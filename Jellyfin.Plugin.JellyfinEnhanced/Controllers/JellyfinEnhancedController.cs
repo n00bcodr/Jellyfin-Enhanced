@@ -60,6 +60,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Content(version);
         }
 
+        [HttpGet("public-config")]
+        [Produces("application/json")]
+        public ActionResult GetPublicConfig()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503, "Configuration not available.");
+            }
+
+            var publicConfig = new
+            {
+                JellyseerrEnabled = config.JellyseerrEnabled
+            };
+
+            return new JsonResult(publicConfig);
+        }
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null, bool isUserRequest = false)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;

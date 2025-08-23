@@ -60,8 +60,20 @@
         }).catch(err => {
             console.warn('🪼 Jellyfin Enhanced: Could not load plugin version', err);
         });
+        const publicConfigPromise = ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
+            dataType: 'json'
+        }).then(publicConfig => {
+            if (publicConfig) {
+                pluginConfig = { ...pluginConfig, ...publicConfig };
+                console.log('🪼 Jellyfin Enhanced: Public configuration loaded', publicConfig);
+            }
+        }).catch(err => {
+            console.warn('🪼 Jellyfin Enhanced: Could not load public configuration.', err);
+        });
 
-        return Promise.all([configPromise, versionPromise]);
+        return Promise.all([configPromise, versionPromise, publicConfigPromise]);
     }
 
     // Wait for ApiClient and load config
@@ -3341,12 +3353,6 @@
             console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is disabled in the plugin settings.');
             return;
         }
-        if (!pluginConfig.JellyseerrUrls || !pluginConfig.JellyseerrApiKey) {
-            console.warn('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is enabled, but the URL or API Key is missing in the plugin configuration. Disabling for this session.');
-            return;
-        }
-
-
             (function () {
                 'use strict';
                 console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr Loaded.');
