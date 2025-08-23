@@ -462,7 +462,7 @@
                 borderRadius: '8px',
                 zIndex: 99999,
                 fontSize: 'clamp(13px, 2vw, 16px)',
-                textShadow: '-1px -1px 5px black',
+                textShadow: '-1px -1px 10px black',
                 fontWeight: '500',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                 backdropFilter: `blur(30px)`,
@@ -3347,23 +3347,25 @@
 
         console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere loaded!');
     }
+
+    // --- JELLYSEERR SEARCH SCRIPT ---
     function initializeJellyseerrScript() {
-        // New check to ensure Jellyseerr is enabled and configured before proceeding
+        // Check to ensure Jellyseerr is enabled and configured before proceeding
         if (!pluginConfig.JellyseerrEnabled) {
-            console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is disabled in the plugin settings.');
+            console.log('🪼 Jellyfin Enhanced: Jellyseerr Search:Integration is disabled in the plugin settings.');
             return;
         }
             (function () {
                 'use strict';
-                console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr Loaded.');
+                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Loaded.');
 
                 let lastProcessedQuery = null;
                 let debounceTimeout = null;
 
-                // 1. STYLES - Replace GM_addStyle with vanilla JS
+                // 1. STYLES
                 function addStyles() {
                     const styleId = 'jellyseerr-styles';
-                    if (document.getElementById(styleId)) return; // Already added
+                    if (document.getElementById(styleId)) return;
 
                     const style = document.createElement('style');
                     style.id = styleId;
@@ -3384,6 +3386,7 @@
                             display: flex;
                             justify-content: center;
                             align-items: center;
+                            white-space: nowrap;
                         }
                         .jellyseerr-rating {
                             display: flex;
@@ -3406,15 +3409,19 @@
                             opacity: 1 !important;
                         }
                         .button-submit.jellyseerr-button-pending {
-                            background-color: #683ab797 !important; /* Blue for Pending/Processing */
+                            background-color: #683ab797 !important;
                             color: white !important;
                             opacity: 1 !important;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
+                            padding: 0 0.5em;
+                            gap: 0.5em;
+                        }
+                        .jellyseerr-button-pending span:first-child {
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
                         }
                         .button-submit.jellyseerr-button-requested {
-                            background-color: #673ab7 !important; /* Purple for Requested */
+                            background-color: #673ab7 !important;
                             color: white !important;
                             opacity: 1 !important;
                         }
@@ -3441,10 +3448,11 @@
                             vertical-align: middle;
                         }
                         .jellyseerr-button-spinner {
-                            width: 1.5vh;
-                            height: 1.5vh;
-                            border: 3px solid rgba(255, 255, 255, 0.3); /* The lighter circle part */
-                            border-top-color: #fff; /* The solid part of the circle */
+                            width: 1em;
+                            height: 1em;
+                            flex-shrink: 0;
+                            border: 3px solid rgba(255, 255, 255, 0.3);
+                            border-top-color: #fff;
                             border-radius: 50%;
                             display: inline-block;
                             margin-left: 8px;
@@ -3467,22 +3475,16 @@
                                 if (latestQuery === lastProcessedQuery) return;
 
                                 lastProcessedQuery = latestQuery;
-                                console.log(`[JELLYSEERR] Debounced search for "${latestQuery}", initiating.`);
 
-                                const oldSection = document.querySelector('.jellyseerr-section');
-                                if (oldSection) {
-                                    oldSection.remove();
-                                }
+                                document.querySelectorAll('.jellyseerr-section').forEach(e => e.remove());
 
                                 runJellyseerrSearch(latestQuery);
-                            }, 750);
+                            }, 1500); // wait 1.5 seconds after typing stops
                         } else if (!isSearchPage) {
                             lastProcessedQuery = null;
                             clearTimeout(debounceTimeout);
                         }
                     });
-
-                    console.log('[JELLYSEERR] Starting observer on document.body.');
                     observer.observe(document.body, { childList: true, subtree: true });
                 }
 
@@ -3493,18 +3495,17 @@
                                             document.querySelector('#searchPage .padded-top.padded-bottom-page');
 
                     if (!searchResultsContainer && !document.querySelector('#searchPage')) {
-                        console.error('[JELLYSEERR] Could not find or create a container to inject results into.');
+                        console.error('🪼 Jellyfin Enhanced: Jellyseerr Search: Could not find or create a container to inject results into.');
                         lastProcessedQuery = null;
                         return;
                     }
 
-                    console.log(`[JELLYSEERR] Fetching from Jellyseerr for query: "${query}".`);
+                    console.log(`🪼 Jellyfin Enhanced: Jellyseerr Search: Fetching from Jellyseerr for query: "${query}".`);
                     fetchFromJellyseerr(query, searchResultsContainer);
                 }
 
-                // IMPROVED INJECTION LOGIC
-                function intelligentlyInjectResults(sectionToInject, container) {
-                    console.log('[JELLYSEERR] Waiting for Jellyfin results to stabilize...');
+                function renderJellyseerrResults(sectionToInject, container) {
+                    console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Waiting for Jellyfin results to load...');
                     let lastMutationTime = Date.now();
                     let stabilityCheckInterval = null;
                     let maxWaitTime = 10000;
@@ -3512,7 +3513,7 @@
 
                     const observer = new MutationObserver(() => {
                         lastMutationTime = Date.now();
-                        console.log('[JELLYSEERR] Container mutation detected, resetting stability timer.');
+                        // console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Container mutation detected, resetting stability timer.');
                     });
 
                     const observeTarget = container || document.querySelector('#searchPage');
@@ -3527,14 +3528,12 @@
                         const timeSinceLastMutation = Date.now() - lastMutationTime;
                         const totalWaitTime = Date.now() - startTime;
 
-                        console.log(`[JELLYSEERR] Stability check - Spinner: ${!!activeSpinner}, Time since mutation: ${timeSinceLastMutation}ms, Total wait: ${totalWaitTime}ms`);
-
                         if ((!activeSpinner && timeSinceLastMutation > 1000) || noResultsMessage || totalWaitTime > maxWaitTime) {
                             clearInterval(stabilityCheckInterval);
                             observer.disconnect();
 
                             if (noResultsMessage) {
-                                console.log('[JELLYSEERR] Jellyfin returned no results. Injecting Jellyseerr section.');
+                                console.debug('🪼 Jellyfin Enhanced: Jellyseerr Search: Jellyfin returned no results. Injecting Jellyseerr section.');
                                 const searchPage = document.querySelector('#searchPage');
                                 if (searchPage) {
                                     searchPage.insertBefore(sectionToInject, noResultsMessage);
@@ -3543,19 +3542,19 @@
                             }
 
                             if (totalWaitTime > maxWaitTime) {
-                                console.log('[JELLYSEERR] Timeout reached, proceeding with injection.');
+                                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Timeout reached, proceeding with injection at the top.');
                             }
 
-                            console.log('[JELLYSEERR] Jellyfin results have stabilized. Analyzing final layout...');
+                            console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Jellyfin results are available. Analyzing results layout...');
 
                             const searchPage = document.querySelector('#searchPage');
                             if (!searchPage) {
-                                console.error('[JELLYSEERR] Could not find search page for injection.');
+                                console.error('🪼 Jellyfin Enhanced: Jellyseerr Search: Could not find search page for injection.');
                                 return;
                             }
 
                             const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
-                            console.log(`[JELLYSEERR] Found ${allSections.length} existing sections`);
+                            console.debug(`🪼 Jellyfin Enhanced: Jellyseerr Search: Found ${allSections.length} existing sections`);
 
                             const finalSections = allSections.map(el => ({
                                 element: el,
@@ -3563,11 +3562,11 @@
                             }));
 
                             finalSections.forEach(section => {
-                                console.log(`[JELLYSEERR] Found section: "${section.title}"`);
+                                console.debug(`🪼 Jellyfin Enhanced: Jellyseerr Search: Found section: "${section.title}"`);
                             });
 
                             if (finalSections.length === 0) {
-                                console.log('[JELLYSEERR] No Jellyfin sections found after stabilization. Using fallback.');
+                                console.debug('🪼 Jellyfin Enhanced: Jellyseerr Search: No Jellyfin sections found. Adding to top as fallback.');
                                 let injectionPoint = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
                                 if (!injectionPoint) {
                                     injectionPoint = document.createElement('div');
@@ -3584,10 +3583,10 @@
                             const moviesSection = finalSections.find(s => s.title.toLowerCase().includes('movies') || s.title.toLowerCase().includes('films'));
 
                             if (peopleSection) {
-                                console.log('[JELLYSEERR] Injecting before People section.');
+                                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Results added before People section.');
                                 peopleSection.element.parentElement.insertBefore(sectionToInject, peopleSection.element);
                             } else if (episodesSection) {
-                                console.log('[JELLYSEERR] Injecting after Episodes section.');
+                                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Results added after Episodes section.');
                                 const nextSibling = episodesSection.element.nextElementSibling;
                                 if (nextSibling) {
                                     episodesSection.element.parentElement.insertBefore(sectionToInject, nextSibling);
@@ -3595,7 +3594,7 @@
                                     episodesSection.element.parentElement.appendChild(sectionToInject);
                                 }
                             } else if (showsSection) {
-                                console.log('[JELLYSEERR] Injecting after Shows section.');
+                                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Results added  after Shows section.');
                                 const nextSibling = showsSection.element.nextElementSibling;
                                 if (nextSibling) {
                                     showsSection.element.parentElement.insertBefore(sectionToInject, nextSibling);
@@ -3603,7 +3602,7 @@
                                     showsSection.element.parentElement.appendChild(sectionToInject);
                                 }
                             } else if (moviesSection) {
-                                console.log('[JELLYSEERR] Injecting after Movies section.');
+                                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Results added  after Movies section.');
                                 const nextSibling = moviesSection.element.nextElementSibling;
                                 if (nextSibling) {
                                     moviesSection.element.parentElement.insertBefore(sectionToInject, nextSibling);
@@ -3611,7 +3610,7 @@
                                     moviesSection.element.parentElement.appendChild(sectionToInject);
                                 }
                             } else {
-                                console.log('[JELLYSEERR] Fallback: Appending to the search results container.');
+                                console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Results added [Fallback].');
                                 let fallbackContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
                                 if (!fallbackContainer) {
                                     fallbackContainer = document.createElement('div');
@@ -3627,7 +3626,7 @@
                 // 4. API - Fetch search results
                 async function fetchFromJellyseerr(query, container) {
                     const requestUrl = `${ApiClient.serverAddress()}/JellyfinEnhanced/jellyseerr/search?query=${encodeURIComponent(query)}`;
-                    console.log(`[JELLYSEERR] Making GET request to proxy: ${requestUrl}`);
+                    // console.debug(`🪼 Jellyfin Enhanced: Jellyseerr Search: Making GET request to proxy: ${requestUrl}`);
 
                     const placeholder = createJellyseerrSection(true);
                     if (container) {
@@ -3637,7 +3636,7 @@
                         if (searchPage) {
                             searchPage.appendChild(placeholder);
                         } else {
-                            console.error('[JELLYSEERR] Could not find a container to inject placeholder into.');
+                            console.error('🪼 Jellyfin Enhanced: Jellyseerr Search: Could not find a container to inject placeholder into.');
                             return;
                         }
                     }
@@ -3651,19 +3650,19 @@
 
                         placeholder.remove();
                         if (data.results && data.results.length > 0) {
-                            console.log(`[JELLYSEERR] Received ${data.results.length} results from proxy.`);
+                            console.log(`🪼 Jellyfin Enhanced: Jellyseerr Search: Received ${data.results.length} results.`);
                             const jellyseerrSection = createJellyseerrSection(false, data.results);
                             const noResultsMessage = document.querySelector('#searchPage .noItemsMessage');
                             if (noResultsMessage) {
                                 noResultsMessage.style.display = 'none';
                             }
-                            intelligentlyInjectResults(jellyseerrSection, container);
+                            renderJellyseerrResults(jellyseerrSection, container);
                         } else {
-                            console.log('[JELLYSEERR] Jellyseerr (via proxy) returned no results.');
+                            console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: No results found.');
                         }
                     } catch (error) {
                         placeholder.remove();
-                        console.error('[JELLYSEERR] Error fetching from proxy:', error);
+                        console.error('🪼 Jellyfin Enhanced: Jellyseerr Search: Error fetching:', error);
                     }
                 }
 
@@ -3709,7 +3708,7 @@
                 // 6. UI - Create a single result card
                 function createJellyseerrCard(item) {
                     const year = item.releaseDate ? item.releaseDate.substring(0, 4) : (item.firstAirDate ? item.firstAirDate.substring(0, 4) : 'N/A');
-                    const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : '';
+                    const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
                     const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
                     const titleText = item.title || item.name;
                     const tmdbUrl = `https://www.themoviedb.org/${item.mediaType}/${item.id}`;
@@ -3724,7 +3723,7 @@
                                 <div class="cardImageContainer coveredImage cardContent" style="background-image: url('${posterUrl}');">
                                     <div class="cardIndicators">
                                         <div class="indicator">
-                                            <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyseerr.svg" class="jellyseerr-icon" alt="From Jellyseerr"/>
+                                            <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyseerr.svg" class="jellyseerr-icon" alt="Jellyseerr"/>
                                         </div>
                                     </div>
                                 </div>
@@ -3753,13 +3752,18 @@
                     switch (status) {
                         case 2: // PENDING_APPROVAL
                         case 3: // PROCESSING
-                            button.textContent = status === 2 ? 'Pending' : 'Processing';
+                            const buttonText = status === 2 ? 'Pending' : 'Processing';
+                            button.innerHTML = `<span>${buttonText}</span><span class="jellyseerr-button-spinner"></span>`;
                             button.disabled = true;
                             button.classList.add('button-submit');
                             button.classList.add('jellyseerr-button-pending');
-                            button.innerHTML += '<span class="jellyseerr-button-spinner"></span>';
                             break;
                         case 4: // PARTIALLY_AVAILABLE
+                            button.textContent = 'Partially Available';
+                            button.disabled = true;
+                            button.classList.add('jellyseerr-button-available');
+                            button.classList.add('button-submit');
+                            break;
                         case 5: // AVAILABLE
                             button.textContent = 'Available';
                             button.disabled = true;
@@ -3773,7 +3777,27 @@
                             button.classList.add('jellyseerr-button-requested');
                             break;
                     }
-
+                    const mediaType = item.mediaType;
+                    if (mediaType === 'movie' || mediaType === 'tv') {
+                        const imageContainer = card.querySelector('.cardImageContainer');
+                        if (imageContainer) {
+                            const badge = document.createElement('div');
+                            badge.style.position = 'absolute';
+                            badge.style.top = '8px';
+                            badge.style.left = '8px';
+                            badge.style.zIndex = '2';
+                            badge.style.backgroundColor = mediaType === 'movie' ? '#3b82f6' : '#f333d6';
+                            badge.style.color = 'white';
+                            badge.style.padding = '2px 8px';
+                            badge.style.borderRadius = '4px';
+                            badge.style.fontSize = '0.9em';
+                            badge.style.fontWeight = '500';
+                            badge.style.fontStyle = 'inherit';
+                            badge.style.textShadow = '-1px 1px 5px black';
+                            badge.textContent = mediaType === 'movie' ? 'Movie' : 'Series';
+                            imageContainer.appendChild(badge);
+                        }
+                    }
                     return card;
                 }
 
@@ -3791,11 +3815,10 @@
                 async function requestMedia(tmdbId, mediaType, button) {
                     const jellyfinUserId = ApiClient.getCurrentUserId();
                     if (!jellyfinUserId) {
-                        console.error('[JELLYSEERR] Could not get Jellyfin user ID. Aborting request.');
+                        console.error('🪼 Jellyfin Enhanced: Jellyseerr Search: Could not get Jellyfin user ID. Aborting request.');
                         button.textContent = 'Login Error';
                         return;
                     }
-
 
                     button.disabled = true;
                     button.textContent = 'Requesting...';
@@ -3810,7 +3833,6 @@
                     if (mediaType === 'tv') { requestBody.seasons = "all"; }
 
                     const requestUrl = `${ApiClient.serverAddress()}/JellyfinEnhanced/jellyseerr/request`;
-                    console.log(`[JELLYSEERR] Making POST request to proxy: ${requestUrl}`);
 
                     try {
                         await ApiClient.ajax({
@@ -3826,7 +3848,7 @@
 
                     } catch (error) {
                         button.disabled = false; // Re-enable on error
-                        console.error('[JELLYSEERR] Request Failed via proxy:', error);
+                        console.error('🪼 Jellyfin Enhanced: Jellyseerr Search: Request Failed via proxy:', error);
 
                         // Attempt to parse a more specific error message from Jellyseerr
                         try {

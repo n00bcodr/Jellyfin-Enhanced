@@ -21,7 +21,7 @@
             <div style="margin-bottom: 1em;">
                 <button class="jellyfin-tab-button active" data-tab="enhanced" style="background: none; border: none; color: var(--primary-accent-color, #fff); cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid var(--primary-accent-color, #fff);"><h3>Enhanced Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
-                <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseer Settings</h3></button>
+                <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseerr Settings</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
                 <div id="enhanced" class="jellyfin-tab-content active" style="display: block; font-family: inherit;">
@@ -155,19 +155,28 @@
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Jellyseerr Results in Search</span>
+                                    <span>Show Jellyseerr Results in Search</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds Jellyseerr search results directly to Jellyfin's search page for easy requests.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrUrls">Jellyseerr URLs</label>
-                                <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="e.g., https://jellyseer.example.com&#10;http://192.168.1.10:5055"></textarea>
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Jellyseerr URL(s)</label>
+                                <textarea style="display:block; height: 8vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="e.g., &#10;https://jellyseerr.example.com&#10;http://192.168.1.10:5055"></textarea>
                                 <div class="fieldDescription">Enter your Jellyseerr instance URLs, one per line. The script will use the first one that connects successfully.</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrApiKey">Jellyseerr API Key</label>
+                                <label class="sectionTitle" for="jellyseerrApiKey">Jellyseerr API Key</label>
                                 <input id="jellyseerrApiKey" is="emby-input" name="jellyseerrApiKey" type="text"/>
-                                <div class="fieldDescription">Your API key from your Jellyseerr instance (found in Settings -> General).</div>
+                                <div class="fieldDescription">API key from your Jellyseerr instance (found in Settings -> General Settings -> API Key).</div>
+                            </div>
+                        </div>
+                        <div
+                            style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #dc0000; border-radius: 4px; padding: 1em 1em; margin: 2em 0 .5em 0; display: flex; align-items: center; gap: 1em;">
+                            <i class="material-icons" style="color: #dc0000; font-size: 22px;">warning</i>
+                            <div>
+                                As of now, if enabled requests made by users from the search page will be automatically approved.<br><br>
+                                To the best of my knowledge this is a limitation of the Jellyseerr API.<br><br>
+                                If this does not suit your use-case, <b>please disable this feature</b> for now and watch this space for updates.
                             </div>
                         </div>
                     </fieldset>
