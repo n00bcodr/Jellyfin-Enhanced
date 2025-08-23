@@ -3336,10 +3336,17 @@
         console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere loaded!');
     }
     function initializeJellyseerrScript() {
+        // New check to ensure Jellyseerr is enabled and configured before proceeding
         if (!pluginConfig.JellyseerrEnabled) {
-            console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is disabled.');
+            console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is disabled in the plugin settings.');
             return;
         }
+        if (!pluginConfig.JellyseerrUrls || !pluginConfig.JellyseerrApiKey) {
+            console.warn('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is enabled, but the URL or API Key is missing in the plugin configuration. Disabling for this session.');
+            return;
+        }
+
+
             (function () {
                 'use strict';
                 console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr Loaded.');
@@ -3439,39 +3446,6 @@
                         }
                     `;
                     document.head.appendChild(style);
-                }
-
-                async function findWorkingJellyseerrUrl() {
-                    if (workingJellyseerrUrl) {
-                        return workingJellyseerrUrl;
-                    }
-
-                    for (const url of CONFIG.jellyseerrUrls) {
-                        try {
-                            const testUrl = `${url}/api/v1/status`;
-                            console.log(`[JELLYSEERR] Testing URL: ${testUrl}`);
-
-                            const response = await makeHttpRequest({
-                                method: 'GET',
-                                url: testUrl,
-                                headers: { 'X-Api-Key': CONFIG.jellyseerrApiKey },
-                                timeout: 5000
-                            });
-
-                            if (response.status >= 200 && response.status < 300) {
-                                console.log(`[JELLYSEERR] Found working Jellyseerr URL: ${url}`);
-                                workingJellyseerrUrl = url;
-                                return url;
-                            } else {
-                                console.log(`[JELLYSEERR] URL [${url}] returned status ${response.status}. Trying next.`);
-                            }
-                        } catch (error) {
-                            console.log(`[JELLYSEERR] URL [${url}] failed: ${error.message}. Trying next.`);
-                        }
-                    }
-
-                    console.error('[JELLYSEERR] No working Jellyseerr URL found from the provided list.');
-                    return null;
                 }
 
                 // 2. MAIN OBSERVER
@@ -3731,6 +3705,8 @@
                     const year = item.releaseDate ? item.releaseDate.substring(0, 4) : (item.firstAirDate ? item.firstAirDate.substring(0, 4) : 'N/A');
                     const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : '';
                     const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
+                    const titleText = item.title || item.name;
+                    const tmdbUrl = `https://www.themoviedb.org/${item.mediaType}/${item.id}`;
 
                     const card = document.createElement('div');
                     card.className = 'card overflowPortraitCard card-hoverable jellyseerr-card';
@@ -3748,7 +3724,9 @@
                                 </div>
                             </div>
                             <div class="cardText cardTextCentered cardText-first">
-                                <bdi>${item.title || item.name}</bdi>
+                                <a href="${tmdbUrl}" target="_blank" style="color: inherit; text-decoration: none;" title="View on TMDB">
+                                    <bdi>${titleText}</bdi>
+                                </a>
                             </div>
                             <div class="cardText cardText-secondary jellyseerr-meta">
                                 <bdi>${year}</bdi>
@@ -3805,12 +3783,24 @@
 
                 // 8. API - Send the request to Jellyseerr
                 async function requestMedia(tmdbId, mediaType, button) {
+                    const jellyfinUserId = ApiClient.getCurrentUserId();
+                    if (!jellyfinUserId) {
+                        console.error('[JELLYSEERR] Could not get Jellyfin user ID. Aborting request.');
+                        button.textContent = 'Login Error';
+                        return;
+                    }
+
+
                     button.disabled = true;
                     button.textContent = 'Requesting...';
                     button.classList.add('jellyseerr-button-requested');
                     button.classList.add('button-submit');
 
-                    let requestBody = { mediaType: mediaType, mediaId: parseInt(tmdbId) };
+                    let requestBody = {
+                        mediaType: mediaType,
+                        mediaId: parseInt(tmdbId),
+                        jellyfinUserId: jellyfinUserId
+                    };
                     if (mediaType === 'tv') { requestBody.seasons = "all"; }
 
                     const requestUrl = `${ApiClient.serverAddress()}/JellyfinEnhanced/jellyseerr/request`;
@@ -3825,8 +3815,8 @@
                         });
 
                         button.textContent = 'Requested ✔';
-                        button.classList.remove('button-submit');
                         button.classList.add('jellyseerr-button-requested');
+                        button.classList.remove('button-submit');
 
                     } catch (error) {
                         button.disabled = false; // Re-enable on error
@@ -3834,8 +3824,7 @@
 
                         // Attempt to parse a more specific error message from Jellyseerr
                         try {
-                            const errorResponse = JSON.parse(error.xhr.responseText);
-                            const errorMessage = errorResponse.message || "Error";
+                            const errorMessage = (error.xhr && error.xhr.responseText) ? error.xhr.responseText : "Error";
                             button.textContent = errorMessage.includes("already been requested") ? 'Already Requested' : 'Error';
                         } catch (e) {
                             button.textContent = 'Request Failed';
@@ -3847,7 +3836,7 @@
                 addStyles();
                 initializeObserver();
             })();
-        }
+    }
     // Initialize the script
     waitForApiClientAndLoadConfig();
 
