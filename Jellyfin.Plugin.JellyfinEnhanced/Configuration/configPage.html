@@ -21,6 +21,7 @@
             <div style="margin-bottom: 1em;">
                 <button class="jellyfin-tab-button active" data-tab="enhanced" style="background: none; border: none; color: var(--primary-accent-color, #fff); cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid var(--primary-accent-color, #fff);"><h3>Enhanced Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
+                <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseer Settings</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
                 <div id="enhanced" class="jellyfin-tab-content active" style="display: block; font-family: inherit;">
@@ -143,6 +144,30 @@
                                 <label class="inputLabel inputLabelUnfocused" for="IGNORE_PROVIDERS">Ignore Providers</label>
                                 <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="IGNORE_PROVIDERS" name="IGNORE_PROVIDERS" placeholder="e.g., .*with Ads, Hulu"></textarea>
                                 <div class="fieldDescription">A list of providers to ignore from the default region (supports regex).<a class="sectionTitle" target="_blank" href="https://raw.githubusercontent.com/n00bcodr/Jellyfin-Elsewhere/refs/heads/main/resources/providers.txt">Full List</a></div>
+                            </div>
+                        </div>
+                    </fieldset>
+                </div>
+                <div id="jellyseerr" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Configuration</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Jellyseerr Results in Search</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds Jellyseerr search results directly to Jellyfin's search page for easy requests.</div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrUrls">Jellyseerr URLs</label>
+                                <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="e.g., https://jellyseer.example.com&#10;http://192.168.1.10:5055"></textarea>
+                                <div class="fieldDescription">Enter your Jellyseerr instance URLs, one per line. The script will use the first one that connects successfully.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrApiKey">Jellyseerr API Key</label>
+                                <input id="jellyseerrApiKey" is="emby-input" name="jellyseerrApiKey" type="text"/>
+                                <div class="fieldDescription">Your API key from your Jellyseerr instance (found in Settings -> General).</div>
                             </div>
                         </div>
                     </fieldset>
@@ -388,6 +413,9 @@
                 document.querySelector('#showFileSizes').checked = config.ShowFileSizes;
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
+                document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
+                document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
+                document.querySelector('#jellyseerrApiKey').value = config.JellyseerrApiKey;
 
                 Dashboard.hideLoadingMsg();
             });
@@ -426,6 +454,10 @@
                 config.ShowFileSizes = document.querySelector('#showFileSizes').checked;
                 config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
                 config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
+                config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
+                config.JellyseerrUrls = document.querySelector('#jellyseerrUrls').value;
+                config.JellyseerrApiKey = document.querySelector('#jellyseerrApiKey').value;
+
 
                 ApiClient.updatePluginConfiguration(pluginId, config)
                     .then((result) => {

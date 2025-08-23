@@ -57,6 +57,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "BookmarkCurrentTime", Key = "B", Label = "Bookmark Current Time", Category = "Player" },
                 new Shortcut { Name = "GoToSavedBookmark", Key = "Shift+B", Label = "Go to Saved Bookmark", Category = "Player" }
             };
+
+            // Jellyseerr Search Settings
+            JellyseerrEnabled = false;
+            JellyseerrUrls = "";
+            JellyseerrApiKey = "";
         }
 
         // Jellyfin Enhanced Settings
@@ -84,5 +89,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RemoveContinueWatchingEnabled { get; set; }
         public bool ShowAudioLanguages { get; set; }
         public List<Shortcut> Shortcuts { get; set; }
+
+        // Jellyseerr Search Settings
+        public bool JellyseerrEnabled { get; set; }
+        public string JellyseerrUrls { get; set; }
+        public string JellyseerrApiKey { get; set; }
     }
 }

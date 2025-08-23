@@ -73,6 +73,10 @@
                 setTimeout(() => {
                     initializeElsewhereScript();
                 }, 1000);
+                // Initialize Jellyseerr after Elsewhere
+                setTimeout(() => {
+                    initializeJellyseerrScript();
+                }, 1500);
             });
         } else {
             setTimeout(waitForApiClientAndLoadConfig, 200);
@@ -3331,7 +3335,519 @@
 
         console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere loaded!');
     }
+    function initializeJellyseerrScript() {
+        if (!pluginConfig.JellyseerrEnabled) {
+            console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr integration is disabled.');
+            return;
+        }
+            (function () {
+                'use strict';
+                console.log('🪼 Jellyfin Enhanced: 🔎 Jellyseerr Loaded.');
 
+                let lastProcessedQuery = null;
+                let debounceTimeout = null;
+
+                // 1. STYLES - Replace GM_addStyle with vanilla JS
+                function addStyles() {
+                    const styleId = 'jellyseerr-styles';
+                    if (document.getElementById(styleId)) return; // Already added
+
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = `
+                        .jellyseerr-section {
+                            margin-bottom: 2em;
+                        }
+                        .jellyseerr-card {
+                            border-radius: 0.25em;
+                            overflow: hidden;
+                            display: flex;
+                            flex-direction: column;
+                            box-shadow: none !important;
+                        }
+                        .jellyseerr-request-button {
+                            margin-top: 0.5em !important;
+                            width: 100%;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                        }
+                        .jellyseerr-rating {
+                            display: flex;
+                            align-items: center;
+                            gap: 0.3em;
+                            color: #bdbdbd;
+                        }
+                        .jellyseerr-rating .material-icons {
+                            font-size: 1.2em;
+                            color: #ffc107;
+                        }
+                        .jellyseerr-icon {
+                            width: 30px;
+                            height: 50px;
+                            filter: drop-shadow(0 0 3px rgba(0,0,0,.7));
+                        }
+                        .button-submit.jellyseerr-button-available {
+                            background-color: #52b54b !important;
+                            color: white !important;
+                            opacity: 1 !important;
+                        }
+                        .button-submit.jellyseerr-button-pending {
+                            background-color: #683ab797 !important; /* Blue for Pending/Processing */
+                            color: white !important;
+                            opacity: 1 !important;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+                        .button-submit.jellyseerr-button-requested {
+                            background-color: #673ab7 !important; /* Purple for Requested */
+                            color: white !important;
+                            opacity: 1 !important;
+                        }
+                        .jellyseerr-meta {
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            gap: 1.5em;
+                            padding: 0 0.75em;
+                        }
+                        @keyframes jellyseerr-spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                        .jellyseerr-loading-spinner {
+                            display: inline-block;
+                            width: 20px;
+                            height: 20px;
+                            border: 3px solid rgba(255, 255, 255, 0.3);
+                            border-radius: 50%;
+                            border-top-color: #fff;
+                            animation: jellyseerr-spin 1s ease-in-out infinite;
+                            margin-left: 10px;
+                            vertical-align: middle;
+                        }
+                        .jellyseerr-button-spinner {
+                            width: 1.5vh;
+                            height: 1.5vh;
+                            border: 3px solid rgba(255, 255, 255, 0.3); /* The lighter circle part */
+                            border-top-color: #fff; /* The solid part of the circle */
+                            border-radius: 50%;
+                            display: inline-block;
+                            margin-left: 8px;
+                            animation: jellyseerr-spin 1s linear infinite;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+
+                async function findWorkingJellyseerrUrl() {
+                    if (workingJellyseerrUrl) {
+                        return workingJellyseerrUrl;
+                    }
+
+                    for (const url of CONFIG.jellyseerrUrls) {
+                        try {
+                            const testUrl = `${url}/api/v1/status`;
+                            console.log(`[JELLYSEERR] Testing URL: ${testUrl}`);
+
+                            const response = await makeHttpRequest({
+                                method: 'GET',
+                                url: testUrl,
+                                headers: { 'X-Api-Key': CONFIG.jellyseerrApiKey },
+                                timeout: 5000
+                            });
+
+                            if (response.status >= 200 && response.status < 300) {
+                                console.log(`[JELLYSEERR] Found working Jellyseerr URL: ${url}`);
+                                workingJellyseerrUrl = url;
+                                return url;
+                            } else {
+                                console.log(`[JELLYSEERR] URL [${url}] returned status ${response.status}. Trying next.`);
+                            }
+                        } catch (error) {
+                            console.log(`[JELLYSEERR] URL [${url}] failed: ${error.message}. Trying next.`);
+                        }
+                    }
+
+                    console.error('[JELLYSEERR] No working Jellyseerr URL found from the provided list.');
+                    return null;
+                }
+
+                // 2. MAIN OBSERVER
+                function initializeObserver() {
+                    const observer = new MutationObserver(() => {
+                        const isSearchPage = window.location.hash.includes('/search.html');
+                        const currentQuery = isSearchPage ? new URLSearchParams(window.location.hash.split('?')[1]).get('query') : null;
+
+                        if (isSearchPage && currentQuery) {
+                            clearTimeout(debounceTimeout);
+                            debounceTimeout = setTimeout(() => {
+                                const latestQuery = new URLSearchParams(window.location.hash.split('?')[1]).get('query');
+                                if (latestQuery === lastProcessedQuery) return;
+
+                                lastProcessedQuery = latestQuery;
+                                console.log(`[JELLYSEERR] Debounced search for "${latestQuery}", initiating.`);
+
+                                const oldSection = document.querySelector('.jellyseerr-section');
+                                if (oldSection) {
+                                    oldSection.remove();
+                                }
+
+                                runJellyseerrSearch(latestQuery);
+                            }, 750);
+                        } else if (!isSearchPage) {
+                            lastProcessedQuery = null;
+                            clearTimeout(debounceTimeout);
+                        }
+                    });
+
+                    console.log('[JELLYSEERR] Starting observer on document.body.');
+                    observer.observe(document.body, { childList: true, subtree: true });
+                }
+
+                // 3. TRIGGER FUNCTION
+                function runJellyseerrSearch(query) {
+                    let searchResultsContainer = document.querySelector('#searchPage .searchResults') ||
+                                            document.querySelector('#searchPage [class*="searchResults"]') ||
+                                            document.querySelector('#searchPage .padded-top.padded-bottom-page');
+
+                    if (!searchResultsContainer && !document.querySelector('#searchPage')) {
+                        console.error('[JELLYSEERR] Could not find or create a container to inject results into.');
+                        lastProcessedQuery = null;
+                        return;
+                    }
+
+                    console.log(`[JELLYSEERR] Fetching from Jellyseerr for query: "${query}".`);
+                    fetchFromJellyseerr(query, searchResultsContainer);
+                }
+
+                // IMPROVED INJECTION LOGIC
+                function intelligentlyInjectResults(sectionToInject, container) {
+                    console.log('[JELLYSEERR] Waiting for Jellyfin results to stabilize...');
+                    let lastMutationTime = Date.now();
+                    let stabilityCheckInterval = null;
+                    let maxWaitTime = 10000;
+                    let startTime = Date.now();
+
+                    const observer = new MutationObserver(() => {
+                        lastMutationTime = Date.now();
+                        console.log('[JELLYSEERR] Container mutation detected, resetting stability timer.');
+                    });
+
+                    const observeTarget = container || document.querySelector('#searchPage');
+                    if (observeTarget) {
+                        observer.observe(observeTarget, { childList: true, subtree: true });
+                    }
+
+                    stabilityCheckInterval = setInterval(() => {
+                        const spinners = document.querySelectorAll('.mdlSpinnerActive, .loading, .spinner, [class*="loading"], [class*="spinner"]');
+                        const activeSpinner = Array.from(spinners).find(el => el.offsetParent !== null);
+                        const noResultsMessage = document.querySelector('#searchPage .noItemsMessage');
+                        const timeSinceLastMutation = Date.now() - lastMutationTime;
+                        const totalWaitTime = Date.now() - startTime;
+
+                        console.log(`[JELLYSEERR] Stability check - Spinner: ${!!activeSpinner}, Time since mutation: ${timeSinceLastMutation}ms, Total wait: ${totalWaitTime}ms`);
+
+                        if ((!activeSpinner && timeSinceLastMutation > 1000) || noResultsMessage || totalWaitTime > maxWaitTime) {
+                            clearInterval(stabilityCheckInterval);
+                            observer.disconnect();
+
+                            if (noResultsMessage) {
+                                console.log('[JELLYSEERR] Jellyfin returned no results. Injecting Jellyseerr section.');
+                                const searchPage = document.querySelector('#searchPage');
+                                if (searchPage) {
+                                    searchPage.insertBefore(sectionToInject, noResultsMessage);
+                                }
+                                return;
+                            }
+
+                            if (totalWaitTime > maxWaitTime) {
+                                console.log('[JELLYSEERR] Timeout reached, proceeding with injection.');
+                            }
+
+                            console.log('[JELLYSEERR] Jellyfin results have stabilized. Analyzing final layout...');
+
+                            const searchPage = document.querySelector('#searchPage');
+                            if (!searchPage) {
+                                console.error('[JELLYSEERR] Could not find search page for injection.');
+                                return;
+                            }
+
+                            const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
+                            console.log(`[JELLYSEERR] Found ${allSections.length} existing sections`);
+
+                            const finalSections = allSections.map(el => ({
+                                element: el,
+                                title: el.querySelector('.sectionTitle, h2')?.textContent.trim() || ''
+                            }));
+
+                            finalSections.forEach(section => {
+                                console.log(`[JELLYSEERR] Found section: "${section.title}"`);
+                            });
+
+                            if (finalSections.length === 0) {
+                                console.log('[JELLYSEERR] No Jellyfin sections found after stabilization. Using fallback.');
+                                let injectionPoint = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
+                                if (!injectionPoint) {
+                                    injectionPoint = document.createElement('div');
+                                    injectionPoint.className = 'searchResults padded-top padded-bottom-page';
+                                    searchPage.appendChild(injectionPoint);
+                                }
+                                injectionPoint.appendChild(sectionToInject);
+                                return;
+                            }
+
+                            const peopleSection = finalSections.find(s => s.title.toLowerCase().includes('people'));
+                            const episodesSection = finalSections.find(s => s.title.toLowerCase().includes('episodes'));
+                            const showsSection = finalSections.find(s => s.title.toLowerCase().includes('shows') || s.title.toLowerCase().includes('series'));
+                            const moviesSection = finalSections.find(s => s.title.toLowerCase().includes('movies') || s.title.toLowerCase().includes('films'));
+
+                            if (peopleSection) {
+                                console.log('[JELLYSEERR] Injecting before People section.');
+                                peopleSection.element.parentElement.insertBefore(sectionToInject, peopleSection.element);
+                            } else if (episodesSection) {
+                                console.log('[JELLYSEERR] Injecting after Episodes section.');
+                                const nextSibling = episodesSection.element.nextElementSibling;
+                                if (nextSibling) {
+                                    episodesSection.element.parentElement.insertBefore(sectionToInject, nextSibling);
+                                } else {
+                                    episodesSection.element.parentElement.appendChild(sectionToInject);
+                                }
+                            } else if (showsSection) {
+                                console.log('[JELLYSEERR] Injecting after Shows section.');
+                                const nextSibling = showsSection.element.nextElementSibling;
+                                if (nextSibling) {
+                                    showsSection.element.parentElement.insertBefore(sectionToInject, nextSibling);
+                                } else {
+                                    showsSection.element.parentElement.appendChild(sectionToInject);
+                                }
+                            } else if (moviesSection) {
+                                console.log('[JELLYSEERR] Injecting after Movies section.');
+                                const nextSibling = moviesSection.element.nextElementSibling;
+                                if (nextSibling) {
+                                    moviesSection.element.parentElement.insertBefore(sectionToInject, nextSibling);
+                                } else {
+                                    moviesSection.element.parentElement.appendChild(sectionToInject);
+                                }
+                            } else {
+                                console.log('[JELLYSEERR] Fallback: Appending to the search results container.');
+                                let fallbackContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
+                                if (!fallbackContainer) {
+                                    fallbackContainer = document.createElement('div');
+                                    fallbackContainer.className = 'searchResults padded-top padded-bottom-page';
+                                    searchPage.appendChild(fallbackContainer);
+                                }
+                                fallbackContainer.appendChild(sectionToInject);
+                            }
+                        }
+                    }, 200);
+                }
+
+                // 4. API - Fetch search results
+                async function fetchFromJellyseerr(query, container) {
+                    const requestUrl = `${ApiClient.serverAddress()}/JellyfinEnhanced/jellyseerr/search?query=${encodeURIComponent(query)}`;
+                    console.log(`[JELLYSEERR] Making GET request to proxy: ${requestUrl}`);
+
+                    const placeholder = createJellyseerrSection(true);
+                    if (container) {
+                        container.appendChild(placeholder);
+                    } else {
+                        const searchPage = document.querySelector('#searchPage');
+                        if (searchPage) {
+                            searchPage.appendChild(placeholder);
+                        } else {
+                            console.error('[JELLYSEERR] Could not find a container to inject placeholder into.');
+                            return;
+                        }
+                    }
+
+                    try {
+                        const data = await ApiClient.ajax({
+                            type: 'GET',
+                            url: requestUrl,
+                            dataType: 'json'
+                        });
+
+                        placeholder.remove();
+                        if (data.results && data.results.length > 0) {
+                            console.log(`[JELLYSEERR] Received ${data.results.length} results from proxy.`);
+                            const jellyseerrSection = createJellyseerrSection(false, data.results);
+                            const noResultsMessage = document.querySelector('#searchPage .noItemsMessage');
+                            if (noResultsMessage) {
+                                noResultsMessage.style.display = 'none';
+                            }
+                            intelligentlyInjectResults(jellyseerrSection, container);
+                        } else {
+                            console.log('[JELLYSEERR] Jellyseerr (via proxy) returned no results.');
+                        }
+                    } catch (error) {
+                        placeholder.remove();
+                        console.error('[JELLYSEERR] Error fetching from proxy:', error);
+                    }
+                }
+
+                // 5. UI - Create the entire Jellyseerr section
+                function createJellyseerrSection(isLoading, results = []) {
+                    const section = document.createElement('div');
+                    section.className = 'verticalSection emby-scroller-container jellyseerr-section';
+
+                    const title = document.createElement('h2');
+                    title.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
+                    title.textContent = 'Discover on Jellyseerr';
+
+                    if (isLoading) {
+                        const spinner = document.createElement('div');
+                        spinner.className = 'jellyseerr-loading-spinner';
+                        title.appendChild(spinner);
+                    }
+                    section.appendChild(title);
+
+                    const scrollerContainer = document.createElement('div');
+                    scrollerContainer.setAttribute('is', 'emby-scroller');
+                    scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
+                    scrollerContainer.dataset.horizontal = "true";
+                    scrollerContainer.dataset.centerfocus = "card";
+
+                    const itemsContainer = document.createElement('div');
+                    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+                    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+                    itemsContainer.style.whiteSpace = 'nowrap';
+
+                    if (!isLoading) {
+                        results.forEach(item => {
+                            const card = createJellyseerrCard(item);
+                            itemsContainer.appendChild(card);
+                        });
+                    }
+
+                    scrollerContainer.appendChild(itemsContainer);
+                    section.appendChild(scrollerContainer);
+                    return section;
+                }
+
+                // 6. UI - Create a single result card
+                function createJellyseerrCard(item) {
+                    const year = item.releaseDate ? item.releaseDate.substring(0, 4) : (item.firstAirDate ? item.firstAirDate.substring(0, 4) : 'N/A');
+                    const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : '';
+                    const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
+
+                    const card = document.createElement('div');
+                    card.className = 'card overflowPortraitCard card-hoverable jellyseerr-card';
+
+                    card.innerHTML = `
+                        <div class="cardBox cardBox-bottompadded">
+                            <div class="cardScalable">
+                                <div class="cardPadder cardPadder-overflowPortrait"></div>
+                                <div class="cardImageContainer coveredImage cardContent" style="background-image: url('${posterUrl}');">
+                                    <div class="cardIndicators">
+                                        <div class="indicator">
+                                            <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyseerr.svg" class="jellyseerr-icon" alt="From Jellyseerr"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="cardText cardTextCentered cardText-first">
+                                <bdi>${item.title || item.name}</bdi>
+                            </div>
+                            <div class="cardText cardText-secondary jellyseerr-meta">
+                                <bdi>${year}</bdi>
+                                <div class="jellyseerr-rating">
+                                    <span class="material-icons">star</span>
+                                    <span>${rating}</span>
+                                </div>
+                            </div>
+                            <div class="cardFooter" style="padding: 0.5em 1em 1em;">
+                                <button is="emby-button" type="button" class="jellyseerr-request-button emby-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
+                            </div>
+                        </div>
+                    `;
+
+                    const button = card.querySelector('.jellyseerr-request-button');
+                    const status = item.mediaInfo ? item.mediaInfo.status : 1;
+
+                    switch (status) {
+                        case 2: // PENDING_APPROVAL
+                        case 3: // PROCESSING
+                            button.textContent = status === 2 ? 'Pending' : 'Processing';
+                            button.disabled = true;
+                            button.classList.add('button-submit');
+                            button.classList.add('jellyseerr-button-pending');
+                            button.innerHTML += '<span class="jellyseerr-button-spinner"></span>';
+                            break;
+                        case 4: // PARTIALLY_AVAILABLE
+                        case 5: // AVAILABLE
+                            button.textContent = 'Available';
+                            button.disabled = true;
+                            button.classList.add('jellyseerr-button-available');
+                            button.classList.add('button-submit');
+                            break;
+                        default: // UNKNOWN or other statuses
+                            button.textContent = 'Request';
+                            button.disabled = false;
+                            button.classList.add('button-submit');
+                            button.classList.add('jellyseerr-button-requested');
+                            break;
+                    }
+
+                    return card;
+                }
+
+                // 7. ACTION - Handle request button clicks
+                document.body.addEventListener('click', function(event) {
+                    const button = event.target.closest('.jellyseerr-request-button');
+                    if (button && !button.disabled) {
+                        const mediaType = button.dataset.mediaType;
+                        const tmdbId = button.dataset.tmdbId;
+                        requestMedia(tmdbId, mediaType, button);
+                    }
+                });
+
+                // 8. API - Send the request to Jellyseerr
+                async function requestMedia(tmdbId, mediaType, button) {
+                    button.disabled = true;
+                    button.textContent = 'Requesting...';
+                    button.classList.add('jellyseerr-button-requested');
+                    button.classList.add('button-submit');
+
+                    let requestBody = { mediaType: mediaType, mediaId: parseInt(tmdbId) };
+                    if (mediaType === 'tv') { requestBody.seasons = "all"; }
+
+                    const requestUrl = `${ApiClient.serverAddress()}/JellyfinEnhanced/jellyseerr/request`;
+                    console.log(`[JELLYSEERR] Making POST request to proxy: ${requestUrl}`);
+
+                    try {
+                        await ApiClient.ajax({
+                            type: 'POST',
+                            url: requestUrl,
+                            data: JSON.stringify(requestBody),
+                            contentType: 'application/json'
+                        });
+
+                        button.textContent = 'Requested ✔';
+                        button.classList.remove('button-submit');
+                        button.classList.add('jellyseerr-button-requested');
+
+                    } catch (error) {
+                        button.disabled = false; // Re-enable on error
+                        console.error('[JELLYSEERR] Request Failed via proxy:', error);
+
+                        // Attempt to parse a more specific error message from Jellyseerr
+                        try {
+                            const errorResponse = JSON.parse(error.xhr.responseText);
+                            const errorMessage = errorResponse.message || "Error";
+                            button.textContent = errorMessage.includes("already been requested") ? 'Already Requested' : 'Error';
+                        } catch (e) {
+                            button.textContent = 'Request Failed';
+                        }
+
+                        button.classList.remove('button-submit');
+                    }
+                }
+                addStyles();
+                initializeObserver();
+            })();
+        }
     // Initialize the script
     waitForApiClientAndLoadConfig();
 

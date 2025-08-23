@@ -10,6 +10,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<StartupService>();
+            serviceCollection.AddHttpClient();
         }
     }
 }
