@@ -21,6 +21,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public string? JellyfinUserId { get; set; }
     }
 
+    public class SeasonRequestBody
+    {
+        [JsonPropertyName("mediaType")]
+        public string MediaType { get; set; } = string.Empty;
+
+        [JsonPropertyName("mediaId")]
+        public int MediaId { get; set; }
+
+        [JsonPropertyName("seasons")]
+        public object Seasons { get; set; } = "all";
+    }
+
     [Route("JellyfinEnhanced")]
     [ApiController]
     public class JellyfinEnhancedController : ControllerBase
@@ -271,10 +283,122 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/search?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/tv/{tvId}")]
+        public Task<IActionResult> JellyseerrTvDetails(int tvId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tvId}", HttpMethod.Get);
+        }
+
         [HttpPost("jellyseerr/request")]
         public async Task<IActionResult> JellyseerrRequest([FromBody] JsonElement requestBody)
         {
-            return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
+            try
+            {
+                // Parse the request to handle season-specific requests
+                var requestData = new SeasonRequestBody();
+
+                if (requestBody.TryGetProperty("mediaType", out var mediaTypeProperty))
+                {
+                    requestData.MediaType = mediaTypeProperty.GetString() ?? "";
+                }
+
+                if (requestBody.TryGetProperty("mediaId", out var mediaIdProperty))
+                {
+                    requestData.MediaId = mediaIdProperty.GetInt32();
+                }
+
+                if (requestBody.TryGetProperty("seasons", out var seasonsProperty))
+                {
+                    // Handle both array of season numbers and "all" string
+                    if (seasonsProperty.ValueKind == JsonValueKind.Array)
+                    {
+                        var seasonNumbers = new List<int>();
+                        foreach (var season in seasonsProperty.EnumerateArray())
+                        {
+                            if (season.ValueKind == JsonValueKind.Number)
+                            {
+                                seasonNumbers.Add(season.GetInt32());
+                            }
+                        }
+                        requestData.Seasons = seasonNumbers;
+                        _logger.Info($"Season-specific request for TV ID {requestData.MediaId}, seasons: [{string.Join(", ", seasonNumbers)}]");
+                    }
+                    else if (seasonsProperty.ValueKind == JsonValueKind.String)
+                    {
+                        requestData.Seasons = seasonsProperty.GetString();
+                        _logger.Info($"Bulk season request for TV ID {requestData.MediaId}, seasons: {requestData.Seasons}");
+                    }
+                }
+
+                // Convert back to JSON for the proxy request
+                var modifiedRequestBody = JsonSerializer.Serialize(requestData, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
+
+                return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, modifiedRequestBody);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error processing Jellyseerr request: {ex.Message}");
+                return StatusCode(400, new { message = "Invalid request format" });
+            }
+        }
+
+        [HttpPost("jellyseerr/request/seasons")]
+        public async Task<IActionResult> JellyseerrRequestSeasons([FromBody] JsonElement requestBody)
+        {
+            try
+            {
+                if (!requestBody.TryGetProperty("mediaId", out var mediaIdProperty) ||
+                    !requestBody.TryGetProperty("seasons", out var seasonsProperty))
+                {
+                    return BadRequest(new { message = "Missing required fields: mediaId and seasons" });
+                }
+
+                var mediaId = mediaIdProperty.GetInt32();
+                var seasonNumbers = new List<int>();
+
+                if (seasonsProperty.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var season in seasonsProperty.EnumerateArray())
+                    {
+                        if (season.ValueKind == JsonValueKind.Number)
+                        {
+                            seasonNumbers.Add(season.GetInt32());
+                        }
+                    }
+                }
+
+                if (seasonNumbers.Count == 0)
+                {
+                    return BadRequest(new { message = "No valid seasons provided" });
+                }
+
+                _logger.Info($"Processing season-specific request for TV ID {mediaId}, seasons: [{string.Join(", ", seasonNumbers)}]");
+
+                var requestPayload = new
+                {
+                    mediaType = "tv",
+                    mediaId = mediaId,
+                    seasons = seasonNumbers
+                };
+
+                var jsonContent = JsonSerializer.Serialize(requestPayload);
+                return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, jsonContent);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error processing season request: {ex.Message}");
+                return StatusCode(500, new { message = "Failed to process season request" });
+            }
+        }
+
+        [HttpGet("jellyseerr/tv/{tvId}/seasons")]
+        public Task<IActionResult> JellyseerrTvSeasons(int tvId)
+        {
+            _logger.Info($"Fetching seasons for TV ID: {tvId}");
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tvId}", HttpMethod.Get);
         }
 
         [HttpGet("script")]

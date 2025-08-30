@@ -23,6 +23,7 @@
         let isJellyseerrOnlyMode = false; // New state for filter mode
         let hiddenSections = []; // Store hidden sections for restoration
         let jellyseerrOriginalPosition = null; // Store original position marker
+        let seasonModalCache = new Map(); // Cache for TV show season data
 
         // SVG Icons definition
         const icons = {
@@ -44,7 +45,8 @@
             //cancel
             cancel: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-left:0.5em;"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"></path></svg>',
             //download
-            request: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-right:0.5em;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg>'
+            request: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-right:0.5em;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg>',
+            close: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>'
         };
 
 
@@ -84,6 +86,247 @@
             }
         }
 
+        // Season Modal Functions
+        function createSeasonModal() {
+            const modal = document.createElement('div');
+            modal.className = 'jellyseerr-season-modal-overlay';
+            modal.innerHTML = `
+                <div class="jellyseerr-season-modal">
+                    <div class="jellyseerr-season-modal-header">
+                        <h2 class="jellyseerr-season-modal-title">Request Series</h2>
+                        <button class="jellyseerr-season-modal-close" type="button">
+                            ${icons.close}
+                        </button>
+                    </div>
+                    <div class="jellyseerr-season-modal-subtitle"></div>
+                    <div class="jellyseerr-season-modal-content">
+                        <div class="jellyseerr-season-list-header">
+                            <span class="jellyseerr-season-header-text">SEASON</span>
+                            <span class="jellyseerr-season-header-text"># OF EPISODES</span>
+                            <span class="jellyseerr-season-header-text">STATUS</span>
+                        </div>
+                        <div class="jellyseerr-season-list"></div>
+                    </div>
+                    <div class="jellyseerr-season-modal-footer">
+                        <button class="jellyseerr-season-modal-cancel" type="button">Cancel</button>
+                        <button class="jellyseerr-season-modal-submit" type="button">Select Season(s)</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            return modal;
+        }
+
+        function showSeasonModal(item, originalButton) {
+            const modal = createSeasonModal();
+            const tmdbId = item.id;
+
+            // Update modal title and subtitle
+            const titleEl = modal.querySelector('.jellyseerr-season-modal-title');
+            const subtitleEl = modal.querySelector('.jellyseerr-season-modal-subtitle');
+            titleEl.textContent = 'Request Series';
+            subtitleEl.textContent = item.title || item.name;
+
+            // Show loading state
+            const seasonList = modal.querySelector('.jellyseerr-season-list');
+            seasonList.innerHTML = '<div class="jellyseerr-season-loading">Loading seasons...</div>';
+
+            // Fetch TV show details including seasons
+            fetchTvShowDetails(tmdbId).then(tvDetails => {
+                if (tvDetails && tvDetails.seasons) {
+                    renderSeasonList(seasonList, tvDetails, originalButton);
+                } else {
+                    seasonList.innerHTML = '<div class="jellyseerr-season-error">Failed to load seasons</div>';
+                }
+            }).catch(error => {
+                console.error(`${logPrefix} Error fetching TV details:`, error);
+                seasonList.innerHTML = '<div class="jellyseerr-season-error">Failed to load seasons</div>';
+            });
+
+            // Add event listeners
+            const closeBtn = modal.querySelector('.jellyseerr-season-modal-close');
+            const cancelBtn = modal.querySelector('.jellyseerr-season-modal-cancel');
+            const submitBtn = modal.querySelector('.jellyseerr-season-modal-submit');
+
+            const closeModal = () => {
+                document.body.removeChild(modal);
+            };
+
+            closeBtn.addEventListener('click', closeModal);
+            cancelBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+
+            // Handle season submission
+            submitBtn.addEventListener('click', () => {
+                const selectedSeasons = Array.from(modal.querySelectorAll('.jellyseerr-season-toggle:checked'))
+                    .map(checkbox => parseInt(checkbox.dataset.seasonNumber));
+
+                if (selectedSeasons.length === 0) {
+                    JE.toast('⚠️ Please select at least one season', 3000);
+                    return;
+                }
+
+                closeModal();
+                requestTvSeasons(tmdbId, selectedSeasons, originalButton);
+            });
+
+            // Show modal with animation
+            requestAnimationFrame(() => {
+                modal.classList.add('show');
+            });
+        }
+
+        function renderSeasonList(container, tvDetails, originalButton) {
+            container.innerHTML = '';
+
+            if (!tvDetails.seasons || tvDetails.seasons.length === 0) {
+                container.innerHTML = '<div class="jellyseerr-season-error">No seasons found</div>';
+                return;
+            }
+
+            // Filter out season 0 (specials) and sort by season number
+            const validSeasons = tvDetails.seasons
+                .filter(season => season.seasonNumber > 0)
+                .sort((a, b) => a.seasonNumber - b.seasonNumber);
+
+            validSeasons.forEach(season => {
+                const seasonItem = document.createElement('div');
+                seasonItem.className = 'jellyseerr-season-item';
+
+                // Determine season status from existing media info
+                const seasonStatus = getSeasonStatus(tvDetails, season.seasonNumber);
+                const statusText = getSeasonStatusText(seasonStatus);
+                const statusClass = getSeasonStatusClass(seasonStatus);
+
+                seasonItem.innerHTML = `
+                    <div class="jellyseerr-season-toggle-container">
+                        <label class="jellyseerr-season-toggle-label">
+                            <input type="checkbox" class="jellyseerr-season-toggle"
+                                   data-season-number="${season.seasonNumber}"
+                                   ${seasonStatus === 1 ? 'checked' : ''}
+                                   ${seasonStatus !== 1 ? 'disabled' : ''}>
+                            <span class="jellyseerr-season-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="jellyseerr-season-info">
+                        <span class="jellyseerr-season-name">Season ${season.seasonNumber}</span>
+                    </div>
+                    <div class="jellyseerr-season-episodes">
+                        <span>${season.episodeCount} Episode${season.episodeCount !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="jellyseerr-season-status">
+                        <span class="jellyseerr-season-status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                `;
+
+                container.appendChild(seasonItem);
+            });
+        }
+
+        function getSeasonStatus(tvDetails, seasonNumber) {
+            // Check if we have media info for this specific season
+            if (tvDetails.mediaInfo && tvDetails.mediaInfo.seasons) {
+                const seasonInfo = tvDetails.mediaInfo.seasons.find(s => s.seasonNumber === seasonNumber);
+                if (seasonInfo) {
+                    return seasonInfo.status;
+                }
+            }
+            // Default to not requested if no specific season info
+            return 1; // Not requested
+        }
+
+        function getSeasonStatusText(status) {
+            switch (status) {
+                case 1: return 'Not Requested';
+                case 2: return 'Pending';
+                case 3: return 'Requested';
+                case 4: return 'Partially Available';
+                case 5: return 'Available';
+                case 6: return 'Rejected';
+                default: return 'Unknown';
+            }
+        }
+
+        function getSeasonStatusClass(status) {
+            switch (status) {
+                case 1: return 'not-requested';
+                case 2: return 'pending';
+                case 3: return 'requested';
+                case 4: return 'partially-available';
+                case 5: return 'available';
+                case 6: return 'rejected';
+                default: return 'unknown';
+            }
+        }
+
+        async function fetchTvShowDetails(tmdbId) {
+            try {
+                const data = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/tv/${tmdbId}`),
+                    dataType: 'json',
+                    headers: {
+                        'X-Jellyfin-User-Id': ApiClient.getCurrentUserId()
+                    }
+                });
+
+                // Cache the result
+                seasonModalCache.set(tmdbId, data);
+                return data;
+            } catch (error) {
+                console.error(`${logPrefix} Error fetching TV show details:`, error);
+                throw error;
+            }
+        }
+
+        async function requestTvSeasons(tmdbId, seasonNumbers, button) {
+            button.disabled = true;
+            button.innerHTML = `<span>Requesting ${seasonNumbers.length} Season${seasonNumbers.length > 1 ? 's' : ''}</span><span class="jellyseerr-button-spinner"></span>`;
+
+            const requestBody = {
+                mediaType: 'tv',
+                mediaId: parseInt(tmdbId),
+                seasons: seasonNumbers
+            };
+
+            try {
+                await ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/request'),
+                    data: JSON.stringify(requestBody),
+                    contentType: 'application/json',
+                    headers: {
+                        'X-Jellyfin-User-Id': ApiClient.getCurrentUserId()
+                    }
+                });
+
+                const seasonText = seasonNumbers.length === 1 ? `Season ${seasonNumbers[0]}` : `${seasonNumbers.length} Seasons`;
+                button.innerHTML = `<span>${seasonText} Requested ${icons.requested}</span>`;
+                button.classList.remove('jellyseerr-button-request');
+                button.classList.add('jellyseerr-button-pending');
+
+                // Clear cache to force refresh on next request
+                seasonModalCache.delete(tmdbId);
+
+            } catch (error) {
+                button.disabled = false;
+                const userId = ApiClient.getCurrentUserId();
+                const errorDetails = error.responseJSON || error;
+                console.error(`${logPrefix} Season request failed for user ${userId}. Request Body:`, JSON.stringify(requestBody), 'Error:', errorDetails);
+
+                let errorMessage = 'Error';
+                if (error.status === 404) {
+                    errorMessage = 'User Not Found';
+                } else if (error.responseJSON && error.responseJSON.message) {
+                    errorMessage = error.responseJSON.message;
+                }
+
+                button.innerHTML = `<span>${errorMessage} ${icons.error}</span>`;
+                button.classList.add('jellyseerr-button-error');
+            }
+        }
 
         // STYLES
         function addStyles() {
@@ -190,6 +433,314 @@
                 .jellyseerr-request-button.jellyseerr-button-available { background-color: #16a34a !important; color: #fff !important; }
                 .jellyseerr-request-button.jellyseerr-button-error { background: #dc3545 !important; color: #fff !important; }
 
+                /* --- Season Modal Styles --- */
+                .jellyseerr-season-modal-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.75);
+                    backdrop-filter: blur(4px);
+                    -webkit-backdrop-filter: blur(4px);
+                    z-index: 10000;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                    padding: 1rem;
+                }
+
+                .jellyseerr-season-modal-overlay.show {
+                    opacity: 1;
+                }
+
+                .jellyseerr-season-modal {
+                    background: #1f2937;
+                    border-radius: 12px;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    width: 100%;
+                    max-width: 600px;
+                    max-height: 80vh;
+                    overflow: hidden;
+                    display: flex;
+                    flex-direction: column;
+                    transform: scale(0.95);
+                    transition: transform 0.2s ease;
+                }
+
+                .jellyseerr-season-modal-overlay.show .jellyseerr-season-modal {
+                    transform: scale(1);
+                }
+
+                .jellyseerr-season-modal-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 1.5rem 1.5rem 1rem;
+                    border-bottom: 1px solid #374151;
+                }
+
+                .jellyseerr-season-modal-title {
+                    font-size: 1.5rem;
+                    font-weight: 600;
+                    color: #f9fafb;
+                    margin: 0;
+                }
+
+                .jellyseerr-season-modal-subtitle {
+                    color: #9ca3af;
+                    font-size: 1.1rem;
+                    padding: 0 1.5rem 1rem;
+                    border-bottom: 1px solid #374151;
+                    margin-bottom: 0;
+                }
+
+                .jellyseerr-season-modal-close {
+                    background: none;
+                    border: none;
+                    color: #9ca3af;
+                    cursor: pointer;
+                    padding: 0.5rem;
+                    border-radius: 6px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: background 0.2s, color 0.2s;
+                }
+
+                .jellyseerr-season-modal-close:hover {
+                    background: #374151;
+                    color: #f9fafb;
+                }
+
+                .jellyseerr-season-modal-content {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 0;
+                }
+
+                .jellyseerr-season-list-header {
+                    display: grid;
+                    grid-template-columns: 80px 1fr auto;
+                    gap: 1rem;
+                    padding: 1rem 1.5rem 0.5rem;
+                    color: #9ca3af;
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+
+                .jellyseerr-season-list {
+                    min-height: 200px;
+                }
+
+                .jellyseerr-season-loading,
+                .jellyseerr-season-error {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 3rem 1.5rem;
+                    color: #9ca3af;
+                    font-size: 1rem;
+                }
+
+                .jellyseerr-season-error {
+                    color: #ef4444;
+                }
+
+                .jellyseerr-season-item {
+                    display: grid;
+                    grid-template-columns: 80px 1fr auto;
+                    gap: 1rem;
+                    align-items: center;
+                    padding: 0.75rem 1.5rem;
+                    border-bottom: 1px solid #374151;
+                    transition: background 0.2s;
+                }
+
+                .jellyseerr-season-item:hover {
+                    background: #374151;
+                }
+
+                .jellyseerr-season-item:last-child {
+                    border-bottom: none;
+                }
+
+                .jellyseerr-season-toggle-container {
+                    display: flex;
+                    align-items: center;
+                }
+
+                .jellyseerr-season-toggle-label {
+                    position: relative;
+                    display: inline-block;
+                    width: 48px;
+                    height: 24px;
+                    cursor: pointer;
+                }
+
+                .jellyseerr-season-toggle {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                }
+
+                .jellyseerr-season-toggle-slider {
+                    position: absolute;
+                    cursor: pointer;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: #6b7280;
+                    transition: .3s;
+                    border-radius: 24px;
+                }
+
+                .jellyseerr-season-toggle-slider:before {
+                    position: absolute;
+                    content: "";
+                    height: 18px;
+                    width: 18px;
+                    left: 3px;
+                    bottom: 3px;
+                    background-color: white;
+                    transition: .3s;
+                    border-radius: 50%;
+                }
+
+                .jellyseerr-season-toggle:checked + .jellyseerr-season-toggle-slider {
+                    background-color: #3b82f6;
+                }
+
+                .jellyseerr-season-toggle:disabled + .jellyseerr-season-toggle-slider {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                .jellyseerr-season-toggle:checked + .jellyseerr-season-toggle-slider:before {
+                    transform: translateX(24px);
+                }
+
+                .jellyseerr-season-info {
+                    color: #f9fafb;
+                    font-weight: 500;
+                }
+
+                .jellyseerr-season-episodes {
+                    color: #d1d5db;
+                    font-size: 0.875rem;
+                }
+
+                .jellyseerr-season-status-badge {
+                    padding: 0.25rem 0.75rem;
+                    border-radius: 9999px;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+
+                .jellyseerr-season-status-badge.not-requested {
+                    background: #6b7280;
+                    color: #f9fafb;
+                }
+
+                .jellyseerr-season-status-badge.pending {
+                    background: #b45309;
+                    color: #fff;
+                }
+
+                .jellyseerr-season-status-badge.requested {
+                    background: #7c3aed;
+                    color: #fff;
+                }
+
+                .jellyseerr-season-status-badge.partially-available {
+                    background: #059669;
+                    color: #fff;
+                }
+
+                .jellyseerr-season-status-badge.available {
+                    background: #16a34a;
+                    color: #fff;
+                }
+
+                .jellyseerr-season-status-badge.rejected {
+                    background: #dc2626;
+                    color: #fff;
+                }
+
+                .jellyseerr-season-modal-footer {
+                    display: flex;
+                    gap: 0.75rem;
+                    padding: 1.5rem;
+                    border-top: 1px solid #374151;
+                    justify-content: flex-end;
+                }
+
+                .jellyseerr-season-modal-cancel,
+                .jellyseerr-season-modal-submit {
+                    padding: 0.75rem 1.5rem;
+                    border-radius: 6px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: background 0.2s, color 0.2s;
+                    border: none;
+                    font-size: 0.875rem;
+                }
+
+                .jellyseerr-season-modal-cancel {
+                    background: #374151;
+                    color: #f9fafb;
+                }
+
+                .jellyseerr-season-modal-cancel:hover {
+                    background: #4b5563;
+                }
+
+                .jellyseerr-season-modal-submit {
+                    background: #3b82f6;
+                    color: #fff;
+                }
+
+                .jellyseerr-season-modal-submit:hover {
+                    background: #2563eb;
+                }
+
+                .jellyseerr-season-modal-submit:disabled {
+                    background: #6b7280;
+                    cursor: not-allowed;
+                }
+
+                @media (max-width: 768px) {
+                    .jellyseerr-season-modal {
+                        margin: 1rem;
+                        max-height: 90vh;
+                    }
+
+                    .jellyseerr-season-list-header {
+                        font-size: 0.75rem;
+                        padding: 1rem 1rem 0.5rem;
+                    }
+
+                    .jellyseerr-season-item {
+                        padding: 0.5rem 1rem;
+                    }
+
+                    .jellyseerr-season-modal-footer {
+                        flex-direction: column;
+                    }
+
+                    .jellyseerr-season-modal-cancel,
+                    .jellyseerr-season-modal-submit {
+                        width: 100%;
+                    }
+                }
+
                 /* --- Spinners & Loaders --- */
                 .jellyseerr-spinner, .jellyseerr-loading-spinner, .jellyseerr-button-spinner {
                     display: inline-block; border-radius: 50%;
@@ -208,7 +759,7 @@
                 .jellyseerr-hover-popover {
                     position: fixed; min-width: 260px; max-width: 340px; padding: 10px 12px;
                     background: #1f2937; color: #e5e7eb; border-radius: 10px; z-index: 9999;
-                    box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,25_2, .06);
+                    box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255, .06);
                     opacity: 0; pointer-events: none; transition: opacity .12s ease, transform .12s ease;
                 }
                 .jellyseerr-hover-popover.show { opacity: 1; }
@@ -481,6 +1032,25 @@
         }
 
         async function requestMedia(tmdbId, mediaType, button) {
+            // For TV shows, show season selection modal
+            if (mediaType === 'tv') {
+                // Get the original item data to pass to the modal
+                const card = button.closest('.jellyseerr-card');
+                const titleElement = card.querySelector('.cardText-first a');
+                const title = titleElement ? titleElement.textContent.trim() : 'Unknown Series';
+
+                const item = {
+                    id: tmdbId,
+                    title: title,
+                    name: title,
+                    mediaType: 'tv'
+                };
+
+                showSeasonModal(item, button);
+                return;
+            }
+
+            // For movies, proceed with original logic
             button.disabled = true;
             button.innerHTML = `<span>Requesting</span><span class="jellyseerr-button-spinner"></span>`;
 
@@ -488,7 +1058,6 @@
                 mediaType,
                 mediaId: parseInt(tmdbId)
             };
-            if (mediaType === 'tv') requestBody.seasons = "all";
 
             try {
                 await ApiClient.ajax({
@@ -619,8 +1188,6 @@
                 }
             }, 200);
         }
-
-
 
         function createJellyseerrSection(isLoading, results = []) {
             const section = document.createElement('div');
@@ -804,7 +1371,12 @@
                         button.classList.add('button-submit', 'jellyseerr-button-rejected');
                         break;
                     default:
-                        button.innerHTML = `${icons.request}<span>Request</span>`;
+                        // For TV shows, show "Select Seasons" instead of "Request"
+                        if (item.mediaType === 'tv') {
+                            button.innerHTML = `${icons.request}<span>Select Seasons</span>`;
+                        } else {
+                            button.innerHTML = `${icons.request}<span>Request</span>`;
+                        }
                         button.disabled = false;
                         button.classList.add('button-submit', 'jellyseerr-button-request');
                 }
