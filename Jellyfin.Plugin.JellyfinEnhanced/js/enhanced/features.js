@@ -73,7 +73,7 @@
             throw new Error('No items found in selected libraries.');
         } catch (error) {
             console.error('🪼 Jellyfin Enhanced: Error fetching random item:', error);
-            JE.toast(`❌ ${error.message || 'Unknown error'}`, 2000);
+            JE.toast(error.message || JE.t('unknown_error'), 2000);
             return null;
         }
     }
@@ -87,10 +87,10 @@
             const serverId = ApiClient.serverId();
             const itemUrl = `#!/details?id=${item.Id}${serverId ? `&serverId=${serverId}` : ''}`;
             window.location.hash = itemUrl;
-            JE.toast(`🎲 Random Item Loaded`, 2000);
+            JE.toast(JE.t('toast_random_item_loaded'), 2000);
         } else {
             console.error('🪼 Jellyfin Enhanced: Invalid item object or ID:', item);
-            JE.toast('❌ Uh oh! Something went wrong!', 2000);
+            JE.toast(JE.t('toast_generic_error'), 2000);
         }
     }
 
@@ -112,7 +112,7 @@
         randomButton.id = 'randomItemButton';
         randomButton.setAttribute('is', 'paper-icon-button-light');
         randomButton.className = 'headerButton headerButtonRight paper-icon-button-light';
-        randomButton.title = 'Show a random item from your library (R)';
+        randomButton.title = JE.t('random_button_tooltip');
         randomButton.innerHTML = `<i class="material-icons">casino</i>`;
 
         randomButton.addEventListener('click', async () => {
@@ -161,7 +161,7 @@
                 if (totalSize > 0 && !container.querySelector('.mediaInfoItem-fileSize')) {
                     const sizeElement = document.createElement('div');
                     sizeElement.className = 'mediaInfoItem mediaInfoItem-fileSize';
-                    sizeElement.title = "Total File Size";
+                    sizeElement.title = JE.t('file_size_tooltip');
                     sizeElement.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hard_disk</span>${formatSize(totalSize)}`;
                     container.appendChild(sizeElement);
                 }
@@ -226,7 +226,7 @@
             if (uniqueLanguages.length > 0) {
                 const langElement = document.createElement('div');
                 langElement.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
-                langElement.title = "Audio Language(s)";
+                langElement.title = JE.t('audio_language_tooltip');
                 langElement.style.display = 'flex';
                 langElement.style.alignItems = 'center';
                 langElement.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
@@ -272,7 +272,7 @@
     async function removeFromContinueWatching(itemId) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId || !itemId) {
-            showNotification("Could not remove item: User or Item ID not found.", "error");
+            showNotification(JE.t('remove_continue_watching_error'), "error");
             return false;
         }
 
@@ -285,8 +285,8 @@
             });
             return true;
         } catch (error) {
-            const errorMessage = error.responseJSON?.Message || error.statusText || 'Unknown error';
-            showNotification(`Unable to remove item: ${errorMessage}`, "error");
+            const errorMessage = error.responseJSON?.Message || error.statusText || JE.t('unknown_error');
+            showNotification(JE.t('remove_continue_watching_error_api', { error: errorMessage }), "error");
             return false;
         }
     }
@@ -303,7 +303,7 @@
         button.dataset.id = 'remove-continue-watching';
         button.innerHTML = `
             <span class="actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons" aria-hidden="true">visibility_off</span>
-            <div class="listItemBody actionsheetListItemBody"><div class="listItemBodyText actionSheetItemText">Remove</div></div>
+            <div class="listItemBody actionsheetListItemBody"><div class="listItemBodyText actionSheetItemText">${JE.t('remove_button_text')}</div></div>
         `;
 
         button.addEventListener('click', async (e) => {
@@ -316,14 +316,14 @@
             const originalIcon = buttonIconElem.textContent;
 
             button.disabled = true;
-            buttonTextElem.textContent = 'Removing...';
+            buttonTextElem.textContent = JE.t('remove_button_removing');
             buttonIconElem.textContent = 'hourglass_empty';
 
             const success = await removeFromContinueWatching(itemId);
 
             if (success) {
                 document.querySelector('.actionSheet.opened')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                showNotification("Item removed from Continue Watching", "success");
+                showNotification(JE.t('remove_continue_watching_success'), "success");
                 setTimeout(() => window.Emby?.Page?.currentView?.refresh({ force: true }), 500);
             } else {
                 button.disabled = false;

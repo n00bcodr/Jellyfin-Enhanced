@@ -516,7 +516,7 @@
             } catch (err) {
                 if (err.name !== 'AbortError') {
                 console.error("Error fetching item info:", err);
-                this.overlayPlot.textContent = "Unable to fetch item info.";
+                this.overlayPlot.textContent = JE.t('pausescreen_fetch_error');
                 }
             }
             }
@@ -545,7 +545,7 @@
             runtime && `<span>${runtime}</span>`
           ].filter(Boolean).join('');
 
-          this.overlayPlot.textContent = item.Overview || "No description available";
+          this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
 
           // Images: preload to blob URLs (cached)
           const logoUrls = this.getLogoUrls(item, domain, itemId);
@@ -595,7 +595,7 @@
           }
 
           if (percentageEl) {
-            percentageEl.textContent = `${Math.round(pct)}% watched`;
+            percentageEl.textContent = JE.t('pausescreen_watched_percent', { percent: Math.round(pct) });
           }
 
           if (endsAtEl) {
@@ -603,7 +603,7 @@
               const remainingSeconds = duration - current;
               const endTime = new Date(Date.now() + remainingSeconds * 1000);
               const formattedEndTime = endTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-              endsAtEl.textContent = `Ends at ${formattedEndTime}`;
+              endsAtEl.textContent = JE.t('pausescreen_ends_at', { time: formattedEndTime });
             } else {
               endsAtEl.textContent = ''; // Clear it if video is over
             }

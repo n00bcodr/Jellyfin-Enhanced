@@ -30,7 +30,7 @@
     JE.adjustPlaybackSpeed = (direction) => {
         const video = getVideo();
         if (!video) {
-            JE.toast('❌ No Video Found');
+            JE.toast(JE.t('toast_no_video_found'));
             return;
         }
         const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -45,7 +45,7 @@
             currentIndex = Math.max(currentIndex - 1, 0);
         }
         video.playbackRate = speeds[currentIndex];
-        JE.toast(`⚡ Speed: ${speeds[currentIndex]}x`);
+        JE.toast(JE.t('toast_speed', { speed: speeds[currentIndex] }));
     };
 
     /**
@@ -54,11 +54,11 @@
     JE.resetPlaybackSpeed = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast('❌ No Video Found');
+            JE.toast(JE.t('toast_no_video_found'));
             return;
         }
         video.playbackRate = 1.0;
-        JE.toast('⚡ Speed: Normal');
+        JE.toast(JE.t('toast_speed_normal'));
     };
 
     /**
@@ -68,10 +68,11 @@
     JE.jumpToPercentage = (percentage) => {
         const video = getVideo();
         if (!video || !video.duration) {
-            JE.toast('❌ No Video Found');
+            JE.toast(JE.t('toast_no_video_found'));
             return;
         }
-        JE.toast(`⏭️ Jumped to ${percentage}%`);
+        video.currentTime = video.duration * (percentage / 100);
+        JE.toast(JE.t('toast_jumped_to', { percent: percentage }));
     };
 
     /**
@@ -81,7 +82,7 @@
         const performCycle = () => {
             const allItems = document.querySelectorAll('.actionSheetContent .listItem');
             if (allItems.length === 0) {
-                JE.toast('❌ No Subtitles Found');
+                JE.toast(JE.t('toast_no_subtitles_found'));
                 document.body.click();
                 return;
             }
@@ -92,7 +93,7 @@
             });
 
             if (subtitleOptions.length === 0) {
-                JE.toast('❌ No Subtitles Found');
+                JE.toast(JE.t('toast_no_subtitles_found'));
                 document.body.click();
                 return;
             }
@@ -108,7 +109,7 @@
             if (nextOption) {
                 nextOption.click();
                 const subtitleName = nextOption.querySelector('.listItemBodyText').textContent.trim();
-                JE.toast(`📝 Subtitle: ${subtitleName}`);
+                JE.toast(JE.t('toast_subtitle', { subtitle: subtitleName }));
             }
         };
 
@@ -132,7 +133,7 @@
             const audioOptions = Array.from(document.querySelectorAll('.actionSheetContent .listItem')).filter(item => item.querySelector('.listItemBodyText.actionSheetItemText'));
 
             if (audioOptions.length === 0) {
-                JE.toast('❌ No Audio Tracks Found');
+                JE.toast(JE.t('toast_no_audio_tracks_found'));
                 document.body.click();
                 return;
             }
@@ -148,7 +149,7 @@
             if (nextOption) {
                 nextOption.click();
                 const audioName = nextOption.querySelector('.listItemBodyText.actionSheetItemText').textContent.trim();
-                JE.toast(`🎵 Audio: ${audioName}`);
+                JE.toast(JE.t('toast_audio', { audio: audioName }));
             }
         };
 
@@ -181,7 +182,7 @@
         const next = opts[(current + 1) % opts.length];
         if (next) {
             next.click();
-            JE.toast(`📐 Aspect Ratio: ${next.textContent.trim()}`);
+            JE.toast(JE.t('toast_aspect_ratio', { ratio: next.textContent.trim() }));
         }
     };
 
@@ -201,10 +202,10 @@
         const buttonText = skipButton.textContent || '';
         if (JE.currentSettings.autoSkipIntro && buttonText.includes('Skip Intro')) {
             skipButton.click();
-            JE.toast('↪️ Auto-Skipped Intro');
+            JE.toast(JE.t('toast_auto_skipped_intro'));
         } else if (JE.currentSettings.autoSkipOutro && buttonText.includes('Skip Outro')) {
             skipButton.click();
-            JE.toast('↪️ Auto-Skipped Outro');
+            JE.toast(JE.t('toast_auto_skipped_outro'));
         }
     };
 

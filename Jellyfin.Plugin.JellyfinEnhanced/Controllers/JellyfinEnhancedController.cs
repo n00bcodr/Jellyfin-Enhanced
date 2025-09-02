@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
@@ -351,6 +352,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowArrLinksAsText
             });
         }
+        [HttpGet("locales/{lang}.json")]
+        public ActionResult GetLocale(string lang)
+        {
+            var sanitizedLang = Path.GetFileName(lang); // Basic sanitization
+            var resourcePath = $"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{sanitizedLang}.json";
+            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourcePath);
+
+            if (stream == null)
+            {
+                _logger.Warning($"Locale file not found for language: {sanitizedLang}");
+                return NotFound();
+            }
+
+            return new FileStreamResult(stream, "application/json");
+        }
+
         private ActionResult GetScriptResource(string resourcePath)
         {
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");

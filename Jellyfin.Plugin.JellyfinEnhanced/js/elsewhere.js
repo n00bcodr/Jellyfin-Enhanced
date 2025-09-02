@@ -309,10 +309,10 @@
             `;
 
             content.innerHTML = `
-                <h3 style="margin-top: 0; margin-bottom: 16px; color: #fff; font-size: 18px; font-weight: bolder;">Search Settings</h3>
+                <h3 style="margin-top: 0; margin-bottom: 16px; color: #fff; font-size: 18px; font-weight: bolder;">${JE.t('elsewhere_settings_title')}</h3>
 
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #ccc;">Default Search Country</label>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #ccc;">${JE.t('elsewhere_settings_country')}</label>
                     <select id="region-select" style="width: 100%; padding: 12px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;">
                         ${Object.entries(availableRegions).map(([code, name]) =>
                             `<option value="${code}" ${code === userRegion ? 'selected' : ''}>${name}</option>`
@@ -321,18 +321,18 @@
                 </div>
 
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #ccc;">Search Other Countries (leave empty to use default)</label>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #ccc;">${JE.t('elsewhere_settings_other_countries')}</label>
                     <div id="regions-autocomplete"></div>
                 </div>
 
                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #ccc;">Providers (leave empty to show all available)</label>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #ccc;">${JE.t('elsewhere_settings_providers')}</label>
                     <div id="services-autocomplete"></div>
                 </div>
 
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                    <button id="cancel-settings" style="padding: 10px 18px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 6px; cursor: pointer; font-size: 14px;">Cancel</button>
-                    <button id="save-settings" style="padding: 10px 18px; border: none; background: #0078d4; color: white; border-radius: 6px; cursor: pointer; font-size: 14px;">Save</button>
+                    <button id="cancel-settings" style="padding: 10px 18px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 6px; cursor: pointer; font-size: 14px;">${JE.t('elsewhere_settings_cancel')}</button>
+                    <button id="save-settings" style="padding: 10px 18px; border: none; background: #0078d4; color: white; border-radius: 6px; cursor: pointer; font-size: 14px;">${JE.t('elsewhere_settings_save')}</button>
                 </div>
             `;
 
@@ -343,7 +343,7 @@
             const regionsContainer = content.querySelector('#regions-autocomplete');
             const regionOptions = Object.entries(availableRegions).map(([code, name]) => `${name} (${code})`);
             const regionsAutocomplete = createAutocompleteInput(
-                'Type to add countries...',
+                JE.t('elsewhere_settings_add_countries_placeholder'),
                 regionOptions,
                 userRegions.map(code => `${availableRegions[code] || code} (${code})`),
                 (selected) => {}
@@ -353,7 +353,7 @@
             // Add autocomplete for services
             const servicesContainer = content.querySelector('#services-autocomplete');
             const servicesAutocomplete = createAutocompleteInput(
-                'Type to add providers...',
+                JE.t('elsewhere_settings_add_providers_placeholder'),
                 availableProviders,
                 userServices.slice(),
                 (selected) => {}
@@ -550,9 +550,9 @@
             const hasServices = regionData && regionData.flatrate && regionData.flatrate.length > 0;
 
             if (hasServices) {
-                title.textContent = `Also available in ${availableRegions[DEFAULT_REGION] || DEFAULT_REGION} on:`;
+                title.textContent = JE.t('elsewhere_panel_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
             } else {
-                title.textContent = `Not available on any streaming services in ${availableRegions[DEFAULT_REGION] || DEFAULT_REGION}`;
+                title.textContent = JE.t('elsewhere_panel_not_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
             }
 
             title.style.cssText = `
@@ -571,7 +571,7 @@
                 title.href = regionData.link;
                 title.target = '_blank';
                 title.rel = 'noopener noreferrer';
-                title.title = 'View on JustWatch';
+                title.title = JE.t('elsewhere_panel_view_on_justwatch');
                 title.style.padding = '0';
                 title.style.margin = '0';
             }
@@ -910,7 +910,7 @@
 
             // Create clickable title that links to JustWatch
             const title = document.createElement('a');
-            title.textContent = `Available in ${availableRegions[region] || region} on:`;
+            title.textContent = JE.t('elsewhere_panel_available_in_region', { region: availableRegions[region] || region });
             title.style.cssText = `
                 font-weight: 600;
                 font-size: 14px;
@@ -927,7 +927,7 @@
                 title.href = regionData.link;
                 title.target = '_blank';
                 title.rel = 'noopener noreferrer';
-                title.title = 'View on JustWatch';
+                title.title = JE.t('elsewhere_panel_view_on_justwatch');
                 title.style.padding = '0';
                 title.style.margin = '0';
             }
@@ -936,7 +936,7 @@
             const closeButton = document.createElement('button');
             const closeIcon = createMaterialIcon('close', '16px');
             closeButton.appendChild(closeIcon);
-            closeButton.title = 'Close';
+            closeButton.title = JE.t('elsewhere_panel_close_tooltip');
             closeButton.style.cssText = `
                 display: flex;
                 align-items: center;

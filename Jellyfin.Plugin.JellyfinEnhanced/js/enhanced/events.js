@@ -25,19 +25,19 @@
             e.preventDefault();
             document.querySelector('button.headerSearchButton')?.click();
             setTimeout(() => document.querySelector('input[type="search"]')?.focus(), 100);
-            JE.toast('🔍 Search');
+            JE.toast(JE.t('toast_search'));
         } else if (combo === activeShortcuts.GoToHome) {
             e.preventDefault();
             window.location.hash = '#/home.html';
-            JE.toast('🏠 Home');
+            JE.toast(JE.t('toast_home'));
         } else if (combo === activeShortcuts.GoToDashboard) {
             e.preventDefault();
             window.location.hash = '#/dashboard';
-            JE.toast('📊 Dashboard');
+            JE.toast(JE.t('toast_dashboard'));
         } else if (combo === activeShortcuts.QuickConnect) {
             e.preventDefault();
             window.location.hash = '#/quickconnect';
-            JE.toast('🔗 Quick Connect');
+            JE.toast(JE.t('toast_quick_connect'));
         } else if (key === '?') {
             e.preventDefault();
             e.stopPropagation();
@@ -48,7 +48,7 @@
         } else if (combo === activeShortcuts.ClearAllBookmarks) {
             e.preventDefault();
             localStorage.removeItem('jellyfinEnhancedBookmarks');
-            JE.toast('🗑️ All Bookmarks Cleared');
+            JE.toast(JE.t('toast_all_bookmarks_cleared'));
         }
 
         // --- Player-Only Shortcuts ---
@@ -65,7 +65,8 @@
                 const h_set = Math.floor(video.currentTime / 3600);
                 const m_set = Math.floor((video.currentTime % 3600) / 60);
                 const s_set = Math.floor(video.currentTime % 60);
-                JE.toast(`📍 Bookmarked at ${h_set > 0 ? `${h_set}:` : ''}${m_set.toString().padStart(h_set > 0 ? 2 : 1, '0')}:${s_set.toString().padStart(2, '0')}`);
+                const time_set = `${h_set > 0 ? `${h_set}:` : ''}${m_set.toString().padStart(h_set > 0 ? 2 : 1, '0')}:${s_set.toString().padStart(2, '0')}`;
+                JE.toast(JE.t('toast_bookmarked_at', { time: time_set }));
                 break;
             case activeShortcuts.GoToSavedBookmark:
                 e.preventDefault();
@@ -78,9 +79,10 @@
                     const h_get = Math.floor(bookmarkTime / 3600);
                     const m_get = Math.floor((bookmarkTime % 3600) / 60);
                     const s_get = Math.floor(bookmarkTime % 60);
-                    JE.toast(`📍 Returned to bookmark at ${h_get > 0 ? `${h_get}:` : ''}${m_get.toString().padStart(h_get > 0 ? 2 : 1, '0')}:${s_get.toString().padStart(2, '0')}`);
+                    const time_get = `${h_get > 0 ? `${h_get}:` : ''}${m_get.toString().padStart(h_get > 0 ? 2 : 1, '0')}:${s_get.toString().padStart(2, '0')}`;
+                    JE.toast(JE.t('toast_returned_to_bookmark', { time: time_get }));
                 } else {
-                    JE.toast('❌ No Bookmarks Found!');
+                    JE.toast(JE.t('toast_no_bookmarks_found'));
                 }
                 break;
             case activeShortcuts.CycleAspectRatio:
@@ -102,7 +104,6 @@
                 } else {
                     document.querySelector('button.btnSubtitles')?.click();
                 }
-                break;
                 break;
             case activeShortcuts.CycleSubtitleTracks:
                 e.preventDefault();

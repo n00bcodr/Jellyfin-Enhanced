@@ -20,10 +20,10 @@
 
     /**
      * Displays a short-lived toast notification.
-     * @param {string} txt The text to display in the toast.
+     * @param {string} key The localization key for the text to display.
      * @param {number} [duration=JE.CONFIG.TOAST_DURATION] The duration to show the toast.
      */
-    JE.toast = (txt, duration = JE.CONFIG.TOAST_DURATION) => {
+    JE.toast = (key, duration = JE.CONFIG.TOAST_DURATION) => {
         const getJellyfinThemeVariable = (variableName, defaultValue) => {
             const rootStyle = getComputedStyle(document.documentElement);
             const value = rootStyle.getPropertyValue(variableName).trim();
@@ -62,7 +62,7 @@
             transition: 'transform 0.3s ease-out',
             maxWidth: 'clamp(280px, 80vw, 350px)'
         });
-        t.innerHTML = txt;
+        t.innerHTML = key; // Note: The calling function should now pass the localized string
         document.body.appendChild(t);
         setTimeout(() => t.style.transform = 'translateX(0)', 10);
         setTimeout(() => {
@@ -480,18 +480,18 @@
                 .shake-error { animation: shake 0.5s ease-in-out; }
             </style>
             <div style="padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg};">
-                <div style="font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">🪼 Jellyfin Enhanced</div>
-                <div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.8);">Version ${JE.pluginVersion}</div>
+                <div style="font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.t('panel_title')}</div>
+                <div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.8);">${JE.t('panel_version', { version: JE.pluginVersion })}</div>
             </div>
             <div class="tabs">
-                <button class="tab-button" data-tab="shortcuts">Shortcuts</button>
-                <button class="tab-button" data-tab="settings">Settings</button>
+                <button class="tab-button" data-tab="shortcuts">${JE.t('panel_shortcuts_tab')}</button>
+                <button class="tab-button" data-tab="settings">${JE.t('panel_settings_tab')}</button>
             </div>
             <div class="panel-main-content" style="padding: 0 20px; flex: 1; overflow-y: auto; position: relative; background: ${panelBgColor};">
                  <div id="shortcuts-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px;">
                  <div class="shortcuts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;">
                         <div style="flex: 1; min-width: 400px;">
-                            <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">Global</h3>
+                            <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
                                 ${JE.pluginConfig.Shortcuts.filter(s => s.Category === 'Global').map(s => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -505,7 +505,7 @@
                             </div>
                         </div>
                         <div style="flex: 1; min-width: 400px;">
-                            <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">Player</h3>
+                            <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_player')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
                                 ${JE.pluginConfig.Shortcuts.filter(s => s.Category === 'Player').map(s => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -524,132 +524,131 @@
                         </div>
                         </div>
                         <div style="text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);">
-                            ⓘ Click a key to change it. Press <kbd style="background:${kbdBackground}; padding:1px 4px; border-radius:3px;">Backspace</kbd> while listening to reset to default.
+                           ${JE.t('panel_shortcuts_footer')}
                         </div>
                 </div>
                 <div id="settings-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px; width: 50vw;">
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">⏯️ Playback Settings</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">⏯️ ${JE.t('panel_settings_playback')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoPauseToggle" ${JE.currentSettings.autoPauseEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Auto-pause</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Pause when switching tabs</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_pause')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_pause_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="pauseScreenToggle" ${JE.currentSettings.pauseScreenEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Custom Pause Screen</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Show a stylized screen when videos are paused.</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_custom_pause_screen')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_custom_pause_screen_desc')}</div></div>
                                 </label>
                             </div>
                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoResumeToggle" ${JE.currentSettings.autoResumeEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Auto-resume</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Resume when returning to tab</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_resume')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_resume_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoPipToggle" ${JE.currentSettings.autoPipEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Auto Picture-in-Picture</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Automatically enter PiP when switching tabs</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_pip')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_pip_desc')}</div></div>
                                 </label>
                             </div>
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">↪️ Auto-Skip Settings</summary>
-                        <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-left: 18px; margin-bottom: 10px;"> ⓘ Depends on Intro-Skipper Plugin being available</div>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">↪️ ${JE.t('panel_settings_auto_skip')}</summary>
+                        <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-left: 18px; margin-bottom: 10px;">${JE.t('panel_settings_auto_skip_depends')}</div>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoSkipIntroToggle" ${JE.currentSettings.autoSkipIntro ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Automatically Skip Intro</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_intro')}</div></div>
                                 </label>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoSkipOutroToggle" ${JE.currentSettings.autoSkipOutro ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Automatically Skip Outro</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_outro')}</div></div>
                                 </label>
                             </div>
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">📝 Subtitle Settings</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">📝 ${JE.t('panel_settings_subtitles')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">Style</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">Size</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">Font</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;"></div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;"></div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;"></div></div>
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🎲 Random Button Settings</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🎲 ${JE.t('panel_settings_random_button')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomButtonToggle" ${JE.currentSettings.randomButtonEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">Enable Random Button</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Show random button in header</div></div></label>
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomButtonToggle" ${JE.currentSettings.randomButtonEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_enable')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_enable_desc')}</div></div></label>
                                 <br>
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomUnwatchedOnly" ${JE.currentSettings.randomUnwatchedOnly ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">Unwatched Only</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Only select from unwatched items</div></div></label>
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomUnwatchedOnly" ${JE.currentSettings.randomUnwatchedOnly ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_unwatched')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_unwatched_desc')}</div></div></label>
                             </div>
-                            <div style="font-weight:500; margin-bottom:8px;">Item Types</div>
+                            <div style="font-weight:500; margin-bottom:8px;">${JE.t('panel_settings_random_button_types')}</div>
                             <div style="display:flex; gap:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeMovies" ${JE.currentSettings.randomIncludeMovies ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>Movies</span></label>
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeShows" ${JE.currentSettings.randomIncludeShows ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>Shows</span></label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeMovies" ${JE.currentSettings.randomIncludeMovies ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_movies')}</span></label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeShows" ${JE.currentSettings.randomIncludeShows ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_shows')}</span></label>
                             </div>
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🖥️ UI Settings</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🖥️ ${JE.t('panel_settings_ui')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="showFileSizesToggle" ${JE.currentSettings.showFileSizes ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Show File Sizes</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Display total file size on item detail pages.</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_file_sizes')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_file_sizes_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="showAudioLanguagesToggle" ${JE.currentSettings.showAudioLanguages ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Show Audio Languages</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Display available audio languages on detail pages.</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_audio_languages')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_audio_languages_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="qualityTagsToggle" ${JE.currentSettings.qualityTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Show Quality Tags</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Display 4K, 1080p, Dolby Digital, DTS, etc., tags on posters.</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_quality_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_quality_tags_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="removeContinueWatchingToggle" ${JE.currentSettings.removeContinueWatchingEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Add Remove from Continue Watching Button</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Add option to remove items from Continue Watching section</div><div style="font-size:12px; font-weight: bold; color:rgba(255, 55, 55, 1); margin-top:2px;">⚠️ This is as destructive action, it removes the watch progress of the item for the user</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_remove_continue_watching')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_remove_continue_watching_desc')}</div><div style="font-size:12px; font-weight: bold; color:rgba(255, 55, 55, 1); margin-top:2px;">${JE.t('panel_settings_ui_remove_continue_watching_warning')}</div></div>
                                 </label>
                             </div>
-
                         </div>
                     </details>
                 </div>
             </div>
             <div class="panel-footer" style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; justify-content: space-between; align-items: center;">
-                <div class="close-helptext" style="font-size:12px; color:rgba(255,255,255,0.5);">Press <kbd style="background:${kbdBackground}; padding:2px 4px; border-radius:3px;">?</kbd> or <kbd style="background:${kbdBackground}; padding:2px 4px; border-radius:3px;">Esc</kbd> to close</div>
+                <div class="close-helptext" style="font-size:12px; color:rgba(255,255,255,0.5);">${JE.t('panel_footer_close')}</div>
                 ${logoUrl ? `<img src="${logoUrl}" class="footer-logo" alt="Theme Logo" style="height: 40px;">` : ''}
                 <div class="footer-buttons" style="display:flex; gap:12px; align-items:center;">
-                    <button id="releaseNotesBtn" style="font-family:inherit; background:${releaseNotesBg}; color:${releaseNotesTextColor}; border:${checkUpdatesBorder}; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px;" onmouseover="this.style.background='${primaryAccentColor}'" onmouseout="this.style.background='${releaseNotesBg}'">📋 Release Notes</button>
-                    <a href="https://github.com/${GITHUB_REPO}/" target="_blank" style="color:${primaryAccentColor}; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:12px; padding:4px 8px; border-radius:4px; background:${githubButtonBg}; transition:background 0.2s;" onmouseover="this.style.background='rgba(102, 179, 255, 0.2)'" onmouseout="this.style.background='${githubButtonBg}'"><svg height="12" viewBox="0 0 24 24" width="12" fill="currentColor"><path d="M12 1C5.923 1 1 5.923 1 12c0 4.867 3.149 8.979 7.521 10.436.55.096.756-.233.756-.522 0-.262-.013-1.128-.013-2.049-2.764.509-3.479-.674-3.699-1.292-.124-.317-.66-1.293-1.127-1.554-.385-.207-.936-.715-.014-.729.866-.014 1.485.797 1.691 1.128.99 1.663 2.571 1.196 3.204.907.096-.715.385-1.196.701-1.471-2.448-.275-5.005-1.224-5.005-5.432 0-1.196.426-2.186 1.128-2.956-.111-.275-.496-1.402.11-2.915 0 0 .921-.288 3.024 1.128a10.193 10.193 0 0 1 2.75-.371c.936 0 1.871.123 2.75.371 2.104-1.43 3.025-1.128 3.025-1.128.605 1.513.221 2.64.111 2.915.701.77 1.127 1.747 1.127 2.956 0 4.222-2.571 5.157-5.019 5.432.399.344.743 1.004.743 2.035 0 1.471-.014 2.654-.014 3.025 0 .289.206.632.756.522C19.851 20.979 23 16.854 23 12c0-6.077-4.922-11-11-11Z"></path></svg> Contribute</a>
+                    <button id="releaseNotesBtn" style="font-family:inherit; background:${releaseNotesBg}; color:${releaseNotesTextColor}; border:${checkUpdatesBorder}; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px;" onmouseover="this.style.background='${primaryAccentColor}'" onmouseout="this.style.background='${releaseNotesBg}'">${JE.t('panel_footer_release_notes')}</button>
+                    <a href="https://github.com/${GITHUB_REPO}/" target="_blank" style="color:${primaryAccentColor}; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:12px; padding:4px 8px; border-radius:4px; background:${githubButtonBg}; transition:background 0.2s;" onmouseover="this.style.background='rgba(102, 179, 255, 0.2)'" onmouseout="this.style.background='${githubButtonBg}'"><svg height="12" viewBox="0 0 24 24" width="12" fill="currentColor"><path d="M12 1C5.923 1 1 5.923 1 12c0 4.867 3.149 8.979 7.521 10.436.55.096.756-.233.756-.522 0-.262-.013-1.128-.013-2.049-2.764.509-3.479-.674-3.699-1.292-.124-.317-.66-1.293-1.127-1.554-.385-.207-.936-.715-.014-.729.866-.014 1.485.797 1.691 1.128.99 1.663 2.571 1.196 3.204.907.096-.715.385-1.196.701-1.471-2.448-.275-5.005-1.224-5.005-5.432 0-1.196.426-2.186 1.128-2.956-.111-.275-.496-1.402.11-2.915 0 0 .921-.288 3.024 1.128a10.193 10.193 0 0 1 2.75-.371c.936 0 1.871.123 2.75.371 2.104-1.43 3.025-1.128 3.025-1.128.605 1.513.221 2.64.111 2.915.701.77 1.127 1.747 1.127 2.956 0 4.222-2.571 5.157-5.019 5.432.399.344.743 1.004.743 2.035 0 1.471-.014 2.654-.014 3.025 0 .289.206.632.756.522C19.851 20.979 23 16.854 23 12c0-6.077-4.922-11-11-11Z"></path></svg> ${JE.t('panel_footer_contribute')}</a>
                 </div>
             </div>
-            <button id="closeSettingsPanel" style="position:absolute; top:24px; right:24px; background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+            <button id="closeSettingsPanel" style="position:absolute; top:24px; right:24px; background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">${JE.t('panel_close_button')}</button>
         `;
 
         document.body.appendChild(help);
+
+        // --- Shortcut Key Binding Logic ---
         const shortcutKeys = help.querySelectorAll('.shortcut-key');
         shortcutKeys.forEach(keyElement => {
             const getOriginalKey = () => JE.state.activeShortcuts[keyElement.dataset.action];
 
-            keyElement.addEventListener('click', () => keyElement.focus());
-
             keyElement.addEventListener('focus', () => {
-                keyElement.textContent = 'Listening...';
+                keyElement.textContent = JE.t('panel_shortcuts_listening');
                 keyElement.style.borderColor = primaryAccentColor;
                 keyElement.style.width = '100px';
             });
@@ -789,21 +788,21 @@
         document.addEventListener('keydown', closeHelp);
         document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
         document.removeEventListener('keydown', JE.keyListener);
-        document.getElementById('autoPauseToggle').addEventListener('change', (e) => { JE.currentSettings.autoPauseEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`⏸️ Auto-Pause ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('autoResumeToggle').addEventListener('change', (e) => { JE.currentSettings.autoResumeEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`▶️ Auto-Resume ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('autoPipToggle').addEventListener('change', (e) => { JE.currentSettings.autoPipEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🖼️ Auto PiP ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('autoSkipIntroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipIntro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`↪️ Auto-Skip Intro ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('autoSkipOutroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipOutro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`↪️ Auto-Skip Outro ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('randomButtonToggle').addEventListener('change', (e) => { JE.currentSettings.randomButtonEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🎲 Random Button ${e.target.checked ? 'Enabled' : 'Disabled'}`); JE.addRandomButton(); resetAutoCloseTimer(); });
-        document.getElementById('randomUnwatchedOnly').addEventListener('change', (e) => { JE.currentSettings.randomUnwatchedOnly = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🎲 Unwatched Only ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast('⚠️ At least one item type must be selected'); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🎬 Movies ${e.target.checked ? 'included in' : 'excluded from'} random selection`); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast('⚠️ At least one item type must be selected'); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🍿 Shows ${e.target.checked ? 'included in' : 'excluded from'} random selection`); resetAutoCloseTimer(); });
+        document.getElementById('autoPauseToggle').addEventListener('change', (e) => { JE.currentSettings.autoPauseEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_pause_enabled' : 'toast_auto_pause_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('autoResumeToggle').addEventListener('change', (e) => { JE.currentSettings.autoResumeEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_resume_enabled' : 'toast_auto_resume_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('autoPipToggle').addEventListener('change', (e) => { JE.currentSettings.autoPipEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_pip_enabled' : 'toast_auto_pip_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('autoSkipIntroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipIntro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_skip_intro_enabled' : 'toast_auto_skip_intro_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('autoSkipOutroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipOutro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_skip_outro_enabled' : 'toast_auto_skip_outro_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('randomButtonToggle').addEventListener('change', (e) => { JE.currentSettings.randomButtonEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_random_button_enabled' : 'toast_random_button_disabled')); JE.addRandomButton(); resetAutoCloseTimer(); });
+        document.getElementById('randomUnwatchedOnly').addEventListener('change', (e) => { JE.currentSettings.randomUnwatchedOnly = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_unwatched_only_enabled' : 'toast_unwatched_only_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_movies_included' : 'toast_movies_excluded')); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_shows_included' : 'toast_shows_excluded')); resetAutoCloseTimer(); });
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
-        document.getElementById('showFileSizesToggle').addEventListener('change', (e) => { JE.currentSettings.showFileSizes = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`📄 File Size Display ${e.target.checked ? 'Enabled' : 'Disabled'}`); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove()); } resetAutoCloseTimer(); });
-        document.getElementById('showAudioLanguagesToggle').addEventListener('change', (e) => { JE.currentSettings.showAudioLanguages = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🗣️ Audio Language Display ${e.target.checked ? 'Enabled' : 'Disabled'}`); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove()); } else { JE.runLanguageCheck(); } resetAutoCloseTimer(); });
-        document.getElementById('removeContinueWatchingToggle').addEventListener('change', (e) => { JE.currentSettings.removeContinueWatchingEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`👁️ Remove Continue Watching ${e.target.checked ? 'Enabled' : 'Disabled'}`); resetAutoCloseTimer(); });
-        document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🏷️ Quality Tags ${e.target.checked ? 'Enabled' : 'Disabled'}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
-        document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`🖼️ Custom Pause Screen ${e.target.checked ? 'Enabled' : 'Disabled'}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
+        document.getElementById('showFileSizesToggle').addEventListener('change', (e) => { JE.currentSettings.showFileSizes = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_file_size_display_enabled' : 'toast_file_size_display_disabled')); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove()); } resetAutoCloseTimer(); });
+        document.getElementById('showAudioLanguagesToggle').addEventListener('change', (e) => { JE.currentSettings.showAudioLanguages = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_audio_language_display_enabled' : 'toast_audio_language_display_disabled')); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove()); } else { JE.runLanguageCheck(); } resetAutoCloseTimer(); });
+        document.getElementById('removeContinueWatchingToggle').addEventListener('change', (e) => { JE.currentSettings.removeContinueWatchingEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_remove_continue_watching_enabled' : 'toast_remove_continue_watching_disabled')); resetAutoCloseTimer(); });
+        document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${JE.t(e.target.checked ? 'toast_quality_tags_enabled' : 'toast_quality_tags_disabled')}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
+        document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${JE.t(e.target.checked ? 'toast_custom_pause_screen_enabled' : 'toast_custom_pause_screen_disabled')}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);
@@ -824,7 +823,7 @@
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
                         JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily);
-                        JE.toast(`🎨 Subtitle Style: ${selectedPreset.name}`);
+                        JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
                         JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
                         const styleIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
@@ -832,7 +831,7 @@
                         const stylePreset = JE.subtitlePresets[styleIndex];
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
                         JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, selectedPreset.size, fontFamily);
-                        JE.toast(`📏 Subtitle Size: ${selectedPreset.name}`);
+                        JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
                     } else if (type === 'font-family') {
                         JE.currentSettings.selectedFontFamilyPresetIndex = presetIndex;
                         const styleIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
@@ -840,7 +839,7 @@
                         const stylePreset = JE.subtitlePresets[styleIndex];
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, fontSize, selectedPreset.family);
-                        JE.toast(`🔤 Subtitle Font: ${selectedPreset.name}`);
+                        JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     }
 
                     JE.saveSettings(JE.currentSettings);
