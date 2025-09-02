@@ -22,7 +22,6 @@
     <EmbeddedResource Include="Configuration\configPage.html"/>
     <None Remove="plugin.js"/>
     <EmbeddedResource Include="js\**" />
-    <EmbeddedResource Include="js\locales\*.json" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,57 @@
     'use strict';
 
     /**
+     * Loads the appropriate language file based on the user's settings from localStorage.
+     * @returns {Promise<object>} A promise that resolves to the translations object.
+     */
+    async function loadTranslations() {
+        try {
+            // First, get the current user's ID
+            const user = await ApiClient.getCurrentUser();
+            if (!user || !user.Id) {
+                console.warn("🪼 Jellyfin Enhanced: User ID not found, defaulting to English.");
+                const enResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
+                return await enResponse.json();
+            }
+
+            // Construct the localStorage key and get the language
+            const storageKey = `${user.Id}-language`;
+            const storedLang = localStorage.getItem(storageKey);
+
+            // Use the stored language, or default to 'en'. Take the base language code (e.g., 'en' from 'en-us').
+            const lang = (storedLang || 'en').split('-')[0];
+
+            const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
+
+            if (response.ok) {
+                console.log(`🪼 Jellyfin Enhanced: Loaded '${lang}' translations from localStorage.`);
+                return await response.json();
+            } else {
+                // Fallback to English if the user's language file isn't found
+                console.warn(`🪼 Jellyfin Enhanced: No locale for '${lang}', falling back to English.`);
+                const enResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
+                return await enResponse.json();
+            }
+        } catch (error) {
+            console.error('🪼 Jellyfin Enhanced: Failed to load translations, using empty object.', error);
+            return {}; // Return empty object on error to prevent crashes
+        }
+    }
+
+    /**
+     * A simple translation function.
+     * @param {string} key - The translation key.
+     * @param {object} [params={}] - Optional parameters to replace in the string.
+     * @returns {string} The translated string.
+     */
+    function translate(key, params = {}) {
+        let text = window.JellyfinEnhanced.translations[key] || key;
+        for (const [param, value] of Object.entries(params)) {
+            text = text.replace(new RegExp(`{${param}}`, 'g'), value);
+        }
+        return text;
+    }
+    /**
      * Loads an array of scripts dynamically into the document head.
      * @param {string[]} scripts - Array of script filenames to load.
      * @param {string} basePath - The base URL path for the scripts.
