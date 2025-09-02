@@ -571,7 +571,7 @@
                 title.href = regionData.link;
                 title.target = '_blank';
                 title.rel = 'noopener noreferrer';
-                title.title = JE.t('elsewhere_panel_view_on_justwatch');
+                title.title = 'JustWatch';
                 title.style.padding = '0';
                 title.style.margin = '0';
             }
@@ -927,7 +927,7 @@
                 title.href = regionData.link;
                 title.target = '_blank';
                 title.rel = 'noopener noreferrer';
-                title.title = JE.t('elsewhere_panel_view_on_justwatch');
+                title.title = 'JustWatch';
                 title.style.padding = '0';
                 title.style.margin = '0';
             }
