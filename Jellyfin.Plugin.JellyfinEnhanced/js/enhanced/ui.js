@@ -489,7 +489,7 @@
             </div>
             <div class="panel-main-content" style="padding: 0 20px; flex: 1; overflow-y: auto; position: relative; background: ${panelBgColor};">
                  <div id="shortcuts-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px;">
-                    <div class="shortcuts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;">
+                 <div class="shortcuts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;">
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
@@ -647,6 +647,8 @@
         shortcutKeys.forEach(keyElement => {
             const getOriginalKey = () => JE.state.activeShortcuts[keyElement.dataset.action];
 
+            keyElement.addEventListener('click', () => keyElement.focus());
+
             keyElement.addEventListener('focus', () => {
                 keyElement.textContent = JE.t('panel_shortcuts_listening');
                 keyElement.style.borderColor = primaryAccentColor;
@@ -667,31 +669,34 @@
 
                 if (e.key === 'Backspace') {
                     const action = keyElement.dataset.action;
+
+                    // Load, modify, and save the user's custom shortcuts
                     const userShortcuts = JE.userShortcutManager.load();
                     delete userShortcuts[action];
                     JE.userShortcutManager.save(userShortcuts);
 
+                    // Find the original server default key from the plugin's configuration
                     const defaultConfig = JE.pluginConfig.Shortcuts.find(s => s.Name === action);
                     const defaultKey = defaultConfig ? defaultConfig.Key : '';
 
+                    // Update the active shortcuts in memory and what's shown on screen
                     JE.state.activeShortcuts[action] = defaultKey;
                     keyElement.textContent = defaultKey;
                     const indicator = labelWrapper.querySelector('.modified-indicator');
                     if (indicator) {
                         indicator.remove();
                     }
-                    keyElement.blur();
+                    keyElement.blur(); // Exit the "Listening..." mode
                     return;
                 }
 
                 if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
-                    return;
+                    return; // Don't allow setting only a modifier key
                 }
 
                 const combo = (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
                 const action = keyElement.dataset.action;
                 const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
-
                 if (existingAction && existingAction !== action) {
                     keyElement.style.background = 'rgb(255 0 0 / 60%)';
                     keyElement.classList.add('shake-error');
@@ -701,15 +706,19 @@
                             keyElement.style.background = kbdBackground;
                         }
                     }, 500);
+                        // Reject the new keybinding and stop the function
                     return;
                 }
-
+                // Save the new shortcut
                 const userShortcuts = JE.userShortcutManager.load();
                 userShortcuts[action] = combo;
                 JE.userShortcutManager.save(userShortcuts);
-                JE.state.activeShortcuts[action] = combo;
-                keyElement.textContent = combo;
 
+                // Update active shortcuts
+                JE.state.activeShortcuts[action] = combo;
+
+                // Update the UI and exit edit mode
+                keyElement.textContent = combo;
                 if (labelWrapper && !labelWrapper.querySelector('.modified-indicator')) {
                     const indicator = document.createElement('span');
                     indicator.className = 'modified-indicator';
@@ -718,7 +727,7 @@
                     indicator.textContent = '•';
                     labelWrapper.prepend(indicator);
                 }
-                keyElement.blur();
+                keyElement.blur(); // Triggers the blur event to clean up styles
             });
         });
         resetAutoCloseTimer();

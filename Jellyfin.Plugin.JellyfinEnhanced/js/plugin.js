@@ -89,15 +89,20 @@
         }
         scripts.forEach(scriptName => {
             const script = document.createElement('script');
-            script.src = `${basePath}/${scriptName}?v=${Date.now()}`;
+            script.src = `${basePath}/${scriptName}?v=${Date.now()}`; // Cache-busting
             script.onload = () => {
                 loadedCount++;
-                if (loadedCount === totalScripts && callback) callback();
+                console.log(`🪼 Jellyfin Enhanced: Loaded component '${scriptName}'`);
+                if (loadedCount === totalScripts) {
+                    if (callback) callback();
+                }
             };
             script.onerror = () => {
                 console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`);
-                loadedCount++;
-                if (loadedCount === totalScripts && callback) callback();
+                loadedCount++; // Increment even on error to not block the callback
+                if (loadedCount === totalScripts) {
+                    if (callback) callback();
+                }
             };
             document.head.appendChild(script);
         });

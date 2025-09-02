@@ -73,7 +73,7 @@
             throw new Error('No items found in selected libraries.');
         } catch (error) {
             console.error('🪼 Jellyfin Enhanced: Error fetching random item:', error);
-            JE.toast(error.message || JE.t('unknown_error'), 2000);
+            JE.toast(`❌ ${error.message || 'Unknown error'}`, 2000);
             return null;
         }
     }
