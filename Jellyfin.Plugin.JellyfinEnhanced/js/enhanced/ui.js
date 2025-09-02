@@ -242,6 +242,15 @@
             .layout-mobile #jellyfin-enhanced-panel .footer-buttons > * { justify-content: center; }
             @keyframes longPressGlow { from { box-shadow: 0 0 5px 2px var(--primary-accent-color, #fff); } to { box-shadow: 0 0 8px 15px transparent; } }
             .headerUserButton.long-press-active { animation: longPressGlow 750ms ease-out; }
+            #jellyfin-enhanced-panel kbd {
+                background-color: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.2);
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 0.9em;
+                font-family: inherit;
+                box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+            }
         `;
         document.head.appendChild(style);
     };
@@ -493,12 +502,12 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${JE.pluginConfig.Shortcuts.filter(s => s.Category === 'Global').map(action => `
+                                ${JE.pluginConfig.Shortcuts.filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${action}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action]}</span>
+                                        <span class="shortcut-key" tabindex="0" data-action="${action.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action.Name]}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            ${userShortcuts.hasOwnProperty(action) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
-                                            <span>${JE.t('shortcut_' + action)}</span>
+                                            ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
+                                            <span>${JE.t('shortcut_' + action.Name)}</span>
                                         </div>
                                     </div>
                                 `).join('')}
@@ -790,21 +799,26 @@
         document.addEventListener('keydown', closeHelp);
         document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
         document.removeEventListener('keydown', JE.keyListener);
-        document.getElementById('autoPauseToggle').addEventListener('change', (e) => { JE.currentSettings.autoPauseEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_pause_enabled' : 'toast_auto_pause_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('autoResumeToggle').addEventListener('change', (e) => { JE.currentSettings.autoResumeEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_resume_enabled' : 'toast_auto_resume_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('autoPipToggle').addEventListener('change', (e) => { JE.currentSettings.autoPipEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_pip_enabled' : 'toast_auto_pip_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('autoSkipIntroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipIntro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_skip_intro_enabled' : 'toast_auto_skip_intro_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('autoSkipOutroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipOutro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_auto_skip_outro_enabled' : 'toast_auto_skip_outro_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('randomButtonToggle').addEventListener('change', (e) => { JE.currentSettings.randomButtonEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_random_button_enabled' : 'toast_random_button_disabled')); JE.addRandomButton(); resetAutoCloseTimer(); });
-        document.getElementById('randomUnwatchedOnly').addEventListener('change', (e) => { JE.currentSettings.randomUnwatchedOnly = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_unwatched_only_enabled' : 'toast_unwatched_only_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_movies_included' : 'toast_movies_excluded')); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_shows_included' : 'toast_shows_excluded')); resetAutoCloseTimer(); });
-        document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
-        document.getElementById('showFileSizesToggle').addEventListener('change', (e) => { JE.currentSettings.showFileSizes = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_file_size_display_enabled' : 'toast_file_size_display_disabled')); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove()); } resetAutoCloseTimer(); });
-        document.getElementById('showAudioLanguagesToggle').addEventListener('change', (e) => { JE.currentSettings.showAudioLanguages = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_audio_language_display_enabled' : 'toast_audio_language_display_disabled')); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove()); } else { JE.runLanguageCheck(); } resetAutoCloseTimer(); });
-        document.getElementById('removeContinueWatchingToggle').addEventListener('change', (e) => { JE.currentSettings.removeContinueWatchingEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t(e.target.checked ? 'toast_remove_continue_watching_enabled' : 'toast_remove_continue_watching_disabled')); resetAutoCloseTimer(); });
-        document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${JE.t(e.target.checked ? 'toast_quality_tags_enabled' : 'toast_quality_tags_disabled')}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
-        document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${JE.t(e.target.checked ? 'toast_custom_pause_screen_enabled' : 'toast_custom_pause_screen_disabled')}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
+        const createToast = (featureKey, isEnabled) => {
+            const feature = JE.t(featureKey);
+            const status = JE.t(isEnabled ? 'status_enabled' : 'status_disabled');
+            return JE.t('toast_feature_status', { feature, status });
+        };
+
+        document.getElementById('autoPauseToggle').addEventListener('change', (e) => { JE.currentSettings.autoPauseEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_pause', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('autoResumeToggle').addEventListener('change', (e) => { JE.currentSettings.autoResumeEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_resume', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('autoPipToggle').addEventListener('change', (e) => { JE.currentSettings.autoPipEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_pip', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('autoSkipIntroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipIntro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_skip_intro', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('autoSkipOutroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipOutro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_skip_outro', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('randomButtonToggle').addEventListener('change', (e) => { JE.currentSettings.randomButtonEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_random_button', e.target.checked)); JE.addRandomButton(); resetAutoCloseTimer(); });
+        document.getElementById('randomUnwatchedOnly').addEventListener('change', (e) => { JE.currentSettings.randomUnwatchedOnly = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_unwatched_only', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('showFileSizesToggle').addEventListener('change', (e) => { JE.currentSettings.showFileSizes = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_file_size_display', e.target.checked)); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove()); } resetAutoCloseTimer(); });
+        document.getElementById('showAudioLanguagesToggle').addEventListener('change', (e) => { JE.currentSettings.showAudioLanguages = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_audio_language_display', e.target.checked)); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove()); } else { JE.runLanguageCheck(); } resetAutoCloseTimer(); });
+        document.getElementById('removeContinueWatchingToggle').addEventListener('change', (e) => { JE.currentSettings.removeContinueWatchingEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_remove_continue_watching', e.target.checked)); resetAutoCloseTimer(); });
+        document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_quality_tags', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
+        document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_custom_pause_screen', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);

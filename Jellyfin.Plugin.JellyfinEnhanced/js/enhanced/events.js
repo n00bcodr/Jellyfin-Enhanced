@@ -45,7 +45,7 @@
         } else if (combo === activeShortcuts.PlayRandomItem && !JE.isVideoPage()) {
             e.preventDefault();
             document.getElementById('randomItemButton')?.click();
-        } else if (combo === activeShortcuts.ClearAllBookmarks) {
+        } else if (combo === activeShortcuts.ClearAllBookmarks && !JE.isVideoPage()) {
             e.preventDefault();
             localStorage.removeItem('jellyfinEnhancedBookmarks');
             JE.toast(JE.t('toast_all_bookmarks_cleared'));
