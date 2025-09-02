@@ -489,16 +489,16 @@
             </div>
             <div class="panel-main-content" style="padding: 0 20px; flex: 1; overflow-y: auto; position: relative; background: ${panelBgColor};">
                  <div id="shortcuts-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px;">
-                 <div class="shortcuts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;">
+                    <div class="shortcuts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;">
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${JE.pluginConfig.Shortcuts.filter(s => s.Category === 'Global').map(s => `
+                                ${['OpenSearch', 'GoToHome', 'GoToDashboard', 'QuickConnect', 'PlayRandomItem', 'ClearAllBookmarks'].map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${s.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[s.Name]}</span>
+                                        <span class="shortcut-key" tabindex="0" data-action="${action}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action]}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            ${userShortcuts.hasOwnProperty(s.Name) ? `<span title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
-                                            <span>${s.Label}</span>
+                                            ${userShortcuts.hasOwnProperty(action) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
+                                            <span>${JE.t('shortcut_' + action)}</span>
                                         </div>
                                     </div>
                                 `).join('')}
@@ -507,25 +507,25 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_player')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${JE.pluginConfig.Shortcuts.filter(s => s.Category === 'Player').map(s => `
+                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'GoToSavedBookmark'].map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${s.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[s.Name]}</span>
+                                        <span class="shortcut-key" tabindex="0" data-action="${action}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action]}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            ${userShortcuts.hasOwnProperty(s.Name) ? `<span class="modified-indicator" title="Modified" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
-                                            <span>${s.Label}</span>
+                                            ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
+                                            <span>${JE.t('shortcut_' + action)}</span>
                                         </div>
                                     </div>
                                 `).join('')}
                                 <div style="display: flex; justify-content: space-between;">
                                     <span style="background:${kbdBackground}; padding:2px 8px; border-radius:3px;">0-9</span>
-                                    <span>Jump to % of video</span>
+                                    <span>${JE.t('shortcut_JumpToPercentage')}</span>
                                 </div>
                             </div>
                         </div>
-                        </div>
-                        <div style="text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);">
-                           ${JE.t('panel_shortcuts_footer')}
-                        </div>
+                    </div>
+                    <div style="text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);">
+                    ${JE.t('panel_shortcuts_footer')}
+                    </div>
                 </div>
                 <div id="settings-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px; width: 50vw;">
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
@@ -578,9 +578,9 @@
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">📝 ${JE.t('panel_settings_subtitles')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;"></div></div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;"></div></div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;"></div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
@@ -667,34 +667,31 @@
 
                 if (e.key === 'Backspace') {
                     const action = keyElement.dataset.action;
-
-                    // Load, modify, and save the user's custom shortcuts
                     const userShortcuts = JE.userShortcutManager.load();
                     delete userShortcuts[action];
                     JE.userShortcutManager.save(userShortcuts);
 
-                    // Find the original server default key from the plugin's configuration
                     const defaultConfig = JE.pluginConfig.Shortcuts.find(s => s.Name === action);
                     const defaultKey = defaultConfig ? defaultConfig.Key : '';
 
-                    // Update the active shortcuts in memory and what's shown on screen
                     JE.state.activeShortcuts[action] = defaultKey;
                     keyElement.textContent = defaultKey;
                     const indicator = labelWrapper.querySelector('.modified-indicator');
                     if (indicator) {
                         indicator.remove();
                     }
-                    keyElement.blur(); // Exit the "Listening..." mode
+                    keyElement.blur();
                     return;
                 }
 
                 if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
-                    return; // Don't allow setting only a modifier key
+                    return;
                 }
 
                 const combo = (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
                 const action = keyElement.dataset.action;
                 const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
+
                 if (existingAction && existingAction !== action) {
                     keyElement.style.background = 'rgb(255 0 0 / 60%)';
                     keyElement.classList.add('shake-error');
@@ -704,19 +701,15 @@
                             keyElement.style.background = kbdBackground;
                         }
                     }, 500);
-                        // Reject the new keybinding and stop the function
                     return;
                 }
-                // Save the new shortcut
+
                 const userShortcuts = JE.userShortcutManager.load();
                 userShortcuts[action] = combo;
                 JE.userShortcutManager.save(userShortcuts);
-
-                // Update active shortcuts
                 JE.state.activeShortcuts[action] = combo;
-
-                // Update the UI and exit edit mode
                 keyElement.textContent = combo;
+
                 if (labelWrapper && !labelWrapper.querySelector('.modified-indicator')) {
                     const indicator = document.createElement('span');
                     indicator.className = 'modified-indicator';
@@ -725,7 +718,7 @@
                     indicator.textContent = '•';
                     labelWrapper.prepend(indicator);
                 }
-                keyElement.blur(); // Triggers the blur event to clean up styles
+                keyElement.blur();
             });
         });
         resetAutoCloseTimer();

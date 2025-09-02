@@ -178,5 +178,22 @@
     "jellyseerr_modal_request_selected": "Request Selected Season(s)",    "pausescreen_fetch_error": "Unable to fetch item info.",
     "pausescreen_no_description": "No description available.",
     "pausescreen_ends_at": "Ends at {time}",
-    "pausescreen_watched_percent": "{percent}% watched"
+    "pausescreen_watched_percent": "{percent}% watched",
+    "shortcut_OpenSearch": "Open Search",
+    "shortcut_GoToHome": "Go to Home",
+    "shortcut_GoToDashboard": "Go to Dashboard",
+    "shortcut_QuickConnect": "Quick Connect",
+    "shortcut_PlayRandomItem": "Play Random Item",
+    "shortcut_ClearAllBookmarks": "Clear All Bookmarks",
+    "shortcut_CycleAspectRatio": "Cycle Aspect Ratio",
+    "shortcut_ShowPlaybackInfo": "Show Playback Info",
+    "shortcut_SubtitleMenu": "Subtitle Menu",
+    "shortcut_CycleSubtitleTracks": "Cycle Subtitle Tracks",
+    "shortcut_CycleAudioTracks": "Cycle Audio Tracks",
+    "shortcut_IncreasePlaybackSpeed": "Increase Playback Speed",
+    "shortcut_DecreasePlaybackSpeed": "Decrease Playback Speed",
+    "shortcut_ResetPlaybackSpeed": "Reset Playback Speed",
+    "shortcut_BookmarkCurrentTime": "Bookmark Current Time",
+    "shortcut_GoToSavedBookmark": "Go to Saved Bookmark",
+    "shortcut_JumpToPercentage": "Jump to % of video"
 }
