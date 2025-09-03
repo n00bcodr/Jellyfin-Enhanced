@@ -1277,8 +1277,10 @@
             }
 
             // Define section types for intelligent placement
-            const primaryTypes = ['movies', 'shows', 'series', 'episodes'];
-            const secondaryTypes = ['people', 'artists', 'albums', 'songs', 'videos', 'collections', 'playlists'];
+            const primaryTypes = ['movies','filme','filmer','film','film','film','películas','映画','电影','filmes','фильмы','أفلام','shows','shows','program','spettacoli','émissions','shows','series','ショー','节目','programas','сериалы','عروض','episodes','episoden','avsnitt','episodi','épisodes','episoder','episodios','エピソード','集','episódios','эпизоды','الحلقات'];
+            const secondaryTypes = ['people','personen','personer','persone','personnes','folk','personas','人々','人','pessoas','люди','الناس','artists','künstler','konstnärer','artisti','artistes','kunstnere','artistas','アーティスト','艺术家','artistas','артисты','فنانون','albums','alben','album','album','albums','albums','álbumes','アルバム','专辑','álbuns','альбомы','ألبومات','songs','lieder','låtar','canzoni','chansons','sange','canciones','曲','歌曲','canções','песни','أغاني','videos','videos','videor','video','vidéos','videoer','videos','ビデオ','视频','vídeos','видео','فيديو','collections','sammlungen','samlingar','collezioni','collections','samlinger','colecciones','コレクション','收藏','coleções','коллекции','مجموعات','playlists','wiedergabelisten','spellistor','playlist','listes de lecture','playlister','listas de reproducción','プレイリスト','播放列表','listas de reprodução','плейлисты','قوائم التشغيل'];
+
+
             const allTypes = primaryTypes.concat(secondaryTypes);
 
             let attempts = 0;
