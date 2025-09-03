@@ -872,6 +872,7 @@
                     },
                     dataType: 'json'
                 });
+                return response;
             } catch (error) {
                 console.error(`${logPrefix} Failed to fetch TV show details for TMDB ID ${tmdbId}:`, error);
                 return null;
