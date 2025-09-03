@@ -923,8 +923,11 @@
 
                 // Determine appropriate error message
                 let errorMessage = JE.t('jellyseerr_btn_error');
-                if (error.status === 404) errorMessage = JE.t('jellyseerr_btn_user_not_found');
-                else if (error.responseJSON?.message) errorMessage = error.responseJSON.message;
+                if (error.status === 404) {
+                    errorMessage = JE.t('jellyseerr_btn_user_not_found');
+                } else if (error.responseJSON && error.responseJSON.message) {
+                    errorMessage = error.responseJSON.message;
+                }
 
                 button.innerHTML = `<span>${errorMessage} ${icons.error}</span>`;
                 button.classList.add('jellyseerr-button-error');
@@ -1815,11 +1818,32 @@
 
                 // This switch now correctly handles statuses from the `mediaInfo.seasons` array
                 switch (apiStatus) {
-                    case 2: case 3: statusText = JE.t('jellyseerr_season_status_requested'); statusClass = 'processing'; break;
-                    case 4: statusText = JE.t('jellyseerr_season_status_partial'); statusClass = 'partially-available'; break;
-                    case 5: statusText = JE.t('jellyseerr_season_status_available'); statusClass = 'available'; break;
+                    case 1: // Not Available / Not Requested
+                        statusText = JE.t('jellyseerr_season_status_not_requested');
+                        statusClass = 'not-requested';
+                        break;
+                    case 2: // These statuses are from the request system, showing progress
+                    case 3:
+                        statusText = JE.t('jellyseerr_season_status_requested');
+                        statusClass = 'processing';
+                        break;
+                    case 4:
+                        statusText = JE.t('jellyseerr_season_status_partial');
+                        statusClass = 'partially-available';
+                        break;
+                    case 5:
+                        statusText = JE.t('jellyseerr_season_status_available');
+                        statusClass = 'available';
+                        break;
                 }
-                if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.some(ds => ds.episode?.seasonNumber === season.seasonNumber)) statusText = JE.t('jellyseerr_season_status_processing');
+                const hasActiveDownload = (apiStatus === 2 || apiStatus === 3) &&
+                    tvDetails.mediaInfo?.downloadStatus?.some(ds =>
+                        ds.episode && ds.episode.seasonNumber === season.seasonNumber
+                    );
+
+                if (hasActiveDownload) {
+                    statusText = JE.t('jellyseerr_season_status_processing');
+                }
 
                 seasonItem.innerHTML = `
                     <input type="checkbox" class="jellyseerr-season-checkbox"
