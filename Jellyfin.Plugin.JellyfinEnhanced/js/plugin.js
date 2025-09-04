@@ -113,10 +113,9 @@
      */
     async function initialize() {
         if (typeof ApiClient === 'undefined' || !ApiClient.getPluginConfiguration || !ApiClient.getCurrentUserId()) {
-
-        setTimeout(initialize, 200);
-        return;
-    }
+            setTimeout(initialize, 200);
+            return;
+        }
 
         try {
             // Wait for both config and translations to be ready
@@ -136,7 +135,12 @@
             const allScripts = [
                 'enhanced/config.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/events.js',
-                'elsewhere.js', 'jellyseerr.js', 'pausescreen.js',
+                'elsewhere.js',
+                'jellyseerr/api.js',
+                'jellyseerr/modal.js',
+                'jellyseerr/ui.js',
+                'jellyseerr/jellyseerr.js',
+                'pausescreen.js',
                 'qualitytags.js', 'arr-links.js'
             ];
 
