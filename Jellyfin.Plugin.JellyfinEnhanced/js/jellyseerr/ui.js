@@ -196,12 +196,11 @@
     };
 
     /**
-     * Adds enhanced CSS styles for season selection modal
+     * Adds enhanced CSS styles for season selection modal.
      */
     ui.addSeasonModalStyles = function() {
         const seasonStyleId = 'jellyseerr-season-styles';
         if (document.getElementById(seasonStyleId)) return;
-
         const style = document.createElement('style');
         style.id = seasonStyleId;
         style.textContent = `
@@ -361,8 +360,10 @@
      * @param {Array} results - Array of search result items.
      * @param {string} query - The search query that generated these results.
      * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
-    ui.renderJellyseerrResults = function(results, query, isJellyseerrOnlyMode) {
+    ui.renderJellyseerrResults = function(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound) {
         console.log(`${logPrefix} Rendering results for query: "${query}"`);
         const searchPage = document.querySelector('#searchPage');
         if (!searchPage) {
@@ -373,7 +374,7 @@
         const oldSection = searchPage.querySelector('.jellyseerr-section');
         if(oldSection) oldSection.remove();
 
-        const sectionToInject = createJellyseerrSection(results, isJellyseerrOnlyMode);
+        const sectionToInject = createJellyseerrSection(results, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
         const primarySectionKeywords = ['movies', 'shows', 'film', 'serier', 'filme', 'serien', 'películas', 'series', 'films', 'séries', 'serie tv'];
 
@@ -412,7 +413,7 @@
                     if (resultsContainer) {
                         resultsContainer.prepend(sectionToInject);
                     } else {
-                        searchPage.appendChild(sectionToInject);
+                        searchPage.appendChild(sectionToInject); // Fallback
                     }
                 }
             }
@@ -423,9 +424,11 @@
      * Creates the main Jellyseerr results section.
      * @param {Array} results - Array of search result items.
      * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Section element.
      */
-    function createJellyseerrSection(results = [], isJellyseerrOnlyMode) {
+    function createJellyseerrSection(results = [], isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound) {
         const section = document.createElement('div');
         section.className = 'verticalSection emby-scroller-container jellyseerr-section';
         section.setAttribute('data-jellyseerr-section', 'true');
@@ -446,7 +449,7 @@
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
 
         results.forEach(item => {
-            const card = createJellyseerrCard(item);
+            const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
             itemsContainer.appendChild(card);
         });
 
@@ -458,9 +461,11 @@
     /**
      * Creates an individual Jellyseerr result card.
      * @param {Object} item - Search result item from Jellyseerr API.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Card element.
      */
-    function createJellyseerrCard(item) {
+    function createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound) {
         const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
         const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
@@ -478,10 +483,10 @@
                         <div class="cardIndicators"></div>
                     </div>
                     <div class="cardOverlayContainer" data-action="link"></div>
-                    <div class="jellyseerr-overview"><div class="content">${((item.overview || 'No info available.').slice(0, 500))}…</div></div>
+                    <div class="jellyseerr-overview"><div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div></div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
-                    <a is="emby-linkbutton" href="${tmdbUrl}" target="_blank" rel="noopener noreferrer" title="View on TMDB"><bdi>${titleText}</bdi></a>
+                    <a is="emby-linkbutton" href="${tmdbUrl}" target="_blank" rel="noopener noreferrer" title="${JE.t('jellyseerr_card_view_on_tmdb')}"><bdi>${titleText}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <bdi>${year}</bdi>
@@ -500,7 +505,7 @@
         }
 
         const button = card.querySelector('.jellyseerr-request-button');
-        configureRequestButton(button, item);
+        configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
         addMediaTypeBadge(card, item);
 
         return card;
@@ -510,6 +515,8 @@
      * Configures the request button based on item status and type.
      * @param {HTMLElement} button - Button element to configure.
      * @param {Object} item - Media item data.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     function configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound) {
         if (!isJellyseerrActive) {
@@ -542,9 +549,8 @@
      * @param {HTMLElement} button - Button element.
      * @param {number} overallStatus - Calculated overall status.
      * @param {Object|null} seasonAnalysis - Season analysis results.
-     * @param {Object} item - TV show item data.
      */
-    function configureTvShowButton(button, overallStatus, seasonAnalysis, item) {
+    function configureTvShowButton(button, overallStatus, seasonAnalysis) {
         const setButton = (text, icon, className, disabled = false, summary = seasonAnalysis?.statusSummary) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             if (summary) button.innerHTML += `<div class="jellyseerr-season-summary">${summary}</div>`;
@@ -778,7 +784,10 @@
                     setTimeout(() => {
                         const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
                         if (query) {
-                            JE.jellyseerrUI.renderJellyseerrResults([], query, false); // Trigger a re-render
+                            const mainController = JE.jellyseerr;
+                            if (mainController) {
+                                mainController.fetchAndRenderResults(query);
+                            }
                         }
                     }, 1000);
                 } catch (error) {
@@ -818,6 +827,20 @@
                 </div>
                 <div class="jellyseerr-season-episodes">${season.episodeCount || 0} ep</div>
                 <div class="jellyseerr-season-status jellyseerr-season-status-${statusClass}">${statusText}</div>`;
+
+            // Add inline download progress
+            if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.length > 0) {
+                const seasonDownloads = tvDetails.mediaInfo.downloadStatus.filter(ds => ds.episode?.seasonNumber === season.seasonNumber);
+                if (seasonDownloads.length > 0) {
+                    const totalSize = seasonDownloads.reduce((sum, ds) => sum + (ds.size || 0), 0);
+                    const totalSizeLeft = seasonDownloads.reduce((sum, ds) => sum + (ds.sizeLeft || 0), 0);
+                    if (totalSize > 0) {
+                        const aggregatedStatus = { size: totalSize, sizeLeft: totalSizeLeft, status: `${seasonDownloads.length} episode(s) downloading` };
+                        const progressElement = createInlineProgress(aggregatedStatus);
+                        if (progressElement) seasonItem.appendChild(progressElement);
+                    }
+                }
+            }
             seasonList.appendChild(seasonItem);
         });
 
@@ -835,6 +858,7 @@
     };
 
     // Expose the UI module on the global JE object
+    ui.icons = icons;
     JE.jellyseerrUI = ui;
 
 })(window.JellyfinEnhanced);

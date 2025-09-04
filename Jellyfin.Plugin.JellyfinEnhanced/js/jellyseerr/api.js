@@ -109,14 +109,14 @@
     api.fetchAdvancedRequestData = async function(mediaType) {
         const serverType = mediaType === 'movie' ? 'radarr' : 'sonarr';
         try {
-            const servers = await get(`/service/${serverType}`);
+            const servers = await get(`/${serverType}`);
             const serverList = Array.isArray(servers) ? servers : [servers];
             const validServers = [];
 
             for (const server of serverList) {
                 if (!server || typeof server.id !== 'number') continue;
                 try {
-                    const details = await get(`/service/${serverType}/${server.id}`);
+                    const details = await get(`/${serverType}/${server.id}`);
                     server.qualityProfiles = details.profiles || [];
                     server.rootFolders = details.rootFolders || [];
                     validServers.push(server);

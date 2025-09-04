@@ -96,7 +96,7 @@
         async function fetchAndRenderResults(query) {
             const data = await search(query);
             if (data.results && data.results.length > 0) {
-                renderJellyseerrResults(data.results, query, isJellyseerrOnlyMode);
+                renderJellyseerrResults(data.results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
             }
         }
 
@@ -212,7 +212,7 @@
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
                         await requestMedia(tmdbId, mediaType);
-                        button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
+                        button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
@@ -223,7 +223,7 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        button.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
+                        button.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUI.icons.error}`;
                         button.classList.add('jellyseerr-button-error');
                     }
                 }
