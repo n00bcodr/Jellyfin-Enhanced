@@ -272,6 +272,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/search?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/sonarr")]
+        public Task<IActionResult> GetSonarrInstances()
+        {
+            return ProxyJellyseerrRequest("/api/v1/service/sonarr", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/radarr")]
+        public Task<IActionResult> GetRadarrInstances()
+        {
+            return ProxyJellyseerrRequest("/api/v1/service/radarr", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/{type}/{serverId}")]
+        public Task<IActionResult> GetServiceDetails(string type, int serverId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/service/{type}/{serverId}", HttpMethod.Get);
+        }
+
         [HttpPost("jellyseerr/request")]
         public async Task<IActionResult> JellyseerrRequest([FromBody] JsonElement requestBody)
         {
@@ -343,6 +361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
+                config.JellyseerrShowAdvanced,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,

@@ -610,6 +610,37 @@
                     max-height: calc(80vh - 200px);
                     overflow-y: auto;
                 }
+                .jellyseerr-advanced-options {
+                    margin-top: 1em;
+                    padding-top: 1em;
+                    border-top: 1px solid rgba(148, 163, 184, 0.1);
+                }
+
+                .jellyseerr-advanced-options h3 {
+                    margin-top: 0;
+                }
+
+                .jellyseerr-form-row {
+                    display: flex;
+                    gap: 1em;
+                    margin-bottom: 1em;
+                }
+
+                .jellyseerr-form-group {
+                    flex: 1;
+                }
+
+                .jellyseerr-form-group label {
+                    display: block;
+                    margin-bottom: 0.5em;
+                }
+
+                .jellyseerr-form-group select, .jellyseerr-form-group input {
+                    width: 100%;
+                    padding: 0.5em;
+                    border-radius: 4px;
+                    border: 1px solid #ccc;
+                }
 
                 /* Season list */
                 .jellyseerr-season-list {
@@ -885,7 +916,7 @@
          * @param {string} mediaType - 'movie' or 'tv'
          * @param {HTMLElement} button - Request button element
          */
-        async function requestMedia(tmdbId, mediaType, button) {
+        async function requestMedia(tmdbId, mediaType, button, advancedSettings = {}) {
             // Update button to show requesting state
             button.disabled = true;
             button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
@@ -940,11 +971,12 @@
          * @param {number} tmdbId - TMDB ID of the TV show
          * @param {number[]} seasonNumbers - Array of season numbers to request
          */
-        async function requestTvSeasons(tmdbId, seasonNumbers) {
+        async function requestTvSeasons(tmdbId, seasonNumbers, advancedSettings = {}) {
             const requestBody = {
                 mediaType: 'tv',
                 mediaId: parseInt(tmdbId),
-                seasons: seasonNumbers
+                seasons: seasonNumbers,
+                ...advancedSettings
             };
 
             try {
@@ -1737,6 +1769,267 @@
         }
 
         // ================================
+        // ADVANCED REQUEST MODAL
+        // ================================
+
+        async function fetchAdvancedRequestData(mediaType) {
+            const serverType = mediaType === 'movie' ? 'radarr' : 'sonarr';
+            const headers = { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() };
+
+            try {
+                const servers = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/${serverType}`),
+                    headers,
+                    dataType: 'json'
+                });
+
+                // The API returns a single object if there's only one server, so ensure it's always an array
+                const serverList = Array.isArray(servers) ? servers : [servers];
+
+                // Filter out any invalid servers and fetch details for valid ones
+                const validServers = [];
+
+                for (const server of serverList) {
+                    // Check if server has valid id
+                    if (!server || !server.id) {
+                        console.warn(`${logPrefix} Skipping server with missing ID:`, server);
+                        continue;
+                    }
+
+                    try {
+                        const details = await ApiClient.ajax({
+                            type: 'GET',
+                            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/${serverType}/${server.id}`),
+                            headers,
+                            dataType: 'json'
+                        });
+
+                        server.qualityProfiles = details.profiles || [];
+                        server.rootFolders = details.rootFolders || [];
+                        validServers.push(server);
+                    } catch (e) {
+                        console.error(`${logPrefix} Could not fetch details for ${serverType} server ID ${server.id}:`, e);
+                        // Still add server but with empty arrays
+                        server.qualityProfiles = [];
+                        server.rootFolders = [];
+                        validServers.push(server);
+                    }
+                }
+
+                return { servers: validServers, tags: [] };
+            } catch (error) {
+                console.error(`${logPrefix} Failed to fetch ${serverType} servers:`, error);
+                return { servers: [], tags: [] };
+            }
+        }
+        function createAdvancedOptionsHTML(idPrefix) {
+            return `
+                <div class="jellyseerr-advanced-options">
+                    <h3>Advanced Options</h3>
+                    <div class="jellyseerr-form-row">
+                        <div class="jellyseerr-form-group">
+                            <label for="${idPrefix}-server">Destination Server</label>
+                            <select is="emby-select" id="${idPrefix}-server" class="emby-select">
+                                <option value="">Select Server...</option>
+                            </select>
+                        </div>
+                        <div class="jellyseerr-form-group">
+                            <label for="${idPrefix}-quality">Quality Profile</label>
+                            <select is="emby-select" id="${idPrefix}-quality" class="emby-select">
+                                <option value="">Select Quality...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="jellyseerr-form-row">
+                        <div class="jellyseerr-form-group">
+                            <label for="${idPrefix}-folder">Root Folder</label>
+                            <select is="emby-select" id="${idPrefix}-folder" class="emby-select">
+                                <option value="">Select Folder...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        function populateAdvancedOptions(modal, data, idPrefix) {
+            const serverSelect = modal.querySelector(`#${idPrefix}-server`);
+            const qualitySelect = modal.querySelector(`#${idPrefix}-quality`);
+            const folderSelect = modal.querySelector(`#${idPrefix}-folder`);
+
+            if (!serverSelect || !qualitySelect || !folderSelect) {
+                console.error(`${logPrefix} Could not find advanced options elements in modal`);
+                return;
+            }
+
+            // Clear existing options
+            serverSelect.innerHTML = '<option value="">Select Server...</option>';
+            qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
+            folderSelect.innerHTML = '<option value="">Select Folder...</option>';
+
+            // Populate servers
+            if (data.servers && data.servers.length > 0) {
+                data.servers.forEach(server => {
+                    if (server && server.id) {
+                        const option = document.createElement('option');
+                        option.value = server.id;
+                        option.textContent = server.name || `Server ${server.id}`;
+                        if (server.isDefault) option.selected = true;
+                        serverSelect.appendChild(option);
+                    }
+                });
+            } else {
+                const option = document.createElement('option');
+                option.value = "";
+                option.textContent = "No servers available";
+                option.disabled = true;
+                serverSelect.appendChild(option);
+            }
+
+            function updateServerDependentOptions() {
+                const selectedServerId = serverSelect.value;
+                const selectedServer = data.servers.find(s => s.id == selectedServerId);
+
+                // Clear dependent selects
+                qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
+                folderSelect.innerHTML = '<option value="">Select Folder...</option>';
+
+                if (!selectedServer) return;
+
+                // Populate quality profiles
+                if (selectedServer.qualityProfiles && selectedServer.qualityProfiles.length > 0) {
+                    selectedServer.qualityProfiles.forEach(profile => {
+                        if (profile && (profile.id || profile.id === 0)) {
+                            const option = document.createElement('option');
+                            option.value = profile.id;
+                            option.textContent = profile.name || `Profile ${profile.id}`;
+                            if (profile.id === selectedServer.activeProfileId) option.selected = true;
+                            qualitySelect.appendChild(option);
+                        }
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.value = "";
+                    option.textContent = "No quality profiles available";
+                    option.disabled = true;
+                    qualitySelect.appendChild(option);
+                }
+
+                // Populate root folders
+                if (selectedServer.rootFolders && selectedServer.rootFolders.length > 0) {
+                    selectedServer.rootFolders.forEach(folder => {
+                        if (folder && folder.path) {
+                            const option = document.createElement('option');
+                            option.value = folder.path;
+                            option.textContent = folder.path;
+                            if (folder.path === selectedServer.activeDirectory) option.selected = true;
+                            folderSelect.appendChild(option);
+                        }
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.value = "";
+                    option.textContent = "No root folders available";
+                    option.disabled = true;
+                    folderSelect.appendChild(option);
+                }
+            }
+
+            serverSelect.addEventListener('change', updateServerDependentOptions);
+
+            // Trigger initial population if there's a default server selected
+            if (serverSelect.value) {
+                updateServerDependentOptions();
+            }
+        }
+
+        // Fixed showMovieRequestModal function
+        async function showMovieRequestModal(tmdbId, title, searchResultItem) {
+            const modal = document.createElement('div');
+            modal.className = 'jellyseerr-season-modal';
+            const backdropImage = searchResultItem && searchResultItem.backdropPath ?
+                `url('https://image.tmdb.org/t/p/w1280${searchResultItem.backdropPath}')` :
+                'linear-gradient(45deg, #3b82f6, #8b5cf6)';
+
+            modal.innerHTML = `
+                <div class="jellyseerr-season-content">
+                    <div class="jellyseerr-season-header" style="background: ${backdropImage}; background-size: cover; background-position: center;">
+                        <div class="jellyseerr-season-title">Request Movie</div>
+                        <div class="jellyseerr-season-subtitle">${title}</div>
+                    </div>
+                    <div class="jellyseerr-season-body">
+                        ${createAdvancedOptionsHTML('movie')}
+                    </div>
+                    <div class="jellyseerr-modal-footer">
+                        <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary">Cancel</button>
+                        <button class="jellyseerr-modal-button jellyseerr-modal-button-primary">Request</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            document.body.classList.add('jellyseerr-modal-is-open');
+
+            const closeModal = () => {
+                modal.classList.remove('show');
+                document.body.classList.remove('jellyseerr-modal-is-open');
+                setTimeout(() => {
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                }, 300);
+            };
+
+            modal.querySelector('.jellyseerr-modal-button-secondary').addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+            const requestButton = modal.querySelector('.jellyseerr-modal-button-primary');
+            requestButton.addEventListener('click', async () => {
+                const serverSelect = modal.querySelector('#movie-server');
+                const qualitySelect = modal.querySelector('#movie-quality');
+                const folderSelect = modal.querySelector('#movie-folder');
+
+                // Validate selections
+                if (!serverSelect.value || !qualitySelect.value || !folderSelect.value) {
+                    JE.toast('Please select all required options', 3000);
+                    return;
+                }
+
+                requestButton.disabled = true;
+                requestButton.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
+
+                const advancedSettings = {
+                    serverId: parseInt(serverSelect.value),
+                    profileId: parseInt(qualitySelect.value),
+                    rootFolder: folderSelect.value,
+                    tags: []
+                };
+
+                try {
+                    const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
+                    await requestMedia(tmdbId, 'movie', originalButton, advancedSettings);
+                    closeModal();
+                } catch (error) {
+                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
+                    requestButton.disabled = false;
+                    requestButton.textContent = 'Request';
+                }
+            });
+
+            // Fetch and populate advanced options
+            try {
+                const data = await fetchAdvancedRequestData('movie');
+                populateAdvancedOptions(modal, data, 'movie');
+            } catch (error) {
+                console.error(`${logPrefix} Failed to load advanced options:`, error);
+                JE.toast('Failed to load server options', 3000);
+            }
+
+            setTimeout(() => modal.classList.add('show'), 10);
+        }
+
+
+        // ================================
         // SEASON SELECTION MODAL
         // ================================
 
@@ -1786,6 +2079,24 @@
             const backdropImage = tvDetails.backdropPath ?
                 `url('https://image.tmdb.org/t/p/w1280${tvDetails.backdropPath}')` :
                 'linear-gradient(45deg, #3b82f6, #8b5cf6)';
+            const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
+
+            modal.innerHTML = `
+                <div class="jellyseerr-season-content">
+                    <div class="jellyseerr-season-header" style="background: ${backdropImage}; background-size: cover; background-position: center;">
+                        <div class="jellyseerr-season-title">${JE.t('jellyseerr_modal_title')}</div>
+                        <div class="jellyseerr-season-subtitle">${showTitle}</div>
+                    </div>
+                    <div class="jellyseerr-season-body">
+                        <div class="jellyseerr-season-list"></div>
+                        ${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}
+                    </div>
+                    <div class="jellyseerr-modal-footer">
+                        <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary">${JE.t('jellyseerr_modal_cancel')}</button>
+                        <button class="jellyseerr-modal-button jellyseerr-modal-button-primary">${JE.t('jellyseerr_modal_request')}</button>
+                    </div>
+                </div>
+            `;
 
             modal.innerHTML = `
                 <div class="jellyseerr-season-content">
@@ -1895,6 +2206,15 @@
                 document.body.classList.remove('jellyseerr-modal-is-open');
                 setTimeout(() => document.body.removeChild(modal), 300);
             };
+            if (showAdvanced) {
+                try {
+                    const data = await fetchAdvancedRequestData('tv');
+                    populateAdvancedOptions(modal, data, 'tv');
+                } catch (error) {
+                    console.error(`${logPrefix} Failed to load TV advanced options:`, error);
+                    JE.toast('Failed to load server options', 3000);
+                }
+            }
 
             // Cancel button
             modal.querySelector('.jellyseerr-modal-button-secondary').addEventListener('click', () => history.back());
@@ -1919,8 +2239,18 @@
                 requestButton.disabled = true;
                 requestButton.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
+                let advancedSettings = {};
+                if (showAdvanced) {
+                    advancedSettings = {
+                        serverId: modal.querySelector('#tv-server').value,
+                        profileId: modal.querySelector('#tv-quality').value,
+                        rootFolder: modal.querySelector('#tv-folder').value,
+                        tags: Array.from(modal.querySelector('#tv-tags').selectedOptions).map(o => parseInt(o.value))
+                    };
+                }
+
                 try {
-                    await requestTvSeasons(tmdbId, selectedSeasons);
+                    await requestTvSeasons(tmdbId, selectedSeasons, advancedSettings);
                     JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
                     closeModal();
 
@@ -2018,26 +2348,30 @@
         }, { passive: true });
 
         // Main click handler for request buttons
-        document.body.addEventListener('click', function(event) {
+        document.body.addEventListener('click', async function(event) {
             const button = event.target.closest('.jellyseerr-request-button');
             if (!button || button.disabled) return;
 
             const mediaType = button.dataset.mediaType;
             const tmdbId = button.dataset.tmdbId;
+            const card = button.closest('.jellyseerr-card');
+            const titleText = card?.querySelector('.cardText-first bdi')?.textContent || (mediaType === 'movie' ? 'this movie' : 'this show');
 
-            if (mediaType === 'movie') {
-                // Direct request for movies
-                requestMedia(tmdbId, mediaType, button);
-            } else if (mediaType === 'tv') {
-                // Show season selection modal for TV shows
-                const card = button.closest('.jellyseerr-card');
-                const titleText = card?.querySelector('.cardText-first bdi')?.textContent || 'this show';
+            // We need to parse searchResultItem for both movie and TV to get backdrop etc.
+            const searchResultItem = button.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
 
-                // Pass original search result item for enhanced status inference
-                const searchResultItem = button.dataset.searchResultItem ?
-                    JSON.parse(button.dataset.searchResultItem) : null;
-
-                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem);
+            if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                if (mediaType === 'movie') {
+                    showMovieRequestModal(tmdbId, titleText, searchResultItem);
+                } else if (mediaType === 'tv') {
+                    showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem);
+                }
+            } else {
+                 if (mediaType === 'movie') {
+                    requestMedia(tmdbId, mediaType, button);
+                } else if (mediaType === 'tv') {
+                    showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem);
+                }
             }
         });
 
