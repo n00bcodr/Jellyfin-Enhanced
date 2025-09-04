@@ -641,6 +641,26 @@
                     border-radius: 4px;
                     border: 1px solid #ccc;
                 }
+                .jellyseerr-form-group select[is="emby-select"] {
+                    background-color: rgba(30, 41, 59, 0.7) !important;
+                    color: #e2e8f0 !important;
+                    border: 1px solid rgba(51, 65, 85, 0.5) !important;
+                    border-radius: 8px !important;
+                    padding: 12px 16px !important;
+                    font-size: 0.95rem !important;
+                    -webkit-appearance: none;
+                    -moz-appearance: none;
+                    appearance: none;
+                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E") !important;
+                    background-repeat: no-repeat !important;
+                    background-position: right 16px center !important;
+                    transition: border-color 0.2s ease, background-color 0.2s ease !important;
+                }
+
+                .jellyseerr-form-group select[is="emby-select"]:hover {
+                    border-color: rgba(59, 130, 246, 0.4) !important;
+                    background-color: rgba(30, 41, 59, 1) !important;
+                }
 
                 /* Season list */
                 .jellyseerr-season-list {
@@ -923,7 +943,8 @@
 
             const requestBody = {
                 mediaType,
-                mediaId: parseInt(tmdbId)
+                mediaId: parseInt(tmdbId),
+                ...advancedSettings
             };
 
             // For TV shows, request all seasons by default
@@ -1309,8 +1330,8 @@
             }
 
             // Define section types for intelligent placement
-            const primaryTypes = ['movies','filme','filmer','film','film','film','películas','映画','电影','filmes','фильмы','أفلام','shows','shows','program','spettacoli','émissions','shows','series','ショー','节目','programas','сериалы','عروض','episodes','episoden','avsnitt','episodi','épisodes','episoder','episodios','エピソード','集','episódios','эпизоды','الحلقات'];
-            const secondaryTypes = ['people','personen','personer','persone','personnes','folk','personas','人々','人','pessoas','люди','الناس','artists','künstler','konstnärer','artisti','artistes','kunstnere','artistas','アーティスト','艺术家','artistas','артисты','فنانون','albums','alben','album','album','albums','albums','álbumes','アルバム','专辑','álbuns','альбомы','ألبومات','songs','lieder','låtar','canzoni','chansons','sange','canciones','曲','歌曲','canções','песни','أغاني','videos','videos','videor','video','vidéos','videoer','videos','ビデオ','视频','vídeos','видео','فيديو','collections','sammlungen','samlingar','collezioni','collections','samlinger','colecciones','コレクション','收藏','coleções','коллекции','مجموعات','playlists','wiedergabelisten','spellistor','playlist','listes de lecture','playlister','listas de reproducción','プレイリスト','播放列表','listas de reprodução','плейлисты','قوائم التشغيل'];
+            const primaryTypes = ['movies', 'filme', 'filmer', 'film', 'películas', '映画', '电影', 'filmes', 'фильмы', 'أفلام', 'shows', 'séries', 'émissions', 'serie', 'series', 'ショー', 'сериалы', 'عروض', 'episodes', 'episoden', 'avsnitt', 'episodi', 'épisodes', 'episoder', 'episodios', 'エピソード', '集', 'episódios', 'эпизоды', 'الحلقات'];
+            const secondaryTypes = ['programs', 'programme', 'program', 'programmi', 'programmes', 'programmer', 'programas', 'プログラム', '程序', 'программы', 'البرامج', 'programma', 'people', 'personen', 'personer', 'persone', 'personnes', 'folk', 'personas', '人々', '人', 'pessoas', 'люди', 'الناس', 'artists', 'künstler', 'konstnärer', 'artisti', 'artistes', 'kunstnere', 'artistas', 'アーティスト', '艺术家', 'artistas', 'артисты', 'فنانون', 'albums', 'alben', 'album', 'álbumes', 'アルバム', '专辑', 'álbuns', 'альбомы', 'ألبومات', 'songs', 'lieder', 'låtar', 'canzoni', 'chansons', 'sange', 'canciones', '曲', '歌曲', 'canções', 'песни', 'أغاني', 'videos', 'videor', 'video', 'vidéos', 'videoer', 'ビデオ', '视频', 'vídeos', 'видео', 'فيديو', 'collections', 'sammlungen', 'samlingar', 'collezioni', 'samlinger', 'colecciones', 'コレクション', '收藏', 'coleções', 'коллекции', 'مجموعات', 'playlists', 'wiedergabelisten', 'spellistor', 'playlist', 'listes de lecture', 'playlister', 'listas de reproducción', 'プレイリスト', '播放列表', 'listas de reprodução', 'плейлисты', 'قوائم التشغيل'];
 
 
             const allTypes = primaryTypes.concat(secondaryTypes);
@@ -1639,6 +1660,7 @@
          * @param {Object} item - Movie item data
          */
         function configureMovieButton(button, item) {
+            button.dataset.searchResultItem = JSON.stringify(item);
             const status = item.mediaInfo ? item.mediaInfo.status : 1;
 
             switch (status) {
@@ -1792,7 +1814,7 @@
 
                 for (const server of serverList) {
                     // Check if server has valid id
-                    if (!server || !server.id) {
+                    if (!server || typeof server.id !== 'number') {
                         console.warn(`${logPrefix} Skipping server with missing ID:`, server);
                         continue;
                     }
@@ -1853,97 +1875,105 @@
             `;
         }
         function populateAdvancedOptions(modal, data, idPrefix) {
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds
+        const interval = setInterval(() => {
             const serverSelect = modal.querySelector(`#${idPrefix}-server`);
             const qualitySelect = modal.querySelector(`#${idPrefix}-quality`);
             const folderSelect = modal.querySelector(`#${idPrefix}-folder`);
 
-            if (!serverSelect || !qualitySelect || !folderSelect) {
-                console.error(`${logPrefix} Could not find advanced options elements in modal`);
-                return;
-            }
-
-            // Clear existing options
-            serverSelect.innerHTML = '<option value="">Select Server...</option>';
-            qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
-            folderSelect.innerHTML = '<option value="">Select Folder...</option>';
-
-            // Populate servers
-            if (data.servers && data.servers.length > 0) {
-                data.servers.forEach(server => {
-                    if (server && server.id) {
-                        const option = document.createElement('option');
-                        option.value = server.id;
-                        option.textContent = server.name || `Server ${server.id}`;
-                        if (server.isDefault) option.selected = true;
-                        serverSelect.appendChild(option);
-                    }
-                });
-            } else {
-                const option = document.createElement('option');
-                option.value = "";
-                option.textContent = "No servers available";
-                option.disabled = true;
-                serverSelect.appendChild(option);
-            }
-
-            function updateServerDependentOptions() {
-                const selectedServerId = serverSelect.value;
-                const selectedServer = data.servers.find(s => s.id == selectedServerId);
-
-                // Clear dependent selects
+            if (serverSelect && qualitySelect && folderSelect) {
+                clearInterval(interval);
+                // Clear existing options
+                serverSelect.innerHTML = '<option value="">Select Server...</option>';
                 qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
                 folderSelect.innerHTML = '<option value="">Select Folder...</option>';
 
-                if (!selectedServer) return;
-
-                // Populate quality profiles
-                if (selectedServer.qualityProfiles && selectedServer.qualityProfiles.length > 0) {
-                    selectedServer.qualityProfiles.forEach(profile => {
-                        if (profile && (profile.id || profile.id === 0)) {
+                // Populate servers
+                if (data.servers && data.servers.length > 0) {
+                    data.servers.forEach(server => {
+                        if (server && typeof server.id === 'number') {
                             const option = document.createElement('option');
-                            option.value = profile.id;
-                            option.textContent = profile.name || `Profile ${profile.id}`;
-                            if (profile.id === selectedServer.activeProfileId) option.selected = true;
-                            qualitySelect.appendChild(option);
+                            option.value = server.id;
+                            option.textContent = server.name || `Server ${server.id}`;
+                            if (server.isDefault) option.selected = true;
+                            serverSelect.appendChild(option);
                         }
                     });
                 } else {
                     const option = document.createElement('option');
                     option.value = "";
-                    option.textContent = "No quality profiles available";
+                    option.textContent = "No servers available";
                     option.disabled = true;
-                    qualitySelect.appendChild(option);
+                    serverSelect.appendChild(option);
                 }
 
-                // Populate root folders
-                if (selectedServer.rootFolders && selectedServer.rootFolders.length > 0) {
-                    selectedServer.rootFolders.forEach(folder => {
-                        if (folder && folder.path) {
-                            const option = document.createElement('option');
-                            option.value = folder.path;
-                            option.textContent = folder.path;
-                            if (folder.path === selectedServer.activeDirectory) option.selected = true;
-                            folderSelect.appendChild(option);
-                        }
-                    });
-                } else {
-                    const option = document.createElement('option');
-                    option.value = "";
-                    option.textContent = "No root folders available";
-                    option.disabled = true;
-                    folderSelect.appendChild(option);
+                function updateServerDependentOptions() {
+                    const selectedServerId = serverSelect.value;
+                    const selectedServer = data.servers.find(s => s.id == selectedServerId);
+
+                    // Clear dependent selects
+                    qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
+                    folderSelect.innerHTML = '<option value="">Select Folder...</option>';
+
+                    if (!selectedServer) return;
+
+                    // Populate quality profiles
+                    if (selectedServer.qualityProfiles && selectedServer.qualityProfiles.length > 0) {
+                        selectedServer.qualityProfiles.forEach(profile => {
+                            if (profile && (profile.id || profile.id === 0)) {
+                                const option = document.createElement('option');
+                                option.value = profile.id;
+                                option.textContent = profile.name || `Profile ${profile.id}`;
+                                if (profile.id === selectedServer.activeProfileId) option.selected = true;
+                                qualitySelect.appendChild(option);
+                            }
+                        });
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = "";
+                        option.textContent = "No quality profiles available";
+                        option.disabled = true;
+                        qualitySelect.appendChild(option);
+                    }
+
+                    // Populate root folders
+                    if (selectedServer.rootFolders && selectedServer.rootFolders.length > 0) {
+                        selectedServer.rootFolders.forEach(folder => {
+                            if (folder && folder.path) {
+                                const option = document.createElement('option');
+                                option.value = folder.path;
+                                option.textContent = folder.path;
+                                if (folder.path === selectedServer.activeDirectory) option.selected = true;
+                                folderSelect.appendChild(option);
+                            }
+                        });
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = "";
+                        option.textContent = "No root folders available";
+                        option.disabled = true;
+                        folderSelect.appendChild(option);
+                    }
+                }
+
+                serverSelect.addEventListener('change', updateServerDependentOptions);
+
+                // Trigger initial population if there's a default server selected
+                if (serverSelect.value) {
+                    updateServerDependentOptions();
+                }
+
+            } else {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(interval);
+                    console.error(`${logPrefix} Could not find advanced options elements in modal after ${maxAttempts} attempts`);
                 }
             }
-
-            serverSelect.addEventListener('change', updateServerDependentOptions);
-
-            // Trigger initial population if there's a default server selected
-            if (serverSelect.value) {
-                updateServerDependentOptions();
-            }
-        }
-
-        // Fixed showMovieRequestModal function
+        }, 100);
+    }
+        // showMovieRequestModal function
         async function showMovieRequestModal(tmdbId, title, searchResultItem) {
             const modal = document.createElement('div');
             modal.className = 'jellyseerr-season-modal';
@@ -2090,22 +2120,6 @@
                     <div class="jellyseerr-season-body">
                         <div class="jellyseerr-season-list"></div>
                         ${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}
-                    </div>
-                    <div class="jellyseerr-modal-footer">
-                        <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary">${JE.t('jellyseerr_modal_cancel')}</button>
-                        <button class="jellyseerr-modal-button jellyseerr-modal-button-primary">${JE.t('jellyseerr_modal_request')}</button>
-                    </div>
-                </div>
-            `;
-
-            modal.innerHTML = `
-                <div class="jellyseerr-season-content">
-                    <div class="jellyseerr-season-header" style="background: ${backdropImage}; background-size: cover; background-position: center;">
-                        <div class="jellyseerr-season-title">${JE.t('jellyseerr_modal_title')}</div>
-                        <div class="jellyseerr-season-subtitle">${showTitle}</div>
-                    </div>
-                    <div class="jellyseerr-season-body">
-                          <div class="jellyseerr-season-list"></div>
                     </div>
                     <div class="jellyseerr-modal-footer">
                         <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary">${JE.t('jellyseerr_modal_cancel')}</button>
