@@ -9,8 +9,13 @@
 
 The ultimate enhancement for your Jellyfin experience. This plugin (previously script) combines the powerful features of Jellyfin Enhanced and [Jellyfin Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere/) and more into one easy-to-install package.
 
-<img src="images/panel_jellyfish.gif" alt="Panel with Jellyfish Theme" width="90%" align="center"/>
----
+<img src="images/panel_jellyfish.gif" alt="Enhanced Panel" width="90%" align="center"/>
+
+<br>
+<p align="center">
+--------------------------------------------------
+</p>
+<br>
 
 ## 📑 Table of Contents
 
@@ -39,7 +44,6 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
   - [📄 License](#-license)
 - [Enjoying Jellyfin Enhanced?](#enjoying-jellyfin-enhanced)
 
----
 
 ## 🔧 Installation
 
@@ -52,7 +56,7 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
 
 
 > [!NOTE]
-> If you are on a docker install it is highly advisable to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) at least v2.2.1.0 installed. It helps avoid permission issues while modifying index.html\
+> If you are on a docker install it is highly advisable to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) at least v2.2.1.0 installed. It helps avoid permission issues while modifying index.html
 >
 > **Only if you do not have file-transformation plugin installed - proceed with the below workaround!**
 
@@ -62,7 +66,8 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
 <summary style="font-size: 1.25em;">🐳 Docker Installation Workaround</summary>
 <br>
 
-> [!Important]
+> [!IMPORTANT]
+> 
 > If you have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin installed, you need not do this.
 
 If you're running Jellyfin through Docker, the plugin may not have permission to modify jellyfin-web to inject the script. If you see permission errors such as `'System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html ' is denied.` in your logs, you will need to map the `index.html` file manually:
@@ -719,7 +724,10 @@ Here is a list of common errors you might see in your Jellyfin server logs or yo
 
 MIT License
 
----
+<br>
+<p align="center">
+--------------------------------------------------
+</p>
 <br>
 <div align="center">
 
