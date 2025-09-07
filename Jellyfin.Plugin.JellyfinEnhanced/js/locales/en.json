@@ -184,5 +184,8 @@
     "shortcut_ResetPlaybackSpeed": "Reset Playback Speed",
     "shortcut_BookmarkCurrentTime": "Bookmark Current Time",
     "shortcut_GoToSavedBookmark": "Go to Saved Bookmark",
-    "shortcut_JumpToPercentage": "Jump to % of video"
+    "shortcut_JumpToPercentage": "Jump to % of video",
+    "reviews_title": "Reviews ({count})",
+    "reviews_read_more": "Read More",
+    "reviews_read_less": "Read Less"
 }

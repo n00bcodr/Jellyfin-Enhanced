@@ -21,7 +21,7 @@
     "toast_feature_status": "{feature} {status}",
     "status_enabled": "Activé",
     "status_disabled": "Désactivé",
-        "feature_auto_pause": "⏸️ Pause auto",
+    "feature_auto_pause": "⏸️ Pause auto",
     "feature_auto_resume": "▶️ Reprise auto",
     "feature_auto_pip": "🖼️ PiP auto",
     "feature_auto_skip_intro": "↪️ Passer intro automatiquement",
@@ -184,5 +184,8 @@
     "shortcut_ResetPlaybackSpeed": "Réinitialiser la vitesse de lecture",
     "shortcut_BookmarkCurrentTime": "Marquer le temps actuel",
     "shortcut_GoToSavedBookmark": "Aller au signet enregistré",
-    "shortcut_JumpToPercentage": "Aller à % de la vidéo"
+    "shortcut_JumpToPercentage": "Aller à % de la vidéo",
+    "reviews_title": "Critiques ({count})",
+    "reviews_read_more": "Lire la suite",
+    "reviews_read_less": "Lire moins"
 }

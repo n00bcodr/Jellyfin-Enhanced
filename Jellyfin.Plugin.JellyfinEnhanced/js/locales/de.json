@@ -184,5 +184,8 @@
     "shortcut_ResetPlaybackSpeed": "Wiedergabegeschwindigkeit zurücksetzen",
     "shortcut_BookmarkCurrentTime": "Aktuelle Zeit als Lesezeichen setzen",
     "shortcut_GoToSavedBookmark": "Zu gespeichertem Lesezeichen gehen",
-    "shortcut_JumpToPercentage": "Zu % des Videos springen"
+    "shortcut_JumpToPercentage": "Zu % des Videos springen",
+    "reviews_title": "Bewertungen ({count})",
+    "reviews_read_more": "Mehr lesen",
+    "reviews_read_less": "Weniger lesen"
 }
