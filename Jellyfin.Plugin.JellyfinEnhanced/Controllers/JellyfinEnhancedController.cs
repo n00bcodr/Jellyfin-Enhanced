@@ -370,7 +370,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SonarrUrl,
                 config.RadarrUrl,
                 config.BazarrUrl,
-                config.ShowArrLinksAsText
+                config.ShowArrLinksAsText,
+                config.WatchlistEnabled
             });
         }
         [HttpGet("locales/{lang}.json")]

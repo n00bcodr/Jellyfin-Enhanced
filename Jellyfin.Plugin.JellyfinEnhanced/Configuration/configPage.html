@@ -23,6 +23,7 @@
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseerr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Links</h3></button>
+                <button class="jellyfin-tab-button" data-tab="watchlist" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Watchlist</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
                 <div id="enhanced" class="jellyfin-tab-content active" style="display: block; font-family: inherit;">
@@ -234,6 +235,20 @@
                                     <span>Show links as text instead of icons</span>
                                 </label>
                             </div>
+                        </div>
+                    </fieldset>
+                </div>
+                 <div id="watchlist" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Watchlist Settings</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="watchlistEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Watchlist Feature</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Watchlist" tab </div>
                         </div>
                     </fieldset>
                 </div>
@@ -545,6 +560,7 @@
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
+                document.querySelector('#watchlistEnabled').checked = config.WatchlistEnabled;
 
                 Dashboard.hideLoadingMsg();
             });
@@ -593,6 +609,8 @@
             config.RadarrUrl = document.querySelector('#radarrUrl').value;
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
+            config.WatchlistEnabled = document.querySelector('#watchlistEnabled').checked;
+
 
             try {
                 const result = await ApiClient.updatePluginConfiguration(pluginId, config);

@@ -141,7 +141,8 @@
                 'jellyseerr/ui.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'arr-links.js'
+                'qualitytags.js', 'arr-links.js',
+                'watchlist/cardBuilder.js', 'watchlist/watchlist.js'
             ];
 
             loadScripts(allScripts, basePath, () => {
@@ -166,6 +167,12 @@
                 }
                 if (typeof window.JellyfinEnhanced.initializeReviewsScript === 'function') {
                     window.JellyfinEnhanced.initializeReviewsScript();
+                }
+                 if (typeof window.JellyfinEnhanced.initializeCardBuilderScript === 'function') {
+                    window.JellyfinEnhanced.initializeCardBuilderScript();
+                }
+                if (typeof window.JellyfinEnhanced.initializeWatchlistScript === 'function') {
+                    window.JellyfinEnhanced.initializeWatchlistScript();
                 }
                 console.log('🪼 Jellyfin Enhanced: All components loaded and initialized.');
             });

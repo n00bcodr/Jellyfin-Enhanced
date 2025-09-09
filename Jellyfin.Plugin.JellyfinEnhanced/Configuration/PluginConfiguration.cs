@@ -42,6 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowReviews = false;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
+            WatchlistEnabled = true;
             Shortcuts = new List<Shortcut>
             {
                 new Shortcut { Name = "OpenSearch", Key = "/", Label = "Open Search", Category = "Global" },
@@ -106,6 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }
+        public bool WatchlistEnabled { get; set; }
 
         // Jellyseerr Search Settings
         public bool JellyseerrEnabled { get; set; }
