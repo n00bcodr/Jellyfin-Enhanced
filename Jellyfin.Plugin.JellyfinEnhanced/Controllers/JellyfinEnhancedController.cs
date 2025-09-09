@@ -356,6 +356,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RemoveContinueWatchingEnabled,
                 config.ShowAudioLanguages,
                 config.Shortcuts,
+                config.ShowReviews,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
 

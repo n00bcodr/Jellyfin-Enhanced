@@ -143,6 +143,12 @@
                                 <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="IGNORE_PROVIDERS" name="IGNORE_PROVIDERS" placeholder="e.g., .*with Ads, Hulu"></textarea>
                                 <div class="fieldDescription">A list of providers to ignore from the default region (supports regex).<a class="sectionTitle" target="_blank" href="https://raw.githubusercontent.com/n00bcodr/Jellyfin-Elsewhere/refs/heads/main/resources/providers.txt">Full List</a></div>
                             </div>
+                            <h3>Extras</h3>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="showReviews" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show Reviews from TMDB in Item Details Page<div style="font-size: .9em;">Requires TMDB API Key to be set</div></span>
+                                </label>
+                            </div>
                         </div>
                     </fieldset>
                 </div>
@@ -528,6 +534,7 @@
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
+                document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
@@ -575,6 +582,7 @@
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
+            config.ShowReviews = document.querySelector('#showReviews').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;

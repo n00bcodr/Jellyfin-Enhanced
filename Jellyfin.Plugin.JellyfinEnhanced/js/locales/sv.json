@@ -184,5 +184,8 @@
     "shortcut_ResetPlaybackSpeed": "Återställ uppspelningshastighet",
     "shortcut_BookmarkCurrentTime": "Bokmärk nuvarande tid",
     "shortcut_GoToSavedBookmark": "Gå till sparat bokmärke",
-    "shortcut_JumpToPercentage": "Hoppa till % av video"
+    "shortcut_JumpToPercentage": "Hoppa till % av video",
+    "reviews_title": "Recensioner ({count})",
+    "reviews_read_more": "Läs mer",
+    "reviews_read_less": "Läs mindre"
 }

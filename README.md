@@ -20,7 +20,6 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
 ## 📑 Table of Contents
 
 - [Jellyfin Enhanced](#jellyfin-enhanced)
-  - [📑 Table of Contents](#-table-of-contents)
   - [🔧 Installation](#-installation)
     - [🐳 Docker Installation Workaround](#docker-installation)
   - [✨ Features](#-features)
@@ -67,7 +66,7 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
 <br>
 
 > [!IMPORTANT]
-> 
+>
 > If you have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin installed, you need not do this.
 
 If you're running Jellyfin through Docker, the plugin may not have permission to modify jellyfin-web to inject the script. If you see permission errors such as `'System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html ' is denied.` in your logs, you will need to map the `index.html` file manually:
@@ -113,6 +112,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🎲 Random Item Button:** Discover something new in your library with a single click.
 - **👁️ Remove from Continue Watching:** Easily clean up your home screen.
 - **🔍 Streaming Provider Lookup:** See where else your media is available to stream across multiple regions.
+- **✒️ Show Reviews from TMDB:** Option to show TMDB reviews of an item in Jellyfin.
 - **🎬 Custom Pause Screen:** A beautifully designed, informative overlay when you pause a video. This feature is a modified version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen).
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.

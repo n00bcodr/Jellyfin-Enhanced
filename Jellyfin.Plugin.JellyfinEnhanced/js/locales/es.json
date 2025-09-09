@@ -184,5 +184,8 @@
     "shortcut_ResetPlaybackSpeed": "Restablecer velocidad de reproducción",
     "shortcut_BookmarkCurrentTime": "Marcar tiempo actual",
     "shortcut_GoToSavedBookmark": "Ir al marcador guardado",
-    "shortcut_JumpToPercentage": "Saltar al % del vídeo"
+    "shortcut_JumpToPercentage": "Saltar al % del vídeo",
+    "reviews_title": "Reseñas ({count})",
+    "reviews_read_more": "Leer más",
+    "reviews_read_less": "Leer menos"
 }

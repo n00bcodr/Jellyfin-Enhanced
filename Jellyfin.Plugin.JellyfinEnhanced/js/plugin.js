@@ -140,7 +140,7 @@
                 'jellyseerr/modal.js',
                 'jellyseerr/ui.js',
                 'jellyseerr/jellyseerr.js',
-                'pausescreen.js',
+                'pausescreen.js', 'reviews.js',
                 'qualitytags.js', 'arr-links.js'
             ];
 
@@ -163,6 +163,9 @@
                 }
                 if (typeof window.JellyfinEnhanced.initializeArrLinksScript === 'function') {
                     window.JellyfinEnhanced.initializeArrLinksScript();
+                }
+                if (typeof window.JellyfinEnhanced.initializeReviewsScript === 'function') {
+                    window.JellyfinEnhanced.initializeReviewsScript();
                 }
                 console.log('🪼 Jellyfin Enhanced: All components loaded and initialized.');
             });

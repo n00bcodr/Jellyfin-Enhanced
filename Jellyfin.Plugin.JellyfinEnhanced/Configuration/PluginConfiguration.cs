@@ -39,6 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowFileSizes = false;
             RemoveContinueWatchingEnabled = false;
             ShowAudioLanguages = true;
+            ShowReviews = false;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
             Shortcuts = new List<Shortcut>
@@ -101,6 +102,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowFileSizes { get; set; }
         public bool RemoveContinueWatchingEnabled { get; set; }
         public bool ShowAudioLanguages { get; set; }
+        public bool ShowReviews { get; set; }
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }
