@@ -23,6 +23,7 @@
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseerr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Links</h3></button>
+                <button class="jellyfin-tab-button" data-tab="watchlist" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Watchlist Settings</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
                 <div id="enhanced" class="jellyfin-tab-content active" style="display: block; font-family: inherit;">
@@ -233,6 +234,50 @@
                                     <input id="showArrLinksAsText" is="emby-checkbox" type="checkbox"/>
                                     <span>Show links as text instead of icons</span>
                                 </label>
+                            </div>
+                        </div>
+                    </fieldset>
+                </div>
+                 <div id="watchlist" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Watchlist Settings</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="watchlistEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Watchlist<sup> β</sup></span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds the ability to add items to a personal watchlist. <br>This feature is adapted from <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks">ranaldsgift/KefinTweaks</a>.</div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">To View Your Watchlist:</h4>
+                                        <p class="fieldDescription" style="margin: 0;">To see your watchlisted items, you need to create a new view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
+                                            <li>Install the <strong>Custom Tabs</strong> plugin and all it's pre-requisites.</li>
+                                            <li>Navigate to Dashboard > General > Custom Tabs and add a new tab.</li>
+                                            <li>Add "Display Text" according to your preference</li>
+                                            <li>Copy the code below and paste it into the 'HTML Content'.</li>
+                                        </ol>
+                                        <div style="position: relative;">
+                                            <button type="button" id="copyWatchlistHtmlBtn" is="emby-button" class="raised raised-mini emby-button" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
+                                                <span id="copyWatchlistBtnText" style="vertical-align: middle;">Copy</span>
+                                            </button>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="sections watchlist"&gt;
+    &lt;div class="watchlist-movies"&gt;&lt;/div&gt;
+    &lt;div class="watchlist-series"&gt;&lt;/div&gt;
+    &lt;div class="watchlist-episodes"&gt;&lt;/div&gt;
+&lt;/div&gt;</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            Already have Custom Tabs installed?
+                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </fieldset>
@@ -545,6 +590,7 @@
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
+                document.querySelector('#watchlistEnabled').checked = config.WatchlistEnabled;
 
                 Dashboard.hideLoadingMsg();
             });
@@ -593,6 +639,8 @@
             config.RadarrUrl = document.querySelector('#radarrUrl').value;
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
+            config.WatchlistEnabled = document.querySelector('#watchlistEnabled').checked;
+
 
             try {
                 const result = await ApiClient.updatePluginConfiguration(pluginId, config);
@@ -619,6 +667,56 @@
         form.addEventListener('submit', saveConfig);
         clearLocalStorageBtn.addEventListener('click', clearLocalStorage);
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
+        if (copyWatchlistHtmlBtn) {
+            copyWatchlistHtmlBtn.addEventListener('click', () => {
+                const codeText = `<div class="sections watchlist">\n    <div class="watchlist-movies"></div>\n    <div class="watchlist-series"></div>\n    <div class="watchlist-episodes"></div>\n</div>`;
+                const copyBtnText = document.querySelector('#copyWatchlistBtnText');
+                const copyBtnIcon = copyWatchlistHtmlBtn.querySelector('i');
+
+                const success = () => {
+                    copyBtnText.textContent = 'Copied!';
+                    copyBtnIcon.textContent = 'check';
+                    copyWatchlistHtmlBtn.style.color = '#52b54b'; // Green success color
+                    setTimeout(() => {
+                        copyBtnText.textContent = 'Copy';
+                        copyBtnIcon.textContent = 'content_copy';
+                        copyWatchlistHtmlBtn.style.color = ''; // Reset color
+                    }, 2500);
+                };
+
+                const error = (err) => {
+                    console.error('Failed to copy text: ', err);
+                    copyBtnText.textContent = 'Failed';
+                    copyBtnIcon.textContent = 'error';
+                    copyWatchlistHtmlBtn.style.color = '#dc3545'; // Red error color
+                    setTimeout(() => {
+                        copyBtnText.textContent = 'Copy';
+                        copyBtnIcon.textContent = 'content_copy';
+                        copyWatchlistHtmlBtn.style.color = ''; // Reset color
+                    }, 2500);
+                };
+
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(codeText).then(success).catch(error);
+                } else {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = codeText;
+                    textArea.style.position = 'fixed';
+                    textArea.style.top = '-9999px';
+                    textArea.style.left = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy') ? success() : error(new Error('Copy command failed'));
+                    } catch (err) {
+                        error(err);
+                    } finally {
+                        document.body.removeChild(textArea);
+                    }
+                }
+            });
+        }
     })();
 </script>
 </div>
