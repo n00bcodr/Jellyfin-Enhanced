@@ -23,7 +23,7 @@
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseerr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Links</h3></button>
-                <button class="jellyfin-tab-button" data-tab="watchlist" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Watchlist</h3></button>
+                <button class="jellyfin-tab-button" data-tab="watchlist" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Watchlist Settings</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
                 <div id="enhanced" class="jellyfin-tab-content active" style="display: block; font-family: inherit;">
@@ -670,7 +670,6 @@
 const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
         if (copyWatchlistHtmlBtn) {
             copyWatchlistHtmlBtn.addEventListener('click', () => {
-                // Correctly formatted HTML content to be copied
                 const codeText = `<div class="sections watchlist">\n    <div class="watchlist-movies"></div>\n    <div class="watchlist-series"></div>\n    <div class="watchlist-episodes"></div>\n</div>`;
                 const copyBtnText = document.querySelector('#copyWatchlistBtnText');
                 const copyBtnIcon = copyWatchlistHtmlBtn.querySelector('i');
@@ -698,11 +697,9 @@ const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
                     }, 2500);
                 };
 
-                // Use modern clipboard API if available (https), with a fallback for http
                 if (navigator.clipboard && window.isSecureContext) {
                     navigator.clipboard.writeText(codeText).then(success).catch(error);
                 } else {
-                    // Fallback for non-secure contexts (http)
                     const textArea = document.createElement('textarea');
                     textArea.value = codeText;
                     textArea.style.position = 'fixed';
