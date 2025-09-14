@@ -116,6 +116,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🎬 Custom Pause Screen:** A beautifully designed, informative overlay when you pause a video. This feature is a modified version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen).
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
+- **🔖 Watchlist** Watchlist any item and access your watchlist using a [CustomTab](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/tree/main/src)
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 
 <br>

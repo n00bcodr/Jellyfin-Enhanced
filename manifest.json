@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- feat: Watchlist (#48)\n - Depends on Avaiability of Custom Tabs",
+                "targetAbi": "10.10.0.0",
+                "version": "7.3.0.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.3.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "a3f7e0a3f456b37858589d2daf2b1216",
+                "timestamp": "2025-09-14T04:52:00Z"
+            },
+            {
                 "changelog": "- Add TMDB reviews feature to item details page\n - Update README.md",
                 "targetAbi": "10.10.0.0",
                 "version": "7.2.0.0",
