@@ -10,6 +10,19 @@
             return;
         }
 
+        const styleId = 'watchlist-styles';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                .watchlist-button[data-active="true"] .material-icons,
+                .watchlist-icon[data-active="true"] .material-icons {
+                    font-family: 'Material Icons';
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         console.log(`${logPrefix} Initializing...`);
 
         async function fetchLikedItems(type) {
@@ -299,7 +312,10 @@
                 console.warn(`${logPrefix} Could not find card parent for overlay container`);
                 return;
             }
-
+            const itemType = card.getAttribute('data-type');
+            if (!['Movie', 'Series', 'Episode'].includes(itemType)) {
+                return;
+            }
             const itemId = card.getAttribute('data-id');
             if (!itemId) {
                 console.warn(`${logPrefix} Could not find data-id on card element`);
