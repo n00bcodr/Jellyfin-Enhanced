@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -20,12 +22,15 @@ jobs:
       - name: Install dependencies
         run: npm install ajv ajv-cli
 
-      - name: Check for new language file naming
+      - name: Get changed translation files
+        id: changed_files
         run: |
-          # Get a list of new files added to the locales directory in this PR
           new_files=$(git diff --name-only --diff-filter=A ${{ github.base_ref }} ${{ github.head_ref }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/')
+          echo "::set-output name=files::$new_files"
 
-          for file in $new_files; do
+      - name: Validate new language file naming
+        run: |
+          for file in ${{ steps.changed_files.outputs.files }}; do
             filename=$(basename "$file")
             # Check if filename is a two-letter code followed by .json
             if ! [[ "$filename" =~ ^[a-z]{2}\.json$ ]]; then
