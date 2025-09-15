@@ -141,7 +141,7 @@
                 'jellyseerr/ui.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'arr-links.js',
+                'qualitytags.js', 'genretags.js', 'arr-links.js',
                 'watchlist/cardBuilder.js', 'watchlist/watchlist.js'
             ];
 
@@ -161,6 +161,9 @@
                 }
                 if (typeof window.JellyfinEnhanced.initializeQualityTags === 'function') {
                     window.JellyfinEnhanced.initializeQualityTags();
+                }
+                if (typeof window.JellyfinEnhanced.initializeGenreTags === 'function') {
+                    window.JellyfinEnhanced.initializeGenreTags();
                 }
                 if (typeof window.JellyfinEnhanced.initializeArrLinksScript === 'function') {
                     window.JellyfinEnhanced.initializeArrLinksScript();

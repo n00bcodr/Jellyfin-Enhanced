@@ -628,6 +628,12 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_quality_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_quality_tags_desc')}</div></div>
                                 </label>
                             </div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="genreTagsToggle" ${JE.currentSettings.genreTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_genre_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_genre_tags_desc')}</div></div>
+                                </label>
+                            </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="removeContinueWatchingToggle" ${JE.currentSettings.removeContinueWatchingEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -818,6 +824,7 @@
         document.getElementById('showAudioLanguagesToggle').addEventListener('change', (e) => { JE.currentSettings.showAudioLanguages = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_audio_language_display', e.target.checked)); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove()); } else { JE.runLanguageCheck(); } resetAutoCloseTimer(); });
         document.getElementById('removeContinueWatchingToggle').addEventListener('change', (e) => { JE.currentSettings.removeContinueWatchingEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_remove_continue_watching', e.target.checked)); resetAutoCloseTimer(); });
         document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_quality_tags', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
+        document.getElementById('genreTagsToggle').addEventListener('change', (e) => { JE.currentSettings.genreTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_genre_tags', e.target.checked)}.<br> Refresh page to apply.`); if (!e.target.checked) { document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove()); } resetAutoCloseTimer(); });
         document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_custom_pause_screen', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
 
         const setupPresetHandlers = (containerId, presets, type) => {

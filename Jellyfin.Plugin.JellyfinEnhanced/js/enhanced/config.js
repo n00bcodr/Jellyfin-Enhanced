@@ -102,6 +102,7 @@
                 removeContinueWatchingEnabled: pluginConfig.RemoveContinueWatchingEnabled,
                 pauseScreenEnabled: pluginConfig.PauseScreenEnabled,
                 qualityTagsEnabled: pluginConfig.QualityTagsEnabled,
+                genreTagsEnabled: pluginConfig.GenreTagsEnabled,
                 lastOpenedTab: 'shortcuts'
             };
         } catch (e) {
@@ -124,6 +125,7 @@
                 removeContinueWatchingEnabled: false,
                 pauseScreenEnabled: true,
                 qualityTagsEnabled: false,
+                genreTagsEnabled: false,
                 lastOpenedTab: 'shortcuts'
             };
         }

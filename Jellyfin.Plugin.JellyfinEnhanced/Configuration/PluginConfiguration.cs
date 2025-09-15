@@ -42,6 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowReviews = false;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
+            GenreTagsEnabled = false;
             WatchlistEnabled = true;
             Shortcuts = new List<Shortcut>
             {
@@ -122,5 +123,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RadarrUrl { get; set; }
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
+        public bool GenreTagsEnabled { get; set; }
     }
 }

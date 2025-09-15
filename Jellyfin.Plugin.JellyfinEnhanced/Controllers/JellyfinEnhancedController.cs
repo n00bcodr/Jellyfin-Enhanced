@@ -359,6 +359,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowReviews,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
+                config.GenreTagsEnabled,
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,

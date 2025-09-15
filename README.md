@@ -31,6 +31,7 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
   - [🎨 Custom Styling](#-custom-styling)
     - [Pause Screen CSS](#pause-screen-css)
     - [Quality Tags CSS](#quality-tags-css)
+    - [Genre Tags CSS](#genre-tags-css)
     - [Enhanced Panel CSS](#panel-css)
   - [🫚 Project Structure](#-project-structure)
     - [File Structure](#file-structure)
@@ -115,6 +116,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **✒️ Show Reviews from TMDB:** Option to show TMDB reviews of an item in Jellyfin.
 - **🎬 Custom Pause Screen:** A beautifully designed, informative overlay when you pause a video. This feature is a modified version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen).
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
+- **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🔖 Watchlist** Watchlist any item and access your watchlist using a [CustomTab](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/tree/main/src)
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
@@ -389,7 +391,7 @@ Quality tags are injected into each card/poster with this structure:
         bottom: auto !important;
         align-items: flex-end !important;
     }
-  ```
+    ```
   - Bottom Left
     ```css
     .quality-overlay-container {
@@ -423,14 +425,144 @@ Quality tags are injected into each card/poster with this structure:
   .quality-overlay-label.audio-codec{ display: none !important; }
   ```
 
-> [!Note]
+> **Note:**
 >* Always use `!important` to ensure your custom styles override the defaults.
 >* Only the **best resolution** tag per item is shown (e.g. you won’t see both 4K and 1080p).
 >* `LOW-RES` is the fallback for anything below 480p.
 >* Tags are sorted automatically with resolution first, then video features, then audio.
+>
 
 </details>
 
+### <a id="genre-tags-css"></a>
+
+<details> <summary style="font-size: 1.2em;">Genre Tags</summary> <br>
+
+Genre tags appear on the top right of posters. By default, they are circular icons that expand on hover to show the genre name.
+
+The HTML structure for the tags is as follows:
+
+
+```html
+<div class="cardImageContainer">
+    <div class="genre-overlay-container">
+        <div class="genre-tag" title="Action">
+            <span class="material-icons">local_fire_department</span>
+            <span class="genre-text">Action</span>
+        </div>
+        </div>
+</div>
+
+```
+
+**Classes**
+
+-   **`.genre-overlay-container`**: The main container for all genre tags on a card.
+
+-   **`.genre-tag`**: The individual tag for a single genre.
+
+-   **`.genre-text`**: The text part of the tag, which is hidden by default.
+
+-   **`.card:hover .genre-tag`**: This selector is used to define the expanded style when a user hovers over the card.
+
+<br>
+
+**Customization Examples**
+--------------------------
+
+| Element | CSS Selector | Example CSS |
+| --- | --- | --- |
+| **All Tags** | `.genre-tag` | `.genre-tag { background-color: #007bff !important; }` |
+| **Icon Size** | `.genre-tag .material-icons` | `.genre-tag .material-icons { font-size: 22px !important; }` |
+| **Text Style** | `.genre-tag .genre-text` | `.genre-tag .genre-text { font-weight: bold !important; }` |
+| **Remove Hover Animation** | `.card:hover .genre-tag` | `.card:hover .genre-tag { width: 30px !important; }` |
+| **Always Show Text** | `.genre-tag .genre-text` | `.genre-tag .genre-text { display: inline !important; }` |
+| **Stack Horizontally** | `.genre-overlay-container` | `.genre-overlay-container { flex-direction: row !important; }` |
+
+
+<br>
+
+**CSS Examples**
+----------------
+
+-   **Make Tags Square Instead of Circular**
+
+    ```css
+    .genre-tag {
+        border-radius: 4px !important;
+    }
+    .card:hover .genre-tag {
+        border-radius: 4px !important;
+    }
+
+    ```
+
+-   **Always Show Text (No Hover Animation)**
+
+    ```css
+    .genre-tag {
+        width: auto !important;
+        border-radius: 14px !important;
+        padding: 0 8px !important;
+    }
+    .genre-tag .genre-text {
+        display: inline !important;
+    }
+
+    ```
+
+-   **Change the Background Color**
+
+    ```css
+    .genre-tag {
+        background-color: rgba(100, 100, 255, 0.8) !important;
+        color: #fff !important;
+    }
+
+    ```
+
+-  **Position of Tags**
+
+
+     - Top Right
+
+       ```css
+       .genre-overlay-container {
+           top: 6px !important;
+           right: 6px !important;
+           left: auto !important;
+           bottom: auto !important;
+           align-items: flex-end !important;
+       }
+       ```
+     - Bottom Left
+
+       ```css
+       .genre-overlay-container {
+           bottom: 6px !important;
+           left: 6px !important;
+           top: auto !important;
+           right: auto !important;
+           align-items: flex-start !important;
+       }
+       ```
+     - Bottom Right
+
+       ```css
+       .genre-overlay-container {
+           bottom: 6px !important;
+           right: 6px !important;
+           top: auto !important;
+           left: auto !important;
+           align-items: flex-end !important;
+       }
+       ```
+> **Note:**
+> -   Remember to use `!important` in your custom CSS to override the default styles from the plugin.
+> -   The plugin will show a maximum of three genre tags per item.
+>
+
+</details>
 
 ### <a id="panel-css"></a>
 
@@ -582,6 +714,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     ├── elsewhere.js
     ├── pausescreen.js
     ├── qualitytags.js
+    ├── genretags.js
     └── plugin.js
 ```
 
@@ -611,6 +744,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
 
 * **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
+*
+* **`genretags.js`**: Manages the display of media genre information as tags directly on the posters.
 
 
 <br>
@@ -626,7 +761,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 - Official Jellyfin Desktop Apps
 
 
-> [!NOTE]
+> [!IMPORTANT]
 > Functionality does not work on anything that does not use Jellyfin Embedded web UI, such as 3rd party apps, Android TV App etc.
 
 

@@ -62,6 +62,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showAudioLanguages" is="emby-checkbox" type="checkbox"/><span>Show available audio languages on item detail page</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags<div>This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div></span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
                                 </div>
                             </details>
                             <div
@@ -578,6 +579,7 @@
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
+                document.querySelector('#genreTagsEnabled').checked = config.GenreTagsEnabled;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
@@ -627,6 +629,7 @@
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
+            config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
