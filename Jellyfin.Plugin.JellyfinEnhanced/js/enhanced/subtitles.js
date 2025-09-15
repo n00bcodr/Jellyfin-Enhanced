@@ -9,7 +9,7 @@
      * @type {Array<object>}
      */
     JE.subtitlePresets = [
-        { name: "Clean White", textColor: "#FFFFFFFF", bgColor: "transparent", previewText: "Aa" },
+        { name: "Clean White", textColor: "#FFFFFFFF", bgColor: "transparent", textShadow: "-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000", previewText: "Aa" },
         { name: "Classic Black Box", textColor: "#FFFFFFFF", bgColor: "#000000FF", previewText: "Aa" },
         { name: "Netflix Style", textColor: "#FFFFFFFF", bgColor: "#000000B2", previewText: "Aa" },
         { name: "Cinema Yellow", textColor: "#FFFF00FF", bgColor: "#000000B2", previewText: "Aa" },
@@ -49,7 +49,7 @@
      * @param {number} fontSize The font size in vw units.
      * @param {string} fontFamily The font family.
      */
-    JE.applySubtitleStyles = (textColor, bgColor, fontSize, fontFamily) => {
+    JE.applySubtitleStyles = (textColor, bgColor, fontSize, fontFamily, textShadow) => {
         const styleElement = document.getElementById('htmlvideoplayer-cuestyle');
         if (!styleElement) return;
 
@@ -69,6 +69,7 @@
                     color: ${textColor} !important;
                     font-size: ${fontSize}vw !important;
                     font-family: ${fontFamily} !important;
+                    text-shadow: ${textShadow || 'none'} !important;
                 }
             `;
             sheet.insertRule(newRule, 0);
@@ -95,7 +96,8 @@
                 stylePreset.textColor,
                 stylePreset.bgColor,
                 fontSizePreset.size,
-                fontFamilyPreset.family
+                fontFamilyPreset.family,
+                stylePreset.textShadow
             );
         }
     };

@@ -845,7 +845,7 @@
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily);
+                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, selectedPreset.textShadow);
                         JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
                         JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
@@ -853,7 +853,7 @@
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                         const stylePreset = JE.subtitlePresets[styleIndex];
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-                        JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, selectedPreset.size, fontFamily);
+                        JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, selectedPreset.size, fontFamily, stylePreset.textShadow);
                         JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
                     } else if (type === 'font-family') {
                         JE.currentSettings.selectedFontFamilyPresetIndex = presetIndex;
@@ -861,7 +861,7 @@
                         const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                         const stylePreset = JE.subtitlePresets[styleIndex];
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-                        JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, fontSize, selectedPreset.family);
+                        JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, fontSize, selectedPreset.family, stylePreset.textShadow);
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     }
 
