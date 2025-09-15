@@ -212,6 +212,27 @@
               content: '•';
               margin: 1em;
             }
+            #pause-screen-close-btn {
+              position: absolute;
+              top: 20px;
+              right: 20px;
+              background: rgba(0,0,0,0.1);
+              border: 1px solid rgba(255,255,255,0.2);
+              color: white;
+              width: 1.5em;
+              height: 1.5em;
+              border-radius: 50%;
+              font-size: 1.5em;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              z-index: 2;
+              transition: background 0.2s;
+            }
+            #pause-screen-close-btn:hover {
+              background: rgba(0,0,0,0.8);
+            }
             /* Accessibility helpers */
             #pause-screen-focus-start, #pause-screen-focus-end {
               position: fixed; width:1px; height:1px; overflow:hidden; clip: rect(0 0 0 0);
@@ -339,12 +360,20 @@
           this.overlayDisc = document.createElement("img");
           this.overlayDisc.id = "pause-screen-disc";
 
+          const closeButton = document.createElement("button");
+          closeButton.id = "pause-screen-close-btn";
+          closeButton.innerHTML = "&times;";
+          closeButton.onclick = () => {
+              this.hideOverlay();
+          };
+
           // Assemble
           this.overlayContent.appendChild(this.overlayBackdrop);
           this.overlayContent.appendChild(this.overlayLogo);
           this.overlayContent.appendChild(this.overlayDetails);
           this.overlayContent.appendChild(this.overlayPlot);
           this.overlayContent.appendChild(this.progressWrap);
+          this.overlayContent.appendChild(closeButton);
 
           this.overlay.appendChild(this.focusStart);
           this.overlay.appendChild(this.overlayContent);
