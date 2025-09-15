@@ -147,7 +147,9 @@
         }
 
         function scanAndProcess() {
-            const elements = document.querySelectorAll('.card .cardImageContainer:not([data-genres-processed])');
+            const elements = Array.from(document.querySelectorAll(
+                'a.cardImageContainer, div.listItemImage'
+            ));
             elements.forEach(el => {
                 el.dataset.genresProcessed = true;
                 visibilityObserver.observe(el);
@@ -179,12 +181,11 @@
                     width: 30px;
                     border-radius: 50%;
                     box-shadow: 0 2px 5px rgba(0,0,0,0.4);
-                    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
                     overflow: hidden;
-                    background-color: rgba(20, 20, 20, 0.8);
+                    background-color: rgba(10, 10, 10, 0.8);
                     color: #E0E0E0;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    backdrop-filter: blur(4px);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    backdrop-filter: blur(10px);
                 }
                 .${tagClass} .material-symbols-outlined {
                     font-size: 1.4em;
