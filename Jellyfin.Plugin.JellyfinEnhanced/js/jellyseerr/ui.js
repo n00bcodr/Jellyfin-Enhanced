@@ -59,18 +59,44 @@
      */
     function fillHoverPopover(item) {
         const downloadStatus = item.mediaInfo?.downloadStatus?.[0] || item.mediaInfo?.downloadStatus4k?.[0];
-        if (!downloadStatus || typeof downloadStatus.size !== 'number' || typeof downloadStatus.sizeLeft !== 'number' || downloadStatus.size <= 0) {
+        if (!downloadStatus) {
+            console.debug(`${logPrefix} No download status found`);
             return null;
         }
-        const percentage = Math.max(0, Math.min(100, Math.round(100 * (1 - downloadStatus.sizeLeft / downloadStatus.size))));
+        const hasValidSizeData = (typeof downloadStatus.size === 'number' &&
+                                typeof downloadStatus.sizeLeft === 'number' &&
+                                downloadStatus.size > 0);
+
+        const isQueued = (downloadStatus.status && downloadStatus.status.toLowerCase() === 'queued');
+
+        if (!hasValidSizeData && !isQueued) {
+            console.debug(`${logPrefix} No valid download status or queued status`);
+            return null;
+        }
+
         const popover = ensureHoverPopover();
-        popover.innerHTML = `
-            <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
-            <div class="jellyseerr-hover-progress"><div class="bar" style="width:${percentage}%;"></div></div>
-            <div class="row">
-                <div>${percentage}%</div>
-                <div class="status">${(downloadStatus.status || 'downloading').toString().replace(/^./, c => c.toUpperCase())}</div>
-            </div>`;
+
+        if (isQueued || downloadStatus.size <= 0) {
+            // For queued items, show 0% progress
+            popover.innerHTML = `
+                <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
+                <div class="jellyseerr-hover-progress"><div class="bar" style="width:0%;"></div></div>
+                <div class="row">
+                    <div>0%</div>
+                    <div class="status">Queued</div>
+                </div>`;
+        } else {
+            // For downloading items, show actual progress
+            const percentage = Math.max(0, Math.min(100, Math.round(100 * (1 - downloadStatus.sizeLeft / downloadStatus.size))));
+            popover.innerHTML = `
+                <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
+                <div class="jellyseerr-hover-progress"><div class="bar" style="width:${percentage}%;"></div></div>
+                <div class="row">
+                    <div>${percentage}%</div>
+                    <div class="status">${(downloadStatus.status || 'downloading').toString().replace(/^./, c => c.toUpperCase())}</div>
+                </div>`;
+        }
+        console.debug(`${logPrefix} Popover filled for ${isQueued ? 'queued' : 'downloading'} item`);
         return popover;
     }
 
