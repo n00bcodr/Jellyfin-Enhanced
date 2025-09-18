@@ -13,6 +13,7 @@
 
         const key = e.key;
         const combo = (e.shiftKey ? 'Shift+' : '') +
+                      (e.metaKey ? 'Meta+' : '') +
                       (e.ctrlKey ? 'Ctrl+' : '') +
                       (e.altKey ? 'Alt+' : '') +
                       (key.match(/^[a-zA-Z]$/) ? key.toUpperCase() : key);
