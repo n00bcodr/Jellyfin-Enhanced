@@ -8,6 +8,8 @@
     // State variables managed by the main jellyseerr.js, but used by UI functions
     let jellyseerrHoverPopover = null;
     let jellyseerrHoverLock = false;
+    let refreshModalInterval = null;
+
 
     // ================================
     // SVG ICONS LIBRARY
@@ -120,6 +122,9 @@
     ui.hideHoverPopover = function() {
         if (jellyseerrHoverPopover && !jellyseerrHoverLock) {
             jellyseerrHoverPopover.classList.remove('show');
+            delete jellyseerrHoverPopover.dataset.tmdbId;
+            delete jellyseerrHoverPopover.dataset.clientX;
+            delete jellyseerrHoverPopover.dataset.clientY;
         }
     };
 
@@ -652,6 +657,7 @@
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             if (summary) button.innerHTML += `<div class="jellyseerr-season-summary">${summary}</div>`;
             button.disabled = disabled;
+            button.className = 'jellyseerr-request-button emby-button jellyseerr-button-tv'; // Reset classes
             button.classList.add('button-submit', className);
         };
         switch (overallStatus) {
@@ -676,6 +682,7 @@
         const setButton = (text, icon, className, disabled = false) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             button.disabled = disabled;
+            button.className = 'jellyseerr-request-button emby-button'; // Reset classes
             button.classList.add('button-submit', className);
         };
         switch (status) {
@@ -684,6 +691,7 @@
                 if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_processing')}</span><span class="jellyseerr-button-spinner"></span>`;
                     button.disabled = true;
+                    button.className = 'jellyseerr-request-button emby-button';
                     button.classList.add('button-submit', 'jellyseerr-button-processing');
                     addDownloadProgressHover(button, item);
                 } else {
@@ -703,27 +711,29 @@
      * @param {Object} item - Media item with download status.
      */
     function addDownloadProgressHover(button, item) {
-        button.addEventListener('mouseenter', (e) => {
+        const showPopover = (e) => {
             const popover = fillHoverPopover(item);
             if (popover) {
-                positionHoverPopover(popover, e.clientX, e.clientY);
+                const clientX = e.clientX || (e.target.getBoundingClientRect().right);
+                const clientY = e.clientY || (e.target.getBoundingClientRect().top - 8);
+                positionHoverPopover(popover, clientX, clientY);
                 popover.classList.add('show');
+                popover.dataset.tmdbId = item.id;
+                popover.dataset.clientX = clientX;
+                popover.dataset.clientY = clientY;
             }
-        });
+        };
+
+        button.addEventListener('mouseenter', showPopover);
         button.addEventListener('mousemove', (e) => {
             if (jellyseerrHoverPopover?.classList.contains('show') && !jellyseerrHoverLock) {
+                jellyseerrHoverPopover.dataset.clientX = e.clientX;
+                jellyseerrHoverPopover.dataset.clientY = e.clientY;
                 positionHoverPopover(jellyseerrHoverPopover, e.clientX, e.clientY);
             }
         });
         button.addEventListener('mouseleave', ui.hideHoverPopover);
-        button.addEventListener('focus', () => {
-            const popover = fillHoverPopover(item);
-            if (popover) {
-                const rect = button.getBoundingClientRect();
-                positionHoverPopover(popover, rect.right, rect.top - 8);
-                popover.classList.add('show');
-            }
-        });
+        button.addEventListener('focus', showPopover);
         button.addEventListener('blur', () => {
             ui.toggleHoverPopoverLock(false);
             ui.hideHoverPopover();
@@ -735,8 +745,13 @@
                 const rect = button.getBoundingClientRect();
                 ui.toggleHoverPopoverLock();
                 if (jellyseerrHoverLock) {
-                    positionHoverPopover(popover, rect.left + rect.width / 2, rect.top - 8);
+                    const clientX = rect.left + rect.width / 2;
+                    const clientY = rect.top - 8;
+                    positionHoverPopover(popover, clientX, clientY);
                     popover.classList.add('show');
+                    popover.dataset.tmdbId = item.id;
+                    popover.dataset.clientX = clientX;
+                    popover.dataset.clientY = clientY;
                 } else {
                     popover.classList.remove('show');
                 }
@@ -833,6 +848,8 @@
      */
     ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null) {
         if (mediaType !== 'tv') return;
+        if (refreshModalInterval) clearInterval(refreshModalInterval);
+
 
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { fetchTvShowDetails, requestTvSeasons, fetchAdvancedRequestData } = JE.jellyseerrAPI;
@@ -846,7 +863,7 @@
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
         const bodyHtml = `<div class="jellyseerr-season-list"></div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
 
-        const { modalElement, show } = create({
+        const modalInstance = create({
             title: JE.t('jellyseerr_modal_title'),
             subtitle: showTitle,
             bodyHtml,
@@ -896,16 +913,59 @@
         });
 
         // Populate season list inside the modal
-        const seasonList = modalElement.querySelector('.jellyseerr-season-list');
+        const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
+        updateSeasonList(seasonList, tvDetails);
+        modalInstance.show();
+
+
+        // Start polling for updates when the modal is shown
+        refreshModalInterval = setInterval(async () => {
+            const freshTvDetails = await fetchTvShowDetails(tmdbId);
+            if (freshTvDetails) {
+                updateSeasonList(seasonList, freshTvDetails);
+            }
+        }, 10000); // Refresh every 10 seconds
+
+        // Add a listener to stop polling when the modal is closed
+        const originalClose = modalInstance.close;
+        modalInstance.close = () => {
+            if (refreshModalInterval) clearInterval(refreshModalInterval);
+            originalClose();
+        };
+
+        if (showAdvanced) {
+            try {
+                const data = await fetchAdvancedRequestData('tv');
+                populateAdvancedOptions(modalInstance.modalElement, data, 'tv');
+            } catch (error) {
+                console.error(`${logPrefix} Failed to load TV advanced options:`, error);
+                JE.toast('Failed to load server options', 3000);
+            }
+        }
+    };
+
+    function updateSeasonList(seasonListElement, tvDetails) {
+        if (!seasonListElement || !tvDetails) return;
+
         const seasonStatusMap = {};
         tvDetails.mediaInfo?.seasons?.forEach(s => { seasonStatusMap[s.seasonNumber] = s.status; });
         tvDetails.mediaInfo?.requests?.forEach(r => r.seasons?.forEach(sr => { seasonStatusMap[sr.seasonNumber] = sr.status; }));
 
         tvDetails.seasons.filter(s => s.seasonNumber > 0).forEach(season => {
-            const apiStatus = seasonStatusMap[season.seasonNumber];
+            const seasonNumber = season.seasonNumber;
+            let seasonItem = seasonListElement.querySelector(`.jellyseerr-season-item[data-season-number="${seasonNumber}"]`);
+
+            // If the season item doesn't exist, create it
+            if (!seasonItem) {
+                seasonItem = document.createElement('div');
+                seasonItem.className = 'jellyseerr-season-item';
+                seasonItem.dataset.seasonNumber = seasonNumber;
+                seasonListElement.appendChild(seasonItem);
+            }
+
+            const apiStatus = seasonStatusMap[seasonNumber];
             const canRequest = !apiStatus || apiStatus === 1;
-            const seasonItem = document.createElement('div');
-            seasonItem.className = `jellyseerr-season-item ${canRequest ? '' : 'disabled'}`;
+
             let statusText = JE.t('jellyseerr_season_status_not_requested'), statusClass = 'not-requested';
             switch (apiStatus) {
                 case 2:
@@ -913,21 +973,37 @@
                 case 4: statusText = JE.t('jellyseerr_season_status_partial'); statusClass = 'partially-available'; break;
                 case 5: statusText = JE.t('jellyseerr_season_status_available'); statusClass = 'available'; break;
             }
-            if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.some(ds => ds.episode?.seasonNumber === season.seasonNumber)) {
+
+            if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.some(ds => ds.episode?.seasonNumber === seasonNumber)) {
                 statusText = JE.t('jellyseerr_season_status_processing');
             }
+
+            // Update the content but preserve the checkbox state if it exists
+            const existingCheckbox = seasonItem.querySelector('.jellyseerr-season-checkbox');
+            const isChecked = existingCheckbox ? existingCheckbox.checked : false;
+
             seasonItem.innerHTML = `
-                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${season.seasonNumber}" ${canRequest ? '' : 'disabled'}>
+                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${seasonNumber}" ${canRequest ? '' : 'disabled'}>
                 <div class="jellyseerr-season-info">
-                    <div class="jellyseerr-season-name">${season.name || `Season ${season.seasonNumber}`}</div>
+                    <div class="jellyseerr-season-name">${season.name || `Season ${seasonNumber}`}</div>
                     <div class="jellyseerr-season-meta">${season.airDate ? season.airDate.substring(0, 4) : ''}</div>
                 </div>
                 <div class="jellyseerr-season-episodes">${season.episodeCount || 0} ep</div>
-                <div class="jellyseerr-season-status jellyseerr-season-status-${statusClass}">${statusText}</div>`;
+                <div class="jellyseerr-season-status jellyseerr-season-status-${statusClass}">${statusText}</div>
+            `;
 
-            // Add inline download progress
+            if(existingCheckbox) {
+                seasonItem.querySelector('.jellyseerr-season-checkbox').checked = isChecked;
+            }
+
+            seasonItem.classList.toggle('disabled', !canRequest);
+
+            // Add/Update inline download progress
+            const existingProgress = seasonItem.querySelector('.jellyseerr-inline-progress');
+            if (existingProgress) existingProgress.remove();
+
             if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.length > 0) {
-                const seasonDownloads = tvDetails.mediaInfo.downloadStatus.filter(ds => ds.episode?.seasonNumber === season.seasonNumber);
+                const seasonDownloads = tvDetails.mediaInfo.downloadStatus.filter(ds => ds.episode?.seasonNumber === seasonNumber);
                 if (seasonDownloads.length > 0) {
                     const totalSize = seasonDownloads.reduce((sum, ds) => sum + (ds.size || 0), 0);
                     const totalSizeLeft = seasonDownloads.reduce((sum, ds) => sum + (ds.sizeLeft || 0), 0);
@@ -938,22 +1014,51 @@
                     }
                 }
             }
-            seasonList.appendChild(seasonItem);
         });
+    }
 
-        show();
+    /**
+     * Updates existing Jellyseerr results in the DOM with fresh data.
+     * @param {Array} newResults - The new array of result items from the API.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} jellyseerrUserFound - If the current user is linked.
+     */
+    ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound) {
+        const existingButtons = document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id]');
+        if (existingButtons.length === 0) return;
 
-        if (showAdvanced) {
-            try {
-                const data = await fetchAdvancedRequestData('tv');
-                populateAdvancedOptions(modalElement, data, 'tv');
-            } catch (error) {
-                console.error(`${logPrefix} Failed to load TV advanced options:`, error);
-                JE.toast('Failed to load server options', 3000);
+        existingButtons.forEach(button => {
+            const tmdbId = button.dataset.tmdbId;
+            const newItem = newResults.find(item => item.id.toString() === tmdbId);
+            if (!newItem) return;
+
+            const oldItemJSON = button.dataset.searchResultItem;
+            if (!oldItemJSON) return;
+
+            // Simple check: compare JSON strings of mediaInfo
+            const oldMediaInfo = JSON.parse(oldItemJSON).mediaInfo;
+            const newMediaInfo = newItem.mediaInfo;
+            if (JSON.stringify(oldMediaInfo) !== JSON.stringify(newMediaInfo)) {
+                console.log(`${logPrefix} Status change detected for TMDB ID ${tmdbId}. Updating button.`);
+                configureRequestButton(button, newItem, isJellyseerrActive, jellyseerrUserFound);
+
+                // If the popover for this item is currently visible, update it
+                if (jellyseerrHoverPopover &&
+                    jellyseerrHoverPopover.classList.contains('show') &&
+                    jellyseerrHoverPopover.dataset.tmdbId === tmdbId) {
+
+                    console.log(`${logPrefix} Active popover found for TMDB ID ${tmdbId}. Refreshing content.`);
+                    const popoverContent = fillHoverPopover(newItem);
+                    if (popoverContent) {
+                        const { clientX, clientY } = jellyseerrHoverPopover.dataset;
+                        positionHoverPopover(popoverContent, parseFloat(clientX), parseFloat(clientY));
+                    } else {
+                        ui.hideHoverPopover(); // Hide if there's no longer valid download data
+                    }
+                }
             }
-        }
+        });
     };
-
     // Expose the UI module on the global JE object
     ui.icons = icons;
     JE.jellyseerrUI = ui;

@@ -26,13 +26,15 @@
         let isJellyseerrOnlyMode = false;
         let hiddenSections = [];
         let jellyseerrOriginalPosition = null;
+        let refreshInterval = null;
+
 
         // Destructure modules for easy access
         const { checkUserStatus, search, requestMedia } = JE.jellyseerrAPI;
         const {
             addMainStyles, addSeasonModalStyles, updateJellyseerrIcon,
             renderJellyseerrResults, showMovieRequestModal, showSeasonSelectionModal,
-            hideHoverPopover, toggleHoverPopoverLock
+            hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults
         } = JE.jellyseerrUI;
 
         /**
@@ -101,6 +103,24 @@
         }
 
         /**
+         * Fetches fresh data and updates the existing UI elements.
+         * @param {string} query The current search query.
+         */
+        async function refreshJellyseerrData(query) {
+            if (!query || !document.querySelector('.jellyseerr-section')) return;
+
+            console.log(`${logPrefix} Refreshing data for query: "${query}"`);
+            try {
+                const data = await search(query);
+                if (data.results) {
+                    updateJellyseerrResults(data.results, isJellyseerrActive, jellyseerrUserFound);
+                }
+            } catch (error) {
+                console.warn(`${logPrefix} Failed to refresh Jellyseerr data:`, error);
+            }
+        }
+
+        /**
          * Sets up DOM observation for search page changes.
          */
         function initializePageObserver() {
@@ -111,6 +131,8 @@
                 const currentQuery = isSearchPage ? new URLSearchParams(window.location.hash.split('?')[1])?.get('query') : null;
 
                 if (isSearchPage && currentQuery?.trim()) {
+                    if (refreshInterval) clearInterval(refreshInterval);
+                    refreshInterval = setInterval(() => refreshJellyseerrData(currentQuery), 15000); // Refresh every 15 seconds
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         if (!isJellyseerrActive) {
@@ -132,6 +154,7 @@
                     }, 1000);
                 } else {
                     clearTimeout(debounceTimeout);
+                    if (refreshInterval) clearInterval(refreshInterval);
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
