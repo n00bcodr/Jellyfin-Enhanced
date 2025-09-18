@@ -19,6 +19,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoskipInterval = 500;
 
             // Jellyfin Elsewhere Settings
+            ElsewhereEnabled = true;
             TMDB_API_KEY = "";
             DEFAULT_REGION = "US";
             DEFAULT_PROVIDERS = "";
@@ -84,6 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int HelpPanelAutocloseDelay { get; set; }
 
         // Jellyfin Elsewhere Settings
+        public bool ElsewhereEnabled { get; set; }
         public string TMDB_API_KEY { get; set; }
         public string DEFAULT_REGION { get; set; }
         public string DEFAULT_PROVIDERS { get; set; }

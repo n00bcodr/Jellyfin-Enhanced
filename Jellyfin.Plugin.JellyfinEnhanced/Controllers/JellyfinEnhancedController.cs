@@ -336,6 +336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.AutoskipInterval,
 
                 // Jellyfin Elsewhere Settings
+                config.ElsewhereEnabled,
                 config.TMDB_API_KEY,
                 config.DEFAULT_REGION,
                 config.DEFAULT_PROVIDERS,

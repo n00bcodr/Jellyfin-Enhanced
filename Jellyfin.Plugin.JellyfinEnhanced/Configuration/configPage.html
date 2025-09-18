@@ -123,6 +123,12 @@
                 <div id="elsewhere" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Configuration</h3></legend>
+                        <div class="checkboxContainer" style="margin-bottom: 2em;">
+                            <label>
+                                <input id="elsewhereEnabled" is="emby-checkbox" type="checkbox"/>
+                                <span>Enable Elsewhere<div style="font-size: .9em;">Show Streaming Provider Lookup on Item Details Page</div></span>
+                            </label>
+                        </div>
                         <div class="configSection">
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="TMDB_API_KEY">TMDB API Key</label>
@@ -562,6 +568,7 @@
                 // Load all other settings
                 document.querySelector('#ToastDuration').value = config.ToastDuration;
                 document.querySelector('#HelpPanelAutocloseDelay').value = config.HelpPanelAutocloseDelay;
+                document.querySelector('#elsewhereEnabled').checked = config.ElsewhereEnabled;
                 document.querySelector('#TMDB_API_KEY').value = config.TMDB_API_KEY;
                 document.querySelector('#DEFAULT_REGION').value = config.DEFAULT_REGION;
                 document.querySelector('#DEFAULT_PROVIDERS').value = config.DEFAULT_PROVIDERS;
@@ -612,6 +619,7 @@
 
             config.ToastDuration = parseInt(document.querySelector('#ToastDuration').value, 10);
             config.HelpPanelAutocloseDelay = parseInt(document.querySelector('#HelpPanelAutocloseDelay').value, 10);
+            config.ElsewhereEnabled = document.querySelector('#elsewhereEnabled').checked;
             config.TMDB_API_KEY = document.querySelector('#TMDB_API_KEY').value;
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;

@@ -9,6 +9,10 @@
      * It will only run if a TMDB API key is configured.
      */
     JE.initializeElsewhereScript = function() {
+        if (!JE.pluginConfig.ElsewhereEnabled) {
+            console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Feature is disabled in plugin settings.');
+            return;
+        }
         // --- Configuration ---
         const TMDB_API_KEY = JE.pluginConfig.TMDB_API_KEY || '';
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
