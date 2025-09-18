@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Improve download status popover handling\n - Add auto-refresh for Jellyseerr UI and modals\n - Add Meta key support to shortcut detection\n - Add Elsewhere feature toggle to plugin settings",
+                "targetAbi": "10.10.7.0",
+                "version": "7.5.0.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.5.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "96A4DE77B6FD91EA9AEE9DACD39DFA6A",
+                "timestamp": "2025-09-18T16:41:38"
+            },
+            {
                 "changelog": "- Add Genre Tags\n - Add a closebutton for pausescreen to remove the overlay #50\n - Create Hungarian Translations (#52, #49)\n - Add text shadow to subtitle styles #47",
                 "targetAbi": "10.10.7.0",
                 "version": "7.4.0.0",
