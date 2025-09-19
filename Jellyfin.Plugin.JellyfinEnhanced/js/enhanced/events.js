@@ -145,7 +145,7 @@
         const runPageSpecificFunctions = () => {
             if (JE.isVideoPage()) {
                 JE.addOsdSettingsButton();
-                JE.startAutoSkip();
+                JE.initializeAutoSkipObserver();
                 JE.applySavedStylesWhenReady();
             } else {
                 JE.stopAutoSkip();

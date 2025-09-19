@@ -333,7 +333,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Jellyfin Enhanced Settings
                 config.ToastDuration,
                 config.HelpPanelAutocloseDelay,
-                config.AutoskipInterval,
 
                 // Jellyfin Elsewhere Settings
                 config.ElsewhereEnabled,

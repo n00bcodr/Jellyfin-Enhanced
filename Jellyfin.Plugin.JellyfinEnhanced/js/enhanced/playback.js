@@ -193,39 +193,39 @@
     };
 
     /**
-     * Handles the logic for automatically skipping intros and outros.
+     * Initializes a MutationObserver to watch for the skip button's appearance.
      */
-    const autoSkipHandler = () => {
-        const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
-        if (!skipButton) return;
+    JE.initializeAutoSkipObserver = () => {
+        const skipButtonObserver = new MutationObserver((mutationsList) => {
+            for (const mutation of mutationsList) {
+                if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                    const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
+                    if (skipButton && !JE.state.skipToastShown) {
+                        const buttonText = skipButton.textContent || '';
+                        if (JE.currentSettings.autoSkipIntro && buttonText.includes('Skip Intro')) {
+                            skipButton.click();
+                            JE.toast(JE.t('toast_auto_skipped_intro'));
+                            JE.state.skipToastShown = true;
+                        } else if (JE.currentSettings.autoSkipOutro && buttonText.includes('Skip Outro')) {
+                            skipButton.click();
+                            JE.toast(JE.t('toast_auto_skipped_outro'));
+                            JE.state.skipToastShown = true;
+                        }
+                    } else if (!skipButton) {
+                        JE.state.skipToastShown = false; // Reset when the button is gone
+                    }
+                }
+            }
+        });
 
-        const buttonText = skipButton.textContent || '';
-        if (JE.currentSettings.autoSkipIntro && buttonText.includes('Skip Intro')) {
-            skipButton.click();
-            JE.toast(JE.t('toast_auto_skipped_intro'));
-        } else if (JE.currentSettings.autoSkipOutro && buttonText.includes('Skip Outro')) {
-            skipButton.click();
-            JE.toast(JE.t('toast_auto_skipped_outro'));
+        const videoOsd = document.querySelector('.videoOsdBottom');
+        if (videoOsd) {
+            skipButtonObserver.observe(videoOsd, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class']
+            });
         }
     };
-
-    /**
-     * Starts the interval for checking for skippable segments.
-     */
-    JE.startAutoSkip = () => {
-        if (!JE.state.autoSkipInterval) {
-            JE.state.autoSkipInterval = setInterval(autoSkipHandler, JE.CONFIG.AUTOSKIP_INTERVAL);
-        }
-    };
-
-    /**
-     * Stops the auto-skip interval.
-     */
-    JE.stopAutoSkip = () => {
-        if (JE.state.autoSkipInterval) {
-            clearInterval(JE.state.autoSkipInterval);
-            JE.state.autoSkipInterval = null;
-        }
-    };
-
 })(window.JellyfinEnhanced);

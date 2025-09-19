@@ -16,7 +16,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Jellyfin Enhanced Settings
             ToastDuration = 1500;
             HelpPanelAutocloseDelay = 15000;
-            AutoskipInterval = 500;
 
             // Jellyfin Elsewhere Settings
             ElsewhereEnabled = true;
@@ -91,7 +90,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string DEFAULT_PROVIDERS { get; set; }
         public string IGNORE_PROVIDERS { get; set; }
         public long ClearLocalStorageTimestamp { get; set; }
-        public int AutoskipInterval { get; set; }
 
         // Default User Settings
         public bool AutoPauseEnabled { get; set; }

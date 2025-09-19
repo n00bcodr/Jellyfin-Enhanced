@@ -14,7 +14,6 @@
     JE.CONFIG = {
         TOAST_DURATION: pluginConfig.ToastDuration,
         HELP_PANEL_AUTOCLOSE_DELAY: pluginConfig.HelpPanelAutocloseDelay,
-        AUTOSKIP_INTERVAL: pluginConfig.AutoskipInterval,
     };
 
     /**
@@ -22,10 +21,10 @@
      * @type {object}
      */
     JE.state = {
-        autoSkipInterval: null,
         activeShortcuts: {},
         currentContextItemId: null,
-        isContinueWatchingContext: false
+        isContinueWatchingContext: false,
+        skipToastShown: false
     };
 
     /**
