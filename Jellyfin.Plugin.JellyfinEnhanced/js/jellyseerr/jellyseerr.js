@@ -124,11 +124,10 @@
          * Sets up DOM observation for search page changes.
          */
         function initializePageObserver() {
-            const observer = new MutationObserver(() => {
-                updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
-
-                const isSearchPage = window.location.hash.includes('/search.html');
-                const currentQuery = isSearchPage ? new URLSearchParams(window.location.hash.split('?')[1])?.get('query') : null;
+            const handleSearch = () => {
+                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                const isSearchPage = searchInput !== null;
+                const currentQuery = isSearchPage ? searchInput.value : null;
 
                 if (isSearchPage && currentQuery?.trim()) {
                     if (refreshInterval) clearInterval(refreshInterval);
@@ -139,7 +138,7 @@
                             document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                             return;
                         }
-                        const latestQuery = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
+                        const latestQuery = searchInput.value;
                         if (latestQuery === lastProcessedQuery) return;
 
                         if (isJellyseerrOnlyMode) {
@@ -158,6 +157,28 @@
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                }
+            };
+
+            const observer = new MutationObserver(() => {
+                updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
+
+                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                if (searchInput && !searchInput.dataset.jellyseerrListener) {
+                    searchInput.addEventListener('input', handleSearch);
+                    searchInput.dataset.jellyseerrListener = 'true';
+
+                    // Add a click listener for the alphabet picker
+                    const alphaPicker = document.querySelector('.alphaPicker');
+                    if (alphaPicker) {
+                        alphaPicker.addEventListener('click', () => {
+                            // Use a short delay to ensure the input value has updated before we read it
+                            setTimeout(handleSearch, 100);
+                        });
+                    }
+
+                    // Also handle the case where the page loads with a query already in the box
+                    handleSearch();
                 }
             });
             observer.observe(document.body, { childList: true, subtree: true });

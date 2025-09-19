@@ -482,6 +482,12 @@
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
 
+        const isTvMode = document.querySelector('.alphaPicker-tv') !== null;
+        if (isTvMode) {
+            itemsContainer.classList.add('itemsContainer-tv');
+            itemsContainer.classList.add('animatedScrollX');
+        }
+
         results.forEach(item => {
             const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
             itemsContainer.appendChild(card);
