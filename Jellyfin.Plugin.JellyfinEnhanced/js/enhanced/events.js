@@ -146,6 +146,7 @@
             if (JE.isVideoPage()) {
                 JE.addOsdSettingsButton();
                 JE.startAutoSkip();
+                JE.applySavedStylesWhenReady();
             } else {
                 JE.stopAutoSkip();
             }

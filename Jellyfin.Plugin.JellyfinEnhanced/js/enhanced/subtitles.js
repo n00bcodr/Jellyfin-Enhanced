@@ -83,6 +83,13 @@
      * Reads saved subtitle settings and applies them.
      */
     JE.applySavedStylesWhenReady = () => {
+        const styleElement = document.getElementById('htmlvideoplayer-cuestyle');
+        if (!styleElement) {
+            // If the style element isn't ready, try again shortly.
+            // This can happen during page transitions.
+            setTimeout(JE.applySavedStylesWhenReady, 100);
+            return;
+        }
         const savedStyleIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
         const savedFontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
         const savedFontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
