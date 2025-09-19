@@ -25,8 +25,9 @@ jobs:
       - name: Get changed translation files
         id: changed_files
         run: |
-          new_files=$(git diff --name-only --diff-filter=A ${{ github.base_ref }} ${{ github.head_ref }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/')
-          echo "::set-output name=files::$new_files"
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          new_files=$(git diff --name-only --diff-filter=A ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/')
+          echo "files=$new_files" >> $GITHUB_OUTPUT
 
       - name: Validate new language file naming
         run: |
