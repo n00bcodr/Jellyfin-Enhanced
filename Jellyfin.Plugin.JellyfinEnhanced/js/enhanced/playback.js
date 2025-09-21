@@ -192,11 +192,16 @@
         JE.openSettings(performAspectCycle);
     };
 
+    let skipButtonObserver = null;
+
     /**
      * Initializes a MutationObserver to watch for the skip button's appearance.
      */
     JE.initializeAutoSkipObserver = () => {
-        const skipButtonObserver = new MutationObserver((mutationsList) => {
+        if (skipButtonObserver) {
+            return; // Observer is already running
+        }
+        skipButtonObserver = new MutationObserver((mutationsList) => {
             for (const mutation of mutationsList) {
                 if (mutation.type === 'childList' || mutation.type === 'attributes') {
                     const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
@@ -218,14 +223,21 @@
             }
         });
 
-        const videoOsd = document.querySelector('.videoOsdBottom');
-        if (videoOsd) {
-            skipButtonObserver.observe(videoOsd, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['class']
-            });
+        skipButtonObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'style']
+        });
+    };
+
+    /**
+     * Disconnects the MutationObserver for the skip button.
+     */
+    JE.stopAutoSkip = () => {
+        if (skipButtonObserver) {
+            skipButtonObserver.disconnect();
+            skipButtonObserver = null;
         }
     };
 })(window.JellyfinEnhanced);
