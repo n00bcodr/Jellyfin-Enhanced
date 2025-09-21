@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Fix skip button observer management",
+                "targetAbi": "10.10.7.0",
+                "version": "7.6.1.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "B9A91E27FE317BE13C1995B15B46C365",
+                "timestamp": "2025-09-21T05:30:44"
+            },
+            {
                 "changelog": "- Add admin update check and install\n - Fix Jellyseerr search input handling for TV mode UI\n - Ensure subtitle styles are applied after page load\n - Refactor auto-skip logic to use MutationObserver",
                 "targetAbi": "10.10.7.0",
                 "version": "7.6.0.0",
