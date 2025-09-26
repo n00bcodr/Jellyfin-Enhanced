@@ -55,7 +55,16 @@
      */
     api.search = async function(query) {
         try {
-            return await get(`/search?query=${encodeURIComponent(query)}`);
+            const data = await get(`/search?query=${encodeURIComponent(query)}`);
+
+            // Filter out people results before returning
+            if (data.results) {
+                data.results = data.results.filter(result => result.mediaType !== 'person');
+                // Update the totalResults count to reflect filtered results
+                data.totalResults = data.results.length;
+            }
+
+            return data;
         } catch (error) {
             console.error(`${logPrefix} Search failed for query "${query}":`, error);
             return { results: [] };
