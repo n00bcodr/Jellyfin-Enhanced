@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Add missed languages to mapping\n - Filter out 'person' results in Jellyseer search API",
+                "targetAbi": "10.10.7.0",
+                "version": "7.6.2.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.2.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "27868FA98BDEA74E0BD514DF439A7CF2",
+                "timestamp": "2025-09-26T15:51:30"
+            },
+            {
                 "changelog": "- Fix skip button observer management",
                 "targetAbi": "10.10.7.0",
                 "version": "7.6.1.0",
