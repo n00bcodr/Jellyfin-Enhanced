@@ -970,7 +970,7 @@
             }
 
             const apiStatus = seasonStatusMap[seasonNumber];
-            const canRequest = !apiStatus || apiStatus === 1;
+            const canRequest = !apiStatus || apiStatus === 1 || apiStatus === 7;
 
             let statusText = JE.t('jellyseerr_season_status_not_requested'), statusClass = 'not-requested';
             switch (apiStatus) {
