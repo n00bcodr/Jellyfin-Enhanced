@@ -34,6 +34,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await Task.Run(() =>
             {
                 RegisterFileTransformation();
+                if (JellyfinEnhanced.Instance != null && JellyfinEnhanced.Instance.Configuration.WatchlistEnabled)
+                {
+                    RegisterWatchlistHomeSection();
+                }
             }, cancellationToken);
         }
 
@@ -72,6 +76,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.LogWarning("File Transformation plugin not found. Using fallback injection method.");
                 JellyfinEnhanced.Instance?.InjectScript();
             }
+        }
+
+        private void RegisterWatchlistHomeSection()
+        {
+            Assembly? fileTransformationAssembly =
+                AssemblyLoadContext.All.SelectMany(x => x.Assemblies).FirstOrDefault(x =>
+                    x.FullName?.Contains(".HomeScreenSections") ?? false);
+            if (fileTransformationAssembly == null)
+            {
+                _logger.LogWarning("HomeScreen plugin not found. Skipping Watchlist home section registration.");
+                return;
+            }
+            
+            Type? pluginInterfaceType = fileTransformationAssembly.GetType("Jellyfin.Plugin.HomeScreenSections.PluginInterface");
+            if (pluginInterfaceType == null)
+            {
+                _logger.LogWarning("Could not find PluginInterface in HomeScreen assembly. Skipping Watchlist home section registration.");
+                return;
+            }
+
+            JObject payload = new JObject()
+            {
+                { "id", "JellyfinEnhancedWatchlist"}, 
+                { "displayText", "Watchlist"},
+                { "limit", 1},
+                { "resultsEndpoint", "/JellyfinEnhanced/watchlist"}
+            };
+            pluginInterfaceType.GetMethod("RegisterSection")?.Invoke(null, [payload]);
+            _logger.LogInformation("Successfully registered Watchlist home section with the HomeScreen plugin.");
         }
 
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
