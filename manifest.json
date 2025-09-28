@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Allow requests for seasons with status 7\n - Add option to disable all keyboard shortcuts",
+                "targetAbi": "10.10.7.0",
+                "version": "7.7.0.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.7.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "08199D0A312BD0A703316A1B224A990E",
+                "timestamp": "2025-09-28T08:59:08"
+            },
+            {
                 "changelog": "- Add missed languages to mapping\n - Filter out 'person' results in Jellyseer search API",
                 "targetAbi": "10.10.7.0",
                 "version": "7.6.2.0",
