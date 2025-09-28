@@ -505,7 +505,9 @@
                     document.removeEventListener('keydown', closeHelp);
                     document.removeEventListener('mousemove', handleMouseMove);
                     document.removeEventListener('mouseup', handleMouseUp);
-                    document.addEventListener('keydown', JE.keyListener);
+                    if (!JE.pluginConfig.DisableAllShortcuts) {
+                        document.addEventListener('keydown', JE.keyListener);
+                    }
                 }
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
@@ -577,10 +579,11 @@
                 <div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.8);">${JE.t('panel_version', { version: JE.pluginVersion })}</div>
             </div>
             <div class="tabs">
-                <button class="tab-button" data-tab="shortcuts">${JE.t('panel_shortcuts_tab')}</button>
+                ${!JE.pluginConfig.DisableAllShortcuts ? `<button class="tab-button" data-tab="shortcuts">${JE.t('panel_shortcuts_tab')}</button>` : ''}
                 <button class="tab-button" data-tab="settings">${JE.t('panel_settings_tab')}</button>
             </div>
             <div class="panel-main-content" style="padding: 0 20px; flex: 1; overflow-y: auto; position: relative; background: ${panelBgColor};">
+                 ${!JE.pluginConfig.DisableAllShortcuts ? `
                  <div id="shortcuts-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px;">
                  <div class="shortcuts-container" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;">
                         <div style="flex: 1; min-width: 400px;">
@@ -619,7 +622,7 @@
                     <div style="text-align: center; font-size: 11px; color: rgba(255,255,255,0.6);">
                     ${JE.t('panel_shortcuts_footer')}
                     </div>
-                </div>
+                </div>` : ''}
                 <div id="settings-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px; width: 50vw;">
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">⏯️ ${JE.t('panel_settings_playback')}</summary>
@@ -762,123 +765,138 @@
         });
 
         // --- Shortcut Key Binding Logic ---
-        const shortcutKeys = help.querySelectorAll('.shortcut-key');
-        shortcutKeys.forEach(keyElement => {
-            const getOriginalKey = () => JE.state.activeShortcuts[keyElement.dataset.action];
+        if (!JE.pluginConfig.DisableAllShortcuts) {
+            const shortcutKeys = help.querySelectorAll('.shortcut-key');
+            shortcutKeys.forEach(keyElement => {
+                const getOriginalKey = () => JE.state.activeShortcuts[keyElement.dataset.action];
 
-            keyElement.addEventListener('click', () => keyElement.focus());
+                keyElement.addEventListener('click', () => keyElement.focus());
 
-            keyElement.addEventListener('focus', () => {
-                keyElement.textContent = JE.t('panel_shortcuts_listening');
-                keyElement.style.borderColor = primaryAccentColor;
-                keyElement.style.width = '100px';
-            });
+                keyElement.addEventListener('focus', () => {
+                    keyElement.textContent = JE.t('panel_shortcuts_listening');
+                    keyElement.style.borderColor = primaryAccentColor;
+                    keyElement.style.width = '100px';
+                });
 
-            keyElement.addEventListener('blur', () => {
-                keyElement.textContent = getOriginalKey();
-                keyElement.style.borderColor = 'transparent';
-                keyElement.style.width = 'auto';
-            });
+                keyElement.addEventListener('blur', () => {
+                    keyElement.textContent = getOriginalKey();
+                    keyElement.style.borderColor = 'transparent';
+                    keyElement.style.width = 'auto';
+                });
 
-            keyElement.addEventListener('keydown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                keyElement.addEventListener('keydown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
 
-                const labelWrapper = keyElement.nextElementSibling;
+                    const labelWrapper = keyElement.nextElementSibling;
 
-                if (e.key === 'Backspace') {
+                    if (e.key === 'Backspace') {
+                        const action = keyElement.dataset.action;
+
+                        // Load, modify, and save the user's custom shortcuts
+                        const userShortcuts = JE.userShortcutManager.load();
+                        delete userShortcuts[action];
+                        JE.userShortcutManager.save(userShortcuts);
+
+                        // Find the original server default key from the plugin's configuration
+                        const defaultConfig = JE.pluginConfig.Shortcuts.find(s => s.Name === action);
+                        const defaultKey = defaultConfig ? defaultConfig.Key : '';
+
+                        // Update the active shortcuts in memory and what's shown on screen
+                        JE.state.activeShortcuts[action] = defaultKey;
+                        keyElement.textContent = defaultKey;
+                        const indicator = labelWrapper.querySelector('.modified-indicator');
+                        if (indicator) {
+                            indicator.remove();
+                        }
+                        keyElement.blur(); // Exit the "Listening..." mode
+                        return;
+                    }
+
+                    if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+                        return; // Don't allow setting only a modifier key
+                    }
+
+                    const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
                     const action = keyElement.dataset.action;
-
-                    // Load, modify, and save the user's custom shortcuts
+                    const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
+                    if (existingAction && existingAction !== action) {
+                        keyElement.style.background = 'rgb(255 0 0 / 60%)';
+                        keyElement.classList.add('shake-error');
+                        setTimeout(() => {
+                            keyElement.classList.remove('shake-error');
+                            if (document.activeElement === keyElement) {
+                                keyElement.style.background = kbdBackground;
+                            }
+                        }, 500);
+                            // Reject the new keybinding and stop the function
+                        return;
+                    }
+                    // Save the new shortcut
                     const userShortcuts = JE.userShortcutManager.load();
-                    delete userShortcuts[action];
+                    userShortcuts[action] = combo;
                     JE.userShortcutManager.save(userShortcuts);
 
-                    // Find the original server default key from the plugin's configuration
-                    const defaultConfig = JE.pluginConfig.Shortcuts.find(s => s.Name === action);
-                    const defaultKey = defaultConfig ? defaultConfig.Key : '';
+                    // Update active shortcuts
+                    JE.state.activeShortcuts[action] = combo;
 
-                    // Update the active shortcuts in memory and what's shown on screen
-                    JE.state.activeShortcuts[action] = defaultKey;
-                    keyElement.textContent = defaultKey;
-                    const indicator = labelWrapper.querySelector('.modified-indicator');
-                    if (indicator) {
-                        indicator.remove();
+                    // Update the UI and exit edit mode
+                    keyElement.textContent = combo;
+                    if (labelWrapper && !labelWrapper.querySelector('.modified-indicator')) {
+                        const indicator = document.createElement('span');
+                        indicator.className = 'modified-indicator';
+                        indicator.title = 'Modified by user';
+                        indicator.style.cssText = `color:${primaryAccentColor}; font-size: 20px; line-height: 1;`;
+                        indicator.textContent = '•';
+                        labelWrapper.prepend(indicator);
                     }
-                    keyElement.blur(); // Exit the "Listening..." mode
-                    return;
-                }
-
-                if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
-                    return; // Don't allow setting only a modifier key
-                }
-
-                const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
-                const action = keyElement.dataset.action;
-                const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
-                if (existingAction && existingAction !== action) {
-                    keyElement.style.background = 'rgb(255 0 0 / 60%)';
-                    keyElement.classList.add('shake-error');
-                    setTimeout(() => {
-                        keyElement.classList.remove('shake-error');
-                        if (document.activeElement === keyElement) {
-                            keyElement.style.background = kbdBackground;
-                        }
-                    }, 500);
-                        // Reject the new keybinding and stop the function
-                    return;
-                }
-                // Save the new shortcut
-                const userShortcuts = JE.userShortcutManager.load();
-                userShortcuts[action] = combo;
-                JE.userShortcutManager.save(userShortcuts);
-
-                // Update active shortcuts
-                JE.state.activeShortcuts[action] = combo;
-
-                // Update the UI and exit edit mode
-                keyElement.textContent = combo;
-                if (labelWrapper && !labelWrapper.querySelector('.modified-indicator')) {
-                    const indicator = document.createElement('span');
-                    indicator.className = 'modified-indicator';
-                    indicator.title = 'Modified by user';
-                    indicator.style.cssText = `color:${primaryAccentColor}; font-size: 20px; line-height: 1;`;
-                    indicator.textContent = '•';
-                    labelWrapper.prepend(indicator);
-                }
-                keyElement.blur(); // Triggers the blur event to clean up styles
+                    keyElement.blur(); // Triggers the blur event to clean up styles
+                });
             });
-        });
+        }
         resetAutoCloseTimer();
 
-        // --- Remember last opened tab ---
+        // --- Tab Logic ---
         const tabButtons = help.querySelectorAll('.tab-button');
         const tabContents = help.querySelectorAll('.tab-content');
+        const tabsContainer = help.querySelector('.tabs');
 
-        // Set initial tab based on saved settings
-        const lastTab = JE.currentSettings.lastOpenedTab || 'shortcuts';
-        tabButtons.forEach(btn => btn.classList.remove('active'));
-        tabContents.forEach(content => content.classList.remove('active'));
-        help.querySelector(`.tab-button[data-tab="${lastTab}"]`).classList.add('active');
-        help.querySelector(`#${lastTab}-content`).classList.add('active');
+        if (JE.pluginConfig.DisableAllShortcuts) {
+            // If shortcuts are disabled, hide the tab bar and show settings directly.
+            if (tabsContainer) {
+                tabsContainer.style.display = 'none';
+            }
+            const settingsContent = help.querySelector('#settings-content');
+            if (settingsContent) {
+                settingsContent.classList.add('active');
+            }
+        } else {
+            // --- Remember last opened tab ---
+            const lastTab = JE.currentSettings.lastOpenedTab || 'shortcuts';
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            const activeTabButton = help.querySelector(`.tab-button[data-tab="${lastTab}"]`);
+            if(activeTabButton) activeTabButton.classList.add('active');
+            const activeTabContent = help.querySelector(`#${lastTab}-content`);
+            if(activeTabContent) activeTabContent.classList.add('active');
 
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const tab = button.dataset.tab;
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                tabContents.forEach(content => {
-                    content.classList.remove('active');
-                    if (content.id === `${tab}-content`) {
-                        content.classList.add('active');
-                    }
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const tab = button.dataset.tab;
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    tabContents.forEach(content => {
+                        content.classList.remove('active');
+                        if (content.id === `${tab}-content`) {
+                            content.classList.add('active');
+                        }
+                    });
+                    JE.currentSettings.lastOpenedTab = tab;
+                    JE.saveSettings(JE.currentSettings);
+                    resetAutoCloseTimer();
                 });
-                JE.currentSettings.lastOpenedTab = tab;
-                JE.saveSettings(JE.currentSettings);
-                resetAutoCloseTimer();
             });
-        });
-
+        }
 
         // Autoscroll when details sections open
         const allDetails = help.querySelectorAll('details');
@@ -902,7 +920,9 @@
                 document.removeEventListener('keydown', closeHelp);
                 document.removeEventListener('mousemove', handleMouseMove);
                 document.removeEventListener('mouseup', handleMouseUp);
-                document.addEventListener('keydown', JE.keyListener);
+                if (!JE.pluginConfig.DisableAllShortcuts) {
+                    document.addEventListener('keydown', JE.keyListener);
+                }
             }
         };
 
@@ -913,7 +933,11 @@
         };
         document.addEventListener('keydown', closeHelp);
         document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
-        document.removeEventListener('keydown', JE.keyListener);
+
+        if (!JE.pluginConfig.DisableAllShortcuts) {
+            document.removeEventListener('keydown', JE.keyListener);
+        }
+
         document.getElementById('autoPauseToggle').addEventListener('change', (e) => { JE.currentSettings.autoPauseEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_pause', e.target.checked)); resetAutoCloseTimer(); });
         document.getElementById('autoResumeToggle').addEventListener('change', (e) => { JE.currentSettings.autoResumeEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_resume', e.target.checked)); resetAutoCloseTimer(); });
         document.getElementById('autoPipToggle').addEventListener('change', (e) => { JE.currentSettings.autoPipEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_pip', e.target.checked)); resetAutoCloseTimer(); });

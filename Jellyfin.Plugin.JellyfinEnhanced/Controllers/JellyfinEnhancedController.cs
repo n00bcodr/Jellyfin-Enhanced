@@ -360,6 +360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
+                config.DisableAllShortcuts,
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,

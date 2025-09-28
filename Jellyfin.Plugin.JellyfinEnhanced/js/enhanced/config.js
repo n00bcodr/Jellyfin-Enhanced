@@ -102,6 +102,7 @@
                 pauseScreenEnabled: pluginConfig.PauseScreenEnabled,
                 qualityTagsEnabled: pluginConfig.QualityTagsEnabled,
                 genreTagsEnabled: pluginConfig.GenreTagsEnabled,
+                disableAllShortcuts: pluginConfig.DisableAllShortcuts,
                 lastOpenedTab: 'shortcuts'
             };
         } catch (e) {
@@ -125,6 +126,7 @@
                 pauseScreenEnabled: true,
                 qualityTagsEnabled: false,
                 genreTagsEnabled: false,
+                disableAllShortcuts: false,
                 lastOpenedTab: 'shortcuts'
             };
         }

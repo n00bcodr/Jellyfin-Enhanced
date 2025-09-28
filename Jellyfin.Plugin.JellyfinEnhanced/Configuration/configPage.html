@@ -65,6 +65,10 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
                                 </div>
                             </details>
+                            <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="disableAllShortcuts" is="emby-checkbox" type="checkbox"/><span>⌨️ Disable Keyboard Shortcuts</span></label></div>
+                                    <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in enhanced panel</div>
+                                </div>
                             <div
                                 style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: .5em 1em; margin: 2em 0 .5em 0; display: flex; align-items: center; gap: 1em;">
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
@@ -566,6 +570,7 @@
                 populateAddShortcutDropdown();
 
                 // Load all other settings
+                document.querySelector('#disableAllShortcuts').checked = config.DisableAllShortcuts;
                 document.querySelector('#ToastDuration').value = config.ToastDuration;
                 document.querySelector('#HelpPanelAutocloseDelay').value = config.HelpPanelAutocloseDelay;
                 document.querySelector('#elsewhereEnabled').checked = config.ElsewhereEnabled;
@@ -601,6 +606,7 @@
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
                 document.querySelector('#watchlistEnabled').checked = config.WatchlistEnabled;
 
+
                 Dashboard.hideLoadingMsg();
             });
         }
@@ -616,7 +622,7 @@
                 if (index !== -1) finalShortcuts[index] = override;
             });
             config.Shortcuts = finalShortcuts;
-
+            config.DisableAllShortcuts = document.querySelector('#disableAllShortcuts').checked;
             config.ToastDuration = parseInt(document.querySelector('#ToastDuration').value, 10);
             config.HelpPanelAutocloseDelay = parseInt(document.querySelector('#HelpPanelAutocloseDelay').value, 10);
             config.ElsewhereEnabled = document.querySelector('#elsewhereEnabled').checked;

@@ -5,7 +5,24 @@
     'use strict';
 
     /**
-     * The main key listener for all shortcuts.
+     * An always-active key listener specifically for opening the panel.
+     * @param {KeyboardEvent} e The keyboard event.
+     */
+    function panelKeyListener(e) {
+        // Don't open if the panel is already open or if typing in an input field.
+        if (document.getElementById('jellyfin-enhanced-panel') || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            return;
+        }
+
+        if (e.key === '?') {
+            e.preventDefault();
+            e.stopPropagation();
+            JE.showEnhancedPanel();
+        }
+    }
+
+    /**
+     * The main key listener for all other shortcuts.
      * @param {KeyboardEvent} e The keyboard event.
      */
     JE.keyListener = (e) => {
@@ -39,10 +56,6 @@
             e.preventDefault();
             window.location.hash = '#/quickconnect';
             JE.toast('🔗 Quick Connect');
-        } else if (key === '?') {
-            e.preventDefault();
-            e.stopPropagation();
-            JE.showEnhancedPanel();
         } else if (combo === activeShortcuts.PlayRandomItem && !JE.isVideoPage()) {
             e.preventDefault();
             document.getElementById('randomItemButton')?.click();
@@ -251,7 +264,6 @@
         if (serverClearTimestamp > localClearedTimestamp) {
             localStorage.removeItem('jellyfinEnhancedSettings');
             localStorage.setItem('jellyfinEnhancedLastCleared', serverClearTimestamp.toString());
-            //setTimeout(() => JE.toast('⚙️ All settings have been reset by the server admin.', 5000), 2000); //Stop sending a toast notification on every new session
         }
 
         // Initial UI setup
@@ -263,8 +275,14 @@
         setupDOMObserver();
         observeActionSheets();
         addContextMenuListener();
-        document.addEventListener('keydown', JE.keyListener);
 
+        // Always listen for the panel-opening key
+        document.addEventListener('keydown', panelKeyListener);
+
+        // Conditionally listen for all other shortcuts
+        if (!JE.pluginConfig.DisableAllShortcuts) {
+            document.addEventListener('keydown', JE.keyListener);
+        }
 
         // Listeners for tab visibility (auto-pause/resume/PiP)
         document.addEventListener('visibilitychange', () => {
