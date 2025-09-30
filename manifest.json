@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Add TMDB API proxy endpoint\n - Update manifest name to 'Jellyfin Enhanced' to fix auto-update\n - Add configurable custom splash screen feature",
+                "targetAbi": "10.10.7.0",
+                "version": "7.8.0.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.8.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "0273623BB845DBEA33AD558B243CBF8A",
+                "timestamp": "2025-09-30T13:05:09"
+            },
+            {
                 "changelog": "- Allow requests for seasons with status 7\n - Add option to disable all keyboard shortcuts",
                 "targetAbi": "10.10.7.0",
                 "version": "7.7.0.0",
