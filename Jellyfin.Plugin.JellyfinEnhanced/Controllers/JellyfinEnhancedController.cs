@@ -333,6 +333,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Jellyfin Enhanced Settings
                 config.ToastDuration,
                 config.HelpPanelAutocloseDelay,
+                config.EnableCustomSplashScreen,
+                config.SplashScreenImageUrl,
 
                 // Jellyfin Elsewhere Settings
                 config.ElsewhereEnabled,

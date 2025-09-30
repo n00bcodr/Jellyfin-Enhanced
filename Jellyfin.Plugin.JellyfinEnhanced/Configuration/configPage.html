@@ -23,7 +23,7 @@
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseerr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Links</h3></button>
-                <button class="jellyfin-tab-button" data-tab="watchlist" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Watchlist Settings</h3></button>
+                <button class="jellyfin-tab-button" data-tab="extras" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Other Settings</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
                 <div id="enhanced" class="jellyfin-tab-content active" style="display: block; font-family: inherit;">
@@ -249,7 +249,30 @@
                         </div>
                     </fieldset>
                 </div>
-                 <div id="watchlist" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
+                 <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3></h3></legend>
+                        <div class="configSection">
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Custom Splash Screen</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="enableCustomSplashScreen" is="emby-checkbox" type="checkbox"/><span>Enable Custom Splash Screen</span></label></div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="splashScreenImageUrl">Splash Screen Image URL</label>
+                                        <input id="splashScreenImageUrl" is="emby-input" name="splashScreenImageUrl" type="text"/>
+                                        <div class="fieldDescription">URL for the splash screen image. Defaults to Jellyfin banner.</div>
+                                    </div>
+                                </div>
+                                <div
+                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: .5em 1em; margin: 2em 0 .5em 0; display: flex; align-items: center; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
+                                <div>
+                                    Might cause strange behaviour if <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-media-bar">jellyfin-plugin-media-bar</a> is installed.
+                                </div>
+                            </div>
+                            </details>
+                        </div>
+                    </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Watchlist Settings</h3></legend>
                         <div class="configSection">
@@ -570,6 +593,8 @@
                 populateAddShortcutDropdown();
 
                 // Load all other settings
+                document.querySelector('#enableCustomSplashScreen').checked = config.EnableCustomSplashScreen;
+                document.querySelector('#splashScreenImageUrl').value = config.SplashScreenImageUrl;
                 document.querySelector('#disableAllShortcuts').checked = config.DisableAllShortcuts;
                 document.querySelector('#ToastDuration').value = config.ToastDuration;
                 document.querySelector('#HelpPanelAutocloseDelay').value = config.HelpPanelAutocloseDelay;
@@ -622,6 +647,8 @@
                 if (index !== -1) finalShortcuts[index] = override;
             });
             config.Shortcuts = finalShortcuts;
+            config.EnableCustomSplashScreen = document.querySelector('#enableCustomSplashScreen').checked;
+            config.SplashScreenImageUrl = document.querySelector('#splashScreenImageUrl').value;
             config.DisableAllShortcuts = document.querySelector('#disableAllShortcuts').checked;
             config.ToastDuration = parseInt(document.querySelector('#ToastDuration').value, 10);
             config.HelpPanelAutocloseDelay = parseInt(document.querySelector('#HelpPanelAutocloseDelay').value, 10);

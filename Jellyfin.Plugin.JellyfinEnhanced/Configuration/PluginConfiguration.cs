@@ -16,6 +16,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Jellyfin Enhanced Settings
             ToastDuration = 1500;
             HelpPanelAutocloseDelay = 15000;
+            EnableCustomSplashScreen = false;
+            SplashScreenImageUrl = "/web/assets/img/banner-light.png";
 
             // Jellyfin Elsewhere Settings
             ElsewhereEnabled = true;
@@ -83,6 +85,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Jellyfin Enhanced Settings
         public int ToastDuration { get; set; }
         public int HelpPanelAutocloseDelay { get; set; }
+        public bool EnableCustomSplashScreen { get; set; }
+        public string SplashScreenImageUrl { get; set; }
+
 
         // Jellyfin Elsewhere Settings
         public bool ElsewhereEnabled { get; set; }

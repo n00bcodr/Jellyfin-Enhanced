@@ -109,6 +109,23 @@
     }
 
     /**
+     * Loads the splash screen script early to hide media-bar splash
+     */
+    function loadSplashScreenEarly() {
+        if (typeof ApiClient === 'undefined') {
+            setTimeout(loadSplashScreenEarly, 50);
+            return;
+        }
+
+        const splashScript = document.createElement('script');
+        splashScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/splashscreen.js?v=' + Date.now());
+        splashScript.onload = () => {
+            console.log('🪼 Jellyfin Enhanced: Splash screen script loaded early.');
+        };
+        document.head.appendChild(splashScript);
+    }
+
+    /**
      * Main initialization function.
      */
     async function initialize() {
@@ -129,6 +146,11 @@
             window.JellyfinEnhanced.pluginVersion = version;
             window.JellyfinEnhanced.translations = translations;
             console.log('🪼 Jellyfin Enhanced: Public configuration and translations loaded.');
+
+            // Initialize splash screen now that config is available
+            if (typeof window.JellyfinEnhanced.initializeSplashScreen === 'function') {
+                window.JellyfinEnhanced.initializeSplashScreen();
+            }
 
             // Now, load all other feature scripts
             const basePath = '/JellyfinEnhanced/js';
@@ -171,13 +193,18 @@
                 if (typeof window.JellyfinEnhanced.initializeReviewsScript === 'function') {
                     window.JellyfinEnhanced.initializeReviewsScript();
                 }
-                 if (typeof window.JellyfinEnhanced.initializeCardBuilderScript === 'function') {
+                if (typeof window.JellyfinEnhanced.initializeCardBuilderScript === 'function') {
                     window.JellyfinEnhanced.initializeCardBuilderScript();
                 }
                 if (typeof window.JellyfinEnhanced.initializeWatchlistScript === 'function') {
                     window.JellyfinEnhanced.initializeWatchlistScript();
                 }
                 console.log('🪼 Jellyfin Enhanced: All components loaded and initialized.');
+
+                // Hide the splash screen now that everything is ready
+                if (typeof window.JellyfinEnhanced.hideSplashScreen === 'function') {
+                    window.JellyfinEnhanced.hideSplashScreen();
+                }
             });
 
         } catch (error) {
@@ -185,6 +212,10 @@
         }
     }
 
+    // Load splash screen immediately (before main initialization)
+    loadSplashScreenEarly();
+
+    // Then start main initialization
     initialize();
 
 })();
