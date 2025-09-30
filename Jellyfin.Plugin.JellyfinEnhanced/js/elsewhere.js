@@ -474,14 +474,12 @@
 
         // Fetch streaming data
         function fetchStreamingData(tmdbId, mediaType, callback) {
-            if (!TMDB_API_KEY) {
-                callback('Please configure your TMDB API Key in the plugin settings');
-                return;
-            }
-
-            const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`;
-
-            fetch(url)
+            const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`)}?`;
+            fetch(url, {
+                headers: {
+                    "X-Emby-Token": ApiClient.accessToken()
+                }
+            })
                 .then(response => {
                     if (response.ok) {
                         return response.json();

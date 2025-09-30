@@ -20,8 +20,12 @@
 
         function fetchReviews(tmdbId, mediaType) {
             const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-            const url = `https://api.themoviedb.org/3/${apiMediaType}/${tmdbId}/reviews?api_key=${JE.pluginConfig.TMDB_API_KEY}&language=en-US&page=1`;
-            return fetch(url)
+            const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
+            return fetch(url, {
+                    headers: {
+                        "X-Emby-Token": ApiClient.accessToken()
+                    }
+                })
                 .then(response => response.ok ? response.json() : Promise.reject(`API Error: ${response.status}`))
                 .then(data => data.results || [])
                 .catch(error => {

@@ -376,6 +376,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.WatchlistEnabled
             });
         }
+
+        [HttpGet("tmdb/{**apiPath}")]
+        public async Task<IActionResult> ProxyTmdbRequest(string apiPath)
+        {
+            if (!Request.Headers.TryGetValue("X-Emby-Token", out var token) || string.IsNullOrEmpty(token))
+            {
+                return Unauthorized("User authentication required.");
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            {
+                return StatusCode(503, "TMDB API key is not configured.");
+            }
+
+            var httpClient = _httpClientFactory.CreateClient();
+            var queryString = HttpContext.Request.QueryString;
+            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}&api_key={config.TMDB_API_KEY}";
+
+            try
+            {
+                var response = await httpClient.GetAsync(requestUri);
+                var content = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return Content(content, "application/json");
+                }
+
+                return StatusCode((int)response.StatusCode, content);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to proxy TMDB request. Error: {ex.Message}");
+                return StatusCode(500, "Failed to connect to TMDB.");
+            }
+        }
+
         [HttpGet("locales/{lang}.json")]
         public ActionResult GetLocale(string lang)
         {
