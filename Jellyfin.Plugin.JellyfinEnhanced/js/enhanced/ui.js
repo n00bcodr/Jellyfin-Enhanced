@@ -74,23 +74,16 @@
     /**
      * Fetches the latest GitHub release notes and displays them in a notification panel.
      */
-    async function showReleaseNotesNotification(updateInfo = null, isUpdateAvailable = false) {
-        let release = updateInfo;
-        if (!release) {
-            try {
-                const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
-                if (!response.ok) throw new Error('Failed to fetch release data');
-                release = await response.json();
-
-                // Check if this is a newer version for auto-update detection
-                if (!updateInfo && release.tag_name.replace('v', '') > JE.pluginVersion) {
-                    isUpdateAvailable = true;
-                }
-            } catch (error) {
-                console.error('🪼 Jellyfin Enhanced: Failed to fetch release notes:', error);
-                JE.toast('❌ Could not load release notes.');
-                return;
-            }
+    async function showReleaseNotesNotification() {
+        let release;
+        try {
+            const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+            if (!response.ok) throw new Error('Failed to fetch release data');
+            release = await response.json();
+        } catch (error) {
+            console.error('🪼 Jellyfin Enhanced: Failed to fetch release notes:', error);
+            JE.toast('❌ Could not load release notes.');
+            return;
         }
 
         const notificationId = 'jellyfin-release-notes-notification';
@@ -198,26 +191,16 @@
             (release.body.length > 1500 ? release.body.substring(0, 200) + '...' : release.body) :
             'No release notes available.';
 
-        // Progress tracking state
-        let isInstalling = false;
-        let installProgress = 0;
-
         notification.innerHTML = `
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
                 <div style="width: 40px; height: 40px; background: #3e74f2bd; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px;">📋</div>
                 <div>
-                    <div style="font-weight: 600; font-size: 16px; color: #779aeadc;">${isUpdateAvailable ? '🥳 Update Available!' : 'Latest Release Notes'}</div>
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${isUpdateAvailable ? `${JE.pluginVersion} → ${release.tag_name.replace('v', '')}` : release.tag_name}</div>
+                    <div style="font-weight: 600; font-size: 16px; color: #779aeadc;">Latest Release Notes</div>
+                    <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${release.tag_name}</div>
                 </div>
             </div>
             <div style="margin-bottom: 17px; font-size: 13px; color: rgba(255,255,255,0.8); line-height: 1.4; max-height: 300px; overflow-y: auto;">
                 ${markdownToHtml(releaseNotes)}
-            </div>
-            <div id="install-progress" style="display: none; margin-bottom: 12px;">
-                <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden;">
-                    <div id="progress-bar" style="background: #00a4dc; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-                </div>
-                <div id="progress-text" style="font-size: 12px; color: rgba(255,255,255,0.8); margin-top: 4px; text-align: center;"></div>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <a href="${release.html_url}" target="_blank" style="background: #3e74f2bd; border: 1px solid #779aeadc; color: white; text-decoration: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;">View on GitHub</a>
@@ -226,73 +209,6 @@
         `;
 
         document.body.appendChild(notification);
-
-        // Admin-only install button for updates
-        if (isUpdateAvailable) {
-            isCurrentUserAdmin().then(isAdmin => {
-                if (isAdmin) {
-                    const installButton = document.createElement('button');
-                    installButton.id = 'install-update-btn';
-                    installButton.textContent = '⬇️ Install Update';
-                    installButton.style.cssText = 'background: #00a4dc; border: none; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-family: inherit; font-weight: 500; cursor: pointer; margin-left: auto;';
-
-                    installButton.onclick = async () => {
-                        if (isInstalling) return;
-
-                        isInstalling = true;
-                        installButton.disabled = true;
-                        installButton.textContent = 'Installing...';
-                        installButton.style.opacity = '0.6';
-
-                        // Show progress bar
-                        const progressContainer = notification.querySelector('#install-progress');
-                        const progressBar = notification.querySelector('#progress-bar');
-                        progressContainer.style.display = 'block';
-
-                        const updateProgress = async (percent) => {
-                            return new Promise(resolve => {
-                                setTimeout(() => {
-                                    progressBar.style.width = `${percent}%`;
-                                    resolve();
-                                }, 800);
-                            });
-                        };
-
-                        try {
-                            for (const percent of [20, 40, 60, 80, 100]) {
-                                await updateProgress(percent);
-                            }
-
-                            // Trigger update API call
-                            await triggerUpdate(release);
-
-                            // Show restart notification
-                            setTimeout(() => {
-                                JE.toast('🔄 Installation Complete. <br>Restart Jellyfin to complete the update', 5000);
-                            }, 1000);
-
-                            // Close notification after successful install
-                            setTimeout(() => {
-                                notification.remove();
-                            }, 2000);
-
-                        } catch (error) {
-                            console.error('🪼 Jellyfin Enhanced: Update installation failed:', error);
-                            JE.toast('❌ Update failed.');
-                            installButton.disabled = false;
-                            installButton.textContent = JE.t('install_update_button');
-                            installButton.style.opacity = '1';
-                            progressContainer.style.display = 'none';
-                            isInstalling = false;
-                        }
-                    };
-
-                    const buttonContainer = notification.querySelector('div[style*="flex-wrap"]');
-                    buttonContainer.appendChild(installButton);
-                }
-            });
-        }
-
         setTimeout(() => { notification.style.transform = 'translateX(0)'; }, 10);
 
         resetAutoCloseTimer();
@@ -734,7 +650,7 @@
             <div class="panel-footer" style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; justify-content: space-between; align-items: center;">
                 <div class="close-helptext" style="font-size:12px; color:rgba(255,255,255,0.5);">${JE.t('panel_footer_close')}</div>
                 ${logoUrl ? `<img src="${logoUrl}" class="footer-logo" alt="Theme Logo" style="height: 40px;">` : ''}
-                <div class="footer-buttons" style="display:flex; gap:12px; align-items:center; flex-wrap: wrap;">
+                <div class="footer-buttons" style="display:flex; gap:12px; align-items:center;">
                     <button id="releaseNotesBtn" style="font-family:inherit; background:${releaseNotesBg}; color:${releaseNotesTextColor}; border:${checkUpdatesBorder}; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px;" onmouseover="this.style.background='${primaryAccentColor}'" onmouseout="this.style.background='${releaseNotesBg}'">${JE.t('panel_footer_release_notes')}</button>
                     <a href="https://github.com/${GITHUB_REPO}/" target="_blank" style="color:${primaryAccentColor}; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:12px; padding:4px 8px; border-radius:4px; background:${githubButtonBg}; transition:background 0.2s;" onmouseover="this.style.background='rgba(102, 179, 255, 0.2)'" onmouseout="this.style.background='${githubButtonBg}'"><svg height="12" viewBox="0 0 24 24" width="12" fill="currentColor"><path d="M12 1C5.923 1 1 5.923 1 12c0 4.867 3.149 8.979 7.521 10.436.55.096.756-.233.756-.522 0-.262-.013-1.128-.013-2.049-2.764.509-3.479-.674-3.699-1.292-.124-.317-.66-1.293-1.127-1.554-.385-.207-.936-.715-.014-.729.866-.014 1.485.797 1.691 1.128.99 1.663 2.571 1.196 3.204.907.096-.715.385-1.196.701-1.471-2.448-.275-5.005-1.224-5.005-5.432 0-1.196.426-2.186 1.128-2.956-.111-.275-.496-1.402.11-2.915 0 0 .921-.288 3.024 1.128a10.193 10.193 0 0 1 2.75-.371c.936 0 1.871.123 2.75.371 2.104-1.43 3.025-1.128 3.025-1.128.605 1.513.221 2.64.111 2.915.701.77 1.127 1.747 1.127 2.956 0 4.222-2.571 5.157-5.019 5.432.399.344.743 1.004.743 2.035 0 1.471-.014 2.654-.014 3.025 0 .289.206.632.756.522C19.851 20.979 23 16.854 23 12c0-6.077-4.922-11-11-11Z"></path></svg> ${JE.t('panel_footer_contribute')}</a>
                 </div>
@@ -743,26 +659,6 @@
         `;
 
         document.body.appendChild(help);
-
-        // --- Admin-only Features ---
-        isCurrentUserAdmin().then(isAdmin => {
-            if (isAdmin) {
-                // Auto-check for upon opening the panel
-                checkForUpdatesOnLoad();
-
-                const footerButtons = help.querySelector('.footer-buttons');
-                const updateButton = document.createElement('button');
-                updateButton.id = 'checkUpdatesBtn';
-                updateButton.textContent = JE.t('panel_footer_check_updates');
-                Object.assign(updateButton.style, {
-                    fontFamily: 'inherit', background: releaseNotesBg, color: releaseNotesTextColor, border: checkUpdatesBorder,
-                    padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer',
-                    transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px'
-                });
-                updateButton.addEventListener('click', checkForUpdates);
-                footerButtons.prepend(updateButton);
-            }
-        });
 
         // --- Shortcut Key Binding Logic ---
         if (!JE.pluginConfig.DisableAllShortcuts) {
@@ -1022,148 +918,4 @@
         setupPresetHandlers('font-family-presets-container', JE.fontFamilyPresets, 'font-family');
     };
 
-    async function isCurrentUserAdmin() {
-        try {
-            const user = await ApiClient.getCurrentUser();
-            return user && user.Policy && user.Policy.IsAdministrator;
-        } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Could not determine user admin status.', error);
-            return false;
-        }
-    }
-
-    async function checkForUpdates() {
-        try {
-            const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
-            if (!response.ok) throw new Error('Network response was not ok');
-
-            const release = await response.json();
-            const latestVersion = release.tag_name.replace('v', '');
-
-            // Simple version comparison
-            if (compareVersions(latestVersion, JE.pluginVersion) > 0) {
-                await showReleaseNotesNotification(release, true);
-            } else {
-                JE.toast(JE.t('toast_no_update_available'));
-            }
-        } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Update check failed:', error);
-            JE.toast(JE.t('toast_update_failed'));
-        }
-    }
-
-    /**
-     * Auto-check for updates on page load (admin only, silent)
-     */
-    async function checkForUpdatesOnLoad() {
-        try {
-            const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
-            if (!response.ok) throw new Error('Network response was not ok');
-
-            const release = await response.json();
-            const latestVersion = release.tag_name.replace('v', '');
-
-            // Simple version comparison
-            if (compareVersions(latestVersion, JE.pluginVersion) > 0) {
-                // Show update available toast
-                showUpdateAvailableToast(release);
-            }
-        } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Auto update check failed:', error);
-            // Silent failure for auto-check
-        }
-    }
-
-    /**
-     * Compare two version strings
-     */
-    function compareVersions(version1, version2) {
-        const v1Parts = version1.split('.').map(Number);
-        const v2Parts = version2.split('.').map(Number);
-
-        for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
-            const v1Part = v1Parts[i] || 0;
-            const v2Part = v2Parts[i] || 0;
-
-            if (v1Part > v2Part) return 1;
-            if (v1Part < v2Part) return -1;
-        }
-        return 0;
-    }
-
-    /**
-     * Show clickable toast notification for available updates
-     */
-    function showUpdateAvailableToast(release) {
-        // Remove any existing update toasts to prevent overlap
-        document.querySelectorAll('.jellyfin-enhanced-update-toast').forEach(el => el.remove());
-
-        const toastMessage = JE.t('toast_update_available_admin', { version: release.tag_name.replace('v', '') });
-
-        const getJellyfinThemeVariable = (variableName, defaultValue) => {
-            const rootStyle = getComputedStyle(document.documentElement);
-            const value = rootStyle.getPropertyValue(variableName).trim();
-            return value ? value : defaultValue;
-        };
-
-        const isJellyfishThemeActive = getJellyfinThemeVariable('--theme-updated-on', '') !== '' || getJellyfinThemeVariable('--theme-name', '').toLowerCase().includes('jellyfish');
-        let toastBg, toastBorder;
-
-        if (isJellyfishThemeActive) {
-            toastBg = getJellyfinThemeVariable('--secondary-background-transparent', 'rgba(0,0,0,0.6)');
-            toastBorder = `1px solid ${getJellyfinThemeVariable('--primary-accent-color', 'rgba(255,255,255,0.1)')}`;
-        } else {
-            toastBg = 'linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))';
-            toastBorder = '1px solid rgba(255,255,255,0.1)';
-        }
-
-        const t = document.createElement('div');
-        t.className = 'jellyfin-enhanced-toast jellyfin-enhanced-update-toast';
-
-        Object.assign(t.style, {
-            position: 'fixed', bottom: '20px', right: '20px', transform: 'translateX(120%)',
-            background: toastBg, color: '#fff', padding: '10px 14px', borderRadius: '8px',
-            zIndex: 99999, fontSize: 'clamp(13px, 2vw, 16px)', fontWeight: '500',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)', backdropFilter: 'blur(30px)',
-            border: toastBorder, transition: 'transform 0.3s ease-out',
-            maxWidth: 'clamp(280px, 80vw, 350px)', cursor: 'pointer'
-        });
-
-        t.innerHTML = toastMessage;
-        t.onclick = () => {
-            showReleaseNotesNotification(release, true);
-            t.remove();
-        };
-
-        document.body.appendChild(t);
-        setTimeout(() => t.style.transform = 'translateX(0)', 10);
-        setTimeout(() => {
-            t.style.transform = 'translateX(120%)';
-            setTimeout(() => t.remove(), 300);
-        }, 10000); // Show for 10 seconds
-    }
-
-    /**
-     * Trigger the actual plugin update via Jellyfin API
-     */
-    async function triggerUpdate(release) {
-        try {
-            const pluginGuid = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
-            const version = release.tag_name.replace('v', '');
-
-            const url = `${ApiClient.serverAddress()}/Packages/Installed/JellyfinEnhanced?version=${version}&assemblyGuid=${pluginGuid}`;
-
-            await ApiClient.ajax({
-                type: "POST",
-                url: url,
-                headers: {
-                    "X-Emby-Token": ApiClient.accessToken()
-                }
-            });
-
-        } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Update trigger failed:', error);
-            throw error;
-        }
-    }
 })(window.JellyfinEnhanced);
