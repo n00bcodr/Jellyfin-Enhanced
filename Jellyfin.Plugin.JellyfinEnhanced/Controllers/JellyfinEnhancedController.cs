@@ -10,6 +10,9 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using MediaBrowser.Common.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -28,11 +31,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
+        private readonly UserConfigurationManager _userConfigurationManager;
 
-        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger)
+        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IApplicationPaths appPaths)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
+            _userConfigurationManager = new UserConfigurationManager(appPaths);
         }
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
@@ -436,6 +441,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
+        }
+
+        [HttpGet("preferences")]
+        public ActionResult<UserConfiguration> GetPreferences()
+        {
+            var jellyfinUserId = Request.Headers["X-Jellyfin-User-Id"].ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+            {
+                return Unauthorized("User authentication required.");
+            }
+
+            var preferences = _userConfigurationManager.GetUserConfiguration(jellyfinUserId);
+            return Ok(preferences);
+        }
+
+        [HttpPost("preferences")]
+        public ActionResult SavePreferences([FromBody] UserConfiguration preferences)
+        {
+            var jellyfinUserId = Request.Headers["X-Jellyfin-User-Id"].ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+            {
+                return Unauthorized("User authentication required.");
+            }
+
+            preferences.JellyfinUserId = jellyfinUserId;
+            _userConfigurationManager.SaveUserConfiguration(preferences);
+            return Ok();
+        }
+
+        [HttpDelete("preferences")]
+        public ActionResult ClearPreferences()
+        {
+            var jellyfinUserId = Request.Headers["X-Jellyfin-User-Id"].ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+            {
+                return Unauthorized("User authentication required.");
+            }
+
+            _userConfigurationManager.ClearUserConfiguration(jellyfinUserId);
+            return Ok();
         }
     }
 }

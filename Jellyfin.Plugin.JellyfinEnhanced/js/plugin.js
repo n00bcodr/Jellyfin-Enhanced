@@ -2,8 +2,15 @@
 (function() {
     'use strict';
 
-    // Create the global namespace immediately
-    window.JellyfinEnhanced = {};
+    // Check if the plugin has already been initialized. If so, stop here.
+    if (window.JellyfinEnhanced && window.JellyfinEnhanced.isInitialized) {
+        console.log('🪼 Jellyfin Enhanced: Already initialized. Halting duplicate execution.');
+        return;
+    }
+
+    // Create the global namespace immediately and set the initialization flag.
+    window.JellyfinEnhanced = window.JellyfinEnhanced || {};
+    window.JellyfinEnhanced.isInitialized = true;
 
     /**
      * A simple translation function that will be available globally.
@@ -167,8 +174,12 @@
                 'watchlist/cardBuilder.js', 'watchlist/watchlist.js'
             ];
 
-            loadScripts(allScripts, basePath, () => {
-                // Initialize all modules now that dependencies are loaded
+            loadScripts(allScripts, basePath, async () => {
+                // Asynchronously load settings and then initialize dependent modules
+                JE.currentSettings = await JE.loadSettings();
+                JE.initializeShortcuts();
+
+                // Now, initialize all modules that depend on settings
                 if (typeof window.JellyfinEnhanced.initializeEnhancedScript === 'function') {
                     window.JellyfinEnhanced.initializeEnhancedScript();
                 }

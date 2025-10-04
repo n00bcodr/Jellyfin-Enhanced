@@ -61,7 +61,8 @@
             document.getElementById('randomItemButton')?.click();
         } else if (combo === activeShortcuts.ClearAllBookmarks && !JE.isVideoPage()) {
             e.preventDefault();
-            localStorage.removeItem('jellyfinEnhancedBookmarks');
+            JE.currentSettings.bookmarks = {};
+            JE.saveSettings(JE.currentSettings);
             JE.toast(JE.t('toast_all_bookmarks_cleared'));
         }
 
@@ -73,9 +74,11 @@
                 e.preventDefault();
                 e.stopPropagation();
                 const videoId = document.title?.replace(/^Playing:\s*/, '').trim() || 'unknown';
-                const bookmarks = JSON.parse(localStorage.getItem('jellyfinEnhancedBookmarks') || '{}');
-                bookmarks[videoId] = video.currentTime;
-                localStorage.setItem('jellyfinEnhancedBookmarks', JSON.stringify(bookmarks));
+                if (!JE.currentSettings.bookmarks) {
+                    JE.currentSettings.bookmarks = {};
+                }
+                JE.currentSettings.bookmarks[videoId] = video.currentTime;
+                JE.saveSettings(JE.currentSettings);
                 const h_set = Math.floor(video.currentTime / 3600);
                 const m_set = Math.floor((video.currentTime % 3600) / 60);
                 const s_set = Math.floor(video.currentTime % 60);
@@ -86,8 +89,7 @@
                 e.preventDefault();
                 e.stopPropagation();
                 const videoId_get = document.title?.replace(/^Playing:\s*/, '').trim() || 'unknown';
-                const bookmarks_get = JSON.parse(localStorage.getItem('jellyfinEnhancedBookmarks') || '{}');
-                const bookmarkTime = bookmarks_get[videoId_get];
+                const bookmarkTime = JE.currentSettings.bookmarks ? JE.currentSettings.bookmarks[videoId_get] : undefined;
                 if (bookmarkTime !== undefined) {
                     video.currentTime = bookmarkTime;
                     const h_get = Math.floor(bookmarkTime / 3600);
@@ -255,16 +257,34 @@
     }
 
     /**
+     * Checks if an admin has triggered a settings reset and clears server-side settings if needed.
+     */
+    async function checkForAdminReset() {
+        const serverClearTimestamp = JE.pluginConfig.ClearLocalStorageTimestamp || 0;
+        const localClearedTimestamp = parseInt(localStorage.getItem('jellyfinEnhancedLastAdminReset') || '0', 10);
+
+        if (serverClearTimestamp > localClearedTimestamp) {
+            console.log('🪼 Jellyfin Enhanced: Admin reset detected. Clearing server-side user settings.');
+            try {
+                await ApiClient.ajax({
+                    type: 'DELETE',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/preferences'),
+                    headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() }
+                });
+                localStorage.setItem('jellyfinEnhancedLastAdminReset', serverClearTimestamp.toString());
+                window.location.reload();
+            } catch (error) {
+                console.error('🪼 Jellyfin Enhanced: Failed to process admin reset.', error);
+            }
+        }
+    }
+
+
+    /**
      * Initializes all event listeners for the core Jellyfin Enhanced script.
      */
-    JE.initializeEnhancedScript = function() {
-        // Check if local storage needs to be cleared by admin request
-        const serverClearTimestamp = JE.pluginConfig.ClearLocalStorageTimestamp || 0;
-        const localClearedTimestamp = parseInt(localStorage.getItem('jellyfinEnhancedLastCleared') || '0', 10);
-        if (serverClearTimestamp > localClearedTimestamp) {
-            localStorage.removeItem('jellyfinEnhancedSettings');
-            localStorage.setItem('jellyfinEnhancedLastCleared', serverClearTimestamp.toString());
-        }
+    JE.initializeEnhancedScript = async function() {
+        await checkForAdminReset();
 
         // Initial UI setup
         JE.injectGlobalStyles();
