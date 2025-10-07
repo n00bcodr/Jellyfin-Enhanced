@@ -355,7 +355,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Jellyfin Elsewhere Settings
                 config.ElsewhereEnabled,
-                config.TMDB_API_KEY,
                 config.DEFAULT_REGION,
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
@@ -388,9 +387,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,
-                config.SonarrUrl,
-                config.RadarrUrl,
-                config.BazarrUrl,
                 config.ShowArrLinksAsText,
                 config.WatchlistEnabled
             });
@@ -470,7 +466,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Items = []
                 };
             }
-            
+
             var likedItems = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.Season, BaseItemKind.Episode]
