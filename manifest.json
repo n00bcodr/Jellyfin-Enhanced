@@ -13,8 +13,8 @@
                 "targetAbi": "10.10.7.0",
                 "version": "7.9.0.0",
                 "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.9.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "12F244C30F84C0C6F8BB5EA58343708E",
-                "timestamp": "2025-10-07T11:59:30"
+                "checksum": "0510A9EED3F11E924F781C071A7EF7B6",
+                "timestamp": "2025-10-07T12:31:43"
             },
             {
                 "changelog": "- Add TMDB API proxy endpoint\n - Update manifest name to 'Jellyfin Enhanced' to fix auto-update\n - Add configurable custom splash screen feature",
