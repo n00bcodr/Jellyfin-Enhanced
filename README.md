@@ -56,7 +56,7 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
 
 
 > [!NOTE]
-> If you are on a docker install it is highly advisable to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) at least v2.2.1.0 installed. It helps avoid permission issues while modifying index.html
+> It is highly recommended to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) at least v2.2.1.0 installed. It helps avoid permission issues while modifying index.html on any kind of installation!
 >
 > **Only if you do not have file-transformation plugin installed - proceed with the below workaround!**
 
@@ -66,9 +66,9 @@ The ultimate enhancement for your Jellyfin experience. This plugin (previously s
 <summary style="font-size: 1.25em;">🐳 Docker Installation Workaround</summary>
 <br>
 
-> [!IMPORTANT]
+> **IMPORTANT**!
 >
-> If you have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin installed, you need not do this.
+> If you have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin installed, DO NOT proceed.
 
 If you're running Jellyfin through Docker, the plugin may not have permission to modify jellyfin-web to inject the script. If you see permission errors such as `'System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html ' is denied.` in your logs, you will need to map the `index.html` file manually:
 
@@ -114,12 +114,16 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **👁️ Remove from Continue Watching:** Easily clean up your home screen.
 - **🔍 Streaming Provider Lookup:** See where else your media is available to stream across multiple regions.
 - **✒️ Show Reviews from TMDB:** Option to show TMDB reviews of an item in Jellyfin.
+- **🖼️ Auto Picture-in-Picture:** Automatically enter Picture-in-Picture mode when switching to another tab.
+- **📁 Show File Sizes:** Display the total file size of media on its detail page.
+- **🗣️ Show Audio Languages:** See available audio languages with country flags on the item detail page.
 - **🎬 Custom Pause Screen:** A beautifully designed, informative overlay when you pause a video. This feature is a modified version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen).
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🔖 Watchlist** Watchlist any item and access your watchlist using a [CustomTab](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/tree/main/src)
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
+- **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
 
 <br>
 
@@ -710,6 +714,11 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── jellyseerr.js
     │   ├── modal.js
     │   └── ui.js
+    ├── watchlist/
+    │   ├── cardBuilder.js
+    │   └── watchlist.js
+    ├── reviews.js
+    ├── splashscreen.js
     ├── arr-links.js
     ├── elsewhere.js
     ├── pausescreen.js
@@ -736,6 +745,14 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`modal.js`**: A dedicated component for creating and managing the advanced request modals.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
     * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
+
+* **`/watchlist/`**: This directory contains all components for the watchlist functionality.
+    * **`cardBuilder.js`**: A utility to dynamically construct card elements for displaying media items, used by the watchlist.
+    * **`watchlist.js`**: Manages all aspects of the watchlist feature, including adding/removing items and displaying the watchlist itself.
+
+* **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
+
+* **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
 
 * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
 
