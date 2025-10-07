@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Integrate watchlist into home sections plugin\n - Revert admin update check and install\n - Prevent duplicate ARR links with concurrency lock\n - Add new private-config and move sensitive info there",
+                "targetAbi": "10.10.7.0",
+                "version": "7.9.0.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.9.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "12F244C30F84C0C6F8BB5EA58343708E",
+                "timestamp": "2025-10-07T11:59:30"
+            },
+            {
                 "changelog": "- Add TMDB API proxy endpoint\n - Update manifest name to 'Jellyfin Enhanced' to fix auto-update\n - Add configurable custom splash screen feature",
                 "targetAbi": "10.10.7.0",
                 "version": "7.8.0.0",
