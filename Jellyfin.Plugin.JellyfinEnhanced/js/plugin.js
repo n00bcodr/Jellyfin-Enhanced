@@ -75,6 +75,25 @@
     }
 
     /**
+     * Fetches sensitive configuration from the authenticated endpoint.
+     * @returns {Promise<void>}
+     */
+    async function loadPrivateConfig() {
+        try {
+            const privateConfig = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/private-config'),
+                dataType: 'json'
+            });
+            // Merge the sensitive keys into the main config object
+            Object.assign(window.JellyfinEnhanced.pluginConfig, privateConfig);
+            console.log('🪼 Jellyfin Enhanced: Private configuration loaded securely.');
+        } catch (error) {
+            console.warn('🪼 Jellyfin Enhanced: Could not load private configuration. Some features may be limited.', error);
+        }
+    }
+
+    /**
      * Loads an array of scripts dynamically.
      * @param {string[]} scripts - Array of script filenames.
      * @param {string} basePath - The base URL path for the scripts.
@@ -145,7 +164,8 @@
             window.JellyfinEnhanced.pluginConfig = config;
             window.JellyfinEnhanced.pluginVersion = version;
             window.JellyfinEnhanced.translations = translations;
-            console.log('🪼 Jellyfin Enhanced: Public configuration and translations loaded.');
+            await loadPrivateConfig();
+            console.log('🪼 Jellyfin Enhanced: Configuration and translations loaded.');
 
             // Initialize splash screen now that config is available
             if (typeof window.JellyfinEnhanced.initializeSplashScreen === 'function') {

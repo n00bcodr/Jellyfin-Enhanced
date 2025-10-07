@@ -336,6 +336,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("version")]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
+        [HttpGet("private-config")]
+        [Authorize]
+        public ActionResult GetPrivateConfig()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            return new JsonResult(new
+            {
+                // For Jellyfin Elsewhere & Reviews
+                config.TMDB_API_KEY,
+
+                // For Arr Links
+                config.SonarrUrl,
+                config.RadarrUrl,
+                config.BazarrUrl
+            });
+        }
         [HttpGet("public-config")]
         public ActionResult GetPublicConfig()
         {
