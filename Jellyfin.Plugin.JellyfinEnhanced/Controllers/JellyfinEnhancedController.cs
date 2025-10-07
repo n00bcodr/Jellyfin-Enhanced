@@ -241,7 +241,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/status");
+                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/user");
                 if (resp.IsSuccessStatusCode)
                     return Ok(new { ok = true });
 
