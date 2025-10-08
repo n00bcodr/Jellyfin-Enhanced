@@ -463,7 +463,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var httpClient = _httpClientFactory.CreateClient();
             var queryString = HttpContext.Request.QueryString;
-            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}&api_key={config.TMDB_API_KEY}";
+            var separator = queryString.HasValue ? "&" : "?";
+            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
 
             try
             {
