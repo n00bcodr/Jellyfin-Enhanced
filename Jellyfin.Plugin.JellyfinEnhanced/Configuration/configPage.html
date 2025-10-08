@@ -136,7 +136,13 @@
                         <div class="configSection">
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="TMDB_API_KEY">TMDB API Key</label>
-                                <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text"/>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" style="flex-grow: 1;"/>
+                                    <span id="tmdbStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testTmdbBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
                                 <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a></div>
                                 <div class="fieldDescription">Leaving this blank will not load Jellyfin Elsewhere</div>
                             </div>
@@ -348,6 +354,9 @@
 
             const testJellyseerrBtn = document.getElementById('testJellyseerrBtn');
             const jellyseerrStatusIndicator = document.getElementById('jellyseerrStatusIndicator');
+
+            const testTmdbBtn = document.getElementById('testTmdbBtn');
+            const tmdbStatusIndicator = document.getElementById('tmdbStatusIndicator');
 
             const style = document.createElement('style');
             style.textContent = `
@@ -579,6 +588,44 @@
             }
         }
 
+        async function testTmdbConnection() {
+            const apiKey = (document.querySelector('#TMDB_API_KEY').value || '').trim();
+
+            if (!apiKey) {
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide a TMDB API key to test the connection.' });
+                return;
+            }
+
+            testTmdbBtn.disabled = true;
+            tmdbStatusIndicator.textContent = 'sync';
+            tmdbStatusIndicator.className = 'material-icons status-check';
+            tmdbStatusIndicator.style.color = '#00a4dc';
+
+            try {
+                const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/validate`, { apiKey: apiKey });
+                await ApiClient.ajax({ type: 'GET', url: validationUrl });
+
+                tmdbStatusIndicator.textContent = 'check_circle';
+                tmdbStatusIndicator.style.color = '#52b54b';
+                Dashboard.alert({ title: 'Success', message: 'Successfully connected to TMDB!' });
+
+            } catch (e) {
+                console.error('TMDB validation failed:', e);
+                const errorMessage = (e.status === 401)
+                    ? 'The API Key is invalid.'
+                    : 'Could not connect to TMDB. Please check the key and your network.';
+
+                tmdbStatusIndicator.textContent = 'error';
+                tmdbStatusIndicator.style.color = '#dc3545';
+                Dashboard.alert({ title: 'Connection Failed', message: errorMessage });
+            } finally {
+                testTmdbBtn.disabled = false;
+                if (tmdbStatusIndicator) {
+                    tmdbStatusIndicator.classList.remove('status-check');
+                }
+            }
+        }
+
 
         function loadConfig() {
             Dashboard.showLoadingMsg();
@@ -711,7 +758,8 @@
         form.addEventListener('submit', saveConfig);
         clearLocalStorageBtn.addEventListener('click', clearLocalStorage);
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
-const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
+        testTmdbBtn.addEventListener('click', testTmdbConnection);
+        const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
         if (copyWatchlistHtmlBtn) {
             copyWatchlistHtmlBtn.addEventListener('click', () => {
                 const codeText = `<div class="sections watchlist">\n    <div class="watchlist-movies"></div>\n    <div class="watchlist-series"></div>\n    <div class="watchlist-episodes"></div>\n</div>`;
@@ -721,11 +769,11 @@ const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
                 const success = () => {
                     copyBtnText.textContent = 'Copied!';
                     copyBtnIcon.textContent = 'check';
-                    copyWatchlistHtmlBtn.style.color = '#52b54b'; // Green success color
+                    copyWatchlistHtmlBtn.style.color = '#52b54b';
                     setTimeout(() => {
                         copyBtnText.textContent = 'Copy';
                         copyBtnIcon.textContent = 'content_copy';
-                        copyWatchlistHtmlBtn.style.color = ''; // Reset color
+                        copyWatchlistHtmlBtn.style.color = '';
                     }, 2500);
                 };
 
@@ -733,11 +781,11 @@ const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
                     console.error('Failed to copy text: ', err);
                     copyBtnText.textContent = 'Failed';
                     copyBtnIcon.textContent = 'error';
-                    copyWatchlistHtmlBtn.style.color = '#dc3545'; // Red error color
+                    copyWatchlistHtmlBtn.style.color = '#dc3545';
                     setTimeout(() => {
                         copyBtnText.textContent = 'Copy';
                         copyBtnIcon.textContent = 'content_copy';
-                        copyWatchlistHtmlBtn.style.color = ''; // Reset color
+                        copyWatchlistHtmlBtn.style.color = '';
                     }, 2500);
                 };
 

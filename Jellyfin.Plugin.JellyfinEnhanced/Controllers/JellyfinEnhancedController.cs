@@ -329,6 +329,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
+
+        [HttpGet("tmdb/validate")]
+        public async Task<IActionResult> ValidateTmdb([FromQuery] string apiKey)
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return BadRequest(new { ok = false, message = "API key is missing" });
+            }
+
+            var httpClient = _httpClientFactory.CreateClient();
+            try
+            {
+                var requestUri = $"https://api.themoviedb.org/3/configuration?api_key={apiKey}";
+                var response = await httpClient.GetAsync(requestUri);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return Ok(new { ok = true });
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    return Unauthorized(new { ok = false, message = "Invalid API Key." });
+                }
+
+                return StatusCode((int)response.StatusCode, new { ok = false, message = "Failed to connect to TMDB." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Exception during TMDB API key validation: {ex.Message}");
+                return StatusCode(500, new { ok = false, message = "Could not reach TMDB services." });
+            }
+        }
+
         [HttpGet("script")]
         public ActionResult GetMainScript() => GetScriptResource("js/plugin.js");
         [HttpGet("js/{**path}")]
