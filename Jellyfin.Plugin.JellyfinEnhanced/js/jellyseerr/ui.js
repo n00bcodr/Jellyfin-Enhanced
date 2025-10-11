@@ -9,6 +9,7 @@
     let jellyseerrHoverPopover = null;
     let jellyseerrHoverLock = false;
     let refreshModalInterval = null;
+    let active4KPopup = null;
 
 
     // ================================
@@ -34,7 +35,9 @@
         //cancel
         cancel: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-left:0.5em;"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"></path></svg>',
         //download
-        request: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-right:0.5em;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg>'
+        request: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-right:0.5em;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg>',
+        // arrow_drop_down
+        arrow_down: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img"><path d="M7 10l5 5 5-5z"/></svg>'
     };
 
     // ================================
@@ -155,6 +158,65 @@
     }
 
     // ================================
+    // 4K POPUP MANAGEMENT
+    // ================================
+
+    /**
+     * Hides any active 4K popup menu.
+     */
+    function hide4KPopup() {
+        if (active4KPopup) {
+            active4KPopup.remove();
+            active4KPopup = null;
+        }
+    }
+
+    /**
+     * Shows the 4K request popup menu below the button group.
+     * @param {HTMLElement} buttonGroup - The split button container.
+     * @param {Object} item - Media item data.
+     */
+    function show4KPopup(buttonGroup, item) {
+        hide4KPopup();
+
+        const popup = document.createElement('div');
+        popup.className = 'jellyseerr-4k-popup';
+
+        const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
+
+        // Create different button based on 4K status
+        const request4KBtn = document.createElement('button');
+        request4KBtn.className = 'jellyseerr-4k-popup-item';
+
+        if (status4k === 5) {
+            // 4K is available
+            request4KBtn.innerHTML = `<span>4K Available</span>${icons.available}`;
+            request4KBtn.disabled = true;
+            request4KBtn.classList.add('jellyseerr-4k-available');
+        } else if (status4k === 2 || status4k === 3) {
+            // 4K is pending or processing
+            request4KBtn.innerHTML = `<span>4K Requested</span>${icons.pending}`;
+            request4KBtn.disabled = true;
+        } else {
+            // 4K can be requested
+            request4KBtn.innerHTML = `<span>Request in 4K</span>`;
+            request4KBtn.dataset.tmdbId = item.id;
+            request4KBtn.dataset.action = 'request4k';
+        }
+
+        popup.appendChild(request4KBtn);
+        buttonGroup.appendChild(popup);
+        active4KPopup = popup;
+
+        // Position the popup
+        setTimeout(() => {
+            popup.style.top = `${buttonGroup.offsetHeight}px`;
+            popup.style.left = '0';
+            popup.classList.add('show');
+        }, 10);
+    }
+
+    // ================================
     // STYLING SYSTEM
     // ================================
 
@@ -210,6 +272,128 @@
             .jellyseerr-request-button.jellyseerr-button-error { background: #dc3545 !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-tv:not(.jellyseerr-button-available):not(.jellyseerr-button-offline):not(.jellyseerr-button-no-user):not(.jellyseerr-button-error)::after { content: '▼'; margin-left: 6px; font-size: 0.7em; opacity: 0.8; }
             .jellyseerr-season-summary { font-size: 0.85em; opacity: 0.9; display: block; margin-top: 2px; }
+            /* SPLIT BUTTON FOR 4K */
+            /* Allow button group to overflow card footer */
+            .jellyseerr-card .cardFooter {
+                padding: 0.5em 1em 1em !important;
+                overflow: visible !important;
+            }
+
+            /* SPLIT BUTTON FOR 4K */
+            .jellyseerr-button-group {
+                display: flex;
+                width: 100%;
+                position: relative;
+                gap: 0;
+                align-items: stretch;
+            }
+            .jellyseerr-button-group .jellyseerr-request-button {
+                border-radius: 4px 0 0 4px;
+                flex: 1;
+                margin: 0 !important;
+                min-width: 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .jellyseerr-button-group .jellyseerr-request-button span {
+                display: inline-block;
+                max-width: 100%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .jellyseerr-split-arrow {
+                width: 2.8em;
+                min-width: 2.8em;
+                max-width: 2.8em;
+                height: 3.5em;
+                border: none;
+                cursor: pointer;
+                background-color: #16a34a !important;
+                color: #fff !important;
+                border-radius: 0 4px 4px 0;
+                border-left: 1px solid rgba(255,255,255,0.3);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background .2s;
+                padding: 0;
+                flex-shrink: 0;
+                position: relative;
+                z-index: 1;
+            }
+            .jellyseerr-split-arrow:hover:not(:disabled) {
+                background-color: #15803d !important;
+            }
+            .jellyseerr-split-arrow:active:not(:disabled) {
+                background-color: #166534 !important;
+            }
+            .jellyseerr-split-arrow:disabled,
+            .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {
+                opacity: 0.7;
+                cursor: default;
+                background-color: #16a34a !important;
+            }
+            .jellyseerr-split-arrow svg {
+                width: 1.5em;
+                height: 1.5em;
+            }
+
+            /* 4K POPUP MENU */
+            .jellyseerr-4k-popup {
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: #1f2937;
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                border-radius: 8px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+                z-index: 1000;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.2s ease;
+                margin-top: 4px;
+                min-width: 160px;
+            }
+            .jellyseerr-4k-popup.show {
+                opacity: 1;
+                pointer-events: all;
+            }
+            .jellyseerr-4k-popup-item {
+                width: 100%;
+                padding: 12px 16px;
+                border: none;
+                background: transparent;
+                color: #e5e7eb;
+                text-align: left;
+                cursor: pointer;
+                transition: background 0.2s;
+                font-size: 0.95rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                border-radius: 8px;
+                white-space: nowrap;
+            }
+            .jellyseerr-4k-popup-item:not(:disabled):hover {
+                background: rgba(59, 130, 246, 0.2);
+            }
+            .jellyseerr-4k-popup-item:not(:disabled):active {
+                background: rgba(59, 130, 246, 0.3);
+            }
+            .jellyseerr-4k-popup-item:disabled {
+                opacity: 0.8;
+                cursor: default;
+                color: #16a34a;
+            }
+            .jellyseerr-4k-popup-item.jellyseerr-4k-available {
+                color: #16a34a;
+            }
+            .jellyseerr-4k-popup-item svg {
+                flex-shrink: 0;
+            }
             /* SPINNERS & LOADERS */
             .jellyseerr-spinner, .jellyseerr-loading-spinner, .jellyseerr-button-spinner { display: inline-block; border-radius: 50%; animation: jellyseerr-spin 1s linear infinite; }
             .jellyseerr-loading-spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; margin-left: 10px; vertical-align: middle; }
@@ -689,12 +873,140 @@
     function configureMovieButton(button, item) {
         button.dataset.searchResultItem = JSON.stringify(item);
         const status = item.mediaInfo ? item.mediaInfo.status : 1;
+        const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
+
+        // Debug logging - REMOVE THIS AFTER TESTING
+        console.log('Movie:', item.title || item.name, {
+            status: status,
+            status4k: status4k,
+            mediaInfo: item.mediaInfo,
+            showAdvanced: JE.pluginConfig.JellyseerrShowAdvanced
+        });
+
+        // Show split button when advanced mode is on and either:
+        // - Standard is available (status 5), OR
+        // - 4K can be requested (status4k 1)
+        const show4KOption = JE.pluginConfig.JellyseerrShowAdvanced &&
+                            (status === 5 || status4k === 1);
+
         const setButton = (text, icon, className, disabled = false) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             button.disabled = disabled;
             button.className = 'jellyseerr-request-button emby-button'; // Reset classes
             button.classList.add('button-submit', className);
         };
+
+        // If we need a split button for 4K, replace the button with a button group
+        // If we need a split button for 4K, replace the button with a button group
+        if (show4KOption) {
+            const cardFooter = button.closest('.cardFooter');
+            if (cardFooter) {
+                // Create button group
+                const buttonGroup = document.createElement('div');
+                buttonGroup.className = 'jellyseerr-button-group';
+
+                // Determine main button text and state
+                let mainButtonText, mainButtonIcon, mainButtonClass, mainButtonDisabled;
+
+                if (status === 5) {
+                    // Standard is available
+                    mainButtonText = JE.t('jellyseerr_btn_available');
+                    mainButtonIcon = icons.available;
+                    mainButtonClass = 'jellyseerr-button-available';
+                    mainButtonDisabled = true;
+                } else if (status === 2 || status === 3) {
+                    // Standard is pending/processing
+                    mainButtonText = JE.t('jellyseerr_btn_pending');
+                    mainButtonIcon = icons.pending;
+                    mainButtonClass = 'jellyseerr-button-pending';
+                    mainButtonDisabled = true;
+                } else {
+                    // Standard not requested
+                    mainButtonText = JE.t('jellyseerr_btn_request');
+                    mainButtonIcon = icons.request;
+                    mainButtonClass = 'jellyseerr-button-request';
+                    mainButtonDisabled = false;
+                }
+
+                // Main button
+                const mainButton = document.createElement('button');
+                mainButton.className = `jellyseerr-request-button emby-button button-submit ${mainButtonClass}`;
+                mainButton.disabled = mainButtonDisabled;
+                mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>`;
+                mainButton.dataset.tmdbId = item.id;
+                mainButton.dataset.mediaType = 'movie';
+                mainButton.dataset.searchResultItem = JSON.stringify(item);
+
+                // Arrow button for dropdown
+                const arrowButton = document.createElement('button');
+                arrowButton.className = 'jellyseerr-split-arrow';
+                arrowButton.innerHTML = icons.arrow_down;
+                arrowButton.dataset.tmdbId = item.id;
+                arrowButton.dataset.toggle4k = 'true';
+
+                // Determine arrow button state based on 4K status
+                if (status4k === 5) {
+                    // 4K already available
+                    arrowButton.disabled = true;
+                    arrowButton.classList.add('jellyseerr-split-arrow-disabled');
+                    arrowButton.title = '4K Available';
+                } else if (status4k === 2 || status4k === 3) {
+                    // 4K pending/processing
+                    arrowButton.title = '4K Requested';
+                } else {
+                    // 4K can be requested
+                    arrowButton.title = 'Request in 4K';
+                }
+
+                buttonGroup.appendChild(mainButton);
+                buttonGroup.appendChild(arrowButton);
+
+                // Replace the original button with the button group
+                button.replaceWith(buttonGroup);
+
+                // Add click handler for main button (if not disabled)
+                if (!mainButtonDisabled) {
+                    mainButton.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        // Handle standard request
+                        if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                            showMovieRequestModal(item.id, item.title || item.name, item);
+                        } else {
+                            mainButton.disabled = true;
+                            mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
+                            try {
+                                await requestMedia(item.id, 'movie');
+                                mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
+                                mainButton.classList.remove('jellyseerr-button-request');
+                                mainButton.classList.add('jellyseerr-button-pending');
+                            } catch (error) {
+                                mainButton.disabled = false;
+                                let errorMessage = JE.t('jellyseerr_btn_error');
+                                if (error.status === 404) {
+                                    errorMessage = JE.t('jellyseerr_btn_user_not_found');
+                                } else if (error.responseJSON?.message) {
+                                    errorMessage = error.responseJSON.message;
+                                }
+                                mainButton.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
+                                mainButton.classList.add('jellyseerr-button-error');
+                            }
+                        }
+                    });
+                }
+
+                // Add click handler for arrow button
+                arrowButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (active4KPopup && active4KPopup.parentElement === buttonGroup) {
+                        hide4KPopup();
+                    } else {
+                        show4KPopup(buttonGroup, item);
+                    }
+                });
+            }
+            return;
+        }
+
         switch (status) {
             case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending', true); break;
             case 3:

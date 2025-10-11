@@ -90,11 +90,13 @@
      * @param {number} tmdbId - The TMDB ID of the media.
      * @param {string} mediaType - 'movie' or 'tv'.
      * @param {object} [advancedSettings={}] - Optional advanced settings (server, quality, folder).
+     * @param {boolean} [is4k=false] - Whether this is a 4K request.
      * @returns {Promise<any>}
      */
-    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}) {
+    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false) {
         const body = { mediaType, mediaId: parseInt(tmdbId), ...advancedSettings };
         if (mediaType === 'tv') body.seasons = "all";
+        if (is4k) body.is4k = true;
         return post('/request', body);
     };
 
