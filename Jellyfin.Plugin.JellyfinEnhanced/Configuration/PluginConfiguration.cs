@@ -47,6 +47,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             GenreTagsEnabled = false;
             WatchlistEnabled = true;
             DisableAllShortcuts = false;
+            DefaultSubtitleStyle = 0;
+            DefaultSubtitleSize = 2;
+            DefaultSubtitleFont = 0;
+            DisableCustomSubtitleStyles = false;
             Shortcuts = new List<Shortcut>
             {
                 new Shortcut { Name = "OpenSearch", Key = "/", Label = "Open Search", Category = "Global" },
@@ -116,6 +120,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool WatchlistEnabled { get; set; }
         public bool DisableAllShortcuts { get; set; }
+        public int DefaultSubtitleStyle { get; set; }
+        public int DefaultSubtitleSize { get; set; }
+        public int DefaultSubtitleFont { get; set; }
+        public bool DisableCustomSubtitleStyles { get; set; }
 
         // Jellyseerr Search Settings
         public bool JellyseerrEnabled { get; set; }

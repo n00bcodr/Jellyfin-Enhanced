@@ -62,6 +62,10 @@
                 sheet.deleteRule(0);
             }
 
+            if (JE.currentSettings.disableCustomSubtitleStyles) {
+                return;
+            }
+
             // Create and insert the new rule with the dynamic styles.
             const newRule = `
                 .htmlvideoplayer::cue {

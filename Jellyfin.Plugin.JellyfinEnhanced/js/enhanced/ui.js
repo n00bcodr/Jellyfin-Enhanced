@@ -590,6 +590,12 @@
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">📝 ${JE.t('panel_settings_subtitles')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="disableCustomSubtitleStyles" ${JE.currentSettings.disableCustomSubtitleStyles ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_disable_custom_styles')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_disable_custom_styles_desc')}</div></div>
+                                </label>
+                            </div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
@@ -850,6 +856,7 @@
         document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_quality_tags', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
         document.getElementById('genreTagsToggle').addEventListener('change', (e) => { JE.currentSettings.genreTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_genre_tags', e.target.checked)}.<br> Refresh page to apply.`); if (!e.target.checked) { document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove()); } resetAutoCloseTimer(); });
         document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_custom_pause_screen', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
+        document.getElementById('disableCustomSubtitleStyles').addEventListener('change', (e) => { JE.currentSettings.disableCustomSubtitleStyles = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_disable_custom_subtitle_styles', e.target.checked)); JE.applySavedStylesWhenReady(); resetAutoCloseTimer(); });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);

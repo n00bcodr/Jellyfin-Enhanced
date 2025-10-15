@@ -47,6 +47,44 @@
                                 </div>
                             </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">📝 Subtitle Settings</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 1em;"><label><input id="disableCustomSubtitleStyles" is="emby-checkbox" type="checkbox"/><span>Disable Custom Subtitle Styles by default</span></label></div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultSubtitleStyle">Default Subtitle Style</label>
+                                        <select is="emby-select" id="DefaultSubtitleStyle" name="DefaultSubtitleStyle" class="emby-select">
+                                            <option value="0">Clean White</option>
+                                            <option value="1">Classic Black Box</option>
+                                            <option value="2">Netflix Style</option>
+                                            <option value="3">Cinema Yellow</option>
+                                            <option value="4">Soft Gray</option>
+                                            <option value="5">High Contrast</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultSubtitleSize">Default Subtitle Size</label>
+                                        <select is="emby-select" id="DefaultSubtitleSize" name="DefaultSubtitleSize" class="emby-select">
+                                            <option value="0">Tiny</option>
+                                            <option value="1">Small</option>
+                                            <option value="2">Normal</option>
+                                            <option value="3">Large</option>
+                                            <option value="4">Extra Large</option>
+                                            <option value="5">Gigantic</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultSubtitleFont">Default Subtitle Font</label>
+                                        <select is="emby-select" id="DefaultSubtitleFont" name="DefaultSubtitleFont" class="emby-select">
+                                            <option value="0">Default</option>
+                                            <option value="1">Noto Sans</option>
+                                            <option value="2">Sans Serif</option>
+                                            <option value="3">Typewriter</option>
+                                            <option value="4">Roboto</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </details>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
                                 <summary style="cursor: pointer; font-weight: bold;">🎲 Random Button Settings</summary>
                                 <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="randomButtonEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Random Button</span></label></div>
@@ -677,6 +715,10 @@
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
                 document.querySelector('#watchlistEnabled').checked = config.WatchlistEnabled;
+                document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
+                document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
+                document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
+                document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
 
 
                 Dashboard.hideLoadingMsg();
@@ -731,6 +773,10 @@
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
             config.WatchlistEnabled = document.querySelector('#watchlistEnabled').checked;
+            config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
+            config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
+            config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
+            config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
 
 
             try {
