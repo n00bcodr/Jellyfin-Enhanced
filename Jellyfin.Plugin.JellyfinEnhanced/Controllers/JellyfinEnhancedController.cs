@@ -434,6 +434,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
                 config.DisableAllShortcuts,
+                config.DefaultSubtitleStyle,
+                config.DefaultSubtitleSize,
+                config.DefaultSubtitleFont,
+                config.DisableCustomSubtitleStyles,
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
