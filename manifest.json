@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
         "versions": [
             {
+                "changelog": "- Add option to set disable custom subtitle styles\n - Add new selectors to splash screen hide list",
+                "targetAbi": "10.10.7.0",
+                "version": "7.11.0.0",
+                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.11.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+                "checksum": "AD1AFEE82C5ACD96B7CC541C876AF9E8",
+                "timestamp": "2025-10-15T06:13:49"
+            },
+            {
                 "changelog": "- Change Jellyseerr API endpoint for connectivity check\n - Add TMDB API key validation to config page\n - Fix TMDB API key query string handling",
                 "targetAbi": "10.10.7.0",
                 "version": "7.10.0.0",
