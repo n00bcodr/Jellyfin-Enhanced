@@ -11,6 +11,8 @@
     // Create the global namespace immediately and set the initialization flag.
     window.JellyfinEnhanced = window.JellyfinEnhanced || {};
     window.JellyfinEnhanced.isInitialized = true;
+    // Create a local alias for convenience
+    const JE = window.JellyfinEnhanced;
 
     /**
      * A simple translation function that will be available globally.
@@ -19,8 +21,8 @@
      * @param {object} [params={}] - Optional parameters to replace in the string.
      * @returns {string} The translated string.
      */
-    window.JellyfinEnhanced.t = function(key, params = {}) {
-        const translations = window.JellyfinEnhanced.translations || {};
+    JE.t = function(key, params = {}) {
+        const translations = JE.translations || {};
         let text = translations[key] || key;
         for (const [param, value] of Object.entries(params)) {
             text = text.replace(new RegExp(`{${param}}`, 'g'), value);
@@ -93,11 +95,34 @@
                 dataType: 'json'
             });
             // Merge the sensitive keys into the main config object
-            Object.assign(window.JellyfinEnhanced.pluginConfig, privateConfig);
+            Object.assign(JE.pluginConfig, privateConfig);
             console.log('🪼 Jellyfin Enhanced: Private configuration loaded securely.');
         } catch (error) {
             console.warn('🪼 Jellyfin Enhanced: Could not load private configuration. Some features may be limited.', error);
         }
+    }
+
+    /**
+     * Loads a single script and returns a promise that resolves when it's loaded.
+     * @param {string} scriptName - The filename of the script.
+     * @param {string} basePath - The base URL path for the script.
+     * @returns {Promise<void>}
+     */
+    function loadSingleScript(scriptName, basePath) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`); // Cache-busting
+            script.onload = () => {
+                console.log(`🪼 Jellyfin Enhanced: Loaded essential component '${scriptName}'`);
+                resolve();
+            };
+            script.onerror = () => {
+                const errorMsg = `Failed to load script '${scriptName}'`;
+                console.error(`🪼 Jellyfin Enhanced: ${errorMsg}`);
+                reject(new Error(errorMsg));
+            };
+            document.head.appendChild(script);
+        });
     }
 
     /**
@@ -168,21 +193,32 @@
             ]);
 
             // Populate the global object
-            window.JellyfinEnhanced.pluginConfig = config;
-            window.JellyfinEnhanced.pluginVersion = version;
-            window.JellyfinEnhanced.translations = translations;
+            JE.pluginConfig = config;
+            JE.pluginVersion = version;
+            JE.translations = translations;
             await loadPrivateConfig();
             console.log('🪼 Jellyfin Enhanced: Configuration and translations loaded.');
 
             // Initialize splash screen now that config is available
-            if (typeof window.JellyfinEnhanced.initializeSplashScreen === 'function') {
-                window.JellyfinEnhanced.initializeSplashScreen();
+            if (typeof JE.initializeSplashScreen === 'function') {
+                JE.initializeSplashScreen();
             }
 
-            // Now, load all other feature scripts
             const basePath = '/JellyfinEnhanced/js';
+
+            // 1. Load the core config script first to define JE.loadSettings
+            await loadSingleScript('enhanced/config.js', basePath);
+
+            // 2. Now that config.js is loaded, we can safely load the user settings
+            JE.currentSettings = await JE.loadSettings();
+            if (!JE.currentSettings) {
+                throw new Error("Failed to load user settings.");
+            }
+            console.log('🪼 Jellyfin Enhanced: User settings loaded successfully.');
+
+            // 3. Load all other feature scripts in parallel
             const allScripts = [
-                'enhanced/config.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
+                'enhanced/subtitles.js', 'enhanced/ui.js',
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/events.js',
                 'elsewhere.js',
                 'jellyseerr/api.js',
@@ -194,47 +230,26 @@
                 'watchlist/cardBuilder.js', 'watchlist/watchlist.js'
             ];
 
-            loadScripts(allScripts, basePath, async () => {
-                // Asynchronously load settings and then initialize dependent modules
-                JE.currentSettings = await JE.loadSettings();
+            // 4. After all other scripts are loaded, initialize all modules
+            loadScripts(allScripts, basePath, () => {
                 JE.initializeShortcuts();
 
-                // Now, initialize all modules that depend on settings
-                if (typeof window.JellyfinEnhanced.initializeEnhancedScript === 'function') {
-                    window.JellyfinEnhanced.initializeEnhancedScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeElsewhereScript === 'function') {
-                    window.JellyfinEnhanced.initializeElsewhereScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeJellyseerrScript === 'function') {
-                    window.JellyfinEnhanced.initializeJellyseerrScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializePauseScreen === 'function') {
-                    window.JellyfinEnhanced.initializePauseScreen();
-                }
-                if (typeof window.JellyfinEnhanced.initializeQualityTags === 'function') {
-                    window.JellyfinEnhanced.initializeQualityTags();
-                }
-                if (typeof window.JellyfinEnhanced.initializeGenreTags === 'function') {
-                    window.JellyfinEnhanced.initializeGenreTags();
-                }
-                if (typeof window.JellyfinEnhanced.initializeArrLinksScript === 'function') {
-                    window.JellyfinEnhanced.initializeArrLinksScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeReviewsScript === 'function') {
-                    window.JellyfinEnhanced.initializeReviewsScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeCardBuilderScript === 'function') {
-                    window.JellyfinEnhanced.initializeCardBuilderScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeWatchlistScript === 'function') {
-                    window.JellyfinEnhanced.initializeWatchlistScript();
-                }
+                if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
+                if (typeof JE.initializeElsewhereScript === 'function') JE.initializeElsewhereScript();
+                if (typeof JE.initializeJellyseerrScript === 'function') JE.initializeJellyseerrScript();
+                if (typeof JE.initializePauseScreen === 'function') JE.initializePauseScreen();
+                if (typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
+                if (typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
+                if (typeof JE.initializeArrLinksScript === 'function') JE.initializeArrLinksScript();
+                if (typeof JE.initializeReviewsScript === 'function') JE.initializeReviewsScript();
+                if (typeof JE.initializeCardBuilderScript === 'function') JE.initializeCardBuilderScript();
+                if (typeof JE.initializeWatchlistScript === 'function') JE.initializeWatchlistScript();
+
                 console.log('🪼 Jellyfin Enhanced: All components loaded and initialized.');
 
                 // Hide the splash screen now that everything is ready
-                if (typeof window.JellyfinEnhanced.hideSplashScreen === 'function') {
-                    window.JellyfinEnhanced.hideSplashScreen();
+                if (typeof JE.hideSplashScreen === 'function') {
+                    JE.hideSplashScreen();
                 }
             });
 

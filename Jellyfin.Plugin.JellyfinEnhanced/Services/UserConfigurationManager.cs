@@ -15,9 +15,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public UserConfigurationManager(IApplicationPaths appPaths)
         {
-            var configDir = Path.Combine(appPaths.PluginConfigurationsPath, "Jellyfin.Plugin.JellyfinEnhanced");
-            Directory.CreateDirectory(configDir);
-            _configPath = Path.Combine(configDir, "user_preferences.json");
+            // Get the base path for all installed plugins (e.g., /var/lib/jellyfin/plugins)
+            var basePluginsPath = appPaths.PluginsPath;
+
+            // Manually construct the path exactly as you want it
+            var customConfigDir = Path.Combine(basePluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
+
+            // Create the directory structure if it doesn't exist
+            Directory.CreateDirectory(customConfigDir);
+
+            // Set the final path for the user_preferences.json file
+            _configPath = Path.Combine(customConfigDir, "user_preferences.json");
+
             LoadConfigurations();
         }
 
