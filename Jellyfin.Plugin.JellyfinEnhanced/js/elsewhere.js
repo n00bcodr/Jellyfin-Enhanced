@@ -474,7 +474,7 @@
 
         // Fetch streaming data
         function fetchStreamingData(tmdbId, mediaType, callback) {
-            const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`)}?`;
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`);
             fetch(url, {
                 headers: {
                     "X-Emby-Token": ApiClient.accessToken()

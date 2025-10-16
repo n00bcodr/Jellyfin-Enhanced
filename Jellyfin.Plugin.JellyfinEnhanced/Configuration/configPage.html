@@ -47,6 +47,44 @@
                                 </div>
                             </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">📝 Subtitle Settings</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 1em;"><label><input id="disableCustomSubtitleStyles" is="emby-checkbox" type="checkbox"/><span>Disable Custom Subtitle Styles by default</span></label></div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultSubtitleStyle">Default Subtitle Style</label>
+                                        <select is="emby-select" id="DefaultSubtitleStyle" name="DefaultSubtitleStyle" class="emby-select">
+                                            <option value="0">Clean White</option>
+                                            <option value="1">Classic Black Box</option>
+                                            <option value="2">Netflix Style</option>
+                                            <option value="3">Cinema Yellow</option>
+                                            <option value="4">Soft Gray</option>
+                                            <option value="5">High Contrast</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultSubtitleSize">Default Subtitle Size</label>
+                                        <select is="emby-select" id="DefaultSubtitleSize" name="DefaultSubtitleSize" class="emby-select">
+                                            <option value="0">Tiny</option>
+                                            <option value="1">Small</option>
+                                            <option value="2">Normal</option>
+                                            <option value="3">Large</option>
+                                            <option value="4">Extra Large</option>
+                                            <option value="5">Gigantic</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultSubtitleFont">Default Subtitle Font</label>
+                                        <select is="emby-select" id="DefaultSubtitleFont" name="DefaultSubtitleFont" class="emby-select">
+                                            <option value="0">Default</option>
+                                            <option value="1">Noto Sans</option>
+                                            <option value="2">Sans Serif</option>
+                                            <option value="3">Typewriter</option>
+                                            <option value="4">Roboto</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </details>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
                                 <summary style="cursor: pointer; font-weight: bold;">🎲 Random Button Settings</summary>
                                 <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="randomButtonEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Random Button</span></label></div>
@@ -136,7 +174,13 @@
                         <div class="configSection">
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="TMDB_API_KEY">TMDB API Key</label>
-                                <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text"/>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" style="flex-grow: 1;"/>
+                                    <span id="tmdbStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testTmdbBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
                                 <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a></div>
                                 <div class="fieldDescription">Leaving this blank will not load Jellyfin Elsewhere</div>
                             </div>
@@ -348,6 +392,9 @@
 
             const testJellyseerrBtn = document.getElementById('testJellyseerrBtn');
             const jellyseerrStatusIndicator = document.getElementById('jellyseerrStatusIndicator');
+
+            const testTmdbBtn = document.getElementById('testTmdbBtn');
+            const tmdbStatusIndicator = document.getElementById('tmdbStatusIndicator');
 
             const style = document.createElement('style');
             style.textContent = `
@@ -579,6 +626,44 @@
             }
         }
 
+        async function testTmdbConnection() {
+            const apiKey = (document.querySelector('#TMDB_API_KEY').value || '').trim();
+
+            if (!apiKey) {
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide a TMDB API key to test the connection.' });
+                return;
+            }
+
+            testTmdbBtn.disabled = true;
+            tmdbStatusIndicator.textContent = 'sync';
+            tmdbStatusIndicator.className = 'material-icons status-check';
+            tmdbStatusIndicator.style.color = '#00a4dc';
+
+            try {
+                const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/validate`, { apiKey: apiKey });
+                await ApiClient.ajax({ type: 'GET', url: validationUrl });
+
+                tmdbStatusIndicator.textContent = 'check_circle';
+                tmdbStatusIndicator.style.color = '#52b54b';
+                Dashboard.alert({ title: 'Success', message: 'Successfully connected to TMDB!' });
+
+            } catch (e) {
+                console.error('TMDB validation failed:', e);
+                const errorMessage = (e.status === 401)
+                    ? 'The API Key is invalid.'
+                    : 'Could not connect to TMDB. Please check the key and your network.';
+
+                tmdbStatusIndicator.textContent = 'error';
+                tmdbStatusIndicator.style.color = '#dc3545';
+                Dashboard.alert({ title: 'Connection Failed', message: errorMessage });
+            } finally {
+                testTmdbBtn.disabled = false;
+                if (tmdbStatusIndicator) {
+                    tmdbStatusIndicator.classList.remove('status-check');
+                }
+            }
+        }
+
 
         function loadConfig() {
             Dashboard.showLoadingMsg();
@@ -630,6 +715,10 @@
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
                 document.querySelector('#watchlistEnabled').checked = config.WatchlistEnabled;
+                document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
+                document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
+                document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
+                document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
 
 
                 Dashboard.hideLoadingMsg();
@@ -684,6 +773,10 @@
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
             config.WatchlistEnabled = document.querySelector('#watchlistEnabled').checked;
+            config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
+            config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
+            config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
+            config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
 
 
             try {
@@ -711,7 +804,8 @@
         form.addEventListener('submit', saveConfig);
         clearLocalStorageBtn.addEventListener('click', clearLocalStorage);
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
-const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
+        testTmdbBtn.addEventListener('click', testTmdbConnection);
+        const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
         if (copyWatchlistHtmlBtn) {
             copyWatchlistHtmlBtn.addEventListener('click', () => {
                 const codeText = `<div class="sections watchlist">\n    <div class="watchlist-movies"></div>\n    <div class="watchlist-series"></div>\n    <div class="watchlist-episodes"></div>\n</div>`;
@@ -721,11 +815,11 @@ const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
                 const success = () => {
                     copyBtnText.textContent = 'Copied!';
                     copyBtnIcon.textContent = 'check';
-                    copyWatchlistHtmlBtn.style.color = '#52b54b'; // Green success color
+                    copyWatchlistHtmlBtn.style.color = '#52b54b';
                     setTimeout(() => {
                         copyBtnText.textContent = 'Copy';
                         copyBtnIcon.textContent = 'content_copy';
-                        copyWatchlistHtmlBtn.style.color = ''; // Reset color
+                        copyWatchlistHtmlBtn.style.color = '';
                     }, 2500);
                 };
 
@@ -733,11 +827,11 @@ const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
                     console.error('Failed to copy text: ', err);
                     copyBtnText.textContent = 'Failed';
                     copyBtnIcon.textContent = 'error';
-                    copyWatchlistHtmlBtn.style.color = '#dc3545'; // Red error color
+                    copyWatchlistHtmlBtn.style.color = '#dc3545';
                     setTimeout(() => {
                         copyBtnText.textContent = 'Copy';
                         copyBtnIcon.textContent = 'content_copy';
-                        copyWatchlistHtmlBtn.style.color = ''; // Reset color
+                        copyWatchlistHtmlBtn.style.color = '';
                     }, 2500);
                 };
 

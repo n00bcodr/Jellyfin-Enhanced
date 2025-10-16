@@ -28,78 +28,6 @@
     };
 
     /**
-     * Performs a one-time migration of settings from localStorage to the server,
-     * preventing race conditions from multiple devices.
-     */
-    async function migrateLocalStorageToServer() {
-        // This flag ensures the migration logic only runs once per device.
-        if (localStorage.getItem('jellyfinEnhancedMigrated_v2')) {
-            return;
-        }
-
-        console.log('🪼 Jellyfin Enhanced: Checking if migration is needed...');
-
-        // 1. Check if settings already exist on the server.
-        let serverSettings;
-        try {
-            serverSettings = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl('/JellyfinEnhanced/preferences'),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
-        } catch (e) {
-            console.error("🪼 Jellyfin Enhanced: Could not contact server for migration check. Aborting migration.", e);
-            return; // Can't proceed without server confirmation.
-        }
-
-        // 2. If settings exist on the server, another device has already migrated.
-        if (serverSettings && serverSettings.jellyfinUserId) {
-            console.log('🪼 Jellyfin Enhanced: Server already has settings. Migration not needed on this device.');
-            // Clean up this device's local storage and mark as migrated.
-            localStorage.removeItem('jellyfinEnhancedSettings');
-            localStorage.removeItem('jellyfinEnhancedUserShortcuts');
-            localStorage.removeItem('jellyfinEnhancedBookmarks');
-            localStorage.setItem('jellyfinEnhancedMigrated_v2', 'true');
-            return;
-        }
-
-        // 3. If no server settings exist, this is the first device. Proceed with migration.
-        console.log('🪼 Jellyfin Enhanced: No server settings found. Starting migration of local settings...');
-
-        const oldSettings = JSON.parse(localStorage.getItem('jellyfinEnhancedSettings') || '{}');
-        const oldShortcuts = JSON.parse(localStorage.getItem('jellyfinEnhancedUserShortcuts') || '{}');
-        const oldBookmarks = JSON.parse(localStorage.getItem('jellyfinEnhancedBookmarks') || '{}');
-
-        // If there's nothing to migrate, just mark as done.
-        if (Object.keys(oldSettings).length === 0 && Object.keys(oldShortcuts).length === 0 && Object.keys(oldBookmarks).length === 0) {
-            localStorage.setItem('jellyfinEnhancedMigrated_v2', 'true');
-            console.log('🪼 Jellyfin Enhanced: No local settings found to migrate.');
-            return;
-        }
-
-        const migratedSettings = {
-            ...oldSettings,
-            userShortcuts: oldShortcuts,
-            bookmarks: oldBookmarks
-        };
-
-        try {
-            await JE.saveSettings(migratedSettings);
-            console.log('🪼 Jellyfin Enhanced: Successfully migrated settings to the server.');
-
-            // Clean up old localStorage items after successful migration.
-            localStorage.removeItem('jellyfinEnhancedSettings');
-            localStorage.removeItem('jellyfinEnhancedUserShortcuts');
-            localStorage.removeItem('jellyfinEnhancedBookmarks');
-            localStorage.setItem('jellyfinEnhancedMigrated_v2', 'true');
-        } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Migration upload failed. Settings will remain local for this session.', error);
-        }
-    }
-
-
-    /**
      * Manages loading and saving of user-defined shortcuts from the main settings object.
      */
     JE.userShortcutManager = {
@@ -145,12 +73,10 @@
     };
 
     /**
-     * Loads settings from the server, migrating from localStorage if necessary.
+     * Loads settings from the server.
      * @returns {Promise<object>} The loaded or default settings.
      */
     JE.loadSettings = async () => {
-        await migrateLocalStorageToServer();
-
         try {
             const settings = await ApiClient.ajax({
                 type: 'GET',
@@ -167,9 +93,10 @@
                     autoPipEnabled: pluginConfig.AutoPipEnabled,
                     autoSkipIntro: pluginConfig.AutoSkipIntro,
                     autoSkipOutro: pluginConfig.AutoSkipOutro,
-                    selectedStylePresetIndex: 0,
-                    selectedFontSizePresetIndex: 2,
-                    selectedFontFamilyPresetIndex: 0,
+                    selectedStylePresetIndex: pluginConfig.DefaultSubtitleStyle,
+                    selectedFontSizePresetIndex: pluginConfig.DefaultSubtitleSize,
+                    selectedFontFamilyPresetIndex: pluginConfig.DefaultSubtitleFont,
+                    disableCustomSubtitleStyles: pluginConfig.DisableCustomSubtitleStyles,
                     randomButtonEnabled: pluginConfig.RandomButtonEnabled,
                     randomIncludeMovies: pluginConfig.RandomIncludeMovies,
                     randomIncludeShows: pluginConfig.RandomIncludeShows,
@@ -199,6 +126,7 @@
                 selectedStylePresetIndex: 0,
                 selectedFontSizePresetIndex: 2,
                 selectedFontFamilyPresetIndex: 0,
+                disableCustomSubtitleStyles: false,
                 randomButtonEnabled: true,
                 randomIncludeMovies: true,
                 randomIncludeShows: true,

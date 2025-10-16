@@ -570,13 +570,17 @@
     async function fetchProviderIcons(container, tmdbId, mediaType) {
         if (!container || !tmdbId || !mediaType) return;
 
-        const TMDB_API_KEY = JE.pluginConfig.TMDB_API_KEY;
+        const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`);
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
 
         try {
-            const response = await fetch(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
+            const response = await fetch(url, {
+                headers: {
+                    "X-Emby-Token": ApiClient.accessToken()
+                }
+            });
             if (!response.ok) return;
 
             const data = await response.json();

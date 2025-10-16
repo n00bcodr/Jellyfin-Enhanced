@@ -9,7 +9,16 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Jellyfin.Data.Enums;
+using MediaBrowser.Controller.Dto;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Querying;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Common.Configuration;
@@ -31,12 +40,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
+        private readonly IUserManager _userManager;
+        private readonly IUserDataManager _userDataManager;
+        private readonly ILibraryManager _libraryManager;
+        private readonly IDtoService _dtoService;
         private readonly UserConfigurationManager _userConfigurationManager;
 
-        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IApplicationPaths appPaths)
+        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IDtoService dtoService, IApplicationPaths appPaths)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
+            _userManager = userManager;
+            _userDataManager = userDataManager;
+            _libraryManager = libraryManager;
+            _dtoService = dtoService;
             _userConfigurationManager = new UserConfigurationManager(appPaths);
         }
 
@@ -229,7 +246,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/status");
+                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/user");
                 if (resp.IsSuccessStatusCode)
                     return Ok(new { ok = true });
 
@@ -317,6 +334,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
+
+        [HttpGet("tmdb/validate")]
+        public async Task<IActionResult> ValidateTmdb([FromQuery] string apiKey)
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return BadRequest(new { ok = false, message = "API key is missing" });
+            }
+
+            var httpClient = _httpClientFactory.CreateClient();
+            try
+            {
+                var requestUri = $"https://api.themoviedb.org/3/configuration?api_key={apiKey}";
+                var response = await httpClient.GetAsync(requestUri);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return Ok(new { ok = true });
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    return Unauthorized(new { ok = false, message = "Invalid API Key." });
+                }
+
+                return StatusCode((int)response.StatusCode, new { ok = false, message = "Failed to connect to TMDB." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Exception during TMDB API key validation: {ex.Message}");
+                return StatusCode(500, new { ok = false, message = "Could not reach TMDB services." });
+            }
+        }
+
         [HttpGet("script")]
         public ActionResult GetMainScript() => GetScriptResource("js/plugin.js");
         [HttpGet("js/{**path}")]
@@ -324,6 +375,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("version")]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
+        [HttpGet("private-config")]
+        [Authorize]
+        public ActionResult GetPrivateConfig()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            return new JsonResult(new
+            {
+                // For Jellyfin Elsewhere & Reviews
+                config.TMDB_API_KEY,
+
+                // For Arr Links
+                config.SonarrUrl,
+                config.RadarrUrl,
+                config.BazarrUrl
+            });
+        }
         [HttpGet("public-config")]
         public ActionResult GetPublicConfig()
         {
@@ -343,7 +415,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Jellyfin Elsewhere Settings
                 config.ElsewhereEnabled,
-                config.TMDB_API_KEY,
                 config.DEFAULT_REGION,
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
@@ -368,6 +439,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
                 config.DisableAllShortcuts,
+                config.DefaultSubtitleStyle,
+                config.DefaultSubtitleSize,
+                config.DefaultSubtitleFont,
+                config.DisableCustomSubtitleStyles,
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
@@ -376,9 +451,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,
-                config.SonarrUrl,
-                config.RadarrUrl,
-                config.BazarrUrl,
                 config.ShowArrLinksAsText,
                 config.WatchlistEnabled
             });
@@ -400,7 +472,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var httpClient = _httpClientFactory.CreateClient();
             var queryString = HttpContext.Request.QueryString;
-            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}&api_key={config.TMDB_API_KEY}";
+            var separator = queryString.HasValue ? "&" : "?";
+            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
 
             try
             {
@@ -437,13 +510,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new FileStreamResult(stream, "application/json");
         }
 
+        [HttpPost("watchlist")]
+        public async Task<QueryResult<BaseItemDto>?> GetWatchlist()
+        {
+            using var reader = new StreamReader(Request.Body);
+            var rawJson = await reader.ReadToEndAsync();
+
+            JObject data = JObject.Parse(rawJson);
+            var userId = Guid.Parse(data["UserId"]?.ToString() ?? string.Empty);
+            if (userId == Guid.Empty)
+            {
+                return null;
+            }
+            var user = _userManager.GetUserById(userId);
+            if (user == null)
+            {
+                return new QueryResult<BaseItemDto>
+                {
+                    TotalRecordCount = 0,
+                    Items = []
+                };
+            }
+
+            var likedItems = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.Season, BaseItemKind.Episode]
+            }).Where(i =>
+            {
+                var userData = _userDataManager.GetUserData(user, i);
+                return userData.Likes == true;
+            });
+            var dtoOptions = new DtoOptions
+            {
+                Fields = new List<ItemFields>
+                {
+                    ItemFields.PrimaryImageAspectRatio
+                },
+                ImageTypeLimit = 1,
+                ImageTypes = new List<ImageType>
+                {
+                    ImageType.Thumb,
+                    ImageType.Backdrop,
+                    ImageType.Primary,
+                }
+            };
+            var items = _dtoService.GetBaseItemDtos(likedItems.ToList(), dtoOptions, user);
+            return new QueryResult<BaseItemDto>
+            {
+                TotalRecordCount = items.Count,
+                Items = items
+            };
+        }
+
         private ActionResult GetScriptResource(string resourcePath)
         {
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
-        [HttpGet("preferences")]
+[HttpGet("preferences")]
         public ActionResult<UserConfiguration> GetPreferences()
         {
             var jellyfinUserId = Request.Headers["X-Jellyfin-User-Id"].ToString();
@@ -482,5 +607,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _userConfigurationManager.ClearUserConfiguration(jellyfinUserId);
             return Ok();
         }
+
     }
 }
