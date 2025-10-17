@@ -788,15 +788,31 @@
             return false;
         }
 
-        function clearLocalStorage() {
-            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings for all users to defaults on next load.")) {
+        async function clearLocalStorage() {
+            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings for all users to defaults (shortcuts and bookmarks will be preserved).")) {
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(pluginId).then((config) => {
-                    config.ClearLocalStorageTimestamp = Date.now();
-                    ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
+
+                try {
+                    // Call the new backend endpoint
+                    await ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('/JellyfinEnhanced/admin/reset-all-users'),
+                        headers: {
+                            'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`,
+                        }
                     });
-                });
+
+                    // Also update the timestamp to trigger client refresh
+                    const config = await ApiClient.getPluginConfiguration(pluginId);
+                    config.ClearLocalStorageTimestamp = Date.now();
+                    const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    alert("All users' settings have been reset successfully!");
+                } catch (error) {
+                    Dashboard.hideLoadingMsg();
+                    alert("Failed to reset settings: " + error.message);
+                }
             }
         }
 

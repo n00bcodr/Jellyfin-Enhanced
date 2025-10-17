@@ -568,7 +568,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
-[HttpGet("preferences")]
+        [HttpGet("preferences")]
         public ActionResult<UserConfiguration> GetPreferences()
         {
             var jellyfinUserId = Request.Headers["X-Jellyfin-User-Id"].ToString();
@@ -606,6 +606,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             _userConfigurationManager.ClearUserConfiguration(jellyfinUserId);
             return Ok();
+        }
+        [HttpPost("admin/reset-all-users")]
+        [Authorize(Policy = "RequiresElevation")]
+        public ActionResult ResetAllUsersSettings()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            var defaults = new UserConfiguration
+            {
+                AutoPauseEnabled = config.AutoPauseEnabled,
+                AutoResumeEnabled = config.AutoResumeEnabled,
+                AutoPipEnabled = config.AutoPipEnabled,
+                PauseScreenEnabled = config.PauseScreenEnabled,
+                AutoSkipIntro = config.AutoSkipIntro,
+                AutoSkipOutro = config.AutoSkipOutro,
+                DisableCustomSubtitleStyles = config.DisableCustomSubtitleStyles,
+                SelectedStylePresetIndex = config.DefaultSubtitleStyle,
+                SelectedFontSizePresetIndex = config.DefaultSubtitleSize,
+                SelectedFontFamilyPresetIndex = config.DefaultSubtitleFont,
+                RandomButtonEnabled = config.RandomButtonEnabled,
+                RandomUnwatchedOnly = config.RandomUnwatchedOnly,
+                RandomIncludeMovies = config.RandomIncludeMovies,
+                RandomIncludeShows = config.RandomIncludeShows,
+                ShowFileSizes = config.ShowFileSizes,
+                ShowAudioLanguages = config.ShowAudioLanguages,
+                QualityTagsEnabled = config.QualityTagsEnabled,
+                GenreTagsEnabled = config.GenreTagsEnabled,
+                RemoveContinueWatchingEnabled = config.RemoveContinueWatchingEnabled
+            };
+
+            _userConfigurationManager.ResetAllUsersToDefaults(defaults);
+
+            return Ok(new { message = "All users' settings have been reset to defaults (shortcuts and bookmarks preserved)" });
         }
 
     }
