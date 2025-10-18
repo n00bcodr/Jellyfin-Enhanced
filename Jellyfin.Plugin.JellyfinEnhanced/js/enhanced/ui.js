@@ -549,12 +549,6 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_pause')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_pause_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="pauseScreenToggle" ${JE.currentSettings.pauseScreenEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_custom_pause_screen')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_custom_pause_screen_desc')}</div></div>
-                                </label>
-                            </div>
                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoResumeToggle" ${JE.currentSettings.autoResumeEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -565,6 +559,12 @@
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoPipToggle" ${JE.currentSettings.autoPipEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_pip')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_pip_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="pauseScreenToggle" ${JE.currentSettings.pauseScreenEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_custom_pause_screen')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_custom_pause_screen_desc')}</div></div>
                                 </label>
                             </div>
                         </div>
