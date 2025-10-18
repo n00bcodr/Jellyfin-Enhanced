@@ -568,7 +568,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
-        [HttpGet("preferences")]
+[HttpGet("preferences")]
         public ActionResult<UserConfiguration> GetPreferences()
         {
             var jellyfinUserId = Request.Headers["X-Jellyfin-User-Id"].ToString();
@@ -607,6 +607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _userConfigurationManager.ClearUserConfiguration(jellyfinUserId);
             return Ok();
         }
+
         [HttpPost("admin/reset-all-users")]
         [Authorize(Policy = "RequiresElevation")]
         public ActionResult ResetAllUsersSettings()

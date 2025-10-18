@@ -793,12 +793,11 @@
                 Dashboard.showLoadingMsg();
 
                 try {
-                    // Call the new backend endpoint
                     await ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('/JellyfinEnhanced/admin/reset-all-users'),
                         headers: {
-                            'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`,
+                            'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"'
                         }
                     });
 
@@ -808,10 +807,10 @@
                     const result = await ApiClient.updatePluginConfiguration(pluginId, config);
 
                     Dashboard.processPluginConfigurationUpdateResult(result);
-                    alert("All users' settings have been reset successfully!");
+                    Dashboard.alert("All users' settings have been reset successfully!");
                 } catch (error) {
                     Dashboard.hideLoadingMsg();
-                    alert("Failed to reset settings: " + error.message);
+                    Dashboard.alert("Failed to reset settings: " + (error.message || error));
                 }
             }
         }
