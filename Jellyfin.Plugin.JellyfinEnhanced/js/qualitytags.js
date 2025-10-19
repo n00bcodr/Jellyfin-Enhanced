@@ -34,7 +34,7 @@
 
         // Sort tags for consistent display order (Resolution > Features)
         const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '480p', 'LOW-RES', 'SD'];
-        const videoOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR'];
+        const videoOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', '3D'];
         const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
         const featureOrder = [...videoOrder, ...audioOrder];
 
@@ -68,7 +68,8 @@
             'Dolby Digital+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
             'TRUEHD': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
             '7.1': { bg: 'rgba(156, 39, 176, 0.9)', text: '#ffffff' },
-            '5.1': { bg: 'rgba(103, 58, 183, 0.9)', text: '#ffffff' }
+            '5.1': { bg: 'rgba(103, 58, 183, 0.9)', text: '#ffffff' },
+            '3D': { bg: 'rgba(0, 150, 255, 0.9)', text: '#ffffff' }
         };
 
         // --- STATE VARIABLES ---
@@ -380,6 +381,22 @@
                 } else if (maxChannels === 6) {
                     audioTag = '5.1';
                     qualities.add(audioTag);
+                }
+            }
+
+            // --- 3D VIDEO LOGIC ---
+            if (mediaSources) {
+                for (const source of mediaSources) {
+                    if (source.Path) {
+                        const path = source.Path.toLowerCase();
+                        const has3D = path.includes('3d');
+                        const has3DFormat = /hsbs|fsbs|htab|ftab|mvc/.test(path);
+
+                        if (has3D && has3DFormat) {
+                            qualities.add('3D');
+                            break; // Found 3D, no need to check other sources
+                        }
+                    }
                 }
             }
 
