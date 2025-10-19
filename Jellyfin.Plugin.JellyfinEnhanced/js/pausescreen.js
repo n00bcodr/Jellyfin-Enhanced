@@ -107,13 +107,36 @@
             #pause-screen-overlay {
               position: fixed; inset: 0;
               display: none;
-              z-index: 9999;
+              z-index: 99;
               color: #fff;
               font-family: inherit;
               background: var(--pause-screen-overlay-bg);
             }
             #pause-screen-overlay[aria-hidden="false"] { display: flex; }
+
             .pause-screen-active .videoOsdBottom { opacity: 0 !important; pointer-events: none !important; }
+
+            /* To show back button when paused */
+            .pause-screen-active .skinHeader.osdHeader {
+                z-index: 100 !important;
+                opacity: 0.9 !important;
+                visibility: visible !important;
+                background: transparent !important;
+                width: 10vw !important;
+
+            }
+            .pause-screen-active .skinHeader.osdHeader .headerRight {
+                display: none !important;
+            }
+
+            .pause-screen-active .skinHeader.osdHeader {
+                visibility: hidden !important;
+            }
+
+            .pause-screen-active .headerBackButton {
+                visibility: visible !important;
+            }
+
             #pause-screen-content {
               position: relative;
               width: 100%; height: 100%;
