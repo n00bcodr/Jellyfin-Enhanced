@@ -142,18 +142,10 @@
     async function displayItemSize(itemId) {
         const targetSelector = '.itemMiscInfo.itemMiscInfo-primary';
         const container = document.querySelector(targetSelector);
-        const existingTag = container?.querySelector('.mediaInfoItem-fileSize');
 
-            if (existingTag && existingTag.dataset.itemId === itemId) {
-                return;
-            }
-            if (existingTag) {
-                existingTag.remove();
-            }
-            if (!container || container.classList.contains('fileSize-processing')) {
-                return;
-            }
-
+        if (!container || container.querySelector('.mediaInfoItem-fileSize') || container.classList.contains('fileSize-processing')) {
+            return;
+        }
         container.classList.add('fileSize-processing');
 
         try {
@@ -163,7 +155,6 @@
                 if (totalSize > 0 && !container.querySelector('.mediaInfoItem-fileSize')) {
                     const sizeElement = document.createElement('div');
                     sizeElement.className = 'mediaInfoItem mediaInfoItem-fileSize';
-                    sizeElement.dataset.itemId = itemId;
                     sizeElement.title = JE.t('file_size_tooltip');
                     sizeElement.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hard_disk</span>${formatSize(totalSize)}`;
                     container.appendChild(sizeElement);
@@ -204,15 +195,7 @@
         const targetSelector = '.itemMiscInfo.itemMiscInfo-primary';
         const container = document.querySelector(targetSelector);
 
-        const existingTag = container?.querySelector('.mediaInfoItem-audioLanguage');
-
-        if (existingTag && existingTag.dataset.itemId === itemId) {
-            return;
-        }
-        if (existingTag) {
-            existingTag.remove();
-        }
-        if (!container || container.classList.contains('language-processing')) {
+        if (!container || container.querySelector('.mediaInfoItem-audioLanguage') || container.classList.contains('language-processing')) {
             return;
         }
         container.classList.add('language-processing');
@@ -238,7 +221,6 @@
             if (uniqueLanguages.length > 0) {
                 const langElement = document.createElement('div');
                 langElement.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
-                langElement.dataset.itemId = itemId;
                 langElement.title = JE.t('audio_language_tooltip');
                 langElement.style.display = 'flex';
                 langElement.style.alignItems = 'center';
