@@ -138,32 +138,33 @@
     /**
      * Shows the total file size of an item on its details page.
      * @param {string} itemId The ID of the item.
+     * @param {HTMLElement} container The DOM element to append the info to.
      */
-    async function displayItemSize(itemId) {
-        const targetSelector = '.itemMiscInfo.itemMiscInfo-primary';
-        const container = document.querySelector(targetSelector);
-
-        if (!container || container.querySelector('.mediaInfoItem-fileSize') || container.classList.contains('fileSize-processing')) {
+    async function displayItemSize(itemId, container) {
+        if (container.querySelector('.mediaInfoItem-fileSize')) {
             return;
         }
-        container.classList.add('fileSize-processing');
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
+        container.appendChild(placeholder);
 
         try {
             const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
             if (item && item.MediaSources && item.MediaSources.length > 0) {
                 const totalSize = item.MediaSources.reduce((sum, source) => sum + (source.Size || 0), 0);
-                if (totalSize > 0 && !container.querySelector('.mediaInfoItem-fileSize')) {
-                    const sizeElement = document.createElement('div');
-                    sizeElement.className = 'mediaInfoItem mediaInfoItem-fileSize';
-                    sizeElement.title = JE.t('file_size_tooltip');
-                    sizeElement.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hard_disk</span>${formatSize(totalSize)}`;
-                    container.appendChild(sizeElement);
+                if (totalSize > 0) {
+                    placeholder.title = JE.t('file_size_tooltip');
+                    placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hard_disk</span>${formatSize(totalSize)}`;
+                } else {
+                    placeholder.remove();
                 }
+            } else {
+                placeholder.remove();
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
-        } finally {
-            container?.classList.remove('fileSize-processing');
+            placeholder.remove();
         }
     }
 
@@ -171,13 +172,24 @@
      * Triggers the file size display check on details pages.
      */
     JE.runFileSizeCheck = () => {
-        if (JE.currentSettings.showFileSizes && JE.isDetailsPage()) {
+        if (!JE.currentSettings.showFileSizes) return;
+        if (!JE.isDetailsPage()) {
+             // Cleanup when not on a details page
+            document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
+            return;
+        }
+
+        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+        if (!visiblePage) return;
+
+        const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
+        if (container) {
             try {
                 const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                 if (itemId) {
-                    displayItemSize(itemId);
+                    displayItemSize(itemId, container);
                 }
-            } catch (e) { /* ignore errors during page transitions */ }
+            } catch (e) { /* ignore */ }
         }
     };
 
@@ -190,15 +202,14 @@
     /**
      * Displays the audio languages of an item on its details page.
      * @param {string} itemId The ID of the item.
+     * @param {HTMLElement} container The DOM element to append the info to.
      */
-    async function displayAudioLanguages(itemId) {
-        const targetSelector = '.itemMiscInfo.itemMiscInfo-primary';
-        const container = document.querySelector(targetSelector);
+    async function displayAudioLanguages(itemId, container) {
+        if (container.querySelector('.mediaInfoItem-audioLanguage')) return;
 
-        if (!container || container.querySelector('.mediaInfoItem-audioLanguage') || container.classList.contains('language-processing')) {
-            return;
-        }
-        container.classList.add('language-processing');
+        const placeholder = document.createElement('div');
+        placeholder.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
+        container.appendChild(placeholder);
 
         try {
             const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
@@ -219,29 +230,27 @@
 
             const uniqueLanguages = Array.from(languages).map(JSON.parse);
             if (uniqueLanguages.length > 0) {
-                const langElement = document.createElement('div');
-                langElement.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
-                langElement.title = JE.t('audio_language_tooltip');
-                langElement.style.display = 'flex';
-                langElement.style.alignItems = 'center';
-                langElement.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
+                placeholder.title = JE.t('audio_language_tooltip');
+                placeholder.style.display = 'flex';
+                placeholder.style.alignItems = 'center';
+                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
 
                 uniqueLanguages.forEach((lang, index) => {
                     const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
                     if (countryCode) {
-                        langElement.innerHTML += `<img src="https://flagcdn.com/w20/${countryCode.toLowerCase()}.png" alt="${lang.name} flag" style="width: 18px; margin-right: 0.3em; border-radius: 2px;">`;
+                        placeholder.innerHTML += `<img src="https://flagcdn.com/w20/${countryCode.toLowerCase()}.png" alt="${lang.name} flag" style="width: 18px; margin-right: 0.3em; border-radius: 2px;">`;
                     }
-                    langElement.appendChild(document.createTextNode(lang.name));
+                    placeholder.appendChild(document.createTextNode(lang.name));
                     if (index < uniqueLanguages.length - 1) {
-                        langElement.innerHTML += '<span style="margin: 0 0.25em;">, </span>';
+                        placeholder.innerHTML += '<span style="margin: 0 0.25em;">, </span>';
                     }
                 });
-                container.appendChild(langElement);
+            } else {
+                placeholder.remove();
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
-        } finally {
-            container?.classList.remove('language-processing');
+            placeholder.remove();
         }
     }
 
@@ -249,15 +258,31 @@
      * Triggers the audio language display check on details pages.
      */
     JE.runLanguageCheck = () => {
-        if (JE.currentSettings.showAudioLanguages && JE.isDetailsPage()) {
+        if (!JE.currentSettings.showAudioLanguages) return;
+        if (!JE.isDetailsPage()){
+            // Cleanup when not on a details page
+            document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
+            return;
+        }
+
+        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+        if (!visiblePage) return;
+
+        const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
+        if (container) {
             try {
                 const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                 if (itemId) {
-                    displayAudioLanguages(itemId);
+                    displayAudioLanguages(itemId, container);
                 }
             } catch (e) { /* ignore */ }
         }
     };
+
+    setInterval(() => {
+        JE.runFileSizeCheck();
+        JE.runLanguageCheck();
+    }, 500);
 
     /**
      * Resets the playback position of an item to 0, effectively removing it from "Continue Watching".

@@ -168,8 +168,6 @@
         const observer = new MutationObserver(() => {
             runPageSpecificFunctions();
             JE.addRandomButton();
-            JE.runFileSizeCheck();
-            JE.runLanguageCheck();
             onUserButtonLongPress();
         });
 
