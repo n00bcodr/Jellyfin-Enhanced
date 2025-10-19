@@ -19,6 +19,10 @@
         let isProcessingQueue = false;
 
         const genreIconMap = {
+            // Default
+            'default': 'theaters',
+
+            // English
             'action': 'sports_martial_arts', 'adventure': 'explore', 'animation': 'animation',
             'comedy': 'mood', 'crime': 'local_police', 'documentary': 'article',
             'drama': 'theater_comedy', 'family': 'family_restroom', 'fantasy': 'auto_awesome',
@@ -26,7 +30,49 @@
             'mystery': 'psychology_alt', 'romance': 'favorite', 'science fiction': 'science',
             'sci-fi': 'science', 'tv movie': 'tv', 'thriller': 'psychology', 'war': 'military_tech',
             'western': 'landscape', 'superhero': 'domino_mask', 'musical': 'music_video',
-            'biography': 'menu_book', 'sport': 'sports_soccer', 'default': 'theaters'
+            'biography': 'menu_book', 'sport': 'sports_soccer',
+
+            // French (fr)
+            'aventure': 'explore', 'comédie': 'mood', 'drame': 'theater_comedy', 'fantastique': 'auto_awesome',
+            'histoire': 'history_edu', 'horreur': 'skull', 'musique': 'music_note', 'mystère': 'psychology_alt',
+            'science-fiction': 'science', 'téléfilm': 'tv', 'guerre': 'military_tech', 'comédie musicale': 'music_video',
+            'biographie': 'menu_book', 'familial': 'family_restroom', 'historique': 'history_edu',
+
+            // Spanish (es)
+            'acción': 'sports_martial_arts', 'aventura': 'explore', 'animación': 'animation', 'comedia': 'mood',
+            'crimen': 'local_police', 'documental': 'article', 'familiar': 'family_restroom', 'fantasía': 'auto_awesome',
+            'historia': 'history_edu', 'terror': 'skull', 'música': 'music_note', 'misterio': 'psychology_alt',
+            'ciencia ficción': 'science', 'película de tv': 'tv', 'suspense': 'psychology', 'bélica': 'military_tech',
+            'superhéroes': 'domino_mask', 'biografía': 'menu_book', 'deporte': 'sports_soccer',
+
+            // German (de)
+            'abenteuer': 'explore', 'komödie': 'mood', 'krimi': 'local_police', 'dokumentarfilm': 'article',
+            'familienfilm': 'family_restroom', 'geschichte': 'history_edu', 'kriegsfilm': 'military_tech',
+            'musikfilm': 'music_video', 'liebesfilm': 'favorite', 'fernsehfilm': 'tv',
+
+            // Italian (it)
+            'azione': 'sports_martial_arts', 'avventura': 'explore', 'animazione': 'animation', 'commedia': 'mood',
+            'crimine': 'local_police', 'documentario': 'article', 'drammatico': 'theater_comedy', 'famiglia': 'family_restroom',
+            'fantastico': 'auto_awesome', 'storico': 'history_edu', 'orrore': 'skull', 'musica': 'music_note',
+            'mistero': 'psychology_alt', 'romantico': 'favorite', 'fantascienza': 'science', 'film per la tv': 'tv',
+            'guerra': 'military_tech', 'biografico': 'menu_book', 'sportivo': 'sports_soccer',
+
+            // Danish (da)
+            'eventyr': 'explore', 'komedie': 'mood', 'krimi': 'local_police', 'dokumentar': 'article',
+            'familie': 'family_restroom', 'historie': 'history_edu', 'gyser': 'skull', 'musik': 'music_note',
+            'mysterie': 'psychology_alt', 'romantik': 'favorite', 'krig': 'military_tech', 'tv-film': 'tv',
+
+            // Swedish (sv)
+            'äventyr': 'explore', 'komedi': 'mood', 'brott': 'local_police', 'dokumentär': 'article',
+            'familj': 'family_restroom', 'historia': 'history_edu', 'skräck': 'skull', 'musik': 'music_note',
+            'mysterium': 'psychology_alt', 'romantik': 'favorite', 'krigs': 'military_tech',
+
+            // Hungarian (hu)
+            'akció': 'sports_martial_arts', 'kaland': 'explore', 'animációs': 'animation', 'vígjáték': 'mood',
+            'bűnügyi': 'local_police', 'dokumentum': 'article', 'dráma': 'theater_comedy', 'családi': 'family_restroom',
+            'történelmi': 'history_edu', 'horror': 'skull', 'zenei': 'music_note', 'misztikus': 'psychology_alt',
+            'romantikus': 'favorite', 'sci-fi': 'science', 'tv film': 'tv', 'háborús': 'military_tech',
+            'életrajzi': 'menu_book'
         };
 
         const visibilityObserver = new IntersectionObserver((entries) => {
