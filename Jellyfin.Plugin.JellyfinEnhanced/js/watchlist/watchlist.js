@@ -1,4 +1,4 @@
-// /js/watchlist.js
+// /js/watchlist/watchlist.js
 (function(JE) {
     'use strict';
 
@@ -18,6 +18,9 @@
                 .watchlist-button[data-active="true"] .material-icons,
                 .watchlist-icon[data-active="true"] .material-icons {
                     font-family: 'Material Icons';
+                }
+                .watchlist-icon[data-active='true'] .detailButton-icon:before {
+                    font-variation-settings: 'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 20;
                 }
             `;
             document.head.appendChild(style);
@@ -57,127 +60,14 @@
             }
 
             container.style.display = '';
-            const sectionHtml = createWatchlistSection(type, items);
-            container.innerHTML = sectionHtml;
+            if (typeof JE.cardBuilder !== 'undefined' && JE.cardBuilder.renderCards) {
+                const scrollableContainer = JE.cardBuilder.renderCards(items, getTypeDisplayName(type));
+                container.innerHTML = '';
+                container.appendChild(scrollableContainer);
+            } else {
+                console.error("cardBuilder is not available");
+            }
             return { type, itemCount: items.length };
-        }
-
-        function createWatchlistSection(type, items) {
-            const verticalSection = document.createElement('div');
-            verticalSection.className = 'verticalSection emby-scroller-container';
-
-            const sectionTitle = document.createElement('h2');
-            sectionTitle.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
-            sectionTitle.textContent = getTypeDisplayName(type);
-
-            const scrollButtons = document.createElement('div');
-            scrollButtons.setAttribute('is', 'emby-scrollbuttons');
-            scrollButtons.className = 'emby-scrollbuttons padded-right';
-
-            const prevButton = document.createElement('button');
-            prevButton.type = 'button';
-            prevButton.setAttribute('is', 'paper-icon-button-light');
-            prevButton.setAttribute('data-ripple', 'false');
-            prevButton.setAttribute('data-direction', 'left');
-            prevButton.title = 'Previous';
-            prevButton.className = 'emby-scrollbuttons-button paper-icon-button-light';
-            prevButton.disabled = true;
-
-            const prevIcon = document.createElement('span');
-            prevIcon.className = 'material-icons chevron_left';
-            prevIcon.setAttribute('aria-hidden', 'true');
-            prevButton.appendChild(prevIcon);
-
-            const nextButton = document.createElement('button');
-            nextButton.type = 'button';
-            nextButton.setAttribute('is', 'paper-icon-button-light');
-            nextButton.setAttribute('data-ripple', 'false');
-            nextButton.setAttribute('data-direction', 'right');
-            nextButton.title = 'Next';
-            nextButton.className = 'emby-scrollbuttons-button paper-icon-button-light';
-
-            const nextIcon = document.createElement('span');
-            nextIcon.className = 'material-icons chevron_right';
-            nextIcon.setAttribute('aria-hidden', 'true');
-            nextButton.appendChild(nextIcon);
-
-            scrollButtons.appendChild(prevButton);
-            scrollButtons.appendChild(nextButton);
-
-            const scroller = document.createElement('div');
-            scroller.setAttribute('is', 'emby-scroller');
-            scroller.setAttribute('data-horizontal', 'true');
-            scroller.setAttribute('data-centerfocus', 'card');
-            scroller.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
-            scroller.setAttribute('data-scroll-mode-x', 'custom');
-            scroller.style.overflow = 'hidden';
-
-            const itemsContainer = document.createElement('div');
-            itemsContainer.setAttribute('is', 'emby-itemscontainer');
-            itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider animatedScrollX';
-            itemsContainer.style.whiteSpace = 'nowrap';
-            itemsContainer.style.willChange = 'transform';
-            itemsContainer.style.transition = 'transform 270ms ease-out';
-            itemsContainer.style.transform = 'translateX(0px)';
-
-            items.forEach((item, index) => {
-                if (typeof JE.cardBuilder !== 'undefined' && JE.cardBuilder.buildCard) {
-                    const card = JE.cardBuilder.buildCard(item);
-                    card.setAttribute('data-index', index);
-                    card.classList.add('discover-card');
-                    itemsContainer.appendChild(card);
-                }
-            });
-
-            scroller.appendChild(itemsContainer);
-
-            let scrollPosition = 0;
-            const cardWidth = 212; // 200px card + 12px gap
-            const visibleCards = Math.floor(scroller.offsetWidth / cardWidth);
-            const scrollStep = Math.max(1, Math.floor(visibleCards * 0.9));
-            const maxScroll = Math.max(0, items.length - visibleCards);
-
-            const updateScrollButtons = () => {
-                prevButton.disabled = scrollPosition <= 0;
-                nextButton.disabled = scrollPosition >= maxScroll;
-            };
-
-            const scrollTo = (position, smooth = true) => {
-                scrollPosition = Math.max(0, Math.min(position, maxScroll));
-
-                if (smooth) {
-                    itemsContainer.style.transition = 'transform 500ms cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-                } else {
-                    itemsContainer.style.transition = 'none';
-                }
-
-                itemsContainer.style.transform = `translateX(-${scrollPosition * cardWidth}px)`;
-                updateScrollButtons();
-
-                if (smooth) {
-                    setTimeout(() => {
-                        itemsContainer.style.transition = 'transform 270ms ease-out';
-                    }, 500);
-                }
-            };
-
-            prevButton.addEventListener('click', () => {
-                const newPosition = Math.max(0, scrollPosition - scrollStep);
-                scrollTo(newPosition, true);
-            });
-
-            nextButton.addEventListener('click', () => {
-                const newPosition = Math.min(maxScroll, scrollPosition + scrollStep);
-                scrollTo(newPosition, true);
-            });
-
-            updateScrollButtons();
-
-            verticalSection.appendChild(sectionTitle);
-            verticalSection.appendChild(scrollButtons);
-            verticalSection.appendChild(scroller);
-
-            return verticalSection.outerHTML;
         }
 
         function getTypeDisplayName(itemType) {
