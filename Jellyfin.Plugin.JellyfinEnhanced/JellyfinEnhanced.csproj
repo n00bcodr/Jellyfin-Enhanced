@@ -1,21 +1,32 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AssemblyVersion>7.13.0.0</AssemblyVersion>
-    <FileVersion>7.13.0.0</FileVersion>
-    <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
-    <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
-  </PropertyGroup>
+    <PropertyGroup>
+        <JellyfinVersion>10.11.0</JellyfinVersion>
+        <TargetFramework Condition="$(JellyfinVersion.StartsWith('10.11.0'))">net9.0</TargetFramework>
+        <TargetFramework Condition="'$(JellyfinVersion)' == '10.10.7'">net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AssemblyVersion>8.0.0.0</AssemblyVersion>
+        <FileVersion>8.0.0.0</FileVersion>
+        <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
+        <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.10.7"/>
-    <PackageReference Include="Jellyfin.Model" Version="10.10.7"/>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-  </ItemGroup>
+    <ItemGroup>
+      <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" />
+      <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" />
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    </ItemGroup>
 
+    <ItemGroup Condition="'$(JellyfinVersion)' != '10.10.7'">
+        <None Include="JellyfinVersionSpecific/10.10.7/*.cs" />
+        <Compile Remove="JellyfinVersionSpecific/10.10.7/*.cs" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(JellyfinVersion)' != '10.11.0'">
+        <None Include="JellyfinVersionSpecific/10.11.0/*.cs" />
+        <Compile Remove="JellyfinVersionSpecific/10.11.0/*.cs" />
+    </ItemGroup>
 
   <ItemGroup>
     <None Remove="Configuration\configPage.html"/>

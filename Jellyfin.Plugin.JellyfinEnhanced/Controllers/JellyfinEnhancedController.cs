@@ -533,7 +533,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }).Where(i =>
             {
                 var userData = _userDataManager.GetUserData(user, i);
-                return userData.Likes == true;
+                return userData?.Likes == true;
             });
             var dtoOptions = new DtoOptions
             {
