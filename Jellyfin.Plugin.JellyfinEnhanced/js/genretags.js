@@ -168,6 +168,14 @@
 
         function processElement(element, isPriority = false) {
             if (processedElements.has(element)) return;
+
+            const card = element.closest('.card');
+            // Only process elements that are inside a card with a data-type of Movie or Series.
+            if (!card || !card.dataset.type || !MEDIA_TYPES.has(card.dataset.type)) {
+                processedElements.add(element);
+                return;
+            }
+
             const itemId = getItemIdFromElement(element);
             if (!itemId) return;
 
