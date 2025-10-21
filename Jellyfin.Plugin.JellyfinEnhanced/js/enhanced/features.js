@@ -145,6 +145,7 @@
             return;
         }
 
+        // Add a temporary placeholder to prevent re-entry from other observer calls
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
         container.appendChild(placeholder);
@@ -154,44 +155,22 @@
             if (item && item.MediaSources && item.MediaSources.length > 0) {
                 const totalSize = item.MediaSources.reduce((sum, source) => sum + (source.Size || 0), 0);
                 if (totalSize > 0) {
+                    // Now populate the placeholder with the real content
                     placeholder.title = JE.t('file_size_tooltip');
-                    placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hard_disk</span>${formatSize(totalSize)}`;
+                    placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
                 } else {
-                    placeholder.remove();
+                    placeholder.remove(); // No size, remove placeholder
                 }
             } else {
-                placeholder.remove();
+                placeholder.remove(); // No sources, remove placeholder
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
-            placeholder.remove();
+            if (placeholder.parentNode) {
+                placeholder.remove(); // Error, remove placeholder
+            }
         }
     }
-
-    /**
-     * Triggers the file size display check on details pages.
-     */
-    JE.runFileSizeCheck = () => {
-        if (!JE.currentSettings.showFileSizes) return;
-        if (!JE.isDetailsPage()) {
-             // Cleanup when not on a details page
-            document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
-            return;
-        }
-
-        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-        if (!visiblePage) return;
-
-        const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
-        if (container) {
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (itemId) {
-                    displayItemSize(itemId, container);
-                }
-            } catch (e) { /* ignore */ }
-        }
-    };
 
     /**
      * A map of language names/codes to country codes for flag display.
@@ -207,6 +186,7 @@
     async function displayAudioLanguages(itemId, container) {
         if (container.querySelector('.mediaInfoItem-audioLanguage')) return;
 
+        // Add a temporary placeholder to prevent re-entry from other observer calls
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
         container.appendChild(placeholder);
@@ -246,43 +226,46 @@
                     }
                 });
             } else {
-                placeholder.remove();
+                placeholder.remove(); // No source, remove placeholder
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
-            placeholder.remove();
+            if (placeholder.parentNode) {
+                placeholder.remove(); // Error, remove placeholder
+            }
         }
     }
 
-    /**
-     * Triggers the audio language display check on details pages.
-     */
-    JE.runLanguageCheck = () => {
-        if (!JE.currentSettings.showAudioLanguages) return;
-        if (!JE.isDetailsPage()){
-            // Cleanup when not on a details page
-            document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
-            return;
-        }
-
-        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-        if (!visiblePage) return;
-
-        const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
-        if (container) {
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (itemId) {
-                    displayAudioLanguages(itemId, container);
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                if (visiblePage) {
+                    const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
+                    if (container) {
+                        try {
+                            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                            if (itemId) {
+                                if (JE.currentSettings.showFileSizes) {
+                                    displayItemSize(itemId, container);
+                                }
+                                if (JE.currentSettings.showAudioLanguages) {
+                                    displayAudioLanguages(itemId, container);
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
                 }
-            } catch (e) { /* ignore */ }
+            }
         }
-    };
+    });
 
-    setInterval(() => {
-        JE.runFileSizeCheck();
-        JE.runLanguageCheck();
-    }, 500);
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+    });
 
     /**
      * Resets the playback position of an item to 0, effectively removing it from "Continue Watching".
