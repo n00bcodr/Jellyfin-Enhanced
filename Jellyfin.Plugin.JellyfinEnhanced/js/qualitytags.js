@@ -257,7 +257,7 @@
                     qualities.add(hdrTag);
                 } else {
                     // Priority 2: HDR Fallback
-                    const hdr10PlusRegex = /hdr10\+/i;
+                    const hdr10PlusRegex = /hdr10plus/i;
                     const hdr10Regex = /hdr10/i;
                     const hdrRegex = /\bhdr\b/i;
 
