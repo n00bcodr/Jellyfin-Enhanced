@@ -1,35 +1,27 @@
-(function(JE) {
+// /js/reviews.js
+(function (JE) {
     'use strict';
 
-    JE.initializeReviewsScript = function() {
+    JE.initializeReviewsScript = function () {
         if (!JE.pluginConfig.ShowReviews || !JE.pluginConfig.TMDB_API_KEY) {
             console.log('🪼 Jellyfin Enhanced: Reviews feature disabled or TMDB API key not set.');
             return;
         }
 
         const logPrefix = '🪼 Jellyfin Enhanced: Reviews:';
-        let lastProcessedItemId = null;
-
-        function log(message, data) {
-            if (data !== undefined) {
-                console.debug(`${logPrefix} ${message}`, data);
-            } else {
-                console.debug(`${logPrefix} ${message}`);
-            }
-        }
 
         function fetchReviews(tmdbId, mediaType) {
             const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
             const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
             return fetch(url, {
-                    headers: {
-                        "X-Emby-Token": ApiClient.accessToken()
-                    }
-                })
+                headers: {
+                    "X-Emby-Token": ApiClient.accessToken()
+                }
+            })
                 .then(response => response.ok ? response.json() : Promise.reject(`API Error: ${response.status}`))
                 .then(data => data.results || [])
                 .catch(error => {
-                    console.error(`${logPrefix} ERROR: Failed to fetch reviews.`, error);
+                    console.error(`${logPrefix} Failed to fetch reviews.`, error);
                     return null;
                 });
         }
@@ -71,66 +63,70 @@
 
             const textElement = reviewCard.querySelector('.tmdb-review-text');
             textElement.innerHTML = escapeHtml(previewContent).replace(/\n/g, '<br>') +
-                                    (isLongReview ? `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
+                (isLongReview ? `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
 
             return reviewCard;
         }
 
-        function addReviewsToPage(reviews) {
-            const existingSection = document.querySelector('.tmdb-reviews-section');
-            if (existingSection) existingSection.remove();
-
-            if (!reviews || reviews.length === 0) {
-                console.log(`${logPrefix} No reviews found to display.`);
-                return;
+        function addReviewsToPage(reviews, contextPage) {
+            const existingSection = contextPage.querySelector('.tmdb-reviews-section');
+            if (existingSection) {
+                existingSection.remove();
             }
 
-            let targetContainer = document.querySelector('.detailSectionContent') ||
-                                  document.querySelector('.detailPagePrimaryContainer') ||
-                                  document.querySelector('.detailPage');
+            let reviewsSection;
+            const hasReviews = reviews && reviews.length > 0;
 
-            if (!targetContainer) {
-                console.debug(`${logPrefix} ERROR: Could not find a suitable container.`);
-                return;
-            }
+            if (hasReviews) {
+                reviewsSection = document.createElement('details');
+                reviewsSection.className = 'detailSection tmdb-reviews-section';
+                const summary = document.createElement('summary');
+                summary.className = 'sectionTitle';
+                summary.innerHTML = `${JE.t('reviews_title', { count: reviews.length })} <i class="material-icons expand-icon">expand_more</i>`;
+                reviewsSection.appendChild(summary);
 
-            const reviewsDetails = document.createElement('details');
-            reviewsDetails.className = 'detailSection tmdb-reviews-section';
+                const swipeContainer = document.createElement('div');
+                swipeContainer.className = 'tmdb-review-swipe-container';
 
-            const summary = document.createElement('summary');
-            summary.className = 'sectionTitle';
-            summary.innerHTML = `${JE.t('reviews_title', { count: reviews.length })} <i class="material-icons expand-icon">expand_more</i>`;
-            reviewsDetails.appendChild(summary);
+                reviews.slice(0, 10).forEach(review => { // Limit to 10 reviews
+                    swipeContainer.appendChild(createReviewElement(review));
+                });
+                reviewsSection.appendChild(swipeContainer);
 
-            const swipeContainer = document.createElement('div');
-            swipeContainer.className = 'tmdb-review-swipe-container';
+                swipeContainer.addEventListener('click', function (e) {
+                    if (e.target.classList.contains('tmdb-review-toggle')) {
+                        const textElement = e.target.parentElement;
+                        const card = textElement.closest('.tmdb-review-card');
+                        const review = reviews.find(r => escapeHtml(r.author) === card.querySelector('.tmdb-review-author').textContent);
 
-            reviews.slice(0, 10).forEach(review => { // Limit to 10 reviews
-                swipeContainer.appendChild(createReviewElement(review));
-            });
-            reviewsDetails.appendChild(swipeContainer);
-
-            const overviewSection = targetContainer.querySelector('.detailSection-overview') || targetContainer.querySelector('h1, h2');
-            if (overviewSection) {
-                overviewSection.parentNode.insertBefore(reviewsDetails, overviewSection.nextSibling);
-            } else {
-                targetContainer.appendChild(reviewsDetails);
-            }
-
-            swipeContainer.addEventListener('click', function(e) {
-                if (e.target.classList.contains('tmdb-review-toggle')) {
-                    const textElement = e.target.parentElement;
-                    const card = textElement.closest('.tmdb-review-card');
-                    const review = reviews.find(r => escapeHtml(r.author) === card.querySelector('.tmdb-review-author').textContent);
-
-                    if (textElement.classList.toggle('expanded')) {
-                        textElement.innerHTML = escapeHtml(review.content).replace(/\n/g, '<br>') + ` <span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
-                    } else {
-                        const previewContent = review.content.substring(0, 350);
-                        textElement.innerHTML = escapeHtml(previewContent).replace(/\n/g, '<br>') + `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
+                        if (textElement.classList.toggle('expanded')) {
+                            textElement.innerHTML = escapeHtml(review.content).replace(/\n/g, '<br>') + ` <span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
+                        } else {
+                            const previewContent = review.content.substring(0, 350);
+                            textElement.innerHTML = escapeHtml(previewContent).replace(/\n/g, '<br>') + `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
+                        }
                     }
-                }
-            });
+                });
+            } else {
+                // If no reviews, create a simple, non-expandable header
+                reviewsSection = document.createElement('div');
+                reviewsSection.className = 'detailSection tmdb-reviews-section';
+                const summary = document.createElement('summary');
+                summary.className = 'sectionTitle';
+                summary.innerHTML = `${JE.t('reviews_title', { count: 0 })}`;
+                reviewsSection.appendChild(summary);
+            }
+
+            const insertionAnchor =
+                contextPage.querySelector('.streaming-lookup-container') ||
+                contextPage.querySelector('.itemExternalLinks') ||
+                contextPage.querySelector('.tagline');
+
+            if (insertionAnchor && insertionAnchor.parentNode) {
+                insertionAnchor.parentNode.insertBefore(reviewsSection, insertionAnchor.nextSibling);
+            } else {
+                console.error(`${logPrefix} Could not find a suitable anchor to insert reviews.`);
+            }
         }
 
         function injectCss() {
@@ -176,32 +172,37 @@
             document.head.appendChild(style);
         }
 
-        async function runLogic(itemId, userId) {
+        async function processPage(visiblePage) {
+            if (!visiblePage || visiblePage.querySelector('.tmdb-reviews-section')) {
+                return;
+            }
+
             try {
-                const item = await ApiClient.getItem(userId, itemId);
-                const tmdbId = item?.ProviderIds?.Tmdb;
-                const mediaType = item?.Type;
-                if (tmdbId && mediaType) {
-                    const reviews = await fetchReviews(tmdbId, mediaType);
-                    addReviewsToPage(reviews);
+                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                const userId = ApiClient.getCurrentUserId();
+
+                if (itemId && userId) {
+                    const item = await ApiClient.getItem(userId, itemId);
+                    const tmdbId = item?.ProviderIds?.Tmdb;
+                    const mediaType = item?.Type;
+
+                    if (tmdbId && mediaType) {
+                        const reviews = await fetchReviews(tmdbId, mediaType);
+                        addReviewsToPage(reviews, visiblePage);
+                    } else {
+                        addReviewsToPage([], visiblePage);
+                    }
                 }
             } catch (error) {
-                console.debug(`${logPrefix} ERROR fetching item details:`, error);
+                console.error(`${logPrefix} Error processing page:`, error);
             }
         }
 
-        function startMainLoop() {
+        function startLoop() {
             setInterval(() => {
-                const isDetailsPage = window.location.hash.includes('/details?id=');
-                const currentItemId = isDetailsPage ? new URLSearchParams(window.location.hash.split('?')[1]).get('id') : null;
-                if (!currentItemId) {
-                    lastProcessedItemId = null;
-                    return;
-                }
-                if (currentItemId !== lastProcessedItemId) {
-                    lastProcessedItemId = currentItemId;
-                    const userId = ApiClient.getCurrentUserId();
-                    if (userId) runLogic(currentItemId, userId);
+                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                if (visiblePage) {
+                    processPage(visiblePage);
                 }
             }, 1000);
         }
@@ -210,7 +211,7 @@
         let mainInterval = setInterval(() => {
             if (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId()) {
                 clearInterval(mainInterval);
-                startMainLoop();
+                startLoop();
             }
         }, 500);
     };
