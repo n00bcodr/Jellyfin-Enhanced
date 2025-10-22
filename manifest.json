@@ -1,277 +1,277 @@
 [
-    {
-        "name": "Jellyfin Enhanced",
-        "guid": "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b",
-        "description": "A combination of the Jellyfin Enhanced and Jellyfin Elsewhere userscripts, providing a comprehensive set of tweaks and features for Jellyfin.",
-        "overview": "Jellyfin Enhanced and Jellyfin Elsewhere for a better Jellyfin experience.",
-        "owner": "n00bcodr",
-        "category": "General",
-        "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
-        "versions": [
-            {
-                "changelog": "- 10.11 Support!",
-                "targetAbi": "10.10.7.0",
-                "version": "8.0.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/8.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
-                "checksum": "615F30A482401761D0EA5EAD7FFCAA0E",
-                "timestamp": "2025-10-20T11:37:02"
-            },
-            {
-                "changelog": "- Fix the ordering of Pause Screen setting in the Enhanced Panel\n - Update pause screen to show back button\n - Align watchlist with upstream from ranaldsgift\n - Improve loading of filesize and language tags\n - Add 3D video tag detection and styling\n - Add multi-language support for genre icons",
-                "targetAbi": "10.10.7.0",
-                "version": "7.13.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.13.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "B5BA0B295E42112B8BEDD6EF7584D3FB",
-                "timestamp": "2025-10-19T19:45:30"
-            },
-            {
-                "changelog": "- Fix the ordering of Pause Screen setting in the Enhanced Panel\n - Update pause screen to show back button\n - Align watchlist with upstream from ranaldsgift\n - Improve loading of filesize and language tags\n - Add 3D video tag detection and styling\n - Add multi-language support for genre icons",
-                "targetAbi": "10.10.7.0",
-                "version": "7.12.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.12.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "A79F99D8276A38F24C1C849EAE058731",
-                "timestamp": "2025-10-19T18:55:09"
-            },
-            {
-                "changelog": "- Add option to set disable custom subtitle styles\n - Add new selectors to splash screen hide list",
-                "targetAbi": "10.10.7.0",
-                "version": "7.11.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.11.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "AD1AFEE82C5ACD96B7CC541C876AF9E8",
-                "timestamp": "2025-10-15T06:13:49"
-            },
-            {
-                "changelog": "- Change Jellyseerr API endpoint for connectivity check\n - Add TMDB API key validation to config page\n - Fix TMDB API key query string handling",
-                "targetAbi": "10.10.7.0",
-                "version": "7.10.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.10.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "EF7C5E55E904234D6E17E7358DCA793D",
-                "timestamp": "2025-10-08T06:16:18"
-            },
-            {
-                "changelog": "- Integrate watchlist into home sections plugin\n - Revert admin update check and install\n - Prevent duplicate ARR links with concurrency lock\n - Add new private-config and move sensitive info there",
-                "targetAbi": "10.10.7.0",
-                "version": "7.9.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.9.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "0510A9EED3F11E924F781C071A7EF7B6",
-                "timestamp": "2025-10-07T12:31:43"
-            },
-            {
-                "changelog": "- Add TMDB API proxy endpoint\n - Update manifest name to 'Jellyfin Enhanced' to fix auto-update\n - Add configurable custom splash screen feature",
-                "targetAbi": "10.10.7.0",
-                "version": "7.8.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.8.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "0273623BB845DBEA33AD558B243CBF8A",
-                "timestamp": "2025-09-30T13:05:09"
-            },
-            {
-                "changelog": "- Allow requests for seasons with status 7\n - Add option to disable all keyboard shortcuts",
-                "targetAbi": "10.10.7.0",
-                "version": "7.7.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.7.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "08199D0A312BD0A703316A1B224A990E",
-                "timestamp": "2025-09-28T08:59:08"
-            },
-            {
-                "changelog": "- Add missed languages to mapping\n - Filter out 'person' results in Jellyseer search API",
-                "targetAbi": "10.10.7.0",
-                "version": "7.6.2.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.2.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "27868FA98BDEA74E0BD514DF439A7CF2",
-                "timestamp": "2025-09-26T15:51:30"
-            },
-            {
-                "changelog": "- Fix skip button observer management",
-                "targetAbi": "10.10.7.0",
-                "version": "7.6.1.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "B9A91E27FE317BE13C1995B15B46C365",
-                "timestamp": "2025-09-21T05:30:44"
-            },
-            {
-                "changelog": "- Add admin update check and install\n - Fix Jellyseerr search input handling for TV mode UI\n - Ensure subtitle styles are applied after page load\n - Refactor auto-skip logic to use MutationObserver",
-                "targetAbi": "10.10.7.0",
-                "version": "7.6.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "3DE299F36B987A3E6B58CF4AB9000D7B",
-                "timestamp": "2025-09-20T17:06:29"
-            },
-            {
-                "changelog": "- Improve download status popover handling\n - Add auto-refresh for Jellyseerr UI and modals\n - Add Meta key support to shortcut detection\n - Add Elsewhere feature toggle to plugin settings",
-                "targetAbi": "10.10.7.0",
-                "version": "7.5.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.5.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "96A4DE77B6FD91EA9AEE9DACD39DFA6A",
-                "timestamp": "2025-09-18T16:41:38"
-            },
-            {
-                "changelog": "- Add Genre Tags\n - Add a closebutton for pausescreen to remove the overlay #50\n - Create Hungarian Translations (#52, #49)\n - Add text shadow to subtitle styles #47",
-                "targetAbi": "10.10.7.0",
-                "version": "7.4.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.4.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "C2456F8FC089E6DE0AD2E6B4C21C6A73",
-                "timestamp": "2025-09-16T05:03:00"
-            },
-            {
-                "changelog": "- feat: Watchlist (#48)\n - Depends on Avaiability of Custom Tabs",
-                "targetAbi": "10.10.7.0",
-                "version": "7.3.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.3.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "A3F7E0A3F456B37858589D2DAF2B1216",
-                "timestamp": "2025-09-14T04:52:00"
-            },
-            {
-                "changelog": "- Add TMDB reviews feature to item details page\n - Update README.md",
-                "targetAbi": "10.10.7.0",
-                "version": "7.2.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.2.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "2CFE6C9307B12B1CCA8089336DA77904",
-                "timestamp": "2025-09-09T04:47:11"
-            },
-            {
-                "changelog": "- Add option to show streaming providers on Jellyseerr posters\n - Use ApiClient.getUrl to support setups with base url\n - Remove custom z-index styles from pause screen which is causing issues with ASS subtitles",
-                "targetAbi": "10.10.7.0",
-                "version": "7.1.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.1.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "2FFF5B0AAB876983523F32B2E5349E14",
-                "timestamp": "2025-09-06T12:48:20"
-            },
-            {
-                "changelog": "- Add advanced Jellyseerr request options and refactor JS #34\n - Spanish translation (#41)\n - Adjust Italian localization text in it.json (#40)\n - Add action to validate json on PRs\n - Make readme better to read.",
-                "targetAbi": "10.10.7.0",
-                "version": "7.0.0.1",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.0.0.1/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "77B501AC9953DCC69130AB9BF46AFA54",
-                "timestamp": "2025-09-05T11:00:32"
-            },
-            {
-                "changelog": "- Internationalization & Translations - Jellyfin Enhanced is now available in multiple* languages!\n - Improve quality tag detection and sorting logic",
-                "targetAbi": "10.10.7.0",
-                "version": "6.6.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.6.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "5FBE854C4307D185CCE211D8BF9FFABC",
-                "timestamp": "2025-09-03T16:30:12"
-            },
-            {
-                "changelog": "- Add *arr links integration to plugin\n - Adjust 4K threshold and fix title resolution detection",
-                "targetAbi": "10.10.7.0",
-                "version": "6.5.1.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.5.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "4D2079547AA306AD911AA7B29B41E384",
-                "timestamp": "2025-09-02T12:29:23"
-            },
-            {
-                "changelog": "- Support to request individual seasons\n - Improve resolution detection\n - Change clear all bookmarks shortcut",
-                "targetAbi": "10.10.7.0",
-                "version": "6.5.0.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.5.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "4342077CCE7DEF0CDA6650F666D85F15",
-                "timestamp": "2025-09-01T16:20:24"
-            },
-            {
-                "changelog": "- Improve Quality Tags logic and styling\n - Minor improvements and bug fixes",
-                "targetAbi": "10.10.7.0",
-                "version": "6.4.1.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.4.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
-                "checksum": "8A4B07327F6F3856E609DFE5700B0E42",
-                "timestamp": "2025-08-31T10:19:27"
-            },
-            {
-                "checksum": "B129839EF0C48064EB03C296D0EAC81C",
-                "changelog": "- New Features: Add Custom Pause Screen and Quality Tags on posters.\n- Behind the scenes: Implement a dedicated log file for easier troubleshooting and improve URL handling.",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.4.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.4.0.0.zip",
-                "timestamp": "2025-08-29T20:29:29",
-                "version": "6.4.0.0"
-            },
-            {
-                "checksum": "2D217DF3C4583541369EE9A38F2FAE46",
-                "changelog": "- Double click/tap on the Jellyseerr Icon to toggle filter to display only Jellyseerr results.\n - Minor: Add more Logging for both client and server. ",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.3.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.3.0.0.zip",
-                "timestamp": "2025-08-28T17:19:12",
-                "version": "6.3.0.0"
-            },
-            {
-                "checksum": "8C35A30B6DA0AE024B6FDC9632B628DD",
-                "changelog": "- Improve Jellyseer Results injection logic, fixes a bug where container is injected even before search results from Jellyfin are available.\n - Fixes a bug where TMDB links open in app making it impossible to navigate elsewhere\n - Fixes Jellyseerr section not rendering properly on some themes\n - Change the color of Jellyseerr Request button. ",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.2.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.2.0.0.zip",
-                "timestamp": "2025-08-27T16:13:12",
-                "version": "6.2.0.0"
-            },
-            {
-                "checksum": "4FBDAFDB94145D3E077E7C1E6963A481",
-                "changelog": "- Improve Jellyseer Results injection logic, fixes a bug where container is injected even before search results from Jellyfin are available.\n - Fixes a bug where TMDB links open in app making it impossible to navigate elsewhere\n - Fixes Jellyseerr section not rendering properly on some themes\n - Change the color of Jellyseerr Request button. ",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.1.1.0/Jellyfin.Plugin.JellyfinEnhanced_6.1.1.0.zip",
-                "timestamp": "2025-08-27T05:31:11",
-                "version": "6.1.1.0"
-            },
-            {
-                "checksum": "A8DB0B7C56E6849F3E5FFFF8345CD1CB",
-                "changelog": "- *One-Time Setup*: Admins configure the connection once with an API key. No more per-user or per-device logins.\n - *Zero User Configuration*: The integration works automatically for all users across all devices without requiring them to enter any credentials.\n - The API key is managed securely on the server, making the connection more robust and reliable.",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.1.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.1.0.0.zip",
-                "timestamp": "2025-08-26T13:01:38",
-                "version": "6.1.0.0"
-            },
-            {
-                "checksum": "CB91D071F57958E81239277EC87708D5",
-                "changelog": "- Jellyseerr results and requests through Jellyfin Search!\n - Users can now directly login to Jellyseerr from Jellyfin and search and request items\n - Complete refactor for easy future maintainence",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.0.0.0.zip",
-                "timestamp": "2025-08-25T13:37:52",
-                "version": "6.0.0.0"
-            },
-            {
-                "checksum": "21D8702ECDF8259627E332AB561FFCB8",
-                "changelog": "- User customizable shortcuts!\n - Users can now customize shortcuts directly from the enhanced panel\n - New Setting: Auto Picture-in-Picture (PiP)",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.4.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.4.0.0.zip",
-                "timestamp": "2025-08-24T18:09:33",
-                "version": "5.4.0.0"
-            },
-            {
-                "checksum": "E0A055673B6ECE00D413B40900DF6266",
-                "changelog": "- New UI Setting: Add available languages with flags in Item Details page\n - Add a new 'Gigantic' Subtitle style and change subtitle units to for better scaling\n - New Schortcut for opening jellyfin enhanced panel, long press user icon in the header (useful for touch devices)\n - Minor: Increase toast blur for better readability\n - Minor: Add debounce for elsewhere panel autocomplete.",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.3.1.0/Jellyfin.Plugin.JellyfinEnhanced_5.3.1.0.zip",
-                "timestamp": "2025-08-23T04:36:40",
-                "version": "5.3.1.0"
-            },
-            {
-                "checksum": "CD71009DFC17EEDA28EF566C1178594E",
-                "changelog": "- Customizable Shortcuts: The server admin can now set overrides for the existing shortcuts, allowing for personalized key bindings.\n - Improve Elsewhere API failure messages",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.3.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.3.0.0.zip",
-                "timestamp": "2025-08-21T06:12:00",
-                "version": "5.3.0.0"
-            },
-            {
-                "checksum": "DF7E6772672424F4452EC69AE8EBACD9",
-                "changelog": "- Move all the default settings configuration to the config page to give control to the server owner to enable options by default\n - Tabbed interface in config page separating Enhanced settings and Elsewhere settings\n - Minor: Move the startup task to 'Startup Services' instead of creating a separate category\n - Minor: Mobile UI improvements",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.2.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.2.0.0.zip",
-                "timestamp": "2025-08-20T06:12:00",
-                "version": "5.2.0.0"
-            },
-            {
-                "checksum": "DEB52B57618432D7380B22F184499773",
-                "changelog": "Use [file-transformation-plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) to 'inject' javascript without modifying index.html\n -This is to help with all the permission issues for docker installs.\n - Fallback if file-transformation-plugin is not installed to the regulat index.html modification\n - Add an option to reset Jellyfin Enhanced settings to default for all users",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.1.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.1.0.0.zip",
-                "timestamp": "2025-08-18T16:34:21",
-                "version": "5.1.0.0"
-            },
-            {
-                "checksum": "88E4B205DE902CDD3062D648BFB7EC7D",
-                "changelog": "Initial release. \n - Combine Jellyfin Enhanced and Jellyfin Elsewhere \n - Add Remove from Continue Watching \n - Add a button to open the panel in sidebar",
-                "targetAbi": "10.10.7.0",
-                "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.0.0.0.zip",
-                "timestamp": "2025-08-16T12:48:38",
-                "version": "5.0.0.0"
-            }
-        ]
-    }
+  {
+    "name": "Jellyfin Enhanced",
+    "guid": "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b",
+    "description": "A combination of the Jellyfin Enhanced and Jellyfin Elsewhere userscripts, providing a comprehensive set of tweaks and features for Jellyfin.",
+    "overview": "Jellyfin Enhanced and Jellyfin Elsewhere for a better Jellyfin experience.",
+    "owner": "n00bcodr",
+    "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
+    "versions": [
+      {
+        "changelog": "- 10.11 Support!",
+        "targetAbi": "10.10.7.0",
+        "version": "8.0.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/8.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "615F30A482401761D0EA5EAD7FFCAA0E",
+        "timestamp": "2025-10-20T11:37:02"
+      },
+      {
+        "changelog": "- Fix the ordering of Pause Screen setting in the Enhanced Panel\n - Update pause screen to show back button\n - Align watchlist with upstream from ranaldsgift\n - Improve loading of filesize and language tags\n - Add 3D video tag detection and styling\n - Add multi-language support for genre icons",
+        "targetAbi": "10.10.7.0",
+        "version": "7.13.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.13.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "B5BA0B295E42112B8BEDD6EF7584D3FB",
+        "timestamp": "2025-10-19T19:45:30"
+      },
+      {
+        "changelog": "- Fix the ordering of Pause Screen setting in the Enhanced Panel\n - Update pause screen to show back button\n - Align watchlist with upstream from ranaldsgift\n - Improve loading of filesize and language tags\n - Add 3D video tag detection and styling\n - Add multi-language support for genre icons",
+        "targetAbi": "10.10.7.0",
+        "version": "7.12.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.12.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "A79F99D8276A38F24C1C849EAE058731",
+        "timestamp": "2025-10-19T18:55:09"
+      },
+      {
+        "changelog": "- Add option to set disable custom subtitle styles\n - Add new selectors to splash screen hide list",
+        "targetAbi": "10.10.7.0",
+        "version": "7.11.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.11.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "AD1AFEE82C5ACD96B7CC541C876AF9E8",
+        "timestamp": "2025-10-15T06:13:49"
+      },
+      {
+        "changelog": "- Change Jellyseerr API endpoint for connectivity check\n - Add TMDB API key validation to config page\n - Fix TMDB API key query string handling",
+        "targetAbi": "10.10.7.0",
+        "version": "7.10.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.10.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "EF7C5E55E904234D6E17E7358DCA793D",
+        "timestamp": "2025-10-08T06:16:18"
+      },
+      {
+        "changelog": "- Integrate watchlist into home sections plugin\n - Revert admin update check and install\n - Prevent duplicate ARR links with concurrency lock\n - Add new private-config and move sensitive info there",
+        "targetAbi": "10.10.7.0",
+        "version": "7.9.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.9.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "0510A9EED3F11E924F781C071A7EF7B6",
+        "timestamp": "2025-10-07T12:31:43"
+      },
+      {
+        "changelog": "- Add TMDB API proxy endpoint\n - Update manifest name to 'Jellyfin Enhanced' to fix auto-update\n - Add configurable custom splash screen feature",
+        "targetAbi": "10.10.7.0",
+        "version": "7.8.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.8.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "0273623BB845DBEA33AD558B243CBF8A",
+        "timestamp": "2025-09-30T13:05:09"
+      },
+      {
+        "changelog": "- Allow requests for seasons with status 7\n - Add option to disable all keyboard shortcuts",
+        "targetAbi": "10.10.7.0",
+        "version": "7.7.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.7.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "08199D0A312BD0A703316A1B224A990E",
+        "timestamp": "2025-09-28T08:59:08"
+      },
+      {
+        "changelog": "- Add missed languages to mapping\n - Filter out 'person' results in Jellyseer search API",
+        "targetAbi": "10.10.7.0",
+        "version": "7.6.2.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.2.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "27868FA98BDEA74E0BD514DF439A7CF2",
+        "timestamp": "2025-09-26T15:51:30"
+      },
+      {
+        "changelog": "- Fix skip button observer management",
+        "targetAbi": "10.10.7.0",
+        "version": "7.6.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "B9A91E27FE317BE13C1995B15B46C365",
+        "timestamp": "2025-09-21T05:30:44"
+      },
+      {
+        "changelog": "- Add admin update check and install\n - Fix Jellyseerr search input handling for TV mode UI\n - Ensure subtitle styles are applied after page load\n - Refactor auto-skip logic to use MutationObserver",
+        "targetAbi": "10.10.7.0",
+        "version": "7.6.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.6.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "3DE299F36B987A3E6B58CF4AB9000D7B",
+        "timestamp": "2025-09-20T17:06:29"
+      },
+      {
+        "changelog": "- Improve download status popover handling\n - Add auto-refresh for Jellyseerr UI and modals\n - Add Meta key support to shortcut detection\n - Add Elsewhere feature toggle to plugin settings",
+        "targetAbi": "10.10.7.0",
+        "version": "7.5.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.5.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "96A4DE77B6FD91EA9AEE9DACD39DFA6A",
+        "timestamp": "2025-09-18T16:41:38"
+      },
+      {
+        "changelog": "- Add Genre Tags\n - Add a closebutton for pausescreen to remove the overlay #50\n - Create Hungarian Translations (#52, #49)\n - Add text shadow to subtitle styles #47",
+        "targetAbi": "10.10.7.0",
+        "version": "7.4.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.4.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "C2456F8FC089E6DE0AD2E6B4C21C6A73",
+        "timestamp": "2025-09-16T05:03:00"
+      },
+      {
+        "changelog": "- feat: Watchlist (#48)\n - Depends on Avaiability of Custom Tabs",
+        "targetAbi": "10.10.7.0",
+        "version": "7.3.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.3.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "A3F7E0A3F456B37858589D2DAF2B1216",
+        "timestamp": "2025-09-14T04:52:00"
+      },
+      {
+        "changelog": "- Add TMDB reviews feature to item details page\n - Update README.md",
+        "targetAbi": "10.10.7.0",
+        "version": "7.2.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.2.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "2CFE6C9307B12B1CCA8089336DA77904",
+        "timestamp": "2025-09-09T04:47:11"
+      },
+      {
+        "changelog": "- Add option to show streaming providers on Jellyseerr posters\n - Use ApiClient.getUrl to support setups with base url\n - Remove custom z-index styles from pause screen which is causing issues with ASS subtitles",
+        "targetAbi": "10.10.7.0",
+        "version": "7.1.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.1.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "2FFF5B0AAB876983523F32B2E5349E14",
+        "timestamp": "2025-09-06T12:48:20"
+      },
+      {
+        "changelog": "- Add advanced Jellyseerr request options and refactor JS #34\n - Spanish translation (#41)\n - Adjust Italian localization text in it.json (#40)\n - Add action to validate json on PRs\n - Make readme better to read.",
+        "targetAbi": "10.10.7.0",
+        "version": "7.0.0.1",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/7.0.0.1/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "77B501AC9953DCC69130AB9BF46AFA54",
+        "timestamp": "2025-09-05T11:00:32"
+      },
+      {
+        "changelog": "- Internationalization & Translations - Jellyfin Enhanced is now available in multiple* languages!\n - Improve quality tag detection and sorting logic",
+        "targetAbi": "10.10.7.0",
+        "version": "6.6.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.6.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "5FBE854C4307D185CCE211D8BF9FFABC",
+        "timestamp": "2025-09-03T16:30:12"
+      },
+      {
+        "changelog": "- Add *arr links integration to plugin\n - Adjust 4K threshold and fix title resolution detection",
+        "targetAbi": "10.10.7.0",
+        "version": "6.5.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.5.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "4D2079547AA306AD911AA7B29B41E384",
+        "timestamp": "2025-09-02T12:29:23"
+      },
+      {
+        "changelog": "- Support to request individual seasons\n - Improve resolution detection\n - Change clear all bookmarks shortcut",
+        "targetAbi": "10.10.7.0",
+        "version": "6.5.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.5.0.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "4342077CCE7DEF0CDA6650F666D85F15",
+        "timestamp": "2025-09-01T16:20:24"
+      },
+      {
+        "changelog": "- Improve Quality Tags logic and styling\n - Minor improvements and bug fixes",
+        "targetAbi": "10.10.7.0",
+        "version": "6.4.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.4.1.0/Jellyfin.Plugin.JellyfinEnhanced.zip",
+        "checksum": "8A4B07327F6F3856E609DFE5700B0E42",
+        "timestamp": "2025-08-31T10:19:27"
+      },
+      {
+        "checksum": "B129839EF0C48064EB03C296D0EAC81C",
+        "changelog": "- New Features: Add Custom Pause Screen and Quality Tags on posters.\n- Behind the scenes: Implement a dedicated log file for easier troubleshooting and improve URL handling.",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.4.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.4.0.0.zip",
+        "timestamp": "2025-08-29T20:29:29",
+        "version": "6.4.0.0"
+      },
+      {
+        "checksum": "2D217DF3C4583541369EE9A38F2FAE46",
+        "changelog": "- Double click/tap on the Jellyseerr Icon to toggle filter to display only Jellyseerr results.\n - Minor: Add more Logging for both client and server. ",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.3.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.3.0.0.zip",
+        "timestamp": "2025-08-28T17:19:12",
+        "version": "6.3.0.0"
+      },
+      {
+        "checksum": "8C35A30B6DA0AE024B6FDC9632B628DD",
+        "changelog": "- Improve Jellyseer Results injection logic, fixes a bug where container is injected even before search results from Jellyfin are available.\n - Fixes a bug where TMDB links open in app making it impossible to navigate elsewhere\n - Fixes Jellyseerr section not rendering properly on some themes\n - Change the color of Jellyseerr Request button. ",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.2.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.2.0.0.zip",
+        "timestamp": "2025-08-27T16:13:12",
+        "version": "6.2.0.0"
+      },
+      {
+        "checksum": "4FBDAFDB94145D3E077E7C1E6963A481",
+        "changelog": "- Improve Jellyseer Results injection logic, fixes a bug where container is injected even before search results from Jellyfin are available.\n - Fixes a bug where TMDB links open in app making it impossible to navigate elsewhere\n - Fixes Jellyseerr section not rendering properly on some themes\n - Change the color of Jellyseerr Request button. ",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.1.1.0/Jellyfin.Plugin.JellyfinEnhanced_6.1.1.0.zip",
+        "timestamp": "2025-08-27T05:31:11",
+        "version": "6.1.1.0"
+      },
+      {
+        "checksum": "A8DB0B7C56E6849F3E5FFFF8345CD1CB",
+        "changelog": "- *One-Time Setup*: Admins configure the connection once with an API key. No more per-user or per-device logins.\n - *Zero User Configuration*: The integration works automatically for all users across all devices without requiring them to enter any credentials.\n - The API key is managed securely on the server, making the connection more robust and reliable.",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.1.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.1.0.0.zip",
+        "timestamp": "2025-08-26T13:01:38",
+        "version": "6.1.0.0"
+      },
+      {
+        "checksum": "CB91D071F57958E81239277EC87708D5",
+        "changelog": "- Jellyseerr results and requests through Jellyfin Search!\n - Users can now directly login to Jellyseerr from Jellyfin and search and request items\n - Complete refactor for easy future maintainence",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/6.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_6.0.0.0.zip",
+        "timestamp": "2025-08-25T13:37:52",
+        "version": "6.0.0.0"
+      },
+      {
+        "checksum": "21D8702ECDF8259627E332AB561FFCB8",
+        "changelog": "- User customizable shortcuts!\n - Users can now customize shortcuts directly from the enhanced panel\n - New Setting: Auto Picture-in-Picture (PiP)",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.4.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.4.0.0.zip",
+        "timestamp": "2025-08-24T18:09:33",
+        "version": "5.4.0.0"
+      },
+      {
+        "checksum": "E0A055673B6ECE00D413B40900DF6266",
+        "changelog": "- New UI Setting: Add available languages with flags in Item Details page\n - Add a new 'Gigantic' Subtitle style and change subtitle units to for better scaling\n - New Schortcut for opening jellyfin enhanced panel, long press user icon in the header (useful for touch devices)\n - Minor: Increase toast blur for better readability\n - Minor: Add debounce for elsewhere panel autocomplete.",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.3.1.0/Jellyfin.Plugin.JellyfinEnhanced_5.3.1.0.zip",
+        "timestamp": "2025-08-23T04:36:40",
+        "version": "5.3.1.0"
+      },
+      {
+        "checksum": "CD71009DFC17EEDA28EF566C1178594E",
+        "changelog": "- Customizable Shortcuts: The server admin can now set overrides for the existing shortcuts, allowing for personalized key bindings.\n - Improve Elsewhere API failure messages",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.3.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.3.0.0.zip",
+        "timestamp": "2025-08-21T06:12:00",
+        "version": "5.3.0.0"
+      },
+      {
+        "checksum": "DF7E6772672424F4452EC69AE8EBACD9",
+        "changelog": "- Move all the default settings configuration to the config page to give control to the server owner to enable options by default\n - Tabbed interface in config page separating Enhanced settings and Elsewhere settings\n - Minor: Move the startup task to 'Startup Services' instead of creating a separate category\n - Minor: Mobile UI improvements",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.2.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.2.0.0.zip",
+        "timestamp": "2025-08-20T06:12:00",
+        "version": "5.2.0.0"
+      },
+      {
+        "checksum": "DEB52B57618432D7380B22F184499773",
+        "changelog": "Use [file-transformation-plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) to 'inject' javascript without modifying index.html\n -This is to help with all the permission issues for docker installs.\n - Fallback if file-transformation-plugin is not installed to the regulat index.html modification\n - Add an option to reset Jellyfin Enhanced settings to default for all users",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.1.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.1.0.0.zip",
+        "timestamp": "2025-08-18T16:34:21",
+        "version": "5.1.0.0"
+      },
+      {
+        "checksum": "88E4B205DE902CDD3062D648BFB7EC7D",
+        "changelog": "Initial release. \n - Combine Jellyfin Enhanced and Jellyfin Elsewhere \n - Add Remove from Continue Watching \n - Add a button to open the panel in sidebar",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/5.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_5.0.0.0.zip",
+        "timestamp": "2025-08-16T12:48:38",
+        "version": "5.0.0.0"
+      }
+    ]
+  }
 ]
