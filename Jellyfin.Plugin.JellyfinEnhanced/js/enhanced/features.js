@@ -226,7 +226,10 @@
                     }
                 });
             } else {
-                placeholder.remove(); // No source, remove placeholder
+                // If no languages, show a placeholder dash instead of removing the element
+                placeholder.style.display = 'flex';
+                placeholder.style.alignItems = 'center';
+                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
