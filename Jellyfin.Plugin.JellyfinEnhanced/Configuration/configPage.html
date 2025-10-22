@@ -303,7 +303,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="enableCustomSplashScreen" is="emby-checkbox" type="checkbox"/><span>Enable Custom Splash Screen</span></label></div>
                                     <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="splashScreenImageUrl">Splash Screen Image URL</label>
-                                        <input id="splashScreenImageUrl" is="emby-input" name="splashScreenImageUrl" type="text"/>
+                                        <input id="splashScreenImageUrl" is="emby-input" name="splashScreenImageUrl" type="text" placeholder="/web/assets/img/banner-light.png"/>
                                         <div class="fieldDescription">URL for the splash screen image. Defaults to Jellyfin banner.</div>
                                     </div>
                                 </div>
@@ -312,6 +312,9 @@
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
                                 <div>
                                     Might cause strange behaviour if <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-media-bar">jellyfin-plugin-media-bar</a> is installed.
+                                    <br>
+                                    <br>
+                                    If you are on Jellyfin version 10.11 and you want the default Jellyfin Banner - Change the splash screen URL to "<strong>/web/banner-light.b113d4d1c6c07fcb73f0.png</strong>"
                                 </div>
                             </div>
                             </details>
