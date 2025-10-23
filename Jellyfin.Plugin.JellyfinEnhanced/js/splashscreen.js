@@ -15,7 +15,11 @@
         '.manualLoginForm',
         '#mainAnimatedPage',
         '.homeSectionsContainer',
-        '.pageContainer'
+        '.pageContainer',
+        '.slides-container',
+        '.backdrop-container',
+        'customTabButton_0',
+        '.editorsChoiceItemBanner'
     ];
 
     let splashElement = null;

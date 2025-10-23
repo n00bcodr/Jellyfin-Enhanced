@@ -434,6 +434,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
                 config.DisableAllShortcuts,
+                config.DefaultSubtitleStyle,
+                config.DefaultSubtitleSize,
+                config.DefaultSubtitleFont,
+                config.DisableCustomSubtitleStyles,
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
@@ -529,7 +533,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }).Where(i =>
             {
                 var userData = _userDataManager.GetUserData(user, i);
-                return userData.Likes == true;
+                return userData?.Likes == true;
             });
             var dtoOptions = new DtoOptions
             {

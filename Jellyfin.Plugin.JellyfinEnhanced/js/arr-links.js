@@ -65,9 +65,9 @@
                 document.head.appendChild(style);
             }
 
-            function getExternalIds() {
+            function getExternalIds(context) {
                 const ids = { tmdb: null};
-                const links = document.querySelectorAll('.itemExternalLinks a, .externalIdLinks a');
+                const links = context.querySelectorAll('.itemExternalLinks a, .externalIdLinks a');
                 links.forEach(link => {
                     const href = link.href;
                     if (href.includes('themoviedb.org/movie/')) {
@@ -92,56 +92,58 @@
             }
 
             async function addArrLinks() {
-                // If the function is already running, exit to prevent duplicates.
                 if (isAddingLinks) {
                     return;
                 }
 
-                const anchorElement = document.querySelector('.itemExternalLinks');
-                // Also exit if links are already present or the anchor isn't found.
+                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                if (!visiblePage) return;
+
+                const anchorElement = visiblePage.querySelector('.itemExternalLinks');
+
+                // Cleanup stale links from any non-visible pages to prevent future conflicts
+                document.querySelectorAll('#itemDetailPage.hide .arr-link').forEach(staleLink => {
+                    if (staleLink.previousSibling && staleLink.previousSibling.nodeType === Node.TEXT_NODE) {
+                       staleLink.previousSibling.remove();
+                    }
+                    staleLink.remove();
+                });
+
                 if (!anchorElement || anchorElement.querySelector('.arr-link')) {
                     return;
                 }
 
-                isAddingLinks = true; // Set the lock
+                isAddingLinks = true;
                 try {
-                    // Re-check for links after acquiring the lock to be extra safe.
-                    if (document.querySelector('.itemExternalLinks .arr-link')) {
-                        return;
-                    }
-
                     const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                     if (!itemId) return;
 
                     const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
                     if (!item?.Type) return;
 
-                    const ids = getExternalIds();
+                    const ids = getExternalIds(visiblePage);
 
                     if (item.Type === 'Series' && item.Name && JE.pluginConfig.SonarrUrl) {
                         const seriesSlug = slugify(item.Name);
                         const url = `${JE.pluginConfig.SonarrUrl}/series/${seriesSlug}`;
-                        const sonarrButton = createLinkButton("Sonarr", url, "arr-link-sonarr");
-                        anchorElement.appendChild(document.createTextNode(', '));
-                        anchorElement.appendChild(sonarrButton);
+                        anchorElement.appendChild(document.createTextNode(' '));
+                        anchorElement.appendChild(createLinkButton("Sonarr", url, "arr-link-sonarr"));
                     }
 
                     if (item.Type === 'Movie' && ids.tmdb && JE.pluginConfig.RadarrUrl) {
                         const url = `${JE.pluginConfig.RadarrUrl}/movie/${ids.tmdb}`;
-                        const radarrButton = createLinkButton("Radarr", url, "arr-link-radarr");
-                        anchorElement.appendChild(document.createTextNode(', '));
-                        anchorElement.appendChild(radarrButton);
+                        anchorElement.appendChild(document.createTextNode(' '));
+                        anchorElement.appendChild(createLinkButton("Radarr", url, "arr-link-radarr"));
                     }
 
                     if ((item.Type === 'Series' || item.Type === 'Movie') && JE.pluginConfig.BazarrUrl) {
                         const path = item.Type === 'Series' ? 'series' : 'movies';
                         const url = `${JE.pluginConfig.BazarrUrl}/${path}/`;
-                        const bazarrButton = createLinkButton("Bazarr", url, "arr-link-bazarr");
-                        anchorElement.appendChild(document.createTextNode(', '));
-                        anchorElement.appendChild(bazarrButton);
+                        anchorElement.appendChild(document.createTextNode(' '));
+                        anchorElement.appendChild(createLinkButton("Bazarr", url, "arr-link-bazarr"));
                     }
                 } finally {
-                    isAddingLinks = false; // Release the lock, even if an error occurs.
+                    isAddingLinks = false;
                 }
             }
 
@@ -161,20 +163,10 @@
                 return button;
             }
 
-            let debounceTimer = null;
-            function debouncedRun() {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(addArrLinks, 750);
-            }
-
-            const observer = new MutationObserver(debouncedRun);
-            observer.observe(document.body, { childList: true, subtree: true });
-
-            debouncedRun();
+            setInterval(addArrLinks, 500);
 
         } catch (err) {
             console.error(`${logPrefix} Failed to initialize`, err);
-            setTimeout(() => JE.initializeArrLinksScript(), 1000); // retry after 1s
         }
     };
 })(window.JellyfinEnhanced);
