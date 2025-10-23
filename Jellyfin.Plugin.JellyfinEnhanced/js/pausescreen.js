@@ -231,7 +231,7 @@
               content: '•';
               margin: 1em;
             }
-            .progress-ends-at::after {
+            #pause-screen-progress-meta .progress-ends-at::after {
               content: '•';
               margin: 1em;
             }
@@ -259,6 +259,14 @@
             /* Accessibility helpers */
             #pause-screen-focus-start, #pause-screen-focus-end {
               position: fixed; width:1px; height:1px; overflow:hidden; clip: rect(0 0 0 0);
+            }
+            /* Make this selector more specific to override other plugins */
+            #pause-screen-progress-meta .progress-percentage {
+                font-size: inherit !important;
+                font-weight: normal !important;
+                color: inherit !important;
+                min-width: auto !important;
+                text-align: left !important;
             }
 
             /* Tablet */
