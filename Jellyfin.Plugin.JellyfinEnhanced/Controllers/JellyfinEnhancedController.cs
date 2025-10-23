@@ -447,7 +447,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Arr Links Settings
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
-                config.WatchlistEnabled
+                config.WatchlistEnabled,
+
+                config.KefinTweaksVersion
             });
         }
 

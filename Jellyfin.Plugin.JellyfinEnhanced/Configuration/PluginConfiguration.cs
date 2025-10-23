@@ -84,6 +84,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RadarrUrl = "";
             BazarrUrl = "";
             ShowArrLinksAsText = false;
+
+            // commit hash for watchlist feature from kefinTweaks
+            KefinTweaksVersion = "master";
         }
 
         // Jellyfin Enhanced Settings
@@ -139,5 +142,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
         public bool GenreTagsEnabled { get; set; }
+        public string KefinTweaksVersion { get; set; }
     }
 }
