@@ -36,6 +36,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoPauseEnabled" is="emby-checkbox" type="checkbox"/><span>Auto-pause on tab switch</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoResumeEnabled" is="emby-checkbox" type="checkbox"/><span>Auto-resume on tab switch</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoPipEnabled" is="emby-checkbox" type="checkbox"/><span>Auto Picture-in-Picture on tab switch</span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="longPress2xEnabled" is="emby-checkbox" type="checkbox"/><span>Long press/hold for 2x speed <sup> β</sup></span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen<div>This feature is a modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-PauseScreen">BobHasNoSoul</a></div></span></label></div>
                                 </div>
                             </details>
@@ -712,6 +713,7 @@
                 document.querySelector('#autoPipEnabled').checked = config.AutoPipEnabled;
                 document.querySelector('#autoSkipIntro').checked = config.AutoSkipIntro;
                 document.querySelector('#autoSkipOutro').checked = config.AutoSkipOutro;
+                document.querySelector('#longPress2xEnabled').checked = config.LongPress2xEnabled;
                 document.querySelector('#randomButtonEnabled').checked = config.RandomButtonEnabled;
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
@@ -771,6 +773,7 @@
             config.AutoPipEnabled = document.querySelector('#autoPipEnabled').checked;
             config.AutoSkipIntro = document.querySelector('#autoSkipIntro').checked;
             config.AutoSkipOutro = document.querySelector('#autoSkipOutro').checked;
+            config.LongPress2xEnabled = document.querySelector('#longPress2xEnabled').checked;
             config.RandomButtonEnabled = document.querySelector('#randomButtonEnabled').checked;
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;

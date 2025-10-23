@@ -416,8 +416,11 @@
           // Pointer/touch to resume
           const tryResume = (event) => {
             if (event.target === this.overlay || event.target === this.overlayContent) {
-              this.hideOverlay();
-              if (this.currentVideo?.paused) this.currentVideo.play();
+                // Introduce a delay to allow for long-press detection
+                JE.state.pauseScreenClickTimer = setTimeout(() => {
+                    this.hideOverlay();
+                    if (this.currentVideo?.paused) this.currentVideo.play();
+                }, 500);
             }
           };
           this.overlay.addEventListener('click', tryResume);

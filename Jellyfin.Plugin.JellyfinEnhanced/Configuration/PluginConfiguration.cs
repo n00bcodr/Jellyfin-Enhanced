@@ -34,6 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoPipEnabled = false;
             AutoSkipIntro = false;
             AutoSkipOutro = false;
+            LongPress2xEnabled = false;
             RandomButtonEnabled = true;
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
@@ -110,6 +111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoPipEnabled { get; set; }
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
+        public bool LongPress2xEnabled { get; set; }
         public bool RandomButtonEnabled { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }

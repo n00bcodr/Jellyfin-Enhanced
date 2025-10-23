@@ -24,7 +24,8 @@
         activeShortcuts: {},
         currentContextItemId: null,
         isContinueWatchingContext: false,
-        skipToastShown: false
+        skipToastShown: false,
+        pauseScreenClickTimer: null
     };
 
     /**
@@ -104,6 +105,7 @@
                 qualityTagsEnabled: pluginConfig.QualityTagsEnabled,
                 genreTagsEnabled: pluginConfig.GenreTagsEnabled,
                 disableAllShortcuts: pluginConfig.DisableAllShortcuts,
+                longPress2xEnabled: pluginConfig.LongPress2xEnabled,
                 lastOpenedTab: 'shortcuts'
             };
         } catch (e) {
@@ -129,6 +131,7 @@
                 qualityTagsEnabled: false,
                 genreTagsEnabled: false,
                 disableAllShortcuts: false,
+                longPress2xEnabled: false,
                 lastOpenedTab: 'shortcuts'
             };
         }

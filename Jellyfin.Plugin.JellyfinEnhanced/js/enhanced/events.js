@@ -282,6 +282,24 @@
             document.addEventListener('keydown', JE.keyListener);
         }
 
+        // Add Long Press listeners if enabled
+        if (JE.currentSettings.longPress2xEnabled) {
+            const videoPageCheck = (handler) => (e) => {
+                if (JE.isVideoPage()) {
+                    // Don't interfere with clicks on OSD buttons / the pause screen overlay / Enhanced Panel
+                    if (e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
+                    handler(e);
+                }
+            };
+
+            document.addEventListener('mousedown', videoPageCheck(JE.handleLongPressDown), true);
+            document.addEventListener('mouseup', videoPageCheck(JE.handleLongPressUp), true);
+            document.addEventListener('mouseleave', videoPageCheck(JE.handleLongPressCancel), true);
+            document.addEventListener('touchstart', videoPageCheck(JE.handleLongPressDown), { capture: true, passive: true });
+            document.addEventListener('touchend', videoPageCheck(JE.handleLongPressUp), { capture: true, passive: false });
+            document.addEventListener('touchcancel', videoPageCheck(JE.handleLongPressCancel), { capture: true, passive: false });
+        }
+
         // Listeners for tab visibility (auto-pause/resume/PiP)
         document.addEventListener('visibilitychange', () => {
             const video = document.querySelector('video');

@@ -421,6 +421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.AutoPipEnabled,
                 config.AutoSkipIntro,
                 config.AutoSkipOutro,
+                config.LongPress2xEnabled,
                 config.RandomButtonEnabled,
                 config.RandomIncludeMovies,
                 config.RandomIncludeShows,
@@ -447,8 +448,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Arr Links Settings
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
-                config.WatchlistEnabled,
 
+                config.WatchlistEnabled,
                 config.KefinTweaksVersion
             });
         }
