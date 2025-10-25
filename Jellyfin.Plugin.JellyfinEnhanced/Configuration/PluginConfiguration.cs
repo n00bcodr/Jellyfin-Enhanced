@@ -34,6 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoPipEnabled = false;
             AutoSkipIntro = false;
             AutoSkipOutro = false;
+            LongPress2xEnabled = false;
             RandomButtonEnabled = true;
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
@@ -75,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrEnabled = false;
             JellyseerrShowAdvanced = false;
             ShowElsewhereOnJellyseerr = false;
+            JellyseerrUseJellyseerrLinks = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
 
@@ -84,6 +86,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RadarrUrl = "";
             BazarrUrl = "";
             ShowArrLinksAsText = false;
+
+            // commit hash for watchlist feature from kefinTweaks
+            KefinTweaksVersion = "master";
         }
 
         // Jellyfin Enhanced Settings
@@ -107,6 +112,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoPipEnabled { get; set; }
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
+        public bool LongPress2xEnabled { get; set; }
         public bool RandomButtonEnabled { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
@@ -129,6 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrEnabled { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }
         public bool ShowElsewhereOnJellyseerr { get; set; }
+        public bool JellyseerrUseJellyseerrLinks { get; set; }
         public string JellyseerrUrls { get; set; }
         public string JellyseerrApiKey { get; set; }
 
@@ -139,5 +146,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
         public bool GenreTagsEnabled { get; set; }
+        public string KefinTweaksVersion { get; set; }
     }
 }

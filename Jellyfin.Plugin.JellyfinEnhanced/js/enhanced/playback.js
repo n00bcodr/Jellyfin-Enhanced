@@ -240,4 +240,95 @@
             skipButtonObserver = null;
         }
     };
+
+    // --- Long Press Speed Control ---
+    const LONG_PRESS_CONFIG = {
+        DURATION: 500,
+        SPEED_NORMAL: 1.0,
+        SPEED_FAST: 2.0,
+    };
+
+    let pressTimer = null;
+    let isLongPress = false;
+    let videoElement = null;
+    let originalSpeed = LONG_PRESS_CONFIG.SPEED_NORMAL;
+    let speedOverlay = null;
+
+    function createSpeedOverlay() {
+        if (speedOverlay) return;
+        speedOverlay = document.createElement('div');
+        speedOverlay.setAttribute('data-speed-overlay', 'true');
+        speedOverlay.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9); color: white; padding: 20px 30px; border-radius: 8px;
+            font-size: 2em; font-weight: bold; z-index: 999999;
+            pointer-events: none; font-family: system-ui;
+            opacity: 0; transition: opacity 0.2s ease-out; display: none;
+        `;
+        document.body.appendChild(speedOverlay);
+    }
+
+    function showOverlay(speed) {
+        createSpeedOverlay();
+        speedOverlay.textContent = `${speed}x${speed > 1 ? ' ⏩' : ' ▶️'}`;
+        speedOverlay.style.display = 'block';
+        setTimeout(() => speedOverlay.style.opacity = '1', 10);
+    }
+
+    function hideOverlay() {
+        if (speedOverlay) {
+            speedOverlay.style.opacity = '0';
+            setTimeout(() => speedOverlay.style.display = 'none', 200);
+        }
+    }
+
+    JE.handleLongPressDown = (e) => {
+        if (!JE.currentSettings.longPress2xEnabled || (e.button !== undefined && e.button !== 0) || pressTimer) {
+            return;
+        }
+        videoElement = getVideo();
+        if (!videoElement) return;
+
+        originalSpeed = videoElement.playbackRate || LONG_PRESS_CONFIG.SPEED_NORMAL;
+        isLongPress = false;
+
+        pressTimer = setTimeout(() => {
+            if (JE.state.pauseScreenClickTimer) {
+                clearTimeout(JE.state.pauseScreenClickTimer);
+                JE.state.pauseScreenClickTimer = null;
+            }
+            isLongPress = true;
+            videoElement.playbackRate = LONG_PRESS_CONFIG.SPEED_FAST;
+            showOverlay(LONG_PRESS_CONFIG.SPEED_FAST);
+            if (navigator.vibrate) navigator.vibrate(50);
+        }, LONG_PRESS_CONFIG.DURATION);
+    };
+
+    JE.handleLongPressUp = (e) => {
+        if (!pressTimer) return;
+        clearTimeout(pressTimer);
+        pressTimer = null;
+
+        if (isLongPress) {
+            videoElement.playbackRate = originalSpeed;
+            hideOverlay();
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+        }
+        isLongPress = false;
+    };
+
+    JE.handleLongPressCancel = () => {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+            if (isLongPress) {
+                videoElement.playbackRate = originalSpeed;
+                hideOverlay();
+            }
+            isLongPress = false;
+        }
+    };
+
 })(window.JellyfinEnhanced);

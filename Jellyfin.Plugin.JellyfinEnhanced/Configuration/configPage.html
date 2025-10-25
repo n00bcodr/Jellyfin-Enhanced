@@ -36,6 +36,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoPauseEnabled" is="emby-checkbox" type="checkbox"/><span>Auto-pause on tab switch</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoResumeEnabled" is="emby-checkbox" type="checkbox"/><span>Auto-resume on tab switch</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoPipEnabled" is="emby-checkbox" type="checkbox"/><span>Auto Picture-in-Picture on tab switch</span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="longPress2xEnabled" is="emby-checkbox" type="checkbox"/><span>Long press/hold for 2x speed <sup> β</sup></span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen<div>This feature is a modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-PauseScreen">BobHasNoSoul</a></div></span></label></div>
                                 </div>
                             </details>
@@ -221,6 +222,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="jellyseerrUseJellyseerrLinks" is="emby-checkbox" type="checkbox"/>
+                                    <span>Link result titles to Jellyseerr instead of TMDB</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title will open your Jellyseerr item page using the first configured Jellyseerr URL.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
                                     <span>Show advanced request options</span>
                                 </label>
@@ -329,7 +337,19 @@
                                     <span>Enable Watchlist<sup> β</sup></span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds the ability to add items to a personal watchlist. <br>This feature is adapted from <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks">ranaldsgift/KefinTweaks</a>.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                Adds a powerful, multi-tab watchlist to Jellyfin. <br>
+                                This feature is powered by and loaded directly from the excellent
+                                <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks">ranaldsgift/KefinTweaks</a>
+                                project. Check it out for more great tweaks!
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="KefinTweaksVersion">KefinTweaks Version</label>
+                                <input id="KefinTweaksVersion" is="emby-input" name="KefinTweaksVersion" type="text" placeholder="master"/>
+                                <div class="fieldDescription">
+                                    Enter the commit hash or branch name from the KefinTweaks repository (e.g., "master" or "1d9fe7efdae8..."). Defaults to 'master' if left empty. <br>This controls which version of the watchlist scripts are loaded. In most cases, you need not change this.
+                                </div>
+                            </div>
                             <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
                                     <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
@@ -347,11 +367,15 @@
                                                 <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
                                                 <span id="copyWatchlistBtnText" style="vertical-align: middle;">Copy</span>
                                             </button>
-                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="sections watchlist"&gt;
-    &lt;div class="watchlist-movies"&gt;&lt;/div&gt;
-    &lt;div class="watchlist-series"&gt;&lt;/div&gt;
-    &lt;div class="watchlist-episodes"&gt;&lt;/div&gt;
-&lt;/div&gt;</code></pre>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="sections watchlist"&gt;&lt;/div&gt;
+&lt;style&gt;
+  .sections.watchlist {
+    padding-top: 20px; /* Adjust/remove this value as needed for your theme */
+  }
+&lt;/style&gt;</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            <strong>Note:</strong> Depending on your theme, you may need to adjust or remove the `padding-top` value in the style block to prevent the content from appearing behind the header.
                                         </div>
                                         <div class="fieldDescription" style="margin-top: 1em;">
                                             Already have Custom Tabs installed?
@@ -696,6 +720,7 @@
                 document.querySelector('#autoPipEnabled').checked = config.AutoPipEnabled;
                 document.querySelector('#autoSkipIntro').checked = config.AutoSkipIntro;
                 document.querySelector('#autoSkipOutro').checked = config.AutoSkipOutro;
+                document.querySelector('#longPress2xEnabled').checked = config.LongPress2xEnabled;
                 document.querySelector('#randomButtonEnabled').checked = config.RandomButtonEnabled;
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
@@ -708,6 +733,7 @@
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
+                document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
@@ -722,6 +748,7 @@
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
+                document.querySelector('#KefinTweaksVersion').value = config.KefinTweaksVersion || 'master';
 
 
                 Dashboard.hideLoadingMsg();
@@ -754,6 +781,7 @@
             config.AutoPipEnabled = document.querySelector('#autoPipEnabled').checked;
             config.AutoSkipIntro = document.querySelector('#autoSkipIntro').checked;
             config.AutoSkipOutro = document.querySelector('#autoSkipOutro').checked;
+            config.LongPress2xEnabled = document.querySelector('#longPress2xEnabled').checked;
             config.RandomButtonEnabled = document.querySelector('#randomButtonEnabled').checked;
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
@@ -766,6 +794,7 @@
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
+            config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
@@ -780,6 +809,7 @@
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
+            config.KefinTweaksVersion = document.querySelector('#KefinTweaksVersion').value || 'master';
 
 
             try {
@@ -791,13 +821,26 @@
             return false;
         }
 
+        // Resets server-side settings.json for all users to plugin defaults
         function clearLocalStorage() {
-            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings for all users to defaults on next load.")) {
+            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings (settings.json) for ALL users to the above defaults.")) {
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(pluginId).then((config) => {
-                    config.ClearLocalStorageTimestamp = Date.now();
-                    ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
+                    dataType: 'json'
+                }).then(() => {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert({
+                        title: 'Success',
+                        message: 'All users\' settings have been reset to defaults. Settings will take effect after a refresh.'
+                    });
+                }).catch((e) => {
+                    Dashboard.hideLoadingMsg();
+                    console.error('Failed to reset settings for all users:', e);
+                    Dashboard.alert({
+                        title: 'Error',
+                        message: 'Failed to reset settings for all users. Check server logs for details.'
                     });
                 });
             }
@@ -811,7 +854,7 @@
         const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
         if (copyWatchlistHtmlBtn) {
             copyWatchlistHtmlBtn.addEventListener('click', () => {
-                const codeText = `<div class="sections watchlist">\n    <div class="watchlist-movies"></div>\n    <div class="watchlist-series"></div>\n    <div class="watchlist-episodes"></div>\n</div>`;
+                const codeText = `<div class="sections watchlist"></div>\n<style>\n  .sections.watchlist {\n    padding-top: 20px; /* Adjust/remove this value as needed for your theme */\n  }\n</style>`;
                 const copyBtnText = document.querySelector('#copyWatchlistBtnText');
                 const copyBtnIcon = copyWatchlistHtmlBtn.querySelector('i');
 
