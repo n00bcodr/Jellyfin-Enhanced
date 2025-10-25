@@ -812,13 +812,26 @@
             return false;
         }
 
+        // Resets server-side settings.json for all users to plugin defaults
         function clearLocalStorage() {
-            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings for all users to defaults on next load.")) {
+            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings (settings.json) for ALL users to the above defaults.")) {
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(pluginId).then((config) => {
-                    config.ClearLocalStorageTimestamp = Date.now();
-                    ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
+                    dataType: 'json'
+                }).then(() => {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert({
+                        title: 'Success',
+                        message: 'All users\' settings have been reset to defaults. Settings will take effect after a refresh.'
+                    });
+                }).catch((e) => {
+                    Dashboard.hideLoadingMsg();
+                    console.error('Failed to reset settings for all users:', e);
+                    Dashboard.alert({
+                        title: 'Error',
+                        message: 'Failed to reset settings for all users. Check server logs for details.'
                     });
                 });
             }

@@ -390,11 +390,13 @@
                 userServices = selectedServices;
 
                 modal.style.display = 'none';
-                localStorage.setItem('streaming-settings', JSON.stringify({
-                    region: userRegion,
-                    regions: userRegions,
-                    services: userServices
-                }));
+
+                const elsewhereSettings = {
+                    Region: userRegion,
+                    Regions: userRegions,
+                    Services: userServices
+                };
+                JE.saveUserSettings('elsewhere.json', elsewhereSettings);
             };
 
             // Close on backdrop click
@@ -407,17 +409,10 @@
 
         // Load saved settings
         function loadSettings() {
-            const saved = localStorage.getItem('streaming-settings');
-            if (saved) {
-                try {
-                    const settings = JSON.parse(saved);
-                    userRegion = settings.region || DEFAULT_REGION;
-                    userRegions = settings.regions || [];
-                    userServices = settings.services || [];
-                } catch (e) {
-                    console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Error loading settings:', e);
-                }
-            }
+            const settings = JE.userConfig.elsewhere;
+            userRegion = settings.Region || DEFAULT_REGION;
+            userRegions = settings.Regions || [];
+            userServices = settings.Services || [];
         }
 
         function createServiceBadge(service, tmdbId, mediaType) {

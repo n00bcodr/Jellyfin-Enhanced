@@ -61,7 +61,8 @@
             document.getElementById('randomItemButton')?.click();
         } else if (combo === activeShortcuts.ClearAllBookmarks && !JE.isVideoPage()) {
             e.preventDefault();
-            localStorage.removeItem('jellyfinEnhancedBookmarks');
+            JE.userConfig.bookmarks.Bookmarks = {};
+            JE.saveUserSettings('bookmarks.json', JE.userConfig.bookmarks);
             JE.toast(JE.t('toast_all_bookmarks_cleared'));
         }
 
@@ -73,9 +74,8 @@
                 e.preventDefault();
                 e.stopPropagation();
                 const videoId = document.title?.replace(/^Playing:\s*/, '').trim() || 'unknown';
-                const bookmarks = JSON.parse(localStorage.getItem('jellyfinEnhancedBookmarks') || '{}');
-                bookmarks[videoId] = video.currentTime;
-                localStorage.setItem('jellyfinEnhancedBookmarks', JSON.stringify(bookmarks));
+                JE.userConfig.bookmarks.Bookmarks[videoId] = video.currentTime;
+                JE.saveUserSettings('bookmarks.json', JE.userConfig.bookmarks);
                 const h_set = Math.floor(video.currentTime / 3600);
                 const m_set = Math.floor((video.currentTime % 3600) / 60);
                 const s_set = Math.floor(video.currentTime % 60);
@@ -86,8 +86,7 @@
                 e.preventDefault();
                 e.stopPropagation();
                 const videoId_get = document.title?.replace(/^Playing:\s*/, '').trim() || 'unknown';
-                const bookmarks_get = JSON.parse(localStorage.getItem('jellyfinEnhancedBookmarks') || '{}');
-                const bookmarkTime = bookmarks_get[videoId_get];
+                const bookmarkTime = JE.userConfig.bookmarks.Bookmarks[videoId_get];
                 if (bookmarkTime !== undefined) {
                     video.currentTime = bookmarkTime;
                     const h_get = Math.floor(bookmarkTime / 3600);

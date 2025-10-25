@@ -19,6 +19,8 @@ using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json.Linq;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using MediaBrowser.Controller;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -41,8 +43,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
+        private readonly UserConfigurationManager _userConfigurationManager;
 
-        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IDtoService dtoService)
+        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IDtoService dtoService, UserConfigurationManager userConfigurationManager)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -50,6 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _userDataManager = userDataManager;
             _libraryManager = libraryManager;
             _dtoService = dtoService;
+            _userConfigurationManager = userConfigurationManager;
         }
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
@@ -77,10 +81,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (response.IsSuccessStatusCode)
                     {
                         var content = await response.Content.ReadAsStringAsync();
-                        var usersResponse = JsonSerializer.Deserialize<JsonElement>(content);
+                        var usersResponse = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(content);
                         if (usersResponse.TryGetProperty("results", out var usersArray))
                         {
-                            var users = JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
+                            var users = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
                             _logger.Info($"Found {users?.Count ?? 0} users at {url.Trim()}");
                             var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, jellyfinUserId, StringComparison.OrdinalIgnoreCase));
                             if (user != null)
@@ -262,7 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             bool active = false;
             if (activeResult?.Value is not null)
             {
-                var json = JsonSerializer.Serialize(activeResult.Value);
+                var json = System.Text.Json.JsonSerializer.Serialize(activeResult.Value);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("active", out var a))
                     active = a.GetBoolean();
@@ -564,6 +568,116 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
+        }
+
+        [HttpGet("user-settings/{userId}/settings.json")]
+        [Authorize]
+        public IActionResult GetUserSettingsSettings(string userId)
+        {
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json");
+            return Ok(userConfig);
+        }
+
+        [HttpGet("user-settings/{userId}/shortcuts.json")]
+        [Authorize]
+        public IActionResult GetUserSettingsShortcuts(string userId)
+        {
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(userId, "shortcuts.json");
+            return Ok(userConfig);
+        }
+
+        [HttpGet("user-settings/{userId}/bookmarks.json")]
+        [Authorize]
+        public IActionResult GetUserSettingsBookmarks(string userId)
+        {
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmarks>(userId, "bookmarks.json");
+            return Ok(userConfig);
+        }
+
+        [HttpGet("user-settings/{userId}/elsewhere.json")]
+        [Authorize]
+        public IActionResult GetUserSettingsElsewhere(string userId)
+        {
+            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(userId, "elsewhere.json");
+            return Ok(userConfig);
+        }
+
+        [HttpPost("user-settings/{userId}/settings.json")]
+        [Authorize]
+        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
+        {
+            _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
+            return Ok();
+        }
+
+        [HttpPost("user-settings/{userId}/shortcuts.json")]
+        [Authorize]
+        public IActionResult SaveUserSettingsShortcuts(string userId, [FromBody] UserShortcuts userConfiguration)
+        {
+            _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
+            return Ok();
+        }
+
+        [HttpPost("user-settings/{userId}/bookmarks.json")]
+        [Authorize]
+        public IActionResult SaveUserSettingsBookmarks(string userId, [FromBody] UserBookmarks userConfiguration)
+        {
+            _userConfigurationManager.SaveUserConfiguration(userId, "bookmarks.json", userConfiguration);
+            return Ok();
+        }
+
+        [HttpPost("user-settings/{userId}/elsewhere.json")]
+        [Authorize]
+        public IActionResult SaveUserSettingsElsewhere(string userId, [FromBody] ElsewhereSettings userConfiguration)
+        {
+            _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
+            return Ok();
+        }
+
+        [HttpPost("reset-all-users-settings")]
+        [Authorize]
+        public IActionResult ResetAllUsersSettings()
+        {
+            var users = _userManager.Users;
+            var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+
+            if (defaultConfig == null)
+            {
+                return StatusCode(500, new { success = false, message = "Default plugin configuration not found." });
+            }
+
+            var defaultUserSettings = new UserSettings
+            {
+                AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
+                AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
+                AutoPipEnabled = defaultConfig.AutoPipEnabled,
+                LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+                PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
+                AutoSkipIntro = defaultConfig.AutoSkipIntro,
+                AutoSkipOutro = defaultConfig.AutoSkipOutro,
+                DisableCustomSubtitleStyles = defaultConfig.DisableCustomSubtitleStyles,
+                SelectedStylePresetIndex = defaultConfig.DefaultSubtitleStyle,
+                SelectedFontSizePresetIndex = defaultConfig.DefaultSubtitleSize,
+                SelectedFontFamilyPresetIndex = defaultConfig.DefaultSubtitleFont,
+                RandomButtonEnabled = defaultConfig.RandomButtonEnabled,
+                RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
+                RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
+                RandomIncludeShows = defaultConfig.RandomIncludeShows,
+                ShowFileSizes = defaultConfig.ShowFileSizes,
+                ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+                QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
+                GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
+                RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
+                LastOpenedTab = "shortcuts"
+            };
+
+            foreach (var user in users)
+            {
+                _userConfigurationManager.SaveUserConfiguration(user.Id.ToString("N"), "settings.json", defaultUserSettings);
+            }
+
+            _logger.Info($"Reset settings for all {users.Count()} users to plugin defaults.");
+            return Ok(new { success = true, userCount = users.Count() });
         }
     }
 }

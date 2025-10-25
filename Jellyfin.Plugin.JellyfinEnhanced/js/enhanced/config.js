@@ -1,26 +1,25 @@
+// /js/enhanced/config.js
 /**
  * @file Manages plugin configuration, user settings, and shared state.
  */
 (function(JE) {
     'use strict';
 
-    // Expose the main plugin configuration loaded by plugin.js
-    const pluginConfig = JE.pluginConfig;
-
     /**
      * Constants derived from the plugin configuration.
      * @type {object}
      */
     JE.CONFIG = {
-        TOAST_DURATION: pluginConfig.ToastDuration,
-        HELP_PANEL_AUTOCLOSE_DELAY: pluginConfig.HelpPanelAutocloseDelay,
+        // Use getters so values always reflect the latest pluginConfig even if assigned later
+        get TOAST_DURATION() { return (JE.pluginConfig && JE.pluginConfig.ToastDuration) || 1500; },
+        get HELP_PANEL_AUTOCLOSE_DELAY() { return (JE.pluginConfig && JE.pluginConfig.HelpPanelAutocloseDelay) || 15000; }
     };
 
     /**
      * Shared state variables used across different components.
      * @type {object}
      */
-    JE.state = {
+    JE.state = JE.state || {
         activeShortcuts: {},
         currentContextItemId: null,
         isContinueWatchingContext: false,
@@ -29,117 +28,94 @@
     };
 
     /**
-     * Manages loading and saving of user-defined shortcuts from localStorage.
+     * Saves user settings to the server.
      */
-    JE.userShortcutManager = {
-        key: 'jellyfinEnhancedUserShortcuts',
-        load: function() {
-            try {
-                return JSON.parse(localStorage.getItem(this.key)) || {};
-            } catch (e) {
-                console.error('🪼 Jellyfin Enhanced: Error loading user shortcuts.', e);
-                return {};
-            }
-        },
-        save: function(shortcuts) {
-            try {
-                localStorage.setItem(this.key, JSON.stringify(shortcuts));
-            } catch (e) {
-                console.error('🪼 Jellyfin Enhanced: Error saving user shortcuts.', e);
-            }
+    JE.saveUserSettings = async (fileName, settings) => {
+        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
+            console.error("🪼 Jellyfin Enhanced: ApiClient not available");
+            return;
         }
-    };
-
-    /**
-     * Merges the default shortcuts from the server with any user-overridden shortcuts.
-     * The result is stored in JE.state.activeShortcuts.
-     */
-    JE.initializeShortcuts = function() {
-        const defaultShortcuts = (pluginConfig.Shortcuts || []).reduce((acc, s) => {
-            acc[s.Name] = s.Key;
-            return acc;
-        }, {});
-        const userShortcuts = JE.userShortcutManager.load();
-        // User shortcuts override the defaults/admin settings
-        JE.state.activeShortcuts = { ...defaultShortcuts, ...userShortcuts };
-    };
-
-    /**
-     * Saves the provided settings object to localStorage.
-     * @param {object} settings The settings object to save.
-     */
-    JE.saveSettings = (settings) => {
         try {
-            localStorage.setItem('jellyfinEnhancedSettings', JSON.stringify(settings));
+            const userId = ApiClient.getCurrentUserId();
+            if (!userId) {
+                console.error("🪼 Jellyfin Enhanced: User ID not available");
+                return;
+            }
+
+            await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
+                data: JSON.stringify(settings),
+                contentType: 'application/json'
+            });
         } catch (e) {
-            console.error('🪼 Jellyfin Enhanced: Failed to save settings:', e);
+            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
         }
     };
 
     /**
-     * Loads settings from localStorage, falling back to plugin defaults if not found.
-     * @returns {object} The loaded or default settings.
+     * Loads and merges settings from user config, plugin defaults, and hardcoded fallbacks.
      */
     JE.loadSettings = () => {
-        try {
-            const settings = JSON.parse(localStorage.getItem('jellyfinEnhancedSettings'));
-            // Return saved settings or a default configuration.
-            return settings || {
-                autoPauseEnabled: pluginConfig.AutoPauseEnabled,
-                autoResumeEnabled: pluginConfig.AutoResumeEnabled,
-                autoPipEnabled: pluginConfig.AutoPipEnabled,
-                autoSkipIntro: pluginConfig.AutoSkipIntro,
-                autoSkipOutro: pluginConfig.AutoSkipOutro,
-                selectedStylePresetIndex: pluginConfig.DefaultSubtitleStyle,
-                selectedFontSizePresetIndex: pluginConfig.DefaultSubtitleSize,
-                selectedFontFamilyPresetIndex: pluginConfig.DefaultSubtitleFont,
-                disableCustomSubtitleStyles: pluginConfig.DisableCustomSubtitleStyles,
-                randomButtonEnabled: pluginConfig.RandomButtonEnabled,
-                randomIncludeMovies: pluginConfig.RandomIncludeMovies,
-                randomIncludeShows: pluginConfig.RandomIncludeShows,
-                randomUnwatchedOnly: pluginConfig.RandomUnwatchedOnly,
-                showFileSizes: pluginConfig.ShowFileSizes,
-                showAudioLanguages: pluginConfig.ShowAudioLanguages,
-                removeContinueWatchingEnabled: pluginConfig.RemoveContinueWatchingEnabled,
-                pauseScreenEnabled: pluginConfig.PauseScreenEnabled,
-                qualityTagsEnabled: pluginConfig.QualityTagsEnabled,
-                genreTagsEnabled: pluginConfig.GenreTagsEnabled,
-                disableAllShortcuts: pluginConfig.DisableAllShortcuts,
-                longPress2xEnabled: pluginConfig.LongPress2xEnabled,
-                lastOpenedTab: 'shortcuts'
-            };
-        } catch (e) {
-            console.error('🪼 Jellyfin Enhanced: Error loading settings:', e);
-            // Fallback to default settings on error.
-            return {
-                autoPauseEnabled: true,
-                autoResumeEnabled: false,
-                autoPipEnabled: false,
-                autoSkipIntro: false,
-                autoSkipOutro: false,
-                selectedStylePresetIndex: 0,
-                selectedFontSizePresetIndex: 2,
-                selectedFontFamilyPresetIndex: 0,
-                disableCustomSubtitleStyles: false,
-                randomButtonEnabled: true,
-                randomIncludeMovies: true,
-                randomIncludeShows: true,
-                randomUnwatchedOnly: false,
-                showFileSizes: false,
-                removeContinueWatchingEnabled: false,
-                pauseScreenEnabled: true,
-                qualityTagsEnabled: false,
-                genreTagsEnabled: false,
-                disableAllShortcuts: false,
-                longPress2xEnabled: false,
-                lastOpenedTab: 'shortcuts'
-            };
+        const userSettings = JE.userConfig?.settings || {};
+        const pluginDefaults = JE.pluginConfig || {};
+
+        const hardcodedDefaults = {
+            autoPauseEnabled: true, autoResumeEnabled: false, autoPipEnabled: false,
+            autoSkipIntro: false, autoSkipOutro: false,
+            selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0,
+            disableCustomSubtitleStyles: false, randomButtonEnabled: true,
+            randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
+            showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
+            pauseScreenEnabled: true, qualityTagsEnabled: false, genreTagsEnabled: false,
+            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
+        };
+
+        const mergedSettings = {};
+        for (const key in hardcodedDefaults) {
+            if (userSettings.hasOwnProperty(key) && userSettings[key] !== null && userSettings[key] !== undefined) {
+                // Detect corrupted values (empty arrays or unexpected objects)
+                if (typeof userSettings[key] === 'object' && Array.isArray(userSettings[key]) && userSettings[key].length === 0) {
+                    mergedSettings[key] = pluginDefaults[key] ?? hardcodedDefaults[key];
+                } else if (typeof userSettings[key] === 'object' && userSettings[key] !== null && !Array.isArray(userSettings[key])) {
+                    mergedSettings[key] = pluginDefaults[key] ?? hardcodedDefaults[key];
+                } else {
+                    mergedSettings[key] = userSettings[key];
+                }
+            } else if (pluginDefaults.hasOwnProperty(key) && pluginDefaults[key] !== null && pluginDefaults[key] !== undefined) {
+                mergedSettings[key] = pluginDefaults[key];
+            } else {
+                mergedSettings[key] = hardcodedDefaults[key];
+            }
         }
+
+        mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
+        return mergedSettings;
     };
 
-    // --- Initial Load ---
-    // Load initial settings and shortcuts into the global JE object upon script execution.
-    JE.currentSettings = JE.loadSettings();
-    JE.initializeShortcuts();
+    /**
+     * Initializes keyboard shortcut mappings from plugin and user configurations.
+     */
+    JE.initializeShortcuts = function() {
+        const pluginDefaults = JE.pluginConfig || {};
+        const userShortcutsConfig = JE.userConfig?.shortcuts || {};
+
+        const defaultShortcuts = Array.isArray(pluginDefaults.Shortcuts)
+            ? pluginDefaults.Shortcuts.reduce((acc, s) => {
+                if (s && s.Name && s.Key !== undefined) acc[s.Name] = s.Key;
+                return acc;
+              }, {})
+            : {};
+
+        const userShortcuts = Array.isArray(userShortcutsConfig.Shortcuts)
+            ? userShortcutsConfig.Shortcuts.reduce((acc, s) => {
+                if (s && s.Name && s.Key !== undefined) acc[s.Name] = s.Key;
+                return acc;
+              }, {})
+            : {};
+
+        JE.state.activeShortcuts = JE.state.activeShortcuts || {};
+        Object.assign(JE.state.activeShortcuts, defaultShortcuts, userShortcuts);
+    };
 
 })(window.JellyfinEnhanced);

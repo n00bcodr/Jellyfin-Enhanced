@@ -48,7 +48,7 @@
         init() {
           const credentials = this.getCredentials();
           if (!credentials) {
-            console.error("Jellyfin credentials not found");
+            console.error("🪼 Jellyfin Enhanced: Jellyfin credentials not found");
             return;
           }
           this.userId = credentials.userId;
@@ -446,7 +446,7 @@
                 e.stopPropagation(); // stop Jellyfin binding
                 this.hideOverlay();
                 if (this.currentVideo && this.currentVideo.paused) {
-                    this.currentVideo.play().catch(err => console.warn("Play() blocked:", err));
+                    this.currentVideo.play().catch(err => console.warn("🪼 Jellyfin Enhanced: Play() blocked:", err));
                 }
               }
               // Keep Tab inside
@@ -575,7 +575,7 @@
                 await this.displayItemInfo(record.item, record.domain, itemId);
             } catch (err) {
                 if (err.name !== 'AbortError') {
-                console.error("Error fetching item info:", err);
+                console.error("🪼 Jellyfin Enhanced: Error fetching item info:", err);
                 this.overlayPlot.textContent = JE.t('pausescreen_fetch_error');
                 }
             }

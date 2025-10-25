@@ -2,74 +2,118 @@
 (function() {
     'use strict';
 
-    // Create the global namespace immediately
-    window.JellyfinEnhanced = {};
-
-    /**
-     * A simple translation function that will be available globally.
-     * It will use the translations object once it's loaded.
-     * @param {string} key - The translation key.
-     * @param {object} [params={}] - Optional parameters to replace in the string.
-     * @returns {string} The translated string.
-     */
-    window.JellyfinEnhanced.t = function(key, params = {}) {
-        const translations = window.JellyfinEnhanced.translations || {};
-        let text = translations[key] || key;
-        for (const [param, value] of Object.entries(params)) {
-            text = text.replace(new RegExp(`{${param}}`, 'g'), value);
-        }
-        return text;
+    // Create the global namespace immediately with placeholders
+    window.JellyfinEnhanced = {
+        pluginConfig: {},
+        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {} },
+        translations: {},
+        pluginVersion: 'unknown',
+        state: {
+            activeShortcuts: {},
+            currentContextItemId: null,
+            isContinueWatchingContext: false,
+            skipToastShown: false,
+            pauseScreenClickTimer: null
+         },
+        // Placeholder functions
+        t: (key, params = {}) => { // Actual implementation defined later
+            const translations = window.JellyfinEnhanced?.translations || {};
+            let text = translations[key] || key;
+            if (params) {
+                for (const [param, value] of Object.entries(params)) {
+                    text = text.replace(new RegExp(`{${param}}`, 'g'), value);
+                }
+            }
+            return text;
+        },
+        loadSettings: () => { console.warn("🪼 Jellyfin Enhanced: loadSettings called before config.js loaded"); return {}; },
+        initializeShortcuts: () => { console.warn("🪼 Jellyfin Enhanced: initializeShortcuts called before config.js loaded"); },
+        saveUserSettings: async (fileName) => { console.warn(`🪼 Jellyfin Enhanced: saveUserSettings(${fileName}) called before config.js loaded`); }
     };
 
+    const JE = window.JellyfinEnhanced; // Alias for internal use
+
     /**
-     * Loads the appropriate language file based on the user's settings from localStorage.
+     * Converts PascalCase object keys to camelCase recursively.
+     * @param {object} obj - The object to convert.
+     * @returns {object} - A new object with camelCase keys.
+     */
+    function toCamelCase(obj) {
+        if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+            return obj; // Return primitives and arrays as-is
+        }
+        const camelCased = {};
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                const camelKey = key.charAt(0).toLowerCase() + key.slice(1);
+                camelCased[camelKey] = toCamelCase(obj[key]); // Recursive for nested objects
+            }
+        }
+        return camelCased;
+    }
+
+    /**
+     * Loads the appropriate language file based on the user's settings.
      * @returns {Promise<object>} A promise that resolves to the translations object.
      */
     async function loadTranslations() {
         try {
-            const user = await ApiClient.getCurrentUser();
-            if (!user || !user.Id) {
-                console.warn("🪼 Jellyfin Enhanced: User ID not found, defaulting to English.");
-                const enResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
-                return await enResponse.json();
+            // Wait briefly for ApiClient user to potentially become available
+            let user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
+            if (!user?.Id) {
+                await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+                user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
             }
 
-            const storageKey = `${user.Id}-language`;
-            const storedLang = localStorage.getItem(storageKey);
-            const lang = (storedLang || 'en').split('-')[0];
+            const userId = user?.Id;
+            let lang = 'en'; // Default to English
 
-            const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
+            if (userId) {
+                const storageKey = `${userId}-language`;
+                const storedLang = localStorage.getItem(storageKey);
+                lang = (storedLang || 'en').split('-')[0]; // Use base language code
+            }
+
+            let response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
 
             if (response.ok) {
-                console.log(`🪼 Jellyfin Enhanced: Loaded '${lang}' translations.`);
                 return await response.json();
             } else {
-                console.warn(`🪼 Jellyfin Enhanced: No locale for '${lang}', falling back to English.`);
-                const enResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
-                return await enResponse.json();
+                response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
+                if (response.ok) {
+                    return await response.json();
+                } else {
+                    throw new Error("Failed to load English fallback translations");
+                }
             }
         } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Failed to load translations, using empty object.', error);
-            return {};
+            console.error('🪼 Jellyfin Enhanced: Failed to load translations:', error);
+            return {}; // Return empty object on catastrophic failure
         }
     }
 
-    /**
+     /**
      * Fetches plugin configuration and version from the server.
      * @returns {Promise<[object, string]>} A promise that resolves with config and version.
      */
-    function loadPluginData() {
+     function loadPluginData() {
         const configPromise = ApiClient.ajax({
             type: 'GET',
             url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
             dataType: 'json'
-        }).catch(() => ({}));
+        }).catch((e) => {
+            console.error("🪼 Jellyfin Enhanced: Failed to fetch public config", e);
+            return {}; // Return empty object on error
+        });
 
         const versionPromise = ApiClient.ajax({
             type: 'GET',
             url: ApiClient.getUrl('/JellyfinEnhanced/version'),
             dataType: 'text'
-        }).catch(() => '...');
+        }).catch((e) => {
+             console.error("🪼 Jellyfin Enhanced: Failed to fetch version", e);
+            return 'unknown'; // Return placeholder on error
+        });
 
         return Promise.all([configPromise, versionPromise]);
     }
@@ -86,61 +130,55 @@
                 dataType: 'json'
             });
             // Merge the sensitive keys into the main config object
-            Object.assign(window.JellyfinEnhanced.pluginConfig, privateConfig);
-            console.log('🪼 Jellyfin Enhanced: Private configuration loaded securely.');
+            Object.assign(JE.pluginConfig, privateConfig);
         } catch (error) {
             console.warn('🪼 Jellyfin Enhanced: Could not load private configuration. Some features may be limited.', error);
+            // Don't assign anything if it fails
         }
     }
+
 
     /**
      * Loads an array of scripts dynamically.
      * @param {string[]} scripts - Array of script filenames.
      * @param {string} basePath - The base URL path for the scripts.
-     * @param {function} callback - Function to execute after all scripts are loaded.
+     * @returns {Promise<void>} - A promise that resolves when all scripts attempt to load.
      */
-    function loadScripts(scripts, basePath, callback) {
-        let loadedCount = 0;
-        const totalScripts = scripts.length;
-        if (totalScripts === 0) {
-            if (callback) callback();
-            return;
-        }
-        scripts.forEach(scriptName => {
-            const script = document.createElement('script');
-            script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`);// Cache-busting
-            script.onload = () => {
-                loadedCount++;
-                console.log(`🪼 Jellyfin Enhanced: Loaded component '${scriptName}'`);
-                if (loadedCount === totalScripts) {
-                    if (callback) callback();
-                }
-            };
-            script.onerror = () => {
-                console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`);
-                loadedCount++; // Increment even on error to not block the callback
-                if (loadedCount === totalScripts) {
-                    if (callback) callback();
-                }
-            };
-            document.head.appendChild(script);
+    function loadScripts(scripts, basePath) {
+        const promises = scripts.map(scriptName => {
+            return new Promise((resolve) => { // Always resolve so one failure doesn't stop others
+                const script = document.createElement('script');
+                script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`); // Cache-busting
+                script.onload = () => {
+                    resolve({ status: 'fulfilled', script: scriptName });
+                };
+                script.onerror = (e) => {
+                    console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`, e);
+                    resolve({ status: 'rejected', script: scriptName, error: e }); // Resolve even on error
+                };
+                document.head.appendChild(script);
+            });
         });
+        // Wait for all promises to settle (either fulfilled or rejected)
+        return Promise.allSettled(promises);
     }
 
-    /**
-     * Loads the splash screen script early to hide media-bar splash
+     /**
+     * Loads the splash screen script early.
      */
-    function loadSplashScreenEarly() {
+     function loadSplashScreenEarly() {
         if (typeof ApiClient === 'undefined') {
             setTimeout(loadSplashScreenEarly, 50);
             return;
         }
-
         const splashScript = document.createElement('script');
         splashScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/splashscreen.js?v=' + Date.now());
         splashScript.onload = () => {
-            console.log('🪼 Jellyfin Enhanced: Splash screen script loaded early.');
+            if (typeof JE.initializeSplashScreen === 'function') {
+                JE.initializeSplashScreen(); // Initialize if available
+            }
         };
+         splashScript.onerror = () => console.error('🪼 Jellyfin Enhanced: Failed to load splash screen script.');
         document.head.appendChild(splashScript);
     }
 
@@ -148,35 +186,90 @@
      * Main initialization function.
      */
     async function initialize() {
-        if (typeof ApiClient === 'undefined' || !ApiClient.getPluginConfiguration || !ApiClient.getCurrentUserId()) {
-            setTimeout(initialize, 200);
+        // Ensure ApiClient exists and user is logged in
+        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId?.()) {
+            setTimeout(initialize, 300); // Increased retry delay slightly
             return;
         }
 
         try {
-            // Wait for both config and translations to be ready
+            // Stage 1: Load base configs and translations
             const [[config, version], translations] = await Promise.all([
                 loadPluginData(),
-                loadTranslations()
+                loadTranslations() // Load translations first
             ]);
 
-            // Populate the global object
-            window.JellyfinEnhanced.pluginConfig = config;
-            window.JellyfinEnhanced.pluginVersion = version;
-            window.JellyfinEnhanced.translations = translations;
+            JE.pluginConfig = config && typeof config === 'object' ? config : {};
+            JE.pluginVersion = version || 'unknown';
+            JE.translations = translations || {};
+            JE.t = window.JellyfinEnhanced.t; // Ensure the real function is assigned
             await loadPrivateConfig();
-            console.log('🪼 Jellyfin Enhanced: Configuration and translations loaded.');
 
-            // Initialize splash screen now that config is available
-            if (typeof window.JellyfinEnhanced.initializeSplashScreen === 'function') {
-                window.JellyfinEnhanced.initializeSplashScreen();
+            // Stage 2: Fetch user-specific settings
+            const userId = ApiClient.getCurrentUserId();
+
+            const fetchPromises = [
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json`), dataType: 'json' })
+                         .then(data => ({ name: 'settings', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'settings', status: 'rejected', reason: e })),
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/shortcuts.json`), dataType: 'json' })
+                         .then(data => ({ name: 'shortcuts', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'shortcuts', status: 'rejected', reason: e })),
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmarks.json`), dataType: 'json' })
+                         .then(data => ({ name: 'bookmarks', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'bookmarks', status: 'rejected', reason: e })),
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json`), dataType: 'json' })
+                         .then(data => ({ name: 'elsewhere', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e }))
+            ];
+            // Use allSettled to get results even if some fetches fail
+            const results = await Promise.allSettled(fetchPromises);
+
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {} };
+            results.forEach(result => {
+                if (result.status === 'fulfilled' && result.value) {
+                    const data = result.value;
+                    if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
+                        // *** CONVERT PASCALCASE TO CAMELCASE ***
+                        if (data.name === 'settings') {
+                            JE.userConfig[data.name] = toCamelCase(data.value);
+                        } else {
+                            JE.userConfig[data.name] = data.value;
+                        }
+                    } else if (data.status === 'rejected') {
+                        if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
+                        else if (data.name === 'bookmarks') JE.userConfig.bookmarks = { Bookmarks: {} };
+                        else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
+                        else JE.userConfig[data.name] = {};
+                    } else {
+                        if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
+                        else if (data.name === 'bookmarks') JE.userConfig.bookmarks = { Bookmarks: {} };
+                        else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
+                        else JE.userConfig[data.name] = {};
+                    }
+                } else {
+                    const name = result.value?.name || result.reason?.name || '';
+                    if (name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
+                    else if (name === 'bookmarks') JE.userConfig.bookmarks = { Bookmarks: {} };
+                    else if (name === 'elsewhere') JE.userConfig.elsewhere = {};
+                    else if (name) JE.userConfig[name] = {};
+                }
+            });
+            // *** Check the data *immediately* after fetching ***
+            console.log('🪼 Jellyfin Enhanced: User configuration FETCHED (Raw Results):', JSON.stringify(JE.userConfig));
+
+
+            // Initialize splash screen
+            if (typeof JE.initializeSplashScreen === 'function') {
+                JE.initializeSplashScreen();
             }
 
-            // Now, load all other feature scripts
+            // Stage 3: Load ALL component scripts
             const basePath = '/JellyfinEnhanced/js';
-            const allScripts = [
+            const allComponentScripts = [
                 'enhanced/config.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/events.js',
+                'migrate.js',
                 'elsewhere.js',
                 'jellyseerr/api.js',
                 'jellyseerr/modal.js',
@@ -186,46 +279,45 @@
                 'qualitytags.js', 'genretags.js', 'arr-links.js',
                 'watchlist/watchlist.js'
             ];
+            await loadScripts(allComponentScripts, basePath);
+            console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
 
-            loadScripts(allScripts, basePath, () => {
-                // Initialize all modules now that dependencies are loaded
-                if (typeof window.JellyfinEnhanced.initializeEnhancedScript === 'function') {
-                    window.JellyfinEnhanced.initializeEnhancedScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeElsewhereScript === 'function') {
-                    window.JellyfinEnhanced.initializeElsewhereScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeJellyseerrScript === 'function') {
-                    window.JellyfinEnhanced.initializeJellyseerrScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializePauseScreen === 'function') {
-                    window.JellyfinEnhanced.initializePauseScreen();
-                }
-                if (typeof window.JellyfinEnhanced.initializeQualityTags === 'function') {
-                    window.JellyfinEnhanced.initializeQualityTags();
-                }
-                if (typeof window.JellyfinEnhanced.initializeGenreTags === 'function') {
-                    window.JellyfinEnhanced.initializeGenreTags();
-                }
-                if (typeof window.JellyfinEnhanced.initializeArrLinksScript === 'function') {
-                    window.JellyfinEnhanced.initializeArrLinksScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeReviewsScript === 'function') {
-                    window.JellyfinEnhanced.initializeReviewsScript();
-                }
-                if (typeof window.JellyfinEnhanced.initializeWatchlistScript === "function") {
-                    window.JellyfinEnhanced.initializeWatchlistScript();
-                }
-                console.log('🪼 Jellyfin Enhanced: All components loaded and initialized.');
+            // Stage 4: Initialize core settings/shortcuts using potentially defined functions
+            if (typeof JE.loadSettings === 'function' && typeof JE.initializeShortcuts === 'function') {
+                JE.currentSettings = JE.loadSettings(); // This happens AFTER config.js is loaded
+                JE.initializeShortcuts();
+                console.log('🪼 Jellyfin Enhanced: Settings MERGED post-load:', JSON.stringify(JE.currentSettings));
+                console.log('🪼 Jellyfin Enhanced: Shortcuts MERGED post-load:', JSON.stringify(JE.state?.activeShortcuts || {}));
+            } else {
+                 console.error("🪼 Jellyfin Enhanced: FATAL - config.js functions not defined after script loading.");
+                 if (typeof JE.hideSplashScreen === 'function') JE.hideSplashScreen();
+                 return;
+            }
 
-                // Hide the splash screen now that everything is ready
-                if (typeof window.JellyfinEnhanced.hideSplashScreen === 'function') {
-                    window.JellyfinEnhanced.hideSplashScreen();
-                }
-            });
+            // Stage 5: Initialize feature modules
+            if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
+            if (typeof JE.initializeMigration === 'function') JE.initializeMigration();
+            if (typeof JE.initializeElsewhereScript === 'function') JE.initializeElsewhereScript();
+            if (typeof JE.initializeJellyseerrScript === 'function') JE.initializeJellyseerrScript();
+            if (typeof JE.initializePauseScreen === 'function') JE.initializePauseScreen();
+            if (typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
+            if (typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
+            if (typeof JE.initializeArrLinksScript === 'function') JE.initializeArrLinksScript();
+            if (typeof JE.initializeReviewsScript === 'function') JE.initializeReviewsScript();
+            if (typeof JE.initializeWatchlistScript === "function") JE.initializeWatchlistScript();
+
+            console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
+
+            // Final Stage: Hide splash screen
+            if (typeof JE.hideSplashScreen === 'function') {
+                JE.hideSplashScreen();
+            }
 
         } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Critical initialization failed.', error);
+            console.error('🪼 Jellyfin Enhanced: CRITICAL INITIALIZATION FAILURE:', error);
+             if (typeof JE.hideSplashScreen === 'function') {
+                JE.hideSplashScreen();
+            }
         }
     }
 

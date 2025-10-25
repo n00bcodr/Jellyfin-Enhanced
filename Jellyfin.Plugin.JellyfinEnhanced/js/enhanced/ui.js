@@ -406,7 +406,9 @@
             flexDirection: 'column'
         });
 
-        const shortcuts = JE.pluginConfig.Shortcuts.reduce((acc, s) => ({ ...acc, [s.Name]: s }), {});
+        const pluginShortcuts = Array.isArray(JE.pluginConfig.Shortcuts) ? JE.pluginConfig.Shortcuts : [];
+        const shortcuts = pluginShortcuts.reduce((acc, s) => ({ ...acc, [s.Name]: s }), {});
+
         // --- Draggable Panel Logic ---------
         let isDragging = false;
         let offset = { x: 0, y: 0 };
@@ -478,7 +480,11 @@
             }).join('');
         };
 
-        const userShortcuts = JE.userShortcutManager.load();
+        const userShortcuts = (JE.userConfig.shortcuts.Shortcuts || []).reduce((acc, s) => {
+            acc[s.Name] = s;
+            return acc;
+        }, {});
+
         help.innerHTML = `
             <style>
                 #jellyfin-enhanced-panel .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
@@ -672,6 +678,17 @@
 
         document.body.appendChild(help);
 
+        /**
+        * Remove this when removing support for Migration
+        */
+        // Hook for migrate.js to add its button
+        if (typeof JE.addMigrationButton === 'function') {
+            JE.addMigrationButton(help);
+        }
+        /**
+        * Remove this when removing support for Migration
+        */
+
         // --- Shortcut Key Binding Logic ---
         if (!JE.pluginConfig.DisableAllShortcuts) {
             const shortcutKeys = help.querySelectorAll('.shortcut-key');
@@ -697,22 +714,23 @@
                     e.stopPropagation();
 
                     const labelWrapper = keyElement.nextElementSibling;
+                    const action = keyElement.dataset.action;
 
                     if (e.key === 'Backspace') {
-                        const action = keyElement.dataset.action;
-
-                        // Load, modify, and save the user's custom shortcuts
-                        const userShortcuts = JE.userShortcutManager.load();
-                        delete userShortcuts[action];
-                        JE.userShortcutManager.save(userShortcuts);
-
-                        // Find the original server default key from the plugin's configuration
-                        const defaultConfig = JE.pluginConfig.Shortcuts.find(s => s.Name === action);
+                        const defaultConfig = pluginShortcuts.find(s => s.Name === action);
                         const defaultKey = defaultConfig ? defaultConfig.Key : '';
+
+                        const shortcutIndex = JE.userConfig.shortcuts.Shortcuts.findIndex(s => s.Name === action);
+                        if (shortcutIndex > -1) {
+                            JE.userConfig.shortcuts.Shortcuts.splice(shortcutIndex, 1);
+                        }
+
+                        JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
 
                         // Update the active shortcuts in memory and what's shown on screen
                         JE.state.activeShortcuts[action] = defaultKey;
                         keyElement.textContent = defaultKey;
+
                         const indicator = labelWrapper.querySelector('.modified-indicator');
                         if (indicator) {
                             indicator.remove();
@@ -726,7 +744,6 @@
                     }
 
                     const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
-                    const action = keyElement.dataset.action;
                     const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
                     if (existingAction && existingAction !== action) {
                         keyElement.style.background = 'rgb(255 0 0 / 60%)';
@@ -740,10 +757,16 @@
                             // Reject the new keybinding and stop the function
                         return;
                     }
-                    // Save the new shortcut
-                    const userShortcuts = JE.userShortcutManager.load();
-                    userShortcuts[action] = combo;
-                    JE.userShortcutManager.save(userShortcuts);
+
+                    // Update or add the shortcut override
+                    let userShortcut = JE.userConfig.shortcuts.Shortcuts.find(s => s.Name === action);
+                    if (userShortcut) {
+                        userShortcut.Key = combo;
+                    } else {
+                        const defaultConfig = pluginShortcuts.find(s => s.Name === action);
+                        JE.userConfig.shortcuts.Shortcuts.push({ ...defaultConfig, Key: combo });
+                    }
+                    JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
 
                     // Update active shortcuts
                     JE.state.activeShortcuts[action] = combo;
@@ -800,7 +823,7 @@
                         }
                     });
                     JE.currentSettings.lastOpenedTab = tab;
-                    JE.saveSettings(JE.currentSettings);
+                    JE.saveUserSettings('settings.json', JE.currentSettings);
                     resetAutoCloseTimer();
                 });
             });
@@ -846,24 +869,43 @@
             document.removeEventListener('keydown', JE.keyListener);
         }
 
-        document.getElementById('autoPauseToggle').addEventListener('change', (e) => { JE.currentSettings.autoPauseEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_pause', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('autoResumeToggle').addEventListener('change', (e) => { JE.currentSettings.autoResumeEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_resume', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('autoPipToggle').addEventListener('change', (e) => { JE.currentSettings.autoPipEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_pip', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('autoSkipIntroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipIntro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_skip_intro', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('autoSkipOutroToggle').addEventListener('change', (e) => { JE.currentSettings.autoSkipOutro = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_auto_skip_outro', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('randomButtonToggle').addEventListener('change', (e) => { JE.currentSettings.randomButtonEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_random_button', e.target.checked)); JE.addRandomButton(); resetAutoCloseTimer(); });
-        document.getElementById('randomUnwatchedOnly').addEventListener('change', (e) => { JE.currentSettings.randomUnwatchedOnly = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_unwatched_only', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
+            document.getElementById(id).addEventListener('change', (e) => {
+                JE.currentSettings[settingKey] = e.target.checked;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                let toastMessage = createToast(featureKey, e.target.checked);
+                if (requiresRefresh) {
+                    toastMessage += ".<br> Refresh page to apply.";
+                }
+                JE.toast(toastMessage);
+                if (id === 'randomButtonToggle') JE.addRandomButton();
+                if (id === 'showFileSizesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
+                if (id === 'showAudioLanguagesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
+                if (id === 'genreTagsToggle' && !e.target.checked) document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
+                resetAutoCloseTimer();
+            });
+        };
+
+        addSettingToggleListener('autoPauseToggle', 'autoPauseEnabled', 'feature_auto_pause');
+        addSettingToggleListener('autoResumeToggle', 'autoResumeEnabled', 'feature_auto_resume');
+        addSettingToggleListener('autoPipToggle', 'autoPipEnabled', 'feature_auto_pip');
+        addSettingToggleListener('autoSkipIntroToggle', 'autoSkipIntro', 'feature_auto_skip_intro');
+        addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
+        addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
+        addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
+        addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
+        addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
+        addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');
+        addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
+        addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
+        addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
+        addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
+        addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
+
+        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
-        document.getElementById('showFileSizesToggle').addEventListener('change', (e) => { JE.currentSettings.showFileSizes = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_file_size_display', e.target.checked)); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove()); } resetAutoCloseTimer(); });
-        document.getElementById('showAudioLanguagesToggle').addEventListener('change', (e) => { JE.currentSettings.showAudioLanguages = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_audio_language_display', e.target.checked)); if (!e.target.checked) { document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove()); } resetAutoCloseTimer(); });
-        document.getElementById('removeContinueWatchingToggle').addEventListener('change', (e) => { JE.currentSettings.removeContinueWatchingEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_remove_continue_watching', e.target.checked)); resetAutoCloseTimer(); });
-        document.getElementById('qualityTagsToggle').addEventListener('change', (e) => { JE.currentSettings.qualityTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_quality_tags', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
-        document.getElementById('genreTagsToggle').addEventListener('change', (e) => { JE.currentSettings.genreTagsEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_genre_tags', e.target.checked)}.<br> Refresh page to apply.`); if (!e.target.checked) { document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove()); } resetAutoCloseTimer(); });
-        document.getElementById('pauseScreenToggle').addEventListener('change', (e) => { JE.currentSettings.pauseScreenEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(`${createToast('feature_custom_pause_screen', e.target.checked)}.<br> Refresh page to apply.`); resetAutoCloseTimer(); });
-        document.getElementById('disableCustomSubtitleStyles').addEventListener('change', (e) => { JE.currentSettings.disableCustomSubtitleStyles = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_disable_custom_subtitle_styles', e.target.checked)); JE.applySavedStylesWhenReady(); resetAutoCloseTimer(); });
-        document.getElementById('longPress2xEnabled').addEventListener('change', (e) => { JE.currentSettings.longPress2xEnabled = e.target.checked; JE.saveSettings(JE.currentSettings); JE.toast(createToast('feature_long_press_2x_speed', e.target.checked)); resetAutoCloseTimer(); });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);
@@ -903,7 +945,7 @@
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     }
 
-                    JE.saveSettings(JE.currentSettings);
+                    JE.saveUserSettings('settings.json', JE.currentSettings);
                     container.querySelectorAll('.preset-box').forEach(box => {
                         box.style.border = '2px solid transparent';
                     });
