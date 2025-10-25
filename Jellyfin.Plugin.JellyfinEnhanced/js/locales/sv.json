@@ -104,6 +104,7 @@
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr är inte ansluten.",
     "jellyseerr_no_results_jellyfin": "Tyvärr! Inga resultat hittades för \"{query}\" på Jellyfin",
     "jellyseerr_card_view_on_tmdb": "Visa på TMDB",
+    "jellyseerr_card_view_on_jellyseerr": "Visa på Jellyseerr",
     "jellyseerr_card_badge_movie": "Film",
     "jellyseerr_card_badge_series": "Serie",
     "jellyseerr_card_no_info": "Ingen information tillgänglig.",

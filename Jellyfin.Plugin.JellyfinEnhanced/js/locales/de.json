@@ -104,6 +104,7 @@
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr ist nicht verbunden.",
     "jellyseerr_no_results_jellyfin": "Keine Ergebnisse für \"{query}\" auf Jellyfin gefunden",
     "jellyseerr_card_view_on_tmdb": "Auf TMDB anzeigen",
+    "jellyseerr_card_view_on_jellyseerr": "Auf Jellyseerr anzeigen",
     "jellyseerr_card_badge_movie": "Film",
     "jellyseerr_card_badge_series": "Serie",
     "jellyseerr_card_no_info": "Keine Informationen verfügbar.",

@@ -384,6 +384,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            // Determine the first configured Jellyseerr URL (if any) for client-side deep links
+            string jellyseerrBaseUrl = string.Empty;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(config.JellyseerrUrls))
+                {
+                    jellyseerrBaseUrl = config.JellyseerrUrls
+                        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(u => u.Trim())
+                        .FirstOrDefault() ?? string.Empty;
+                }
+            }
+            catch { /* ignore */ }
+
             return new JsonResult(new
             {
                 // For Jellyfin Elsewhere & Reviews
@@ -392,7 +406,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // For Arr Links
                 config.SonarrUrl,
                 config.RadarrUrl,
-                config.BazarrUrl
+                config.BazarrUrl,
+                JellyseerrBaseUrl = jellyseerrBaseUrl
             });
         }
         [HttpGet("public-config")]
@@ -448,6 +463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrEnabled,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,
+                config.JellyseerrUseJellyseerrLinks,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,

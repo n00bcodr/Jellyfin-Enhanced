@@ -511,6 +511,9 @@
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
         const titleText = item.title || item.name;
         const tmdbUrl = `https://www.themoviedb.org/${item.mediaType}/${item.id}`;
+        const base = (JE.pluginConfig && JE.pluginConfig.JellyseerrBaseUrl) ? JE.pluginConfig.JellyseerrBaseUrl.toString().trim().replace(/\/$/, '') : '';
+        const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
+        const useJellyseerrLink = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseJellyseerrLinks && jellyseerrUrl);
 
         const card = document.createElement('div');
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
@@ -527,7 +530,7 @@
                     <div class="jellyseerr-overview"><div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div></div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
-                    <a is="emby-linkbutton" href="${tmdbUrl}" target="_blank" rel="noopener noreferrer" title="${JE.t('jellyseerr_card_view_on_tmdb')}"><bdi>${titleText}</bdi></a>
+                    <a is="emby-linkbutton" href="${useJellyseerrLink ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer" title="${useJellyseerrLink ? JE.t('jellyseerr_card_view_on_jellyseerr') : JE.t('jellyseerr_card_view_on_tmdb')}"><bdi>${titleText}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <bdi>${year}</bdi>

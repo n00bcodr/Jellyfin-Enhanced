@@ -104,6 +104,7 @@
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr nincs csatlakoztatva.",
     "jellyseerr_no_results_jellyfin": "Sajnáljuk! Nincs találat a következőre:\"{query}\" a Jellyfin-en",
     "jellyseerr_card_view_on_tmdb": "Megtekintés a TMDB-n",
+    "jellyseerr_card_view_on_jellyseerr": "Megtekintés a Jellyseerr-ben",
     "jellyseerr_card_badge_movie": "Film",
     "jellyseerr_card_badge_series": "Sorozat",
     "jellyseerr_card_no_info": "Nem talélható információ.",
