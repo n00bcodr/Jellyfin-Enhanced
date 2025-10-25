@@ -278,6 +278,8 @@
                 padding: 0.5em 1em 1em !important;
                 overflow: visible !important;
             }
+            .jellyseerr-card .cardBox { overflow: visible !important; }
+            .jellyseerr-section .scrollSlider { overflow: visible !important; }
 
             /* SPLIT BUTTON FOR 4K */
             .jellyseerr-button-group {
@@ -306,13 +308,11 @@
                 width: 2.8em;
                 min-width: 2.8em;
                 max-width: 2.8em;
-                height: 3.5em;
                 border: none;
                 cursor: pointer;
-                background-color: #16a34a !important;
+                background-color: #4f46e5 !important;
                 color: #fff !important;
                 border-radius: 0 4px 4px 0;
-                border-left: 1px solid rgba(255,255,255,0.3);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -322,17 +322,13 @@
                 position: relative;
                 z-index: 1;
             }
-            .jellyseerr-split-arrow:hover:not(:disabled) {
-                background-color: #15803d !important;
-            }
-            .jellyseerr-split-arrow:active:not(:disabled) {
-                background-color: #166534 !important;
-            }
+            .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(0.95); }
+            .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.88); }
             .jellyseerr-split-arrow:disabled,
             .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {
                 opacity: 0.7;
                 cursor: default;
-                background-color: #16a34a !important;
+                filter: brightness(1);
             }
             .jellyseerr-split-arrow svg {
                 width: 1.5em;
@@ -349,7 +345,7 @@
                 border: 1px solid rgba(148, 163, 184, 0.2);
                 border-radius: 8px;
                 box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-                z-index: 1000;
+                z-index: 10000;
                 opacity: 0;
                 pointer-events: none;
                 transition: opacity 0.2s ease;
@@ -365,7 +361,7 @@
                 padding: 12px 16px;
                 border: none;
                 background: transparent;
-                color: #e5e7eb;
+                color: #f8fafc;
                 text-align: left;
                 cursor: pointer;
                 transition: background 0.2s;
@@ -878,19 +874,8 @@
         const status = item.mediaInfo ? item.mediaInfo.status : 1;
         const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
 
-        // Debug logging - REMOVE THIS AFTER TESTING
-        console.log('Movie:', item.title || item.name, {
-            status: status,
-            status4k: status4k,
-            mediaInfo: item.mediaInfo,
-            showAdvanced: JE.pluginConfig.JellyseerrShowAdvanced
-        });
-
-        // Show split button when advanced mode is on and either:
-        // - Standard is available (status 5), OR
-        // - 4K can be requested (status4k 1)
-        const show4KOption = JE.pluginConfig.JellyseerrShowAdvanced &&
-                            (status === 5 || status4k === 1);
+        // Show split button when the 4K feature is enabled
+        const show4KOption = !!JE.pluginConfig.JellyseerrEnable4KRequests;
 
         const setButton = (text, icon, className, disabled = false) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
@@ -942,7 +927,7 @@
 
                 // Arrow button for dropdown
                 const arrowButton = document.createElement('button');
-                arrowButton.className = 'jellyseerr-split-arrow';
+                arrowButton.className = 'jellyseerr-split-arrow emby-button';
                 arrowButton.innerHTML = icons.arrow_down;
                 arrowButton.dataset.tmdbId = item.id;
                 arrowButton.dataset.toggle4k = 'true';
@@ -951,7 +936,7 @@
                 if (status4k === 5) {
                     // 4K already available
                     arrowButton.disabled = true;
-                    arrowButton.classList.add('jellyseerr-split-arrow-disabled');
+                    arrowButton.classList.add('jellyseerr-split-arrow-disabled', 'emby-button');
                     arrowButton.title = '4K Available';
                 } else if (status4k === 2 || status4k === 3) {
                     // 4K pending/processing

@@ -222,6 +222,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="jellyseerrEnable4kRequests" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable 4K Requests</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, movie request buttons include a dropdown to request a 4K version.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrUseJellyseerrLinks" is="emby-checkbox" type="checkbox"/>
                                     <span>Link result titles to Jellyseerr instead of TMDB</span>
                                 </label>
@@ -733,6 +740,7 @@
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
+                document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
@@ -794,6 +802,7 @@
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
+                config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;

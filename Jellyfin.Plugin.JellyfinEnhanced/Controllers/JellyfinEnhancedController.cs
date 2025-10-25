@@ -461,6 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
+                config.JellyseerrEnable4KRequests,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseJellyseerrLinks,
