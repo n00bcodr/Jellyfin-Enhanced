@@ -66,14 +66,16 @@
             }
 
             function getExternalIds(context) {
-                const ids = { tmdb: null};
+                const ids = { tmdb: null, hasTmdbLink: false };
                 const links = context.querySelectorAll('.itemExternalLinks a, .externalIdLinks a');
                 links.forEach(link => {
                     const href = link.href;
                     if (href.includes('themoviedb.org/movie/')) {
                         ids.tmdb = href.match(/\/movie\/(\d+)/)?.[1];
+                        ids.hasTmdbLink = true;
                     } else if (href.includes('themoviedb.org/tv/')) {
                         ids.tmdb = href.match(/\/tv\/(\d+)/)?.[1];
+                        ids.hasTmdbLink = true;
                     }
                 });
                 return ids;
@@ -122,6 +124,11 @@
                     if (!item?.Type) return;
 
                     const ids = getExternalIds(visiblePage);
+
+                    // Only add ARR links if we find a themoviedb link
+                    if (!ids.hasTmdbLink) {
+                        return;
+                    }
 
                     if (item.Type === 'Series' && item.Name && JE.pluginConfig.SonarrUrl) {
                         const seriesSlug = slugify(item.Name);
