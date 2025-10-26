@@ -23,6 +23,7 @@
         localStorage.removeItem('streaming-settings');
         localStorage.removeItem('jellyfinEnhancedBookmarks');
         localStorage.removeItem('jellyfinEnhancedLastCleared');
+        localStorage.removeItem('jellyfinEnhancedLastAdminReset');
         alert('Local browser settings have been cleared. The page will now reload.');
         window.location.reload();
     }
@@ -37,7 +38,7 @@
         `;
 
         const infoText = document.createElement('p');
-        infoText.innerHTML = 'Local settings from a previous version were found in this browser.';
+        infoText.innerHTML = "Settings from a previous version were found in this browser's local storage.";
         infoText.style.cssText = 'font-size: 13px; text-align: center; margin: 0 0 10px 0; color: rgba(255,255,255,0.7);';
 
         const buttonContainer = document.createElement('div');
