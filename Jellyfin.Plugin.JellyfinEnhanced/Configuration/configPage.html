@@ -201,9 +201,14 @@
                                 <div class="fieldDescription">A list of providers to ignore from the default region (supports regex).<a class="sectionTitle" target="_blank" href="https://raw.githubusercontent.com/n00bcodr/Jellyfin-Elsewhere/refs/heads/main/resources/providers.txt">Full List</a></div>
                             </div>
                             <h3>Extras</h3>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                            <div class="checkboxContainer">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="showReviews" is="emby-checkbox" type="checkbox"/>
                                     <span>Show Reviews from TMDB in Item Details Page<div style="font-size: .9em;">Requires TMDB API Key to be set</div></span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="reviewsExpandedByDefault" is="emby-checkbox" type="checkbox"/>
+                                    <span>Expand reviews by default<div style="font-size: .9em;">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div></span>
                                 </label>
                             </div>
                         </div>
@@ -732,6 +737,7 @@
                 document.querySelector('#genreTagsEnabled').checked = config.GenreTagsEnabled;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
+                document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
@@ -793,6 +799,7 @@
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
+            config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;

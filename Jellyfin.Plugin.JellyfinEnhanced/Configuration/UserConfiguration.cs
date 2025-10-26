@@ -25,6 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool GenreTagsEnabled { get; set; }
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;
+        public bool ReviewsExpandedByDefault { get; set; }
     }
 
     public class UserShortcuts

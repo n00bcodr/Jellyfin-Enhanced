@@ -80,6 +80,10 @@
             if (hasReviews) {
                 reviewsSection = document.createElement('details');
                 reviewsSection.className = 'detailSection tmdb-reviews-section';
+                // Respect user preference for expanded/collapsed section by default
+                if (JE.currentSettings?.reviewsExpandedByDefault) {
+                    reviewsSection.setAttribute('open', '');
+                }
                 const summary = document.createElement('summary');
                 summary.className = 'sectionTitle';
                 summary.innerHTML = `${JE.t('reviews_title', { count: reviews.length })} <i class="material-icons expand-icon">expand_more</i>`;
@@ -105,6 +109,20 @@
                             const previewContent = review.content.substring(0, 350);
                             textElement.innerHTML = escapeHtml(previewContent).replace(/\n/g, '<br>') + `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
                         }
+                    }
+                });
+                // Persist user's expand/collapse choice for future pages
+                reviewsSection.addEventListener('toggle', function () {
+                    try {
+                        if (!window.JellyfinEnhanced) return;
+                        const JE = window.JellyfinEnhanced;
+                        JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+                        JE.currentSettings.reviewsExpandedByDefault = reviewsSection.open;
+                        if (typeof JE.saveUserSettings === 'function') {
+                            JE.saveUserSettings('settings.json', JE.currentSettings);
+                        }
+                    } catch (err) {
+                        console.error(`${logPrefix} Failed to persist reviews expanded state`, err);
                     }
                 });
             } else {

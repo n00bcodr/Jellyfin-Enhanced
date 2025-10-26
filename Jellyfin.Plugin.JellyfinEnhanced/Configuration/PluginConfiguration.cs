@@ -43,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RemoveContinueWatchingEnabled = false;
             ShowAudioLanguages = true;
             ShowReviews = false;
+            ReviewsExpandedByDefault = false;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
             GenreTagsEnabled = false;
@@ -121,6 +122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RemoveContinueWatchingEnabled { get; set; }
         public bool ShowAudioLanguages { get; set; }
         public bool ShowReviews { get; set; }
+        public bool ReviewsExpandedByDefault { get; set; }
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }

@@ -450,6 +450,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowAudioLanguages,
                 config.Shortcuts,
                 config.ShowReviews,
+                config.ReviewsExpandedByDefault,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
@@ -684,6 +685,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                 GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
+                ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
                 LastOpenedTab = "shortcuts"
             };
 

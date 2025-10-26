@@ -68,6 +68,7 @@
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
             showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
             pauseScreenEnabled: true, qualityTagsEnabled: false, genreTagsEnabled: false,
+            reviewsExpandedByDefault: false,
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
