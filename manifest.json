@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Add placeholder and info for splash screen URL\n - Fix subtitle styling for Jellyfin 10.11\n - Watchlist from KefinTweaks\n - Add long press for 2x speed playback feature\n - Migrate Settings to Server!\n - Add option to link Jellyseerr site to Jellyseerr results\n - Add 'reviews expanded by default' setting\n\n - Please add the manifest for 10.11 if you are on 10.11. https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json",
+        "targetAbi": "10.10.7.0",
+        "version": "9.0.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "141830ADE5F418057BACBFC393AD0802",
+        "timestamp": "2025-10-26T05:40:18"
+      },
+      {
         "changelog": "- Refactor file size and audio language display logic (again!)\n - Refactor reviews.js\n - Restrict genre tag processing to Movie and Series cards\n - Fix HDR10+ regex to match 'hdr10plus' format\n - Show dash placeholder when no audio languages",
         "targetAbi": "10.10.7.0",
         "version": "8.1.0.0",
