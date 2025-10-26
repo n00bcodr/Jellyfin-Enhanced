@@ -3,7 +3,7 @@
     'use strict';
 
     JE.initializeReviewsScript = function () {
-        if (!JE.pluginConfig.ShowReviews || !JE.pluginConfig.TMDB_API_KEY) {
+        if (!JE.pluginConfig.ShowReviews || !JE.pluginConfig.TmdbEnabled) {
             console.log('🪼 Jellyfin Enhanced: Reviews feature disabled or TMDB API key not set.');
             return;
         }
