@@ -715,8 +715,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── modal.js
     │   └── ui.js
     ├── watchlist/
-    │   ├── cardBuilder.js
     │   └── watchlist.js
+    ├── migrate.js
     ├── reviews.js
     ├── splashscreen.js
     ├── arr-links.js
@@ -746,9 +746,10 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
     * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
 
-* **`/watchlist/`**: This directory contains all components for the watchlist functionality.
-    * **`cardBuilder.js`**: A utility to dynamically construct card elements for displaying media items, used by the watchlist.
-    * **`watchlist.js`**: Manages all aspects of the watchlist feature, including adding/removing items and displaying the watchlist itself.
+* **`/watchlist/`**: This directory contains the watchlist functionality.
+    * **`watchlist.js`**: A loader script that dynamically fetches watchlist functionality from [KefinTweaks](https://github.com/ranaldsgift/kefintweaks). It loads the necessary scripts and CSS from the configured version (or master by default), including `utils.js`, `localStorageCache.js`, `modal.js`, `cardBuilder.js`, and the main `watchlist.js` implementation.
+
+* **`migrate.js`**: Handles one-time migration of user settings from browser localStorage to server-side storage. This allows users who upgraded from earlier versions to seamlessly migrate their settings, shortcuts, elsewhere preferences, and bookmarks to the new server-based configuration system.
 
 * **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
 
