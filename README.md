@@ -595,8 +595,18 @@ The HTML structure for language tags is as follows:
 <summary style="font-size: 1.25em; font-weight: 600;">Enhanced Panel</summary>
 <br>
 
-While the script automatically themes itself with Jellyfish, you can apply your own custom look on any theme.
-Sample styling
+The Enhanced Panel automatically adapts its styling to match your current Jellyfin theme. It detects popular themes like Jellyfish and ElegantFin and uses their color schemes for seamless integration.
+
+**Supported Themes:**
+- **Jellyfish**: Uses theme's accent colors and blur effects
+- **ElegantFin**: Matches the theme's header and accent colors
+- **Default**: Clean, universal styling for unrecognized themes
+
+**Automatic Theme Detection:** The panel detects your active theme using unique CSS variables and applies appropriate styling without any configuration needed.
+
+**Custom Styling:** If you want to override the automatic theming or customize the panel appearance further, you can use the CSS selectors below.
+
+Sample custom styling:
 
 ```css
 

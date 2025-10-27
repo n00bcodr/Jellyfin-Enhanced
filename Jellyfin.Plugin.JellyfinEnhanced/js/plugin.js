@@ -267,7 +267,7 @@
             // Stage 3: Load ALL component scripts
             const basePath = '/JellyfinEnhanced/js';
             const allComponentScripts = [
-                'enhanced/config.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
+                'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/events.js',
                 'migrate.js',
                 'elsewhere.js',
@@ -294,7 +294,13 @@
                  return;
             }
 
-            // Stage 5: Initialize feature modules
+            // Stage 5: Initialize theme system first
+            if (typeof JE.themer?.init === 'function') {
+                JE.themer.init();
+                console.log('🪼 Jellyfin Enhanced: Theme system initialized.');
+            }
+
+            // Stage 6: Initialize feature modules
             if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
             if (typeof JE.initializeMigration === 'function') JE.initializeMigration();
             if (typeof JE.initializeElsewhereScript === 'function') JE.initializeElsewhereScript();

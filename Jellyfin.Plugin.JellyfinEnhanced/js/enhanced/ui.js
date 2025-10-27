@@ -24,22 +24,11 @@
      * @param {number} [duration=JE.CONFIG.TOAST_DURATION] The duration to show the toast.
      */
     JE.toast = (key, duration = JE.CONFIG.TOAST_DURATION) => {
-        const getJellyfinThemeVariable = (variableName, defaultValue) => {
-            const rootStyle = getComputedStyle(document.documentElement);
-            const value = rootStyle.getPropertyValue(variableName).trim();
-            return value ? value : defaultValue;
-        };
-
-        const isJellyfishThemeActive = getJellyfinThemeVariable('--theme-updated-on', '') !== '' || getJellyfinThemeVariable('--theme-name', '').toLowerCase().includes('jellyfish');
-        let toastBg, toastBorder;
-
-        if (isJellyfishThemeActive) {
-            toastBg = getJellyfinThemeVariable('--secondary-background-transparent', 'rgba(0,0,0,0.6)');
-            toastBorder = `1px solid ${getJellyfinThemeVariable('--primary-accent-color', 'rgba(255,255,255,0.1)')}`;
-        } else {
-            toastBg = 'linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))';
-            toastBorder = '1px solid rgba(255,255,255,0.1)';
-        }
+        // Use the theme system to get appropriate colors
+        const themeVars = JE.themer?.getThemeVariables() || {};
+        const toastBg = themeVars.secondaryBg || 'linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))';
+        const toastBorder = `1px solid ${themeVars.primaryAccent || 'rgba(255,255,255,0.1)'}`;
+        const blurValue = themeVars.blur || '30px';
 
         const t = document.createElement('div');
         t.className = 'jellyfin-enhanced-toast';
@@ -57,7 +46,7 @@
             textShadow: '-1px -1px 10px black',
             fontWeight: '500',
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            backdropFilter: `blur(30px)`,
+            backdropFilter: `blur(${blurValue})`,
             border: toastBorder,
             transition: 'transform 0.3s ease-out',
             maxWidth: 'clamp(280px, 80vw, 350px)'
@@ -123,24 +112,11 @@
             resetAutoCloseTimer();
         });
 
-        const getJellyfinThemeVariable = (variableName, defaultValue) => {
-            const rootStyle = getComputedStyle(document.documentElement);
-            const value = rootStyle.getPropertyValue(variableName).trim();
-            return value || defaultValue;
-        };
-
-        const isJellyfishThemeActive = getJellyfinThemeVariable('--theme-updated-on', '') !== '' || getJellyfinThemeVariable('--theme-name', '').toLowerCase().includes('jellyfish');
-
-        let panelBg, panelBorder, textColor;
-        if (isJellyfishThemeActive) {
-            panelBg = getJellyfinThemeVariable('--primary-background-transparent', 'rgba(0,0,0,0.95)');
-            panelBorder = `1px solid ${getJellyfinThemeVariable('--primary-accent-color', 'rgba(255,255,255,0.1)')}`;
-            textColor = getJellyfinThemeVariable('--text-color', '#fff');
-        } else {
-            panelBg = 'linear-gradient(135deg, rgba(0,0,0,0.95), rgba(20,20,20,0.95))';
-            panelBorder = '1px solid rgba(255,255,255,0.1)';
-            textColor = '#fff';
-        }
+        // Get styles from themer
+        const themeVars = JE.themer?.getThemeVariables() || {};
+        const panelBg = themeVars.panelBg;
+        const panelBorder = `1px solid ${themeVars.primaryAccent}`;
+        const textColor = themeVars.textColor;
 
         Object.assign(notification.style, {
             position: 'fixed',
@@ -340,45 +316,25 @@
             existing.remove();
             return;
         }
-        // Get the Jellyfish theme variables to apply consistent styles.
-        const getJellyfinThemeVariable = (variableName, defaultValue) => {
-            const rootStyle = getComputedStyle(document.documentElement);
-            const value = rootStyle.getPropertyValue(variableName).trim();
-            return value ? value : defaultValue;
-        };
+        // Get theme-appropriate styles
+        const themeVars = JE.themer.getThemeVariables();
+        const currentTheme = JE.themer.activeTheme;
 
-        const isJellyfishThemeActive = getJellyfinThemeVariable('--theme-updated-on', '') !== '' || getJellyfinThemeVariable('--theme-name', '').toLowerCase().includes('jellyfish');
-        let panelBgColor, secondaryBg, headerFooterBg, primaryAccentColor, toggleAccentColor, kbdBackground, presetBoxBackground, detailsBackground, panelBlurValue, githubButtonBg, releaseNotesBg, checkUpdatesBorder, releaseNotesTextColor, logoUrl;
-        if (isJellyfishThemeActive) {
-            panelBgColor = getJellyfinThemeVariable('--primary-background-transparent', 'rgba(0,0,0,0.95)');
-            secondaryBg = getJellyfinThemeVariable('--secondary-background-transparent', 'rgba(0,0,0,0.2)');
-            headerFooterBg = secondaryBg;
-            detailsBackground = secondaryBg;
-            primaryAccentColor = getJellyfinThemeVariable('--primary-accent-color', '#00A4DC');
-            toggleAccentColor = primaryAccentColor;
-            kbdBackground = getJellyfinThemeVariable('--alt-accent-color', '#ffffff20');
-            presetBoxBackground = getJellyfinThemeVariable('--alt-accent-color', '#ffffff20');
-            panelBlurValue = getJellyfinThemeVariable('--blur', '20px');
-            githubButtonBg = 'rgba(102, 179, 255, 0.1)';
-            releaseNotesBg = primaryAccentColor;
-            checkUpdatesBorder = `1px solid ${primaryAccentColor}`;
-            releaseNotesTextColor = getJellyfinThemeVariable('--text-color', '#000000');
-            const rawLogoValue = getJellyfinThemeVariable('--logo', '');
-            logoUrl = rawLogoValue.replace(/url\(['"]?(.*?)['"]?\)/i, '$1');
-        } else {
-            panelBgColor = 'linear-gradient(135deg, rgba(0,0,0,0.95), rgba(20,20,20,0.95))';
-            headerFooterBg = 'linear-gradient(135deg, rgba(0,0,0,0.95), rgba(20,20,20,0.95))';
-            detailsBackground = 'rgba(0,0,0,0.2)';
-            primaryAccentColor = '#00A4DC';
-            toggleAccentColor = '#AA5CC3';
-            kbdBackground = 'rgba(255,255,255,0.1)';
-            presetBoxBackground = 'rgba(255,255,255,0.05)';
-            panelBlurValue = '20px';
-            githubButtonBg = 'rgba(102, 179, 255, 0.1)';
-            releaseNotesBg = 'linear-gradient(135deg, #AA5CC3, #00A4DC)';
-            checkUpdatesBorder = `1px solid ${primaryAccentColor}`;
-            releaseNotesTextColor = '#FFFFFF';
-        }
+        // Define theme-aware variables
+        const panelBgColor = themeVars.panelBg;
+        const secondaryBg = themeVars.secondaryBg;
+        const headerFooterBg = themeVars.secondaryBg;
+        const detailsBackground = themeVars.secondaryBg;
+        const primaryAccentColor = themeVars.primaryAccent;
+        const toggleAccentColor = primaryAccentColor;
+        const kbdBackground = themeVars.altAccent;
+        const presetBoxBackground = themeVars.altAccent;
+        const panelBlurValue = themeVars.blur;
+        const githubButtonBg = `rgba(102, 179, 255, 0.1)`;
+        const releaseNotesBg = primaryAccentColor;
+        const checkUpdatesBorder = `1px solid ${primaryAccentColor}`;
+        const releaseNotesTextColor = themeVars.textColor;
+        const logoUrl = themeVars.logo;
 
         const help = document.createElement('div');
         help.id = panelId;
