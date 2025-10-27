@@ -4,6 +4,12 @@
 (function(JE) {
     'use strict';
 
+    // In-memory cache to avoid repeated fetches when data is unavailable or unchanged
+    const FILESIZE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    const LANGUAGE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    const fileSizeCache = {}; // { [itemId]: { size: number|null, unavailable: boolean, ts: number } }
+    const audioLanguageCache = {}; // { [itemId]: { languages: Array, unavailable: boolean, ts: number } }
+
     /**
      * Converts bytes into a human-readable format (e.g., KB, MB, GB).
      * @param {number} bytes The size in bytes.
@@ -141,42 +147,67 @@
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayItemSize(itemId, container) {
-        if (container.querySelector('.mediaInfoItem-fileSize')) {
+        const existing = container.querySelector('.mediaInfoItem-fileSize');
+        if (existing) {
+            // If already rendered for this itemId, do nothing
+            if (existing.dataset.itemId === itemId) return;
+            // Different item now; replace the element
+            existing.remove();
+        }
+
+        // Check cache first to avoid repeated network calls
+        const now = Date.now();
+        const cached = fileSizeCache[itemId];
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
+        placeholder.dataset.itemId = itemId;
+        // Insert first so subsequent observer runs are triggered
+        container.appendChild(placeholder);
+
+        // Helper to render a dash (no data) but keep the element
+        const renderUnavailable = () => {
+            placeholder.title = JE.t('file_size_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.alignItems = 'center';
+            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span> -`;
+        };
+
+        if (cached && (now - cached.ts) < FILESIZE_CACHE_TTL) {
+            if (cached.unavailable || !cached.size) {
+                renderUnavailable();
+                return;
+            }
+            placeholder.title = JE.t('file_size_tooltip');
+            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(cached.size)}`;
             return;
         }
 
-        // Add a temporary placeholder to prevent re-entry from other observer calls
-        const placeholder = document.createElement('div');
-        placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
-        container.appendChild(placeholder);
-
         try {
             const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-            if (item && item.MediaSources && item.MediaSources.length > 0) {
-                const totalSize = item.MediaSources.reduce((sum, source) => sum + (source.Size || 0), 0);
-                if (totalSize > 0) {
-                    // Now populate the placeholder with the real content
-                    placeholder.title = JE.t('file_size_tooltip');
-                    placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
-                } else {
-                    placeholder.remove(); // No size, remove placeholder
-                }
+            const sources = item?.MediaSources || [];
+            const totalSize = sources.reduce((sum, source) => sum + (source.Size || 0), 0);
+
+            if (totalSize > 0) {
+                placeholder.title = JE.t('file_size_tooltip');
+                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
+                fileSizeCache[itemId] = { size: totalSize, unavailable: false, ts: now };
             } else {
-                placeholder.remove(); // No sources, remove placeholder
+                renderUnavailable();
+                fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
-            if (placeholder.parentNode) {
-                placeholder.remove(); // Error, remove placeholder
-            }
+            // Keep placeholder with dash to prevent repeated calls
+            renderUnavailable();
+            fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
         }
     }
 
     /**
      * A map of language names/codes to country codes for flag display.
      */
-    const languageToCountryMap={English:"us",eng:"us",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"bd",ben:"bd",Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",ice:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng"};
-
+    const languageToCountryMap={English:"gb",eng:"gb",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"bd",ben:"bd",Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",ice:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng"};
 
     /**
      * Displays the audio languages of an item on its details page.
@@ -184,12 +215,53 @@
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayAudioLanguages(itemId, container) {
-        if (container.querySelector('.mediaInfoItem-audioLanguage')) return;
+        const existing = container.querySelector('.mediaInfoItem-audioLanguage');
+        if (existing) {
+            // If already rendered for this itemId, do nothing
+            if (existing.dataset.itemId === itemId) return;
+            // Different item now, replace the element
+            existing.remove();
+        }
 
-        // Add a temporary placeholder to prevent re-entry from other observer calls
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
+        placeholder.dataset.itemId = itemId;
         container.appendChild(placeholder);
+
+        // Helper to render unavailable/no data with dash
+        const renderUnavailable = () => {
+            placeholder.title = JE.t('audio_language_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.alignItems = 'center';
+            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
+        };
+
+        // Check cache first
+        const now = Date.now();
+        const cached = audioLanguageCache[itemId];
+        if (cached && (now - cached.ts) < LANGUAGE_CACHE_TTL) {
+            if (cached.unavailable || !cached.languages || cached.languages.length === 0) {
+                renderUnavailable();
+                return;
+            }
+            // Render from cache
+            placeholder.title = JE.t('audio_language_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.alignItems = 'center';
+            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
+
+            cached.languages.forEach((lang, index) => {
+                const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
+                if (countryCode) {
+                    placeholder.innerHTML += `<img src="https://flagcdn.com/w20/${countryCode.toLowerCase()}.png" alt="${lang.name} flag" style="width: 18px; margin-right: 0.3em; border-radius: 2px;">`;
+                }
+                placeholder.appendChild(document.createTextNode(lang.name));
+                if (index < cached.languages.length - 1) {
+                    placeholder.innerHTML += '<span style="margin: 0 0.25em;">, </span>';
+                }
+            });
+            return;
+        }
 
         try {
             const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
@@ -225,17 +297,16 @@
                         placeholder.innerHTML += '<span style="margin: 0 0.25em;">, </span>';
                     }
                 });
+                // Cache the successful result
+                audioLanguageCache[itemId] = { languages: uniqueLanguages, unavailable: false, ts: now };
             } else {
-                // If no languages, show a placeholder dash instead of removing the element
-                placeholder.style.display = 'flex';
-                placeholder.style.alignItems = 'center';
-                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
+                renderUnavailable();
+                audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: now };
             }
         } catch (error) {
             console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
-            if (placeholder.parentNode) {
-                placeholder.remove(); // Error, remove placeholder
-            }
+            renderUnavailable();
+            audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: now };
         }
     }
 
