@@ -114,6 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return null;
         }
 
+        [Authorize]
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -200,6 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("jellyseerr/status")]
+        [Authorize]
         public async Task<IActionResult> GetJellyseerrStatus()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -234,6 +236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("jellyseerr/validate")]
+        [Authorize]
         public async Task<IActionResult> ValidateJellyseerr([FromQuery] string url, [FromQuery] string apiKey)
         {
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
@@ -259,6 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("jellyseerr/user-status")]
+        [Authorize]
         public async Task<IActionResult> GetJellyseerrUserStatus()
         {
             // First check active status
@@ -288,53 +292,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
 
         [HttpGet("jellyseerr/search")]
+        [Authorize]
         public Task<IActionResult> JellyseerrSearch([FromQuery] string query)
         {
             return ProxyJellyseerrRequest($"/api/v1/search?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/sonarr")]
+        [Authorize]
         public Task<IActionResult> GetSonarrInstances()
         {
             return ProxyJellyseerrRequest("/api/v1/service/sonarr", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/radarr")]
+        [Authorize]
         public Task<IActionResult> GetRadarrInstances()
         {
             return ProxyJellyseerrRequest("/api/v1/service/radarr", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/{type}/{serverId}")]
+        [Authorize]
         public Task<IActionResult> GetServiceDetails(string type, int serverId)
         {
             return ProxyJellyseerrRequest($"/api/v1/service/{type}/{serverId}", HttpMethod.Get);
         }
 
         [HttpPost("jellyseerr/request")]
+        [Authorize]
         public async Task<IActionResult> JellyseerrRequest([FromBody] JsonElement requestBody)
         {
             return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
         [HttpGet("jellyseerr/tv/{tmdbId}")]
+        [Authorize]
         public Task<IActionResult> GetTvShow(int tmdbId)
         {
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/tv/{tmdbId}/seasons")]
+        [Authorize]
         public Task<IActionResult> GetTvSeasons(int tmdbId)
         {
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/seasons", HttpMethod.Get);
         }
 
         [HttpPost("jellyseerr/request/tv/{tmdbId}/seasons")]
+        [Authorize]
         public async Task<IActionResult> RequestTvSeasons(int tmdbId, [FromBody] JsonElement requestBody)
         {
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
 
         [HttpGet("tmdb/validate")]
+        [Authorize]
         public async Task<IActionResult> ValidateTmdb([FromQuery] string apiKey)
         {
             if (string.IsNullOrWhiteSpace(apiKey))
@@ -398,10 +411,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* ignore */ }
 
+            // Do not expose TMDB API key to clients; expose a boolean instead
+            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
+
             return new JsonResult(new
             {
-                // For Jellyfin Elsewhere & Reviews
-                config.TMDB_API_KEY,
+                // For Jellyfin Elsewhere & Reviews (only whether configured)
+                TmdbEnabled = tmdbEnabled,
 
                 // For Arr Links
                 config.SonarrUrl,
@@ -476,13 +492,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("tmdb/{**apiPath}")]
+        [Authorize]
         public async Task<IActionResult> ProxyTmdbRequest(string apiPath)
         {
-            if (!Request.Headers.TryGetValue("X-Emby-Token", out var token) || string.IsNullOrEmpty(token))
-            {
-                return Unauthorized("User authentication required.");
-            }
-
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
             {

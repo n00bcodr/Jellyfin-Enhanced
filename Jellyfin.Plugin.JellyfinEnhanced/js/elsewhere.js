@@ -6,7 +6,7 @@
 
     /**
      * Initializes the Jellyfin Elsewhere script.
-     * It will only run if a TMDB API key is configured.
+     * It will only run if the server reports TMDB is configured.
      */
     JE.initializeElsewhereScript = function() {
         if (!JE.pluginConfig.ElsewhereEnabled) {
@@ -14,13 +14,13 @@
             return;
         }
         // --- Configuration ---
-        const TMDB_API_KEY = JE.pluginConfig.TMDB_API_KEY || '';
+        const TmdbEnabled = !!JE.pluginConfig.TmdbEnabled;
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
 
-        if (!TMDB_API_KEY) {
-            console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: No TMDB API key configured, skipping initialization');
+        if (!TmdbEnabled) {
+            console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: TMDB is not configured, skipping initialization');
             return;
         }
 
