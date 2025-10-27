@@ -200,7 +200,22 @@
             JE.state.currentContextItemId = null;
 
             const itemElement = menuButton.closest('[data-id]');
-            const section = itemElement?.closest('.verticalSection');
+            if (!itemElement) return;
+
+            // Primary: Check for data-positionticks attribute
+            // This indicates the item has playback progress and should be in Continue Watching
+            const card = itemElement.closest('.card');
+            const hasPositionTicks = card?.getAttribute('data-positionticks') || itemElement.getAttribute('data-positionticks');
+
+            if (hasPositionTicks) {
+                JE.state.isContinueWatchingContext = true;
+                JE.state.currentContextItemId = itemElement.dataset.id;
+                console.log('🪼 Jellyfin Enhanced: Continue Watching item detected via data-positionticks for item:', itemElement.dataset.id);
+                return;
+            }
+
+            // Fallback: Check section-based approach
+            const section = itemElement.closest('.verticalSection');
             if (section) {
                 const titleElement = section.querySelector('.sectionTitle');
                 const isDefaultSection = titleElement && titleElement.textContent.trim() === 'Continue Watching';
@@ -208,6 +223,7 @@
                 if (section.classList.contains('ContinueWatching') || isDefaultSection) {
                     JE.state.isContinueWatchingContext = true;
                     JE.state.currentContextItemId = itemElement.dataset.id;
+                    console.log('🪼 Jellyfin Enhanced: Continue Watching item detected via section title for item:', itemElement.dataset.id);
                 }
             }
         }, true);
