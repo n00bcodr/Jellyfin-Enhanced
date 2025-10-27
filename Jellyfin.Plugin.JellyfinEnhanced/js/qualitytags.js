@@ -19,8 +19,9 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Quality Tags:';
         const overlayClass = 'quality-overlay-label';
         const containerClass = 'quality-overlay-container';
-        // Use plugin version for cache invalidation, so every plugin update force update tags. Will have to figure out a better way to do this.
-        const CACHE_KEY = `qualityOverlayCache-${JE.pluginVersion || 'static_fallback'}`;
+        // Use static cache key (not version-based) to persist across plugin updates
+        const CACHE_KEY = 'JellyfinEnhanced-qualityTagsCache';
+        const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-qualityTagsCacheTimestamp';
 
         // CSS selectors for elements that should NOT have quality tags applied.
         // This is used to ignore certain views like the cast & crew list.
@@ -72,24 +73,31 @@
             '3D': { bg: 'rgba(0, 150, 255, 0.9)', text: '#ffffff' }
         };
 
-        // --- STATE VARIABLES ---
-        let qualityOverlayCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
-        let processedElements = new WeakSet(); // Stores elements that have been processed to avoid re-work.
-        let requestQueue = []; // A queue for API requests to avoid server overload.
-        let isProcessingQueue = false;
-        let mutationDebounceTimer = null;
-        let renderDebounceTimer = null;
-
         // --- CONFIGURATION ---
         const config = {
             MAX_CONCURRENT_REQUESTS: 7,      // Max number of simultaneous API requests.
             QUEUE_PROCESS_INTERVAL: 300,   // Delay between processing batches from the queue.
             MUTATION_DEBOUNCE: 800,        // Delay to wait for DOM changes to settle before processing.
             RENDER_DEBOUNCE: 500,          // Delay for re-rendering tags on navigation.
-            CACHE_TTL: 7 * 24 * 60 * 60 * 1000, // Cache entries expire after 7 days.
+            CACHE_TTL: (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000, // Cache TTL from server config (default 30 days)
             REQUEST_TIMEOUT: 8000,           // Timeout for API requests.
             MAX_RETRIES: 2                     // Number of times to retry a failed API request.
         };
+
+        // --- STATE VARIABLES ---
+        let qualityOverlayCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
+        // Hot, in-memory cache shared across modules to avoid repeated deserialization and cold reads
+        const Hot = (JE._hotCache = JE._hotCache || {
+            ttl: config.CACHE_TTL,
+            quality: new Map(),
+            genre: new Map()
+        });
+        let processedElements = new WeakSet(); // Stores elements that have been processed to avoid re-work.
+        let requestQueue = []; // A queue for API requests to avoid server overload.
+        let isProcessingQueue = false;
+        const queuedItemIds = new Set(); // De-duplicate queued requests per itemId
+        let mutationDebounceTimer = null;
+        let renderDebounceTimer = null;
 
         // --- OBSERVERS ---
         // Observes elements to see when they enter the viewport, for lazy-loading tags.
@@ -132,15 +140,29 @@
         }
         /**
          * Scans localStorage for any old cache keys from previous plugin versions and removes them.
+         * Also checks if server has triggered a cache clear.
          */
         function cleanupOldCaches() {
-            const currentKey = CACHE_KEY;
+            // Remove old version-based cache keys and legacy cache keys
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key && key.startsWith('qualityOverlayCache-') && key !== currentKey) {
+                if (key && (key.startsWith('qualityOverlayCache-') || key === 'qualityOverlayCache' || key === 'qualityOverlayCacheTimestamp') && key !== CACHE_KEY && key !== CACHE_TIMESTAMP_KEY) {
                     console.log(`${logPrefix} Removing old cache: ${key}`);
                     localStorage.removeItem(key);
                 }
+            }
+
+            // Check if server has triggered a cache clear
+            const serverClearTimestamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
+            const localCacheTimestamp = parseInt(localStorage.getItem(CACHE_TIMESTAMP_KEY) || '0', 10);
+
+            if (serverClearTimestamp > localCacheTimestamp) {
+                console.log(`${logPrefix} Server triggered cache clear (${new Date(serverClearTimestamp).toISOString()})`);
+                localStorage.removeItem(CACHE_KEY);
+                localStorage.setItem(CACHE_TIMESTAMP_KEY, serverClearTimestamp.toString());
+                qualityOverlayCache = {};
+                // Clear hot cache too
+                if (JE._hotCache?.quality) JE._hotCache.quality.clear();
             }
         }
         /**
@@ -416,7 +438,7 @@
                 // Fetch the item with MediaStreams and MediaSources fields
                 const item = await ApiClient.ajax({
                     type: "GET",
-                    url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: "MediaStreams,MediaSources,Type" }),
+                    url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: "MediaStreams,MediaSources,Type,Genres" }),
                     dataType: "json",
                     timeout: config.REQUEST_TIMEOUT
                 });
@@ -437,6 +459,8 @@
 
                 if (qualities.length > 0) {
                     qualityOverlayCache[itemId] = { qualities, timestamp: Date.now() };
+                    // Seed hot cache
+                    Hot.quality.set(itemId, { qualities, timestamp: Date.now() });
                     saveCache();
                     return qualities;
                 }
@@ -488,11 +512,15 @@
                     const qualities = await fetchItemQuality(userId, itemId);
                     if (qualities) {
                         insertOverlay(element, qualities);
+                        queuedItemIds.delete(itemId);
                     }
                 } catch (error) {
                     // If the request fails, retry up to MAX_RETRIES times.
                     if (retryCount < config.MAX_RETRIES) {
                         requestQueue.push({ element, itemId, userId, retryCount: retryCount + 1 });
+                    } else {
+                        // Give up after final retry
+                        queuedItemIds.delete(itemId);
                     }
                 }
             });
@@ -553,6 +581,8 @@
             processedElements.add(container);
         }
 
+
+
         /**
          * Extracts the Jellyfin item ID from a DOM element.
          * @param {HTMLElement} el - The element to inspect.
@@ -601,8 +631,16 @@
             if (!itemId) return;
 
             // 1. Check cache first
+            // Hot cache first
+            const hot = Hot.quality.get(itemId);
+            if (hot && (Date.now() - hot.timestamp) < config.CACHE_TTL) {
+                insertOverlay(element, hot.qualities);
+                return;
+            }
+            // Fallback to persisted cache if present
             const cached = qualityOverlayCache[itemId];
             if (cached && Date.now() - cached.timestamp < config.CACHE_TTL) {
+                Hot.quality.set(itemId, cached);
                 insertOverlay(element, cached.qualities);
                 return;
             }
@@ -610,6 +648,10 @@
             // 2. If not cached, add to the request queue
             const userId = getUserId();
             if (!userId) return;
+
+            // Avoid enqueuing duplicate work for the same itemId
+            if (queuedItemIds.has(itemId)) return;
+            queuedItemIds.add(itemId);
 
             const request = { element, itemId, userId };
             if (isPriority) {
@@ -657,18 +699,8 @@
 
             elements.forEach(el => {
                 if (processedElements.has(el) || shouldIgnoreElement(el)) return;
-
-                const rect = el.getBoundingClientRect();
-                const isVisible = (
-                    rect.top <= (window.innerHeight + 100) &&
-                    rect.bottom >= -100
-                );
-
-                if (isVisible) {
-                    processElement(el, true);
-                } else {
-                    visibilityObserver.observe(el);
-                }
+                // Rely on IntersectionObserver to trigger when elements scroll into view
+                visibilityObserver.observe(el);
             });
         }
 
@@ -685,6 +717,7 @@
                         processedElements = new WeakSet(); // Reset processed elements on navigation
                         requestQueue.length = 0;
                         debouncedRender();
+                        maybePrefetchForDetailPage();
                     }
                 }, 500);
             };

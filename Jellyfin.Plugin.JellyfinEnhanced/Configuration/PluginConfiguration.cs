@@ -47,6 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
             GenreTagsEnabled = false;
+            TagsCacheTtlDays = 30;
             WatchlistEnabled = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -126,6 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }
+        public int TagsCacheTtlDays { get; set; }
         public bool WatchlistEnabled { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }

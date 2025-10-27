@@ -11,12 +11,22 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Genre Tags:';
         const containerClass = 'genre-overlay-container';
         const tagClass = 'genre-tag';
-        const CACHE_KEY = `genreTagsCache-${JE.pluginVersion || 'static_fallback'}`;
-        const MEDIA_TYPES = new Set(['Movie', 'Series']);
+        const CACHE_KEY = 'JellyfinEnhanced-genreTagsCache';
+        const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-genreTagsCacheTimestamp';
+        const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
+        const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
+        // const MEDIA_TYPES = new Set(['Movie', 'Series']);
         let genreCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
+        // Shared in-memory hot cache
+        const Hot = (JE._hotCache = JE._hotCache || {
+            ttl: CACHE_TTL,
+            quality: new Map(),
+            genre: new Map()
+        });
         let processedElements = new WeakSet();
         let requestQueue = [];
         let isProcessingQueue = false;
+        const queuedItemIds = new Set();
 
         const genreIconMap = {
             // Default
@@ -30,13 +40,15 @@
             'mystery': 'psychology_alt', 'romance': 'favorite', 'science fiction': 'science',
             'sci-fi': 'science', 'tv movie': 'tv', 'thriller': 'psychology', 'war': 'military_tech',
             'western': 'landscape', 'superhero': 'domino_mask', 'musical': 'music_video',
-            'biography': 'menu_book', 'sport': 'sports_soccer',
+            'biography': 'menu_book', 'sport': 'sports_soccer', 'game-show': 'quiz',
+            'reality-tv': 'live_tv',
 
             // French (fr)
             'aventure': 'explore', 'comédie': 'mood', 'drame': 'theater_comedy', 'fantastique': 'auto_awesome',
             'histoire': 'history_edu', 'horreur': 'skull', 'musique': 'music_note', 'mystère': 'psychology_alt',
             'science-fiction': 'science', 'téléfilm': 'tv', 'guerre': 'military_tech', 'comédie musicale': 'music_video',
             'biographie': 'menu_book', 'familial': 'family_restroom', 'historique': 'history_edu',
+            'jeu-concours': 'quiz', 'télé-réalité': 'live_tv',
 
             // Spanish (es)
             'acción': 'sports_martial_arts', 'aventura': 'explore', 'animación': 'animation', 'comedia': 'mood',
@@ -44,11 +56,13 @@
             'historia': 'history_edu', 'terror': 'skull', 'música': 'music_note', 'misterio': 'psychology_alt',
             'ciencia ficción': 'science', 'película de tv': 'tv', 'suspense': 'psychology', 'bélica': 'military_tech',
             'superhéroes': 'domino_mask', 'biografía': 'menu_book', 'deporte': 'sports_soccer',
+            'concurso': 'quiz', 'telerrealidad': 'live_tv',
 
             // German (de)
             'abenteuer': 'explore', 'komödie': 'mood', 'krimi': 'local_police', 'dokumentarfilm': 'article',
             'familienfilm': 'family_restroom', 'geschichte': 'history_edu', 'kriegsfilm': 'military_tech',
             'musikfilm': 'music_video', 'liebesfilm': 'favorite', 'fernsehfilm': 'tv',
+            'spielshow': 'quiz', 'reality-tv': 'live_tv',
 
             // Italian (it)
             'azione': 'sports_martial_arts', 'avventura': 'explore', 'animazione': 'animation', 'commedia': 'mood',
@@ -56,23 +70,26 @@
             'fantastico': 'auto_awesome', 'storico': 'history_edu', 'orrore': 'skull', 'musica': 'music_note',
             'mistero': 'psychology_alt', 'romantico': 'favorite', 'fantascienza': 'science', 'film per la tv': 'tv',
             'guerra': 'military_tech', 'biografico': 'menu_book', 'sportivo': 'sports_soccer',
+            'game show': 'quiz', 'reality tv': 'live_tv',
 
             // Danish (da)
             'eventyr': 'explore', 'komedie': 'mood', 'krimi': 'local_police', 'dokumentar': 'article',
             'familie': 'family_restroom', 'historie': 'history_edu', 'gyser': 'skull', 'musik': 'music_note',
             'mysterie': 'psychology_alt', 'romantik': 'favorite', 'krig': 'military_tech', 'tv-film': 'tv',
+            'spilshow': 'quiz', 'reality-tv': 'live_tv',
 
             // Swedish (sv)
             'äventyr': 'explore', 'komedi': 'mood', 'brott': 'local_police', 'dokumentär': 'article',
             'familj': 'family_restroom', 'historia': 'history_edu', 'skräck': 'skull', 'musik': 'music_note',
             'mysterium': 'psychology_alt', 'romantik': 'favorite', 'krigs': 'military_tech',
+            'spelshow': 'quiz', 'reality-tv': 'live_tv',
 
             // Hungarian (hu)
             'akció': 'sports_martial_arts', 'kaland': 'explore', 'animációs': 'animation', 'vígjáték': 'mood',
             'bűnügyi': 'local_police', 'dokumentum': 'article', 'dráma': 'theater_comedy', 'családi': 'family_restroom',
             'történelmi': 'history_edu', 'horror': 'skull', 'zenei': 'music_note', 'misztikus': 'psychology_alt',
             'romantikus': 'favorite', 'sci-fi': 'science', 'tv film': 'tv', 'háborús': 'military_tech',
-            'életrajzi': 'menu_book'
+            'életrajzi': 'menu_book', 'játékshow': 'quiz', 'valóság-tv': 'live_tv'
         };
 
         const visibilityObserver = new IntersectionObserver((entries) => {
@@ -92,6 +109,30 @@
             }
         }
 
+        function cleanupOldCaches() {
+            // Remove old version-based cache keys and legacy cache keys
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.startsWith('genreTagsCache-') || key === 'genreTagsCache' || key === 'genreTagsCacheTimestamp') && key !== CACHE_KEY && key !== CACHE_TIMESTAMP_KEY) {
+                    console.log(`${logPrefix} Removing old cache: ${key}`);
+                    localStorage.removeItem(key);
+                }
+            }
+
+            // Check if server has triggered a cache clear
+            const serverClearTimestamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
+            const localCacheTimestamp = parseInt(localStorage.getItem(CACHE_TIMESTAMP_KEY) || '0', 10);
+
+            if (serverClearTimestamp > localCacheTimestamp) {
+                console.log(`${logPrefix} Server triggered cache clear (${new Date(serverClearTimestamp).toISOString()})`);
+                localStorage.removeItem(CACHE_KEY);
+                localStorage.setItem(CACHE_TIMESTAMP_KEY, serverClearTimestamp.toString());
+                genreCache = {};
+                // Clear hot cache too
+                if (JE._hotCache?.genre) JE._hotCache.genre.clear();
+            }
+        }
+
         function getUserId() {
             return ApiClient.getCurrentUserId();
         }
@@ -102,6 +143,7 @@
                 if (item && MEDIA_TYPES.has(item.Type) && item.Genres && item.Genres.length > 0) {
                     const genres = item.Genres.slice(0, 3);
                     genreCache[itemId] = { genres, timestamp: Date.now() };
+                    Hot.genre.set(itemId, { genres, timestamp: Date.now() });
                     saveCache();
                     return genres;
                 }
@@ -124,6 +166,9 @@
                         insertGenreTags(element, genres);
                     }
                 } catch (error) {}
+                finally {
+                    queuedItemIds.delete(itemId);
+                }
             });
 
             await Promise.allSettled(promises);
@@ -179,8 +224,16 @@
             const itemId = getItemIdFromElement(element);
             if (!itemId) return;
 
+            // Hot cache first
+            const hot = Hot.genre.get(itemId);
+            if (hot && (Date.now() - hot.timestamp) < Hot.ttl) {
+                insertGenreTags(element, hot.genres);
+                return;
+            }
+            // Persisted cache fallback
             const cached = genreCache[itemId];
             if (cached) {
+                Hot.genre.set(itemId, cached);
                 insertGenreTags(element, cached.genres);
                 return;
             }
@@ -188,6 +241,8 @@
             const userId = getUserId();
             if (!userId) return;
 
+            if (queuedItemIds.has(itemId)) return;
+            queuedItemIds.add(itemId);
             const request = { element, itemId, userId };
             if (isPriority) {
                 requestQueue.unshift(request);
@@ -205,8 +260,10 @@
                 'a.cardImageContainer, div.listItemImage'
             ));
             elements.forEach(el => {
-                el.dataset.genresProcessed = true;
-                visibilityObserver.observe(el);
+                // Avoid re-observing if already processed
+                if (!processedElements.has(el)) {
+                    visibilityObserver.observe(el);
+                }
             });
         }
 
@@ -267,9 +324,34 @@
         }
 
         function initialize() {
+            cleanupOldCaches();
             injectCss();
-            setInterval(scanAndProcess, 2000);
-            scanAndProcess();
+            // Initial scan
+            setTimeout(scanAndProcess, 500);
+            // Observe DOM mutations to discover new cards without polling
+            const mo = new MutationObserver((mutations) => {
+                let found = false;
+                for (const m of mutations) {
+                    if (m.type === 'childList') {
+                        m.addedNodes.forEach(node => {
+                            if (node && node.nodeType === 1) {
+                                const el = node;
+                                if (el.matches?.('a.cardImageContainer, div.listItemImage') || el.querySelector?.('a.cardImageContainer, div.listItemImage')) {
+                                    found = true;
+                                }
+                            }
+                        });
+                    }
+                }
+                if (found) {
+                    clearTimeout(mo._scanTimer);
+                    mo._scanTimer = setTimeout(scanAndProcess, 200);
+                }
+            });
+            mo.observe(document.body, { childList: true, subtree: true });
+            // Periodic persistence and cleanup hooks
+            window.addEventListener('beforeunload', saveCache);
+            setInterval(saveCache, 120000);
         }
 
         initialize();

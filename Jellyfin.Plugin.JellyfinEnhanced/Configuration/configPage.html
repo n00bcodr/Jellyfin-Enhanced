@@ -102,6 +102,17 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags<div>This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div></span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
+                                    <div class="inputContainer" style="margin-top: 1em;">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagsCacheTtlDays">Tags Cache Duration (days)</label>
+                                        <input id="tagsCacheTtlDays" is="emby-input" type="number" min="1" max="365" value="30"/>
+                                        <div class="fieldDescription">How long to cache quality and genre tag data (1-365 days, default: 30)</div>
+                                    </div>
+                                    <div style="margin-top: 1em;">
+                                        <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
+                                            <span>Clear All Client Caches</span>
+                                        </button>
+                                        <div class="fieldDescription">Forces all clients to clear their quality/genre tag caches on next load</div>
+                                    </div>
                                 </div>
                             </details>
                             <div style="padding-top: 1em;">
@@ -157,8 +168,8 @@
                         </div>
                     </fieldset>
                     <div class="verticalSection">
-                        <button id="clearLocalStorageBtn" class="raised button-cancel block emby-button" is="emby-button" type="button">
-                            <span>Reset Settings for all users</span>
+                        <button id="resetAllUserSettingsBtn" class="raised button-cancel block emby-button" is="emby-button" type="button">
+                            <span>Reset All User Settings to Defaults</span>
                         </button>
                     </div>
                 </div>
@@ -414,7 +425,8 @@
             const pluginId = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
-            const clearLocalStorageBtn = document.querySelector('#clearLocalStorageBtn');
+            const resetAllUserSettingsBtn = document.querySelector('#resetAllUserSettingsBtn');
+            const clearTagsCacheBtn = document.querySelector('#clearTagsCacheBtn');
 
             const shortcutListContainer = document.getElementById('shortcut-list-container');
             const addShortcutSelect = document.getElementById('add-shortcut-select');
@@ -735,6 +747,7 @@
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
                 document.querySelector('#genreTagsEnabled').checked = config.GenreTagsEnabled;
+                document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
@@ -797,6 +810,7 @@
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
+            config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
@@ -829,7 +843,7 @@
         }
 
         // Resets server-side settings.json for all users to plugin defaults
-        function clearLocalStorage() {
+        function resetAllUserSettings() {
             if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings (settings.json) for ALL users to the above defaults.")) {
                 Dashboard.showLoadingMsg();
                 ApiClient.ajax({
@@ -855,7 +869,29 @@
 
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);
-        clearLocalStorageBtn.addEventListener('click', clearLocalStorage);
+        resetAllUserSettingsBtn.addEventListener('click', resetAllUserSettings);
+        clearTagsCacheBtn.addEventListener('click', async () => {
+            if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
+                Dashboard.showLoadingMsg();
+                try {
+                    const config = await ApiClient.getPluginConfiguration(pluginId);
+                    config.ClearLocalStorageTimestamp = Date.now();
+                    await ApiClient.updatePluginConfiguration(pluginId, config);
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert({
+                        title: 'Success',
+                        message: 'Cache clear signal sent. All clients will clear their caches on next page load.'
+                    });
+                } catch (e) {
+                    Dashboard.hideLoadingMsg();
+                    console.error('Failed to set cache clear timestamp:', e);
+                    Dashboard.alert({
+                        title: 'Error',
+                        message: 'Failed to set cache clear timestamp. Check server logs for details.'
+                    });
+                }
+            }
+        });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
         testTmdbBtn.addEventListener('click', testTmdbConnection);
         const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
