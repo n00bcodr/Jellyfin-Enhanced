@@ -216,22 +216,17 @@
             }
         }
 
-        function startLoop() {
-            setInterval(() => {
-                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                if (visiblePage) {
-                    processPage(visiblePage);
-                }
-            }, 1000);
+        function processPages() {
+            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+            if (visiblePage) {
+                processPage(visiblePage);
+            }
         }
 
         injectCss();
-        let mainInterval = setInterval(() => {
-            if (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId()) {
-                clearInterval(mainInterval);
-                startLoop();
-            }
-        }, 500);
+
+        setTimeout(processPages, 1000); // Initial load after 1 second
+        setInterval(processPages, 2000); // Then check every 2 seconds
     };
 })(window.JellyfinEnhanced);
 
