@@ -644,15 +644,45 @@
                                 </label>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="qualityTagsToggle" ${JE.currentSettings.qualityTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_quality_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_quality_tags_desc')}</div></div>
+                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <input type="checkbox" id="qualityTagsToggle" ${JE.currentSettings.qualityTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500;">${JE.t('panel_settings_ui_quality_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_quality_tags_desc')}</div></div>
+                                    </div>
+                                    <div class="position-selector" data-setting="qualityTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
+                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                    </div>
                                 </label>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="genreTagsToggle" ${JE.currentSettings.genreTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_genre_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_genre_tags_desc')}</div></div>
+                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <input type="checkbox" id="genreTagsToggle" ${JE.currentSettings.genreTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500;">${JE.t('panel_settings_ui_genre_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_genre_tags_desc')}</div></div>
+                                    </div>
+                                    <div class="position-selector" data-setting="genreTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
+                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <input type="checkbox" id="languageTagsToggle" ${JE.currentSettings.languageTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500;">${JE.t('panel_settings_ui_language_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_language_tags_desc')}</div></div>
+                                    </div>
+                                    <div class="position-selector" data-setting="languageTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
+                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                    </div>
                                 </label>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
@@ -882,6 +912,7 @@
                 if (id === 'showFileSizesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
                 if (id === 'showAudioLanguagesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
                 if (id === 'genreTagsToggle' && !e.target.checked) document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
+                if (id === 'languageTagsToggle' && !e.target.checked) document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
                 resetAutoCloseTimer();
             });
         };
@@ -899,6 +930,7 @@
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
         addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
+        addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
@@ -906,6 +938,41 @@
         document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
 
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
+
+        // --- Position Selectors ---
+        const positionSelectors = help.querySelectorAll('.position-selector');
+        positionSelectors.forEach(selector => {
+            const settingKey = selector.dataset.setting;
+            const cells = selector.querySelectorAll('[data-pos]');
+
+            // Highlight current position
+            const updateHighlight = () => {
+                const currentPos = JE.currentSettings[settingKey] || 'top-left';
+                cells.forEach(cell => {
+                    if (cell.dataset.pos === currentPos) {
+                        cell.style.background = primaryAccentColor;
+                    } else {
+                        cell.style.background = 'rgba(255,255,255,0.1)';
+                    }
+                });
+            };
+            updateHighlight();
+
+            // Click handler
+            selector.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const cell = e.target.closest('[data-pos]');
+                if (!cell) return;
+
+                const newPos = cell.dataset.pos;
+                JE.currentSettings[settingKey] = newPos;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                updateHighlight();
+                JE.toast(`Refresh to apply.`);
+                resetAutoCloseTimer();
+            });
+        });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);

@@ -48,6 +48,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsEnabled = false;
             GenreTagsEnabled = false;
             TagsCacheTtlDays = 30;
+            LanguageTagsEnabled = false;
+            QualityTagsPosition = "top-left";
+            GenreTagsPosition = "top-right";
+            LanguageTagsPosition = "bottom-left";
             WatchlistEnabled = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -127,6 +131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }
+        public bool LanguageTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool WatchlistEnabled { get; set; }
         public bool DisableAllShortcuts { get; set; }
@@ -134,6 +139,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int DefaultSubtitleSize { get; set; }
         public int DefaultSubtitleFont { get; set; }
         public bool DisableCustomSubtitleStyles { get; set; }
+        public string QualityTagsPosition { get; set; } = "top-left";
+        public string GenreTagsPosition { get; set; } = "top-right";
+        public string LanguageTagsPosition { get; set; } = "bottom-left";
 
         // Jellyseerr Search Settings
         public bool JellyseerrEnabled { get; set; }

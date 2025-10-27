@@ -32,6 +32,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Pause Screen CSS](#pause-screen-css)
     - [Quality Tags CSS](#quality-tags-css)
     - [Genre Tags CSS](#genre-tags-css)
+    - [Language Tags CSS](#language-tags-css)
     - [Enhanced Panel CSS](#panel-css)
   - [🫚 Project Structure](#-project-structure)
     - [File Structure](#file-structure)
@@ -132,6 +133,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🎬 Custom Pause Screen:** A beautifully designed, informative overlay when you pause a video. This feature is a modified version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen).
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
+- **🌐 Language Tags:** Displays available audio languages as flags on posters.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🔖 Watchlist** Watchlist any item and access your watchlist using a [CustomTab](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/tree/main/src)
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
@@ -395,40 +397,6 @@ Quality tags are injected into each card/poster with this structure:
   }
   ```
 
-* **Position of Tags**
-
-
-  - Top Right
-    ```css
-    .quality-overlay-container {
-        top: 6px !important;
-        right: 6px !important;
-        left: auto !important;
-        bottom: auto !important;
-        align-items: flex-end !important;
-    }
-    ```
-  - Bottom Left
-    ```css
-    .quality-overlay-container {
-        bottom: 6px !important;
-        left: 6px !important;
-        top: auto !important;
-        right: auto !important;
-        align-items: flex-start !important;
-    }
-    ```
-  - Bottom Right
-    ```css
-    .quality-overlay-container {
-        bottom: 6px !important;
-        right: 6px !important;
-        top: auto !important;
-        left: auto !important;
-        align-items: flex-end !important;
-    }
-    ```
-
 
 * **Hide unwanted tags**
 
@@ -442,10 +410,11 @@ Quality tags are injected into each card/poster with this structure:
   ```
 
 > **Note:**
->* Always use `!important` to ensure your custom styles override the defaults.
->* Only the **best resolution** tag per item is shown (e.g. you won’t see both 4K and 1080p).
->* `LOW-RES` is the fallback for anything below 480p.
->* Tags are sorted automatically with resolution first, then video features, then audio.
+>- Always use `!important` to ensure your custom styles override the defaults.
+>- Only the **best resolution** tag per item is shown (e.g. you won’t see both 4K and 1080p).
+>- `LOW-RES` is the fallback for anything below 480p.
+>- Tags are sorted automatically with resolution first, then video features, then audio.
+>- Position can be controlled via the Enhanced Panel settings under.
 >
 
 </details>
@@ -537,46 +506,86 @@ The HTML structure for the tags is as follows:
 
     ```
 
--  **Position of Tags**
-
-
-     - Top Right
-
-       ```css
-       .genre-overlay-container {
-           top: 6px !important;
-           right: 6px !important;
-           left: auto !important;
-           bottom: auto !important;
-           align-items: flex-end !important;
-       }
-       ```
-     - Bottom Left
-
-       ```css
-       .genre-overlay-container {
-           bottom: 6px !important;
-           left: 6px !important;
-           top: auto !important;
-           right: auto !important;
-           align-items: flex-start !important;
-       }
-       ```
-     - Bottom Right
-
-       ```css
-       .genre-overlay-container {
-           bottom: 6px !important;
-           right: 6px !important;
-           top: auto !important;
-           left: auto !important;
-           align-items: flex-end !important;
-       }
-       ```
 > **Note:**
 > -   Remember to use `!important` in your custom CSS to override the default styles from the plugin.
 > -   The plugin will show a maximum of three genre tags per item.
+> -   Position can be controlled via the Enhanced Panel settings under.
 >
+
+</details>
+
+### <a id="language-tags-css"></a>
+<details>
+<summary style="font-size: 1.2em;">Language Tags</summary>
+<br>
+
+Language tags appear as country flag icons on posters to indicate available audio languages. By default, they are positioned in the bottom-left corner and show up to 3 unique language flags per item.
+
+The HTML structure for language tags is as follows:
+
+```html
+<div class="cardImageContainer">
+    <div class="language-overlay-container">
+        <img src="https://flagcdn.com/w20/gb.png" class="language-flag" alt="English" loading="lazy">
+        <img src="https://flagcdn.com/w20/fr.png" class="language-flag" alt="French" loading="lazy">
+        <img src="https://flagcdn.com/w20/es.png" class="language-flag" alt="Spanish" loading="lazy">
+    </div>
+</div>
+```
+
+**Classes**
+
+- **`.language-overlay-container`**: The main container for all language flag icons on a card.
+- **`.language-flag`**: The individual flag image for each language.
+
+<br>
+
+**Customization Examples**
+--------------------------
+
+| Element | CSS Selector | Example CSS |
+| --- | --- | --- |
+| **All Flag Icons** | `.language-flag` | `.language-flag { width: 20px !important; height: 15px !important; }` |
+| **Container Position** | `.language-overlay-container` | `.language-overlay-container { bottom: 10px !important; left: 10px !important; }` |
+| **Flag Spacing** | `.language-overlay-container` | `.language-overlay-container { gap: 2px !important; }` |
+| **Hide Language Tags** | `.language-overlay-container` | `.language-overlay-container { display: none !important; }` |
+| **Stack Horizontally** | `.language-overlay-container` | `.language-overlay-container { flex-direction: row !important; }` |
+
+<br>
+
+**CSS Examples**
+----------------
+
+- **Change Flag Size**
+  ```css
+  .language-flag {
+      width: 30px !important;
+      height: auto !important;
+      border-radius: 3px !important;
+  }
+  ```
+
+- **Add Border and Shadow to Flags**
+  ```css
+  .language-flag {
+      border: 1px solid rgba(255, 255, 255, 0.3) !important;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  }
+  ```
+
+- **Stack Flags Horizontally in a Row**
+  ```css
+  .language-overlay-container {
+      flex-direction: row !important;
+      gap: 4px !important;
+  }
+  ```
+
+> **Note:**
+> - Always use `!important` to ensure your custom styles override the defaults.
+> - Language tags use flag icons from [flagcdn.com](https://flagcdn.com) service.
+> - The plugin shows a maximum of 3 unique language flags per item.
+> - Position can be controlled via the Enhanced Panel settings under.
 
 </details>
 
@@ -736,6 +745,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     ├── pausescreen.js
     ├── qualitytags.js
     ├── genretags.js
+    ├── languagetags.js
     └── plugin.js
 ```
 
@@ -776,6 +786,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
 
 * **`genretags.js`**: Manages the display of media genre information as tags directly on the posters.
+
+* **`languagetags.js`**: Manages the display of audio language information as flag icons directly on the posters.
 
 
 <br>

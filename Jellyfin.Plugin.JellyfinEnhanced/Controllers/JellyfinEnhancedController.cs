@@ -470,11 +470,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
+                config.LanguageTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
                 config.DefaultSubtitleSize,
                 config.DefaultSubtitleFont,
                 config.DisableCustomSubtitleStyles,
+                // Overlay positions
+                config.QualityTagsPosition,
+                config.GenreTagsPosition,
+                config.LanguageTagsPosition,
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,

@@ -23,6 +23,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowAudioLanguages { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool GenreTagsEnabled { get; set; }
+        public bool LanguageTagsEnabled { get; set; }
+        public string QualityTagsPosition { get; set; } = "top-left";
+        public string GenreTagsPosition { get; set; } = "top-right";
+        public string LanguageTagsPosition { get; set; } = "bottom-left";
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;
         public bool ReviewsExpandedByDefault { get; set; }

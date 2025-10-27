@@ -2,6 +2,7 @@
 
     <PropertyGroup>
         <JellyfinVersion>10.10.7</JellyfinVersion>
+        <!-- <JellyfinVersion>10.11.0</JellyfinVersion> -->
         <TargetFramework Condition="$(JellyfinVersion.StartsWith('10.11.0'))">net9.0</TargetFramework>
         <TargetFramework Condition="'$(JellyfinVersion)' == '10.10.7'">net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>

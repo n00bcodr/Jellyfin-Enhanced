@@ -272,15 +272,24 @@
             if (document.getElementById(styleId)) return;
             const style = document.createElement('style');
             style.id = styleId;
+            const pos = (window.JellyfinEnhanced?.currentSettings?.genreTagsPosition || window.JellyfinEnhanced?.pluginConfig?.GenreTagsPosition || 'top-right');
+            const isTop = pos.includes('top');
+            const isLeft = pos.includes('left');
+            const topVal = isTop ? '6px' : 'auto';
+            const bottomVal = isTop ? 'auto' : '6px';
+            const leftVal = isLeft ? '6px' : 'auto';
+            const rightVal = isLeft ? 'auto' : '6px';
             style.textContent = `
                 .${containerClass} {
                     position: absolute;
-                    top: 6px;
-                    right: 6px;
+                    top: ${topVal};
+                    right: ${rightVal};
+                    bottom: ${bottomVal};
+                    left: ${leftVal};
                     display: flex;
                     flex-direction: column;
                     gap: 5px;
-                    align-items: flex-end;
+                    align-items: ${isLeft ? 'flex-start' : 'flex-end'};
                     z-index: 101;
                     pointer-events: none;
                 }

@@ -717,7 +717,6 @@
                         processedElements = new WeakSet(); // Reset processed elements on navigation
                         requestQueue.length = 0;
                         debouncedRender();
-                        maybePrefetchForDetailPage();
                     }
                 }, 500);
             };
@@ -749,15 +748,25 @@
                 }`;
             }).join("\n");
 
+            const pos = (window.JellyfinEnhanced?.currentSettings?.qualityTagsPosition || window.JellyfinEnhanced?.pluginConfig?.QualityTagsPosition || 'top-left');
+            const isTop = pos.includes('top');
+            const isLeft = pos.includes('left');
+            const topVal = isTop ? '6px' : 'auto';
+            const bottomVal = isTop ? 'auto' : '6px';
+            const leftVal = isLeft ? '6px' : 'auto';
+            const rightVal = isLeft ? 'auto' : '6px';
+
             style.textContent = `
                 .${containerClass} {
                     position: absolute;
-                    top: 6px;
-                    left: 6px;
+                    top: ${topVal};
+                    right: ${rightVal};
+                    bottom: ${bottomVal};
+                    left: ${leftVal};
                     display: flex;
                     flex-direction: column;
                     gap: 3px;
-                    align-items: flex-start;
+                    align-items: ${isLeft ? 'flex-start' : 'flex-end'};
                     z-index: 100;
                     max-width: calc(100% - 12px);
                 }

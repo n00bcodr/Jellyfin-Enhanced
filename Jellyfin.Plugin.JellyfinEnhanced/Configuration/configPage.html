@@ -102,17 +102,47 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags<div>This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div></span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="languageTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Language Tags</span></label></div>
+                                    <fieldset style="margin-top: 1em;padding: 2em;border-radius: 20px;border-color: #ffffff25;">
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="qualityTagsPosition">Quality Tags Position</label>
+                                        <select is="emby-select" id="qualityTagsPosition" name="qualityTagsPosition" class="emby-select">
+                                            <option value="top-left">Top Left</option>
+                                            <option value="top-right">Top Right</option>
+                                            <option value="bottom-left">Bottom Left</option>
+                                            <option value="bottom-right">Bottom Right</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="genreTagsPosition">Genre Tags Position</label>
+                                        <select is="emby-select" id="genreTagsPosition" name="genreTagsPosition" class="emby-select">
+                                            <option value="top-left">Top Left</option>
+                                            <option value="top-right">Top Right</option>
+                                            <option value="bottom-left">Bottom Left</option>
+                                            <option value="bottom-right">Bottom Right</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsPosition">Language Tags Position</label>
+                                        <select is="emby-select" id="languageTagsPosition" name="languageTagsPosition" class="emby-select">
+                                            <option value="top-left">Top Left</option>
+                                            <option value="top-right">Top Right</option>
+                                            <option value="bottom-left">Bottom Left</option>
+                                            <option value="bottom-right">Bottom Right</option>
+                                        </select>
+                                    </div>
                                     <div class="inputContainer" style="margin-top: 1em;">
                                         <label class="inputLabel inputLabelUnfocused" for="tagsCacheTtlDays">Tags Cache Duration (days)</label>
                                         <input id="tagsCacheTtlDays" is="emby-input" type="number" min="1" max="365" value="30"/>
-                                        <div class="fieldDescription">How long to cache quality and genre tag data (1-365 days, default: 30)</div>
+                                        <div class="fieldDescription">How long to cache the above tags data (1-365 days, default: 30)</div>
                                     </div>
                                     <div style="margin-top: 1em;">
                                         <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
                                             <span>Clear All Client Caches</span>
                                         </button>
-                                        <div class="fieldDescription">Forces all clients to clear their quality/genre tag caches on next load</div>
+                                        <div class="fieldDescription">Forces all clients to clear Language, Quality and Genre tag caches on next load</div>
                                     </div>
+                                </fieldset>
                                 </div>
                             </details>
                             <div style="padding-top: 1em;">
@@ -278,7 +308,7 @@
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
                                 <div>
                                     "<b>Enable Jellyfin Sign-In</b>" must be enabled in Jellyseerr User Settings (/settings/users)<br><br>
-                                    All users much be imported to Jellyseer as Jellyfin users for them to be able to request conetnt.
+                                    All users much be imported to Jellyseer as Jellyfin users for them to be able to request content.
                                 </div>
                             </div>
                         </div>
@@ -747,6 +777,18 @@
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
                 document.querySelector('#genreTagsEnabled').checked = config.GenreTagsEnabled;
+                const qPos = (config.QualityTagsPosition || 'top-left');
+                const gPos = (config.GenreTagsPosition || 'top-right');
+                const lPos = (config.LanguageTagsPosition || 'bottom-left');
+                const langEnabled = !!config.LanguageTagsEnabled;
+                const qSel = document.querySelector('#qualityTagsPosition');
+                const gSel = document.querySelector('#genreTagsPosition');
+                const lSel = document.querySelector('#languageTagsPosition');
+                const lChk = document.querySelector('#languageTagsEnabled');
+                if (qSel) qSel.value = qPos;
+                if (gSel) gSel.value = gPos;
+                if (lSel) lSel.value = lPos;
+                if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
@@ -810,6 +852,10 @@
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
+            config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
+            config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
+            config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;
+            config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;

@@ -276,7 +276,7 @@
                 'jellyseerr/ui.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'genretags.js', 'arr-links.js',
+                'qualitytags.js', 'genretags.js', 'languagetags.js', 'arr-links.js',
                 'watchlist/watchlist.js'
             ];
             await loadScripts(allComponentScripts, basePath);
@@ -304,6 +304,7 @@
             if (typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
             if (typeof JE.initializeArrLinksScript === 'function') JE.initializeArrLinksScript();
             if (typeof JE.initializeReviewsScript === 'function') JE.initializeReviewsScript();
+            if (typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
             if (typeof JE.initializeWatchlistScript === "function") JE.initializeWatchlistScript();
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
