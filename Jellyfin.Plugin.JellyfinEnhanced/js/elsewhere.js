@@ -559,6 +559,7 @@
                 cursor: pointer;
                 color: #fff;
                 flex: 1;
+                text-align: left;
             `;
 
             // Add JustWatch link if available
@@ -915,6 +916,7 @@
                 cursor: pointer;
                 color: #fff;
                 flex: 1;
+                text-align: left;
             `;
 
             // Add JustWatch link if available and enabled
