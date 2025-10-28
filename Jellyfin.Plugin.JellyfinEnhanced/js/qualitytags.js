@@ -26,6 +26,7 @@
         // CSS selectors for elements that should NOT have quality tags applied.
         // This is used to ignore certain views like the cast & crew list.
         const IGNORE_SELECTORS = [
+            '#itemDetailPage .infoWrapper .cardImageContainer',
             '#itemDetailPage #castCollapsible .cardImageContainer',
             '#indexPage .verticalSection.MyMedia .cardImageContainer'
         ];
