@@ -3,12 +3,12 @@
     <PropertyGroup>
         <JellyfinVersion>10.10.7</JellyfinVersion>
         <!-- <JellyfinVersion>10.11.0</JellyfinVersion> -->
-        <TargetFramework Condition="$(JellyfinVersion.StartsWith('10.11.0'))">net9.0</TargetFramework>
+        <TargetFramework Condition="$(JellyfinVersion.StartsWith('10.11'))">net9.0</TargetFramework>
         <TargetFramework Condition="'$(JellyfinVersion)' == '10.10.7'">net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AssemblyVersion>9.0.0.0</AssemblyVersion>
-        <FileVersion>9.0.0.0</FileVersion>
+        <AssemblyVersion>9.1.0.0</AssemblyVersion>
+        <FileVersion>9.1.0.0</FileVersion>
         <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
     </PropertyGroup>
@@ -24,7 +24,7 @@
         <Compile Remove="JellyfinVersionSpecific/10.10.7/*.cs" />
     </ItemGroup>
 
-    <ItemGroup Condition="'$(JellyfinVersion)' != '10.11.0'">
+    <ItemGroup Condition="!$(JellyfinVersion.StartsWith('10.11'))">
         <None Include="JellyfinVersionSpecific/10.11.0/*.cs" />
         <Compile Remove="JellyfinVersionSpecific/10.11.0/*.cs" />
     </ItemGroup>
