@@ -26,8 +26,8 @@
         // CSS selectors for elements that should NOT have quality tags applied.
         // This is used to ignore certain views like the cast & crew list.
         const IGNORE_SELECTORS = [
-            '#itemDetailPage #castCollapsible a.cardImageContainer',
-            '#indexPage .verticalSection.MyMedia a.cardImageContainer'
+            '#itemDetailPage #castCollapsible .cardImageContainer',
+            '#indexPage .verticalSection.MyMedia .cardImageContainer'
         ];
 
         // The types of Jellyfin items that are eligible for quality tags.
@@ -694,7 +694,7 @@
          */
         function renderVisibleTags() {
             const elements = Array.from(document.querySelectorAll(
-                'a.cardImageContainer, div.listItemImage'
+                '.cardImageContainer, div.listItemImage'
             ));
 
             elements.forEach(el => {
