@@ -275,6 +275,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title will open your Jellyseerr item page using the first configured Jellyseerr URL.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="jellyseerrEnable4kRequests" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable 4K Requests</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, movie request buttons include a dropdown to request a 4K version.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
                                     <span>Show advanced request options</span>
                                 </label>
@@ -794,6 +801,7 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
+                document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
@@ -861,6 +869,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
+            config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;

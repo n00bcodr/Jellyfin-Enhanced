@@ -232,8 +232,65 @@
             }
         }, { passive: true });
 
-        // Main click handler for request buttons
+        // Close 4K popup when clicking outside
+        document.body.addEventListener('click', (e) => {
+            if (!e.target.closest('.jellyseerr-button-group') && !e.target.closest('.jellyseerr-4k-popup')) {
+                const popup = document.querySelector('.jellyseerr-4k-popup');
+                if (popup) popup.remove();
+            }
+        });
+
+        // Main click handler for request buttons and 4K popup items
         document.body.addEventListener('click', async function(event) {
+            // Handle 4K popup item clicks
+            if (event.target.closest('.jellyseerr-4k-popup-item')) {
+                const item = event.target.closest('.jellyseerr-4k-popup-item');
+                const action = item.dataset.action;
+                const tmdbId = item.dataset.tmdbId;
+
+                if (action === 'request4k' && tmdbId) {
+                    const popup = item.closest('.jellyseerr-4k-popup');
+                    item.disabled = true;
+                    item.innerHTML = `<span>Requesting...</span><span class="jellyseerr-button-spinner"></span>`;
+
+                    try {
+                        if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                            // Close popup and show advanced modal
+                            if (popup) popup.remove();
+
+                            // Find the original item data from the card
+                            const card = event.target.closest('.jellyseerr-card');
+                            const titleText = card?.querySelector('.cardText-first bdi')?.textContent || 'this movie';
+                            const button = card?.querySelector('.jellyseerr-request-button');
+                            const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+
+                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
+                        } else {
+                            await requestMedia(tmdbId, 'movie', {}, true); // true for 4K
+                            JE.toast('4K request submitted successfully!', 3000);
+                            if (popup) popup.remove();
+
+                            // Refresh the results to update the UI
+                            const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
+                            if (query) {
+                                setTimeout(() => fetchAndRenderResults(query), 1000);
+                            }
+                        }
+                    } catch (error) {
+                        let errorMessage = 'Failed to request 4K version';
+                        if (error.status === 404) {
+                            errorMessage = 'User not found';
+                        } else if (error.responseJSON?.message) {
+                            errorMessage = error.responseJSON.message;
+                        }
+                        JE.toast(errorMessage, 4000);
+                        item.disabled = false;
+                        item.innerHTML = `<span>Request in 4K</span>`;
+                    }
+                }
+                return;
+            }
+
             const button = event.target.closest('.jellyseerr-request-button');
             if (!button || button.disabled) return;
 
