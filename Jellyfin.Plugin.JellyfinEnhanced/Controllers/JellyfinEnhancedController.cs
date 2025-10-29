@@ -701,6 +701,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                 GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
+                LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
                 LastOpenedTab = "shortcuts"
