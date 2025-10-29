@@ -21,7 +21,8 @@
         const IGNORE_SELECTORS = [
             '#itemDetailPage .infoWrapper .cardImageContainer',
             '#itemDetailPage #castCollapsible .cardImageContainer',
-            '#indexPage .verticalSection.MyMedia .cardImageContainer'
+            '#indexPage .verticalSection.MyMedia .cardImageContainer',
+            '.formDialog .cardImageContainer'
         ];
         // const MEDIA_TYPES = new Set(['Movie', 'Series']);
         let genreCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};

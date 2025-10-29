@@ -28,7 +28,8 @@
         const IGNORE_SELECTORS = [
             '#itemDetailPage .infoWrapper .cardImageContainer',
             '#itemDetailPage #castCollapsible .cardImageContainer',
-            '#indexPage .verticalSection.MyMedia .cardImageContainer'
+            '#indexPage .verticalSection.MyMedia .cardImageContainer',
+            '.formDialog .cardImageContainer'
         ];
 
         // The types of Jellyfin items that are eligible for quality tags.

@@ -22,7 +22,8 @@
         const IGNORE_SELECTORS = [
             '#itemDetailPage .infoWrapper .cardImageContainer',
             '#itemDetailPage #castCollapsible .cardImageContainer',
-            '#indexPage .verticalSection.MyMedia .cardImageContainer'
+            '#indexPage .verticalSection.MyMedia .cardImageContainer',
+            '.formDialog .cardImageContainer'
         ];
 
         let langCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
