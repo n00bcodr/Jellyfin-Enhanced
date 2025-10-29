@@ -17,6 +17,14 @@
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
         const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
 
+        // CSS selectors for elements that should NOT have language tags applied.
+        // This is used to ignore certain views like the cast & crew list.
+        const IGNORE_SELECTORS = [
+            '#itemDetailPage .infoWrapper .cardImageContainer',
+            '#itemDetailPage #castCollapsible .cardImageContainer',
+            '#indexPage .verticalSection.MyMedia .cardImageContainer'
+        ];
+
         let langCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.language = Hot.language || new Map();
@@ -245,8 +253,18 @@
             return parent2 ? parent2.dataset.id : null;
         }
 
+        function shouldIgnoreElement(el) {
+            return IGNORE_SELECTORS.some(selector => {
+                try {
+                    return el.closest(selector) !== null;
+                } catch {
+                    return false; // Silently handle potential errors with complex selectors
+                }
+            });
+        }
+
         function processElement(element, isPriority = false) {
-            if (processedElements.has(element)) return;
+            if (shouldIgnoreElement(element) || processedElements.has(element)) return;
             const card = element.closest('.card');
             if (!card || !card.dataset.type || !MEDIA_TYPES.has(card.dataset.type)) return;
             const itemId = getItemIdFromElement(element);
@@ -279,7 +297,7 @@
         }
 
         function scanAndProcess() {
-            const elements = Array.from(document.querySelectorAll('a.cardImageContainer, div.listItemImage'));
+            const elements = Array.from(document.querySelectorAll('.cardImageContainer, div.listItemImage'));
             elements.forEach(el => {
                 if (!processedElements.has(el)) {
                     visibilityObserver.observe(el);

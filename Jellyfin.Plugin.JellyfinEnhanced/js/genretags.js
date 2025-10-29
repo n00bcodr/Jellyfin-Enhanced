@@ -15,6 +15,14 @@
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-genreTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
         const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
+
+        // CSS selectors for elements that should NOT have genre tags applied.
+        // This is used to ignore certain views like the cast & crew list.
+        const IGNORE_SELECTORS = [
+            '#itemDetailPage .infoWrapper .cardImageContainer',
+            '#itemDetailPage #castCollapsible .cardImageContainer',
+            '#indexPage .verticalSection.MyMedia .cardImageContainer'
+        ];
         // const MEDIA_TYPES = new Set(['Movie', 'Series']);
         let genreCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
         // Shared in-memory hot cache
@@ -211,8 +219,18 @@
             return parent ? parent.dataset.id : null;
         }
 
+        function shouldIgnoreElement(el) {
+            return IGNORE_SELECTORS.some(selector => {
+                try {
+                    return el.closest(selector) !== null;
+                } catch {
+                    return false; // Silently handle potential errors with complex selectors
+                }
+            });
+        }
+
         function processElement(element, isPriority = false) {
-            if (processedElements.has(element)) return;
+            if (shouldIgnoreElement(element) || processedElements.has(element)) return;
 
             const card = element.closest('.card');
             // Only process elements that are inside a card with a data-type of Movie or Series.
@@ -257,7 +275,7 @@
 
         function scanAndProcess() {
             const elements = Array.from(document.querySelectorAll(
-                'a.cardImageContainer, div.listItemImage'
+                '.cardImageContainer, div.listItemImage'
             ));
             elements.forEach(el => {
                 // Avoid re-observing if already processed
@@ -345,7 +363,7 @@
                         m.addedNodes.forEach(node => {
                             if (node && node.nodeType === 1) {
                                 const el = node;
-                                if (el.matches?.('a.cardImageContainer, div.listItemImage') || el.querySelector?.('a.cardImageContainer, div.listItemImage')) {
+                                if (el.matches?.('.cardImageContainer, div.listItemImage') || el.querySelector?.('.cardImageContainer, div.listItemImage')) {
                                     found = true;
                                 }
                             }
