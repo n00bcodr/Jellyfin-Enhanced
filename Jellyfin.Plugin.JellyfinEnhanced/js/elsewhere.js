@@ -34,7 +34,7 @@
 
         // Load regions and providers from GitHub repo
         function loadRegionsAndProviders() {
-            fetch(`https://raw.githubusercontent.com/n00bcodr/Jellyfin-Elsewhere/refs/heads/main/resources/regions.txt`)
+            fetch(`https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt`)
                 .then(response => response.ok ? response.text() : Promise.reject())
                 .then(text => {
                     const lines = text.trim().split('\n');
@@ -58,7 +58,7 @@
                 });
 
                  // Load providers
-            fetch(`https://raw.githubusercontent.com/n00bcodr/Jellyfin-Elsewhere/refs/heads/main/resources/providers.txt`)
+            fetch(`https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt`)
                 .then(response => response.ok ? response.text() : Promise.reject())
                 .then(text => {
                     availableProviders = text.trim().split('\n')
