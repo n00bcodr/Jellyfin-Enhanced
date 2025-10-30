@@ -962,7 +962,7 @@
                             mainButton.disabled = true;
                             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                             try {
-                                await JE.jellyseerrAPI.requestMedia(item.id, 'movie');
+                                await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
                                 mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
                                 mainButton.classList.remove('jellyseerr-button-request');
                                 mainButton.classList.add('jellyseerr-button-pending');
@@ -1122,7 +1122,7 @@
                 const settings = { serverId: parseInt(serverSelect.value), profileId: parseInt(qualitySelect.value), rootFolder: folderSelect.value, tags: [] };
 
                 try {
-                    await requestMedia(tmdbId, 'movie', settings, is4k);
+                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem);
                     // Manually update the original button on the card
                     const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
                     if (originalButton) {
@@ -1201,7 +1201,7 @@
                 }
 
                 try {
-                    await requestTvSeasons(tmdbId, selectedSeasons, settings);
+                    await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem);
                     JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
                     closeFn();
                     setTimeout(() => {

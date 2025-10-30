@@ -266,7 +266,7 @@
 
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
-                            await requestMedia(tmdbId, 'movie', {}, true); // true for 4K
+                            await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
                             JE.toast('4K request submitted successfully!', 3000);
                             if (popup) popup.remove();
 
@@ -312,7 +312,7 @@
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await requestMedia(tmdbId, mediaType);
+                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem); // Pass searchResultItem for override rules
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
