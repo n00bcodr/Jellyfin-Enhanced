@@ -140,7 +140,7 @@
                                         <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
                                             <span>Clear All Client Caches</span>
                                         </button>
-                                        <div class="fieldDescription">Forces all clients to clear Language, Quality and Genre tag caches on next load</div>
+                                        <div class="fieldDescription">Forces all clients to clear Language, Quality and Genre tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
                                     </div>
                                 </fieldset>
                                 </div>
@@ -201,6 +201,9 @@
                         <button id="resetAllUserSettingsBtn" class="raised button-cancel block emby-button" is="emby-button" type="button">
                             <span>Reset All User Settings to Defaults</span>
                         </button>
+                        <div class="fieldDescription" style="margin-top: 0.5em; text-align: center;">
+                            <strong>Important:</strong> Make sure to save your changes above before clicking reset.<br>The reset will apply whatever changes are currently saved in the configuration above.
+                        </div>
                     </div>
                 </div>
 
