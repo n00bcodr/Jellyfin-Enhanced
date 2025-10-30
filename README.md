@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Last%20Updated&labelColor=black&color=AA5CC3&cacheSeconds=3600" alt="Last Updated">
   <img src="https://img.shields.io/github/commit-activity/w/n00bcodr/Jellyfin-Enhanced?logo=git&label=Commit%20Activity&labelColor=black&color=00A4DC&cacheSeconds=600" alt="Commit Activity">
-  <img src="https://img.shields.io/badge/Jellyfin%20Version-10.10.7-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin Version">
+  <img src="https://img.shields.io/badge/Jellyfin%20Version-10.10, 10.11-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin Version">
 </p>
 <br>
 
@@ -54,11 +54,11 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 3.  Set the **Repository URL** to:
 
 > [!IMPORTANT]
-> **If you are on Jellyfin version 10.11**
+> **If you are on Jellyfin version 10.11 use the 10.11 manifest**
 > ```
 > https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json
 > ```
-> If you are on 10.10.7
+> If you are on 10.10.7, use the below manifest
 > ```
 > https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.10/manifest.json
 > ```
@@ -69,7 +69,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 
 
 > [!NOTE]
-> It is highly recommended to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) at least v2.2.1.0 installed. It helps avoid permission issues while modifying index.html on any kind of installation!
+> It is highly recommended to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed. It helps avoid permission issues while modifying index.html on any kind of installation!
 >
 > **Only if you do not have file-transformation plugin installed - proceed with the below workaround!**
 
@@ -135,7 +135,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🌐 Language Tags:** Displays available audio languages as flags on posters.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
-- **🔖 Watchlist** Watchlist any item and access your watchlist using a [CustomTab](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/tree/main/src)
+- **🔖 Watchlist** Watchlist any item and access your watchlist using a [CustomTab](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/tree/main/src) from [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks)
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 - **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
 
@@ -955,7 +955,7 @@ MIT License
 
 Checkout my other repos!
 
-[Jellyfin-Enhanced](https://github.com/n00bcodr/Jellyfin-Enhanced) (javascript/plugin) • [Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) (javascript) • [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) (plugin) • [Jellyfin-JavaScript-Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector) (plugin) • [Jellyfish](https://github.com/n00bcodr/Jellyfish/) (theme)
+[Jellyfin-Enhanced](https://github.com/n00bcodr/Jellyfin-Enhanced) (plugin) • [Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) (javascript) • [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) (plugin) • [Jellyfin-JavaScript-Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector) (plugin) • [Jellyfish](https://github.com/n00bcodr/Jellyfish/) (theme)
 
 
 </div>
