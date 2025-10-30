@@ -190,17 +190,14 @@
      * Listens for context menu clicks to identify "Continue Watching" items.
      */
     function addContextMenuListener() {
-        document.body.addEventListener('mousedown', (e) => {
-            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
-
-            const menuButton = e.target.closest('button[data-action="menu"]');
-            if (!menuButton) return;
+        /**
+         * Helper function to check if an item is in Continue Watching and set context state
+         */
+        const checkAndSetContinueWatchingContext = (itemElement) => {
+            if (!itemElement) return;
 
             JE.state.isContinueWatchingContext = false;
             JE.state.currentContextItemId = null;
-
-            const itemElement = menuButton.closest('[data-id]');
-            if (!itemElement) return;
 
             // Primary: Check for data-positionticks attribute
             // This indicates the item has playback progress and should be in Continue Watching
@@ -226,6 +223,28 @@
                     console.log('🪼 Jellyfin Enhanced: Continue Watching item detected via section title for item:', itemElement.dataset.id);
                 }
             }
+        };
+
+        // Listen for three-dot menu button clicks
+        document.body.addEventListener('mousedown', (e) => {
+            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
+
+            const menuButton = e.target.closest('button[data-action="menu"]');
+            if (!menuButton) return;
+
+            const itemElement = menuButton.closest('[data-id]');
+            checkAndSetContinueWatchingContext(itemElement);
+        }, true);
+
+        // Listen for right-click (contextmenu) events on card items
+        document.body.addEventListener('contextmenu', (e) => {
+            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
+
+            // Find the card or item element that was right-clicked
+            const cardElement = e.target.closest('.card[data-id]');
+            const itemElement = cardElement || e.target.closest('[data-id]');
+            
+            checkAndSetContinueWatchingContext(itemElement);
         }, true);
     }
 
