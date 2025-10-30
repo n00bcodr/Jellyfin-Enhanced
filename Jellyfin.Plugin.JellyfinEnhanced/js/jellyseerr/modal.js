@@ -18,6 +18,9 @@
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave }) {
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
+        modalElement.setAttribute('role', 'dialog');
+        modalElement.setAttribute('aria-modal', 'true');
+        modalElement.setAttribute('tabindex', '-1');
 
         const backdropImage = backdropPath
             ? `url('https://image.tmdb.org/t/p/w1280${backdropPath}')`
@@ -45,7 +48,10 @@
             // Add a state to history to handle back button for closing
             history.pushState(null, '', location.href);
             window.addEventListener('popstate', close);
-            setTimeout(() => modalElement.classList.add('show'), 10);
+            setTimeout(() => {
+                modalElement.classList.add('show');
+                modalElement.focus();
+            }, 10);
         };
 
         const close = () => {
