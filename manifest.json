@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Update elsewhere.js resource URLs to use jsdelivr CDN\n - Fix quality tags for TV mode\n - Resetting LanguageTagsEnabled in ResetAllUserSettings\n - fix: add 'Remove from Continue Watching' option on right-click\n - Add 4K request support for Jellyseerr integration\n - Add support for Jellyseerr override rules in requests\n - Add tag position fields to default config mapping\n - Improve config page cache and reset descriptions",
+        "targetAbi": "10.10.7.0",
+        "version": "9.2.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.2.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "57E92065FCA5A81D93579C7208D1AB80",
+        "timestamp": "2025-10-30T06:26:14"
+      },
+      {
         "changelog": "- Add [Authorize] to Jellyseerr and TMDB endpoints\n - Add check for TMDb link before adding ARR links\n - Enhance README with troubleshooting and error info\n - Add configurable tag cache TTL and cache clear for tags\n - Add language tags overlay with configurable positions for all tags\n - Add caching for file size and audio language lookups\n - Add theme detection and dynamic theming support\n - Refactor reviews processing intervals\n - Improve Continue Watching detection logic\n - Full Blown Release Notes Conversion!\n\n - Please add the manifest for 10.11 if you are on 10.11. https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json",
         "targetAbi": "10.10.7.0",
         "version": "9.1.0.0",
