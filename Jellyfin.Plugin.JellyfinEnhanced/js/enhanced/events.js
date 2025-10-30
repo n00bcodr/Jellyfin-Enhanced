@@ -282,6 +282,16 @@
         userButton.addEventListener('touchstart', startPress, { passive: true });
         userButton.addEventListener('touchend', cancelPress);
         userButton.addEventListener('touchcancel', cancelPress);
+        userButton.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                startPress(e);
+            }
+        });
+        userButton.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                cancelPress();
+            }
+        });
         userButton.addEventListener('click', handleClick, { capture: true });
         userButton.dataset.longPressEnhanced = 'true';
     }
