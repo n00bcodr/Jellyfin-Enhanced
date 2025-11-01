@@ -9,7 +9,12 @@
 
 The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 
-<img src="images/panel_jellyfish.gif" alt="Enhanced Panel" width="90%" align="center"/>
+<div align="center">
+  <video 
+    src="https://github.com/user-attachments/assets/c3fed9fe-63c4-4e26-b2b6-73c4817613aa"
+  >
+  </video>
+</div>
 
 <br>
 <p align="center">
