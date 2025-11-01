@@ -282,13 +282,18 @@
                 // Avoid re-observing if already processed
                 if (!processedElements.has(el)) {
                     visibilityObserver.observe(el);
+                    // Also directly process visible elements for immediate rendering
+                    processElement(el, false);
                 }
             });
         }
 
         function injectCss() {
             const styleId = 'genre-tags-styles';
-            if (document.getElementById(styleId)) return;
+            // Remove existing style to allow updates
+            const existingStyle = document.getElementById(styleId);
+            if (existingStyle) existingStyle.remove();
+
             const style = document.createElement('style');
             style.id = styleId;
             const pos = (window.JellyfinEnhanced?.currentSettings?.genreTagsPosition || window.JellyfinEnhanced?.pluginConfig?.GenreTagsPosition || 'top-right');
@@ -358,6 +363,10 @@
             setTimeout(scanAndProcess, 500);
             // Observe DOM mutations to discover new cards without polling
             const mo = new MutationObserver((mutations) => {
+                // Check if feature is still enabled before processing
+                if (!JE.currentSettings?.genreTagsEnabled) {
+                    return;
+                }
                 let found = false;
                 for (const m of mutations) {
                     if (m.type === 'childList') {
@@ -391,6 +400,26 @@
             document.head.appendChild(link);
         }
         console.log(`${logPrefix} Initialized successfully.`);
+    };
+
+    /**
+     * Re-initializes the Genre Tags feature
+     * Cleans up existing state and re-applies tags.
+     */
+    JE.reinitializeGenreTags = function() {
+        const logPrefix = '🪼 Jellyfin Enhanced: Genre Tags:';
+        console.log(`${logPrefix} Re-initializing...`);
+
+        // Always remove existing tags first
+        document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
+
+        if (!JE.currentSettings.genreTagsEnabled) {
+            console.log(`${logPrefix} Feature is disabled after reinit.`);
+            return;
+        }
+
+        // Trigger a fresh initialization which will set up everything with current settings
+        JE.initializeGenreTags();
     };
 
 })(window.JellyfinEnhanced);

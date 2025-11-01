@@ -334,7 +334,13 @@
             cleanupOldCaches();
             injectCss();
             setTimeout(scanAndProcess, 500);
-            const mo = new MutationObserver(() => { setTimeout(scanAndProcess, 400); });
+            const mo = new MutationObserver(() => {
+                // Check if feature is still enabled before processing
+                if (!JE.currentSettings?.languageTagsEnabled) {
+                    return;
+                }
+                setTimeout(scanAndProcess, 400);
+            });
             mo.observe(document.body, { childList: true, subtree: true });
             window.addEventListener('beforeunload', saveCache);
             setInterval(saveCache, 120000);
@@ -342,6 +348,26 @@
 
         initialize();
         console.log(`${logPrefix} Initialized successfully.`);
+    };
+
+    /**
+     * Re-initializes the Language Tags feature
+     * Cleans up existing state and re-applies tags.
+     */
+    JE.reinitializeLanguageTags = function() {
+        const logPrefix = '🪼 Jellyfin Enhanced: Language Tags:';
+        console.log(`${logPrefix} Re-initializing...`);
+
+        // Always remove existing tags first
+        document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
+
+        if (!JE.currentSettings.languageTagsEnabled) {
+            console.log(`${logPrefix} Feature is disabled after reinit.`);
+            return;
+        }
+
+        // Trigger a fresh initialization which will set up everything with current settings
+        JE.initializeLanguageTags();
     };
 
 })(window.JellyfinEnhanced);

@@ -716,6 +716,10 @@
                 setTimeout(() => {
                     if (window.location.href !== currentUrl) {
                         currentUrl = window.location.href;
+                        // Check if feature is still enabled before processing
+                        if (!JE.currentSettings?.qualityTagsEnabled) {
+                            return;
+                        }
                         processedElements = new WeakSet(); // Reset processed elements on navigation
                         requestQueue.length = 0;
                         debouncedRender();
@@ -811,6 +815,10 @@
 
             // Set up the MutationObserver to watch for dynamically added content
             const mutationObserver = new MutationObserver(() => {
+                // Check if feature is still enabled before processing mutations
+                if (!JE.currentSettings?.qualityTagsEnabled) {
+                    return;
+                }
                 if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
                 mutationDebounceTimer = setTimeout(debouncedRender, config.MUTATION_DEBOUNCE);
             });
@@ -828,6 +836,26 @@
         // --- SCRIPT EXECUTION ---
         initialize();
         console.log(`${logPrefix} Initialized successfully.`);
+    };
+
+    /**
+     * Re-initializes the Quality Tags feature
+     * Cleans up existing state and re-applies tags.
+     */
+    JE.reinitializeQualityTags = function() {
+        const logPrefix = '🪼 Jellyfin Enhanced: Quality Tags:';
+        console.log(`${logPrefix} Re-initializing...`);
+
+        // Always remove existing tags first
+        document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
+
+        if (!JE.currentSettings.qualityTagsEnabled) {
+            console.log(`${logPrefix} Feature is disabled after reinit.`);
+            return;
+        }
+
+        // Trigger a fresh initialization which will set up everything with current settings
+        JE.initializeQualityTags();
     };
 
 })(window.JellyfinEnhanced);
