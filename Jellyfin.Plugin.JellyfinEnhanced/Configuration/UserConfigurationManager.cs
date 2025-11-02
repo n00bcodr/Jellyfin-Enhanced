@@ -26,6 +26,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return userDir;
         }
 
+        public bool UserConfigurationExists(string userId, string fileName)
+        {
+            try
+            {
+                var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+                return File.Exists(configPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Error checking existence for '{fileName}' of user '{userId}': {ex.Message}");
+                return false;
+            }
+        }
+
         /// Loads user configuration from a JSON file.
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
         {

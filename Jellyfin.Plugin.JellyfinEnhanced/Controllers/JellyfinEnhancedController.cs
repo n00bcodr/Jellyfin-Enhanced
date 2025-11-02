@@ -623,6 +623,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult GetUserSettingsSettings(string userId)
         {
+            // Populate defaults from plugin configuration if missing
+            if (!_userConfigurationManager.UserConfigurationExists(userId, "settings.json"))
+            {
+                var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+                if (defaultConfig != null)
+                {
+                    var defaultUserSettings = new UserSettings
+                    {
+                        AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
+                        AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
+                        AutoPipEnabled = defaultConfig.AutoPipEnabled,
+                        LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+                        PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
+                        AutoSkipIntro = defaultConfig.AutoSkipIntro,
+                        AutoSkipOutro = defaultConfig.AutoSkipOutro,
+                        DisableCustomSubtitleStyles = defaultConfig.DisableCustomSubtitleStyles,
+                        SelectedStylePresetIndex = defaultConfig.DefaultSubtitleStyle,
+                        SelectedFontSizePresetIndex = defaultConfig.DefaultSubtitleSize,
+                        SelectedFontFamilyPresetIndex = defaultConfig.DefaultSubtitleFont,
+                        RandomButtonEnabled = defaultConfig.RandomButtonEnabled,
+                        RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
+                        RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
+                        RandomIncludeShows = defaultConfig.RandomIncludeShows,
+                        ShowFileSizes = defaultConfig.ShowFileSizes,
+                        ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+                        QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
+                        GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
+                        LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
+                        QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                        GenreTagsPosition = defaultConfig.GenreTagsPosition,
+                        LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
+                        RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
+                        ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
+                        LastOpenedTab = "shortcuts"
+                    };
+
+                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    _logger.Info($"Saved default settings.json for new user {userId} from plugin configuration.");
+                }
+            }
+
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json");
             return Ok(userConfig);
         }
