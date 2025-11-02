@@ -258,17 +258,16 @@
                     item.disabled = true;
                     item.innerHTML = `<span>Requesting...</span><span class="jellyseerr-button-spinner"></span>`;
 
+                    // Find the original item data from the card
+                    const card = event.target.closest('.jellyseerr-card');
+                    const titleText = card?.querySelector('.cardText-first bdi')?.textContent || 'this movie';
+                    const button = card?.querySelector('.jellyseerr-request-button');
+                    const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+
                     try {
                         if (JE.pluginConfig.JellyseerrShowAdvanced) {
                             // Close popup and show advanced modal
                             if (popup) popup.remove();
-
-                            // Find the original item data from the card
-                            const card = event.target.closest('.jellyseerr-card');
-                            const titleText = card?.querySelector('.cardText-first bdi')?.textContent || 'this movie';
-                            const button = card?.querySelector('.jellyseerr-request-button');
-                            const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
-
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
                             await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
