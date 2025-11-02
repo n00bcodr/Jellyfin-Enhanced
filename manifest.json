@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- 🐛[BUG] Unable to open user menu on WebOS Fixes [#148](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/148)\n - Prevent reviews from running on items without TMDB ID\n - Enable dynamic re-initialization for tag features\n - Improve audio language layout styling (especially on mobile)\n - Add default user settings initialization\n - Improve logging and write logs to JellyfinEnhanced Log file\n - Add manual refresh button to Jellyseerr results\n - Reset all user settings using config directories\n - Add support for Jellyseerr's partial TV season requests setting\n - Fix config check for provider icons on Jellyseerr cards",
+        "targetAbi": "10.10.7.0",
+        "version": "9.3.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.3.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "9C1B08E1C08F2FBD908963DB3ACFFD12",
+        "timestamp": "2025-11-02T16:53:56"
+      },
+      {
         "changelog": "- Update elsewhere.js resource URLs to use jsdelivr CDN\n - Fix quality tags for TV mode\n - Resetting LanguageTagsEnabled in ResetAllUserSettings\n - fix: add 'Remove from Continue Watching' option on right-click\n - Add 4K request support for Jellyseerr integration\n - Add support for Jellyseerr override rules in requests\n - Add tag position fields to default config mapping\n - Improve config page cache and reset descriptions",
         "targetAbi": "10.10.7.0",
         "version": "9.2.0.0",
