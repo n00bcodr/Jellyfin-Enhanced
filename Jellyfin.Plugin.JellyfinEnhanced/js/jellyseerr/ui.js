@@ -768,7 +768,7 @@
         configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
         addMediaTypeBadge(card, item);
 
-        if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TMDB_API_KEY) {
+        if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled) {
             fetchProviderIcons(card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
         }
         return card;
