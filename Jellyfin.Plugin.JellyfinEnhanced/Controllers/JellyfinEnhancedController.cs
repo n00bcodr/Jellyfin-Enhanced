@@ -768,7 +768,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult ResetAllUsersSettings()
         {
-            var users = _userManager.Users;
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
 
             if (defaultConfig == null)
@@ -806,13 +805,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LastOpenedTab = "shortcuts"
             };
 
-            foreach (var user in users)
+            var userCount = 0;
+            // Get all user IDs from the UserConfigurationManager's known users
+            var userIds = _userConfigurationManager.GetAllUserIds();
+            foreach (var userId in userIds)
             {
-                _userConfigurationManager.SaveUserConfiguration(user.Id.ToString("N"), "settings.json", defaultUserSettings);
+                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                userCount++;
             }
 
-            _logger.Info($"Reset settings for all {users.Count()} users to plugin defaults.");
-            return Ok(new { success = true, userCount = users.Count() });
+            _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
+            return Ok(new { success = true, userCount = userCount });
         }
     }
 }

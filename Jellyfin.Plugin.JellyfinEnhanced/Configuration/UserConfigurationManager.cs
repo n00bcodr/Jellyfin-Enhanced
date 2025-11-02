@@ -103,5 +103,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 throw;
             }
         }
+
+        /// Gets all user IDs that have configuration directories.
+        public string[] GetAllUserIds()
+        {
+            try
+            {
+                if (!Directory.Exists(_configBaseDir))
+                {
+                    return Array.Empty<string>();
+                }
+
+                var userDirs = Directory.GetDirectories(_configBaseDir);
+                var userIds = new string[userDirs.Length];
+                
+                for (int i = 0; i < userDirs.Length; i++)
+                {
+                    userIds[i] = Path.GetFileName(userDirs[i]);
+                }
+
+                return userIds;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get all user IDs: {ex.Message}");
+                return Array.Empty<string>();
+            }
+        }
     }
 }
