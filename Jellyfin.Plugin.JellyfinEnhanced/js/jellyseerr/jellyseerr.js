@@ -106,7 +106,8 @@
          * Fetches fresh data and updates the existing UI elements.
          * @param {string} query The current search query.
          */
-        async function refreshJellyseerrData(query) {
+        // Manual refresh handler
+        async function manualRefreshJellyseerrData(query) {
             if (!query || !document.querySelector('.jellyseerr-section')) return;
 
             console.log(`${logPrefix} Refreshing data for query: "${query}"`);
@@ -130,8 +131,6 @@
                 const currentQuery = isSearchPage ? searchInput.value : null;
 
                 if (isSearchPage && currentQuery?.trim()) {
-                    if (refreshInterval) clearInterval(refreshInterval);
-                    refreshInterval = setInterval(() => refreshJellyseerrData(currentQuery), 15000); // Refresh every 15 seconds
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         if (!isJellyseerrActive) {
@@ -153,12 +152,18 @@
                     }, 1000);
                 } else {
                     clearTimeout(debounceTimeout);
-                    if (refreshInterval) clearInterval(refreshInterval);
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                 }
             };
+
+            // Listen for manual refresh events from the UI
+            document.addEventListener('jellyseerr-manual-refresh', function(e) {
+                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                const query = searchInput ? searchInput.value : null;
+                manualRefreshJellyseerrData(query);
+            });
 
             const observer = new MutationObserver(() => {
                 updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);

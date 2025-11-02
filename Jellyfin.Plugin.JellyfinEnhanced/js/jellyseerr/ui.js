@@ -650,6 +650,42 @@
         const title = document.createElement('h2');
         title.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
         title.textContent = isJellyseerrOnlyMode ? JE.t('jellyseerr_results_title') : JE.t('jellyseerr_discover_title');
+
+        // Add a refresh button beside the results heading
+        const refreshBtn = document.createElement('button');
+        refreshBtn.className = 'jellyseerr-refresh-btn';
+        refreshBtn.style.marginLeft = '0.5em';
+        refreshBtn.style.verticalAlign = 'middle';
+        refreshBtn.style.background = 'none';
+        refreshBtn.style.border = 'none';
+        refreshBtn.style.cursor = 'pointer';
+        refreshBtn.style.display = 'inline-flex';
+        refreshBtn.style.alignItems = 'center';
+        refreshBtn.style.justifyContent = 'center';
+        refreshBtn.style.padding = '0';
+        const icon = document.createElement('span');
+        icon.className = 'material-icons jellyseerr-refresh-icon';
+        icon.textContent = 'refresh';
+        icon.style.transition = 'transform 0.5s cubic-bezier(.4,2,.6,1)';
+        refreshBtn.appendChild(icon);
+        refreshBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            icon.style.transform = 'rotate(360deg)';
+            setTimeout(() => { icon.style.transform = ''; }, 500);
+            document.dispatchEvent(new CustomEvent('jellyseerr-manual-refresh'));
+        });
+        title.appendChild(refreshBtn);
+    if (!document.getElementById('jellyseerr-refresh-style')) {
+        const style = document.createElement('style');
+        style.id = 'jellyseerr-refresh-style';
+        style.textContent = `
+            .jellyseerr-refresh-btn:focus { outline: none; }
+            .jellyseerr-refresh-icon { color: #fff; filter: opacity(0.6); }
+            .jellyseerr-refresh-btn:hover .jellyseerr-refresh-icon { color: #fff; filter: opacity(0.9); }
+        `;
+        document.head.appendChild(style);
+    }
         section.appendChild(title);
 
         const scrollerContainer = document.createElement('div');
