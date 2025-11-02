@@ -653,34 +653,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpPost("user-settings/{userId}/settings.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
+                _logger.Info($"Saved user settings for user {userId} to settings.json");
+                return Ok(new { success = true, file = "settings.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user settings for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/shortcuts.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsShortcuts(string userId, [FromBody] UserShortcuts userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
+                _logger.Info($"Saved user shortcuts for user {userId} to shortcuts.json");
+                return Ok(new { success = true, file = "shortcuts.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user shortcuts for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user shortcuts." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/bookmarks.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsBookmarks(string userId, [FromBody] UserBookmarks userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "bookmarks.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "bookmarks.json", userConfiguration);
+                _logger.Info($"Saved user bookmarks for user {userId} to bookmarks.json");
+                return Ok(new { success = true, file = "bookmarks.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user bookmarks for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user bookmarks." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/elsewhere.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsElsewhere(string userId, [FromBody] ElsewhereSettings userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
+                _logger.Info($"Saved user elsewhere settings for user {userId} to elsewhere.json");
+                return Ok(new { success = true, file = "elsewhere.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user elsewhere settings for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user elsewhere settings." });
+            }
         }
 
         [HttpPost("reset-all-users-settings")]
