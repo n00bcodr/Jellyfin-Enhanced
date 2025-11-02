@@ -1197,7 +1197,15 @@
 
 
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { fetchTvShowDetails, requestTvSeasons, fetchAdvancedRequestData } = JE.jellyseerrAPI;
+        const { fetchTvShowDetails, requestTvSeasons, fetchAdvancedRequestData, isPartialRequestsEnabled, requestMedia } = JE.jellyseerrAPI;
+
+        // Check if partial requests are enabled
+        let partialRequestsEnabled = false;
+        try {
+            partialRequestsEnabled = await isPartialRequestsEnabled();
+        } catch (e) {
+            partialRequestsEnabled = false;
+        }
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
         if (!tvDetails?.seasons) {
@@ -1206,19 +1214,15 @@
         }
 
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
-        const bodyHtml = `<div class="jellyseerr-season-list"></div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
 
+        // Show season selection UI, but hide checkboxes if partial requests are disabled
+        const bodyHtml = `<div class="jellyseerr-season-list"></div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
         const modalInstance = create({
             title: JE.t('jellyseerr_modal_title'),
             subtitle: showTitle,
             bodyHtml,
             backdropPath: tvDetails.backdropPath,
             onSave: async (modalEl, requestBtn, closeFn) => {
-                const selectedSeasons = Array.from(modalEl.querySelectorAll('.jellyseerr-season-checkbox:checked')).map(cb => parseInt(cb.dataset.seasonNumber));
-                if (selectedSeasons.length === 0) {
-                    JE.toast(JE.t('jellyseerr_modal_toast_select_season'), 3000);
-                    return;
-                }
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -1230,15 +1234,29 @@
                     if (!server || !quality || !folder) {
                         JE.toast(JE.t('jellyseerr_modal_toast_options_missing'), 3000);
                         requestBtn.disabled = false;
-                        requestBtn.textContent = JE.t('jellyseerr_modal_request_selected');
+                        requestBtn.textContent = partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request');
                         return;
                     }
                     settings = { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] };
                 }
 
                 try {
-                    await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem);
-                    JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
+                    if (partialRequestsEnabled) {
+                        // Partial requests enabled: request selected seasons
+                        const selectedSeasons = Array.from(modalEl.querySelectorAll('.jellyseerr-season-checkbox:checked')).map(cb => parseInt(cb.dataset.seasonNumber));
+                        if (selectedSeasons.length === 0) {
+                            JE.toast(JE.t('jellyseerr_modal_toast_select_season'), 3000);
+                            requestBtn.disabled = false;
+                            requestBtn.textContent = JE.t('jellyseerr_modal_request_selected');
+                            return;
+                        }
+                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem);
+                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
+                    } else {
+                        // Partial requests disabled: request all seasons
+                        await requestMedia(tmdbId, 'tv', settings, false, searchResultItem);
+                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: showTitle }), 4000);
+                    }
                     closeFn();
                     setTimeout(() => {
                         const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
@@ -1252,14 +1270,14 @@
                 } catch (error) {
                     JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
                     requestBtn.disabled = false;
-                    requestBtn.textContent = JE.t('jellyseerr_modal_request_selected');
+                    requestBtn.textContent = partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request');
                 }
             }
         });
 
         // Populate season list inside the modal
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
-        updateSeasonList(seasonList, tvDetails);
+        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled);
         modalInstance.show();
 
 
@@ -1267,7 +1285,7 @@
         refreshModalInterval = setInterval(async () => {
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
             if (freshTvDetails) {
-                updateSeasonList(seasonList, freshTvDetails);
+                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled);
             }
         }, 10000); // Refresh every 10 seconds
 
@@ -1289,7 +1307,7 @@
         }
     };
 
-    function updateSeasonList(seasonListElement, tvDetails) {
+    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true) {
         if (!seasonListElement || !tvDetails) return;
 
         const seasonStatusMap = {};
@@ -1327,8 +1345,11 @@
             const existingCheckbox = seasonItem.querySelector('.jellyseerr-season-checkbox');
             const isChecked = existingCheckbox ? existingCheckbox.checked : false;
 
+            // Disable checkbox if partial requests are disabled OR if the season can't be requested
+            const checkboxDisabled = !partialRequestsEnabled || !canRequest;
+
             seasonItem.innerHTML = `
-                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${seasonNumber}" ${canRequest ? '' : 'disabled'}>
+                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${seasonNumber}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
                 <div class="jellyseerr-season-info">
                     <div class="jellyseerr-season-name">${season.name || `Season ${seasonNumber}`}</div>
                     <div class="jellyseerr-season-meta">${season.airDate ? season.airDate.substring(0, 4) : ''}</div>

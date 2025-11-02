@@ -360,6 +360,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
 
+        [HttpGet("jellyseerr/settings/main")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrSettingsMain()
+        {
+            return ProxyJellyseerrRequest("/api/v1/settings/main", HttpMethod.Get);
+        }
+
         [HttpGet("tmdb/validate")]
         [Authorize]
         public async Task<IActionResult> ValidateTmdb([FromQuery] string apiKey)

@@ -335,6 +335,21 @@
         }
     };
 
+
+    /**
+     * Checks if partial series requests are enabled in Jellyseerr settings.
+     * @returns {Promise<boolean>} - True if partial requests are enabled, false otherwise.
+     */
+    api.isPartialRequestsEnabled = async function() {
+        try {
+            const settings = await get('/settings/main');
+            return !!(settings && settings.partialRequestsEnabled);
+        } catch (error) {
+            console.warn(`${logPrefix} Failed to fetch settings:`, error);
+            return false;
+        }
+    };
+
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;
 
