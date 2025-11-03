@@ -10,7 +10,7 @@
 The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 
 <div align="center">
-  <video 
+  <video
     src="https://github.com/user-attachments/assets/c3fed9fe-63c4-4e26-b2b6-73c4817613aa"
   >
   </video>
@@ -38,6 +38,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Quality Tags CSS](#quality-tags-css)
     - [Genre Tags CSS](#genre-tags-css)
     - [Language Tags CSS](#language-tags-css)
+    - [ARR Tag Links CSS](#arr-tag-links-css)
     - [Enhanced Panel CSS](#panel-css)
   - [🫚 Project Structure](#-project-structure)
     - [File Structure](#file-structure)
@@ -591,6 +592,103 @@ The HTML structure for language tags is as follows:
 > - Language tags use flag icons from [flagcdn.com](https://flagcdn.com) service.
 > - The plugin shows a maximum of 3 unique language flags per item.
 > - Position can be controlled via the Enhanced Panel settings under.
+
+</details>
+
+### <a id="arr-tag-links-css"></a>
+<details>
+<summary style="font-size: 1.2em;">ARR Tag Links</summary>
+<br>
+
+When "Show *arr Tags as Links" is enabled in plugin config settings, the plugin injects tags into the item page under the external links section.
+
+Structure of each link:
+
+```html
+<a class="button-link emby-button arr-tag-link"
+   href="#..."
+   title="View all items with tag: Requested by: (in)-netflix"
+   data-id="in-netflix"
+   data-tag="Requested by: (in)-netflix"
+   data-tag-name="(in)-netflix"
+   data-tag-prefix="Requested by: ">
+  <span class="arr-tag-link-icon" aria-hidden="true">🏷️</span>
+  <span class="arr-tag-link-text"
+        data-id="in-netflix"
+        data-tag="Requested by: (in)-netflix"
+        data-tag-name="(in)-netflix"
+        data-tag-prefix="Requested by: ">
+    Requested by: (in)-netflix
+  </span>
+ </a>
+```
+
+Available hooks:
+- `.arr-tag-link` – the anchor element for a single tag
+- `.arr-tag-link-icon` – the icon span inside the link
+- `.arr-tag-link-text` – the label span inside the link
+- Data attributes on both the link and text spans:
+  - `data-id` – a CSS-friendly slug of the raw tag (e.g. `(in)-netflix` → `in-netflix`)
+  - `data-tag` – full tag text including the prefix
+  - `data-tag-name` – tag without the prefix
+  - `data-tag-prefix` – the configured prefix (default: `Requested by: `)
+
+<br>
+
+Common recipes
+--------------------------
+
+1) Rename a specific tag label
+
+```css
+/* Hide the original label so it doesn't reserve width */
+.itemExternalLinks a.arr-tag-link[data-tag-name="1 - n00bcodr"] .arr-tag-link-text {
+  display: none !important;
+}
+
+/* Draw your custom label using a pseudo-element on the link */
+.itemExternalLinks a.arr-tag-link[data-tag-name="1 - n00bcodr"]::after {
+  content: " Requested by: N00bCodr"; /* leading space keeps a gap after the icon */
+}
+```
+
+2) Hide a specific tag entirely (make use of filters instead)
+
+```css
+.itemExternalLinks a.arr-tag-link[data-id="in-netflix"] { display: none !important; }
+/* or */
+.itemExternalLinks a.arr-tag-link[data-tag-name="(in)-netflix"] { display: none !important; }
+```
+
+3) Change the icon or remove it
+
+```css
+/* Replace the icon */
+.itemExternalLinks a.arr-tag-link .arr-tag-link-icon { display: none !important; }
+.itemExternalLinks a.arr-tag-link::before {
+  content: "🔖"; /* your icon */
+  margin-right: .25rem;
+}
+```
+
+4) Pill/badge styling for all tag links
+
+```css
+.itemExternalLinks a.arr-tag-link {
+  padding: 8px 8px;
+  border-radius: 999px;
+  background: rgb(255,255,255,.5);
+  border: 2px solid rgb(255,255,255,.8);
+}
+```
+
+5) Service-specific colors using the data-id
+
+```css
+.itemExternalLinks a.arr-tag-link[data-id="1 - n00bcodr"]  { background: #d81f26; color: #fff; }
+.itemExternalLinks a.arr-tag-link[data-id="2 - jellyfish"] { background: #00a8e1; color: #fff; }
+.itemExternalLinks a.arr-tag-link[data-id="3 - admin"] { background: #0c1a38; color: #8dd0ff; }
+```
 
 </details>
 

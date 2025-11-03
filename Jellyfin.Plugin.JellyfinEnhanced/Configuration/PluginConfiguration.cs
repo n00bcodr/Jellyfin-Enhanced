@@ -94,6 +94,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             BazarrUrl = "";
             ShowArrLinksAsText = false;
 
+            // Arr Tags Sync Settings
+            ArrTagsSyncEnabled = false;
+            SonarrApiKey = "";
+            RadarrApiKey = "";
+            ArrTagsPrefix = "JE Arr Tag: ";
+            ArrTagsClearOldTags = true;
+            ArrTagsShowAsLinks = true;
+            ArrTagsLinksFilter = "";
+
             // commit hash for watchlist feature from kefinTweaks
             KefinTweaksVersion = "master";
         }
@@ -159,6 +168,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RadarrUrl { get; set; }
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
+
+        // Arr Tags Sync Settings
+        public bool ArrTagsSyncEnabled { get; set; }
+        public string SonarrApiKey { get; set; }
+        public string RadarrApiKey { get; set; }
+        public string ArrTagsPrefix { get; set; }
+        public bool ArrTagsClearOldTags { get; set; }
+        public bool ArrTagsShowAsLinks { get; set; }
+        public string ArrTagsLinksFilter { get; set; }
+
         public bool GenreTagsEnabled { get; set; }
         public string KefinTweaksVersion { get; set; }
     }

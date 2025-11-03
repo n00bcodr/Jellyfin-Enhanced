@@ -506,6 +506,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
 
+                // Arr Tags Sync Settings
+                config.ArrTagsSyncEnabled,
+                config.ArrTagsPrefix,
+                config.ArrTagsShowAsLinks,
+                config.ArrTagsLinksFilter,
+
                 config.WatchlistEnabled,
                 config.KefinTweaksVersion
             });
