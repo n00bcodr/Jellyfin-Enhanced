@@ -342,10 +342,10 @@
      */
     api.isPartialRequestsEnabled = async function() {
         try {
-            const settings = await get('/settings/main');
-            return !!(settings && settings.partialRequestsEnabled);
+            const result = await get('/settings/partial-requests');
+            return !!(result && result.partialRequestsEnabled);
         } catch (error) {
-            console.warn(`${logPrefix} Failed to fetch settings:`, error);
+            console.warn(`${logPrefix} Failed to fetch partial requests setting:`, error);
             return false;
         }
     };

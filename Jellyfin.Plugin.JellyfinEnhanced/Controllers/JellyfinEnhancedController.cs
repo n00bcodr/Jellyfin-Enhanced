@@ -360,11 +360,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
 
-        [HttpGet("jellyseerr/settings/main")]
+        [HttpGet("jellyseerr/settings/partial-requests")]
         [Authorize]
-        public Task<IActionResult> GetJellyseerrSettingsMain()
+        public async Task<IActionResult> GetJellyseerrPartialRequestsSetting()
         {
-            return ProxyJellyseerrRequest("/api/v1/settings/main", HttpMethod.Get);
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                _logger.Warning("Jellyseerr integration is not configured or enabled.");
+                return Ok(new { partialRequestsEnabled = false });
+            }
+
+            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+
+            foreach (var url in urls)
+            {
+                var trimmedUrl = url.Trim();
+                try
+                {
+                    var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/settings/main";
+                    _logger.Info($"Fetching Jellyseerr partial requests setting from: {requestUri}");
+
+                    var response = await httpClient.GetAsync(requestUri);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        // Parse the full settings response but only extract the partialRequestsEnabled field
+                        var settings = JsonDocument.Parse(responseContent);
+                        var partialRequestsEnabled = false;
+                        if (settings.RootElement.TryGetProperty("partialRequestsEnabled", out var prop))
+                        {
+                            partialRequestsEnabled = prop.GetBoolean();
+                        }
+
+                        _logger.Info($"Jellyseerr partial requests setting: {partialRequestsEnabled}");
+                        return Ok(new { partialRequestsEnabled });
+                    }
+
+                    _logger.Warning($"Failed to fetch Jellyseerr settings. URL: {trimmedUrl}, Status: {response.StatusCode}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to connect to Jellyseerr URL: {trimmedUrl}. Error: {ex.Message}");
+                }
+            }
+
+            _logger.Warning("Could not fetch Jellyseerr settings from any URL, defaulting partialRequestsEnabled to false");
+            return Ok(new { partialRequestsEnabled = false });
         }
 
         [HttpGet("tmdb/validate")]
