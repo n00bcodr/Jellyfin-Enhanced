@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             Instance = this;
             _applicationPaths = applicationPaths;
             _logger = logger;
+            _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
             CleanupOldScript();
         }
 

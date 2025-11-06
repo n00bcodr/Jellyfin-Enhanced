@@ -885,6 +885,39 @@
                 JE.currentSettings[settingKey] = e.target.checked;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 let toastMessage = createToast(featureKey, e.target.checked);
+                
+                // Handle tag features with dynamic re-initialization
+                if (id === 'qualityTagsToggle') {
+                    if (e.target.checked) {
+                        // Initialize for the first time if enabling
+                        if (typeof JE.initializeQualityTags === 'function') {
+                            JE.initializeQualityTags();
+                        }
+                    } else {
+                        // Remove all tags if disabling
+                        document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
+                    }
+                    requiresRefresh = false; // No longer needs refresh
+                } else if (id === 'genreTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeGenreTags === 'function') {
+                            JE.initializeGenreTags();
+                        }
+                    } else {
+                        document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
+                    }
+                    requiresRefresh = false;
+                } else if (id === 'languageTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeLanguageTags === 'function') {
+                            JE.initializeLanguageTags();
+                        }
+                    } else {
+                        document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
+                    }
+                    requiresRefresh = false;
+                }
+                
                 if (requiresRefresh) {
                     toastMessage += ".<br> Refresh page to apply.";
                 }
@@ -892,8 +925,6 @@
                 if (id === 'randomButtonToggle') JE.addRandomButton();
                 if (id === 'showFileSizesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
                 if (id === 'showAudioLanguagesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
-                if (id === 'genreTagsToggle' && !e.target.checked) document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
-                if (id === 'languageTagsToggle' && !e.target.checked) document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
                 resetAutoCloseTimer();
             });
         };
@@ -950,7 +981,23 @@
                 JE.currentSettings[settingKey] = newPos;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 updateHighlight();
-                JE.toast(`Refresh to apply.`);
+                
+                // Reinitialize tags dynamically based on which position changed
+                if (settingKey === 'qualityTagsPosition' && JE.currentSettings.qualityTagsEnabled) {
+                    if (typeof JE.reinitializeQualityTags === 'function') {
+                        JE.reinitializeQualityTags();
+                    }
+                } else if (settingKey === 'genreTagsPosition' && JE.currentSettings.genreTagsEnabled) {
+                    if (typeof JE.reinitializeGenreTags === 'function') {
+                        JE.reinitializeGenreTags();
+                    }
+                } else if (settingKey === 'languageTagsPosition' && JE.currentSettings.languageTagsEnabled) {
+                    if (typeof JE.reinitializeLanguageTags === 'function') {
+                        JE.reinitializeLanguageTags();
+                    }
+                }
+                
+                JE.toast(`Position updated!`);
                 resetAutoCloseTimer();
             });
         });

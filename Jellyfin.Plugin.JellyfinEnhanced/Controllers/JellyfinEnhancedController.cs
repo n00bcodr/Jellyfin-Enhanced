@@ -339,11 +339,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/seasons", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/overrideRule")]
+        [Authorize]
+        public Task<IActionResult> GetOverrideRules()
+        {
+            return ProxyJellyseerrRequest("/api/v1/overrideRule", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/user")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrUsers([FromQuery] int take = 1000)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/user?take={take}", HttpMethod.Get);
+        }
+
         [HttpPost("jellyseerr/request/tv/{tmdbId}/seasons")]
         [Authorize]
         public async Task<IActionResult> RequestTvSeasons(int tmdbId, [FromBody] JsonElement requestBody)
         {
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
+        }
+
+        [HttpGet("jellyseerr/settings/partial-requests")]
+        [Authorize]
+        public async Task<IActionResult> GetJellyseerrPartialRequestsSetting()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                _logger.Warning("Jellyseerr integration is not configured or enabled.");
+                return Ok(new { partialRequestsEnabled = false });
+            }
+
+            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+
+            foreach (var url in urls)
+            {
+                var trimmedUrl = url.Trim();
+                try
+                {
+                    var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/settings/main";
+                    _logger.Info($"Fetching Jellyseerr partial requests setting from: {requestUri}");
+
+                    var response = await httpClient.GetAsync(requestUri);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        // Parse the full settings response but only extract the partialRequestsEnabled field
+                        var settings = JsonDocument.Parse(responseContent);
+                        var partialRequestsEnabled = false;
+                        if (settings.RootElement.TryGetProperty("partialRequestsEnabled", out var prop))
+                        {
+                            partialRequestsEnabled = prop.GetBoolean();
+                        }
+
+                        _logger.Info($"Jellyseerr partial requests setting: {partialRequestsEnabled}");
+                        return Ok(new { partialRequestsEnabled });
+                    }
+
+                    _logger.Warning($"Failed to fetch Jellyseerr settings. URL: {trimmedUrl}, Status: {response.StatusCode}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to connect to Jellyseerr URL: {trimmedUrl}. Error: {ex.Message}");
+                }
+            }
+
+            _logger.Warning("Could not fetch Jellyseerr settings from any URL, defaulting partialRequestsEnabled to false");
+            return Ok(new { partialRequestsEnabled = false });
         }
 
         [HttpGet("tmdb/validate")]
@@ -483,6 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
+                config.JellyseerrEnable4KRequests,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseJellyseerrLinks,
@@ -608,6 +675,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult GetUserSettingsSettings(string userId)
         {
+            // Populate defaults from plugin configuration if missing
+            if (!_userConfigurationManager.UserConfigurationExists(userId, "settings.json"))
+            {
+                var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+                if (defaultConfig != null)
+                {
+                    var defaultUserSettings = new UserSettings
+                    {
+                        AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
+                        AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
+                        AutoPipEnabled = defaultConfig.AutoPipEnabled,
+                        LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+                        PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
+                        AutoSkipIntro = defaultConfig.AutoSkipIntro,
+                        AutoSkipOutro = defaultConfig.AutoSkipOutro,
+                        DisableCustomSubtitleStyles = defaultConfig.DisableCustomSubtitleStyles,
+                        SelectedStylePresetIndex = defaultConfig.DefaultSubtitleStyle,
+                        SelectedFontSizePresetIndex = defaultConfig.DefaultSubtitleSize,
+                        SelectedFontFamilyPresetIndex = defaultConfig.DefaultSubtitleFont,
+                        RandomButtonEnabled = defaultConfig.RandomButtonEnabled,
+                        RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
+                        RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
+                        RandomIncludeShows = defaultConfig.RandomIncludeShows,
+                        ShowFileSizes = defaultConfig.ShowFileSizes,
+                        ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+                        QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
+                        GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
+                        LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
+                        QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                        GenreTagsPosition = defaultConfig.GenreTagsPosition,
+                        LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
+                        RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
+                        ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
+                        LastOpenedTab = "shortcuts"
+                    };
+
+                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    _logger.Info($"Saved default settings.json for new user {userId} from plugin configuration.");
+                }
+            }
+
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json");
             return Ok(userConfig);
         }
@@ -638,41 +746,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpPost("user-settings/{userId}/settings.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
+                _logger.Info($"Saved user settings for user {userId} to settings.json");
+                return Ok(new { success = true, file = "settings.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user settings for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/shortcuts.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsShortcuts(string userId, [FromBody] UserShortcuts userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
+                _logger.Info($"Saved user shortcuts for user {userId} to shortcuts.json");
+                return Ok(new { success = true, file = "shortcuts.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user shortcuts for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user shortcuts." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/bookmarks.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsBookmarks(string userId, [FromBody] UserBookmarks userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "bookmarks.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "bookmarks.json", userConfiguration);
+                _logger.Info($"Saved user bookmarks for user {userId} to bookmarks.json");
+                return Ok(new { success = true, file = "bookmarks.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user bookmarks for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user bookmarks." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/elsewhere.json")]
         [Authorize]
+        [Produces("application/json")]
         public IActionResult SaveUserSettingsElsewhere(string userId, [FromBody] ElsewhereSettings userConfiguration)
         {
-            _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
-            return Ok();
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
+                _logger.Info($"Saved user elsewhere settings for user {userId} to elsewhere.json");
+                return Ok(new { success = true, file = "elsewhere.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user elsewhere settings for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user elsewhere settings." });
+            }
         }
 
         [HttpPost("reset-all-users-settings")]
         [Authorize]
         public IActionResult ResetAllUsersSettings()
         {
-            var users = _userManager.Users;
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
 
             if (defaultConfig == null)
@@ -702,18 +849,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                 GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
                 LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
+                QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                GenreTagsPosition = defaultConfig.GenreTagsPosition,
+                LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
                 LastOpenedTab = "shortcuts"
             };
 
-            foreach (var user in users)
+            var userCount = 0;
+            // Get all user IDs from the UserConfigurationManager's known users
+            var userIds = _userConfigurationManager.GetAllUserIds();
+            foreach (var userId in userIds)
             {
-                _userConfigurationManager.SaveUserConfiguration(user.Id.ToString("N"), "settings.json", defaultUserSettings);
+                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                userCount++;
             }
 
-            _logger.Info($"Reset settings for all {users.Count()} users to plugin defaults.");
-            return Ok(new { success = true, userCount = users.Count() });
+            _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
+            return Ok(new { success = true, userCount = userCount });
         }
     }
 }

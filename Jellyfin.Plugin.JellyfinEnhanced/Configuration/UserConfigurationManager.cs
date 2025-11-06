@@ -26,6 +26,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return userDir;
         }
 
+        public bool UserConfigurationExists(string userId, string fileName)
+        {
+            try
+            {
+                var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+                return File.Exists(configPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Error checking existence for '{fileName}' of user '{userId}': {ex.Message}");
+                return false;
+            }
+        }
+
         /// Loads user configuration from a JSON file.
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
         {
@@ -87,6 +101,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 _logger.Error($"Failed to save user configuration for user '{userId}' to file '{fileName}'. Exception: {ex.Message}");
                 throw;
+            }
+        }
+
+        /// Gets all user IDs that have configuration directories.
+        public string[] GetAllUserIds()
+        {
+            try
+            {
+                if (!Directory.Exists(_configBaseDir))
+                {
+                    return Array.Empty<string>();
+                }
+
+                var userDirs = Directory.GetDirectories(_configBaseDir);
+                var userIds = new string[userDirs.Length];
+                
+                for (int i = 0; i < userDirs.Length; i++)
+                {
+                    userIds[i] = Path.GetFileName(userDirs[i]);
+                }
+
+                return userIds;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get all user IDs: {ex.Message}");
+                return Array.Empty<string>();
             }
         }
     }

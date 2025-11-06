@@ -204,11 +204,9 @@
                     const tmdbId = item?.ProviderIds?.Tmdb;
                     const mediaType = item?.Type;
 
-                    if (tmdbId && mediaType) {
+                    if (tmdbId && mediaType && (mediaType === 'Movie' || mediaType === 'Series')) {
                         const reviews = await fetchReviews(tmdbId, mediaType);
                         addReviewsToPage(reviews, visiblePage);
-                    } else {
-                        addReviewsToPage([], visiblePage);
                     }
                 }
             } catch (error) {
@@ -216,17 +214,60 @@
             }
         }
 
+        let lastProcessedItemId = null;
+
         function processPages() {
             const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (visiblePage) {
-                processPage(visiblePage);
+            if (!visiblePage) {
+                lastProcessedItemId = null;
+                return;
+            }
+
+            try {
+                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                if (itemId && itemId !== lastProcessedItemId) {
+                    lastProcessedItemId = itemId;
+                    processPage(visiblePage);
+                }
+            } catch (e) {
+                // Ignore URL parsing errors
             }
         }
 
         injectCss();
 
-        setTimeout(processPages, 1000); // Initial load after 1 second
-        setInterval(processPages, 2000); // Then check every 2 seconds
+        // Initial load
+        setTimeout(processPages, 1000);
+
+        // Watch for navigation changes using MutationObserver
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                    const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                    if (visiblePage) {
+                        processPages();
+                        break; // Only process once per mutation
+                    }
+                }
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
+
+        // Detect hash changes for navigation
+        let currentHash = window.location.hash;
+        setInterval(() => {
+            if (window.location.hash !== currentHash) {
+                currentHash = window.location.hash;
+                lastProcessedItemId = null; // Reset on navigation
+                setTimeout(processPages, 500);
+            }
+        }, 500);
     };
 })(window.JellyfinEnhanced);
 

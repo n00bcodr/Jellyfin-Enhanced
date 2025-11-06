@@ -228,11 +228,21 @@
         placeholder.dataset.itemId = itemId;
         container.appendChild(placeholder);
 
+        const applyLangStyles = (el) => {
+            el.title = JE.t('audio_language_tooltip');
+            el.style.display = 'flex';
+            el.style.alignItems = 'center';
+            el.style.flexDirection = 'row';
+            el.style.justifyContent = 'center';
+            el.style.flexWrap = 'wrap';
+            el.style.textAlign = 'center';
+            el.style.gap = '0.1em';
+            try { el.style.setProperty('white-space', 'normal', 'important'); } catch (_) { el.style.whiteSpace = 'normal'; }
+        };
+
         // Helper to render unavailable/no data with dash
         const renderUnavailable = () => {
-            placeholder.title = JE.t('audio_language_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.alignItems = 'center';
+            applyLangStyles(placeholder);
             placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
         };
 
@@ -245,9 +255,7 @@
                 return;
             }
             // Render from cache
-            placeholder.title = JE.t('audio_language_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.alignItems = 'center';
+            applyLangStyles(placeholder);
             placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
 
             cached.languages.forEach((lang, index) => {
@@ -282,9 +290,7 @@
 
             const uniqueLanguages = Array.from(languages).map(JSON.parse);
             if (uniqueLanguages.length > 0) {
-                placeholder.title = JE.t('audio_language_tooltip');
-                placeholder.style.display = 'flex';
-                placeholder.style.alignItems = 'center';
+                applyLangStyles(placeholder);
                 placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
 
                 uniqueLanguages.forEach((lang, index) => {

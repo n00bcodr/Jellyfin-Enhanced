@@ -106,7 +106,8 @@
          * Fetches fresh data and updates the existing UI elements.
          * @param {string} query The current search query.
          */
-        async function refreshJellyseerrData(query) {
+        // Manual refresh handler
+        async function manualRefreshJellyseerrData(query) {
             if (!query || !document.querySelector('.jellyseerr-section')) return;
 
             console.log(`${logPrefix} Refreshing data for query: "${query}"`);
@@ -130,8 +131,6 @@
                 const currentQuery = isSearchPage ? searchInput.value : null;
 
                 if (isSearchPage && currentQuery?.trim()) {
-                    if (refreshInterval) clearInterval(refreshInterval);
-                    refreshInterval = setInterval(() => refreshJellyseerrData(currentQuery), 15000); // Refresh every 15 seconds
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         if (!isJellyseerrActive) {
@@ -153,12 +152,18 @@
                     }, 1000);
                 } else {
                     clearTimeout(debounceTimeout);
-                    if (refreshInterval) clearInterval(refreshInterval);
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                 }
             };
+
+            // Listen for manual refresh events from the UI
+            document.addEventListener('jellyseerr-manual-refresh', function(e) {
+                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                const query = searchInput ? searchInput.value : null;
+                manualRefreshJellyseerrData(query);
+            });
 
             const observer = new MutationObserver(() => {
                 updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
@@ -232,8 +237,64 @@
             }
         }, { passive: true });
 
-        // Main click handler for request buttons
+        // Close 4K popup when clicking outside
+        document.body.addEventListener('click', (e) => {
+            if (!e.target.closest('.jellyseerr-button-group') && !e.target.closest('.jellyseerr-4k-popup')) {
+                const popup = document.querySelector('.jellyseerr-4k-popup');
+                if (popup) popup.remove();
+            }
+        });
+
+        // Main click handler for request buttons and 4K popup items
         document.body.addEventListener('click', async function(event) {
+            // Handle 4K popup item clicks
+            if (event.target.closest('.jellyseerr-4k-popup-item')) {
+                const item = event.target.closest('.jellyseerr-4k-popup-item');
+                const action = item.dataset.action;
+                const tmdbId = item.dataset.tmdbId;
+
+                if (action === 'request4k' && tmdbId) {
+                    const popup = item.closest('.jellyseerr-4k-popup');
+                    item.disabled = true;
+                    item.innerHTML = `<span>Requesting...</span><span class="jellyseerr-button-spinner"></span>`;
+
+                    // Find the original item data from the card
+                    const card = event.target.closest('.jellyseerr-card');
+                    const titleText = card?.querySelector('.cardText-first bdi')?.textContent || 'this movie';
+                    const button = card?.querySelector('.jellyseerr-request-button');
+                    const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+
+                    try {
+                        if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                            // Close popup and show advanced modal
+                            if (popup) popup.remove();
+                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
+                        } else {
+                            await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
+                            JE.toast('4K request submitted successfully!', 3000);
+                            if (popup) popup.remove();
+
+                            // Refresh the results to update the UI
+                            const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
+                            if (query) {
+                                setTimeout(() => fetchAndRenderResults(query), 1000);
+                            }
+                        }
+                    } catch (error) {
+                        let errorMessage = 'Failed to request 4K version';
+                        if (error.status === 404) {
+                            errorMessage = 'User not found';
+                        } else if (error.responseJSON?.message) {
+                            errorMessage = error.responseJSON.message;
+                        }
+                        JE.toast(errorMessage, 4000);
+                        item.disabled = false;
+                        item.innerHTML = `<span>Request in 4K</span>`;
+                    }
+                }
+                return;
+            }
+
             const button = event.target.closest('.jellyseerr-request-button');
             if (!button || button.disabled) return;
 
@@ -255,7 +316,7 @@
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await requestMedia(tmdbId, mediaType);
+                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem); // Pass searchResultItem for override rules
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');

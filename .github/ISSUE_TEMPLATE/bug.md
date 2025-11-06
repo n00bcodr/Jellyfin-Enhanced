@@ -29,5 +29,7 @@ If applicable, add screenshots to help explain your problem.
 
 Please provide server logs and browser console logs as applicable (make sure sensitive information is redacted)
 
+[How to gather logs?](https://github.com/n00bcodr/Jellyfin-Enhanced/#troubleshooting)
+
 **Additional context**
 Add any other context about the problem here.

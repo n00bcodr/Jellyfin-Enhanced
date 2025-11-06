@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     public class StartupService : IScheduledTask
     {
-        private readonly ILogger<StartupService> _logger;
+        private readonly Logger _logger;
         private readonly IApplicationPaths _applicationPaths;
 
         public string Name => "Jellyfin Enhanced Startup";
@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public string Description => "Injects the Jellyfin Enhanced script using the File Transformation plugin and performs necessary cleanups.";
         public string Category => "Startup Services";
 
-        public StartupService(ILogger<StartupService> logger, IApplicationPaths applicationPaths)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
@@ -36,11 +36,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             await Task.Run(() =>
             {
+                _logger.Info("Jellyfin Enhanced Startup Task run successfully.");
                 RegisterFileTransformation();
                 if (JellyfinEnhanced.Instance != null && JellyfinEnhanced.Instance.Configuration.WatchlistEnabled)
                 {
                     RegisterWatchlistHomeSection();
                 }
+                else
+                {
+                    _logger.Info("Watchlist is disabled in Plugin Configuration; Skipping Watchlist Home Screen Section Registration.");
+                }
+                _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");
             }, cancellationToken);
         }
 
@@ -66,17 +72,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     };
 
                     pluginInterfaceType.GetMethod("RegisterTransformation")?.Invoke(null, new object?[] { payload });
-                    _logger.LogInformation("Successfully registered Jellyfin Enhanced script injection with the File Transformation plugin.");
+                    _logger.Info("Successfully registered Jellyfin Enhanced Script Injection with File Transformation Plugin.");
                 }
                 else
                 {
-                    _logger.LogWarning("Could not find PluginInterface in FileTransformation assembly. Using fallback injection method.");
+                    _logger.Info("Could not find PluginInterface in FileTransformation assembly. Using fallback injection method.");
                     JellyfinEnhanced.Instance?.InjectScript();
                 }
             }
             else
             {
-                _logger.LogWarning("File Transformation plugin not found. Using fallback injection method.");
+                _logger.Info("File Transformation Plugin not found. Using fallback injection method.");
                 JellyfinEnhanced.Instance?.InjectScript();
             }
         }
@@ -88,26 +94,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     x.FullName?.Contains(".HomeScreenSections") ?? false);
             if (fileTransformationAssembly == null)
             {
-                _logger.LogWarning("HomeScreen plugin not found. Skipping Watchlist home section registration.");
+                _logger.Warning("HomeScreenSections plugin not found. Skipping Watchlist Home Screen Section Registration.");
                 return;
             }
-            
+
             Type? pluginInterfaceType = fileTransformationAssembly.GetType("Jellyfin.Plugin.HomeScreenSections.PluginInterface");
             if (pluginInterfaceType == null)
             {
-                _logger.LogWarning("Could not find PluginInterface in HomeScreen assembly. Skipping Watchlist home section registration.");
+                _logger.Warning("Could not find PluginInterface in HomeScreenSections assembly. Skipping Watchlist Home Screen Section Registration.");
                 return;
             }
 
             JObject payload = new JObject()
             {
-                { "id", "JellyfinEnhancedWatchlist"}, 
+                { "id", "JellyfinEnhancedWatchlist"},
                 { "displayText", "Watchlist"},
                 { "limit", 1},
                 { "resultsEndpoint", "/JellyfinEnhanced/watchlist"}
             };
             pluginInterfaceType.GetMethod("RegisterSection")?.Invoke(null, [payload]);
-            _logger.LogInformation("Successfully registered Watchlist home section with the HomeScreen plugin.");
+            _logger.Info("Successfully Registered Watchlist Home Screen Section with the HomeScreenSections Plugin.");
         }
 
 
