@@ -34,7 +34,7 @@
 
         // Use the configured version, or default to 'master' if empty
         const kefinTweaksVersion = JE.pluginConfig.KefinTweaksVersion || 'master';
-        const KEFINTWEAKS_BASE_URL = `https://cdn.jsdelivr.net/gh/ranaldsgift/kefintweaks@${kefinTweaksVersion}/`;
+        const KEFINTWEAKS_BASE_URL = `https://cdn.jsdelivr.net/gh/ranaldsgift/kefintweaks@${kefinTweaksVersion}/scripts`;
 
         console.log(`${logPrefix} Watchlist is enabled. Loading scripts from kefinTweaks@${kefinTweaksVersion}...`);
 
