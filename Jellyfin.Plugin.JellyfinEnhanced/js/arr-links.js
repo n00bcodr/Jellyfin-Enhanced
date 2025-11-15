@@ -86,6 +86,7 @@
                     .toString()
                     .normalize('NFD')
                     .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/&/g, 'and')
                     .toLowerCase()
                     .trim()
                     .replace(/\s+/g, '-')
