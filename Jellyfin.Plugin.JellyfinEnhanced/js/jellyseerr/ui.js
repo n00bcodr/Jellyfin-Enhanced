@@ -735,16 +735,18 @@
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
-                <div class="cardScalable">
-                    <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent itemAction" style="background-image: url('${posterUrl}');">
-                        <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" class="jellyseerr-icon-on-card" alt="Jellyseerr"/>
-                        <div class="jellyseerr-elsewhere-icons"></div>
-                        <div class="cardIndicators"></div>
+                <a href="${useJellyseerrLink ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer"v>
+                    <div class="cardScalable">
+                        <div class="cardPadder cardPadder-overflowPortrait"></div>
+                        <div class="cardImageContainer coveredImage cardContent itemAction" style="background-image: url('${posterUrl}');">
+                            <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" class="jellyseerr-icon-on-card" alt="Jellyseerr"/>
+                            <div class="jellyseerr-elsewhere-icons"></div>
+                            <div class="cardIndicators"></div>
+                        </div>
+                        <div class="cardOverlayContainer" data-action="link"></div>
+                        <div class="jellyseerr-overview"><div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div></div>
                     </div>
-                    <div class="cardOverlayContainer" data-action="link"></div>
-                    <div class="jellyseerr-overview"><div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div></div>
-                </div>
+                </a>
                 <div class="cardText cardTextCentered cardText-first">
                     <a is="emby-linkbutton" href="${useJellyseerrLink ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer" title="${useJellyseerrLink ? JE.t('jellyseerr_card_view_on_jellyseerr') : JE.t('jellyseerr_card_view_on_tmdb')}"><bdi>${titleText}</bdi></a>
                 </div>
