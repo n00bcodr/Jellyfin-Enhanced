@@ -28,6 +28,10 @@
           this.observer = null;
           this.prevFocused = null;
 
+          // Pause screen delay state
+          this.pauseScreenTimer = null;
+          this.interactionListeners = null;
+
           // DOM refs
           this.overlay = null;
           this.overlayContent = null;
@@ -58,6 +62,7 @@
           this.createOverlay();
           this.setupKeyboardAccessibility();
           this.setupVideoObserver();
+          this.setupInteractionListeners();
         }
 
         getCredentials() {
@@ -467,6 +472,23 @@
           this.checkForVideoChanges();
         }
 
+        setupInteractionListeners() {
+          const resetEvents = ['mousemove', 'mousedown', 'click', 'touchstart', 'touchmove', 'keydown', 'wheel'];
+          
+          const resetTimer = () => {
+            if (this.pauseScreenTimer) {
+              clearTimeout(this.pauseScreenTimer);
+              this.pauseScreenTimer = null;
+            }
+          };
+
+          this.interactionListeners = resetEvents.map(event => {
+            const listener = resetTimer;
+            document.addEventListener(event, listener, { passive: true });
+            return { event, listener };
+          });
+        }
+
         checkForVideoChanges() {
           const video = document.querySelector(".videoPlayerContainer video");
           if (video && video !== this.currentVideo) {
@@ -515,10 +537,34 @@
                 this.fetchItemInfo(newItemId);
               }
               this.updateProgressStatic();
-              this.showOverlay();
+
+              // Clear any existing timer
+              if (this.pauseScreenTimer) {
+                clearTimeout(this.pauseScreenTimer);
+                this.pauseScreenTimer = null;
+              }
+
+              // Set up delayed pause screen with 2-second delay
+              this.pauseScreenTimer = setTimeout(() => {
+                if (this.pauseScreenTimer && video === this.currentVideo && video.paused && !video.ended) {
+                  this.showOverlay();
+                }
+                this.pauseScreenTimer = null;
+              }, 2000);
             }
           };
-          const handlePlay = () => { if (video === this.currentVideo) this.hideOverlay(); };
+
+          const handlePlay = () => {
+            if (video === this.currentVideo) {
+              // Clear the timer if video starts playing
+              if (this.pauseScreenTimer) {
+                clearTimeout(this.pauseScreenTimer);
+                this.pauseScreenTimer = null;
+              }
+              this.hideOverlay();
+            }
+          };
+
           video.addEventListener("pause", handlePause);
           video.addEventListener("play", handlePlay);
           return () => {
@@ -756,6 +802,13 @@
         clearState() {
           this.hideOverlay();
           this.clearDisplayData();
+
+          // Clear pause screen timer
+          if (this.pauseScreenTimer) {
+            clearTimeout(this.pauseScreenTimer);
+            this.pauseScreenTimer = null;
+          }
+
           if (this.cleanupListeners) { this.cleanupListeners(); this.cleanupListeners = null; }
           if (this.fetchAbort) { this.fetchAbort.abort(); this.fetchAbort = null; }
           this.currentItemId = null;
@@ -765,6 +818,15 @@
         destroy() {
           this.clearState();
           if (this.observer) { this.observer.disconnect(); this.observer = null; }
+          
+          // Clean up interaction listeners
+          if (this.interactionListeners) {
+            this.interactionListeners.forEach(({ event, listener }) => {
+              document.removeEventListener(event, listener);
+            });
+            this.interactionListeners = null;
+          }
+
           // Revoke blob URLs
           for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
           this.imgBlobCache.clear();
