@@ -60,9 +60,8 @@
         try {
             // Wait briefly for ApiClient user to potentially become available
             let user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
-            if (!user?.Id) {
-                await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
-                user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
+            if (user instanceof Promise) {
+                user = await user;
             }
 
             const userId = user?.Id;
@@ -71,7 +70,9 @@
             if (userId) {
                 const storageKey = `${userId}-language`;
                 const storedLang = localStorage.getItem(storageKey);
-                lang = (storedLang || 'en').split('-')[0]; // Use base language code
+                if (storedLang) {
+                    lang = storedLang.split('-')[0]; // Use base language code
+                }
             }
 
             let response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
