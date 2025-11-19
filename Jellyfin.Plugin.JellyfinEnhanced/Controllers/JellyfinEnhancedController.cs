@@ -558,6 +558,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
 
+                // Letterboxd Settings
+                config.LetterboxdEnabled,
+                config.ShowLetterboxdLinkAsText,
+
                 config.WatchlistEnabled,
                 config.KefinTweaksVersion
             });

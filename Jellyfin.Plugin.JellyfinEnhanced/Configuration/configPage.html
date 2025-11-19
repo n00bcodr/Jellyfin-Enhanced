@@ -359,6 +359,25 @@
                 </div>
                  <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>External Links</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="letterboxdEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Letterboxd External Links</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">Adds Letterboxd links to item details page.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="showLetterboxdLinkAsText" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show Letterboxd link as text instead of icon</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, shows "Letterboxd" as text instead of the Letterboxd icon.</div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3></h3></legend>
                         <div class="configSection">
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -821,6 +840,8 @@
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
                 document.querySelector('#KefinTweaksVersion').value = config.KefinTweaksVersion || 'master';
+                document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
+                document.querySelector('#showLetterboxdLinkAsText').checked = config.ShowLetterboxdLinkAsText;
 
 
                 Dashboard.hideLoadingMsg();
@@ -889,6 +910,8 @@
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
             config.KefinTweaksVersion = document.querySelector('#KefinTweaksVersion').value || 'master';
+            config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
+            config.ShowLetterboxdLinkAsText = document.querySelector('#showLetterboxdLinkAsText').checked;
 
 
             try {

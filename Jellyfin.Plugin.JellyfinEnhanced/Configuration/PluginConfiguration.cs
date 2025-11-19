@@ -94,6 +94,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             BazarrUrl = "";
             ShowArrLinksAsText = false;
 
+            // Letterboxd Settings
+            LetterboxdEnabled = false;
+            ShowLetterboxdLinkAsText = false;
+
             // commit hash for watchlist feature from kefinTweaks
             KefinTweaksVersion = "master";
         }
@@ -160,6 +164,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
         public bool GenreTagsEnabled { get; set; }
+
+        // Letterboxd Settings
+        public bool LetterboxdEnabled { get; set; }
+        public bool ShowLetterboxdLinkAsText { get; set; }
+
         public string KefinTweaksVersion { get; set; }
     }
 }
