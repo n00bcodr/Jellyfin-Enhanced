@@ -3,7 +3,7 @@
 <head>
     <title>Jellyfin Enhanced</title>
 </head>
-<body>
+<body style="background: black;">
 <div class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-checkbox,emby-select" data-role="page" id="JellyfinEnhancedPage" style="color: #eee;">
     <div data-role="content">
         <div class="content-primary">
@@ -353,6 +353,77 @@
                                     <input id="showArrLinksAsText" is="emby-checkbox" type="checkbox"/>
                                     <span>Show links as text instead of icons</span>
                                 </label>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>*arr Tags Sync</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="arrTagsSyncEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable *arr Tags Sync</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                Fetches all tags from Radarr and Sonarr instances defined above and adds them as Jellyfin tags.
+                                <br><br>
+                                <strong>Note:</strong> You need to configure the API keys below and run the sync task from Dashboard > Scheduled Tasks > "Sync Tags from *arr to Jellyfin"
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
+                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
+                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
+                                <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key"/>
+                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="arrTagsPrefix">Tag Prefix</label>
+                                <input id="arrTagsPrefix" is="emby-input" name="arrTagsPrefix" type="text" placeholder="JE Arr Tag: "/>
+                                <div class="fieldDescription">Prefix to add before each tag (e.g., "JE Arr Tag: " will result in "JE Arr Tag: 1 - Jellyfish")</div>
+                                <br>
+                                <strong>Note:</strong> It is crucial to keep the tag prefix constant, it is used to remove old tags before re-adding fresh ones from the *arrs during the scheduled task. Having no prefix will remove all the tags from your items! <br> You can change it from the default, but make sure it is unique.
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="arrTagsClearOldTags" is="emby-checkbox" type="checkbox"/>
+                                    <span>Clear old tags with prefix before syncing</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, removes all existing tags starting with the prefix before adding new ones. This keeps tags in sync with your *arr applications.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="arrTagsShowAsLinks" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show synced tags as clickable links</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays tags with the configured prefix as clickable links on item detail pages. Helpful if your theme hides tags.</div>
+                            <div class="inputContainer">
+                                <label style="margin-bottom: 2em;" for="arrTagsLinksFilter">Filter Tags to Show as Links (Optional)</label>
+                                <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="arrTagsLinksFilter" name="arrTagsLinksFilter" rows="3" placeholder="1 - Jellyfish&#10;trakt&#10;imdb_250"></textarea>
+                                <br>
+                                <div class="fieldDescription">
+                                    Only show specific tags as links. Enter one tag name per line (without the prefix).
+                                    <br>Leave empty to show all tags with the prefix.
+                                    <br><strong>Example:</strong> If you only want "JE Arr Tag: 1 - Jellyfish" and "JE Arr Tag: trakt" as links, enter:
+                                    <br><code>1 - Jellyfish</code>
+                                    <br><code>trakt</code>
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <label style="margin-bottom: 2em;" for="arrTagsLinksHideFilter">Hide Specific Tags from Links (Optional)</label>
+                                <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="arrTagsLinksHideFilter" name="arrTagsLinksHideFilter" rows="3" placeholder="unwanted_tag&#10;spam_tag&#10;test_tag"></textarea>
+                                <br>
+                                <div class="fieldDescription">
+                                    Hide specific tags from being displayed as links. Enter one tag name per line (without the prefix).
+                                    <br>This filter takes priority over the "Show" filter above.
+                                    <br><strong>Example:</strong> To hide "JE Arr Tag: spam_tag" and "JE Arr Tag: test_tag" from links, enter:
+                                    <br><code>spam_tag</code>
+                                    <br><code>test_tag</code>
+                                </div>
                             </div>
                         </div>
                     </fieldset>
@@ -807,6 +878,14 @@
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
+                document.querySelector('#arrTagsSyncEnabled').checked = config.ArrTagsSyncEnabled;
+                document.querySelector('#radarrApiKey').value = config.RadarrApiKey;
+                document.querySelector('#sonarrApiKey').value = config.SonarrApiKey;
+                document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'Requested by: ';
+                document.querySelector('#arrTagsClearOldTags').checked = config.ArrTagsClearOldTags !== false;
+                document.querySelector('#arrTagsShowAsLinks').checked = config.ArrTagsShowAsLinks !== false;
+                document.querySelector('#arrTagsLinksFilter').value = config.ArrTagsLinksFilter || '';
+                document.querySelector('#arrTagsLinksHideFilter').value = config.ArrTagsLinksHideFilter || '';
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
@@ -875,6 +954,14 @@
             config.RadarrUrl = document.querySelector('#radarrUrl').value;
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
+            config.ArrTagsSyncEnabled = document.querySelector('#arrTagsSyncEnabled').checked;
+            config.RadarrApiKey = document.querySelector('#radarrApiKey').value;
+            config.SonarrApiKey = document.querySelector('#sonarrApiKey').value;
+            config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'Requested by: ';
+            config.ArrTagsClearOldTags = document.querySelector('#arrTagsClearOldTags').checked;
+            config.ArrTagsShowAsLinks = document.querySelector('#arrTagsShowAsLinks').checked;
+            config.ArrTagsLinksFilter = document.querySelector('#arrTagsLinksFilter').value || '';
+            config.ArrTagsLinksHideFilter = document.querySelector('#arrTagsLinksHideFilter').value || '';
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);

@@ -38,6 +38,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Quality Tags CSS](#quality-tags-css)
     - [Genre Tags CSS](#genre-tags-css)
     - [Language Tags CSS](#language-tags-css)
+    - [ARR Tag Links CSS](#arr-tag-links-css)
     - [Enhanced Panel CSS](#panel-css)
   - [🫚 Project Structure](#-project-structure)
     - [File Structure](#file-structure)
@@ -593,6 +594,103 @@ The HTML structure for language tags is as follows:
 
 </details>
 
+### <a id="arr-tag-links-css"></a>
+<details>
+<summary style="font-size: 1.2em;">ARR Tag Links</summary>
+<br>
+
+When "Show *arr Tags as Links" is enabled in plugin config settings, the plugin injects tags into the item page under the external links section.
+
+Structure of each link:
+
+```html
+<a class="button-link emby-button arr-tag-link"
+   href="#..."
+   title="View all items with tag: JE Arr Tag: in-netflix"
+   data-id="in-netflix"
+   data-tag="JE Arr Tag: in-netflix"
+   data-tag-name="in-netflix"
+   data-tag-prefix="JE Arr Tag: ">
+  <span class="arr-tag-link-icon" aria-hidden="true">🏷️</span>
+  <span class="arr-tag-link-text"
+        data-id="in-netflix"
+        data-tag="JE Arr Tag: in-netflix"
+        data-tag-name="in-netflix"
+        data-tag-prefix="JE Arr Tag: ">
+    JE Arr Tag: in-netflix
+  </span>
+ </a>
+```
+
+Available hooks:
+- `.arr-tag-link` – the anchor element for a single tag
+- `.arr-tag-link-icon` – the icon span inside the link
+- `.arr-tag-link-text` – the label span inside the link
+- Data attributes on both the link and text spans:
+  - `data-id` – a CSS-friendly slug of the raw tag (e.g. `in-netflix`)
+  - `data-tag` – full tag text including the prefix
+  - `data-tag-name` – tag without the prefix
+  - `data-tag-prefix` – the configured prefix (default: `JE Arr Tag: `)
+
+<br>
+
+Common recipes
+--------------------------
+
+1) Rename a specific tag label
+
+```css
+/* Hide the original label so it doesn't reserve width */
+.itemExternalLinks a.arr-tag-link[data-tag-name="1 - n00bcodr"] .arr-tag-link-text {
+  display: none !important;
+}
+
+/* Draw your custom label using a pseudo-element on the link */
+.itemExternalLinks a.arr-tag-link[data-tag-name="1 - n00bcodr"]::after {
+  content: " N00bCodr"; /* leading space keeps a gap after the icon */
+}
+```
+
+2) Hide a specific tag entirely (recommended to use Hide Filter in config instead)
+
+```css
+.itemExternalLinks a.arr-tag-link[data-id="in-netflix"] { display: none !important; }
+/* or */
+.itemExternalLinks a.arr-tag-link[data-tag-name="in-netflix"] { display: none !important; }
+```
+
+3) Change the icon or remove it
+
+```css
+/* Replace the icon */
+.itemExternalLinks a.arr-tag-link .arr-tag-link-icon { display: none !important; }
+.itemExternalLinks a.arr-tag-link::before {
+  content: "🔖"; /* your icon */
+  margin-right: .25rem;
+}
+```
+
+4) Pill/badge styling for all tag links
+
+```css
+.itemExternalLinks a.arr-tag-link {
+  padding: 8px 8px;
+  border-radius: 999px;
+  background: rgb(255,255,255,.5);
+  border: 2px solid rgb(255,255,255,.8);
+}
+```
+
+5) Service-specific colors using the data-id
+
+```css
+.itemExternalLinks a.arr-tag-link[data-id="1 - n00bcodr"]  { background: #d81f26; color: #fff; }
+.itemExternalLinks a.arr-tag-link[data-id="2 - jellyfish"] { background: #00a8e1; color: #fff; }
+.itemExternalLinks a.arr-tag-link[data-id="3 - admin"] { background: #0c1a38; color: #8dd0ff; }
+```
+
+</details>
+
 ### <a id="panel-css"></a>
 
 <details>
@@ -733,16 +831,23 @@ All client-side scripts are now located in the `Jellyfin.Plugin.JellyfinEnhanced
 Jellyfin.Plugin.JellyfinEnhanced/
 └── js/
     ├── locales/
-    │ ├── <language1>.json
-    │ ├── <language2>.json
-    │ ├── <language3>.json
-    │ ├── ...
+    │   ├── da.json
+    │   ├── de.json
+    │   ├── en.json
+    │   ├── es.json
+    │   ├── fr.json
+    │   ├── hu.json
+    │   ├── it.json
+    │   ├── pt.json
+    │   ├── sv.json
+    │   └── tr.json
     ├── enhanced/
     │   ├── config.js
     │   ├── events.js
     │   ├── features.js
     │   ├── playback.js
     │   ├── subtitles.js
+    │   ├── themer.js
     │   └── ui.js
     ├── jellyseerr/
     │   ├── api.js
@@ -753,7 +858,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
     ├── reviews.js
     ├── splashscreen.js
     ├── arr-links.js
+    ├── arr-tag-links.js
     ├── elsewhere.js
+    ├── letterboxd-links.js
     ├── pausescreen.js
     ├── qualitytags.js
     ├── genretags.js
@@ -769,6 +876,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`/enhanced/`**: Contains the core components of the "Jellyfin Enhanced" feature set.
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
     * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
+    * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
     * **`ui.js`**: Responsible for creating, injecting, and managing all visual elements like the main settings panel, toast notifications, and various buttons.
     * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
     * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
@@ -787,6 +895,10 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
 
 * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
+
+* **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
+
+* **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
 
 * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
 
