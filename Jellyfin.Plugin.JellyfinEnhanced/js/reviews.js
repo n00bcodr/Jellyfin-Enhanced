@@ -154,7 +154,7 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
-                .tmdb-reviews-section { margin: 2em 0 1em 0; }
+                .tmdb-reviews-section { margin: 2em 0 1em 0; display: flex !important; flex-direction: column;}
                 .tmdb-reviews-section summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; -webkit-tap-highlight-color: transparent;}
                 .tmdb-reviews-section summary .expand-icon { color: rgba(255, 255, 255,.8);transition: transform 0.2s ease-in-out;}
                 .tmdb-reviews-section[open] summary .expand-icon { transform: rotate(180deg);}
