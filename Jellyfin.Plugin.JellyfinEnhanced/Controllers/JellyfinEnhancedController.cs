@@ -562,8 +562,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LetterboxdEnabled,
                 config.ShowLetterboxdLinkAsText,
 
-                config.WatchlistEnabled,
-                config.KefinTweaksVersion
             });
         }
 
@@ -615,58 +613,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return new FileStreamResult(stream, "application/json");
-        }
-
-        [HttpPost("watchlist")]
-        public async Task<QueryResult<BaseItemDto>?> GetWatchlist()
-        {
-            using var reader = new StreamReader(Request.Body);
-            var rawJson = await reader.ReadToEndAsync();
-
-            JObject data = JObject.Parse(rawJson);
-            var userId = Guid.Parse(data["UserId"]?.ToString() ?? string.Empty);
-            if (userId == Guid.Empty)
-            {
-                return null;
-            }
-            var user = _userManager.GetUserById(userId);
-            if (user == null)
-            {
-                return new QueryResult<BaseItemDto>
-                {
-                    TotalRecordCount = 0,
-                    Items = []
-                };
-            }
-
-            var likedItems = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.Season, BaseItemKind.Episode]
-            }).Where(i =>
-            {
-                var userData = _userDataManager.GetUserData(user, i);
-                return userData?.Likes == true;
-            });
-            var dtoOptions = new DtoOptions
-            {
-                Fields = new List<ItemFields>
-                {
-                    ItemFields.PrimaryImageAspectRatio
-                },
-                ImageTypeLimit = 1,
-                ImageTypes = new List<ImageType>
-                {
-                    ImageType.Thumb,
-                    ImageType.Backdrop,
-                    ImageType.Primary,
-                }
-            };
-            var items = _dtoService.GetBaseItemDtos(likedItems.ToList(), dtoOptions, user);
-            return new QueryResult<BaseItemDto>
-            {
-                TotalRecordCount = items.Count,
-                Items = items
-            };
         }
 
         private ActionResult GetScriptResource(string resourcePath)

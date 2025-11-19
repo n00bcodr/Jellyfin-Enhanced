@@ -404,60 +404,33 @@
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Watchlist Settings</h3></legend>
+                        <legend class="sectionTitle"><h3>Watchlist Settings (Deprecated)</h3></legend>
                         <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="watchlistEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Watchlist<sup> β</sup></span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">
-                                Adds a powerful, multi-tab watchlist to Jellyfin. <br>
-                                This feature is powered by and loaded directly from the excellent
-                                <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks">ranaldsgift/KefinTweaks</a>
-                                project. Check it out for more great tweaks!
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="KefinTweaksVersion">KefinTweaks Version</label>
-                                <input id="KefinTweaksVersion" is="emby-input" name="KefinTweaksVersion" type="text" placeholder="master"/>
-                                <div class="fieldDescription">
-                                    Enter the commit hash or branch name from the KefinTweaks repository (e.g., "master" or "1d9fe7efdae8..."). Defaults to 'master' if left empty. <br>This controls which version of the watchlist scripts are loaded. In most cases, you need not change this.
-                                </div>
-                            </div>
-                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                            <div style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <i class="material-icons" style="color: #ffc107; font-size: 24px; margin-top: 2px;">warning</i>
                                     <div>
-                                        <h4 style="margin: 0 0 0.5em 0;">To View Your Watchlist:</h4>
-                                        <p class="fieldDescription" style="margin: 0;">To see your watchlisted items, you need to create a new view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
-                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
-                                            <li>Install the <strong>Custom Tabs</strong> plugin and all it's pre-requisites.</li>
-                                            <li>Navigate to Dashboard > General > Custom Tabs and add a new tab.</li>
-                                            <li>Add "Display Text" according to your preference</li>
-                                            <li>Copy the code below and paste it into the 'HTML Content'.</li>
-                                        </ol>
-                                        <div style="position: relative;">
-                                            <button type="button" id="copyWatchlistHtmlBtn" is="emby-button" class="raised raised-mini emby-button" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
-                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
-                                                <span id="copyWatchlistBtnText" style="vertical-align: middle;">Copy</span>
-                                            </button>
-                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="sections watchlist"&gt;&lt;/div&gt;
-&lt;style&gt;
-  .sections.watchlist {
-    padding-top: 20px; /* Adjust/remove this value as needed for your theme */
-  }
-&lt;/style&gt;</code></pre>
-                                        </div>
-                                        <div class="fieldDescription" style="margin-top: 1em;">
-                                            <strong>Note:</strong> Depending on your theme, you may need to adjust or remove the `padding-top` value in the style block to prevent the content from appearing behind the header.
-                                        </div>
-                                        <div class="fieldDescription" style="margin-top: 1em;">
-                                            Already have Custom Tabs installed?
-                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
-                                        </div>
+                                        <h4 style="margin: 0 0 0.5em 0; color: #ffc107;">Watchlist Feature Removed</h4>
+                                        <p style="margin: 0 0 1em 0;">
+                                            The Watchlist feature has been removed from Jellyfin Enhanced. <br>
+                                            It was always borrowed from <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks" style="text-decoration: underline;">KefinTweaks</a>, and now that KefinTweaks is stable with watchlist and so many more awesome tweaks, watchlist will be handed back to @ranaldsgift :)
+                                        </p>
+                                        <p style="margin: 0;">
+                                            All you need to do is install <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks" style="text-decoration: underline;">KefinTweaks</a> and enable watchlist in the config. Your existing watchlist data will remain intact.
+                                        </p>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important; opacity: 0.5;">
+                                <label>
+                                    <input id="watchlistEnabled" is="emby-checkbox" type="checkbox" disabled/>
+                                    <span>Enable Watchlist (Removed - Use KefinTweaks Instead)</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em; opacity: 0.5;">
+                                This setting has been disabled. For watchlist functionality, please install
+                                <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks">KefinTweaks</a>
+                                directly.
                             </div>
                         </div>
                     </fieldset>
@@ -834,12 +807,10 @@
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
-                document.querySelector('#watchlistEnabled').checked = config.WatchlistEnabled;
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
-                document.querySelector('#KefinTweaksVersion').value = config.KefinTweaksVersion || 'master';
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
                 document.querySelector('#showLetterboxdLinkAsText').checked = config.ShowLetterboxdLinkAsText;
 
@@ -904,12 +875,10 @@
             config.RadarrUrl = document.querySelector('#radarrUrl').value;
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
-            config.WatchlistEnabled = document.querySelector('#watchlistEnabled').checked;
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
-            config.KefinTweaksVersion = document.querySelector('#KefinTweaksVersion').value || 'master';
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
             config.ShowLetterboxdLinkAsText = document.querySelector('#showLetterboxdLinkAsText').checked;
 
@@ -975,56 +944,8 @@
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
         testTmdbBtn.addEventListener('click', testTmdbConnection);
-        const copyWatchlistHtmlBtn = document.querySelector('#copyWatchlistHtmlBtn');
-        if (copyWatchlistHtmlBtn) {
-            copyWatchlistHtmlBtn.addEventListener('click', () => {
-                const codeText = `<div class="sections watchlist"></div>\n<style>\n  .sections.watchlist {\n    padding-top: 20px; /* Adjust/remove this value as needed for your theme */\n  }\n</style>`;
-                const copyBtnText = document.querySelector('#copyWatchlistBtnText');
-                const copyBtnIcon = copyWatchlistHtmlBtn.querySelector('i');
-
-                const success = () => {
-                    copyBtnText.textContent = 'Copied!';
-                    copyBtnIcon.textContent = 'check';
-                    copyWatchlistHtmlBtn.style.color = '#52b54b';
-                    setTimeout(() => {
-                        copyBtnText.textContent = 'Copy';
-                        copyBtnIcon.textContent = 'content_copy';
-                        copyWatchlistHtmlBtn.style.color = '';
-                    }, 2500);
-                };
-
-                const error = (err) => {
-                    console.error('Failed to copy text: ', err);
-                    copyBtnText.textContent = 'Failed';
-                    copyBtnIcon.textContent = 'error';
-                    copyWatchlistHtmlBtn.style.color = '#dc3545';
-                    setTimeout(() => {
-                        copyBtnText.textContent = 'Copy';
-                        copyBtnIcon.textContent = 'content_copy';
-                        copyWatchlistHtmlBtn.style.color = '';
-                    }, 2500);
-                };
-
-                if (navigator.clipboard && window.isSecureContext) {
-                    navigator.clipboard.writeText(codeText).then(success).catch(error);
-                } else {
-                    const textArea = document.createElement('textarea');
-                    textArea.value = codeText;
-                    textArea.style.position = 'fixed';
-                    textArea.style.top = '-9999px';
-                    textArea.style.left = '-9999px';
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    try {
-                        document.execCommand('copy') ? success() : error(new Error('Copy command failed'));
-                    } catch (err) {
-                        error(err);
-                    } finally {
-                        document.body.removeChild(textArea);
-                    }
-                }
-            });
-        }
+        // Copy watchlist HTML button functionality removed since watchlist is deprecated
+        // Use KefinTweaks plugin directly for watchlist features
     })();
 </script>
 </div>

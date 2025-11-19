@@ -52,7 +52,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
-            WatchlistEnabled = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
             DefaultSubtitleSize = 2;
@@ -97,9 +96,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Letterboxd Settings
             LetterboxdEnabled = false;
             ShowLetterboxdLinkAsText = false;
-
-            // commit hash for watchlist feature from kefinTweaks
-            KefinTweaksVersion = "master";
         }
 
         // Jellyfin Enhanced Settings
@@ -138,7 +134,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
-        public bool WatchlistEnabled { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }
@@ -168,7 +163,5 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }
         public bool ShowLetterboxdLinkAsText { get; set; }
-
-        public string KefinTweaksVersion { get; set; }
     }
 }

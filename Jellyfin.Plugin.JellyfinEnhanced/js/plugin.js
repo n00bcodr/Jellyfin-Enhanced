@@ -278,8 +278,7 @@
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
                 'qualitytags.js', 'genretags.js', 'languagetags.js', 'arr-links.js',
-                'letterboxd-links.js',
-                'watchlist/watchlist.js'
+                'letterboxd-links.js'
             ];
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
@@ -314,7 +313,6 @@
             if (typeof JE.initializeLetterboxdLinksScript === 'function') JE.initializeLetterboxdLinksScript();
             if (typeof JE.initializeReviewsScript === 'function') JE.initializeReviewsScript();
             if (typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
-            if (typeof JE.initializeWatchlistScript === "function") JE.initializeWatchlistScript();
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 
