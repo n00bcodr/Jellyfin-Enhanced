@@ -1,17 +1,5 @@
 # Jellyfin Enhanced
 
-
-> [!NOTE]
-> **4 November, 2025**
->
-> I am currently on a holiday with limited access to my machine. Development is paused for now.
->
-> You can still raise bugs and feature requests, but responses may be delayed.
-> 
-
-
-
-
 <p align="center">
   <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Last%20Updated&labelColor=black&color=AA5CC3&cacheSeconds=3600" alt="Last Updated">
   <img src="https://img.shields.io/github/commit-activity/w/n00bcodr/Jellyfin-Enhanced?logo=git&label=Commit%20Activity&labelColor=black&color=00A4DC&cacheSeconds=600" alt="Commit Activity">
