@@ -23,7 +23,8 @@
             '#itemDetailPage .infoWrapper .cardImageContainer',
             '#itemDetailPage #castCollapsible .cardImageContainer',
             '#indexPage .verticalSection.MyMedia .cardImageContainer',
-            '.formDialog .cardImageContainer'
+            '.formDialog .cardImageContainer',
+            '#itemDetailPage .chapterCardImageContainer'
         ];
 
         // Add search page to ignore list if configured (Gelato compatibility)
@@ -262,6 +263,7 @@
         function shouldIgnoreElement(el) {
             return IGNORE_SELECTORS.some(selector => {
                 try {
+                    if (el.matches(selector)) return true;
                     return el.closest(selector) !== null;
                 } catch {
                     return false; // Silently handle potential errors with complex selectors
