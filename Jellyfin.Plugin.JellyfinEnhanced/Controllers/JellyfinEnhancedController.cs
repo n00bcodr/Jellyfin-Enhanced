@@ -829,5 +829,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
             return Ok(new { success = true, userCount = userCount });
         }
+        
+        [HttpGet("file-size/{userId}/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetFileSizeByItemId(Guid userId, Guid itemId)
+        {
+            var user = _userManager.GetUserById(userId);
+            if (user is null)
+            {
+                return NotFound();
+            }
+            
+            var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+            if (item is null)
+            {
+                return NotFound();
+            }
+
+            var allAffectedItems = item.GetBaseItemKind() switch
+            {
+                BaseItemKind.Series or BaseItemKind.Season => _libraryManager
+                    .GetItemsResult(new InternalItemsQuery(user) { 
+                        Parent = item, 
+                        Recursive = true
+                    }).Items,
+                _ => [item]
+            };
+          
+            long totalSize = allAffectedItems
+                .Sum(affectedItem =>  affectedItem.GetMediaSources(false).Sum(source => source.Size ?? 0));
+
+            return Ok(new { success = true, size = totalSize });
+        }
     }
 }
