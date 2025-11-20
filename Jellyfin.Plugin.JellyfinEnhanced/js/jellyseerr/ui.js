@@ -203,13 +203,17 @@
         }
 
         popup.appendChild(request4KBtn);
-        buttonGroup.appendChild(popup);
+        document.body.appendChild(popup);
         active4KPopup = popup;
 
-        // Position the popup
+        // Position the popup relative to the button group
+        const rect = buttonGroup.getBoundingClientRect();
+        popup.style.position = 'fixed';
+        popup.style.left = `${rect.left}px`;
+        popup.style.top = `${rect.bottom + 4}px`;
+        popup.style.width = `${rect.width}px`;
+
         setTimeout(() => {
-            popup.style.top = `${buttonGroup.offsetHeight}px`;
-            popup.style.left = '0';
             popup.classList.add('show');
         }, 10);
     }
@@ -259,6 +263,7 @@
             /* REQUEST BUTTONS */
             .jellyseerr-request-button { width: 100%; display: flex; justify-content: center; align-items: center; white-space: normal; text-align: center; height: 3.5em; padding: 0.2em 0.5em; line-height: 1.2; font-size: 1em; transition: background .2s, border-color .2s, color .2s; }
             .jellyseerr-request-button svg { width: 1.5em; height: 1.5em; flex-shrink: 0; vertical-align: middle; }
+            .layout-mobile .jellyseerr-request-button svg { width: 1em; height: 1em; }
             .layout-mobile .jellyseerr-request-button span { font-size: 0.8em !important; }
             .jellyseerr-request-button.jellyseerr-button-offline, .jellyseerr-request-button.jellyseerr-button-no-user { opacity: .6; cursor: not-allowed; }
             .jellyseerr-request-button.jellyseerr-button-request { background-color: #4f46e5 !important; color: #fff !important; }
@@ -273,7 +278,6 @@
             /* SPLIT BUTTON FOR 4K */
             /* Allow button group and popup to overflow card footer */
             .jellyseerr-card .cardFooter {
-                padding: 0.5em 1em 1em !important;
                 overflow: visible !important;
             }
             .jellyseerr-card .cardBox { overflow: visible !important; }
@@ -289,7 +293,8 @@
                 align-items: stretch;
             }
             .jellyseerr-button-group .jellyseerr-request-button {
-                border-radius: 4px 0 0 4px;
+                border-top-right-radius: 0px !important;
+                border-bottom-right-radius: 0px !important;
                 flex: 1;
                 margin: 0 !important;
                 min-width: 0;
@@ -303,21 +308,26 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            .jellyseerr-split-arrow {
-                border: none;
+            button.jellyseerr-split-arrow.emby-button.button-submit {
+                border-top-left-radius: 0px !important;
+                border-bottom-left-radius: 0px !important;
                 cursor: pointer;
-                background-color: #4f46e5;
+                background-color: #4f46e5 !important;
+                background: #4f46e5 !important;
                 color: #fff !important;
-                border-radius: 10px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 transition: background .2s;
-                padding: 0;
                 flex-shrink: 0;
                 position: relative;
                 z-index: 1;
+                margin: 0;
+                padding: 0 .2em !important;
+                font-size: 0.9em;
+                border-left: 1px solid #00000080;
             }
+            .layout-desktop button.jellyseerr-split-arrow.emby-button.button-submit { padding: 0 .5em 0 .5em !important}
             .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(0.95); }
             .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.88); }
             .jellyseerr-split-arrow:disabled,
@@ -347,16 +357,16 @@
                 pointer-events: none;
                 transition: opacity 0.2s ease;
                 margin-top: 4px;
-                min-width: 160px;
                 overflow: visible;
             }
             .jellyseerr-4k-popup.show {
                 opacity: 1;
                 pointer-events: all;
+                width: fit-content;
             }
             .jellyseerr-4k-popup-item {
                 width: 100%;
-                border: none;
+                border: none;.jellyseerr-4k-popup-item
                 background: transparent;
                 color: #f8fafc;
                 text-align: left;
@@ -365,7 +375,7 @@
                 font-size: 0.95rem;
                 display: flex;
                 align-items: center;
-                justify-content: space-between;
+                justify-content: center;
                 border-radius: 8px;
                 white-space: nowrap;
                 padding: 0.5em 0.75em;
@@ -752,7 +762,7 @@
                     <bdi>${year}</bdi>
                     <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
                 </div>
-                <div class="cardFooter" style="padding: 0.5em 1em 1em;">
+                <div class="cardFooter">
                     <button is="emby-button" type="button" class="jellyseerr-request-button emby-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
                 </div>
             </div>`;
@@ -969,7 +979,7 @@
 
                 // Arrow button for 4K dropdown
                 const arrowButton = document.createElement('button');
-                arrowButton.className = 'jellyseerr-split-arrow emby-button';
+                arrowButton.className = 'jellyseerr-split-arrow emby-button button-submit';
                 arrowButton.innerHTML = '<span style="font-size: 1em;">▼</span>';
                 arrowButton.dataset.tmdbId = item.id;
                 arrowButton.dataset.toggle4k = 'true';
