@@ -184,9 +184,12 @@
         }
 
         try {
-            const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-            const sources = item?.MediaSources || [];
-            const totalSize = sources.reduce((sum, source) => sum + (source.Size || 0), 0);
+            const itemResult = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/file-size/${ApiClient.getCurrentUserId()}/${itemId}`),
+                dataType: 'json'
+            });
+            const totalSize = itemResult?.size ?? 0;
 
             if (totalSize > 0) {
                 placeholder.title = JE.t('file_size_tooltip');
@@ -328,6 +331,11 @@
                             if (itemId) {
                                 if (JE.currentSettings.showFileSizes) {
                                     displayItemSize(itemId, container);
+
+                                    // show itemMiscInfo if hidden like on season pages
+                                    if (container.classList.contains('hide')) {
+                                        container.classList.remove('hide')
+                                    }
                                 }
                                 if (JE.currentSettings.showAudioLanguages) {
                                     displayAudioLanguages(itemId, container);
