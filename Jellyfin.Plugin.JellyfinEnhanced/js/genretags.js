@@ -24,6 +24,12 @@
             '#indexPage .verticalSection.MyMedia .cardImageContainer',
             '.formDialog .cardImageContainer'
         ];
+
+        // Add search page to ignore list if configured (Gelato compatibility) (although this is not needed, adding it for consistency)
+        if (JE.pluginConfig?.DisableTagsOnSearchPage === true) {
+            IGNORE_SELECTORS.push('#searchPage .cardImageContainer');
+        }
+
         // const MEDIA_TYPES = new Set(['Movie', 'Series']);
         let genreCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
         // Shared in-memory hot cache

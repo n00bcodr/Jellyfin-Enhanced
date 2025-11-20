@@ -32,6 +32,11 @@
             '.formDialog .cardImageContainer'
         ];
 
+        // Add search page to ignore list if configured (Gelato compatibility)
+        if (JE.pluginConfig?.DisableTagsOnSearchPage === true) {
+            IGNORE_SELECTORS.push('#searchPage .cardImageContainer');
+        }
+
         // The types of Jellyfin items that are eligible for quality tags.
         const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
 

@@ -547,6 +547,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.GenreTagsPosition,
                 config.LanguageTagsPosition,
 
+                config.TagsCacheTtlDays,
+                config.DisableTagsOnSearchPage,
+
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
                 config.JellyseerrEnable4KRequests,

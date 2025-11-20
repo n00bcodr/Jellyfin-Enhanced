@@ -47,8 +47,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
             GenreTagsEnabled = false;
-            TagsCacheTtlDays = 30;
             LanguageTagsEnabled = false;
+            TagsCacheTtlDays = 30;
+            DisableTagsOnSearchPage = false;
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
@@ -144,6 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
+        public bool DisableTagsOnSearchPage { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }

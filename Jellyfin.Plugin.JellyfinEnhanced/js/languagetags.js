@@ -26,6 +26,11 @@
             '.formDialog .cardImageContainer'
         ];
 
+        // Add search page to ignore list if configured (Gelato compatibility)
+        if (JE.pluginConfig?.DisableTagsOnSearchPage === true) {
+            IGNORE_SELECTORS.push('#searchPage .cardImageContainer');
+        }
+
         let langCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.language = Hot.language || new Map();
