@@ -31,27 +31,29 @@
             }
         }
 
-        async function addTagLinks() {
+        async function addTagLinks(itemId, externalLinksContainer) {
             if (isAddingLinks) {
                 return;
             }
 
-            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (!visiblePage) return;
-
-            const externalLinksContainer = visiblePage.querySelector('.itemExternalLinks');
-            if (!externalLinksContainer) return;
-
-            if (externalLinksContainer.querySelector('.arr-tag-link')) {
+            // Check if already rendered for this itemId
+            const existing = externalLinksContainer.querySelector('.arr-tag-link');
+            if (existing && existing.dataset.itemId === itemId) {
                 return;
             }
 
+            // Remove old links if switching items
+            externalLinksContainer.querySelectorAll('.arr-tag-link').forEach(link => {
+                if (link.previousSibling && link.previousSibling.nodeType === Node.TEXT_NODE) {
+                    link.previousSibling.remove();
+                }
+                link.remove();
+            });
+
             isAddingLinks = true;
             try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (!itemId) return;
-
                 const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+
                 if (!item?.Tags || item.Tags.length === 0) return;
 
                 const tagPrefix = JE.pluginConfig.ArrTagsPrefix || 'JE Arr Tag: ';
@@ -116,6 +118,7 @@
                         }
                     });
 
+                    link.dataset.itemId = itemId;
                     link.dataset.id = slug;
                     link.dataset.tag = tag;
                     link.dataset.tagName = tagName;
@@ -147,19 +150,38 @@
             }
         }
 
-        function cleanupStaleLinks() {
-            document.querySelectorAll('#itemDetailPage.hide .arr-tag-link').forEach(staleLink => {
-                if (staleLink.previousSibling && staleLink.previousSibling.nodeType === Node.TEXT_NODE) {
-                    staleLink.previousSibling.remove();
-                }
-                staleLink.remove();
-            });
-        }
+        const observer = new MutationObserver((mutations) => {
+            if (!JE?.pluginConfig?.ArrTagsShowAsLinks) {
+                return;
+            }
 
-        setInterval(() => {
-            cleanupStaleLinks();
-            addTagLinks();
-        }, 500);
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                    const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                    if (visiblePage) {
+                        const externalLinksContainer = visiblePage.querySelector('.itemExternalLinks');
+                        if (externalLinksContainer) {
+                            try {
+                                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                                if (itemId) {
+                                    addTagLinks(itemId, externalLinksContainer);
+                                }
+                            } catch (e) {
+                                // Ignore URL parsing errors
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
 
         console.log(`${logPrefix} Initialized successfully`);
     };

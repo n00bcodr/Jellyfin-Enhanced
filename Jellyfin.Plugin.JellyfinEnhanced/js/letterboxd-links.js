@@ -13,6 +13,7 @@
         console.log(`${logPrefix} Initializing...`);
 
         let isAddingLinks = false; // Lock to prevent concurrent runs
+        let intervalId = null;
 
         const LETTERBOXD_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/letterboxd.svg';
 
@@ -113,7 +114,19 @@
             return button;
         }
 
-        setInterval(addLetterboxdLinks, 500);
+        function processLetterboxdLinks() {
+            if (!JE?.pluginConfig?.LetterboxdEnabled) {
+                if (intervalId) {
+                    clearInterval(intervalId);
+                    intervalId = null;
+                    console.log(`${logPrefix} Stopped - feature disabled`);
+                }
+                return;
+            }
+            addLetterboxdLinks();
+        }
+
+        intervalId = setInterval(processLetterboxdLinks, 500);
 
         try {
             console.log(`${logPrefix} Letterboxd links integration initialized successfully.`);

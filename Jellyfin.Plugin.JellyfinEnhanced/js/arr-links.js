@@ -36,6 +36,7 @@
             console.log(`${logPrefix} Initializing...`);
 
             let isAddingLinks = false; // Lock to prevent concurrent runs
+            let intervalId = null;
 
             const SONARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg';
             const RADARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg';
@@ -171,7 +172,19 @@
                 return button;
             }
 
-            setInterval(addArrLinks, 500);
+            function processArrLinks() {
+                if (!JE?.pluginConfig?.ArrLinksEnabled) {
+                    if (intervalId) {
+                        clearInterval(intervalId);
+                        intervalId = null;
+                        console.log(`${logPrefix} Stopped - feature disabled`);
+                    }
+                    return;
+                }
+                addArrLinks();
+            }
+
+            intervalId = setInterval(processArrLinks, 500);
 
         } catch (err) {
             console.error(`${logPrefix} Failed to initialize`, err);

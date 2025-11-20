@@ -261,7 +261,16 @@
 
         // Detect hash changes for navigation
         let currentHash = window.location.hash;
-        setInterval(() => {
+        let hashCheckIntervalId = setInterval(() => {
+            if (!JE?.pluginConfig?.ShowReviews || !JE?.pluginConfig?.TmdbEnabled) {
+                if (hashCheckIntervalId) {
+                    clearInterval(hashCheckIntervalId);
+                    hashCheckIntervalId = null;
+                    observer.disconnect();
+                    console.log(`${logPrefix} Stopped - feature disabled`);
+                }
+                return;
+            }
             if (window.location.hash !== currentHash) {
                 currentHash = window.location.hash;
                 lastProcessedItemId = null; // Reset on navigation
