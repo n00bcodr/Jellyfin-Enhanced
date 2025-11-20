@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Add Brazilian Portuguese localization\n - Add Turkish localization\n - Fix ampersand replacement in series names for Sonarr links[#182](https://github.com/n00bcodr/Jellyfin-Enhanced/pull/182)\n - Improve user retrieval logic in plugin initialization to fix translations [#168](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/168)\n - Add delayed pause screen with interaction reset [#179](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/179)\n - Fix review layout to support different themes [#178](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/178)\n - Add Letterboxd external links[#181](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/181)\n - Remove watchlist feature (moved to KefinTweaks)\n - Add *arr tags sync and display synced tags as clickable links[#157](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/157)\n - Improve 4K request popup positioning and button styles[#167](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/167)\n - Add option to disable tags on search page (Gelato compatibility)[#173](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/173)",
+        "targetAbi": "10.10.7.0",
+        "version": "9.4.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.4.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "07F1CDC73F8EB75894EEAE90B04DFBF2",
+        "timestamp": "2025-11-20T06:36:40"
+      },
+      {
         "changelog": "- Add endpoint for Jellyseerr partial requests setting",
         "targetAbi": "10.10.7.0",
         "version": "9.3.1.0",
