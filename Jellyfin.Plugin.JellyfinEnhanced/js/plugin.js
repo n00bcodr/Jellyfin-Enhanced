@@ -256,8 +256,7 @@
                     else if (name) JE.userConfig[name] = {};
                 }
             });
-            // *** Check the data *immediately* after fetching ***
-            console.log('🪼 Jellyfin Enhanced: User configuration FETCHED (Raw Results):', JSON.stringify(JE.userConfig));
+            // console.log('🪼 Jellyfin Enhanced: User configuration FETCHED (Raw Results):', JSON.stringify(JE.userConfig));
 
 
             // Initialize splash screen
@@ -287,8 +286,8 @@
             if (typeof JE.loadSettings === 'function' && typeof JE.initializeShortcuts === 'function') {
                 JE.currentSettings = JE.loadSettings(); // This happens AFTER config.js is loaded
                 JE.initializeShortcuts();
-                console.log('🪼 Jellyfin Enhanced: Settings MERGED post-load:', JSON.stringify(JE.currentSettings));
-                console.log('🪼 Jellyfin Enhanced: Shortcuts MERGED post-load:', JSON.stringify(JE.state?.activeShortcuts || {}));
+                // console.log('🪼 Jellyfin Enhanced: Settings MERGED post-load:', JSON.stringify(JE.currentSettings));
+                // console.log('🪼 Jellyfin Enhanced: Shortcuts MERGED post-load:', JSON.stringify(JE.state?.activeShortcuts || {}));
             } else {
                  console.error("🪼 Jellyfin Enhanced: FATAL - config.js functions not defined after script loading.");
                  if (typeof JE.hideSplashScreen === 'function') JE.hideSplashScreen();
