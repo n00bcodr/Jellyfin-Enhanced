@@ -128,6 +128,7 @@
                     icon.className = 'arr-tag-link-icon';
                     icon.setAttribute('aria-hidden', 'true');
                     icon.textContent = '🏷️';
+                    icon.style.marginRight = '5px';
 
                     const text = document.createElement('span');
                     text.className = 'arr-tag-link-text';
