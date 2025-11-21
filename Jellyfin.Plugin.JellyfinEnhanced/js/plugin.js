@@ -54,9 +54,15 @@
 
     /**
      * Loads the appropriate language file based on the user's settings.
+     * Attempts to fetch from GitHub first (with caching), falls back to bundled translations.
      * @returns {Promise<object>} A promise that resolves to the translations object.
      */
     async function loadTranslations() {
+        const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
+        const CACHE_PREFIX = 'JE_translation_';
+        const CACHE_TIMESTAMP_PREFIX = 'JE_translation_ts_';
+        const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        
         try {
             // Wait briefly for ApiClient user to potentially become available
             let user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
@@ -75,11 +81,97 @@
                 }
             }
 
+            // Check if we have a cached version
+            const cacheKey = CACHE_PREFIX + lang;
+            const timestampKey = CACHE_TIMESTAMP_PREFIX + lang;
+            const cachedTranslations = localStorage.getItem(cacheKey);
+            const cachedTimestamp = localStorage.getItem(timestampKey);
+
+            if (cachedTranslations && cachedTimestamp) {
+                const age = Date.now() - parseInt(cachedTimestamp, 10);
+                if (age < CACHE_DURATION) {
+                    console.log(`🪼 Jellyfin Enhanced: Using cached translations for ${lang} (age: ${Math.round(age / 1000 / 60)} minutes)`);
+                    try {
+                        return JSON.parse(cachedTranslations);
+                    } catch (e) {
+                        console.warn('🪼 Jellyfin Enhanced: Failed to parse cached translations, will fetch fresh', e);
+                    }
+                }
+            }
+
+            // Try fetching from GitHub
+            try {
+                console.log(`🪼 Jellyfin Enhanced: Fetching translations for ${lang} from GitHub...`);
+                const githubResponse = await fetch(`${GITHUB_RAW_BASE}/${lang}.json`, {
+                    method: 'GET',
+                    cache: 'no-cache', // We manage our own cache
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (githubResponse.ok) {
+                    const translations = await githubResponse.json();
+                    
+                    // Cache the successful fetch
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(translations));
+                        localStorage.setItem(timestampKey, Date.now().toString());
+                        console.log(`🪼 Jellyfin Enhanced: Successfully fetched and cached translations for ${lang} from GitHub`);
+                    } catch (storageError) {
+                        console.warn('🪼 Jellyfin Enhanced: Failed to cache translations (localStorage full?)', storageError);
+                    }
+                    
+                    return translations;
+                }
+
+                // If GitHub fetch failed with 404, might be a language that doesn't exist
+                if (githubResponse.status === 404 && lang !== 'en') {
+                    console.warn(`🪼 Jellyfin Enhanced: Language ${lang} not found on GitHub, falling back to English`);
+                    // Recursively try English from GitHub
+                    const englishResponse = await fetch(`${GITHUB_RAW_BASE}/en.json`, {
+                        method: 'GET',
+                        cache: 'no-cache',
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    
+                    if (englishResponse.ok) {
+                        const translations = await englishResponse.json();
+                        try {
+                            localStorage.setItem(CACHE_PREFIX + 'en', JSON.stringify(translations));
+                            localStorage.setItem(CACHE_TIMESTAMP_PREFIX + 'en', Date.now().toString());
+                        } catch (e) { /* ignore */ }
+                        return translations;
+                    }
+                }
+
+                // If rate limited (403) or server error (5xx), throw to trigger bundled fallback
+                if (githubResponse.status === 403) {
+                    console.warn('🪼 Jellyfin Enhanced: GitHub rate limit detected, using bundled fallback');
+                } else if (githubResponse.status >= 500) {
+                    console.warn(`🪼 Jellyfin Enhanced: GitHub server error (${githubResponse.status}), using bundled fallback`);
+                }
+                
+                throw new Error(`GitHub fetch failed with status ${githubResponse.status}`);
+            } catch (githubError) {
+                console.warn('🪼 Jellyfin Enhanced: GitHub fetch failed, falling back to bundled translations:', githubError.message);
+            }
+
+            // Fallback to bundled translations served by the plugin
+            console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${lang}...`);
             let response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
 
             if (response.ok) {
-                return await response.json();
+                const translations = await response.json();
+                // Cache the bundled version too
+                try {
+                    localStorage.setItem(cacheKey, JSON.stringify(translations));
+                    localStorage.setItem(timestampKey, Date.now().toString());
+                } catch (e) { /* ignore */ }
+                return translations;
             } else {
+                // Last resort: English bundled
+                console.warn(`🪼 Jellyfin Enhanced: Bundled ${lang} not found, falling back to bundled English`);
                 response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
                 if (response.ok) {
                     return await response.json();

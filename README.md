@@ -284,14 +284,24 @@ curl -X POST\
 
 ### 🌐 Internationalization & Translations
 
-The plugin detects the Jellyfin user profile language automatically. List of currently supported languages [here](Jellyfin.Plugin.JellyfinEnhanced\js\locales).
+The plugin detects the Jellyfin user profile language automatically. List of currently supported languages [here](Jellyfin.Plugin.JellyfinEnhanced/js/locales).
 
+#### 🔄 Translation Updates
+Translations are now fetched directly from GitHub on first load, ensuring users always have access to the latest language updates without requiring a plugin update. The plugin automatically:
+- Fetches the latest translations from the GitHub repository
+- Caches translations locally for 24 hours to reduce network requests
+- Falls back to bundled translations if GitHub is unavailable (offline mode, rate limits, etc.)
+- Handles GitHub rate limiting gracefully
+
+#### 🤝 Contributing Translations
 Is your language missing or incorrect? You can help translate Jellyfin Enhanced for the community!
 
 - Find the Translation Files: Navigate to the `Jellyfin.Plugin.JellyfinEnhanced/js/locales/` directory in this repository.
 - Make a copy of `en.json` and rename it to your language's two-letter ISO 639-1 code (e.g., `es.json` for Spanish, `pl.json` for Polish).
 - Translate: Open your new file and translate the English text on the right side of the colons (:).
 - Submit a Pull Request: Once you're done, submit a pull request with your new translation file.
+
+Once merged, your translations will be immediately available to all users on their next browser refresh (after cache expires)!
 
 
 
