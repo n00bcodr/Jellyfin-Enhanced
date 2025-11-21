@@ -614,6 +614,12 @@
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="showWatchProgressToggle" ${JE.currentSettings.showWatchProgress ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_watch_progress')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_watch_progress_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="showFileSizesToggle" ${JE.currentSettings.showFileSizes ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_file_sizes')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_file_sizes_desc')}</div></div>
                                 </label>
@@ -923,6 +929,7 @@
                 }
                 JE.toast(toastMessage);
                 if (id === 'randomButtonToggle') JE.addRandomButton();
+                if (id === 'showWatchProgressToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-watchProgress').forEach(el => el.remove());
                 if (id === 'showFileSizesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
                 if (id === 'showAudioLanguagesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
                 resetAutoCloseTimer();
@@ -936,6 +943,7 @@
         addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
         addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
         addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
+        addSettingToggleListener('showWatchProgressToggle', 'showWatchProgress', 'feature_watch_progress_display');
         addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
         addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
         addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');

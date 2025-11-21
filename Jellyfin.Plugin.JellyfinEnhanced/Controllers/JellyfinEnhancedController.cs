@@ -529,6 +529,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RandomIncludeMovies,
                 config.RandomIncludeShows,
                 config.RandomUnwatchedOnly,
+                config.ShowWatchProgress,
                 config.ShowFileSizes,
                 config.RemoveContinueWatchingEnabled,
                 config.ShowAudioLanguages,
@@ -660,6 +661,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
                         RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
                         RandomIncludeShows = defaultConfig.RandomIncludeShows,
+                        ShowWatchProgress = defaultConfig.ShowWatchProgress,
                         ShowFileSizes = defaultConfig.ShowFileSizes,
                         ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
                         QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
@@ -806,6 +808,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
                 RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
                 RandomIncludeShows = defaultConfig.RandomIncludeShows,
+                ShowWatchProgress = defaultConfig.ShowWatchProgress,
                 ShowFileSizes = defaultConfig.ShowFileSizes,
                 ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
@@ -860,9 +863,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
 
             long totalSize = allAffectedItems
-                .Sum(affectedItem =>  affectedItem.GetMediaSources(false).Sum(source => source.Size ?? 0));
+                .Sum(affectedItem => affectedItem.GetMediaSources(false).Sum(source => source.Size ?? 0));
 
             return Ok(new { success = true, size = totalSize });
+        }
+        
+        [HttpGet("watch-progress/{userId}/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetWatchProgressByItemId(Guid userId, Guid itemId)
+        {
+            var user = _userManager.GetUserById(userId);
+            if (user is null)
+            {
+                return NotFound();
+            }
+            
+            var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+            if (item is null)
+            {
+                return NotFound();
+            }
+
+            var allAffectedItems = item.GetBaseItemKind() switch
+            {
+                BaseItemKind.Series or BaseItemKind.Season => _libraryManager
+                    .GetItemsResult(new InternalItemsQuery(user) { 
+                        Parent = item, 
+                        Recursive = true
+                    }).Items,
+                _ => [item]
+            };
+            
+            long totalRuntimeTicks = allAffectedItems.Sum(affectedItem => 
+                // Only one of the MediaSources should count into the watch progress
+                affectedItem.GetMediaSources(false)
+                    .FirstOrDefault()?.RunTimeTicks ?? 0);
+            long totalPlaybackTicks = allAffectedItems.Sum(affectedItem =>
+            {
+                var userData = _userDataManager.GetUserData(user, affectedItem);
+                if (userData is null)
+                    return 0;
+                if (userData.Played)
+                    // PlaybackPositionTicks will be 0 after the episode is marked as watched
+                    return affectedItem.RunTimeTicks ?? 0;
+                return userData.PlaybackPositionTicks;
+            });
+            
+            double progress = totalRuntimeTicks == 0 ? 0 : (double)totalPlaybackTicks / totalRuntimeTicks * 100;
+            // Floating point numbers are not needed in the frontend ui
+            int formattedProgress = (int)Math.Clamp(progress, 0, 100);
+            
+            return Ok(new { success = true, progress = formattedProgress });
         }
     }
 }

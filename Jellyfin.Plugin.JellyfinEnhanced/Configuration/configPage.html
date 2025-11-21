@@ -97,6 +97,7 @@
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
                                 <summary style="cursor: pointer; font-weight: bold;">🖥️ UI Settings</summary>
                                 <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showWatchProgress" is="emby-checkbox" type="checkbox"/><span>Show watch progress</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showFileSizes" is="emby-checkbox" type="checkbox"/><span>Show file sizes</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showAudioLanguages" is="emby-checkbox" type="checkbox"/><span>Show available audio languages on item detail page</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
@@ -859,6 +860,7 @@
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
                 document.querySelector('#randomUnwatchedOnly').checked = config.RandomUnwatchedOnly;
+                document.querySelector('#showWatchProgress').checked = config.ShowWatchProgress;
                 document.querySelector('#showFileSizes').checked = config.ShowFileSizes;
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
@@ -946,6 +948,7 @@
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
+            config.ShowWatchProgress = document.querySelector('#showWatchProgress').checked;
             config.ShowFileSizes = document.querySelector('#showFileSizes').checked;
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;

@@ -5,8 +5,10 @@
     'use strict';
 
     // In-memory cache to avoid repeated fetches when data is unavailable or unchanged
+    const WATCHPROGRESS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
     const FILESIZE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
     const LANGUAGE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    const watchProgressCache = {}; // { [itemId]: { languages: Array, ts: number } }
     const fileSizeCache = {}; // { [itemId]: { size: number|null, unavailable: boolean, ts: number } }
     const audioLanguageCache = {}; // { [itemId]: { languages: Array, unavailable: boolean, ts: number } }
 
@@ -142,6 +144,85 @@
     };
 
     /**
+     * Shows the total watch progress (in %) of an item (and its children) on its details page.
+     * @param {string} itemId The ID of the item.
+     * @param {HTMLElement} container The DOM element to append the info to.
+     */
+    async function displayWatchProgress(itemId, container) {
+        // show itemMiscInfo if hidden like on season pages
+        if (container.classList.contains('hide')) {
+            container.classList.remove('hide')
+        }
+
+        const existing = container.querySelector('.mediaInfoItem-watchProgress');
+        if (existing) {
+            // If already rendered for this itemId, do nothing
+            if (existing.dataset.itemId === itemId) return;
+            // Different item now; replace the element
+            existing.remove();
+        }
+
+        // Check cache first to avoid repeated network calls
+        const now = Date.now();
+        const cached = watchProgressCache[itemId];
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'mediaInfoItem mediaInfoItem-watchProgress';
+        placeholder.dataset.itemId = itemId;
+        // Insert first so subsequent observer runs are triggered
+        container.appendChild(placeholder);
+
+        const getIconSpan = (progress) => {
+            if (progress < 5)
+                return `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">circle</span> ${progress}%`;
+            if (progress >= 95)
+                return `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">check_circle</span> ${progress}%`;
+
+            const supportedClockLoaderValues = [10, 20, 40, 60, 80, 90] // only god knows where the other numbers went
+            const closestValue = supportedClockLoaderValues.reduce((prev, curr) =>
+                Math.abs(curr - progress) < Math.abs(prev - progress) ? curr : prev
+            );
+            return `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">clock_loader_${closestValue}</span> ${progress}%`;
+        }
+
+        // Helper to render the 0 state
+        const renderUnavailable = () => {
+            placeholder.title = JE.t('watch_progress_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.alignItems = 'center';
+            placeholder.innerHTML = getIconSpan(0);
+        };
+
+        if (cached && (now - cached.ts) < WATCHPROGRESS_CACHE_TTL) {
+            if (!cached.progress) {
+                renderUnavailable();
+                return;
+            }
+            placeholder.title = JE.t('watch_progress_tooltip');
+            placeholder.innerHTML = getIconSpan(cached.progress);
+            return;
+        }
+
+        try {
+            const itemResult = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/watch-progress/${ApiClient.getCurrentUserId()}/${itemId}`),
+                dataType: 'json'
+            });
+            const progress = itemResult?.progress ?? 0;
+
+            placeholder.title = JE.t('watch_progress_tooltip');
+            placeholder.innerHTML = getIconSpan(progress);
+            watchProgressCache[itemId] = { progress: progress, ts: now };
+        } catch (error) {
+            console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
+            // Keep placeholder with 0 to prevent repeated calls
+            renderUnavailable();
+            watchProgressCache[itemId] = { progress: 0, ts: now };
+        }
+    }
+
+    /**
      * Shows the total file size of an item on its details page.
      * @param {string} itemId The ID of the item.
      * @param {HTMLElement} container The DOM element to append the info to.
@@ -213,11 +294,16 @@
     const languageToCountryMap={English:"gb",eng:"gb",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"bd",ben:"bd",Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",ice:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng"};
 
     /**
-     * Displays the audio languages of an item on its details page.
+     * Displays the audio languages of an item (and its children) on its details page.
      * @param {string} itemId The ID of the item.
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayAudioLanguages(itemId, container) {
+        // show itemMiscInfo if hidden like on season pages
+        if (container.classList.contains('hide')) {
+            container.classList.remove('hide')
+        }
+        
         const existing = container.querySelector('.mediaInfoItem-audioLanguage');
         if (existing) {
             // If already rendered for this itemId, do nothing
@@ -329,13 +415,11 @@
                         try {
                             const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                             if (itemId) {
+                                if (JE.currentSettings.showWatchProgress) {
+                                    displayWatchProgress(itemId, container);
+                                }
                                 if (JE.currentSettings.showFileSizes) {
                                     displayItemSize(itemId, container);
-
-                                    // show itemMiscInfo if hidden like on season pages
-                                    if (container.classList.contains('hide')) {
-                                        container.classList.remove('hide')
-                                    }
                                 }
                                 if (JE.currentSettings.showAudioLanguages) {
                                     displayAudioLanguages(itemId, container);

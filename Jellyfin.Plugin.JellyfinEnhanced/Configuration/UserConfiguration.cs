@@ -19,6 +19,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomUnwatchedOnly { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
+        public bool ShowWatchProgress { get; set; }
         public bool ShowFileSizes { get; set; }
         public bool ShowAudioLanguages { get; set; }
         public bool QualityTagsEnabled { get; set; }

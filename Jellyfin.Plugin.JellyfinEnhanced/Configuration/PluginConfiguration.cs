@@ -41,6 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
             RandomUnwatchedOnly = false;
+            ShowWatchProgress = false;
             ShowFileSizes = false;
             RemoveContinueWatchingEnabled = false;
             ShowAudioLanguages = true;
@@ -139,6 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
+        public bool ShowWatchProgress { get; set; }
         public bool ShowFileSizes { get; set; }
         public bool RemoveContinueWatchingEnabled { get; set; }
         public bool ShowAudioLanguages { get; set; }
