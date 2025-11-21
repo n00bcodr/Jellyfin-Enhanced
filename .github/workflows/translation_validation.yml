@@ -20,19 +20,42 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install ajv ajv-cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          npm install -g ajv-cli
 
       - name: Get changed translation files
         id: changed_files
         run: |
-          git fetch origin ${{ github.event.pull_request.base.ref }}
-          new_files=$(git diff --name-only --diff-filter=A ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/')
-          echo "files=$new_files" >> $GITHUB_OUTPUT
+          # Get all changed locale files in the PR
+          changed_files=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...${{ github.sha }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/*.json')
+          new_files=$(git diff --name-only --diff-filter=A origin/${{ github.event.pull_request.base.ref }}...${{ github.sha }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/*.json')
+          
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$changed_files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "new_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$new_files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "Changed files:"
+          echo "$changed_files"
+          echo "New files:"
+          echo "$new_files"
 
       - name: Validate new language file naming
+        if: steps.changed_files.outputs.new_files != ''
         run: |
-          for file in ${{ steps.changed_files.outputs.files }}; do
+          echo "${{ steps.changed_files.outputs.new_files }}" | while IFS= read -r file; do
+            if [ -z "$file" ]; then
+              continue
+            fi
+            
             filename=$(basename "$file")
+            echo "Checking filename: $filename"
+            
             # Check if filename is a two-letter code followed by .json
             if ! [[ "$filename" =~ ^[a-z]{2}\.json$ ]]; then
               echo "::error file=$file::Invalid filename. Filename must be a two-letter ISO 639-1 language code (e.g., es.json, pl.json)."
@@ -41,58 +64,114 @@ jobs:
           done
 
       - name: Validate JSON format
+        if: steps.changed_files.outputs.changed_files != ''
         run: |
-          for file in $(git diff --name-only ${{ github.base_ref }} ${{ github.head_ref }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/**.json'); do
-            if [ -f "$file" ]; then
-              echo "Validating JSON format for $file..."
-              ajv validate -s '{"type": "object"}' -d "$file" --valid || (echo "::error file=$file::Invalid JSON format." && exit 1)
+          has_errors=0
+          echo "${{ steps.changed_files.outputs.changed_files }}" | while IFS= read -r file; do
+            if [ -z "$file" ] || [ ! -f "$file" ]; then
+              continue
+            fi
+            
+            echo "Validating JSON format for $file..."
+            if ! jq empty "$file" 2>/dev/null; then
+              echo "::error file=$file::Invalid JSON format."
+              has_errors=1
+            else
+              echo "✓ Valid JSON: $file"
             fi
           done
+          
+          if [ $has_errors -eq 1 ]; then
+            exit 1
+          fi
 
       - name: Compare translation keys
-        id: compare_keys
+        if: steps.changed_files.outputs.changed_files != ''
         run: |
           base_file="Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json"
-          base_keys=$(jq -r 'keys_unsorted | .[]' "$base_file" | sort)
-
-          for file in $(git diff --name-only ${{ github.base_ref }} ${{ github.head_ref }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/**.json'); do
-            if [ -f "$file" ] && [ "$file" != "$base_file" ]; then
-              echo "Comparing keys for $file against $base_file..."
-              current_keys=$(jq -r 'keys_unsorted | .[]' "$file" | sort)
-
-              missing_keys=$(comm -23 <(echo "$base_keys") <(echo "$current_keys"))
-              if [ -n "$missing_keys" ]; then
-                echo "::error file=$file::Missing keys: $missing_keys"
-                exit 1
-              fi
-
-              extra_keys=$(comm -13 <(echo "$base_keys") <(echo "$current_keys"))
-              if [ -n "$extra_keys" ]; then
-                echo "::warning file=$file::Extra, untracked keys found: $extra_keys"
-              fi
+          
+          if [ ! -f "$base_file" ]; then
+            echo "::error::Base translation file $base_file not found!"
+            exit 1
+          fi
+          
+          base_keys=$(jq -r 'keys | .[]' "$base_file" | sort)
+          has_errors=0
+          
+          echo "${{ steps.changed_files.outputs.changed_files }}" | while IFS= read -r file; do
+            if [ -z "$file" ] || [ ! -f "$file" ] || [ "$file" = "$base_file" ]; then
+              continue
             fi
-          done
-
-      - name: Check for placeholders
-        id: check_placeholders
-        run: |
-          base_file="Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json"
-
-          # Find all placeholders like {key} in the base file
-          placeholders=$(grep -o '{[a-zA-Z_]\+}' "$base_file" | sort -u)
-
-          for file in $(git diff --name-only ${{ github.base_ref }} ${{ github.head_ref }} -- 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/**.json'); do
-            if [ -f "$file" ] && [ "$file" != "$base_file" ]; then
-              echo "Checking placeholders for $file..."
-              for placeholder in $placeholders; do
-                key=$(jq -r --arg p "$placeholder" 'to_entries[] | select(.value | contains($p)) | .key' "$base_file")
-                if [ -n "$key" ]; then
-                  # Check if the key exists in the current file and if it contains the placeholder
-                  if ! jq -e --arg k "$key" '.[$k]' "$file" | grep -q "$placeholder"; then
-                     echo "::error file=$file::Missing or incorrect placeholder '$placeholder' for key '$key'."
-                     exit 1
-                  fi
-                fi
+            
+            echo "Comparing keys for $file against $base_file..."
+            current_keys=$(jq -r 'keys | .[]' "$file" | sort)
+            
+            # Check for missing keys
+            missing_keys=$(comm -23 <(echo "$base_keys") <(echo "$current_keys"))
+            if [ -n "$missing_keys" ]; then
+              echo "::error file=$file::Missing keys (these exist in en.json but not in this file):"
+              echo "$missing_keys" | while IFS= read -r key; do
+                echo "::error file=$file::  - $key"
+              done
+              has_errors=1
+            fi
+            
+            # Check for extra keys
+            extra_keys=$(comm -13 <(echo "$base_keys") <(echo "$current_keys"))
+            if [ -n "$extra_keys" ]; then
+              echo "::warning file=$file::Extra keys found (these exist in this file but not in en.json):"
+              echo "$extra_keys" | while IFS= read -r key; do
+                echo "::warning file=$file::  - $key"
               done
             fi
+            
+            if [ -z "$missing_keys" ] && [ -z "$extra_keys" ]; then
+              echo "✓ All keys match for $file"
+            fi
           done
+          
+          if [ $has_errors -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Check for placeholders
+        if: steps.changed_files.outputs.changed_files != ''
+        run: |
+          base_file="Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json"
+          has_errors=0
+          
+          echo "${{ steps.changed_files.outputs.changed_files }}" | while IFS= read -r file; do
+            if [ -z "$file" ] || [ ! -f "$file" ] || [ "$file" = "$base_file" ]; then
+              continue
+            fi
+            
+            echo "Checking placeholders for $file..."
+            
+            # Get all keys from the base file
+            base_keys=$(jq -r 'keys | .[]' "$base_file")
+            
+            # Check each key for placeholders
+            echo "$base_keys" | while IFS= read -r key; do
+              base_value=$(jq -r --arg k "$key" '.[$k]' "$base_file")
+              current_value=$(jq -r --arg k "$key" '.[$k]' "$file" 2>/dev/null || echo "null")
+              
+              # Extract placeholders from base value (e.g., {speed}, {time}, {percent})
+              base_placeholders=$(echo "$base_value" | grep -oE '\{[a-zA-Z_][a-zA-Z0-9_]*\}' | sort -u)
+              
+              if [ -n "$base_placeholders" ]; then
+                # Check if translation has the same placeholders
+                echo "$base_placeholders" | while IFS= read -r placeholder; do
+                  if [ "$current_value" != "null" ] && ! echo "$current_value" | grep -qF "$placeholder"; then
+                    echo "::error file=$file::Missing or incorrect placeholder '$placeholder' in key '$key'. Expected in translation: $current_value"
+                    has_errors=1
+                  fi
+                done
+              fi
+            done
+          done
+          
+          if [ $has_errors -eq 1 ]; then
+            exit 1
+          fi
+          
+          echo "✓ All placeholders validated successfully"
