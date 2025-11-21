@@ -165,6 +165,8 @@
     "elsewhere_panel_search_button": "Keresés...",
     "elsewhere_panel_error": "Hiba: {error}",
     "elsewhere_panel_no_services_in_regions": "Nem érhetők el streaming szolgáltatások a kiválasztott régiókban",
+    "elsewhere_panel_not_available": "Nem elérhető streaming szolgáltatásokon",
+    "elsewhere_panel_not_available_in_regions": "Nem elérhető streaming szolgáltatásokon itt: {regions}",
     "elsewhere_panel_close_tooltip": "Bezárás",
     "elsewhere_panel_available_in_region": "Elérhető a {region} régióban:",
     "toast_generic_error": "❌ Hoppá! Valami hiba történt!",

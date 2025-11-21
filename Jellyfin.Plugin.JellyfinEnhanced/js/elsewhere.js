@@ -616,7 +616,7 @@
             const settingsIcon = createMaterialIcon('settings', '16px');
             settingsButton.appendChild(settingsIcon);
 
-            settingsButton.title = 'Settings';
+            settingsButton.title = JE.t('elsewhere_panel_settings_tooltip');
             settingsButton.style.cssText = `
                 display: flex;
                 align-items: center;
@@ -679,8 +679,8 @@
                 if (services.length === 0) {
                     const noServices = document.createElement('div');
                     noServices.textContent = DEFAULT_PROVIDERS.length > 0
-                        ? 'No configured services available'
-                        : 'Not available on any streaming services';
+                        ? JE.t('elsewhere_panel_no_configured_services')
+                        : JE.t('elsewhere_panel_not_available');
                     noServices.style.cssText = 'color: #999; font-size: 13px; margin-bottom: 12px;';
                     container.appendChild(noServices);
                 } else {
@@ -707,7 +707,7 @@
                 const loadingIcon = createMaterialIcon('refresh', '16px');
                 loadingIcon.style.animation = 'spin 1s linear infinite';
                 searchButton.appendChild(loadingIcon);
-                searchButton.appendChild(document.createTextNode(' Searching...'));
+                searchButton.appendChild(document.createTextNode(' ' + JE.t('elsewhere_panel_search_button')));
                 searchButton.style.opacity = '0.7';
                 resultContainer.innerHTML = '';
 
@@ -733,7 +733,7 @@
                     searchButton.style.opacity = '1';
 
                     if (error) {
-                        resultContainer.innerHTML = `<div style="color: #ff6b6b; font-size: 13px; margin-top: 8px;">Error: ${error}</div>`;
+                        resultContainer.innerHTML = `<div style="color: #ff6b6b; font-size: 13px; margin-top: 8px;">${JE.t('elsewhere_panel_error', { error })}</div>`;
                         return;
                     }
 
@@ -783,7 +783,7 @@
                     if (!hasAnyResults && unavailableRegions.length === 0) {
                         const noServices = document.createElement('div');
                         noServices.style.cssText = 'color: #6c757d; font-size: 13px; margin-top: 8px;';
-                        noServices.textContent = `No streaming services available in selected regions`;
+                        noServices.textContent = JE.t('elsewhere_panel_no_services_in_regions');
                         resultContainer.appendChild(noServices);
                     }
                 });
@@ -820,7 +820,7 @@
                               regionNames.length === 2 ? regionNames.join(' and ') :
                               regionNames.slice(0, -1).join(', ') + ' and ' + regionNames[regionNames.length - 1];
 
-            title.textContent = `Not available on any streaming services in ${regionText}`;
+            title.textContent = JE.t('elsewhere_panel_not_available_in_regions', { regions: regionText });
             title.style.cssText = `
                 font-weight: 600;
                 font-size: 14px;
@@ -987,7 +987,7 @@
                 if (error) {
                     const errorDiv = document.createElement('div');
                     errorDiv.style.cssText = 'font-size: 13px; margin-top: 8px; color: #ff6b6b;';
-                    errorDiv.textContent = `Error: ${error}`;
+                    errorDiv.textContent = JE.t('elsewhere_panel_error', { error });
                     container.appendChild(errorDiv);
                     return;
                 }

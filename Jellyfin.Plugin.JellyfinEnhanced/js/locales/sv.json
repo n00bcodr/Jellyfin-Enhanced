@@ -165,6 +165,8 @@
     "elsewhere_panel_search_button": "Söker...",
     "elsewhere_panel_error": "Fel: {error}",
     "elsewhere_panel_no_services_in_regions": "Inga streamingtjänster tillgängliga i valda regioner",
+    "elsewhere_panel_not_available": "Inte tillgänglig på några streamingtjänster",
+    "elsewhere_panel_not_available_in_regions": "Inte tillgänglig på några streamingtjänster i {regions}",
     "elsewhere_panel_close_tooltip": "Stäng",
     "elsewhere_panel_available_in_region": "Tillgänglig i {region} på:",
     "toast_generic_error": "❌ Oj då! Något gick fel!",

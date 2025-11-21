@@ -165,6 +165,8 @@
     "elsewhere_panel_search_button": "Søger...",
     "elsewhere_panel_error": "Fejl: {error}",
     "elsewhere_panel_no_services_in_regions": "Ingen streamingtjenester tilgængelige i valgte regioner",
+    "elsewhere_panel_not_available": "Ikke tilgængelig på nogen streamingtjenester",
+    "elsewhere_panel_not_available_in_regions": "Ikke tilgængelig på nogen streamingtjenester i {regions}",
     "elsewhere_panel_close_tooltip": "Luk",
     "elsewhere_panel_available_in_region": "Tilgængelig i {region} på:",
     "toast_generic_error": "❌ Ups! Noget gik galt!",

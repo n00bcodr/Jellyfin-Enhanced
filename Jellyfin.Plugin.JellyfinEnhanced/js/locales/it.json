@@ -165,6 +165,8 @@
     "elsewhere_panel_search_button": "Cercando...",
     "elsewhere_panel_error": "Errore: {error}",
     "elsewhere_panel_no_services_in_regions": "Nessun servizio di streaming disponibile nelle regioni selezionate",
+    "elsewhere_panel_not_available": "Non disponibile su nessun servizio di streaming",
+    "elsewhere_panel_not_available_in_regions": "Non disponibile su nessun servizio di streaming in {regions}",
     "elsewhere_panel_close_tooltip": "Chiudi",
     "elsewhere_panel_available_in_region": "Disponibile in {region} su:",
     "toast_generic_error": "❌ Ops! Qualcosa è andato storto!",

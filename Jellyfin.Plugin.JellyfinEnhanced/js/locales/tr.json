@@ -165,6 +165,8 @@
     "elsewhere_panel_search_button": "Aranıyor...",
     "elsewhere_panel_error": "Hata: {error}",
     "elsewhere_panel_no_services_in_regions": "Seçili bölgelerde kullanılabilir servis yok",
+    "elsewhere_panel_not_available": "Hiçbir akış hizmetinde mevcut değil",
+    "elsewhere_panel_not_available_in_regions": "{regions} bölgelerinde hiçbir akış hizmetinde mevcut değil",
     "elsewhere_panel_close_tooltip": "Kapat",
     "elsewhere_panel_available_in_region": "{region} bölgesinde mevcut:",
     "toast_generic_error": "❌ Bir şeyler ters gitti!",
