@@ -274,7 +274,16 @@
         function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
             const card = element.closest('.card');
-            if (!card || !card.dataset.type || !MEDIA_TYPES.has(card.dataset.type)) return;
+            if (card && card.dataset.type && !MEDIA_TYPES.has(card.dataset.type)) {
+                return;
+            }
+            
+            if (!card) {
+                const hasCardClass = element.classList.contains('cardImageContainer');
+                const hasItemId = getItemIdFromElement(element);
+                if (!hasCardClass || !hasItemId) return;
+            }
+            
             const itemId = getItemIdFromElement(element);
             if (!itemId) return;
 
