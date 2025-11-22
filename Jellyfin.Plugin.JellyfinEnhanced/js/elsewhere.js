@@ -18,6 +18,8 @@
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
+        const ELSEWHERE_CUSTOM_BRANDING_TEXT = JE.pluginConfig.ElsewhereCustomBrandingText || '';
+        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = JE.pluginConfig.ElsewhereCustomBrandingImageUrl || '';
 
         if (!TmdbEnabled) {
             console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: TMDB is not configured, skipping initialization');
@@ -548,7 +550,33 @@
 
             if (hasServices) {
                 title.textContent = JE.t('elsewhere_panel_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
+            } else if (ELSEWHERE_CUSTOM_BRANDING_TEXT) {
+                // Show custom branding when no services are available and custom text is configured
+                title.textContent = ELSEWHERE_CUSTOM_BRANDING_TEXT;
+                title.classList.add('elsewhere-custom-branding');
+                title.style.cursor = 'default';
+
+                // Add custom icon if URL is provided
+                if (ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL) {
+                    title.style.display = 'flex';
+                    title.style.alignItems = 'center';
+                    title.style.gap = '8px';
+
+                    const icon = document.createElement('img');
+                    icon.src = ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL;
+                    icon.alt = 'Custom Branding';
+                    icon.className = 'elsewhere-custom-branding-icon';
+                    icon.style.cssText = `
+                        width: 24px;
+                        height: 24px;
+                        object-fit: contain;
+                        margin-left: 4px;
+                    `;
+                    icon.onerror = () => icon.style.display = 'none';
+                    title.appendChild(icon);
+                }
             } else {
+                // Fallback to default message if no custom text is set
                 title.textContent = JE.t('elsewhere_panel_not_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
             }
 
@@ -560,10 +588,12 @@
                 color: #fff;
                 flex: 1;
                 text-align: left;
+                display: flex;
+                align-items: flex-end;
             `;
 
-            // Add JustWatch link if available
-            if (regionData && regionData.link) {
+            // Add JustWatch link if available and has services
+            if (hasServices && regionData && regionData.link) {
                 title.setAttribute('is', 'emby-linkbutton');
                 title.classList.add('elsewhere-link-reset');
                 title.href = regionData.link;
@@ -572,6 +602,9 @@
                 title.title = 'JustWatch';
                 title.style.padding = '0';
                 title.style.margin = '0';
+            } else if (!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
+                // Override cursor style for custom branded content
+                title.style.cursor = 'default';
             }
 
              // Create controls container
@@ -584,6 +617,7 @@
 
             // Search button with Material Icon
             const searchButton = document.createElement('button');
+            searchButton.className = 'elsewhere-search-button';
             const searchIcon = createMaterialIcon('search', '16px');
             searchButton.appendChild(searchIcon);
             searchButton.appendChild(document.createTextNode(''));
@@ -601,6 +635,7 @@
                 font-weight: 500;
                 cursor: pointer;
                 transition: all 500ms ease;
+                opacity: ${!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT ? '0' : '1'};
             `;
 
             searchButton.onmouseenter = () => {
@@ -613,6 +648,7 @@
 
             // Settings button with Material Icon
             const settingsButton = document.createElement('button');
+            settingsButton.className = 'elsewhere-settings-button';
             const settingsIcon = createMaterialIcon('settings', '16px');
             settingsButton.appendChild(settingsIcon);
 
@@ -630,6 +666,7 @@
                 transition: all 500ms ease;
                 width: 28px;
                 height: 28px;
+                opacity: ${!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT ? '0' : '1'};
             `;
 
             settingsButton.onmouseenter = () => {
@@ -652,6 +689,18 @@
             header.appendChild(title);
             header.appendChild(controls);
             container.appendChild(header);
+
+            // Add hover effect to show/hide buttons when custom branding is enabled
+            if (!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
+                container.onmouseenter = () => {
+                    searchButton.style.opacity = '1';
+                    settingsButton.style.opacity = '1';
+                };
+                container.onmouseleave = () => {
+                    searchButton.style.opacity = '0';
+                    settingsButton.style.opacity = '0';
+                };
+            }
 
             // Only show services if they exist
             if (hasServices) {

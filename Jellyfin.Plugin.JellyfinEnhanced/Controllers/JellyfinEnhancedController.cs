@@ -514,6 +514,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DEFAULT_REGION,
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
+                config.ElsewhereCustomBrandingText,
+                config.ElsewhereCustomBrandingImageUrl,
                 config.ClearLocalStorageTimestamp,
 
                 // Default User Settings
@@ -829,7 +831,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
             return Ok(new { success = true, userCount = userCount });
         }
-        
+
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -840,7 +842,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return NotFound();
             }
-            
+
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
             if (item is null)
             {
@@ -850,13 +852,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var allAffectedItems = item.GetBaseItemKind() switch
             {
                 BaseItemKind.Series or BaseItemKind.Season => _libraryManager
-                    .GetItemsResult(new InternalItemsQuery(user) { 
-                        Parent = item, 
+                    .GetItemsResult(new InternalItemsQuery(user) {
+                        Parent = item,
                         Recursive = true
                     }).Items,
                 _ => [item]
             };
-          
+
             long totalSize = allAffectedItems
                 .Sum(affectedItem =>  affectedItem.GetMediaSources(false).Sum(source => source.Size ?? 0));
 

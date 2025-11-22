@@ -245,6 +245,17 @@
                                 <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="IGNORE_PROVIDERS" name="IGNORE_PROVIDERS" placeholder="e.g., .*with Ads, Hulu"></textarea>
                                 <div class="fieldDescription">A list of providers to ignore from the default region (supports regex).<a class="sectionTitle" target="_blank" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt">Full List</a></div>
                             </div>
+                            <h3>Elsewhere Custom Branding</h3>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="ElsewhereCustomBrandingText">Custom Branding Message</label>
+                                <input id="ElsewhereCustomBrandingText" is="emby-input" name="ElsewhereCustomBrandingText" type="text" placeholder="e.g., Only available on My Server"/>
+                                <div class="fieldDescription">Custom message to display when content is not available on any streaming providers. Leave blank to disable custom branding.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="ElsewhereCustomBrandingImageUrl">Custom Branding Icon URL</label>
+                                <input id="ElsewhereCustomBrandingImageUrl" is="emby-input" name="ElsewhereCustomBrandingImageUrl" type="text" placeholder="e.g., /web/assets/img/icon.png"/>
+                                <div class="fieldDescription">Optional URL for an icon to display next to the custom message. Leave blank for no icon.</div>
+                            </div>
                             <h3>Extras</h3>
                             <div class="checkboxContainer">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="showReviews" is="emby-checkbox" type="checkbox"/>
@@ -836,6 +847,8 @@
                 document.querySelector('#DEFAULT_REGION').value = config.DEFAULT_REGION;
                 document.querySelector('#DEFAULT_PROVIDERS').value = config.DEFAULT_PROVIDERS;
                 document.querySelector('#IGNORE_PROVIDERS').value = config.IGNORE_PROVIDERS;
+                document.querySelector('#ElsewhereCustomBrandingText').value = config.ElsewhereCustomBrandingText || '';
+                document.querySelector('#ElsewhereCustomBrandingImageUrl').value = config.ElsewhereCustomBrandingImageUrl || '';
                 document.querySelector('#autoPauseEnabled').checked = config.AutoPauseEnabled;
                 document.querySelector('#autoResumeEnabled').checked = config.AutoResumeEnabled;
                 document.querySelector('#autoPipEnabled').checked = config.AutoPipEnabled;
@@ -921,6 +934,8 @@
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;
             config.IGNORE_PROVIDERS = document.querySelector('#IGNORE_PROVIDERS').value;
+            config.ElsewhereCustomBrandingText = document.querySelector('#ElsewhereCustomBrandingText').value;
+            config.ElsewhereCustomBrandingImageUrl = document.querySelector('#ElsewhereCustomBrandingImageUrl').value;
             config.AutoPauseEnabled = document.querySelector('#autoPauseEnabled').checked;
             config.AutoResumeEnabled = document.querySelector('#autoResumeEnabled').checked;
             config.AutoPipEnabled = document.querySelector('#autoPipEnabled').checked;
