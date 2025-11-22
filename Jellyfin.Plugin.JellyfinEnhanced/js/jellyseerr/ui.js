@@ -737,7 +737,35 @@
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
         const titleText = item.title || item.name;
         const tmdbUrl = `https://www.themoviedb.org/${item.mediaType}/${item.id}`;
-        const base = (JE.pluginConfig && JE.pluginConfig.JellyseerrBaseUrl) ? JE.pluginConfig.JellyseerrBaseUrl.toString().trim().replace(/\/$/, '') : '';
+
+        // Resolve Jellyseerr URL based on mappings or fallback to base URL
+        let base = '';
+        if (JE.pluginConfig && JE.pluginConfig.JellyseerrUrlMappings) {
+            const serverAddress = (typeof ApiClient !== 'undefined' && ApiClient.serverAddress)
+                ? ApiClient.serverAddress()
+                : window.location.origin;
+
+            const currentUrl = serverAddress.replace(/\/+$/, '').toLowerCase();
+            const mappings = JE.pluginConfig.JellyseerrUrlMappings.toString().split('\n').map(line => line.trim()).filter(Boolean);
+
+            for (const mapping of mappings) {
+                const [jellyfinUrl, jellyseerrUrl] = mapping.split('|').map(s => s.trim());
+                if (!jellyfinUrl || !jellyseerrUrl) continue;
+
+                const normalizedJellyfinUrl = jellyfinUrl.replace(/\/+$/, '').toLowerCase();
+
+                if (currentUrl === normalizedJellyfinUrl) {
+                    base = jellyseerrUrl.replace(/\/$/, '');
+                    break;
+                }
+            }
+        }
+
+        // Fallback to the default base URL if no mapping matched
+        if (!base && JE.pluginConfig && JE.pluginConfig.JellyseerrBaseUrl) {
+            base = JE.pluginConfig.JellyseerrBaseUrl.toString().trim().replace(/\/$/, '');
+        }
+
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useJellyseerrLink = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseJellyseerrLinks && jellyseerrUrl);
 

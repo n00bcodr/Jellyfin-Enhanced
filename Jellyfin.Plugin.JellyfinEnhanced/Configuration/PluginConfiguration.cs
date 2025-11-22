@@ -90,6 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrUseJellyseerrLinks = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
+            JellyseerrUrlMappings = "";
 
             // Arr Links Settings
             ArrLinksEnabled = false;
@@ -170,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrUseJellyseerrLinks { get; set; }
         public string JellyseerrUrls { get; set; }
         public string JellyseerrApiKey { get; set; }
+        public string JellyseerrUrlMappings { get; set; }
 
         // Arr Links Settings
         public bool ArrLinksEnabled { get; set; }

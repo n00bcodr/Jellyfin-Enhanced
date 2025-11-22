@@ -489,7 +489,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SonarrUrl,
                 config.RadarrUrl,
                 config.BazarrUrl,
-                JellyseerrBaseUrl = jellyseerrBaseUrl
+                JellyseerrBaseUrl = jellyseerrBaseUrl,
+                config.JellyseerrUrlMappings
             });
         }
         [HttpGet("public-config")]
@@ -867,7 +868,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             return Ok(new { success = true, size = totalSize });
         }
-        
+
         [HttpGet("watch-progress/{userId}/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -878,7 +879,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return NotFound();
             }
-            
+
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
             if (item is null)
             {
@@ -888,14 +889,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var allAffectedItems = item.GetBaseItemKind() switch
             {
                 BaseItemKind.Series or BaseItemKind.Season => _libraryManager
-                    .GetItemsResult(new InternalItemsQuery(user) { 
-                        Parent = item, 
+                    .GetItemsResult(new InternalItemsQuery(user) {
+                        Parent = item,
                         Recursive = true
                     }).Items,
                 _ => [item]
             };
-            
-            long totalRuntimeTicks = allAffectedItems.Sum(affectedItem => 
+
+            long totalRuntimeTicks = allAffectedItems.Sum(affectedItem =>
                 // Only one of the MediaSources should count into the watch progress
                 affectedItem.GetMediaSources(false)
                     .FirstOrDefault()?.RunTimeTicks ?? 0);
@@ -909,11 +910,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return affectedItem.RunTimeTicks ?? 0;
                 return userData.PlaybackPositionTicks;
             });
-            
+
             double progress = totalRuntimeTicks == 0 ? 0 : (double)totalPlaybackTicks / totalRuntimeTicks * 100;
             // Floating point numbers are not needed in the frontend ui
             int formattedProgress = (int)Math.Clamp(progress, 0, 100);
-            
+
             return Ok(new { success = true, progress = formattedProgress });
         }
     }

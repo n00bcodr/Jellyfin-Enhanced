@@ -326,6 +326,22 @@
                                 </div>
                                 <div class="fieldDescription">API key from Jellyseerr. (Settings > General Settings >  API Key)</div>
                             </div>
+                            <div class="inputContainer">
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Jellyseerr URL Mappings (Optional)</label>
+                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="http://localhost:8096|http://localhost:5055&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
+                                <div class="fieldDescription">Map your Jellyfin access URLs to specific Jellyseerr URLs for displaying links to users. Users will get the appropriate Jellyseerr link based on how they access Jellyfin. Ofcourse, Ensure "Link result titles to Jellyseerr instead of TMDB" is enabled above. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
+                            </div>
+                            <div
+                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                <div>
+                                    <strong>URL Mapping Examples:</strong><br>
+                                    • Local access: <code>http://192.168.1.10:8096|http://192.168.1.10:5055</code><br>
+                                    • Remote access: <code>https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com</code><br>
+                                    • With base URL: <code>https://example.com/jellyfin|https://example.com/jellyseerr</code><br>
+                                    • Localhost: <code>http://localhost:8096|http://localhost:5055</code><br><br>
+                                </div>
+                            </div>
                             <div
                                 style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
@@ -891,6 +907,7 @@
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
+                document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#sonarrUrl').value = config.SonarrUrl;
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
@@ -971,6 +988,7 @@
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
             config.SonarrUrl = document.querySelector('#sonarrUrl').value;
             config.RadarrUrl = document.querySelector('#radarrUrl').value;
