@@ -592,25 +592,54 @@
 
             const tabs = document.querySelectorAll('.jellyfin-tab-button');
             const tabContents = document.querySelectorAll('.jellyfin-tab-content');
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    tabs.forEach(t => {
+            
+            function activateTab(tabId) {
+                tabs.forEach(t => {
+                    const isActive = t.dataset.tab === tabId;
+                    if (isActive) {
+                        t.classList.add('active');
+                        t.style.color = 'var(--primary-accent-color, #fff)';
+                        t.style.borderBottom = '2px solid var(--primary-accent-color, #fff)';
+                    } else {
                         t.classList.remove('active');
                         t.style.color = '#ccc';
                         t.style.borderBottom = '2px solid transparent';
-                    });
-                    tab.classList.add('active');
-                    tab.style.color = 'var(--primary-accent-color, #fff)';
-                    tab.style.borderBottom = '2px solid var(--primary-accent-color, #fff)';
-                    tabContents.forEach(content => {
+                    }
+                });
+                tabContents.forEach(content => {
+                    const isActive = content.id === tabId;
+                    if (isActive) {
+                        content.classList.add('active');
+                        content.style.display = 'block';
+                    } else {
                         content.classList.remove('active');
                         content.style.display = 'none';
-                    });
-                    const activeTab = document.getElementById(tab.dataset.tab)
-                    activeTab.classList.add('active');
-                    activeTab.style.display = 'block';
+                    }
+                });
+            }
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabId = tab.dataset.tab;
+                    activateTab(tabId);
+                    // Store active tab in sessionStorage to persist across refreshes
+                    try {
+                        sessionStorage.setItem('jellyfinEnhancedActiveTab', tabId);
+                    } catch (e) {
+                        // Ignore if sessionStorage is not available
+                    }
                 });
             });
+            
+            // Restore tab from sessionStorage on page load
+            try {
+                const savedTab = sessionStorage.getItem('jellyfinEnhancedActiveTab');
+                if (savedTab && document.getElementById(savedTab)) {
+                    activateTab(savedTab);
+                }
+            } catch (e) {
+                // Ignore if sessionStorage is not available
+            }
 
         const defaultShortcuts = [
             { Name: "OpenSearch", Key: "/", Label: "Open Search", Category: "Global" },
