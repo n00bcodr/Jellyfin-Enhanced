@@ -202,6 +202,7 @@
     "shortcut_ResetPlaybackSpeed": "Lejátszási sebesség visszaállítása",
     "shortcut_BookmarkCurrentTime": "Aktuális idő könyvjelzőzése",
     "shortcut_GoToSavedBookmark": "Mentett könyvjelző megnyitása",
+    "shortcut_OpenEpisodePreview": "Episode Preview megnyitása",
     "shortcut_JumpToPercentage": "Ugrás a videó %-ához",
     "reviews_title": "Vélemények ({count})",
     "reviews_read_more": "Bővebben",

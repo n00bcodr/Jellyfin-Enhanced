@@ -143,6 +143,25 @@
                 e.stopPropagation();
                 JE.adjustPlaybackSpeed('decrease');
                 break;
+            case activeShortcuts.OpenEpisodePreview:
+                e.preventDefault();
+                e.stopPropagation();
+                const popupFocusContainer = document.getElementById('popupFocusContainer');
+                if (popupFocusContainer && popupFocusContainer.classList.contains('opened')) {
+                    // Popup is already open, close it by removing all dialog elements
+                    const dialogBackdropContainer = document.getElementById('dialogBackdropContainer');
+                    const dialogContainer = document.getElementById('dialogContainer');
+                    
+                    if (dialogBackdropContainer) dialogBackdropContainer.remove();
+                    if (dialogContainer) dialogContainer.remove();
+                } else {
+                    // Popup is not open, try to open it
+                    const popupPreviewButton = document.querySelector('button#popupPreviewButton.autoSize.paper-icon-button-light[is="paper-icon-button-light"]');
+                    if (popupPreviewButton) {
+                        popupPreviewButton.click();
+                    }
+                }
+                break;
         }
 
         if (key.match(/^[0-9]$/)) {
@@ -243,7 +262,7 @@
             // Find the card or item element that was right-clicked
             const cardElement = e.target.closest('.card[data-id]');
             const itemElement = cardElement || e.target.closest('[data-id]');
-            
+
             checkAndSetContinueWatchingContext(itemElement);
         }, true);
     }

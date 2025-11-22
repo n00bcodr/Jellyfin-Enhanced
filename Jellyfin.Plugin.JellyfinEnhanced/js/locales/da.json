@@ -202,6 +202,7 @@
     "shortcut_ResetPlaybackSpeed": "Nulstil afspilningshastighed",
     "shortcut_BookmarkCurrentTime": "Bogmærk nuværende tid",
     "shortcut_GoToSavedBookmark": "Gå til gemt bogmærke",
+    "shortcut_OpenEpisodePreview": "Åbn Episode Preview",
     "shortcut_JumpToPercentage": "Spring til % af video",
     "reviews_title": "Anmeldelser ({count})",
     "reviews_read_more": "Læs mere",

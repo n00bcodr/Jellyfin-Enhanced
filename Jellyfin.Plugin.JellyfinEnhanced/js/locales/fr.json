@@ -202,6 +202,7 @@
     "shortcut_ResetPlaybackSpeed": "Réinitialiser la vitesse de lecture",
     "shortcut_BookmarkCurrentTime": "Marquer le temps actuel",
     "shortcut_GoToSavedBookmark": "Aller au signet enregistré",
+    "shortcut_OpenEpisodePreview": "Ouvrir Episode Preview",
     "shortcut_JumpToPercentage": "Aller à % de la vidéo",
     "reviews_title": "Critiques ({count})",
     "reviews_read_more": "Lire la suite",
