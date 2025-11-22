@@ -50,4 +50,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string> Regions { get; set; } = new List<string>();
         public List<string> Services { get; set; } = new List<string>();
     }
+
+    public class PendingWatchlistItem
+    {
+        public int TmdbId { get; set; }
+        public string MediaType { get; set; } = string.Empty; // "movie" or "tv"
+        public System.DateTime RequestedAt { get; set; }
+    }
+
+    public class PendingWatchlistItems
+    {
+        public List<PendingWatchlistItem> Items { get; set; } = new List<PendingWatchlistItem>();
+    }
 }

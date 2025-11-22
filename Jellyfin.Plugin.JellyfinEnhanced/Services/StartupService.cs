@@ -21,17 +21,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
         private readonly IApplicationPaths _applicationPaths;
         private readonly AutoSeasonRequestMonitor _autoSeasonRequestMonitor;
+        private readonly WatchlistMonitor _watchlistMonitor;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Injects the Jellyfin Enhanced script using the File Transformation plugin and performs necessary cleanups.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, WatchlistMonitor watchlistMonitor)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
             _autoSeasonRequestMonitor = autoSeasonRequestMonitor;
+            _watchlistMonitor = watchlistMonitor;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -43,6 +45,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Initialize auto season request monitoring
                 _autoSeasonRequestMonitor.Initialize();
+
+                // Initialize watchlist monitoring
+                _watchlistMonitor.Initialize();
 
                 _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");
             }, cancellationToken);

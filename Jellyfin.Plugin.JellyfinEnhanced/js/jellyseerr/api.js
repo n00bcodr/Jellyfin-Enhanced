@@ -277,7 +277,20 @@
         const body = { mediaType, mediaId: parseInt(tmdbId), ...advancedSettings };
         if (mediaType === 'tv') body.seasons = "all";
         if (is4k) body.is4k = true;
-        return post('/request', body);
+
+        const result = await post('/request', body);
+
+        // Add to watchlist after successful request
+        if (result) {
+            try {
+                await api.addToWatchlist(tmdbId, mediaType);
+            } catch (error) {
+                // Don't fail the request if watchlist addition fails
+                console.warn(`${logPrefix} Failed to add to watchlist:`, error);
+            }
+        }
+
+        return result;
     };
 
     /**
@@ -299,7 +312,19 @@
         }
 
         const body = { mediaType: 'tv', mediaId: parseInt(tmdbId), seasons: seasonNumbers, ...advancedSettings };
-        return post('/request', body);
+        const result = await post('/request', body);
+
+        // Add to watchlist after successful request
+        if (result) {
+            try {
+                await api.addToWatchlist(tmdbId, 'tv');
+            } catch (error) {
+                // Don't fail the request if watchlist addition fails
+                console.warn(`${logPrefix} Failed to add to watchlist:`, error);
+            }
+        }
+
+        return result;
     };
 
     /**
@@ -346,6 +371,55 @@
             return !!(result && result.partialRequestsEnabled);
         } catch (error) {
             console.warn(`${logPrefix} Failed to fetch partial requests setting:`, error);
+            return false;
+        }
+    };
+
+    /**
+     * Adds requested media to the pending watchlist.
+     * The item will be automatically added to the watchlist when it appears in the library.
+     * @param {number} tmdbId - The TMDB ID of the media.
+     * @param {string} mediaType - 'movie' or 'tv'.
+     * @returns {Promise<boolean>} - True if successfully queued, false otherwise.
+     */
+    api.addToWatchlist = async function(tmdbId, mediaType) {
+        try {
+            // Check if watchlist feature is enabled in plugin config
+            const JE = window.JellyfinEnhanced;
+            if (!JE || !JE.pluginConfig) {
+                console.debug(`${logPrefix} Plugin config not loaded yet`);
+                return false;
+            }
+
+            if (!JE.pluginConfig.AddRequestedMediaToWatchlist || !JE.pluginConfig.JellyseerrEnabled) {
+                console.debug(`${logPrefix} Watchlist auto-add is disabled (AddRequestedMediaToWatchlist: ${JE.pluginConfig.AddRequestedMediaToWatchlist}, JellyseerrEnabled: ${JE.pluginConfig.JellyseerrEnabled})`);
+                return false;
+            }
+
+            const userId = ApiClient.getCurrentUserId();
+            if (!userId) {
+                console.warn(`${logPrefix} Could not get current user ID for watchlist`);
+                return false;
+            }
+
+            // Add to pending watchlist - it will be processed when the item appears in library
+            const response = await ApiClient.fetch({
+                type: 'POST',
+                url: ApiClient.getUrl(`JellyfinEnhanced/user-settings/${userId}/pending-watchlist/add`),
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    TmdbId: tmdbId,
+                    MediaType: mediaType
+                })
+            });
+
+            if (response && response.success) {
+                console.log(`${logPrefix} ✓ Queued TMDB ${tmdbId} (${mediaType}) for watchlist - will be added when it appears in library`);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error(`${logPrefix} Error queuing item for watchlist:`, error);
             return false;
         }
     };

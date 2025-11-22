@@ -382,6 +382,32 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Watchlist Integration</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="addRequestedMediaToWatchlist" is="emby-checkbox" type="checkbox"/>
+                                    <span>Automatically add requested media to user's Watchlist</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                When enabled, any media requested through Jellyseerr Search through Jellyfin Enhanced will automatically be added to the requesting user's Watchlist.
+                                <br><br>
+                                <strong>Note:</strong> This feature requires <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks" style="text-decoration: underline; font-weight: bolder;">KefinTweaks</a> to be installed to actually view the watchlisted items.
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="syncJellyseerrWatchlist" is="emby-checkbox" type="checkbox"/>
+                                    <span>Sync Jellyseerr Watchlist to Jellyfin</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                When enabled, items from each user's Jellyseerr watchlist will be automatically synced to their Jellyfin watchlist.
+                                Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Jellyseerr to Jellyfin".
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
                 <div id="arr-links" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
@@ -969,6 +995,8 @@
                 document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
                 document.querySelector('#autoSeasonRequestEnabled').checked = config.AutoSeasonRequestEnabled || false;
                 document.querySelector('#autoSeasonRequestThresholdValue').value = config.AutoSeasonRequestThresholdValue || 2;
+                document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
+                document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
 
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#sonarrUrl').value = config.SonarrUrl;
@@ -1053,6 +1081,8 @@
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
             config.AutoSeasonRequestThresholdValue = parseInt(document.querySelector('#autoSeasonRequestThresholdValue').value, 10) || 2;
+            config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
+            config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
             config.SonarrUrl = document.querySelector('#sonarrUrl').value;
