@@ -106,15 +106,31 @@
             case activeShortcuts.ShowPlaybackInfo:
                 e.preventDefault();
                 e.stopPropagation();
-                JE.openSettings(() => document.querySelector('.actionSheetContent button[data-id="stats"]')?.click());
+                // Check if stats dialog is already open
+                const statsDialog = document.querySelector('.actionSheetContent button[data-id="stats"]');
+                if (statsDialog) {
+                    // Stats menu is open, close it
+                    const dialogBackdropContainer = document.getElementById('dialogBackdropContainer');
+                    const dialogContainer = document.getElementById('dialogContainer');
+                    if (dialogBackdropContainer) dialogBackdropContainer.remove();
+                    if (dialogContainer) dialogContainer.remove();
+                } else {
+                    // Stats menu is not open, open it
+                    JE.openSettings(() => document.querySelector('.actionSheetContent button[data-id="stats"]')?.click());
+                }
                 break;
             case activeShortcuts.SubtitleMenu:
                 e.preventDefault();
                 e.stopPropagation();
                 const subtitleMenuTitle = Array.from(document.querySelectorAll('.actionSheetContent .actionSheetTitle')).find(el => el.textContent === 'Subtitles');
                 if (subtitleMenuTitle) {
-                    document.querySelector('.dialogBackdrop.dialogBackdropOpened')?.click();
+                    // Subtitle menu is already open, close it
+                    const dialogBackdrop = document.querySelector('.dialogBackdrop.dialogBackdropOpened');
+                    const dialogContainer = document.querySelector('.dialogContainer');
+                    if (dialogBackdrop) dialogBackdrop.remove();
+                    if (dialogContainer) dialogContainer.remove();
                 } else {
+                    // Subtitle menu is not open, open it
                     document.querySelector('button.btnSubtitles')?.click();
                 }
                 break;
@@ -151,7 +167,7 @@
                     // Popup is already open, close it by removing all dialog elements
                     const dialogBackdropContainer = document.getElementById('dialogBackdropContainer');
                     const dialogContainer = document.getElementById('dialogContainer');
-                    
+
                     if (dialogBackdropContainer) dialogBackdropContainer.remove();
                     if (dialogContainer) dialogContainer.remove();
                 } else {
