@@ -189,6 +189,7 @@
         const renderUnavailable = () => {
             placeholder.title = JE.t('watch_progress_tooltip');
             placeholder.style.display = 'flex';
+            placeholder.style.verticalAlign = 'middle';
             placeholder.style.alignItems = 'center';
             placeholder.innerHTML = getIconSpan(0);
         };
@@ -199,6 +200,9 @@
                 return;
             }
             placeholder.title = JE.t('watch_progress_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.verticalAlign = 'middle';
+            placeholder.style.alignItems = 'center';
             placeholder.innerHTML = getIconSpan(cached.progress);
             return;
         }
@@ -212,6 +216,9 @@
             const progress = itemResult?.progress ?? 0;
 
             placeholder.title = JE.t('watch_progress_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.verticalAlign = 'middle';
+            placeholder.style.alignItems = 'center';
             placeholder.innerHTML = getIconSpan(progress);
             watchProgressCache[itemId] = { progress: progress, ts: now };
         } catch (error) {
@@ -260,6 +267,9 @@
                 return;
             }
             placeholder.title = JE.t('file_size_tooltip');
+            placeholder.style.display = 'flex';
+            placeholder.style.verticalAlign = 'middle';
+            placeholder.style.alignItems = 'center';
             placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(cached.size)}`;
             return;
         }
@@ -274,6 +284,9 @@
 
             if (totalSize > 0) {
                 placeholder.title = JE.t('file_size_tooltip');
+                placeholder.style.display = 'flex';
+                placeholder.style.verticalAlign = 'middle';
+                placeholder.style.alignItems = 'center';
                 placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
                 fileSizeCache[itemId] = { size: totalSize, unavailable: false, ts: now };
             } else {
@@ -320,6 +333,7 @@
         const applyLangStyles = (el) => {
             el.title = JE.t('audio_language_tooltip');
             el.style.display = 'flex';
+            el.style.verticalAlign = 'middle';
             el.style.alignItems = 'center';
             el.style.flexDirection = 'row';
             el.style.justifyContent = 'center';
