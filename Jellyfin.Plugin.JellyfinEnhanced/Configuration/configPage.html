@@ -352,6 +352,36 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Automatic Advance Season Requests</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Automatic Advance Season Requests</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                Automatically request the next season in Jellyseerr when a user about to finish the current season.
+                                <br><br>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
+                                <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
+                                <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
+                            </div>
+                            <div
+                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                <div>
+                                    • Requests are triggered when users start or complete watching episodes<br>
+                                    • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br>
+                                    • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br>
+                                    • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
                 <div id="arr-links" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
@@ -592,7 +622,7 @@
 
             const tabs = document.querySelectorAll('.jellyfin-tab-button');
             const tabContents = document.querySelectorAll('.jellyfin-tab-content');
-            
+
             function activateTab(tabId) {
                 tabs.forEach(t => {
                     const isActive = t.dataset.tab === tabId;
@@ -617,7 +647,7 @@
                     }
                 });
             }
-            
+
             tabs.forEach(tab => {
                 tab.addEventListener('click', () => {
                     const tabId = tab.dataset.tab;
@@ -630,7 +660,7 @@
                     }
                 });
             });
-            
+
             // Restore tab from sessionStorage on page load
             try {
                 const savedTab = sessionStorage.getItem('jellyfinEnhancedActiveTab');
@@ -937,6 +967,9 @@
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
                 document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
+                document.querySelector('#autoSeasonRequestEnabled').checked = config.AutoSeasonRequestEnabled || false;
+                document.querySelector('#autoSeasonRequestThresholdValue').value = config.AutoSeasonRequestThresholdValue || 2;
+
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#sonarrUrl').value = config.SonarrUrl;
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
@@ -1018,6 +1051,9 @@
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
+            config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
+            config.AutoSeasonRequestThresholdValue = parseInt(document.querySelector('#autoSeasonRequestThresholdValue').value, 10) || 2;
+
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
             config.SonarrUrl = document.querySelector('#sonarrUrl').value;
             config.RadarrUrl = document.querySelector('#radarrUrl').value;

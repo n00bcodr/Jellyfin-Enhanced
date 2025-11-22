@@ -15,6 +15,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHttpClient();
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
+            serviceCollection.AddSingleton<AutoSeasonRequestService>();
+            serviceCollection.AddSingleton<AutoSeasonRequestMonitor>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
         }
     }
