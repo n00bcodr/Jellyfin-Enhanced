@@ -153,11 +153,47 @@
             return ApiClient.getCurrentUserId();
         }
 
+        async function fetchFirstEpisode(userId, seriesId) {
+            try {
+                const response = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Items', {
+                        ParentId: seriesId,
+                        IncludeItemTypes: 'Episode',
+                        Recursive: true,
+                        SortBy: 'PremiereDate',
+                        SortOrder: 'Ascending',
+                        Limit: 1,
+                        Fields: 'Genres',
+                        userId: userId
+                    }),
+                    dataType: 'json'
+                });
+                return response.Items?.[0] || null;
+            } catch {
+                return null;
+            }
+        }
+
         async function fetchItemGenres(userId, itemId) {
             try {
                 const item = await ApiClient.getItem(userId, itemId);
-                if (item && MEDIA_TYPES.has(item.Type) && item.Genres && item.Genres.length > 0) {
-                    const genres = item.Genres.slice(0, 3);
+                if (!item || !MEDIA_TYPES.has(item.Type)) return null;
+
+                let sourceItem = item;
+
+                // For Series/Season, fetch the first episode to get genre info
+                if (item.Type === 'Series' || item.Type === 'Season') {
+                    const episode = await fetchFirstEpisode(userId, item.Id);
+                    if (episode) {
+                        sourceItem = episode;
+                    } else {
+                        return null; // No episodes found
+                    }
+                }
+
+                if (sourceItem.Genres && sourceItem.Genres.length > 0) {
+                    const genres = sourceItem.Genres.slice(0, 3);
                     genreCache[itemId] = { genres, timestamp: Date.now() };
                     Hot.genre.set(itemId, { genres, timestamp: Date.now() });
                     saveCache();
@@ -223,8 +259,29 @@
         }
 
         function getItemIdFromElement(el) {
-            let parent = el.closest('[data-id]');
-            return parent ? parent.dataset.id : null;
+            if (el.style && el.style.backgroundImage) {
+                const match = el.style.backgroundImage.match(/Items\/([a-f0-9]{32})\//i);
+                if (match && match[1]) return match[1];
+            }
+            // Try href pattern ...id=<ID>
+            if (el.href) {
+                try {
+                    const url = new URL(el.href, window.location.origin);
+                    const idParam = url.searchParams.get('id');
+                    if (idParam) return idParam;
+                } catch {}
+                const m = el.href.match(/[?#&]id=([^&#]+)/);
+                if (m && m[1]) return m[1];
+            }
+            if (el.dataset?.itemid) return el.dataset.itemid;
+            let parent = el.closest('[data-itemid]');
+            if (parent) return parent.dataset.itemid;
+            // Fallback to data-id (but only if it's a valid 32-char hex ID)
+            let parent2 = el.closest('[data-id]');
+            if (parent2 && parent2.dataset.id && /^[a-f0-9]{32}$/i.test(parent2.dataset.id)) {
+                return parent2.dataset.id;
+            }
+            return null;
         }
 
         function shouldIgnoreElement(el) {
@@ -241,11 +298,28 @@
         function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
 
+            // Check for standard .card parent (poster/card view)
             const card = element.closest('.card');
-            // Only process elements that are inside a card with a data-type of Movie or Series.
-            if (!card || !card.dataset.type || !MEDIA_TYPES.has(card.dataset.type)) {
+            if (card && card.dataset.type && !MEDIA_TYPES.has(card.dataset.type)) {
                 processedElements.add(element);
                 return;
+            }
+
+            // Check for .listItem parent (list/episode view)
+            const listItem = element.closest('.listItem');
+            if (listItem && listItem.dataset.type && !MEDIA_TYPES.has(listItem.dataset.type)) {
+                processedElements.add(element);
+                return;
+            }
+
+            // If neither card nor listItem, check if it's a cardImageContainer (InPlayerEpisodePreview)
+            if (!card && !listItem) {
+                const hasCardClass = element.classList.contains('cardImageContainer');
+                const hasItemId = getItemIdFromElement(element);
+                if (!hasCardClass || !hasItemId) {
+                    processedElements.add(element);
+                    return;
+                }
             }
 
             const itemId = getItemIdFromElement(element);

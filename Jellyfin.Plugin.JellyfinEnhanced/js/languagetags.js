@@ -92,19 +92,55 @@
             afr: 'za', Hausa: 'ng', hau: 'ng', Yoruba: 'ng', yor: 'ng', Igbo: 'ng', ibo: 'ng'
         };
 
+        async function fetchFirstEpisode(userId, seriesId) {
+            try {
+                const response = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Items', {
+                        ParentId: seriesId,
+                        IncludeItemTypes: 'Episode',
+                        Recursive: true,
+                        SortBy: 'PremiereDate',
+                        SortOrder: 'Ascending',
+                        Limit: 1,
+                        Fields: 'MediaStreams,MediaSources',
+                        userId: userId
+                    }),
+                    dataType: 'json'
+                });
+                return response.Items?.[0] || null;
+            } catch {
+                return null;
+            }
+        }
+
         async function fetchItemLanguages(userId, itemId) {
             try {
                 const result = await ApiClient.ajax({
                     type: 'GET',
                     url: ApiClient.getUrl(`/Users/${userId}/Items`, {
                         Ids: itemId,
-                        Fields: 'MediaStreams,MediaSources,MediaInfo'
+                        Fields: 'MediaStreams,MediaSources,MediaInfo,Type'
                     }),
                     dataType: 'json'
                 });
                 const item = result?.Items?.[0];
+                if (!item) return [];
+
+                let sourceItem = item;
+
+                // For Series/Season, fetch the first episode to get language info
+                if (item.Type === 'Series' || item.Type === 'Season') {
+                    const episode = await fetchFirstEpisode(userId, item.Id);
+                    if (episode) {
+                        sourceItem = episode;
+                    } else {
+                        return []; // No episodes found
+                    }
+                }
+
                 const languages = new Set();
-                item?.MediaSources?.forEach(source => {
+                sourceItem?.MediaSources?.forEach(source => {
                     source.MediaStreams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
                         const langCode = stream.Language;
                         if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
@@ -273,17 +309,26 @@
 
         function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
+
+            // Check for standard .card parent (poster/card view)
             const card = element.closest('.card');
             if (card && card.dataset.type && !MEDIA_TYPES.has(card.dataset.type)) {
                 return;
             }
-            
-            if (!card) {
+
+            // Check for .listItem parent (list/episode view)
+            const listItem = element.closest('.listItem');
+            if (listItem && listItem.dataset.type && !MEDIA_TYPES.has(listItem.dataset.type)) {
+                return;
+            }
+
+            // If neither card nor listItem, check if it's a cardImageContainer (InPlayerEpisodePreview)
+            if (!card && !listItem) {
                 const hasCardClass = element.classList.contains('cardImageContainer');
                 const hasItemId = getItemIdFromElement(element);
                 if (!hasCardClass || !hasItemId) return;
             }
-            
+
             const itemId = getItemIdFromElement(element);
             if (!itemId) return;
 
