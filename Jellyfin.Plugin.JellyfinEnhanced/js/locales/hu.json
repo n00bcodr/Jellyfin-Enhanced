@@ -205,5 +205,12 @@
     "shortcut_JumpToPercentage": "Ugrás a videó %-ához",
     "reviews_title": "Vélemények ({count})",
     "reviews_read_more": "Bővebben",
-    "reviews_read_less": "Kevesebb"
+    "reviews_read_less": "Kevesebb",
+    "panel_settings_language": "Nyelvi beállítások",
+    "panel_settings_language_display": "Megjelenítési nyelv",
+    "panel_settings_language_display_desc": "Válassza ki a Jellyfin Enhanced felület nyelvét. A módosítások az oldal frissítése után lépnek életbe.",
+    "panel_settings_language_clear_cache": "Fordítási gyorsítótár törlése",
+    "panel_settings_language_clear_cache_desc": "Eltávolítja az összes gyorsítótárazott fordítást. Hasznos egy nemrég frissített fordítás letöltéséhez a Githubról.",
+    "toast_language_changed": "🌐 Nyelv megváltoztatva! Oldal frissítése...",
+    "toast_translation_cache_cleared": "🗑️ Fordítási gyorsítótár törölve! {count} gyorsítótárazott fordítás eltávolítva. Frissítés..."
 }

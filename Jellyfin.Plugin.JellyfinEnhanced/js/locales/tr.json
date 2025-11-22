@@ -205,5 +205,12 @@
     "shortcut_JumpToPercentage": "Videonun %’sine Atla",
     "reviews_title": "Yorumlar ({count})",
     "reviews_read_more": "Daha Fazlasını Oku",
-    "reviews_read_less": "Daha Az Göster"
+    "reviews_read_less": "Daha Az Göster",
+    "panel_settings_language": "Dil Ayarları",
+    "panel_settings_language_display": "Görüntüleme Dili",
+    "panel_settings_language_display_desc": "Jellyfin Enhanced arayüzü için dili seçin. Değişiklikler sayfa yenilemesinden sonra geçerli olur.",
+    "panel_settings_language_clear_cache": "Çeviri Önbelleğini Temizle",
+    "panel_settings_language_clear_cache_desc": "Önbelleğe alınmış tüm çevirileri kaldırır. Github'dan yakın zamanda güncellenmiş bir çeviri almak için kullanışlıdır.",
+    "toast_language_changed": "🌐 Dil değiştirildi! Sayfa yenileniyor...",
+    "toast_translation_cache_cleared": "🗑️ Çeviri önbelleği temizlendi! {count} önbelleğe alınmış çeviri kaldırıldı. Yenileniyor..."
 }

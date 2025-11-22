@@ -700,6 +700,25 @@
                             </div>
                         </div>
                     </details>
+                    <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🌐 ${JE.t('panel_settings_language')}</summary>
+                        <div style="padding: 0 16px 16px 16px;">
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_language_display')}</div>
+                                <select id="displayLanguageSelect" style="width: 100%; padding: 12px; background: ${presetBoxBackground}; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-size: 14px; cursor: pointer; font-family: inherit;">
+                                    <option value="" style="background: rgba(30,30,30,1); color: #fff;">Auto</option>
+                                    <!-- Languages will be populated dynamically -->
+                                </select>
+                                <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:8px;">${JE.t('panel_settings_language_display_desc')}</div>
+                            </div>
+                            <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <button id="clearTranslationCacheButton" style="width: 100%; padding: 12px; background: ${toggleAccentColor}; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                                    ${JE.t('panel_settings_language_clear_cache')}
+                                </button>
+                                <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:8px;">${JE.t('panel_settings_language_clear_cache_desc')}</div>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
             <div class="panel-footer" style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; justify-content: space-between; align-items: center;">
@@ -911,7 +930,7 @@
                 JE.currentSettings[settingKey] = e.target.checked;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 let toastMessage = createToast(featureKey, e.target.checked);
-                
+
                 // Handle tag features with dynamic re-initialization
                 if (id === 'qualityTagsToggle') {
                     if (e.target.checked) {
@@ -943,7 +962,7 @@
                     }
                     requiresRefresh = false;
                 }
-                
+
                 if (requiresRefresh) {
                     toastMessage += ".<br> Refresh page to apply.";
                 }
@@ -1009,7 +1028,7 @@
                 JE.currentSettings[settingKey] = newPos;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 updateHighlight();
-                
+
                 // Reinitialize tags dynamically based on which position changed
                 if (settingKey === 'qualityTagsPosition' && JE.currentSettings.qualityTagsEnabled) {
                     if (typeof JE.reinitializeQualityTags === 'function') {
@@ -1024,11 +1043,173 @@
                         JE.reinitializeLanguageTags();
                     }
                 }
-                
+
                 JE.toast(`Position updated!`);
                 resetAutoCloseTimer();
             });
         });
+
+        // --- Language Settings ---
+        const displayLanguageSelect = document.getElementById('displayLanguageSelect');
+        if (displayLanguageSelect) {
+            // Get current user ID for localStorage key
+            const userId = ApiClient.getCurrentUserId();
+            const languageKey = `${userId}-language`;
+
+            // Get saved language from localStorage as well
+            const localStorageLang = localStorage.getItem(languageKey);
+            const savedLanguage = JE.currentSettings.displayLanguage || localStorageLang || '';
+
+            console.log('🪼 Jellyfin Enhanced: Current language setting:', {
+                fromSettings: JE.currentSettings.displayLanguage,
+                fromLocalStorage: localStorageLang,
+                willUse: savedLanguage
+            });
+
+            // Populate language options from Jellyfin's cultures
+            (async () => {
+                const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
+                const AVAILABLE_LANGUAGES_CACHE_KEY = 'JE_available_languages';
+                const AVAILABLE_LANGUAGES_CACHE_TS_KEY = 'JE_available_languages_ts';
+                const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+                let supportedJELanguages = [];
+
+                // Try to load from cache first
+                const cachedLanguages = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_KEY);
+                const cachedTimestamp = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY);
+
+                if (cachedLanguages && cachedTimestamp) {
+                    const age = Date.now() - parseInt(cachedTimestamp, 10);
+                    if (age < CACHE_DURATION) {
+                        console.log('🪼 Jellyfin Enhanced: Using cached available languages (age: ${Math.round(age / 1000 / 60)} minutes)');
+                        supportedJELanguages = JSON.parse(cachedLanguages);
+                    }
+                }
+
+                // If no valid cache, fetch from GitHub
+                if (supportedJELanguages.length === 0) {
+                    // Fetch cultures from Jellyfin API
+                    const cultures = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('/Localization/Cultures'),
+                        dataType: 'json'
+                    });
+
+                    console.log('🪼 Jellyfin Enhanced: Loaded', cultures.length, 'cultures from Jellyfin API');
+
+                    // Check which languages have translation files available on GitHub
+                    const checkPromises = cultures.map(async (culture) => {
+                        const langCode = culture.TwoLetterISOLanguageName;
+                        try {
+                            const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                            if (response.ok) {
+                                supportedJELanguages.push(culture);
+                                console.log('🪼 Jellyfin Enhanced: Found translation for:', culture.Name, '('+langCode+')');
+                            }
+                        } catch (err) {
+                            // Translation file doesn't exist
+                        }
+                    });
+
+                    await Promise.all(checkPromises);
+
+                    console.log('🪼 Jellyfin Enhanced: Found', supportedJELanguages.length, 'supported cultures with translations');
+
+                    // Cache the results
+                    try {
+                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_KEY, JSON.stringify(supportedJELanguages));
+                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY, Date.now().toString());
+                        console.log('🪼 Jellyfin Enhanced: Cached available languages list');
+                    } catch (err) {
+                        console.warn('🪼 Jellyfin Enhanced: Failed to cache available languages', err);
+                    }
+                }
+
+                // Sort by Name
+                supportedJELanguages.sort((a, b) => a.Name.localeCompare(b.Name));
+
+                // Add options using TwoLetterISOLanguageName as value and Name as display
+                supportedJELanguages.forEach(culture => {
+                    const langCode = culture.TwoLetterISOLanguageName;
+                    const option = document.createElement('option');
+                    option.value = langCode;
+                    option.textContent = culture.Name;
+                    option.style.background = 'rgba(30,30,30,1)';
+                    option.style.color = '#fff';
+                    displayLanguageSelect.appendChild(option);
+                });
+
+                // Set the saved language after options are added
+                displayLanguageSelect.value = savedLanguage;
+                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Select element value is now:', displayLanguageSelect.value);
+            })();
+
+            // Save language on change
+            displayLanguageSelect.addEventListener('change', async (e) => {
+                const newLang = e.target.value;
+
+                // Map language codes to full culture codes for localStorage
+                let fullCultureCode = newLang;
+                if (newLang === 'en') {
+                    fullCultureCode = 'en-GB';
+                }
+
+                // Check if translation file exists
+                let translationExists = true;
+                if (newLang) {
+                    try {
+                        const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
+                        const response = await fetch(`${GITHUB_RAW_BASE}/${newLang}.json`, { method: 'HEAD' });
+                        translationExists = response.ok;
+                    } catch (err) {
+                        // Assume it exists if we can't check (offline mode)
+                        translationExists = true;
+                    }
+                }
+
+                // Save to settings.json (use base language code)
+                JE.currentSettings.displayLanguage = newLang;
+                await JE.saveUserSettings('settings.json', JE.currentSettings);
+
+                // Save to localStorage (use full culture code)
+                if (fullCultureCode) {
+                    localStorage.setItem(languageKey, fullCultureCode);
+                } else {
+                    // Set empty value instead of removing key
+                    localStorage.setItem(languageKey, '');
+                }
+
+                if (newLang && !translationExists) {
+                    JE.toast(`⚠️ Translation file not available for selected language. Falling back to English.`);
+                } else {
+                    JE.toast(JE.t('toast_language_changed'));
+                }
+                setTimeout(() => window.location.reload(), 1500);
+            });
+        }
+
+        // Clear translation cache button
+        const clearTranslationCacheButton = document.getElementById('clearTranslationCacheButton');
+        if (clearTranslationCacheButton) {
+            clearTranslationCacheButton.addEventListener('click', () => {
+                const cacheKeys = [];
+                const CACHE_PREFIX = 'JE_translation_';
+                const CACHE_TIMESTAMP_PREFIX = 'JE_translation_ts_';
+
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(CACHE_TIMESTAMP_PREFIX))) {
+                        cacheKeys.push(key);
+                    }
+                }
+
+                cacheKeys.forEach(key => localStorage.removeItem(key));
+                JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
+                setTimeout(() => window.location.reload(), 2000);
+                resetAutoCloseTimer();
+            });
+        }
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);

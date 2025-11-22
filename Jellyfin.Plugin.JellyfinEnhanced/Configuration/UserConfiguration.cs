@@ -31,6 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;
         public bool ReviewsExpandedByDefault { get; set; }
+        public string DisplayLanguage { get; set; } = string.Empty;
     }
 
     public class UserShortcuts

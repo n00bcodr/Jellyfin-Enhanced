@@ -205,5 +205,12 @@
     "shortcut_JumpToPercentage": "Zu % des Videos springen",
     "reviews_title": "Bewertungen ({count})",
     "reviews_read_more": "Mehr lesen",
-    "reviews_read_less": "Weniger lesen"
+    "reviews_read_less": "Weniger lesen",
+    "panel_settings_language": "Spracheinstellungen",
+    "panel_settings_language_display": "Anzeigesprache",
+    "panel_settings_language_display_desc": "Wählen Sie die Sprache für die Jellyfin Enhanced-Oberfläche. Änderungen werden nach Seitenaktualisierung wirksam.",
+    "panel_settings_language_clear_cache": "Übersetzungscache leeren",
+    "panel_settings_language_clear_cache_desc": "Entfernt alle zwischengespeicherten Übersetzungen. Nützlich zum Abrufen einer kürzlich aktualisierten Übersetzung von Github.",
+    "toast_language_changed": "🌐 Sprache geändert! Seite wird neu geladen...",
+    "toast_translation_cache_cleared": "🗑️ Übersetzungscache geleert! {count} zwischengespeicherte Übersetzung(en) entfernt. Wird neu geladen..."
 }

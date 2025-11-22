@@ -205,5 +205,12 @@
     "shortcut_JumpToPercentage": "Spring til % af video",
     "reviews_title": "Anmeldelser ({count})",
     "reviews_read_more": "Læs mere",
-    "reviews_read_less": "Læs mindre"
+    "reviews_read_less": "Læs mindre",
+    "panel_settings_language": "Sprogindstillinger",
+    "panel_settings_language_display": "Visningssprog",
+    "panel_settings_language_display_desc": "Vælg sproget til Jellyfin Enhanced-grænsefladen. Ændringer træder i kraft efter sideopdatering.",
+    "panel_settings_language_clear_cache": "Ryd oversættelsescache",
+    "panel_settings_language_clear_cache_desc": "Fjerner alle cachede oversættelser. Nyttigt til at hente en nyligt opdateret oversættelse fra Github.",
+    "toast_language_changed": "🌐 Sprog ændret! Opdaterer side...",
+    "toast_translation_cache_cleared": "🗑️ Oversættelsescache ryddet! {count} cachede oversættelse(r) fjernet. Opdaterer..."
 }
