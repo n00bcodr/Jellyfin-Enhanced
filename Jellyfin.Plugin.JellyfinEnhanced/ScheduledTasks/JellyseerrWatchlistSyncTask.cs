@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 {
     // Scheduled task that syncs Jellyseerr watchlist items to Jellyfin watchlist.
-    public class JellyseerrWatchlistSyncTask : IScheduledTask
+    public partial class JellyseerrWatchlistSyncTask : IScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
@@ -48,18 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
-        public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
-        {
-            // Run daily at 3 AM by default
-            return new[]
-            {
-                new TaskTriggerInfo
-                {
-                    Type = TaskTriggerInfo.TriggerDaily,
-                    TimeOfDayTicks = TimeSpan.FromHours(3).Ticks
-                }
-            };
-        }
+        // GetDefaultTriggers is implemented in version-specific partial files.
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
@@ -287,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             Skipped
         }
 
-        private Task<WatchlistItemResult> ProcessWatchlistItem(Jellyfin.Data.Entities.User user, WatchlistItem watchlistItem)
+        private Task<WatchlistItemResult> ProcessWatchlistItem(JUser user, WatchlistItem watchlistItem)
         {
             try
             {
@@ -338,6 +327,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                 // Get user data
                 var userData = _userDataManager.GetUserData(user, item);
+                if (userData == null)
+                {
+                    _logger.Warning($"[Jellyseerr Watchlist Sync] User data is null for item {item.Name}; skipping.");
+                    return Task.FromResult(WatchlistItemResult.Skipped);
+                }
 
                 // Check if already in watchlist
                 if (userData.Likes == true)

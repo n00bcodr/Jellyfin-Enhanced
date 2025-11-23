@@ -11,7 +11,6 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Querying;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
-
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     public class AutoSeasonRequestService
@@ -70,7 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Checks if a specific series needs its next season requested
-        private async Task CheckSeriesForAutoRequest(Series series, Jellyfin.Data.Entities.User user)
+        private async Task CheckSeriesForAutoRequest(Series series, JUser user)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
@@ -105,7 +104,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 IncludeItemTypes = new[] { BaseItemKind.Episode },
                 ParentIndexNumber = lastAvailableSeason.IndexNumber!.Value,
                 Recursive = true,
-                OrderBy = new[] { (ItemSortBy.ParentIndexNumber, SortOrder.Ascending), (ItemSortBy.IndexNumber, SortOrder.Ascending) }
+                OrderBy = new[] { (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending), (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
             };
 
             var episodes = _libraryManager.GetItemsResult(episodesQuery).Items.ToList();
@@ -167,7 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Calculates remaining unwatched episodes
         private int CalculateRemainingEpisodes(
             List<BaseItem> episodes,
-            Jellyfin.Data.Entities.User user)
+            JUser user)
         {
             int remainingEpisodes = 0;
 

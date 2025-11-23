@@ -166,16 +166,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var userData = _userDataManager.GetUserData(user, item);
 
                 // Check if already liked/in watchlist
-                if (userData.Likes == true)
+                if (userData != null && userData.Likes == true)
                 {
                     _logger.Debug($"[Watchlist] '{item.Name}' already in watchlist for user {userId}");
                 }
-                else
+                else if (userData != null)
                 {
                     // Add to watchlist by setting Likes to true
                     userData.Likes = true;
                     _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
                     _logger.Info($"[Watchlist] ✓ Added '{item.Name}' to watchlist for user {user.Username}");
+                }
+                else
+                {
+                    _logger.Warning($"[Watchlist] User data was null for '{item.Name}' and user {user.Username}; skipping.");
                 }
 
                 // Remove from pending list

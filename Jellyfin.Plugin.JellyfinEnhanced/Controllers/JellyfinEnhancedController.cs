@@ -419,7 +419,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             if (libraryItem != null)
                             {
                                 var userData = _userDataManager.GetUserData(user, libraryItem);
-                                if (userData.Likes != true)
+                                if (userData == null)
+                                {
+                                    _logger.Warning($"[Manual Watchlist Sync] User data was null for '{libraryItem.Name}' and user {user.Username}; skipping.");
+                                }
+                                else if (userData.Likes != true)
                                 {
                                     userData.Likes = true;
                                     _userDataManager.SaveUserData(user, libraryItem, userData, UserDataSaveReason.UpdateUserRating, default);
