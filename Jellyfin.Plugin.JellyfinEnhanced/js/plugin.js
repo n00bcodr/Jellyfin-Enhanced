@@ -59,11 +59,27 @@
      */
     async function loadTranslations() {
         const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
-        const CACHE_PREFIX = 'JE_translation_';
-        const CACHE_TIMESTAMP_PREFIX = 'JE_translation_ts_';
         const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
         
         try {
+            // Get plugin version first
+            let pluginVersion = window.JellyfinEnhanced?.pluginVersion;
+            if (!pluginVersion || pluginVersion === 'unknown') {
+                // Fetch version if not loaded yet
+                try {
+                    const versionResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/version'));
+                    if (versionResponse.ok) {
+                        pluginVersion = await versionResponse.text();
+                        if (window.JellyfinEnhanced) {
+                            window.JellyfinEnhanced.pluginVersion = pluginVersion;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('🪼 Jellyfin Enhanced: Failed to fetch plugin version', e);
+                    pluginVersion = 'unknown';
+                }
+            }
+
             // Wait briefly for ApiClient user to potentially become available
             let user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
             if (user instanceof Promise) {
@@ -81,16 +97,32 @@
                 }
             }
 
+            // Clean up old translation caches from previous versions
+            try {
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('JE_translation_') || key.startsWith('JE_translation_ts_'))) {
+                        // Remove if it doesn't match current version
+                        if (!key.includes(`_${pluginVersion}`)) {
+                            localStorage.removeItem(key);
+                            console.log(`🪼 Jellyfin Enhanced: Removed old translation cache: ${key}`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Failed to clean up old translation caches', e);
+            }
+
             // Check if we have a cached version
-            const cacheKey = CACHE_PREFIX + lang;
-            const timestampKey = CACHE_TIMESTAMP_PREFIX + lang;
+            const cacheKey = `JE_translation_${lang}_${pluginVersion}`;
+            const timestampKey = `JE_translation_ts_${lang}_${pluginVersion}`;
             const cachedTranslations = localStorage.getItem(cacheKey);
             const cachedTimestamp = localStorage.getItem(timestampKey);
 
             if (cachedTranslations && cachedTimestamp) {
                 const age = Date.now() - parseInt(cachedTimestamp, 10);
                 if (age < CACHE_DURATION) {
-                    console.log(`🪼 Jellyfin Enhanced: Using cached translations for ${lang} (age: ${Math.round(age / 1000 / 60)} minutes)`);
+                    console.log(`🪼 Jellyfin Enhanced: Using cached translations for ${lang} (age: ${Math.round(age / 1000 / 60)} minutes, version: ${pluginVersion})`);
                     try {
                         return JSON.parse(cachedTranslations);
                     } catch (e) {
@@ -117,7 +149,7 @@
                     try {
                         localStorage.setItem(cacheKey, JSON.stringify(translations));
                         localStorage.setItem(timestampKey, Date.now().toString());
-                        console.log(`🪼 Jellyfin Enhanced: Successfully fetched and cached translations for ${lang} from GitHub`);
+                        console.log(`🪼 Jellyfin Enhanced: Successfully fetched and cached translations for ${lang} from GitHub (version: ${pluginVersion})`);
                     } catch (storageError) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to cache translations (localStorage full?)', storageError);
                     }
@@ -138,8 +170,10 @@
                     if (englishResponse.ok) {
                         const translations = await englishResponse.json();
                         try {
-                            localStorage.setItem(CACHE_PREFIX + 'en', JSON.stringify(translations));
-                            localStorage.setItem(CACHE_TIMESTAMP_PREFIX + 'en', Date.now().toString());
+                            const enCacheKey = `JE_translation_en_${pluginVersion}`;
+                            const enTimestampKey = `JE_translation_ts_en_${pluginVersion}`;
+                            localStorage.setItem(enCacheKey, JSON.stringify(translations));
+                            localStorage.setItem(enTimestampKey, Date.now().toString());
                         } catch (e) { /* ignore */ }
                         return translations;
                     }
