@@ -157,6 +157,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 ## Jellyseerr Search Integration <a name="jellyseerr-search-integration"></a> <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" width="40" height="50" align="center">
 
 The Jellyfin Enhanced plugin can integrate with your Jellyseerr instance, allowing users to search for and request media directly from the Jellyfin search interface.
+Additionally, requested media can be automatically added to your Jellyfin watchlist (from [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks)) once it becomes available in your library.
 
 #### Setup
 
@@ -168,7 +169,9 @@ To enable the Jellyseerr integration, you must first configure it in the plugin 
 4. Enter your **Jellyseerr URL(s)**, one per line. The plugin will use the first one that connects successfully. Should be the same Jellyseerr Instance. Intended for providing internal and external urls, ideally just internal URL should work.
 5. Enter your **Jellyseerr API Key**. You can find this in Jellyseerr under **Settings > General > API Key**.
 6. You can use the test button to see if your Jellyseerr instance is reachable.
-7. Click **Save**.
+7. **(Optional)** Enable **"Add Requested Media to Watchlist"** to automatically add items to [Watchlist](https://github.com/ranaldsgift/KefinTweaks) in Jellyfin once they're downloaded and added to your library.
+8. **(Optional)** Enable **"Sync Jellyseerr Watchlist to Jellyfin"** to automatically sync your Jellyseerr watchlist items to [Jellyfin Watchlist](https://github.com/ranaldsgift/KefinTweaks) when they become available.
+9. Click **Save**.
 
 <p align="center">
   <img src="images/jellyseerr.png" width="600" style="border-radius:25px;" />
@@ -293,7 +296,8 @@ The plugin detects the Jellyfin user profile language automatically. List of cur
 #### 🔄 Translation Updates
 Translations are now fetched directly from GitHub on first load, ensuring users always have access to the latest language updates without requiring a plugin update. The plugin automatically:
 - Fetches the latest translations from the GitHub repository
-- Caches translations locally for 24 hours to reduce network requests
+- Caches translations per plugin version for 24 hours to reduce network requests
+- Automatically clears outdated caches when the plugin is updated
 - Falls back to bundled translations if GitHub is unavailable (offline mode, rate limits, etc.)
 - Handles GitHub rate limiting gracefully
 
