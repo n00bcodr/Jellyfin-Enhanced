@@ -18,26 +18,67 @@
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave }) {
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
+        modalElement.setAttribute('role', 'dialog');
+        modalElement.setAttribute('aria-modal', 'true');
+        modalElement.setAttribute('tabindex', '-1');
 
         const backdropImage = backdropPath
             ? `url('https://image.tmdb.org/t/p/w1280${backdropPath}')`
             : 'linear-gradient(45deg, #3b82f6, #8b5cf6)';
 
         modalElement.innerHTML = `
-            <div class="jellyseerr-season-content">
+            <div class="jellyseerr-season-content" role="document" aria-labelledby="jellyseerr-modal-title">
                 <div class="jellyseerr-season-header" style="background-image: ${backdropImage}; background-size: cover; background-position: center;">
-                    <div class="jellyseerr-season-title">${title}</div>
+                    <div id="jellyseerr-modal-title" class="jellyseerr-season-title">${title}</div>
                     <div class="jellyseerr-season-subtitle">${subtitle}</div>
                 </div>
                 <div class="jellyseerr-modal-body" style="padding: 24px; max-height: calc(80vh - 200px); overflow-y: auto;">
                     ${bodyHtml}
                 </div>
                 <div class="jellyseerr-modal-footer">
-                    <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary">${JE.t('jellyseerr_modal_cancel')}</button>
-                    <button class="jellyseerr-modal-button jellyseerr-modal-button-primary">${JE.t('jellyseerr_modal_request')}</button>
+                    <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary" aria-label="${JE.t('jellyseerr_modal_cancel')}">${JE.t('jellyseerr_modal_cancel')}</button>
+                    <button class="jellyseerr-modal-button jellyseerr-modal-button-primary" aria-label="${JE.t('jellyseerr_modal_request')}">${JE.t('jellyseerr_modal_request')}</button>
                 </div>
             </div>
         `;
+
+        // Handle keyboard navigation
+        const handleKeydown = (e) => {
+            // Close on Escape
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                history.back();
+                return;
+            }
+
+            // Tab key focus trap
+            if (e.key === 'Tab') {
+                const focusableElements = modalElement.querySelectorAll(
+                    'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                );
+                const focusableArray = Array.from(focusableElements);
+
+                if (focusableArray.length === 0) return;
+
+                const firstElement = focusableArray[0];
+                const lastElement = focusableArray[focusableArray.length - 1];
+
+                if (e.shiftKey) {
+                    // Shift+Tab: if on first element, wrap to last
+                    if (document.activeElement === firstElement || document.activeElement === modalElement) {
+                        e.preventDefault();
+                        lastElement.focus();
+                    }
+                } else {
+                    // Tab: if on last element, wrap to first
+                    if (document.activeElement === lastElement) {
+                        e.preventDefault();
+                        firstElement.focus();
+                    }
+                }
+            }
+        };
 
         const show = () => {
             document.body.appendChild(modalElement);
@@ -45,11 +86,22 @@
             // Add a state to history to handle back button for closing
             history.pushState(null, '', location.href);
             window.addEventListener('popstate', close);
-            setTimeout(() => modalElement.classList.add('show'), 10);
+            document.addEventListener('keydown', handleKeydown);
+            setTimeout(() => {
+                modalElement.classList.add('show');
+                // Focus the first interactive element in the modal
+                const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
+                if (firstFocusable) {
+                    firstFocusable.focus();
+                } else {
+                    modalElement.focus();
+                }
+            }, 10);
         };
 
         const close = () => {
             window.removeEventListener('popstate', close);
+            document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
             document.body.classList.remove('jellyseerr-modal-is-open');
             setTimeout(() => {
