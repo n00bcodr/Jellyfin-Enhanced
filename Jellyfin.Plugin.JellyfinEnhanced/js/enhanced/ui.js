@@ -352,6 +352,61 @@
     };
 
     /**
+     * Injects the "Jellyfin Enhanced" link into the user preferences menu (mypreferencesmenu.html).
+     * Adds it as the last item in the first vertical section (after Controls).
+     */
+    JE.addUserPreferencesLink = () => {
+        const addLinkToMenu = () => {
+            const menuContainer = document.querySelector('#myPreferencesMenuPage:not(.hide) .verticalSection');
+            if (!menuContainer) return false;
+            
+            // Check if link already exists
+            if (document.querySelector('#jellyfinEnhancedUserPrefsLink')) return true;
+
+            // Create the link element matching Jellyfin's structure
+            const enhancedLink = document.createElement('a');
+            enhancedLink.id = 'jellyfinEnhancedUserPrefsLink';
+            enhancedLink.setAttribute('is', 'emby-linkbutton');
+            enhancedLink.setAttribute('data-ripple', 'false');
+            enhancedLink.href = '#';
+            enhancedLink.className = 'listItem-border emby-button';
+            enhancedLink.style.display = 'block';
+            enhancedLink.style.padding = '0';
+            enhancedLink.style.margin = '0';
+            
+            enhancedLink.innerHTML = `
+                <div class="listItem">
+                    <span class="material-icons listItemIcon listItemIcon-transparent tune" aria-hidden="true"></span>
+                    <div class="listItemBody">
+                        <div class="listItemBodyText">Advanced Settings (Jellyfin Enhanced)</div>
+                    </div>
+                </div>
+            `;
+
+            enhancedLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                JE.showEnhancedPanel();
+            });
+
+            // Insert at the end of the first vertical section
+            menuContainer.appendChild(enhancedLink);
+            return true;
+        };
+
+        // Try to add immediately
+        if (addLinkToMenu()) return;
+
+        // If not found, observe for when the menu is loaded and visible
+        const observer = new MutationObserver(() => {
+            if (addLinkToMenu()) {
+                observer.disconnect();
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    };
+
+    /**
      * Toggles the main settings and help panel for the plugin.
      */
     JE.showEnhancedPanel = () => {

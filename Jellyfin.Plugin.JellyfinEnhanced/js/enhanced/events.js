@@ -202,6 +202,7 @@
         const observer = new MutationObserver(() => {
             runPageSpecificFunctions();
             JE.addRandomButton();
+            JE.addUserPreferencesLink();
             onUserButtonLongPress();
         });
 
