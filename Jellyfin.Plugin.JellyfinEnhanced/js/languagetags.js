@@ -98,7 +98,7 @@
             Lithuanian: 'lt', lit: 'lt', Icelandic: 'is', ice: 'is', isl: 'is', Georgian: 'ge', kat: 'ge', Armenian: 'am',
             hye: 'am', Mongolian: 'mn', mon: 'mn', Kazakh: 'kz', kaz: 'kz', Uzbek: 'uz', uzb: 'uz', Azerbaijani: 'az',
             aze: 'az', Belarusian: 'by', bel: 'by', Amharic: 'et', amh: 'et', Zulu: 'za', zul: 'za', Afrikaans: 'za',
-            afr: 'za', Hausa: 'ng', hau: 'ng', Yoruba: 'ng', yor: 'ng', Igbo: 'ng', ibo: 'ng'
+            afr: 'za', Hausa: 'ng', hau: 'ng', Yoruba: 'ng', yor: 'ng', Igbo: 'ng', ibo: 'ng', Brazilian:"br", bra:"br"
         };
 
         async function fetchFirstEpisode(userId, seriesId) {
