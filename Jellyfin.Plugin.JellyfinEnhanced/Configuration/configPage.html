@@ -104,7 +104,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags<div>This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div></span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="languageTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Language Tags</span></label></div>
-                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
+
                                     <fieldset style="margin-top: 1em;padding: 2em;border-radius: 20px;border-color: #ffffff25;">
                                     <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="qualityTagsPosition">Quality Tags Position</label>
@@ -145,17 +145,29 @@
                                         <div class="fieldDescription">Forces all clients to clear Language, Quality and Genre tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
                                     </div>
                                 </fieldset>
+                                <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
                                 </div>
                             </details>
                             <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="disableAllShortcuts" is="emby-checkbox" type="checkbox"/><span>⌨️ Disable Keyboard Shortcuts</span></label></div>
                                     <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in enhanced panel</div>
                                 </div>
-                            <div
-                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: .5em 1em; margin: 2em 0 .5em 0; display: flex; align-items: center; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
-                                <div>
-                                    Changes only take effect when all the existing settings are Reset.
+                        </div>
+                        <div class="verticalSection" style="margin-top: 2em;">
+                            <button id="resetAllUserSettingsBtn" class="raised button-submit block emby-button" is="emby-button" type="button">
+                                <span>Apply Above Settings to All Users</span>
+                            </button>
+                            <div style="background-color: rgba(0, 164, 220, 0.1); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin-top: 1em;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <strong>This will save the current configuration and apply all the above settings to every user on this server.</strong><br>
+                                        <strong>Note:</strong> Users can individually customize their own settings by opening the Enhanced Panel:<br>
+                                        • Press <code>?</code> key (default shortcut)<br>
+                                        • Long Press on user profile picture in the top-right corner<br>
+                                        • Through "Jellyfin Enhanced" link from the side bar<br>
+                                        • Access via playback controls menu during video playback (only on mobile devices)
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -199,14 +211,6 @@
                             </div>
                         </div>
                     </fieldset>
-                    <div class="verticalSection">
-                        <button id="resetAllUserSettingsBtn" class="raised button-cancel block emby-button" is="emby-button" type="button">
-                            <span>Reset All User Settings to Defaults</span>
-                        </button>
-                        <div class="fieldDescription" style="margin-top: 0.5em; text-align: center;">
-                            <strong>Important:</strong> Make sure to save your changes above before clicking reset.<br>The reset will apply whatever changes are currently saved in the configuration above.
-                        </div>
-                    </div>
                 </div>
 
                 <div id="elsewhere" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
@@ -1023,10 +1027,7 @@
             });
         }
 
-        async function saveConfig(e) {
-            e.preventDefault();
-            Dashboard.showLoadingMsg();
-
+        async function buildConfigFromForm() {
             const config = await ApiClient.getPluginConfiguration(pluginId);
             const finalShortcuts = [...defaultShortcuts];
             shortcutOverrides.forEach(override => {
@@ -1104,8 +1105,15 @@
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
             config.ShowLetterboxdLinkAsText = document.querySelector('#showLetterboxdLinkAsText').checked;
 
+            return config;
+        }
+
+        async function saveConfig(e) {
+            e.preventDefault();
+            Dashboard.showLoadingMsg();
 
             try {
+                const config = await buildConfigFromForm();
                 const result = await ApiClient.updatePluginConfiguration(pluginId, config);
                 Dashboard.processPluginConfigurationUpdateResult(result);
             } catch {
@@ -1114,28 +1122,35 @@
             return false;
         }
 
-        // Resets server-side settings.json for all users to plugin defaults
-        function resetAllUserSettings() {
-            if (confirm("Are you sure?\n\nThis will reset Jellyfin Enhanced settings (settings.json) for ALL users to the above defaults.")) {
+        // Saves current config and applies it to all users
+        async function resetAllUserSettings() {
+            if (confirm("Are you sure?\n\nThis will save the current configuration overwriting the above settings to ALL users on this server.")) {
                 Dashboard.showLoadingMsg();
-                ApiClient.ajax({
-                    type: 'POST',
-                    url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
-                    dataType: 'json'
-                }).then(() => {
+                try {
+                    // First, save the current configuration
+                    const config = await buildConfigFromForm();
+                    await ApiClient.updatePluginConfiguration(pluginId, config);
+
+                    // Then reset all user settings to match the saved config
+                    await ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
+                        dataType: 'json'
+                    });
+
                     Dashboard.hideLoadingMsg();
                     Dashboard.alert({
                         title: 'Success',
-                        message: 'All users\' settings have been reset to defaults. Settings will take effect after a refresh.'
+                        message: 'Configuration saved and applied to all users successfully!\n\nSettings will take effect after users refresh their browsers.'
                     });
-                }).catch((e) => {
+                } catch (e) {
                     Dashboard.hideLoadingMsg();
-                    console.error('Failed to reset settings for all users:', e);
+                    console.error('Failed to save and apply settings:', e);
                     Dashboard.alert({
                         title: 'Error',
-                        message: 'Failed to reset settings for all users. Check server logs for details.'
+                        message: 'Failed to save and apply settings to all users. Check server logs for details.'
                     });
-                });
+                }
             }
         }
 
