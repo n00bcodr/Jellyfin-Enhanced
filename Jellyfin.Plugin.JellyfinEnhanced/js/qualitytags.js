@@ -30,7 +30,16 @@
             '#itemDetailPage #castCollapsible .cardImageContainer',
             '#indexPage .verticalSection.MyMedia .cardImageContainer',
             '.formDialog .cardImageContainer',
-            '#itemDetailPage .chapterCardImageContainer'
+            '#itemDetailPage .chapterCardImageContainer',
+            // Admin/dashboard pages
+            '#pluginsPage .cardImageContainer',
+            '#pluginsPage .card',
+            '#pluginCatalogPage .cardImageContainer',
+            '#pluginCatalogPage .card',
+            '#devicesPage .cardImageContainer',
+            '#devicesPage .card',
+            '#mediaLibraryPage .cardImageContainer',
+            '#mediaLibraryPage .card'
         ];
 
         // Add search page to ignore list if configured (Gelato compatibility)
