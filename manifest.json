@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Add admin page selectors to ignore lists in tag scripts\n - Add Series/Season language detection for item details\n - Add data-lang attributes for CSS targeting\n - Update configPage.html\n - Add Enhanced Settings link to user preferences menu",
+        "targetAbi": "10.10.7.0",
+        "version": "9.6.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.6.1.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "716FF3A2C28819BC80DE1D1F85029523",
+        "timestamp": "2025-11-24T12:55:49"
+      },
+      {
         "changelog": "- Add custom branding options for Elsewhere panel\n - feat: watch progress for item details\n - add styling to support vanilla jellyfin css\n - Add language selection and cache clearing to UI\n - Populate Language Tags in IPEP\n - Improve genre and language detection for Series/Season\n - Add Open Episode Preview keyboard shortcut\n - Better close subtitles dialog\n - Add Jellyseerr URL mapping support\n - Persist active tab in config settings\n - Align placeholders vertically in feature tooltips\n - Add automatic season request feature\n - Update README with download badges for versions\n - Add Jellyseerr watchlist sync and auto-watchlist features\n - Improve translation caching with versioning\n - Update Jellyseerr integration and translation caching docs\n - Improve modal accessibility and keyboard navigation\n - Update README.md\n - Fix version specific logic!",
         "targetAbi": "10.10.7.0",
         "version": "9.6.0.0",
