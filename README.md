@@ -552,17 +552,22 @@ The HTML structure for language tags is as follows:
 ```html
 <div class="cardImageContainer">
     <div class="language-overlay-container">
-        <img src="https://flagcdn.com/w20/gb.png" class="language-flag" alt="English" loading="lazy">
-        <img src="https://flagcdn.com/w20/fr.png" class="language-flag" alt="French" loading="lazy">
-        <img src="https://flagcdn.com/w20/es.png" class="language-flag" alt="Spanish" loading="lazy">
+        <img src="https://flagcdn.com/w20/gb.png" class="language-flag"
+             data-lang="gb" data-lang-name="English" alt="English" loading="lazy">
+        <img src="https://flagcdn.com/w20/fr.png" class="language-flag"
+             data-lang="fr" data-lang-name="French" alt="French" loading="lazy">
+        <img src="https://flagcdn.com/w20/es.png" class="language-flag"
+             data-lang="es" data-lang-name="Spanish" alt="Spanish" loading="lazy">
     </div>
 </div>
 ```
 
-**Classes**
+**Classes & Attributes**
 
 - **`.language-overlay-container`**: The main container for all language flag icons on a card.
 - **`.language-flag`**: The individual flag image for each language.
+- **`data-lang`**: Country code for the flag (e.g., "gb", "fr", "es") - useful for targeting specific languages.
+- **`data-lang-name`**: Full language name(s) associated with the flag (e.g., "English", "French").
 
 <br>
 
@@ -599,11 +604,60 @@ The HTML structure for language tags is as follows:
   }
   ```
 
+- **Target Specific Languages**
+  ```css
+  /* Change English flag appearance */
+  .language-flag[data-lang="gb"] {
+      border: 2px solid gold !important;
+  }
+
+  /* Hide Japanese flags */
+  .language-flag[data-lang="jp"] {
+      display: none !important;
+  }
+
+  /* Scale up French flags */
+  .language-flag[data-lang="fr"] {
+      transform: scale(1.2) !important;
+  }
+  ```
+
 - **Stack Flags Horizontally in a Row**
   ```css
   .language-overlay-container {
       flex-direction: row !important;
       gap: 4px !important;
+  }
+  ```
+
+- **Audio Languages on Item Details Page**
+
+  In addition to poster overlays, language information is also displayed on item detail pages with the following structure:
+  ```html
+  <div class="mediaInfoItem mediaInfoItem-audioLanguage">
+      <span class="material-icons">translate</span>
+      <span class="audio-language-item" data-lang="en" data-lang-name="English">
+          <img src="https://flagcdn.com/w20/gb.png" alt="English flag" />
+          English
+      </span>
+      <span>, </span>
+      <span class="audio-language-item" data-lang="ja" data-lang-name="Japanese">
+          <img src="https://flagcdn.com/w20/jp.png" alt="Japanese flag" />
+          Japanese
+      </span>
+  </div>
+  ```
+
+  You can style these with:
+  ```css
+  /* Hide specific language from details page */
+  .audio-language-item[data-lang="en"] {
+      display: none !important;
+  }
+
+  /* Change flag appearance for specific language */
+  .audio-language-item[data-lang="ja"] img {
+      border: 2px solid red !important;
   }
   ```
 

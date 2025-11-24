@@ -377,6 +377,50 @@
             placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
         };
 
+        // Helper to render language items with proper DOM elements
+        const renderLanguages = (languages) => {
+            applyLangStyles(placeholder);
+
+            // Add icon
+            const icon = document.createElement('span');
+            icon.className = 'material-icons';
+            icon.style.fontSize = 'inherit';
+            icon.style.marginRight = '0.3em';
+            icon.textContent = 'translate';
+            placeholder.appendChild(icon);
+
+            languages.forEach((lang, index) => {
+                // Create container span with data-lang attribute
+                const langSpan = document.createElement('span');
+                langSpan.className = 'audio-language-item';
+                langSpan.dataset.lang = lang.code;
+                langSpan.dataset.langName = lang.name;
+
+                const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
+                if (countryCode) {
+                    const flag = document.createElement('img');
+                    flag.src = `https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`;
+                    flag.alt = `${lang.name} flag`;
+                    flag.style.width = '18px';
+                    flag.style.marginRight = '0.3em';
+                    flag.style.borderRadius = '2px';
+                    langSpan.appendChild(flag);
+                }
+
+                const text = document.createTextNode(lang.name);
+                langSpan.appendChild(text);
+
+                placeholder.appendChild(langSpan);
+
+                if (index < languages.length - 1) {
+                    const separator = document.createElement('span');
+                    separator.style.margin = '0 0.25em';
+                    separator.textContent = ', ';
+                    placeholder.appendChild(separator);
+                }
+            });
+        };
+
         // Check cache first
         const now = Date.now();
         const cached = audioLanguageCache[itemId];
@@ -386,19 +430,7 @@
                 return;
             }
             // Render from cache
-            applyLangStyles(placeholder);
-            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
-
-            cached.languages.forEach((lang, index) => {
-                const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
-                if (countryCode) {
-                    placeholder.innerHTML += `<img src="https://flagcdn.com/w20/${countryCode.toLowerCase()}.png" alt="${lang.name} flag" style="width: 18px; margin-right: 0.3em; border-radius: 2px;">`;
-                }
-                placeholder.appendChild(document.createTextNode(lang.name));
-                if (index < cached.languages.length - 1) {
-                    placeholder.innerHTML += '<span style="margin: 0 0.25em;">, </span>';
-                }
-            });
+            renderLanguages(cached.languages);
             return;
         }
 
@@ -438,19 +470,7 @@
 
             const uniqueLanguages = Array.from(languages).map(JSON.parse);
             if (uniqueLanguages.length > 0) {
-                applyLangStyles(placeholder);
-                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span>`;
-
-                uniqueLanguages.forEach((lang, index) => {
-                    const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
-                    if (countryCode) {
-                        placeholder.innerHTML += `<img src="https://flagcdn.com/w20/${countryCode.toLowerCase()}.png" alt="${lang.name} flag" style="width: 18px; margin-right: 0.3em; border-radius: 2px;">`;
-                    }
-                    placeholder.appendChild(document.createTextNode(lang.name));
-                    if (index < uniqueLanguages.length - 1) {
-                        placeholder.innerHTML += '<span style="margin: 0 0.25em;">, </span>';
-                    }
-                });
+                renderLanguages(uniqueLanguages);
                 // Cache the successful result
                 audioLanguageCache[itemId] = { languages: uniqueLanguages, unavailable: false, ts: now };
             } else {

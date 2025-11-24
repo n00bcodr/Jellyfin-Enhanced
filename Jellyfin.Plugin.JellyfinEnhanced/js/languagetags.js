@@ -272,6 +272,8 @@
                 img.alt = flagInfo.allLanguages.join(', ');
                 img.title = flagInfo.allLanguages.join(', ');
                 img.loading = 'lazy';
+                img.dataset.lang = flagInfo.countryCode.toLowerCase();
+                img.dataset.langName = flagInfo.allLanguages.join(', ');
                 wrap.appendChild(img);
             });
             if (wrap.children.length > 0) {
