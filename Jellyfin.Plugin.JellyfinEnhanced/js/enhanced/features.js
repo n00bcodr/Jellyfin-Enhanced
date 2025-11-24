@@ -307,6 +307,34 @@
     const languageToCountryMap={English:"gb",eng:"gb",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"bd",ben:"bd",Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",ice:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng"};
 
     /**
+     * Fetches the first episode of a series or season for language detection.
+     * @param {string} userId The user ID.
+     * @param {string} parentId The series or season ID.
+     * @returns {Promise<object|null>} The first episode item or null.
+     */
+    async function fetchFirstEpisodeForLanguage(userId, parentId) {
+        try {
+            const response = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Items', {
+                    ParentId: parentId,
+                    IncludeItemTypes: 'Episode',
+                    Recursive: true,
+                    SortBy: 'PremiereDate',
+                    SortOrder: 'Ascending',
+                    Limit: 1,
+                    Fields: 'MediaStreams,MediaSources',
+                    userId: userId
+                }),
+                dataType: 'json'
+            });
+            return response.Items?.[0] || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Displays the audio languages of an item (and its children) on its details page.
      * @param {string} itemId The ID of the item.
      * @param {HTMLElement} container The DOM element to append the info to.
@@ -375,9 +403,26 @@
         }
 
         try {
-            const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+            const userId = ApiClient.getCurrentUserId();
+            const item = await ApiClient.getItem(userId, itemId);
+
+            let sourceItem = item;
+
+            // For Series/Season, fetch the first episode to get language info
+            if (item.Type === 'Series' || item.Type === 'Season') {
+                const episode = await fetchFirstEpisodeForLanguage(userId, item.Id);
+                if (episode) {
+                    sourceItem = episode;
+                } else {
+                    // No episodes found
+                    renderUnavailable();
+                    audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: now };
+                    return;
+                }
+            }
+
             const languages = new Set();
-            item?.MediaSources?.forEach(source => {
+            sourceItem?.MediaSources?.forEach(source => {
                 source.MediaStreams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
                     const langCode = stream.Language;
                     if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
