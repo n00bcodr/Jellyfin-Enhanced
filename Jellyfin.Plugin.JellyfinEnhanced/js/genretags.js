@@ -114,7 +114,16 @@
             'bűnügyi': 'local_police', 'dokumentum': 'article', 'dráma': 'theater_comedy', 'családi': 'family_restroom',
             'történelmi': 'history_edu', 'horror': 'skull', 'zenei': 'music_note', 'misztikus': 'psychology_alt',
             'romantikus': 'favorite', 'sci-fi': 'science', 'tv film': 'tv', 'háborús': 'military_tech',
-            'életrajzi': 'menu_book', 'játékshow': 'quiz', 'valóság-tv': 'live_tv'
+            'életrajzi': 'menu_book', 'játékshow': 'quiz', 'valóság-tv': 'live_tv',
+
+            // Russian (ru)
+            'боевик': 'sports_martial_arts', 'приключения': 'explore', 'мультфильм': 'animation',
+            'комедия': 'mood', 'криминал': 'local_police', 'документальный': 'article',
+            'драма': 'theater_comedy', 'семейный': 'family_restroom', 'фэнтези': 'auto_awesome',
+            'история': 'history_edu', 'ужасы': 'skull', 'музыка': 'music_note',
+            'детектив': 'psychology_alt', 'мелодрама': 'favorite', 'фантастика': 'science',
+            'НФ и Фэнтези': 'science', 'телевизионный фильм': 'tv', 'триллер': 'psychology', 'военный': 'military_tech',
+            'вестерн': 'landscape', 'реалити-шоу': 'live_tv'
         };
 
         const visibilityObserver = new IntersectionObserver((entries) => {
