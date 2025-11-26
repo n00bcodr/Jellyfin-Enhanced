@@ -56,7 +56,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Get the series this episode belongs to
             var episode = episodeItem as Episode;
-            if (episode == null || episode.Series == null)
+            if (episode == null || episode.Series == null || !episode.ParentIndexNumber.HasValue)
             {
                 return;
             }
@@ -64,12 +64,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var series = episode.Series;
             _logger.Info($"[Auto-Request] Checking '{series.Name}' S{episode.ParentIndexNumber}E{episode.IndexNumber}");
 
-            // Check this specific series for auto-request
-            await CheckSeriesForAutoRequest(series, user);
+            // Check this specific season for auto-request
+            await CheckSeasonForAutoRequest(series, episode.ParentIndexNumber.Value, user);
         }
 
-        // Checks if a specific series needs its next season requested
-        private async Task CheckSeriesForAutoRequest(Series series, JUser user)
+        // Checks if a specific season needs its next season requested
+        private async Task CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, JUser user)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
@@ -77,7 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Get all seasons for this series
+            // Get all seasons for this series that have at least one episode
             var seasonsQuery = new InternalItemsQuery(user)
             {
                 Parent = series,
@@ -91,20 +91,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 .OrderBy(s => s.IndexNumber)
                 .ToList();
 
+            // Filter to only seasons that have at least one episode
+            seasons = seasons.Where(season =>
+            {
+                var episodeCheck = new InternalItemsQuery(user)
+                {
+                    Parent = season,
+                    IncludeItemTypes = new[] { BaseItemKind.Episode },
+                    Limit = 1
+                };
+                return _libraryManager.GetItemsResult(episodeCheck).Items.Count > 0;
+            }).ToList();
+
             if (seasons.Count == 0)
             {
                 return;
             }
 
-            // Get the last available season
-            var lastAvailableSeason = seasons.Last();            // Get all episodes in the last season
+            // Find the current season being watched
+            var currentSeason = seasons.FirstOrDefault(s => s.IndexNumber == currentSeasonNumber);
+            if (currentSeason == null)
+            {
+                _logger.Debug($"[Auto-Request] Season {currentSeasonNumber} not found for '{series.Name}'");
+                return;
+            }
+
+            // Check if the next season already exists locally
+            var nextSeasonNumber = currentSeasonNumber + 1;
+            var nextSeasonExists = seasons.Any(s => s.IndexNumber == nextSeasonNumber);
+
+            if (nextSeasonExists)
+            {
+                _logger.Debug($"[Auto-Request] Season {nextSeasonNumber} already exists locally for '{series.Name}', no request needed");
+                return;
+            }
+
+            _logger.Debug($"[Auto-Request] Checking season {currentSeasonNumber} of '{series.Name}' (next season {nextSeasonNumber} not available locally)");
+
+            // Get all episodes in the current season
             var episodesQuery = new InternalItemsQuery(user)
             {
-                AncestorIds = new[] { series.Id },
+                Parent = currentSeason,
                 IncludeItemTypes = new[] { BaseItemKind.Episode },
-                ParentIndexNumber = lastAvailableSeason.IndexNumber!.Value,
-                Recursive = true,
-                OrderBy = new[] { (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending), (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
+                Recursive = false,
+                OrderBy = new[] { (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
             };
 
             var episodes = _libraryManager.GetItemsResult(episodesQuery).Items.ToList();
@@ -116,17 +146,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Calculate remaining unwatched episodes
             var remainingEpisodes = CalculateRemainingEpisodes(episodes, user);
+            var watchedEpisodes = episodes.Count - remainingEpisodes;
 
-            _logger.Info($"[Auto-Request] Remaining: {remainingEpisodes}/{episodes.Count} episodes (threshold: {config.AutoSeasonRequestThresholdValue})");
+            _logger.Info($"[Auto-Request] Season {currentSeasonNumber}: {watchedEpisodes}/{episodes.Count} watched, {remainingEpisodes} remaining (threshold: {config.AutoSeasonRequestThresholdValue})");
 
             bool shouldRequest = remainingEpisodes <= config.AutoSeasonRequestThresholdValue;
 
             if (shouldRequest)
             {
-                var nextSeasonNumber = lastAvailableSeason.IndexNumber!.Value + 1;
-
                 // Check if we've already requested this season
-                var requestKey = $"{user.Id}_{series.Id}_{lastAvailableSeason.IndexNumber}";
+                var requestKey = $"{user.Id}_{series.Id}_{currentSeasonNumber}";
                 if (!_requestedSeasons.ContainsKey(user.Id.ToString()))
                 {
                     _requestedSeasons[user.Id.ToString()] = new HashSet<string>();
@@ -159,7 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             else
             {
-                _logger.Debug($"[Auto-Request] Threshold not met for '{series.Name}'");
+                _logger.Debug($"[Auto-Request] Threshold not met for '{series.Name}' S{currentSeasonNumber}");
             }
         }
 
