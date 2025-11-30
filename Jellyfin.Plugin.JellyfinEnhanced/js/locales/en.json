@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Quality Profile",
     "jellyseerr_folder_select": "Root Folder",
     "jellyseerr_modal_toast_options_missing": "⚠️ Please select all required options",
+    "jellyseerr_select_all_seasons": "Select All Seasons",
     "jellyseerr_season_status_not_requested": "Not Requested",
     "jellyseerr_season_status_requested": "Requested",
     "jellyseerr_season_status_processing": "Processing",

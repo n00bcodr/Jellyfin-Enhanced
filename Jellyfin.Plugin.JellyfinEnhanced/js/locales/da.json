@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Kvalitetsprofil",
     "jellyseerr_folder_select": "Rodmappe",
     "jellyseerr_modal_toast_options_missing": "⚠️ Vælg venligst alle påkrævede muligheder",
+    "jellyseerr_select_all_seasons": "Vælg alle sæsoner",
     "jellyseerr_season_status_not_requested": "Ikke anmodet",
     "jellyseerr_season_status_requested": "Anmodet",
     "jellyseerr_season_status_processing": "Behandler",

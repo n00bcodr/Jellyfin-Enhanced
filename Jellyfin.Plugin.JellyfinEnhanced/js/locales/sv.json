@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Kvalitetsprofil",
     "jellyseerr_folder_select": "Rotmapp",
     "jellyseerr_modal_toast_options_missing": "⚠️ Vänligen välj alla nödvändiga alternativ",
+    "jellyseerr_select_all_seasons": "Välj alla säsonger",
     "jellyseerr_season_status_not_requested": "Inte begärd",
     "jellyseerr_season_status_requested": "Begärd",
     "jellyseerr_season_status_processing": "Bearbetar",

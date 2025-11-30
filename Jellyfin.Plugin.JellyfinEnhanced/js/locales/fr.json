@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Profil de qualité",
     "jellyseerr_folder_select": "Dossier racine",
     "jellyseerr_modal_toast_options_missing": "⚠️ Veuillez sélectionner toutes les options requises",
+    "jellyseerr_select_all_seasons": "Sélectionner toutes les saisons",
     "jellyseerr_season_status_not_requested": "Non demandé",
     "jellyseerr_season_status_requested": "Demandé",
     "jellyseerr_season_status_processing": "Traitement",

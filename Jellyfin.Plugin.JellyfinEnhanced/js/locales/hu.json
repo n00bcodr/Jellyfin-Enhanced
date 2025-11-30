@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Minőség profil",
     "jellyseerr_folder_select": "Gyökérmappa",
     "jellyseerr_modal_toast_options_missing": "⚠️ Jelöld be az összes szükséges lehetőséget",
+    "jellyseerr_select_all_seasons": "Összes évad kiválasztása",
     "jellyseerr_season_status_not_requested": "Nincs kérve",
     "jellyseerr_season_status_requested": "Kérve",
     "jellyseerr_season_status_processing": "Feldolgozás",

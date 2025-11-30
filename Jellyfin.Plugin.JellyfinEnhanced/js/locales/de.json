@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Qualitätsprofil",
     "jellyseerr_folder_select": "Stammordner",
     "jellyseerr_modal_toast_options_missing": "⚠️ Bitte wählen Sie alle erforderlichen Optionen aus",
+    "jellyseerr_select_all_seasons": "Alle Staffeln auswählen",
     "jellyseerr_season_status_not_requested": "Nicht angefragt",
     "jellyseerr_season_status_requested": "Angefragt",
     "jellyseerr_season_status_processing": "Verarbeitung",

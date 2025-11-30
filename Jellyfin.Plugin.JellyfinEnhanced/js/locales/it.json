@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Profilo di qualità",
     "jellyseerr_folder_select": "Cartella principale",
     "jellyseerr_modal_toast_options_missing": "⚠️ Seleziona tutte le opzioni richieste",
+    "jellyseerr_select_all_seasons": "Seleziona tutte le stagioni",
     "jellyseerr_season_status_not_requested": "Non richiesto",
     "jellyseerr_season_status_requested": "Richiesto",
     "jellyseerr_season_status_processing": "Elaborazione",

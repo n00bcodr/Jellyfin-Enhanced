@@ -448,6 +448,9 @@
             .jellyseerr-form-group select[is="emby-select"] { background-color: rgba(30, 41, 59, 0.7) !important; color: #e2e8f0 !important; border: 1px solid rgba(51, 65, 85, 0.5) !important; border-radius: 8px !important; padding: 12px 16px !important; font-size: 0.95rem !important; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E") !important; background-repeat: no-repeat !important; background-position: right 16px center !important; transition: border-color 0.2s ease, background-color 0.2s ease !important; }
             .jellyseerr-form-group select[is="emby-select"]:hover { border-color: rgba(59, 130, 246, 0.4) !important; background-color: rgba(30, 41, 59, 1) !important; }
             .jellyseerr-season-list { display: grid; gap: 4px; margin-bottom: 24px; }
+            .jellyseerr-season-header-row { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 12px 20px; background: rgba(51, 65, 85, 0.3); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; margin-bottom: 8px; font-weight: 600; color: #e2e8f0; }
+            .jellyseerr-season-header-row .jellyseerr-season-checkbox { cursor: pointer; }
+            .jellyseerr-season-header-label { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #cbd5e1; }
             .jellyseerr-season-item { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 12px; transition: all 0.2s ease; position: relative; }
             .jellyseerr-season-item:hover:not(.disabled) { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); transform: translateY(-1px); }
             .jellyseerr-season-item.disabled { background: rgba(15, 23, 42, 0.6); opacity: 0.6; border-color: rgba(51, 65, 85, 0.2); }
@@ -1253,8 +1256,10 @@
 
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
 
-        // Show season selection UI, but hide checkboxes if partial requests are disabled
-        const bodyHtml = `<div class="jellyseerr-season-list"></div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
+        // Show season selection UI with Select All checkbox header
+        const bodyHtml = `<div class="jellyseerr-season-list">
+            ${partialRequestsEnabled ? '<div class="jellyseerr-season-header-row"><input type="checkbox" class="jellyseerr-season-checkbox" id="jellyseerr-select-all-seasons"><label class="jellyseerr-season-header-label" for="jellyseerr-select-all-seasons">' + JE.t('jellyseerr_select_all_seasons') + '</label><div></div><div></div></div>' : ''}
+        </div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
         const modalInstance = create({
             title: JE.t('jellyseerr_modal_title'),
             subtitle: showTitle,
@@ -1280,8 +1285,8 @@
 
                 try {
                     if (partialRequestsEnabled) {
-                        // Partial requests enabled: request selected seasons
-                        const selectedSeasons = Array.from(modalEl.querySelectorAll('.jellyseerr-season-checkbox:checked')).map(cb => parseInt(cb.dataset.seasonNumber));
+                        // Partial requests enabled: request selected seasons (exclude the Select All checkbox)
+                        const selectedSeasons = Array.from(modalEl.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:checked')).map(cb => parseInt(cb.dataset.seasonNumber));
                         if (selectedSeasons.length === 0) {
                             JE.toast(JE.t('jellyseerr_modal_toast_select_season'), 3000);
                             requestBtn.disabled = false;
@@ -1318,12 +1323,50 @@
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled);
         modalInstance.show();
 
+        // Add Select All checkbox functionality
+        if (partialRequestsEnabled) {
+            const selectAllCheckbox = modalInstance.modalElement.querySelector('#jellyseerr-select-all-seasons');
+            if (selectAllCheckbox) {
+                // Update Select All checkbox state when individual checkboxes change
+                const updateSelectAllState = () => {
+                    const allSeasonCheckboxes = seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled)');
+                    const checkedCount = seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled):checked').length;
+                    selectAllCheckbox.checked = checkedCount > 0 && checkedCount === allSeasonCheckboxes.length;
+                    selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < allSeasonCheckboxes.length;
+                };
+
+                // Handle Select All checkbox click
+                selectAllCheckbox.addEventListener('change', () => {
+                    const allSeasonCheckboxes = seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled)');
+                    allSeasonCheckboxes.forEach(checkbox => {
+                        checkbox.checked = selectAllCheckbox.checked;
+                    });
+                });
+
+                // Add change listeners to individual season checkboxes
+                seasonList.addEventListener('change', (e) => {
+                    if (e.target.classList.contains('jellyseerr-season-checkbox') && e.target.id !== 'jellyseerr-select-all-seasons') {
+                        updateSelectAllState();
+                    }
+                });
+
+                // Initialize Select All state
+                updateSelectAllState();
+
+                seasonList._updateSelectAllState = updateSelectAllState;
+            }
+        }
+
 
         // Start polling for updates when the modal is shown
         refreshModalInterval = setInterval(async () => {
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
             if (freshTvDetails) {
                 updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled);
+                // Update Select All state after refresh
+                if (seasonList._updateSelectAllState) {
+                    seasonList._updateSelectAllState();
+                }
             }
         }, 10000); // Refresh every 10 seconds
 

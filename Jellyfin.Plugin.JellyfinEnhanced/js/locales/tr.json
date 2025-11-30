@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Kalite Profili",
     "jellyseerr_folder_select": "Kök Klasör",
     "jellyseerr_modal_toast_options_missing": "⚠️ Lütfen tüm gerekli seçenekleri seçin",
+    "jellyseerr_select_all_seasons": "Tüm sezonları seç",
     "jellyseerr_season_status_not_requested": "İstenmedi",
     "jellyseerr_season_status_requested": "İstendi",
     "jellyseerr_season_status_processing": "İşleniyor",

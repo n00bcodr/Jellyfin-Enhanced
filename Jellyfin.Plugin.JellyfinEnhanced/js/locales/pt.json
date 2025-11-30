@@ -141,6 +141,7 @@
     "jellyseerr_quality_select": "Perfil de Qualidade",
     "jellyseerr_folder_select": "Pasta Raiz",
     "jellyseerr_modal_toast_options_missing": "⚠️ Por favor, selecione todas as opções necessárias",
+    "jellyseerr_select_all_seasons": "Selecionar todas as temporadas",
     "jellyseerr_season_status_not_requested": "Não Solicitado",
     "jellyseerr_season_status_requested": "Solicitado",
     "jellyseerr_season_status_processing": "Processando",
