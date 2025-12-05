@@ -10,34 +10,49 @@
             return;
         }
 
-        try {
-            // --- Wait for user to be available ---
-            let user = null;
-            for (let i = 0; i < 20; i++) {  // ~10s retry window
-                try {
-                    user = await ApiClient.getCurrentUser();
-                    if (user) break;
-                } catch (e) {
-                    // swallow error, retry
+        // Check admin status with session storage cache
+        const adminCacheKey = 'JE_IsAdmin';
+        let isAdmin = sessionStorage.getItem(adminCacheKey);
+
+        if (isAdmin === null) {
+            // Not cached, fetch user and check
+            try {
+                let user = null;
+                for (let i = 0; i < 20; i++) {  // ~10s retry window
+                    try {
+                        user = await ApiClient.getCurrentUser();
+                        if (user) break;
+                    } catch (e) {
+                        // swallow error, retry
+                    }
+                    await new Promise(r => setTimeout(r, 500));
                 }
-                await new Promise(r => setTimeout(r, 500));
-            }
 
-            if (!user) {
-                console.error(`${logPrefix} Could not get current user after retries.`);
+                if (!user) {
+                    console.error(`${logPrefix} Could not get current user after retries.`);
+                    return;
+                }
+
+                isAdmin = user?.Policy?.IsAdministrator ? 'true' : 'false';
+                sessionStorage.setItem(adminCacheKey, isAdmin);
+            } catch (err) {
+                console.error(`${logPrefix} Error checking admin status:`, err);
                 return;
             }
+        }
 
-            if (!user?.Policy?.IsAdministrator) {
-                console.log(`${logPrefix} User is not an administrator. Links will not be shown.`);
-                return;
-            }
+        if (isAdmin !== 'true') {
+            console.log(`${logPrefix} User is not an administrator. Links will not be shown.`);
+            return;
+        }
 
-            console.log(`${logPrefix} Initializing...`);
+        console.log(`${logPrefix} Initializing...`);
 
-            let isAddingLinks = false; // Lock to prevent concurrent runs
-            let intervalId = null;
+        let isAddingLinks = false; // Lock to prevent concurrent runs
+        let debounceTimer = null;
+        let observer = null;
 
+        try {
             const SONARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg';
             const RADARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg';
             const BAZARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg';
@@ -123,7 +138,9 @@
                     if (!itemId) return;
 
                     const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-                    if (!item?.Type) return;
+                    
+                    // Only process movies and TV shows
+                    if (item?.Type !== 'Movie' && item?.Type !== 'Series') return;
 
                     const ids = getExternalIds(visiblePage);
 
@@ -172,20 +189,50 @@
                 return button;
             }
 
-            function processArrLinks() {
+            observer = new MutationObserver(() => {
                 if (!JE?.pluginConfig?.ArrLinksEnabled) {
-                    if (intervalId) {
-                        clearInterval(intervalId);
-                        intervalId = null;
-                        console.log(`${logPrefix} Stopped - feature disabled`);
+                    // Feature disabled - disconnect observer
+                    if (observer) {
+                        observer.disconnect();
+                        console.log(`${logPrefix} Observer disconnected - feature disabled`);
                     }
                     return;
                 }
-                addArrLinks();
-            }
 
-            intervalId = setInterval(processArrLinks, 500);
+                // Debounce to avoid excessive processing on rapid DOM changes
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                }
 
+                debounceTimer = setTimeout(() => {
+                    addArrLinks();
+                }, 100); // Wait 100ms after last mutation before processing
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class']
+            });
+
+            // Store observer reference for potential cleanup
+            JE._arrLinksObserver = observer;
+
+            // Listen for configuration changes
+            window.addEventListener('JE:configUpdated', () => {
+                const isEnabled = JE?.pluginConfig?.ArrLinksEnabled;
+                
+                if (!isEnabled) {
+                    // Disable: disconnect observer
+                    if (observer) {
+                        observer.disconnect();
+                        console.log(`${logPrefix} Observer disconnected - feature disabled via config update`);
+                    }
+                }
+            });
+
+            console.log(`${logPrefix} Initialized successfully`);
         } catch (err) {
             console.error(`${logPrefix} Failed to initialize`, err);
         }

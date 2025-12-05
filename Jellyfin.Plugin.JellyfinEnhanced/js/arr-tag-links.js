@@ -13,6 +13,8 @@
         console.log(`${logPrefix} Initializing...`);
 
         let isAddingLinks = false;
+        let processedItems = new Set(); // Track items that have been processed
+        let debounceTimer = null;
 
         function slugifyTagName(name) {
             try {
@@ -36,9 +38,15 @@
                 return;
             }
 
+            // Check if we've already processed this item (with or without tags)
+            if (processedItems.has(itemId)) {
+                return;
+            }
+
             // Check if already rendered for this itemId
             const existing = externalLinksContainer.querySelector('.arr-tag-link');
             if (existing && existing.dataset.itemId === itemId) {
+                processedItems.add(itemId);
                 return;
             }
 
@@ -54,7 +62,11 @@
             try {
                 const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
 
-                if (!item?.Tags || item.Tags.length === 0) return;
+                if (!item?.Tags || item.Tags.length === 0) {
+                    // Mark as processed even if no tags - don't keep checking
+                    processedItems.add(itemId);
+                    return;
+                }
 
                 const tagPrefix = JE.pluginConfig.ArrTagsPrefix || 'JE Arr Tag: ';
                 const tagsFilter = JE.pluginConfig.ArrTagsLinksFilter || '';
@@ -92,7 +104,11 @@
                     );
                 }
 
-                if (relevantTags.length === 0) return;
+                if (relevantTags.length === 0) {
+                    // Mark as processed even if no relevant tags - don't keep checking
+                    processedItems.add(itemId);
+                    return;
+                }
 
                 const serverId = ApiClient.serverId();
 
@@ -144,6 +160,9 @@
                     externalLinksContainer.appendChild(link);
                 });
 
+                // Mark item as processed after successfully adding links
+                processedItems.add(itemId);
+
             } catch (err) {
                 console.error(`${logPrefix} Error adding tag links:`, err);
             } finally {
@@ -156,25 +175,27 @@
                 return;
             }
 
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                    const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                    if (visiblePage) {
-                        const externalLinksContainer = visiblePage.querySelector('.itemExternalLinks');
-                        if (externalLinksContainer) {
-                            try {
-                                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                                if (itemId) {
-                                    addTagLinks(itemId, externalLinksContainer);
-                                }
-                            } catch (e) {
-                                // Ignore URL parsing errors
+            // Debounce to avoid excessive processing on rapid DOM changes
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+
+            debounceTimer = setTimeout(() => {
+                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                if (visiblePage) {
+                    const externalLinksContainer = visiblePage.querySelector('.itemExternalLinks');
+                    if (externalLinksContainer) {
+                        try {
+                            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                            if (itemId) {
+                                addTagLinks(itemId, externalLinksContainer);
                             }
+                        } catch (e) {
+                            // Ignore URL parsing errors
                         }
-                        break;
                     }
                 }
-            }
+            }, 100); // Wait 100ms after last mutation before processing
         });
 
         observer.observe(document.body, {
