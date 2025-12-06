@@ -200,8 +200,21 @@
 
                 let sourceItem = item;
 
-                // For Series/Season, fetch the first episode to get genre info
-                if (item.Type === 'Series' || item.Type === 'Season') {
+                // For Season, get genres from the parent Series
+                if (item.Type === 'Season' && item.SeriesId) {
+                    try {
+                        const series = await ApiClient.getItem(userId, item.SeriesId);
+                        if (series && series.Genres && series.Genres.length > 0) {
+                            sourceItem = series;
+                        }
+                    } catch {
+                        // If we can't get the series, fall through to use episode
+                    }
+                }
+
+                // For Series, try to use genres from the item itself first
+                // Only fall back to fetching first episode if the Series has no genres
+                if (item.Type === 'Series' && (!sourceItem.Genres || sourceItem.Genres.length === 0)) {
                     const episode = await fetchFirstEpisode(userId, item.Id);
                     if (episode) {
                         sourceItem = episode;
