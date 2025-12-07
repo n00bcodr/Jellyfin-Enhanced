@@ -292,3 +292,7 @@ apiclient/generated
 mono_crash.*.json
 .env
 build.sh
+DEBUGGING_ISSUE_REPORTER.md
+ISSUE_REPORTER_DEBUG.js
+ISSUE_REPORTER_FIXED.md
+REFINEMENTS_COMPLETE.md

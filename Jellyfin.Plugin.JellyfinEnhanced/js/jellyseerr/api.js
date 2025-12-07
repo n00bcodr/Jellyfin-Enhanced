@@ -424,6 +424,66 @@
         }
     };
 
+    /**
+     * Reports an issue for a media item to Jellyseerr.
+     * @param {number} mediaId - The TMDB/TVDB ID of the media.
+     * @param {string} mediaType - 'movie' or 'tv'.
+     * @param {string} problemType - Type of issue (e.g., 'no_season', 'episode_missing', etc.).
+     * @param {string} [message=''] - Optional description of the issue.
+     * @returns {Promise<any>} - The response from Jellyseerr.
+     */
+    /**
+     * Maps problem types to Jellyseerr issue types and season/episode info
+     * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
+     */
+    const ISSUE_TYPE_MAP = {
+        'wrong_quality': { issueType: 1, label: 'VIDEO' },        // VIDEO
+        'wrong_audio': { issueType: 2, label: 'AUDIO' },           // AUDIO
+        'wrong_subs': { issueType: 3, label: 'SUBTITLES' },        // SUBTITLES
+        'no_season': { issueType: 4, label: 'OTHER' },             // OTHER - TV specific
+        'episode_missing': { issueType: 4, label: 'OTHER' },       // OTHER - TV specific
+        'episode_wrong_quality': { issueType: 1, label: 'VIDEO' }, // VIDEO - Episode
+        'episode_wrong_audio': { issueType: 2, label: 'AUDIO' },   // AUDIO - Episode
+        'episode_wrong_subs': { issueType: 3, label: 'SUBTITLES' } // SUBTITLES - Episode
+    };
+
+    api.reportIssue = async function(mediaId, mediaType, problemType, message = '') {
+        try {
+            const mapping = ISSUE_TYPE_MAP[problemType] || { issueType: 4, label: 'OTHER' };
+
+            // Fetch the correct internal media id from Jellyseerr
+
+            let apiResult = null;
+            if (mediaType === 'movie') {
+                apiResult = await get(`/movie/${mediaId}`);
+            } else if (mediaType === 'tv') {
+                apiResult = await get(`/tv/${mediaId}`);
+            }
+
+            const internalId = apiResult && apiResult.mediaInfo && apiResult.mediaInfo.id;
+            if (!internalId) {
+                throw new Error(`Could not find Jellyseerr media id (mediaInfo.id) for TMDB id ${mediaId} (${mediaType})`);
+            }
+            console.log(`${logPrefix} Retrieved internal media id for issue report:`, internalId);
+
+            const body = {
+                mediaId: parseInt(internalId),
+                issueType: mapping.issueType,
+                problemSeason: 0,
+                problemEpisode: 0,
+                message: message || ''
+            };
+
+            console.debug(`${logPrefix} Sending issue report with body:`, body);
+            const result = await post('/issue', body);
+            console.log(`${logPrefix} Issue reported for Jellyseerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
+            return result;
+        } catch (error) {
+            console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
+            throw error;
+        }
+    };
+
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;
 

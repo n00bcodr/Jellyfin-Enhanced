@@ -401,6 +401,7 @@
                 'jellyseerr/api.js',
                 'jellyseerr/modal.js',
                 'jellyseerr/ui.js',
+                'jellyseerr/issue-reporter.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
                 'qualitytags.js', 'genretags.js', 'languagetags.js', 'arr-links.js', 'arr-tag-links.js',
@@ -432,6 +433,7 @@
             if (typeof JE.initializeMigration === 'function') JE.initializeMigration();
             if (typeof JE.initializeElsewhereScript === 'function' && JE.pluginConfig?.ElsewhereEnabled) JE.initializeElsewhereScript();
             if (typeof JE.initializeJellyseerrScript === 'function' && JE.pluginConfig?.JellyseerrEnabled) JE.initializeJellyseerrScript();
+            if (typeof JE.jellyseerrIssueReporter?.initialize === 'function' && JE.pluginConfig?.JellyseerrEnabled) JE.jellyseerrIssueReporter.initialize();
             if (typeof JE.initializePauseScreen === 'function') JE.initializePauseScreen();
             if (typeof JE.initializeQualityTags === 'function' && JE.currentSettings?.qualityTagsEnabled) JE.initializeQualityTags();
             if (typeof JE.initializeGenreTags === 'function' && JE.currentSettings?.genreTagsEnabled) JE.initializeGenreTags();
