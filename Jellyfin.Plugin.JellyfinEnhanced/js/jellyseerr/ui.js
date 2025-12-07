@@ -443,10 +443,20 @@
             .jellyseerr-advanced-options h3 { margin-top: 0; }
             .jellyseerr-form-row { display: flex; gap: 1em; margin-bottom: 1em; }
             .jellyseerr-form-group { flex: 1; }
-            .jellyseerr-form-group label { display: block; margin-bottom: 0.5em; }
-            .jellyseerr-form-group select, .jellyseerr-form-group input { width: 100%; padding: 0.5em; border-radius: 4px; border: 1px solid #ccc; }
+            .jellyseerr-form-group label { display: block; margin-bottom: 0.5em; font-weight: 600; color: #e2e8f0; }
+            .jellyseerr-form-group select, .jellyseerr-form-group input, .jellyseerr-form-group textarea { width: 100%; padding: 0.75em 0.875em; border-radius: 6px; border: 1px solid rgba(71, 85, 105, 0.5); background-color: rgba(30, 41, 59, 0.7); color: #e2e8f0; font-size: 0.95rem; transition: border-color 0.2s ease, background-color 0.2s ease; }
+            .jellyseerr-form-group select:hover, .jellyseerr-form-group input:hover, .jellyseerr-form-group textarea:hover { border-color: rgba(59, 130, 246, 0.4); background-color: rgba(30, 41, 59, 1); }
+            .jellyseerr-form-group select:focus, .jellyseerr-form-group input:focus, .jellyseerr-form-group textarea:focus { outline: none; border-color: rgba(59, 130, 246, 0.8); background-color: rgba(30, 41, 59, 1); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+            .jellyseerr-form-group textarea { resize: vertical; font-family: inherit; }
             .jellyseerr-form-group select[is="emby-select"] { background-color: rgba(30, 41, 59, 0.7) !important; color: #e2e8f0 !important; border: 1px solid rgba(51, 65, 85, 0.5) !important; border-radius: 8px !important; padding: 12px 16px !important; font-size: 0.95rem !important; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E") !important; background-repeat: no-repeat !important; background-position: right 16px center !important; transition: border-color 0.2s ease, background-color 0.2s ease !important; }
             .jellyseerr-form-group select[is="emby-select"]:hover { border-color: rgba(59, 130, 246, 0.4) !important; background-color: rgba(30, 41, 59, 1) !important; }
+            .jellyseerr-issue-form { padding: 0; }
+            .jellyseerr-issue-select { width: 100%; padding: 0.75em 0.875em; border-radius: 6px; border: 1px solid rgba(71, 85, 105, 0.5); background-color: rgba(30, 41, 59, 0.7); color: #e2e8f0; font-size: 0.95rem; transition: border-color 0.2s ease; }
+            .jellyseerr-issue-select:hover { border-color: rgba(59, 130, 246, 0.4); background-color: rgba(30, 41, 59, 1); }
+            .jellyseerr-issue-select:focus { outline: none; border-color: rgba(59, 130, 246, 0.8); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+            .jellyseerr-issue-textarea { width: 100%; padding: 0.75em 0.875em; border-radius: 6px; border: 1px solid rgba(71, 85, 105, 0.5); background-color: rgba(30, 41, 59, 0.7); color: #e2e8f0; font-size: 0.95rem; font-family: inherit; resize: vertical; transition: border-color 0.2s ease; }
+            .jellyseerr-issue-textarea:hover { border-color: rgba(59, 130, 246, 0.4); background-color: rgba(30, 41, 59, 1); }
+            .jellyseerr-issue-textarea:focus { outline: none; border-color: rgba(59, 130, 246, 0.8); background-color: rgba(30, 41, 59, 1); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
             .jellyseerr-season-list { display: grid; gap: 4px; margin-bottom: 24px; }
             .jellyseerr-season-header-row { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 12px 20px; background: rgba(51, 65, 85, 0.3); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; margin-bottom: 8px; font-weight: 600; color: #e2e8f0; }
             .jellyseerr-season-header-row .jellyseerr-season-checkbox { cursor: pointer; }
@@ -470,6 +480,13 @@
             .jellyseerr-inline-progress-bar { height: .5rem; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: .5rem; }
             .jellyseerr-inline-progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.3s ease; border-radius: 3px; }
             .jellyseerr-inline-progress-text { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
+            /* REPORT ISSUE BUTTON STYLES */
+            .jellyseerr-report-issue-button { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1f2937; padding: 0.5em 1em; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.4); cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
+            .jellyseerr-report-issue-button:hover { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); transform: translateY(-1px); }
+            .jellyseerr-report-issue-button:active { transform: translateY(0); }
+            .jellyseerr-report-unavailable-button { background: linear-gradient(135deg, #f3f4f6, #e5e7eb); color: #374151; padding: 0.5em 1em; border-radius: 6px; border: 1px solid rgba(156,163,175,0.25); cursor: not-allowed; font-weight: 600; font-size: 0.9rem; transition: none; display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; opacity: 0.95; }
+            .jellyseerr-report-unavailable-button:hover { box-shadow: none; transform: none; }
+            .jellyseerr-report-unavailable-button:active { transform: none; }
             .jellyseerr-modal-footer { padding: 20px 24px; background: rgba(15, 23, 42, 0.3); border-top: 1px solid rgba(51, 65, 85, 0.3); display: flex; gap: 12px; justify-content: flex-end; flex-shrink: 0; }
             .jellyseerr-modal-button { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 0.875rem; transition: all 0.2s ease; min-width: 120px; }
             .jellyseerr-modal-button:disabled { opacity: 0.6; cursor: not-allowed; }

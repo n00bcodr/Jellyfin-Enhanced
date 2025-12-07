@@ -1163,5 +1163,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Failed to remove pending watchlist item." });
             }
         }
+
+        [HttpPost("jellyseerr/issue")]
+        [Authorize]
+        public async Task<IActionResult> ReportJellyseerrIssue([FromBody] JsonElement issueBody)
+        {
+            return await ProxyJellyseerrRequest("/api/v1/issue", HttpMethod.Post, issueBody.ToString());
+        }
     }
 }
