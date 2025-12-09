@@ -14,6 +14,8 @@
 
         let isAddingLinks = false; // Lock to prevent concurrent runs
         let intervalId = null;
+        let processedItemIds = new Set(); // Cache of items we've already processed
+        let lastVisibleItemId = null; // Track the currently visible item
 
         const LETTERBOXD_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/letterboxd.svg';
 
@@ -59,6 +61,20 @@
             const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
             if (!visiblePage) return;
 
+            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+            if (!itemId) return;
+
+            // If we've already processed this item, skip it
+            if (processedItemIds.has(itemId)) {
+                return;
+            }
+
+            // If item changed, clear the processed set to allow reprocessing on new item
+            if (lastVisibleItemId && lastVisibleItemId !== itemId) {
+                processedItemIds.clear();
+            }
+            lastVisibleItemId = itemId;
+
             const anchorElement = visiblePage.querySelector('.itemExternalLinks');
 
             // Cleanup stale links from any non-visible pages to prevent future conflicts
@@ -75,15 +91,22 @@
 
             isAddingLinks = true;
             try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (!itemId) return;
-
                 const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-                if (!item?.Type) return;
+                if (!item?.Type) {
+                    processedItemIds.add(itemId);
+                    return;
+                }
+
+                if (!['Movie', 'Series'].includes(item.Type)) {
+                    console.log(`${logPrefix} Skipping ${item.Type} - Letterboxd links not supported.`);
+                    processedItemIds.add(itemId);
+                    return;
+                }
 
                 const imdbId = getImdbId(visiblePage);
                 if (!imdbId) {
-                    console.log(`${logPrefix} No IMDb ID found for ${item.Type}, cannot create Letterboxd link.`);
+                    console.log(`${logPrefix} No IMDb ID found for ${item.Type}.`);
+                    processedItemIds.add(itemId);
                     return;
                 }
 
@@ -91,8 +114,10 @@
                 const letterboxdUrl = `https://letterboxd.com/imdb/${imdbId}`;
                 anchorElement.appendChild(document.createTextNode(' '));
                 anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl, "letterboxd-link-icon"));
+                processedItemIds.add(itemId);
             } catch (err) {
                 console.error(`${logPrefix} Error adding Letterboxd link:`, err);
+                processedItemIds.add(itemId);
             } finally {
                 isAddingLinks = false;
             }
