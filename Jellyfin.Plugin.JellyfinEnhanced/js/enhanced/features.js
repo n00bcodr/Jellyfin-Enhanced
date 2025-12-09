@@ -304,7 +304,7 @@
     /**
      * A map of language names/codes to country codes for flag display.
      */
-    const languageToCountryMap={English:"gb",eng:"gb",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"bd",ben:"bd",Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",ice:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng", Brazilian:"br", bra:"br"};
+    const languageToCountryMap={English:"gb",eng:"gb",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"in",ben:"in",Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng",Brazilian:"br",bra:"br"};
 
     /**
      * Fetches the first episode of a series or season for language detection.
@@ -379,15 +379,58 @@
 
         // Helper to render language items with proper DOM elements
         const renderLanguages = (languages) => {
-            applyLangStyles(placeholder);
+            placeholder.style.display = 'flex';
+            placeholder.style.alignItems = 'center';
+            placeholder.style.gap = '0.5em';
+            placeholder.title = JE.t('audio_language_tooltip');
 
             // Add icon
             const icon = document.createElement('span');
             icon.className = 'material-icons';
             icon.style.fontSize = 'inherit';
-            icon.style.marginRight = '0.3em';
+            icon.style.flexShrink = '0';
             icon.textContent = 'translate';
             placeholder.appendChild(icon);
+
+            const scrollContainer = document.createElement('div');
+            scrollContainer.className = 'audio-languages-container';
+            scrollContainer.style.display = 'flex';
+            scrollContainer.style.flexWrap = 'nowrap';
+            scrollContainer.style.gap = '0.1em';
+            scrollContainer.style.alignItems = 'center';
+            scrollContainer.style.overflowY = 'hidden';
+
+            if (languages.length > 3) { //if there are more than 3 languages, make it scrollable
+                scrollContainer.style.overflowX = 'auto';
+                scrollContainer.style.scrollBehavior = 'smooth';
+                scrollContainer.style.whiteSpace = 'nowrap';
+                scrollContainer.style.maxWidth = '20em';
+                scrollContainer.style.paddingBottom = '2px';
+                scrollContainer.style.touchAction = 'pan-x';
+                scrollContainer.style.webkitOverflowScrolling = 'touch';
+
+                // Hide scrollbar
+                scrollContainer.style.scrollbarWidth = 'none';
+                scrollContainer.style.msOverflowStyle = 'none';
+                scrollContainer.style.overflowY = 'hidden';
+                scrollContainer.addEventListener('wheel', (e) => {
+                    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                        scrollContainer.scrollLeft += e.deltaY;
+                        e.preventDefault();
+                    }
+                }, { passive: false });
+                // Inject inline webkit scrollbar hide
+                scrollContainer.style.setProperty('::-webkit-scrollbar', 'display: none');
+
+                // Add indicator showing scrollable content
+                const indicator = document.createElement('span');
+                indicator.className = 'scroll-indicator';
+                indicator.style.display = 'inline-block';
+                indicator.style.opacity = '0.7';
+                indicator.style.fontSize = '0.9em';
+                indicator.textContent = '⇆';
+                placeholder.appendChild(indicator);
+            }
 
             languages.forEach((lang, index) => {
                 // Create container span with data-lang attribute
@@ -395,6 +438,7 @@
                 langSpan.className = 'audio-language-item';
                 langSpan.dataset.lang = lang.code;
                 langSpan.dataset.langName = lang.name;
+                langSpan.style.whiteSpace = 'nowrap';
 
                 const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
                 if (countryCode) {
@@ -410,15 +454,18 @@
                 const text = document.createTextNode(lang.name);
                 langSpan.appendChild(text);
 
-                placeholder.appendChild(langSpan);
+                scrollContainer.appendChild(langSpan);
 
                 if (index < languages.length - 1) {
                     const separator = document.createElement('span');
                     separator.style.margin = '0 0.25em';
                     separator.textContent = ', ';
-                    placeholder.appendChild(separator);
+                    separator.style.whiteSpace = 'nowrap';
+                    scrollContainer.appendChild(separator);
                 }
             });
+
+            placeholder.appendChild(scrollContainer);
         };
 
         // Check cache first
