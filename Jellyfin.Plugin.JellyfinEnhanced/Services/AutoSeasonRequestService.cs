@@ -21,8 +21,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
 
-        // Track which seasons have already been requested to avoid duplicates
-        private readonly Dictionary<string, HashSet<string>> _requestedSeasons = new();
+        // Track which seasons have already been requested to avoid duplicates (with timestamps for expiry)
+        private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedSeasons = new();
 
         public AutoSeasonRequestService(
             IHttpClientFactory httpClientFactory,
@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Checks a completed episode to determine if next season should be requested.
-        // Event-driven entry point called when a user finishes watching an episode.
+        // Event-driven entry point called when a user finishes or starts watching an episode.
         public async Task CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -56,20 +56,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Get the series this episode belongs to
             var episode = episodeItem as Episode;
-            if (episode == null || episode.Series == null || !episode.ParentIndexNumber.HasValue)
+            if (episode == null || episode.Series == null || !episode.ParentIndexNumber.HasValue || !episode.IndexNumber.HasValue)
             {
                 return;
             }
 
             var series = episode.Series;
-            _logger.Info($"[Auto-Request] Checking '{series.Name}' S{episode.ParentIndexNumber}E{episode.IndexNumber}");
+            var seasonNumber = episode.ParentIndexNumber.Value;
+            var episodeNumber = episode.IndexNumber.Value;
 
-            // Check this specific season for auto-request
-            await CheckSeasonForAutoRequest(series, episode.ParentIndexNumber.Value, user);
+            _logger.Info($"[Auto-Request] Checking '{series.Name}' S{seasonNumber}E{episodeNumber}");
+
+            // Check this specific season for auto-request, passing the current episode number
+            await CheckSeasonForAutoRequest(series, seasonNumber, episodeNumber, user);
         }
 
         // Checks if a specific season needs its next season requested
-        private async Task CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, JUser user)
+        private async Task CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, int currentEpisodeNumber, JUser user)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
@@ -77,119 +80,210 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Get all seasons for this series that have at least one episode
-            var seasonsQuery = new InternalItemsQuery(user)
+            // Get TMDB ID first - we'll need it for Jellyseerr checks
+            var tmdbId = GetTmdbId(series);
+            if (string.IsNullOrEmpty(tmdbId))
             {
-                Parent = series,
-                IncludeItemTypes = new[] { BaseItemKind.Season },
-                Recursive = false
-            };
-
-            var seasons = _libraryManager.GetItemsResult(seasonsQuery).Items
-                .OfType<Season>()
-                .Where(s => s.IndexNumber.HasValue && s.IndexNumber.Value > 0) // Exclude specials (Season 0)
-                .OrderBy(s => s.IndexNumber)
-                .ToList();
-
-            // Filter to only seasons that have at least one episode
-            seasons = seasons.Where(season =>
-            {
-                var episodeCheck = new InternalItemsQuery(user)
-                {
-                    Parent = season,
-                    IncludeItemTypes = new[] { BaseItemKind.Episode },
-                    Limit = 1
-                };
-                return _libraryManager.GetItemsResult(episodeCheck).Items.Count > 0;
-            }).ToList();
-
-            if (seasons.Count == 0)
-            {
+                _logger.Warning($"[Auto-Request] Could not find TMDB ID for series '{series.Name}'");
                 return;
             }
 
-            // Find the current season being watched
-            var currentSeason = seasons.FirstOrDefault(s => s.IndexNumber == currentSeasonNumber);
-            if (currentSeason == null)
-            {
-                _logger.Debug($"[Auto-Request] Season {currentSeasonNumber} not found for '{series.Name}'");
-                return;
-            }
-
-            // Check if the next season already exists locally
-            var nextSeasonNumber = currentSeasonNumber + 1;
-            var nextSeasonExists = seasons.Any(s => s.IndexNumber == nextSeasonNumber);
-
-            if (nextSeasonExists)
-            {
-                _logger.Debug($"[Auto-Request] Season {nextSeasonNumber} already exists locally for '{series.Name}', no request needed");
-                return;
-            }
-
-            _logger.Debug($"[Auto-Request] Checking season {currentSeasonNumber} of '{series.Name}' (next season {nextSeasonNumber} not available locally)");
-
-            // Get all episodes in the current season
+            // Query all episodes in the current season using the series as parent
             var episodesQuery = new InternalItemsQuery(user)
             {
-                Parent = currentSeason,
+                AncestorIds = new[] { series.Id },
                 IncludeItemTypes = new[] { BaseItemKind.Episode },
-                Recursive = false,
-                OrderBy = new[] { (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
+                Recursive = true,
+                OrderBy = new[] { (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending), (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
             };
 
-            var episodes = _libraryManager.GetItemsResult(episodesQuery).Items.ToList();
+            var allEpisodes = _libraryManager.GetItemsResult(episodesQuery).Items
+                .OfType<Episode>()
+                .Where(e => e.ParentIndexNumber == currentSeasonNumber)
+                .OrderBy(e => e.IndexNumber)
+                .ToList();
 
-            if (episodes.Count == 0)
+            if (allEpisodes.Count == 0)
             {
+                _logger.Debug($"[Auto-Request] No episodes found in season {currentSeasonNumber} of '{series.Name}'");
                 return;
             }
 
-            // Calculate remaining unwatched episodes
-            var remainingEpisodes = CalculateRemainingEpisodes(episodes, user);
-            var watchedEpisodes = episodes.Count - remainingEpisodes;
+            var totalEpisodes = allEpisodes.Count;
 
-            _logger.Info($"[Auto-Request] Season {currentSeasonNumber}: {watchedEpisodes}/{episodes.Count} watched, {remainingEpisodes} remaining (threshold: {config.AutoSeasonRequestThresholdValue})");
+            // Calculate remaining episodes based on current episode number, not watch status
+            // If watching E7 out of 9 episodes, remaining = 9 - 7 = 2 episodes left
+            var remainingAfterCurrent = totalEpisodes - currentEpisodeNumber;
+            if (remainingAfterCurrent < 0) remainingAfterCurrent = 0;
 
-            bool shouldRequest = remainingEpisodes <= config.AutoSeasonRequestThresholdValue;
+            _logger.Info($"[Auto-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodes}, {remainingAfterCurrent} remaining after current episode (threshold: {config.AutoSeasonRequestThresholdValue})");
 
-            if (shouldRequest)
+            bool shouldRequest = remainingAfterCurrent <= config.AutoSeasonRequestThresholdValue;
+
+            if (!shouldRequest)
             {
-                // Check if we've already requested this season
-                var requestKey = $"{user.Id}_{series.Id}_{currentSeasonNumber}";
-                if (!_requestedSeasons.ContainsKey(user.Id.ToString()))
-                {
-                    _requestedSeasons[user.Id.ToString()] = new HashSet<string>();
-                }
+                _logger.Debug($"[Auto-Request] Threshold not met for '{series.Name}' S{currentSeasonNumber}");
+                return;
+            }
 
-                if (_requestedSeasons[user.Id.ToString()].Contains(requestKey))
+            // Threshold met - prepare to request next season
+            var nextSeasonNumber = currentSeasonNumber + 1;
+
+            // Check if we've already requested this season (in-memory cache with 1-hour expiry)
+            var requestKey = $"{user.Id}_{series.Id}_{nextSeasonNumber}";
+            if (!_requestedSeasons.ContainsKey(user.Id.ToString()))
+            {
+                _requestedSeasons[user.Id.ToString()] = new Dictionary<string, DateTime>();
+            }
+
+            // Check if cached and not expired (1 hour)
+            if (_requestedSeasons[user.Id.ToString()].TryGetValue(requestKey, out var cachedTime))
+            {
+                if ((DateTime.Now - cachedTime).TotalHours < 1)
                 {
-                    _logger.Debug($"[Auto-Request] Already requested next season for '{series.Name}' S{nextSeasonNumber} (cached)");
+                    _logger.Debug($"[Auto-Request] Already requested '{series.Name}' S{nextSeasonNumber} (cached)");
                     return;
-                }
-
-                // Get TMDB ID to request the next season
-                var tmdbId = GetTmdbId(series);
-                if (string.IsNullOrEmpty(tmdbId))
-                {
-                    _logger.Warning($"[Auto-Request] Could not find TMDB ID for series '{series.Name}' - cannot make request");
-                    return;
-                }
-                var success = await RequestNextSeason(tmdbId, nextSeasonNumber, user.Id.ToString());
-
-                if (success)
-                {
-                    _requestedSeasons[user.Id.ToString()].Add(requestKey);
-                    _logger.Info($"[Auto-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
                 }
                 else
                 {
-                    _logger.Warning($"[Auto-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
+                    // Expired, remove from cache
+                    _requestedSeasons[user.Id.ToString()].Remove(requestKey);
                 }
+            }
+
+            // Check Jellyseerr for season availability/status
+            var jellyseerrStatus = await GetSeasonStatusFromJellyseerr(tmdbId, nextSeasonNumber);
+
+            if (jellyseerrStatus == null)
+            {
+                _logger.Debug($"[Auto-Request] Season {nextSeasonNumber} does not exist for '{series.Name}' (not available on TMDB)");
+                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now; // Mark as checked to avoid repeated attempts
+                return;
+            }
+
+            if (jellyseerrStatus.IsAvailable)
+            {
+                _logger.Debug($"[Auto-Request] Season {nextSeasonNumber} already available on Jellyfin for '{series.Name}'");
+                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now;
+                return;
+            }
+
+            if (jellyseerrStatus.IsRequested)
+            {
+                _logger.Debug($"[Auto-Request] Season {nextSeasonNumber} already requested in Jellyseerr for '{series.Name}'");
+                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now;
+                return;
+            }
+
+            // Season exists, not available, not requested - proceed with request
+            var success = await RequestNextSeason(tmdbId, nextSeasonNumber, user.Id.ToString());
+
+            if (success)
+            {
+                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now;
+                _logger.Info($"[Auto-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
             }
             else
             {
-                _logger.Debug($"[Auto-Request] Threshold not met for '{series.Name}' S{currentSeasonNumber}");
+                _logger.Warning($"[Auto-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
             }
+        }
+
+        // Jellyseerr season status
+        private class SeasonStatus
+        {
+            public bool IsAvailable { get; set; }
+            public bool IsRequested { get; set; }
+        }
+
+        // Gets season status from Jellyseerr
+        private async Task<SeasonStatus?> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return null;
+            }
+
+            try
+            {
+                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Clear();
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+
+                foreach (var url in urls)
+                {
+                    var trimmedUrl = url.Trim().TrimEnd('/');
+                    var requestUrl = $"{trimmedUrl}/api/v1/tv/{tmdbId}";
+
+                    try
+                    {
+                        var response = await httpClient.GetAsync(requestUrl);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            _logger.Debug($"[Auto-Request] Jellyseerr returned {response.StatusCode} for TMDB {tmdbId}");
+                            continue;
+                        }
+
+                        var content = await response.Content.ReadAsStringAsync();
+                        using (JsonDocument doc = JsonDocument.Parse(content))
+                        {
+                            var root = doc.RootElement;
+
+                            // Check if the show has this many seasons in TMDB
+                            // numberOfSeasons tells us how many seasons exist/have aired
+                            if (root.TryGetProperty("numberOfSeasons", out var totalSeasonsProp))
+                            {
+                                var totalSeasons = totalSeasonsProp.GetInt32();
+                                if (seasonNumber > totalSeasons)
+                                {
+                                    _logger.Debug($"[Auto-Request] Season {seasonNumber} does not exist - show only has {totalSeasons} season(s)");
+                                    return null; // Season doesn't exist
+                                }
+                            }
+
+                            // Look for the season in the response
+                            if (root.TryGetProperty("seasons", out var seasonsArray))
+                            {
+                                foreach (var season in seasonsArray.EnumerateArray())
+                                {
+                                    if (season.TryGetProperty("seasonNumber", out var seasonNumProp) &&
+                                        seasonNumProp.GetInt32() == seasonNumber)
+                                    {
+                                        var status = new SeasonStatus();
+
+                                        // Check if season is available (status 5 = available)
+                                        if (season.TryGetProperty("status", out var statusProp))
+                                        {
+                                            var statusValue = statusProp.GetInt32();
+                                            status.IsAvailable = statusValue == 5;
+                                            status.IsRequested = statusValue == 2 || statusValue == 3; // 2=pending, 3=processing
+                                        }
+
+                                        _logger.Debug($"[Auto-Request] Season {seasonNumber} status from Jellyseerr: Available={status.IsAvailable}, Requested={status.IsRequested}");
+                                        return status;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Season not found in Jellyseerr response - it doesn't exist
+                        return null;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug($"[Auto-Request] Error checking Jellyseerr at {trimmedUrl}: {ex.Message}");
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[Auto-Request] Error querying Jellyseerr: {ex.Message}");
+            }
+
+            return null;
         }
 
         // Calculates remaining unwatched episodes

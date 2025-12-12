@@ -20,6 +20,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly AutoSeasonRequestService _autoSeasonRequestService;
         private readonly Logger _logger;
 
+        // Track which user+item combinations have already been checked to avoid duplicate checks
+        private readonly Dictionary<string, DateTime> _checkedSessions = new();
+
         public AutoSeasonRequestMonitor(
             ISessionManager sessionManager,
             IUserManager userManager,
@@ -74,11 +77,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 // Only process TV episodes
-                var itemKind = e.Item?.GetBaseItemKind();
-                _logger.Debug($"[Auto-Request] Item kind: {itemKind}");
-                if (itemKind != BaseItemKind.Episode)
+                if (e.Item?.GetBaseItemKind() != BaseItemKind.Episode)
                 {
-                    _logger.Debug("[Auto-Request] Not an episode, skipping");
                     return;
                 }
 
@@ -89,6 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     completionPercentage = (double)e.PlaybackPositionTicks.Value / e.Item.RunTimeTicks.Value;
                 }
+                //This probably can be removed but leaving it for now as a debug log
 
                 _logger.Info($"[Auto-Request] Episode '{e.Item?.Name ?? "Unknown"}' - PlayedToCompletion: {playedToCompletion}, Completion: {completionPercentage:P1}");
 
@@ -106,6 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _logger.Warning("[Auto-Request] Item or Session/UserId is null, cannot process");
                     }
                 }
+                //This probably can be removed but leaving it for now as a debug log
                 else
                 {
                     _logger.Debug($"[Auto-Request] Episode not completed enough ({completionPercentage:P1}), skipping");
@@ -144,6 +146,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // Only trigger on episode start (less than 2 minutes in)
                     if (progressMinutes <= 2 && progressPercentage < 0.05)
                     {
+                        // Create a unique key using userId and item ID
+                        if (e.Session?.UserId == null || e.Item?.Id == null)
+                        {
+                            return;
+                        }
+
+                        var sessionItemKey = $"{e.Session.UserId}_{e.Item.Id}";
+
+                        // Clean up expired cache entries (older than 1 hour)
+                        var expiredKeys = _checkedSessions.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
+                            .Select(kvp => kvp.Key)
+                            .ToList();
+                        foreach (var key in expiredKeys)
+                        {
+                            _checkedSessions.Remove(key);
+                        }
+
+                        // Skip if we've checked this user+item combination in the last hour
+                        if (_checkedSessions.ContainsKey(sessionItemKey))
+                        {
+                            return;
+                        }
+
+                        // Mark as checked with current timestamp
+                        _checkedSessions[sessionItemKey] = DateTime.Now;
+
                         _logger.Info($"[Auto-Request] Episode '{e.Item?.Name ?? "Unknown"}' started by {e.Session?.UserName ?? "Unknown"}, checking threshold");
 
                         if (e.Item != null && e.Session?.UserId != null)
