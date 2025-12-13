@@ -540,8 +540,6 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3></h3></legend>
                         <div class="configSection">
-                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
-                                <summary style="cursor: pointer; font-weight: bold;">Custom Splash Screen</summary>
                                 <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="enableCustomSplashScreen" is="emby-checkbox" type="checkbox"/><span>Enable Custom Splash Screen</span></label></div>
                                     <div class="inputContainer">
@@ -561,37 +559,6 @@
                                 </div>
                             </div>
                             </details>
-                        </div>
-                    </fieldset>
-                    <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Watchlist Settings (Rehomed)</h3></legend>
-                        <div class="configSection">
-                            <div style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
-                                <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                    <i class="material-icons" style="color: #ffc107; font-size: 24px; margin-top: 2px;">warning</i>
-                                    <div>
-                                        <h4 style="margin: 0 0 0.5em 0; color: #ffc107;">Watchlist Feature Removed</h4>
-                                        <p style="margin: 0 0 1em 0;">
-                                            The Watchlist feature has been removed from Jellyfin Enhanced and returned to where borrowed from <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks" style="text-decoration: underline; font-weight: bolder;">KefinTweaks</a><br><br>
-                                            Now that KefinTweaks is stable with watchlist and so many more awesome tweaks, watchlist is handed back to @ranaldsgift :)
-                                        </p>
-                                        <p style="margin: 0;">
-                                            Follow the installation instructions for <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks" style="text-decoration: underline; font-weight: bolder;">KefinTweaks</a> and enable watchlist in the config. Your existing watchlist data will remain intact.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important; opacity: 0.5;">
-                                <label>
-                                    <input id="watchlistEnabled" is="emby-checkbox" type="checkbox" disabled/>
-                                    <span>Enable Watchlist (Removed - Use KefinTweaks Instead)</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em; opacity: 0.5;">
-                                This setting has been disabled. For watchlist functionality, please install
-                                <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks">KefinTweaks</a>
-                                directly.
-                            </div>
                         </div>
                     </fieldset>
                 </div>
@@ -1181,8 +1148,6 @@
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
         testTmdbBtn.addEventListener('click', testTmdbConnection);
-        // Copy watchlist HTML button functionality removed since watchlist is deprecated
-        // Use KefinTweaks plugin directly for watchlist features
     })();
 </script>
 </div>
