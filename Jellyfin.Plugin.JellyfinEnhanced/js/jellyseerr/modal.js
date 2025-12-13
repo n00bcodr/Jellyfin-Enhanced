@@ -13,9 +13,10 @@
      * @param {string} options.bodyHtml - The HTML content for the modal body.
      * @param {string} options.backdropPath - The backdrop image path for the header.
      * @param {function} options.onSave - The callback function to execute when the primary button is clicked.
+     * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
      * @returns {object} - An object with methods to show and close the modal.
      */
-    modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave }) {
+    modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave, buttonText }) {
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
         modalElement.setAttribute('role', 'dialog');
@@ -37,7 +38,7 @@
                 </div>
                 <div class="jellyseerr-modal-footer">
                     <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary" aria-label="${JE.t('jellyseerr_modal_cancel')}">${JE.t('jellyseerr_modal_cancel')}</button>
-                    <button class="jellyseerr-modal-button jellyseerr-modal-button-primary" aria-label="${JE.t('jellyseerr_modal_request')}">${JE.t('jellyseerr_modal_request')}</button>
+                    <button class="jellyseerr-modal-button jellyseerr-modal-button-primary" aria-label="${buttonText || JE.t('jellyseerr_modal_request')}">${buttonText || JE.t('jellyseerr_modal_request')}</button>
                 </div>
             </div>
         `;

@@ -6,22 +6,15 @@
     const issueReporter = {};
 
     /**
-     * Issue type definitions for Jellyseerr
+     * Issue type definitions matching Jellyseerr's 4 core issue types
+     * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
      */
-    const ISSUE_TYPES = {
-        movie: [
-            { value: 'wrong_quality', label: 'Wrong Quality' },
-            { value: 'wrong_audio', label: 'Wrong Audio Language' },
-            { value: 'wrong_subs', label: 'Wrong Subtitles' }
-        ],
-        tv: [
-            { value: 'no_season', label: 'No Season Available' },
-            { value: 'episode_missing', label: 'Episode Missing' },
-            { value: 'episode_wrong_quality', label: 'Wrong Quality' },
-            { value: 'episode_wrong_audio', label: 'Wrong Audio Language' },
-            { value: 'episode_wrong_subs', label: 'Wrong Subtitles' }
-        ]
-    };
+    const ISSUE_TYPES = [
+        { value: '1', label: 'VIDEO', icon: '🎬' },
+        { value: '2', label: 'AUDIO', icon: '🎵' },
+        { value: '3', label: 'SUBTITLES', icon: '📝' },
+        { value: '4', label: 'OTHER', icon: '❓' }
+    ];
 
     /**
      * Shows the issue report modal for the given media item
@@ -31,19 +24,19 @@
      * @param {string} backdropPath - Optional TMDB backdrop image path
      */
     issueReporter.showReportModal = function(tmdbId, itemName, mediaType, backdropPath = null) {
-        const issueTypes = ISSUE_TYPES[mediaType] || ISSUE_TYPES.movie;
-        
         // Create the form HTML
         const formHtml = `
             <div class="jellyseerr-issue-form">
                 <div class="jellyseerr-form-group">
-                    <label for="issue-type">Issue Type</label>
-                    <select id="issue-type" class="jellyseerr-issue-select" required>
-                        <option value="">Select an issue type</option>
-                        ${issueTypes.map(type => `
-                            <option value="${type.value}">${type.label}</option>
+                    <label>Issue Type</label>
+                    <div class="jellyseerr-issue-radio-group">
+                        ${ISSUE_TYPES.map(type => `
+                            <label class="jellyseerr-radio-label">
+                                <input type="radio" name="issue-type" value="${type.value}" class="jellyseerr-radio-input" required>
+                                <span class="jellyseerr-radio-option">${type.icon} ${type.label}</span>
+                            </label>
                         `).join('')}
-                    </select>
+                    </div>
                 </div>
                 <div class="jellyseerr-form-group">
                     <label for="issue-message">Description (Optional)</label>
@@ -63,8 +56,9 @@
             subtitle: itemName,
             bodyHtml: formHtml,
             backdropPath: backdropPath,
+            buttonText: 'Submit',
             onSave: async (modalEl, button, closeModal) => {
-                const issueType = modalEl.querySelector('#issue-type').value;
+                const issueType = modalEl.querySelector('input[name="issue-type"]:checked')?.value;
                 const message = modalEl.querySelector('#issue-message').value;
 
                 if (!issueType) {
@@ -113,10 +107,19 @@
         }
 
         const button = document.createElement('button');
-        button.className = 'jellyseerr-report-issue-button';
-        button.title = 'Report Issue';
-        // Warning icon + "Report issue" text
-        button.innerHTML = '⚠️ Report issue';
+        // Use a minimal/icon-only class so server CSS can style it like other action icons
+        button.className = 'jellyseerr-report-issue-icon';
+        button.type = 'button';
+        button.setAttribute('aria-label', 'Report issue');
+        button.title = 'Report issue';
+        // Use an inline SVG: outlined triangle with solid exclamation (transparent fill)
+        button.innerHTML = `
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" role="img" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3L2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <rect x="11" y="8" width="2" height="6" fill="currentColor" />
+                <rect x="11" y="16" width="2" height="2" fill="currentColor" />
+            </svg>
+        `;
 
         button.addEventListener('click', (e) => {
             e.preventDefault();
@@ -137,10 +140,18 @@
         if (!container) return null;
 
         const button = document.createElement('button');
-        button.className = 'jellyseerr-report-unavailable-button';
+        button.className = 'jellyseerr-report-unavailable-icon';
+        button.type = 'button';
+        button.setAttribute('aria-label', 'Reporting unavailable');
         button.title = 'Reporting unavailable';
         button.disabled = true;
-        button.innerHTML = '⚠️ Reporting unavailable';
+        button.innerHTML = `
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" role="img" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3L2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <rect x="11" y="8" width="2" height="6" fill="currentColor" />
+                <rect x="11" y="16" width="2" height="2" fill="currentColor" />
+            </svg>
+        `;
 
         // Still allow click to show a helpful toast explaining why
         button.addEventListener('click', (e) => {
@@ -275,7 +286,7 @@
         }
 
         // Check if we already added the button
-        if (itemDetailPage.querySelector('.jellyseerr-report-issue-button')) {
+        if (itemDetailPage.querySelector('.jellyseerr-report-issue-icon')) {
             return false;
         }
 
