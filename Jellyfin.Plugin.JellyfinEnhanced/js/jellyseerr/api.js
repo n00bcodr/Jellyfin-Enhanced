@@ -449,7 +449,8 @@
 
     api.reportIssue = async function(mediaId, mediaType, problemType, message = '') {
         try {
-            const mapping = ISSUE_TYPE_MAP[problemType] || { issueType: 4, label: 'OTHER' };
+            // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
+            const issueType = parseInt(problemType) || 4;
 
             // Fetch the correct internal media id from Jellyseerr
 
@@ -468,7 +469,7 @@
 
             const body = {
                 mediaId: parseInt(internalId),
-                issueType: mapping.issueType,
+                issueType: issueType,
                 problemSeason: 0,
                 problemEpisode: 0,
                 message: message || ''
