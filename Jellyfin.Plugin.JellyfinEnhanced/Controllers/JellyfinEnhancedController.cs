@@ -740,6 +740,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Jellyseerr Search Settings
                 config.JellyseerrEnabled,
+                config.JellyseerrShowReportButton,
                 config.JellyseerrEnable4KRequests,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,

@@ -302,6 +302,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, movie request buttons include a dropdown to request a 4K version.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="jellyseerrShowReportButton" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show "Report Issue" button on item detail pages</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, a small report icon will be added to item action icons allowing users to report playback/content issues to Jellyseerr.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
                                     <span>Show advanced request options</span>
                                 </label>
@@ -960,6 +967,7 @@
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
+                document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -1043,6 +1051,7 @@
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
+            config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
