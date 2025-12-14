@@ -284,6 +284,11 @@
         if (!itemDetailPage) {
             return false;
         }
+        // Don't add if plugin or report-button feature is disabled
+        if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.JellyseerrShowReportButton) {
+            console.debug(`${logPrefix} Jellyseerr or report button disabled, skipping`);
+            return false;
+        }
 
         // Check if we already added the button
         if (itemDetailPage.querySelector('.jellyseerr-report-issue-icon')) {
@@ -457,13 +462,26 @@
     /**
      * Initializes issue reporter on item detail pages
      */
-    issueReporter.initialize = function() {
-        if (!JE.pluginConfig?.JellyseerrEnabled) {
-            console.debug(`${logPrefix} Jellyseerr not enabled, skipping initialization`);
+    issueReporter.initialize = async function() {
+        if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.JellyseerrShowReportButton) {
+            console.debug(`${logPrefix} Jellyseerr or report-button feature disabled, skipping initialization`);
             return;
         }
 
-        console.log(`${logPrefix} Initializing...`);
+        console.log(`${logPrefix} Initializing... (verifying Jellyseerr status)`);
+
+        // Verify Jellyseerr is reachable and active via the server-side status endpoint
+        try {
+            const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
+            const statusRes = await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
+            if (!statusRes || !statusRes.active) {
+                console.debug(`${logPrefix} Jellyseerr status check returned inactive, skipping reporter init`);
+                return;
+            }
+        } catch (e) {
+            console.warn(`${logPrefix} Failed to verify Jellyseerr status, skipping reporter init:`, e);
+            return;
+        }
 
         let lastProcessedItemId = null;
         let processingTimeout = null;
