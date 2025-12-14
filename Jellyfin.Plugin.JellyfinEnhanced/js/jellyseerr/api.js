@@ -447,7 +447,7 @@
         'episode_wrong_subs': { issueType: 3, label: 'SUBTITLES' } // SUBTITLES - Episode
     };
 
-    api.reportIssue = async function(mediaId, mediaType, problemType, message = '') {
+    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
@@ -470,8 +470,8 @@
             const body = {
                 mediaId: parseInt(internalId),
                 issueType: issueType,
-                problemSeason: 0,
-                problemEpisode: 0,
+                problemSeason: parseInt(problemSeason) || 0,
+                problemEpisode: parseInt(problemEpisode) || 0,
                 message: message || ''
             };
 

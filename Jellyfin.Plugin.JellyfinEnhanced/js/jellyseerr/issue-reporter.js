@@ -23,7 +23,7 @@
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropPath - Optional TMDB backdrop image path
      */
-    issueReporter.showReportModal = function(tmdbId, itemName, mediaType, backdropPath = null) {
+    issueReporter.showReportModal = function(tmdbId, itemName, mediaType, backdropPath = null, item = null) {
         // Create the form HTML
         const formHtml = `
             <div class="jellyseerr-issue-form">
@@ -47,6 +47,7 @@
                         rows="4"
                     ></textarea>
                 </div>
+                <div id="jellyseerr-tv-controls-placeholder"></div>
             </div>
         `;
 
@@ -61,6 +62,19 @@
                 const issueType = modalEl.querySelector('input[name="issue-type"]:checked')?.value;
                 const message = modalEl.querySelector('#issue-message').value;
 
+                // Read TV season/episode selections if present
+                let problemSeason = 0;
+                let problemEpisode = 0;
+                const seasonEl = modalEl.querySelector('#issue-season');
+                const episodeEl = modalEl.querySelector('#issue-episode');
+                if (seasonEl) {
+                    problemSeason = parseInt(seasonEl.value) || 0;
+                }
+                // Always read the episode value if the element exists (even when disabled/preset on episode pages)
+                if (episodeEl) {
+                    problemEpisode = parseInt(episodeEl.value) || 0;
+                }
+
                 if (!issueType) {
                     JE.toast('Issue Type is required', 3000);
                     return;
@@ -71,7 +85,7 @@
                     button.textContent = 'Submitting...';
 
                     // Pass only the contents of the description box to the API
-                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message);
+                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode);
 
                     if (result) {
                         JE.toast('✅ Issue reported successfully!', 3000);
@@ -90,6 +104,216 @@
         });
 
         show();
+
+        // If this is a TV item, augment the modal with season/episode selectors
+        if (mediaType === 'tv') {
+            (async () => {
+                try {
+                    const placeholder = modalElement.querySelector('#jellyseerr-tv-controls-placeholder');
+                    if (!placeholder) return;
+
+                    // Build the container for season/episode controls
+                    const controlsHtml = `
+                        <div class="jellyseerr-form-group">
+                            <label for="issue-season">Season</label>
+                            <select id="issue-season" class="jellyseerr-select"></select>
+                        </div>
+                        <div class="jellyseerr-form-group">
+                            <label for="issue-episode">Episode</label>
+                            <select id="issue-episode" class="jellyseerr-select"></select>
+                        </div>
+                    `;
+
+                    placeholder.innerHTML = controlsHtml;
+
+                    const seasonSelect = modalElement.querySelector('#issue-season');
+                    const episodeSelect = modalElement.querySelector('#issue-episode');
+
+                    // Helper to clear and set options
+                    const setOptions = (selectEl, options) => {
+                        selectEl.innerHTML = '';
+                        for (const opt of options) {
+                            const o = document.createElement('option');
+                            o.value = String(opt.value);
+                            o.textContent = opt.label;
+                            selectEl.appendChild(o);
+                        }
+                    };
+
+                    // Default state: disable controls until we populate
+                    seasonSelect.disabled = true;
+                    episodeSelect.disabled = true;
+
+                    // Prefer to query the local Jellyfin server for available seasons/episodes
+                    let normalized = [];
+                    try {
+                        // Determine the seriesId to query for seasons
+                        let seriesId = null;
+                        if (item?.Type === 'Series') seriesId = item.Id;
+                        else if (item?.Type === 'Season' || item?.Type === 'Episode') seriesId = item.SeriesId || item.ParentId || (item.Series && item.Series.Id) || null;
+
+                        if (seriesId) {
+                            // Fetch seasons present on the Jellyfin server
+                            const userId = ApiClient.getCurrentUserId();
+                            const seasonsRes = await ApiClient.ajax({
+                                type: 'GET',
+                                url: ApiClient.getUrl('/Items', {
+                                    ParentId: seriesId,
+                                    IncludeItemTypes: 'Season',
+                                    SortBy: 'IndexNumber',
+                                    SortOrder: 'Ascending',
+                                    Fields: 'IndexNumber,SeasonNumber',
+                                    userId: userId
+                                }),
+                                dataType: 'json'
+                            });
+
+                            const seasonsList = seasonsRes?.Items || [];
+                            normalized = seasonsList.map(s => ({
+                                seasonNumber: parseInt(s.IndexNumber || s.SeasonNumber || s.ParentIndexNumber || 0) || 0,
+                                id: s.Id,
+                                episodes: []
+                            })).filter(s => s.seasonNumber > 0);
+
+                            // For each season, fetch episodes (only titles and numbers)
+                            for (const s of normalized) {
+                                try {
+                                    const epsRes = await ApiClient.ajax({
+                                        type: 'GET',
+                                        url: ApiClient.getUrl('/Items', {
+                                            ParentId: s.id,
+                                            IncludeItemTypes: 'Episode',
+                                            SortBy: 'IndexNumber',
+                                            SortOrder: 'Ascending',
+                                            Fields: 'IndexNumber,Name',
+                                            userId: ApiClient.getCurrentUserId()
+                                        }),
+                                        dataType: 'json'
+                                    });
+                                    const eps = epsRes?.Items || [];
+                                    s.episodes = eps.map(ep => ({ episodeNumber: parseInt(ep.IndexNumber || ep.ParentIndexNumber || ep.Index || 0) || 0, title: ep.Name || ep.Title || '' }));
+                                } catch (e) {
+                                    console.debug(`${logPrefix} Failed to fetch episodes for season ${s.seasonNumber}:`, e);
+                                    s.episodes = [];
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.debug(`${logPrefix} Error fetching seasons/episodes from Jellyfin:`, e);
+                        normalized = [];
+                    }
+
+                    // If no seasons found on server, fallback to minimal inference
+                    if (!normalized || normalized.length === 0) {
+                        const seasonCount = item?.SeasonCount || (item && item.Seasons && item.Seasons.length) || 0;
+                        if (seasonCount && seasonCount > 0) {
+                            for (let i = 1; i <= seasonCount; i++) normalized.push({ seasonNumber: i, episodes: [] });
+                        }
+                    }
+
+                    // If still no seasons discovered, show a single 'All seasons' option and disable episode selector
+                    if (!normalized || normalized.length === 0) {
+                        setOptions(seasonSelect, [{ value: 0, label: 'All seasons' }]);
+                        seasonSelect.disabled = true;
+                        setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                        episodeSelect.disabled = true;
+                        return;
+                    }
+
+                    // Build season options
+                    const seasonOptions = [];
+                    // If more than one season, add 'All seasons'
+                    if (normalized.length > 1) {
+                        seasonOptions.push({ value: 0, label: 'All seasons' });
+                    }
+                    for (const s of normalized) {
+                        seasonOptions.push({ value: s.seasonNumber, label: `Season ${s.seasonNumber}` });
+                    }
+
+                    setOptions(seasonSelect, seasonOptions);
+                    seasonSelect.disabled = false;
+
+                    // Helper to populate episodes for a season
+                    const populateEpisodesForSeason = (seasonNum) => {
+                        const s = normalized.find(x => x.seasonNumber === parseInt(seasonNum));
+                        if (!s) {
+                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                            episodeSelect.disabled = true;
+                            return;
+                        }
+                        const eps = s.episodes && s.episodes.length > 0 ? s.episodes : [];
+                        const epOptions = [{ value: 0, label: 'All episodes' }];
+                        if (eps.length > 0) {
+                            for (const ep of eps) epOptions.push({ value: ep.episodeNumber, label: `Episode ${ep.episodeNumber}${ep.title ? ' — ' + ep.title : ''}` });
+                        }
+                        setOptions(episodeSelect, epOptions);
+                        episodeSelect.disabled = false;
+                    };
+
+                    // If we are on a Season or Episode detail, try to preselect
+                    const curType = item?.Type;
+                    let curSeasonNum = null;
+                    let curEpisodeNum = null;
+                    if (curType === 'Season') {
+                        curSeasonNum = item?.IndexNumber || item?.SeasonNumber || null;
+                    } else if (curType === 'Episode') {
+                        // Many Episode items have ParentIndexNumber for season and IndexNumber for episode
+                        curSeasonNum = item?.ParentIndexNumber || item?.SeasonIndex || item?.ParentIndex || item?.SeasonNumber || null;
+                        curEpisodeNum = item?.IndexNumber || item?.EpisodeNumber || null;
+                    }
+
+                    // Preselect logic
+                    if (curSeasonNum) {
+                        // If season options include the season, set select
+                        const valToSet = String(curSeasonNum);
+                        const opt = Array.from(seasonSelect.options).find(o => o.value === valToSet);
+                        if (opt) seasonSelect.value = valToSet;
+                        // If this is a Season detail, and only one season or user likely doesn't need to change, disable changing seasons
+                        if (curType === 'Season') {
+                            seasonSelect.disabled = true;
+                        }
+                        // populate episodes for that season
+                        populateEpisodesForSeason(curSeasonNum);
+                        if (curEpisodeNum) {
+                            // try to set episode value and disable modification for episode detail
+                            const epOpt = Array.from(episodeSelect.options).find(o => o.value === String(curEpisodeNum));
+                            if (epOpt) episodeSelect.value = String(curEpisodeNum);
+                            if (curType === 'Episode') {
+                                episodeSelect.disabled = true;
+                                seasonSelect.disabled = true;
+                            }
+                        }
+                    } else {
+                        // Default: set to 'All seasons' if present, and disable episode select
+                        if (normalized.length > 1) {
+                            seasonSelect.value = '0';
+                            // Ensure the episode select shows the 'All episodes' option when defaulting
+                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                            episodeSelect.disabled = true;
+                        } else {
+                            // Single season - select it
+                            seasonSelect.value = String(normalized[0].seasonNumber);
+                            populateEpisodesForSeason(normalized[0].seasonNumber);
+                        }
+                    }
+
+                    // When season changes, update episodes
+                    seasonSelect.addEventListener('change', () => {
+                        const val = seasonSelect.value;
+                        if (!val || val === '0') {
+                            // All seasons => show a single "All episodes" option to avoid blank UI and disable selection
+                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                            episodeSelect.disabled = true;
+                        } else {
+                            populateEpisodesForSeason(parseInt(val));
+                        }
+                    });
+
+                } catch (err) {
+                    console.debug(`${logPrefix} Error building tv controls:`, err);
+                }
+            })();
+        }
     };
 
     /**
@@ -100,7 +324,7 @@
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropPath - Optional TMDB backdrop image path
      */
-    issueReporter.createReportButton = function(container, tmdbId, itemName, mediaType, backdropPath = null) {
+    issueReporter.createReportButton = function(container, tmdbId, itemName, mediaType, backdropPath = null, item = null) {
         if (!container) {
             console.warn(`${logPrefix} Container not found for report button`);
             return null;
@@ -124,7 +348,7 @@
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropPath);
+            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropPath, item);
         });
 
         return button;
@@ -319,9 +543,40 @@
             // Determine media type. Treat Series, Season, Episode as 'tv'
             let tmdbId = item.ProviderIds?.Tmdb;
             const isTvLike = ['Series', 'Season', 'Episode'].includes(item.Type);
+            const isMovie = item.Type === 'Movie';
+
+            // Do not display report button for non-media collection pages (collections/boxsets/etc.)
+            if (!isTvLike && !isMovie) {
+                console.debug(`${logPrefix} Skipping ${item.Name}: unsupported item type (${item.Type}) — likely a collection/boxset`);
+                return false;
+            }
+
             const mediaType = isTvLike ? 'tv' : 'movie';
 
             console.debug(`${logPrefix} Checking item: ${item.Name} (type=${item.Type}, mediaType=${mediaType}, TMDB: ${tmdbId})`);
+
+            // Remove report button for special seasons (season 0) and special episodes (season 0)
+            try {
+                if (item.Type === 'Season') {
+                    const seasonNumber = parseInt(item.IndexNumber || item.SeasonNumber || item.Index || 0) || 0;
+                    if (seasonNumber === 0) {
+                        console.debug(`${logPrefix} Skipping ${item.Name}: special season (season 0)`);
+                        return false;
+                    }
+                }
+
+                if (item.Type === 'Episode') {
+                    // Episode items often contain the season number in ParentIndexNumber or SeasonNumber
+                    const parentSeason = parseInt(item.ParentIndexNumber || item.SeasonIndex || item.ParentIndex || item.SeasonNumber || 0) || 0;
+                    if (parentSeason === 0) {
+                        console.debug(`${logPrefix} Skipping ${item.Name}: special episode (season 0)`);
+                        return false;
+                    }
+                }
+            } catch (e) {
+                // If any unexpected shape, don't block the flow; just continue
+                console.debug(`${logPrefix} Could not determine season index for special detection:`, e);
+            }
 
             // If no TMDB ID, and this is a Season/Episode, try to fetch parent/series TMDB ID first
             if (!tmdbId && (item.Type === 'Season' || item.Type === 'Episode')) {
@@ -444,7 +699,8 @@
                 tmdbId,
                 item.Name,
                 mediaType,
-                null
+                null,
+                item
             );
 
             if (button) {
