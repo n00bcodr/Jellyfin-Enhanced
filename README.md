@@ -39,6 +39,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
         - [Setup](#setup)
         - [Icon States](#icon-states)
       - [How It Works?](#how-it-works)
+    - [Jellyseerr Report Issue](#jellyseerr-report-issue)
   - [🌐 Internationalization & Translations](#-internationalization--translations)
   - [🎨 Custom Styling](#-custom-styling)
     - [Pause Screen CSS](#pause-screen-css)
@@ -289,6 +290,25 @@ curl -X POST\
 </p>
 
 <br>
+
+## Jellyseerr Report Issue <a name="jellyseerr-report-issue"></a>
+
+Report issues (video, audio, subtitles, or other) directly to your configured Jellyseerr instance from any movie or TV item detail page in Jellyfin.
+
+#### How to use
+
+- Enable the Jellyseerr integration in the plugin settings and check the **Show 'Report Issue' button on item detail pages** option.
+- Open a movie or TV show detail page and click the compact report icon in the item action icons to open the issue modal.
+- Choose an issue type (Video / Audio / Subtitles / Other), enter a description, and for TV shows optionally select the affected season and episode. You can choose **All seasons** / **All episodes** when appropriate.
+- Submit the report — the plugin will proxy the request through your Jellyfin server to Jellyseerr and use Jellyseerr's internal media id when creating the issue.
+
+#### Notes
+
+- The report button is hidden when Jellyseerr is unreachable or the current Jellyfin user is not linked to a Jellyseerr account.
+- The button will not appear on collection/boxset pages and special seasons/episodes (season 0) are intentionally skipped.
+- Season/episode selectors prefer local Jellyfin data so selections reflect what is actually present on your server.
+
+#### For troubleshooting and proxy endpoints, see the **Jellyseerr API Endpoints** [section](#how-it-works) above. 
 
 ## 🔧 Customization & Advanced Use
 
