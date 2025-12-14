@@ -199,27 +199,35 @@
             }
         };
 
-        const observer = new MutationObserver(() => {
-            runPageSpecificFunctions();
-            JE.addRandomButton();
-            JE.addUserPreferencesLink();
-            onUserButtonLongPress();
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
+        // Create managed observer for general DOM changes
+        JE.helpers.createObserver(
+            'dom-observer',
+            JE.helpers.throttle(() => {
+                runPageSpecificFunctions();
+                JE.addRandomButton();
+                JE.addUserPreferencesLink();
+                onUserButtonLongPress();
+            }, 100),
+            document.body,
+            { childList: true, subtree: true }
+        );
     }
 
     /**
      * Sets up listeners for the action sheet to add the "Remove" button.
      */
     function observeActionSheets() {
-        const observer = new MutationObserver(() => {
-            if (JE.currentSettings.removeContinueWatchingEnabled) {
-                setTimeout(JE.addRemoveButton, 150);
-            }
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
+        // Create managed observer for action sheets
+        JE.helpers.createObserver(
+            'action-sheets',
+            JE.helpers.debounce(() => {
+                if (JE.currentSettings.removeContinueWatchingEnabled) {
+                    JE.addRemoveButton();
+                }
+            }, 150),
+            document.body,
+            { childList: true, subtree: true }
+        );
     }
 
     /**

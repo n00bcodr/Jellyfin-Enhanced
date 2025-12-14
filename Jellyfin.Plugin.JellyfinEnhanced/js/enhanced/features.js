@@ -531,39 +531,50 @@
         }
     }
 
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                if (visiblePage) {
-                    const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
-                    if (container) {
-                        try {
-                            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                            if (itemId) {
-                                if (JE.currentSettings.showWatchProgress) {
-                                    displayWatchProgress(itemId, container);
-                                }
-                                if (JE.currentSettings.showFileSizes) {
-                                    displayItemSize(itemId, container);
-                                }
-                                if (JE.currentSettings.showAudioLanguages) {
-                                    displayAudioLanguages(itemId, container);
-                                }
-                            }
-                        } catch (e) { /* ignore */ }
-                    }
+    /**
+     * Handle item details page display with debounced observer
+     */
+    const handleItemDetails = JE.helpers.debounce(() => {
+        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+        if (!visiblePage) return;
+
+        const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
+        if (!container) return;
+
+        try {
+            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+            if (itemId) {
+                if (JE.currentSettings.showWatchProgress) {
+                    displayWatchProgress(itemId, container);
+                }
+                if (JE.currentSettings.showFileSizes) {
+                    displayItemSize(itemId, container);
+                }
+                if (JE.currentSettings.showAudioLanguages) {
+                    displayAudioLanguages(itemId, container);
                 }
             }
-        }
-    });
+        } catch (e) { /* ignore */ }
+    }, 100);
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'style']
-    });
+    // Create managed observer for item details
+    JE.helpers.createObserver(
+        'item-details-info',
+        (mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                    handleItemDetails();
+                }
+            }
+        },
+        document.body,
+        {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'style']
+        }
+    );
 
     /**
      * Resets the playback position of an item to 0, effectively removing it from "Continue Watching".
