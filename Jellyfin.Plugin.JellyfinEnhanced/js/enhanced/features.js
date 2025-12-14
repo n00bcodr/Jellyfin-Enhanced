@@ -541,25 +541,15 @@
                         try {
                             const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                             if (itemId) {
-                                ApiClient.getItem(ApiClient.getCurrentUserId(), itemId).then(item => {
-                                    if (!item) return;
-
-                                    // Only show these features for media items (not Person, etc.)
-                                    const includedTypes = ['Episode', 'Series', 'Movie', 'BoxSet', 'Playlist'];
-                                    if (!includedTypes.includes(item.Type)) {
-                                        return;
-                                    }
-
-                                    if (JE.currentSettings.showWatchProgress) {
-                                        displayWatchProgress(itemId, container);
-                                    }
-                                    if (JE.currentSettings.showFileSizes) {
-                                        displayItemSize(itemId, container);
-                                    }
-                                    if (JE.currentSettings.showAudioLanguages && !['BoxSet', 'Playlist'].includes(item.Type)) {
-                                        displayAudioLanguages(itemId, container);
-                                    }
-                                }).catch(() => { /* ignore */ });
+                                if (JE.currentSettings.showWatchProgress) {
+                                    displayWatchProgress(itemId, container);
+                                }
+                                if (JE.currentSettings.showFileSizes) {
+                                    displayItemSize(itemId, container);
+                                }
+                                if (JE.currentSettings.showAudioLanguages) {
+                                    displayAudioLanguages(itemId, container);
+                                }
                             }
                         } catch (e) { /* ignore */ }
                     }
