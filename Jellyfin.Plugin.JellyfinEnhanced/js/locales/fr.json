@@ -168,7 +168,6 @@
     "elsewhere_panel_search_button": "Recherche...",
     "elsewhere_panel_error": "Erreur : {error}",
     "elsewhere_panel_no_services_in_regions": "Aucun service de streaming disponible dans les régions sélectionnées",
-    "elsewhere_panel_not_available": "Non disponible sur aucun service de streaming",
     "elsewhere_panel_not_available_in_regions": "Non disponible sur aucun service de streaming en {regions}",
     "elsewhere_panel_close_tooltip": "Fermer",
     "elsewhere_panel_available_in_region": "Disponible en {region} sur:",

@@ -548,7 +548,34 @@
             // Check if services are available in default region
             const hasServices = regionData && regionData.flatrate && regionData.flatrate.length > 0;
 
+            // Pre-filter services to check if any will actually be displayed
+            let filteredServices = [];
             if (hasServices) {
+                filteredServices = regionData.flatrate;
+                
+                // Apply DEFAULT_PROVIDERS filter
+                if (DEFAULT_PROVIDERS.length > 0) {
+                    filteredServices = filteredServices.filter(service =>
+                        DEFAULT_PROVIDERS.includes(service.provider_name)
+                    );
+                }
+
+                // Apply IGNORE_PROVIDERS filter
+                if (IGNORE_PROVIDERS.length > 0) {
+                    try {
+                        const ignorePatterns = IGNORE_PROVIDERS.map(pattern => new RegExp(pattern, 'i'));
+                        filteredServices = filteredServices.filter(service =>
+                            !ignorePatterns.some(regex => regex.test(service.provider_name))
+                        );
+                    } catch (e) {
+                        console.error('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Invalid regex in IGNORE_PROVIDERS.', e);
+                    }
+                }
+            }
+
+            const hasFilteredServices = filteredServices.length > 0;
+
+            if (hasFilteredServices) {
                 title.textContent = JE.t('elsewhere_panel_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
             } else if (ELSEWHERE_CUSTOM_BRANDING_TEXT) {
                 // Show custom branding when no services are available and custom text is configured
@@ -592,8 +619,8 @@
                 align-items: flex-end;
             `;
 
-            // Add JustWatch link if available and has services
-            if (hasServices && regionData && regionData.link) {
+            // Add JustWatch link if available and has filtered services
+            if (hasFilteredServices && regionData && regionData.link) {
                 title.setAttribute('is', 'emby-linkbutton');
                 title.classList.add('elsewhere-link-reset');
                 title.href = regionData.link;
@@ -602,7 +629,7 @@
                 title.title = 'JustWatch';
                 title.style.padding = '0';
                 title.style.margin = '0';
-            } else if (!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
+            } else if (!hasFilteredServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
                 // Override cursor style for custom branded content
                 title.style.cursor = 'default';
             }
@@ -635,7 +662,7 @@
                 font-weight: 500;
                 cursor: pointer;
                 transition: all 500ms ease;
-                opacity: ${!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT ? '0' : '1'};
+                opacity: ${!hasFilteredServices && ELSEWHERE_CUSTOM_BRANDING_TEXT ? '0' : '1'};
             `;
 
             searchButton.onmouseenter = () => {
@@ -666,7 +693,7 @@
                 transition: all 500ms ease;
                 width: 28px;
                 height: 28px;
-                opacity: ${!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT ? '0' : '1'};
+                opacity: ${!hasFilteredServices && ELSEWHERE_CUSTOM_BRANDING_TEXT ? '0' : '1'};
             `;
 
             settingsButton.onmouseenter = () => {
@@ -691,7 +718,7 @@
             container.appendChild(header);
 
             // Add hover effect to show/hide buttons when custom branding is enabled
-            if (!hasServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
+            if (!hasFilteredServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
                 container.onmouseenter = () => {
                     searchButton.style.opacity = '1';
                     settingsButton.style.opacity = '1';
@@ -702,45 +729,24 @@
                 };
             }
 
-            // Only show services if they exist
+            // Show services if they exist after filtering, otherwise show appropriate message
             if (hasServices) {
-                // Filter services based on DEFAULT_PROVIDERS
-                let services = regionData.flatrate;
-                if (DEFAULT_PROVIDERS.length > 0) {
-                    services = services.filter(service =>
-                        DEFAULT_PROVIDERS.includes(service.provider_name)
-                    );
-                }
-
-                // Apply ignore list using regular expressions
-                if (IGNORE_PROVIDERS.length > 0) {
-                    try {
-                        // 'i' for case-insensitive
-                        const ignorePatterns = IGNORE_PROVIDERS.map(pattern => new RegExp(pattern, 'i'));
-                        services = services.filter(service =>
-                            !ignorePatterns.some(regex => regex.test(service.provider_name))
-                        );
-                    } catch (e) {
-                        console.error('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Invalid regex in IGNORE_PROVIDERS.', e);
-                    }
-                }
-
-                if (services.length === 0) {
-                    const noServices = document.createElement('div');
-                    noServices.textContent = DEFAULT_PROVIDERS.length > 0
-                        ? JE.t('elsewhere_panel_no_configured_services')
-                        : JE.t('elsewhere_panel_not_available');
-                    noServices.style.cssText = 'color: #999; font-size: 13px; margin-bottom: 12px;';
-                    container.appendChild(noServices);
-                } else {
+                if (hasFilteredServices) {
+                    // Use the pre-filtered services
                     const servicesContainer = document.createElement('div');
                     servicesContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px;';
 
-                    services.forEach(service => {
+                    filteredServices.forEach(service => {
                         servicesContainer.appendChild(createServiceBadge(service, tmdbId, mediaType));
                     });
 
                     container.appendChild(servicesContainer);
+                } else if (DEFAULT_PROVIDERS.length > 0) {
+                    // Services exist but all were filtered out by user's provider preferences
+                    const noServices = document.createElement('div');
+                    noServices.textContent = JE.t('elsewhere_panel_no_configured_services');
+                    noServices.style.cssText = 'color: #999; font-size: 13px; margin-bottom: 12px;';
+                    container.appendChild(noServices);
                 }
             }
 
