@@ -436,16 +436,10 @@
      * Maps problem types to Jellyseerr issue types and season/episode info
      * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
      */
-    const ISSUE_TYPE_MAP = {
-        'wrong_quality': { issueType: 1, label: 'VIDEO' },        // VIDEO
-        'wrong_audio': { issueType: 2, label: 'AUDIO' },           // AUDIO
-        'wrong_subs': { issueType: 3, label: 'SUBTITLES' },        // SUBTITLES
-        'no_season': { issueType: 4, label: 'OTHER' },             // OTHER - TV specific
-        'episode_missing': { issueType: 4, label: 'OTHER' },       // OTHER - TV specific
-        'episode_wrong_quality': { issueType: 1, label: 'VIDEO' }, // VIDEO - Episode
-        'episode_wrong_audio': { issueType: 2, label: 'AUDIO' },   // AUDIO - Episode
-        'episode_wrong_subs': { issueType: 3, label: 'SUBTITLES' } // SUBTITLES - Episode
-    };
+    // NOTE: Previous mappings for textual problem types were removed —
+    // the current implementation expects a numeric issueType (1..4)
+    // to be provided by the UI. Keep logic in `api.reportIssue` that
+    // parses the numeric value and forwards it to Jellyseerr.
 
     api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
         try {
