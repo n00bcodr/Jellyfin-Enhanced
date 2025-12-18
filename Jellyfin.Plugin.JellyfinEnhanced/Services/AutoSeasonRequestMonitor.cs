@@ -40,6 +40,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Initialize and start monitoring playback events.
         public void Initialize()
         {
+            // Only initialize if the auto-request feature is enabled in plugin configuration.
+            var config = JellyfinEnhanced.Instance?.Configuration as Configuration.PluginConfiguration;
+            if (config == null)
+            {
+                _logger.Warning("[Auto-Request] Configuration is null - skipping auto-request monitoring initialization");
+                return;
+            }
+
+            if (!config.AutoSeasonRequestEnabled || !config.JellyseerrEnabled)
+            {
+                _logger.Info("[Auto-Request] Auto-request monitoring is disabled in configuration - not subscribing to playback events");
+                return;
+            }
+
             _logger.Info("[Auto-Request] Initializing playback event monitoring");
 
             // Subscribe to playback events
