@@ -411,15 +411,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         if (watchlistItems == null || watchlistItems.Count == 0)
                         {
                             _logger.Info($"[Manual Watchlist Sync] No watchlist items found for {user.Username}");
-                            continue;
+                            watchlistItems = new List<WatchlistItem>();
                         }
 
                         _logger.Info($"[Manual Watchlist Sync] Found {watchlistItems.Count} watchlist items for {user.Username}");
+
+                        var requestItems = await GetJellyseerrRequestsForUser(jellyseerrUserId);
+                        if (requestItems != null && requestItems.Count > 0)
+                        {
+                            _logger.Info($"[Manual Watchlist Sync] Found {requestItems.Count} request items for {user.Username}");
+                            watchlistItems.AddRange(requestItems);
+                        }
+
+                        var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                         // Process each watchlist item
                         foreach (var item in watchlistItems)
                         {
                             itemsProcessed++;
+
+                            var key = $"{item.MediaType}:{item.TmdbId}";
+                            if (!processedKeys.Add(key))
+                            {
+                                continue;
+                            }
 
                             // Find the item in Jellyfin library by TMDB ID
                             var libraryItem = FindItemByTmdbId(item.TmdbId, item.MediaType);
@@ -436,6 +451,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     _userDataManager.SaveUserData(user, libraryItem, userData, UserDataSaveReason.UpdateUserRating, default);
                                     itemsAdded++;
                                     _logger.Info($"[Manual Watchlist Sync] Added '{libraryItem.Name}' to watchlist for {user.Username}");
+                                }
+                            }
+                            else
+                            {
+                                // If not in library yet, add to pending watchlist so it will be picked up when it arrives
+                                var pending = _userConfigurationManager.GetUserConfiguration<PendingWatchlistItems>(user.Id.ToString(), "pending-watchlist.json");
+                                var alreadyPending = pending.Items.Any(i => i.TmdbId == item.TmdbId && i.MediaType == item.MediaType);
+                                if (!alreadyPending)
+                                {
+                                    pending.Items.Add(new PendingWatchlistItem
+                                    {
+                                        TmdbId = item.TmdbId,
+                                        MediaType = item.MediaType,
+                                        RequestedAt = DateTime.UtcNow
+                                    });
+                                    _userConfigurationManager.SaveUserConfiguration(user.Id.ToString(), "pending-watchlist.json", pending);
+                                    _logger.Info($"[Manual Watchlist Sync] Added TMDB {item.TmdbId} ({item.MediaType}) to pending watchlist for {user.Username}");
                                 }
                             }
                         }
@@ -524,6 +556,146 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return null;
+        }
+
+        private async Task<List<WatchlistItem>?> GetJellyseerrRequestsForUser(string userId)
+        {
+            try
+            {
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+                {
+                    return null;
+                }
+
+                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+
+                foreach (var url in urls)
+                {
+                    var trimmedUrl = url.Trim();
+                    try
+                    {
+                        var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/request?take=500&skip=0&sort=added";
+                        httpClient.DefaultRequestHeaders.Remove("X-Api-User");
+                        httpClient.DefaultRequestHeaders.Add("X-Api-User", userId);
+
+                        var response = await httpClient.GetAsync(requestUri);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            continue;
+                        }
+
+                        var content = await response.Content.ReadAsStringAsync();
+                        var json = JsonDocument.Parse(content);
+
+                        if (!json.RootElement.TryGetProperty("results", out var results))
+                        {
+                            continue;
+                        }
+
+                        var items = new List<WatchlistItem>();
+
+                        foreach (var item in results.EnumerateArray())
+                        {
+                            if (!BelongsToUser(item, userId))
+                            {
+                                continue;
+                            }
+
+                            var parsed = ParseRequestItem(item);
+                            if (parsed != null)
+                            {
+                                items.Add(parsed);
+                            }
+                        }
+
+                        return items;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Failed to get requests from {trimmedUrl}: {ex.Message}");
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error getting Jellyseerr requests: {ex}");
+            }
+
+            return null;
+        }
+
+        private bool BelongsToUser(JsonElement requestElement, string jellyseerrUserId)
+        {
+            if (requestElement.TryGetProperty("requestedBy", out var requestedBy))
+            {
+                if (requestedBy.ValueKind == JsonValueKind.Number && requestedBy.TryGetInt32(out var idNumber))
+                {
+                    return string.Equals(idNumber.ToString(), jellyseerrUserId, StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (requestedBy.ValueKind == JsonValueKind.String)
+                {
+                    var idStr = requestedBy.GetString();
+                    if (!string.IsNullOrEmpty(idStr) && string.Equals(idStr, jellyseerrUserId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                if (requestedBy.ValueKind == JsonValueKind.Object && requestedBy.TryGetProperty("id", out var idProp))
+                {
+                    if ((idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt32(out var objId) && string.Equals(objId.ToString(), jellyseerrUserId, StringComparison.OrdinalIgnoreCase)) ||
+                        (idProp.ValueKind == JsonValueKind.String && string.Equals(idProp.GetString() ?? string.Empty, jellyseerrUserId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private WatchlistItem? ParseRequestItem(JsonElement requestElement)
+        {
+            int tmdbId = 0;
+            string mediaType = "";
+
+            if (requestElement.TryGetProperty("media", out var media))
+            {
+                if (media.TryGetProperty("tmdbId", out var tmdbProp))
+                {
+                    tmdbId = tmdbProp.GetInt32();
+                }
+                if (media.TryGetProperty("mediaType", out var mtProp) && mtProp.ValueKind == JsonValueKind.String)
+                {
+                    mediaType = mtProp.GetString() ?? "";
+                }
+            }
+
+            if (tmdbId == 0 && requestElement.TryGetProperty("tmdbId", out var topTmdb))
+            {
+                tmdbId = topTmdb.GetInt32();
+            }
+
+            if (string.IsNullOrWhiteSpace(mediaType) && requestElement.TryGetProperty("mediaType", out var topMediaType) && topMediaType.ValueKind == JsonValueKind.String)
+            {
+                mediaType = topMediaType.GetString() ?? "";
+            }
+
+            if (tmdbId == 0 || string.IsNullOrWhiteSpace(mediaType))
+            {
+                return null;
+            }
+
+            return new WatchlistItem
+            {
+                TmdbId = tmdbId,
+                MediaType = mediaType
+            };
         }
 
         private BaseItem? FindItemByTmdbId(int tmdbId, string mediaType)

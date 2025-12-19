@@ -111,25 +111,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     // Get watchlist from Jellyseerr
-                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId);
-
-                    if (watchlistItems == null || watchlistItems.Count == 0)
+                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
+                    if (watchlistItems.Count == 0)
                     {
                         _logger.Info($"[Jellyseerr Watchlist Sync] No watchlist items found for user: {jellyfinUser.Username}");
-                        processedUsers++;
-                        continue;
+                    }
+                    else
+                    {
+                        _logger.Info($"[Jellyseerr Watchlist Sync] Found {watchlistItems.Count} watchlist items for user: {jellyfinUser.Username}");
                     }
 
-                    _logger.Info($"[Jellyseerr Watchlist Sync] Found {watchlistItems.Count} watchlist items for user: {jellyfinUser.Username}");
+                    var requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
+                    if (requestItems.Count > 0)
+                    {
+                        _logger.Info($"[Jellyseerr Watchlist Sync] Found {requestItems.Count} requests for user: {jellyfinUser.Username}");
+                    }
+                    else
+                    {
+                        _logger.Debug($"[Jellyseerr Watchlist Sync] No requests found for user: {jellyfinUser.Username}");
+                    }
 
-                    // Process each watchlist item
+                    var combinedItems = watchlistItems.Concat(requestItems).ToList();
+
+                    // Process each item
                     var itemsAdded = 0;
                     var itemsPending = 0;
-                    foreach (var watchlistItem in watchlistItems)
+                    var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in combinedItems)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        var result = await ProcessWatchlistItem(jellyfinUser, watchlistItem);
+                        var key = $"{item.MediaType}:{item.TmdbId}";
+                        if (!processedKeys.Add(key))
+                        {
+                            continue;
+                        }
+
+                        var result = await ProcessWatchlistItem(jellyfinUser, item);
                         if (result == WatchlistItemResult.Added)
                         {
                             itemsAdded++;
@@ -266,6 +284,153 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             return null;
+        }
+
+        private async Task<List<WatchlistItem>?> GetJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId)
+        {
+            try
+            {
+                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/request?take=500&skip=0&sort=added&filter=all";
+                httpClient.DefaultRequestHeaders.Remove("X-Api-User");
+                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
+
+                var response = await httpClient.GetAsync(requestUri);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.Debug($"[Jellyseerr Watchlist Sync] Requests fetch failed with {response.StatusCode}");
+                    return null;
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+                if (!json.TryGetProperty("results", out var resultsArray))
+                {
+                    _logger.Debug("[Jellyseerr Watchlist Sync] Requests response missing results array");
+                    return null;
+                }
+
+                var items = new List<WatchlistItem>();
+                foreach (var item in resultsArray.EnumerateArray())
+                {
+                    // Filter to the requesting user
+                    if (!BelongsToUser(item, jellyseerrUserId))
+                    {
+                        continue;
+                    }
+
+                    var parsed = ParseRequestItem(item);
+                    if (parsed != null)
+                    {
+                        items.Add(parsed);
+                    }
+                }
+
+                return items;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"[Jellyseerr Watchlist Sync] Error getting Jellyseerr requests: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private bool BelongsToUser(JsonElement requestElement, string jellyseerrUserId)
+        {
+            // Check common shapes: requestedBy is object with id, or scalar id, or userId
+            if (requestElement.TryGetProperty("requestedBy", out var requestedBy))
+            {
+                if (requestedBy.ValueKind == JsonValueKind.Number && requestedBy.TryGetInt32(out var idNumber))
+                {
+                    return string.Equals(idNumber.ToString(), jellyseerrUserId, StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (requestedBy.ValueKind == JsonValueKind.String)
+                {
+                    var idStr = requestedBy.GetString();
+                    if (!string.IsNullOrEmpty(idStr) && string.Equals(idStr, jellyseerrUserId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                if (requestedBy.ValueKind == JsonValueKind.Object && requestedBy.TryGetProperty("id", out var idProp))
+                {
+                    if ((idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt32(out var objId) && string.Equals(objId.ToString(), jellyseerrUserId, StringComparison.OrdinalIgnoreCase)) ||
+                        (idProp.ValueKind == JsonValueKind.String && string.Equals(idProp.GetString() ?? string.Empty, jellyseerrUserId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private WatchlistItem? ParseRequestItem(JsonElement requestElement)
+        {
+            // Prefer media.tmdbId / media.mediaType, fallback to top-level tmdbId/mediaType
+            int tmdbId = 0;
+            string mediaType = "";
+            string title = "";
+
+            if (requestElement.TryGetProperty("media", out var media))
+            {
+                if (media.TryGetProperty("tmdbId", out var tmdbProp))
+                {
+                    tmdbId = tmdbProp.GetInt32();
+                }
+                if (media.TryGetProperty("mediaType", out var mtProp) && mtProp.ValueKind == JsonValueKind.String)
+                {
+                    mediaType = mtProp.GetString() ?? "";
+                }
+                if (media.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String)
+                {
+                    title = titleProp.GetString() ?? "";
+                }
+            }
+
+            if (tmdbId == 0 && requestElement.TryGetProperty("tmdbId", out var topTmdb))
+            {
+                tmdbId = topTmdb.GetInt32();
+            }
+
+            if (tmdbId == 0 && requestElement.TryGetProperty("mediaId", out var mediaIdProp))
+            {
+                if (mediaIdProp.ValueKind == JsonValueKind.Number && mediaIdProp.TryGetInt32(out var mediaIdInt))
+                {
+                    tmdbId = mediaIdInt;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(mediaType) && requestElement.TryGetProperty("mediaType", out var topMediaType) && topMediaType.ValueKind == JsonValueKind.String)
+            {
+                mediaType = topMediaType.GetString() ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(mediaType) && requestElement.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String)
+            {
+                mediaType = typeProp.GetString() ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(title) && requestElement.TryGetProperty("title", out var topTitle) && topTitle.ValueKind == JsonValueKind.String)
+            {
+                title = topTitle.GetString() ?? "";
+            }
+
+            if (tmdbId == 0 || string.IsNullOrWhiteSpace(mediaType))
+            {
+                return null;
+            }
+
+            return new WatchlistItem
+            {
+                TmdbId = tmdbId,
+                MediaType = mediaType,
+                Title = title
+            };
         }
 
         private enum WatchlistItemResult
