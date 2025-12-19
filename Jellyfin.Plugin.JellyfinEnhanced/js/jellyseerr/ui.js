@@ -1251,7 +1251,10 @@
      */
     ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null) {
         if (mediaType !== 'tv') return;
-        if (refreshModalInterval) clearInterval(refreshModalInterval);
+        if (refreshModalInterval) {
+            clearInterval(refreshModalInterval);
+            refreshModalInterval = null;
+        }
 
 
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
@@ -1282,6 +1285,12 @@
             subtitle: showTitle,
             bodyHtml,
             backdropPath: tvDetails.backdropPath,
+            onClose: () => {
+                if (refreshModalInterval) {
+                    clearInterval(refreshModalInterval);
+                    refreshModalInterval = null;
+                }
+            },
             onSave: async (modalEl, requestBtn, closeFn) => {
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
@@ -1386,13 +1395,6 @@
                 }
             }
         }, 10000); // Refresh every 10 seconds
-
-        // Add a listener to stop polling when the modal is closed
-        const originalClose = modalInstance.close;
-        modalInstance.close = () => {
-            if (refreshModalInterval) clearInterval(refreshModalInterval);
-            originalClose();
-        };
 
         if (showAdvanced) {
             try {

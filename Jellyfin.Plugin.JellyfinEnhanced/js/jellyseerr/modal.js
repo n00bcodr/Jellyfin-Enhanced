@@ -13,10 +13,11 @@
      * @param {string} options.bodyHtml - The HTML content for the modal body.
      * @param {string} options.backdropPath - The backdrop image path for the header.
      * @param {function} options.onSave - The callback function to execute when the primary button is clicked.
+     * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
      * @returns {object} - An object with methods to show and close the modal.
      */
-    modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave, buttonText }) {
+    modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave, onClose, buttonText }) {
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
         modalElement.setAttribute('role', 'dialog');
@@ -100,7 +101,20 @@
             }, 10);
         };
 
+        let isClosing = false;
+
         const close = () => {
+            if (isClosing) return;
+            isClosing = true;
+
+            if (typeof onClose === 'function') {
+                try {
+                    onClose();
+                } catch (err) {
+                    console.error(`${logPrefix} onClose handler failed:`, err);
+                }
+            }
+
             window.removeEventListener('popstate', close);
             document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
@@ -109,6 +123,7 @@
                 if (document.body.contains(modalElement)) {
                     document.body.removeChild(modalElement);
                 }
+                isClosing = false;
             }, 300);
         };
 
