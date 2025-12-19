@@ -9,11 +9,11 @@
      * Issue type definitions matching Jellyseerr's 4 core issue types
      * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
      */
-    const ISSUE_TYPES = [
-        { value: '1', label: 'VIDEO', icon: '🎬' },
-        { value: '2', label: 'AUDIO', icon: '🎵' },
-        { value: '3', label: 'SUBTITLES', icon: '📝' },
-        { value: '4', label: 'OTHER', icon: '❓' }
+    const getIssueTypes = () => [
+        { value: '1', label: JE.t('jellyseerr_report_issue_type_video'), icon: '🎬' },
+        { value: '2', label: JE.t('jellyseerr_report_issue_type_audio'), icon: '🎵' },
+        { value: '3', label: JE.t('jellyseerr_report_issue_type_subtitles'), icon: '📝' },
+        { value: '4', label: JE.t('jellyseerr_report_issue_type_other'), icon: '❓' }
     ];
 
     /**
@@ -25,10 +25,11 @@
      */
     issueReporter.showReportModal = function(tmdbId, itemName, mediaType, backdropPath = null, item = null) {
         // Create the form HTML
+        const ISSUE_TYPES = getIssueTypes();
         const formHtml = `
             <div class="jellyseerr-issue-form">
                 <div class="jellyseerr-form-group">
-                    <label>Issue Type</label>
+                    <label>${JE.t('jellyseerr_report_issue_type')}</label>
                     <div class="jellyseerr-issue-radio-group">
                         ${ISSUE_TYPES.map(type => `
                             <label class="jellyseerr-radio-label">
@@ -39,11 +40,11 @@
                     </div>
                 </div>
                 <div class="jellyseerr-form-group">
-                    <label for="issue-message">Description (Optional)</label>
-                    <textarea 
-                        id="issue-message" 
+                    <label for="issue-message">${JE.t('jellyseerr_report_issue_message')}</label>
+                    <textarea
+                        id="issue-message"
                         class="jellyseerr-issue-textarea"
-                        placeholder="Describe the issue in detail..."
+                        placeholder="${JE.t('jellyseerr_report_issue_message_placeholder')}"
                         rows="4"
                     ></textarea>
                 </div>
@@ -53,11 +54,11 @@
 
         // Create modal using the existing modal system
         const { modalElement, show, close } = JE.jellyseerrModal.create({
-            title: 'Report Issue',
+            title: JE.t('jellyseerr_report_issue_title'),
             subtitle: itemName,
             bodyHtml: formHtml,
             backdropPath: backdropPath,
-            buttonText: 'Submit',
+            buttonText: JE.t('jellyseerr_report_issue_submit'),
             onSave: async (modalEl, button, closeModal) => {
                 const issueType = modalEl.querySelector('input[name="issue-type"]:checked')?.value;
                 const message = modalEl.querySelector('#issue-message').value;
@@ -82,13 +83,13 @@
 
                 try {
                     button.disabled = true;
-                    button.textContent = 'Submitting...';
+                    button.textContent = JE.t('jellyseerr_report_issue_submitting');
 
                     // Pass only the contents of the description box to the API
                     const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode);
 
                     if (result) {
-                        JE.toast('✅ Issue reported successfully!', 3000);
+                        JE.toast(JE.t('jellyseerr_report_issue_success'), 3000);
                         console.log(`${logPrefix} Issue successfully reported for ${itemName}`);
                         closeModal();
                     } else {
@@ -96,9 +97,9 @@
                     }
                 } catch (error) {
                     console.error(`${logPrefix} Error reporting issue:`, error);
-                    JE.toast('❌ Failed to report issue', 4000);
+                    JE.toast(JE.t('jellyseerr_report_issue_error'), 4000);
                     button.disabled = false;
-                    button.textContent = 'Submit Report';
+                    button.textContent = JE.t('jellyseerr_report_issue_submit');
                 }
             }
         });
@@ -115,11 +116,11 @@
                     // Build the container for season/episode controls
                     const controlsHtml = `
                         <div class="jellyseerr-form-group">
-                            <label for="issue-season">Season</label>
+                            <label for="issue-season">${JE.t('jellyseerr_report_issue_season')}</label>
                             <select id="issue-season" class="jellyseerr-select"></select>
                         </div>
                         <div class="jellyseerr-form-group">
-                            <label for="issue-episode">Episode</label>
+                            <label for="issue-episode">${JE.t('jellyseerr_report_issue_episode')}</label>
                             <select id="issue-episode" class="jellyseerr-select"></select>
                         </div>
                     `;
@@ -331,8 +332,8 @@
         }
 
         const button = document.createElement('button');
-        // Use a minimal/icon-only class so server CSS can style it like other action icons
-        button.className = 'jellyseerr-report-issue-icon';
+        button.setAttribute('is', 'emby-button');
+        button.className = 'button-flat detailButton emby-button jellyseerr-report-issue-icon';
         button.type = 'button';
         button.setAttribute('aria-label', 'Report issue');
         button.title = 'Report issue';
@@ -364,7 +365,8 @@
         if (!container) return null;
 
         const button = document.createElement('button');
-        button.className = 'jellyseerr-report-unavailable-icon';
+        button.setAttribute('is', 'emby-button');
+        button.className = 'button-flat detailButton emby-button jellyseerr-report-unavailable-icon';
         button.type = 'button';
         button.setAttribute('aria-label', 'Reporting unavailable');
         button.title = 'Reporting unavailable';
@@ -394,12 +396,12 @@
     issueReporter.getTmdbIdFallback = async function(itemName, mediaType, item) {
         try {
             console.debug(`${logPrefix} Attempting fallback TMDB lookup for ${itemName}`);
-            
+
             // Check other provider IDs that might help
             if (item.ProviderIds?.Imdb) {
                 console.debug(`${logPrefix} Found IMDB ID: ${item.ProviderIds.Imdb}, could use for lookup`);
             }
-            
+
             // Try to use External URLs which might contain TMDB link
             if (item.ExternalUrls) {
                 // Normalize to array of values (ExternalUrls may be an array or an object/map)
@@ -492,7 +494,7 @@
             } catch (error) {
                 console.debug(`${logPrefix} Jellyseerr search fallback failed:`, error);
             }
-            
+
             return null;
         } catch (error) {
             console.debug(`${logPrefix} Fallback lookup failed:`, error);
@@ -659,11 +661,11 @@
 
             // Find the appropriate container for the button - check multiple locations
             let buttonContainer = null;
-            
+
             // Try specific button container selectors
             const selectors = [
                 '.detailButtons',
-                '.itemActionsBottom', 
+                '.itemActionsBottom',
                 '[class*="ActionButtons"]',
                 '.mainDetailButtons',
                 '.detailButtonsContainer',
@@ -746,7 +748,7 @@
             try {
                 // Get item ID from URL (same way as reviews.js)
                 const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                
+
                 // Only process if item ID changed
                 if (itemId && itemId !== lastProcessedItemId) {
                     lastProcessedItemId = itemId;
