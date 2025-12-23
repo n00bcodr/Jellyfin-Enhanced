@@ -52,6 +52,7 @@
         let requestQueue = [];
         let isProcessingQueue = false;
         const queuedItemIds = new Set();
+        let mutationDebounceTimer = null;
 
         const genreIconMap = {
             // Default
@@ -241,7 +242,7 @@
             if (isProcessingQueue || requestQueue.length === 0) return;
             isProcessingQueue = true;
 
-            const batch = requestQueue.splice(0, 5);
+            const batch = requestQueue.splice(0, 3);
             const promises = batch.map(async ({ element, itemId, userId }) => {
                 try {
                     const genres = await fetchItemGenres(userId, itemId);
@@ -258,7 +259,7 @@
             isProcessingQueue = false;
 
             if (requestQueue.length > 0) {
-                setTimeout(processRequestQueue, 500);
+                setTimeout(processRequestQueue, 400);
             }
         }
 
@@ -401,6 +402,11 @@
             });
         }
 
+        function debouncedScan() {
+            if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
+            mutationDebounceTimer = setTimeout(scanAndProcess, 300);
+        }
+
         function injectCss() {
             const styleId = 'genre-tags-styles';
             // Remove existing style to allow updates
@@ -475,32 +481,20 @@
             // Initial scan
             setTimeout(scanAndProcess, 500);
             // Observe DOM mutations to discover new cards without polling
-            const mo = new MutationObserver((mutations) => {
+            const mo = new MutationObserver(() => {
                 // Check if feature is still enabled before processing
                 if (!JE.currentSettings?.genreTagsEnabled) {
                     return;
                 }
-                let found = false;
-                for (const m of mutations) {
-                    if (m.type === 'childList') {
-                        m.addedNodes.forEach(node => {
-                            if (node && node.nodeType === 1) {
-                                const el = node;
-                                if (el.matches?.('.cardImageContainer, div.listItemImage') || el.querySelector?.('.cardImageContainer, div.listItemImage')) {
-                                    found = true;
-                                }
-                            }
-                        });
-                    }
-                }
-                if (found) {
-                    clearTimeout(mo._scanTimer);
-                    mo._scanTimer = setTimeout(scanAndProcess, 200);
-                }
+                debouncedScan();
             });
             mo.observe(document.body, { childList: true, subtree: true });
             // Periodic persistence and cleanup hooks
-            window.addEventListener('beforeunload', saveCache);
+            window.addEventListener('beforeunload', () => {
+                saveCache();
+                mo.disconnect();
+                visibilityObserver.disconnect();
+            });
             setInterval(saveCache, 120000);
         }
 

@@ -49,6 +49,7 @@
         let requestQueue = [];
         let isProcessingQueue = false;
         const queuedItemIds = new Set();
+        let mutationDebounceTimer = null;
 
         const visibilityObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => { if (entry.isIntersecting) processElement(entry.target, true); });
@@ -172,7 +173,7 @@
         async function processRequestQueue() {
             if (isProcessingQueue || requestQueue.length === 0) return;
             isProcessingQueue = true;
-            const batch = requestQueue.splice(0, 6);
+            const batch = requestQueue.splice(0, 4);
             const promises = batch.map(async ({ element, itemId, userId }) => {
                 try {
                     const languages = await fetchItemLanguages(userId, itemId);
@@ -187,7 +188,7 @@
             });
             await Promise.allSettled(promises);
             isProcessingQueue = false;
-            if (requestQueue.length > 0) setTimeout(processRequestQueue, 200);
+            if (requestQueue.length > 0) setTimeout(processRequestQueue, 300);
         }
 
         function computePositionStyles(position) {
@@ -379,6 +380,11 @@
             });
         }
 
+        function debouncedScan() {
+            if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
+            mutationDebounceTimer = setTimeout(scanAndProcess, 400);
+        }
+
         function injectCss() {
             const styleId = 'language-tags-styles';
             if (document.getElementById(styleId)) return;
@@ -411,10 +417,14 @@
                 if (!JE.currentSettings?.languageTagsEnabled) {
                     return;
                 }
-                setTimeout(scanAndProcess, 400);
+                debouncedScan();
             });
             mo.observe(document.body, { childList: true, subtree: true });
-            window.addEventListener('beforeunload', saveCache);
+            window.addEventListener('beforeunload', () => {
+                saveCache();
+                mo.disconnect();
+                visibilityObserver.disconnect();
+            });
             setInterval(saveCache, 120000);
         }
 

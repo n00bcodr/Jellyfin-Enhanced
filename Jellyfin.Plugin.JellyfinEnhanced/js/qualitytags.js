@@ -92,10 +92,10 @@
 
         // --- CONFIGURATION ---
         const config = {
-            MAX_CONCURRENT_REQUESTS: 7,      // Max number of simultaneous API requests.
-            QUEUE_PROCESS_INTERVAL: 300,   // Delay between processing batches from the queue.
-            MUTATION_DEBOUNCE: 800,        // Delay to wait for DOM changes to settle before processing.
-            RENDER_DEBOUNCE: 500,          // Delay for re-rendering tags on navigation.
+            MAX_CONCURRENT_REQUESTS: 4,      // Max number of simultaneous API requests.
+            QUEUE_PROCESS_INTERVAL: 400,   // Delay between processing batches from the queue.
+            MUTATION_DEBOUNCE: 600,        // Delay to wait for DOM changes to settle before processing.
+            RENDER_DEBOUNCE: 400,          // Delay for re-rendering tags on navigation.
             CACHE_TTL: (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000, // Cache TTL from server config (default 30 days)
             REQUEST_TIMEOUT: 8000,           // Timeout for API requests.
             MAX_RETRIES: 2                     // Number of times to retry a failed API request.
@@ -588,9 +588,8 @@
                 return featureOrder.indexOf(a) - featureOrder.indexOf(b);
             });
 
-            sortedQualities.forEach((quality, index) => {
+            sortedQualities.forEach((quality) => {
                 const label = createResponsiveLabel(quality);
-                label.style.animationDelay = `${index * 0.1}s`; // Staggered animation
                 qualityContainer.appendChild(label);
             });
 
@@ -803,12 +802,8 @@
                     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
                     border: 1px solid rgba(255,255,255,0.2);
                     backdrop-filter: blur(4px);
-                    opacity: 0;
-                    transform: translateY(-4px);
-                    animation: qualityTagFadeIn 0.3s ease forwards;
-                }
-                @keyframes qualityTagFadeIn {
-                    to { opacity: 1; transform: translateY(0); }
+                    opacity: 1;
+                    transform: translateY(0);
                 }
                 /* Generic style for low resolution content */
                 .${containerClass} .${overlayClass}[data-quality="LOW-RES"] {
@@ -835,8 +830,7 @@
                 if (!JE.currentSettings?.qualityTagsEnabled) {
                     return;
                 }
-                if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
-                mutationDebounceTimer = setTimeout(debouncedRender, config.MUTATION_DEBOUNCE);
+                debouncedRender();
             });
             mutationObserver.observe(document.body, { childList: true, subtree: true });
 
