@@ -279,120 +279,50 @@
               gap: 12px;
               margin-top: 12px;
             }
-                        .jellyseerr-radio-label {
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 8px;
-                            cursor: pointer;
-                            position: relative;
-                        }
-                        .jellyseerr-radio-input {
-                            position: absolute;
-                            opacity: 0;
-                            width: 1px;
-                            height: 1px;
-                            margin: 0;
-                            padding: 0;
-                            clip: rect(0 0 0 0);
-                            border: 0;
-                        }
-                        .jellyseerr-radio-option {
-                            padding: 8px 12px;
-                            border-radius: 6px;
-                            border: 2px solid rgba(255,255,255,0.2);
-                            background-color: rgba(255,255,255,0.05);
-                            transition: all 0.2s ease;
-                            user-select: none;
-                            font-weight: 500;
-                            display: inline-flex;
-                            align-items: center;
-                        }
-                        .jellyseerr-radio-input:checked + .jellyseerr-radio-option {
-                            border-color: var(--primary-accent-color, #1e88e5);
-                            background-color: var(--primary-accent-color, #1e88e5);
-                            color: white;
-                        }
-                        .jellyseerr-radio-input:focus + .jellyseerr-radio-option {
-                            box-shadow: 0 0 0 4px rgba(30,136,229,0.12);
-                            outline: none;
-                        }
-                        .jellyseerr-radio-input:hover + .jellyseerr-radio-option {
-                            border-color: var(--primary-accent-color, #1e88e5);
-                            background-color: rgba(30,136,229,0.1);
-                        }
+            .jellyseerr-radio-label {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                cursor: pointer;
+                position: relative;
+            }
+            .jellyseerr-radio-input {
+                position: absolute;
+                opacity: 0;
+                width: 1px;
+                height: 1px;
+                margin: 0;
+                padding: 0;
+                clip: rect(0 0 0 0);
+                border: 0;
+            }
+            .jellyseerr-radio-option {
+                padding: 8px 12px;
+                border-radius: 6px;
+                border: 2px solid rgba(255,255,255,0.2);
+                background-color: rgba(255,255,255,0.05);
+                transition: all 0.2s ease;
+                user-select: none;
+                font-weight: 500;
+                display: inline-flex;
+                align-items: center;
+            }
+            .jellyseerr-radio-input:checked + .jellyseerr-radio-option {
+                border-color: var(--primary-accent-color, #1e88e5);
+                background-color: var(--primary-accent-color, #1e88e5);
+                color: white;
+            }
+            .jellyseerr-radio-input:focus + .jellyseerr-radio-option {
+                box-shadow: 0 0 0 4px rgba(30,136,229,0.12);
+                outline: none;
+            }
+            .jellyseerr-radio-input:hover + .jellyseerr-radio-option {
+                border-color: var(--primary-accent-color, #1e88e5);
+                background-color: rgba(30,136,229,0.1);
+            }
             .jellyseerr-issue-textarea {
               max-width: 96%;
               box-sizing: border-box;
-            }
-            /* Minimal styles for icon-only report button so host CSS can override */
-            .jellyseerr-report-issue-icon,
-            .jellyseerr-report-unavailable-icon {
-                background: none !important;
-                border: none !important;
-                padding: 0 !important;
-                margin: 0 6px !important;
-                color: inherit !important;
-                font: inherit !important;
-                line-height: 1 !important;
-                display: inline-flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                vertical-align: middle !important;
-            }
-
-            .jellyseerr-report-issue-icon .material-icons,
-            .jellyseerr-report-unavailable-icon .material-icons {
-                font-size: 20px;
-                pointer-events: none;
-            }
-            /* SVG sizing and color inheritance for the outlined warning icon */
-            .jellyseerr-report-issue-icon svg,
-            .jellyseerr-report-unavailable-icon svg {
-                width: 20px;
-                height: 20px;
-                display: block;
-                pointer-events: none;
-                color: inherit; /* stroke/fill use currentColor */
-            }
-
-            .jellyseerr-report-issue-icon:hover svg,
-            .jellyseerr-report-issue-icon:focus svg,
-            .jellyseerr-report-unavailable-icon:hover svg,
-            .jellyseerr-report-unavailable-icon:focus svg {
-                color: #111827 !important; /* dark icon on light circular background */
-            }
-            /* Hover / focus effect: circular background and color inversion (matches action icons) */
-            .jellyseerr-report-issue-icon,
-            .jellyseerr-report-unavailable-icon {
-                transition: background-color 180ms ease, transform 120ms ease, box-shadow 180ms ease;
-                border-radius: 50%;
-                min-width: 36px;
-                min-height: 36px;
-            }
-
-            .jellyseerr-report-issue-icon .material-icons,
-            .jellyseerr-report-unavailable-icon .material-icons {
-                transition: color 180ms ease, transform 120ms ease;
-            }
-
-            .jellyseerr-report-issue-icon:hover,
-            .jellyseerr-report-issue-icon:focus,
-            .jellyseerr-report-unavailable-icon:hover,
-            .jellyseerr-report-unavailable-icon:focus {
-                background-color: rgba(255,255,255,0.12) !important;
-                transform: translateY(-2px);
-            }
-
-            .jellyseerr-report-issue-icon:hover .material-icons,
-            .jellyseerr-report-unavailable-icon:hover .material-icons,
-            .jellyseerr-report-issue-icon:focus .material-icons,
-            .jellyseerr-report-unavailable-icon:focus .material-icons {
-                color: #111827 !important; /* dark icon on light circular background */
-            }
-
-            .jellyseerr-report-unavailable-icon:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
             }
         `;
         document.head.appendChild(style);

@@ -480,13 +480,6 @@
             .jellyseerr-inline-progress-bar { height: .5rem; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: .5rem; }
             .jellyseerr-inline-progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.3s ease; border-radius: 3px; }
             .jellyseerr-inline-progress-text { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
-            /* REPORT ISSUE BUTTON STYLES (deprecated) */
-            .jellyseerr-report-issue-button-deprecated { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1f2937; padding: 0.5em 1em; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.4); cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
-            .jellyseerr-report-issue-button-deprecated:hover { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); transform: translateY(-1px); }
-            .jellyseerr-report-issue-button-deprecated:active { transform: translateY(0); }
-            .jellyseerr-report-unavailable-button-deprecated { background: linear-gradient(135deg, #f3f4f6, #e5e7eb); color: #374151; padding: 0.5em 1em; border-radius: 6px; border: 1px solid rgba(156,163,175,0.25); cursor: not-allowed; font-weight: 600; font-size: 0.9rem; transition: none; display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; opacity: 0.95; }
-            .jellyseerr-report-unavailable-button-deprecated:hover { box-shadow: none; transform: none; }
-            .jellyseerr-report-unavailable-button-deprecated:active { transform: none; }
             .jellyseerr-modal-footer { padding: 20px 24px; background: rgba(15, 23, 42, 0.3); border-top: 1px solid rgba(51, 65, 85, 0.3); display: flex; gap: 12px; justify-content: flex-end; flex-shrink: 0; }
             .jellyseerr-modal-button { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 0.875rem; transition: all 0.2s ease; min-width: 120px; }
             .jellyseerr-modal-button:disabled { opacity: 0.6; cursor: not-allowed; }

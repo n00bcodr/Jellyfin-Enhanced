@@ -4,6 +4,9 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced: Issue Reporter:';
     const issueReporter = {};
+    
+    // Cache for user permission to report
+    let cachedUserCanReport = null;
 
     /**
      * Issue type definitions matching Jellyseerr's 4 core issue types
@@ -15,6 +18,55 @@
         { value: '3', label: JE.t('jellyseerr_report_issue_type_subtitles'), icon: '📝' },
         { value: '4', label: JE.t('jellyseerr_report_issue_type_other'), icon: '❓' }
     ];
+
+    /**
+     * Checks if issue reporting is available (item has TMDB ID and Jellyseerr configured)
+     * Caches the result to avoid repeated checks.
+     * Returns: 'available', 'no-tmdb', or 'no-jellyseerr'
+     * @returns {Promise<string>}
+     */
+    issueReporter.checkReportingAvailability = async function(item) {
+        // Return cached result if available
+        if (cachedUserCanReport !== null) {
+            return cachedUserCanReport;
+        }
+        
+        try {
+            // Check if item has TMDB ID
+            const hasTmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
+            
+            // Check Jellyseerr status
+            const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
+            const statusRes = await ApiClient.ajax({
+                type: 'GET',
+                url: statusUrl,
+                dataType: 'json'
+            });
+            
+            const jellyseerrActive = statusRes && statusRes.active === true;
+            
+            // Determine availability
+            if (!hasTmdbId && !jellyseerrActive) {
+                cachedUserCanReport = 'no-both';
+                return 'no-both';
+            } else if (!hasTmdbId) {
+                cachedUserCanReport = 'no-tmdb';
+                return 'no-tmdb';
+            } else if (!jellyseerrActive) {
+                cachedUserCanReport = 'no-jellyseerr';
+                return 'no-jellyseerr';
+            }
+            
+            // Both available
+            cachedUserCanReport = 'available';
+            return 'available';
+        } catch (error) {
+            console.debug(`${logPrefix} Error checking reporting availability:`, error);
+            // On error, assume available and let the actual request fail if needed
+            cachedUserCanReport = 'available';
+            return 'available';
+        }
+    };
 
     /**
      * Shows the issue report modal for the given media item
@@ -337,13 +389,10 @@
         button.type = 'button';
         button.setAttribute('aria-label', 'Report issue');
         button.title = 'Report issue';
-        // Use an inline SVG: outlined triangle with solid exclamation (transparent fill)
         button.innerHTML = `
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" role="img" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 3L2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                <rect x="11" y="8" width="2" height="6" fill="currentColor" />
-                <rect x="11" y="16" width="2" height="2" fill="currentColor" />
-            </svg>
+            <div class="detailButton-content">
+                <span class="material-icons detailButton-icon warning" aria-hidden="true"></span>
+            </div>
         `;
 
         button.addEventListener('click', (e) => {
@@ -361,29 +410,55 @@
      * @param {string} itemName
      * @param {string} mediaType
      */
-    issueReporter.createUnavailableButton = function(container, itemName, mediaType) {
+    issueReporter.createUnavailableButton = function(container, itemName, mediaType, reason = 'unavailable') {
         if (!container) return null;
 
         const button = document.createElement('button');
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-unavailable-icon';
         button.type = 'button';
-        button.setAttribute('aria-label', 'Reporting unavailable');
-        button.title = 'Reporting unavailable';
+        
+        let ariaLabel = 'Reporting unavailable';
+        let title = 'Reporting unavailable';
+        
+        if (reason === 'no-tmdb') {
+            ariaLabel = 'TMDB not configured';
+            title = 'TMDB is not configured';
+        } else if (reason === 'no-jellyseerr') {
+            ariaLabel = 'Jellyseerr unavailable';
+            title = 'Jellyseerr is not available';
+        } else if (reason === 'no-both') {
+            ariaLabel = 'Reporting services unavailable';
+            title = 'TMDB and Jellyseerr are not configured';
+        } else if (reason === 'no-permissions') {
+            ariaLabel = 'Not enough permissions';
+            title = 'Not enough permissions to report';
+        }
+        
+        button.setAttribute('aria-label', ariaLabel);
+        button.title = title;
         button.disabled = true;
         button.innerHTML = `
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" role="img" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 3L2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                <rect x="11" y="8" width="2" height="6" fill="currentColor" />
-                <rect x="11" y="16" width="2" height="2" fill="currentColor" />
-            </svg>
+            <div class="detailButton-content">
+                <span class="material-icons detailButton-icon warning_off" aria-hidden="true"></span>
+            </div>
         `;
 
         // Still allow click to show a helpful toast explaining why
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            JE.toast('Reporting is unavailable for this item (no TMDB match)', 4000);
+            if (reason === 'no-tmdb') {
+                JE.toast('TMDB is not configured', 4000);
+            } else if (reason === 'no-jellyseerr') {
+                JE.toast('Jellyseerr is not available', 4000);
+            } else if (reason === 'no-both') {
+                JE.toast('TMDB and Jellyseerr are not configured', 4000);
+            } else if (reason === 'no-permissions') {
+                JE.toast('You do not have permissions to report issues', 4000);
+            } else {
+                JE.toast('Reporting is unavailable for this item', 4000);
+            }
         });
 
         return button;
@@ -542,6 +617,56 @@
                 return false;
             }
 
+            // Check if reporting is available (item has TMDB ID and Jellyseerr configured)
+            const availability = await issueReporter.checkReportingAvailability(item);
+            
+            // If services not available, show unavailable button
+            if (availability !== 'available') {
+                console.debug(`${logPrefix} Reporting not available: ${availability}`);
+                
+                // Try to add an unavailable button
+                let buttonContainerUnavail = null;
+                const selectorsUnavail = [
+                    '.detailButtons',
+                    '.itemActionsBottom',
+                    '[class*="ActionButtons"]',
+                    '.mainDetailButtons',
+                    '.detailButtonsContainer',
+                    '[class*="primaryActions"]',
+                    '.topBarSecondaryMenus + *'
+                ];
+
+                for (const sel of selectorsUnavail) {
+                    const found = itemDetailPage.querySelector(sel);
+                    if (found) {
+                        buttonContainerUnavail = found;
+                        break;
+                    }
+                }
+
+                if (!buttonContainerUnavail) {
+                    const allButtons = itemDetailPage.querySelectorAll('button');
+                    if (allButtons.length > 0) {
+                        buttonContainerUnavail = allButtons[allButtons.length - 1].parentElement;
+                    }
+                }
+
+                if (buttonContainerUnavail) {
+                    const unavailButton = issueReporter.createUnavailableButton(buttonContainerUnavail, '', '', availability);
+                    if (unavailButton) {
+                        const moreButton = buttonContainerUnavail.querySelector('.btnMoreCommands');
+                        if (moreButton) {
+                            buttonContainerUnavail.insertBefore(unavailButton, moreButton);
+                        } else {
+                            buttonContainerUnavail.appendChild(unavailButton);
+                        }
+                        console.log(`${logPrefix} Added unavailable report button (${availability})`);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
             // Determine media type. Treat Series, Season, Episode as 'tv'
             let tmdbId = item.ProviderIds?.Tmdb;
             const isTvLike = ['Series', 'Season', 'Episode'].includes(item.Type);
@@ -640,9 +765,14 @@
                     }
 
                     if (buttonContainerFallback) {
-                        const unavailableButton = issueReporter.createUnavailableButton(buttonContainerFallback, item.Name, mediaType);
+                        const unavailableButton = issueReporter.createUnavailableButton(buttonContainerFallback, item.Name, mediaType, 'no-tmdb');
                         if (unavailableButton) {
-                            buttonContainerFallback.appendChild(unavailableButton);
+                            const moreButton = buttonContainerFallback.querySelector('.btnMoreCommands');
+                            if (moreButton) {
+                                buttonContainerFallback.insertBefore(unavailableButton, moreButton);
+                            } else {
+                                buttonContainerFallback.appendChild(unavailableButton);
+                            }
                             console.log(`${logPrefix} Added unavailable report button for ${item.Name}`);
                             return true;
                         }
@@ -706,7 +836,13 @@
             );
 
             if (button) {
-                buttonContainer.appendChild(button);
+                // Try to insert before btnMoreCommands, otherwise append
+                const moreButton = buttonContainer.querySelector('.btnMoreCommands');
+                if (moreButton) {
+                    buttonContainer.insertBefore(button, moreButton);
+                } else {
+                    buttonContainer.appendChild(button);
+                }
                 console.log(`${logPrefix} ✓ Report issue button added to ${item.Name} (${mediaType}, TMDB: ${tmdbId})`);
                 return true;
             }
