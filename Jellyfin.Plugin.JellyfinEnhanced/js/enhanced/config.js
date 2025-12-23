@@ -67,8 +67,10 @@
             disableCustomSubtitleStyles: false, randomButtonEnabled: true,
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
-            pauseScreenEnabled: true, qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false,
-            qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left',
+            pauseScreenEnabled: true,
+            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false,
+            qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right',
+            showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };

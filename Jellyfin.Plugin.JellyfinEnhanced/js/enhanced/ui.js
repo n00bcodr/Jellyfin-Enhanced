@@ -869,6 +869,20 @@
                                     </div>
                                 </label>
                             </div>
+                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <input type="checkbox" id="ratingTagsToggle" ${JE.currentSettings.ratingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                            <div><div style="font-weight:500;">${JE.t('panel_settings_ui_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_rating_tags_desc')}</div></div>
+                                        </div>
+                                        <div class="position-selector" data-setting="ratingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
+                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        </div>
+                                    </label>
+                                </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="removeContinueWatchingToggle" ${JE.currentSettings.removeContinueWatchingEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -1138,6 +1152,15 @@
                         document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
                     }
                     requiresRefresh = false;
+                    } else if (id === 'ratingTagsToggle') {
+                        if (e.target.checked) {
+                            if (typeof JE.initializeRatingTags === 'function') {
+                                JE.initializeRatingTags();
+                            }
+                        } else {
+                            document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                        }
+                        requiresRefresh = false;
                 }
 
                 if (requiresRefresh) {
@@ -1167,6 +1190,7 @@
         addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
         addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
+            addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
@@ -1219,6 +1243,10 @@
                     if (typeof JE.reinitializeLanguageTags === 'function') {
                         JE.reinitializeLanguageTags();
                     }
+                    } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
+                        if (typeof JE.reinitializeRatingTags === 'function') {
+                            JE.reinitializeRatingTags();
+                        }
                 }
 
                 JE.toast(`Position updated!`);

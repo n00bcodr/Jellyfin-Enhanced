@@ -395,7 +395,7 @@
             const allComponentScripts = [
                 'enhanced/helpers.js',
                 'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
-                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/events.js',
+                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
                 'migrate.js',
                 'elsewhere.js',
                 'jellyseerr/api.js',
@@ -404,7 +404,7 @@
                 'jellyseerr/issue-reporter.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'genretags.js', 'languagetags.js', 'arr-links.js', 'arr-tag-links.js',
+                'qualitytags.js', 'genretags.js', 'languagetags.js', 'ratingtags.js', 'arr-links.js', 'arr-tag-links.js',
                 'letterboxd-links.js'
             ];
             await loadScripts(allComponentScripts, basePath);
@@ -437,11 +437,13 @@
             if (typeof JE.initializePauseScreen === 'function') JE.initializePauseScreen();
             if (typeof JE.initializeQualityTags === 'function' && JE.currentSettings?.qualityTagsEnabled) JE.initializeQualityTags();
             if (typeof JE.initializeGenreTags === 'function' && JE.currentSettings?.genreTagsEnabled) JE.initializeGenreTags();
+            if (typeof JE.initializeRatingTags === 'function' && JE.currentSettings?.ratingTagsEnabled) JE.initializeRatingTags();
             if (typeof JE.initializeArrLinksScript === 'function' && JE.pluginConfig?.ArrLinksEnabled) JE.initializeArrLinksScript();
             if (typeof JE.initializeArrTagLinksScript === 'function' && JE.pluginConfig?.ArrTagsShowAsLinks) JE.initializeArrTagLinksScript();
             if (typeof JE.initializeLetterboxdLinksScript === 'function' && JE.pluginConfig?.LetterboxdEnabled) JE.initializeLetterboxdLinksScript();
             if (typeof JE.initializeReviewsScript === 'function' && JE.pluginConfig?.ShowReviews) JE.initializeReviewsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
+            if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 

@@ -46,6 +46,8 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Quality Tags CSS](#quality-tags-css)
     - [Genre Tags CSS](#genre-tags-css)
     - [Language Tags CSS](#language-tags-css)
+    - [Rating Tags CSS](#rating-tags-css)
+    - [Rating Tag OSD CSS](#rating-tag-osd-css)
     - [ARR Tag Links CSS](#arr-tag-links-css)
     - [Enhanced Panel CSS](#panel-css)
   - [🫚 Project Structure](#-project-structure)
@@ -148,6 +150,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🌐 Language Tags:** Displays available audio languages as flags on posters.
+- **⭐ Rating Tags:** See IMDb ratings at a glance directly on posters in your library.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 - **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
@@ -308,7 +311,7 @@ Report issues (video, audio, subtitles, or other) directly to your configured Je
 - The button will not appear on collection/boxset pages and special seasons/episodes (season 0) are intentionally skipped.
 - Season/episode selectors prefer local Jellyfin data so selections reflect what is actually present on your server.
 
-#### For troubleshooting and proxy endpoints, see the **Jellyseerr API Endpoints** [section](#how-it-works) above. 
+#### For troubleshooting and proxy endpoints, see the **Jellyseerr API Endpoints** [section](#how-it-works) above.
 
 ## 🔧 Customization & Advanced Use
 
@@ -689,6 +692,158 @@ The HTML structure for language tags is as follows:
 
 </details>
 
+### <a id="rating-tags-css"></a>
+<details>
+<summary style="font-size: 1.2em;">Rating Tags</summary>
+<br>
+
+Rating tags display IMDb ratings directly on poster cards. The HTML structure is:
+
+```html
+<div class="cardImageContainer">
+    <div class="rating-overlay-container">
+        <div class="rating-tag">
+            <span class="material-icons rating-star-icon">star</span>
+            <span>8.7</span>
+        </div>
+    </div>
+</div>
+```
+
+**Classes**
+
+- **`.rating-overlay-container`**: Wrapper for the rating badge.
+- **`.rating-tag`**: The badge container holding the star and rating value.
+- **`.rating-star-icon`**: The star icon (Material Icons).
+
+<br>
+
+**Customization Examples**
+--------------------------
+
+| Element | CSS Selector | Example CSS |
+| --- | --- | --- |
+| **All Rating Tags** | `.rating-tag` | `.rating-tag { background: rgba(0, 0, 0, 0.7) !important; }` |
+| **Star Icon Color** | `.rating-star-icon` | `.rating-star-icon { color: #ffc107 !important; }` |
+| **Rating Container Position** | `.rating-overlay-container` | `.rating-overlay-container { top: 8px !important; right: 8px !important; }` |
+| **Hide All Rating Tags** | `.rating-overlay-container` | `.rating-overlay-container { display: none !important; }` |
+
+<br>
+
+**CSS Examples**
+----------------
+
+- **Change Badge Background Color**
+  ```css
+  .rating-tag {
+      background: rgba(255, 152, 0, 0.9) !important;
+      color: white !important;
+  }
+  ```
+
+- **Make Stars Larger**
+  ```css
+  .rating-star-icon {
+      font-size: 20px !important;
+      margin-right: 4px !important;
+  }
+  ```
+
+- **Add Border and Shadow**
+  ```css
+  .rating-tag {
+      border: 2px solid #ffc107 !important;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5) !important;
+      border-radius: 6px !important;
+  }
+  ```
+
+- **Gradient Background**
+  ```css
+  .rating-tag {
+      background: linear-gradient(135deg, #ff6b6b, #ffc107) !important;
+      padding: 6px 10px !important;
+  }
+  ```
+
+> **Note:**
+> - Always use `!important` to override the default styles.
+> - The star icon is always yellow by default (`#ffc107`).
+> - Position can be adjusted via the Enhanced Panel settings.
+
+</details>
+
+### <a id="rating-tag-osd-css"></a>
+<details>
+<summary style="font-size: 1.2em;">OSD Rating (Video Player)</summary>
+<br>
+
+OSD ratings appear in the video player control bar next to the time display. The structure is:
+
+```html
+<span id="je-osd-rating-container">
+    <span class="je-star">star</span>
+    <span class="je-text">8.7</span>
+</span>
+```
+
+**Classes**
+
+- **`#je-osd-rating-container`**: Main container for the rating display.
+- **`.je-star`**: The star icon element.
+- **`.je-text`**: The rating value text.
+
+<br>
+
+**Customization Examples**
+--------------------------
+
+| Element | CSS Selector | Example CSS |
+| --- | --- | --- |
+| **Star Color** | `#je-osd-rating-container .je-star` | `#je-osd-rating-container .je-star { color: gold !important; }` |
+| **Rating Text Color** | `#je-osd-rating-container .je-text` | `#je-osd-rating-container .je-text { color: white !important; }` |
+| **Container Spacing** | `#je-osd-rating-container` | `#je-osd-rating-container { gap: 8px !important; }` |
+| **Hide OSD Rating** | `#je-osd-rating-container` | `#je-osd-rating-container { display: none !important; }` |
+
+<br>
+
+**CSS Examples**
+----------------
+
+- **Larger Rating Display**
+  ```css
+  #je-osd-rating-container .je-star {
+      font-size: 20px !important;
+  }
+  #je-osd-rating-container .je-text {
+      font-size: 16px !important;
+  }
+  ```
+
+- **Bold Rating with Custom Color**
+  ```css
+  #je-osd-rating-container .je-text {
+      font-weight: 900 !important;
+      color: #ffc107 !important;
+  }
+  ```
+
+- **Add Background Pill**
+  ```css
+  #je-osd-rating-container {
+      background: rgba(0, 0, 0, 0.5) !important;
+      padding: 4px 8px !important;
+      border-radius: 12px !important;
+  }
+  ```
+
+> **Note:**
+> - The star is yellow by default, the text inherits the normal OSD text color.
+> - Adjust spacing and font sizes to match your player's aesthetic.
+
+</details>
+
+
 ### <a id="arr-tag-links-css"></a>
 <details>
 <summary style="font-size: 1.2em;">ARR Tag Links</summary>
@@ -940,6 +1095,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── config.js
     │   ├── events.js
     │   ├── features.js
+    │   ├── osd-rating.js
     │   ├── playback.js
     │   ├── subtitles.js
     │   ├── themer.js
@@ -949,18 +1105,19 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── jellyseerr.js
     │   ├── modal.js
     │   └── ui.js
-    ├── migrate.js
-    ├── reviews.js
-    ├── splashscreen.js
     ├── arr-links.js
     ├── arr-tag-links.js
     ├── elsewhere.js
-    ├── letterboxd-links.js
-    ├── pausescreen.js
-    ├── qualitytags.js
     ├── genretags.js
     ├── languagetags.js
-    └── plugin.js
+    ├── letterboxd-links.js
+    ├── migrate.js
+    ├── pausescreen.js
+    ├── plugin.js
+    ├── qualitytags.js
+    ├── ratingtags.js
+    ├── reviews.js
+    └── splashscreen.js
 ```
 
 
@@ -970,40 +1127,45 @@ Jellyfin.Plugin.JellyfinEnhanced/
 
 * **`/enhanced/`**: Contains the core components of the "Jellyfin Enhanced" feature set.
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
+    * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
+    * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
+    * **`osd-rating.js`**: Displays IMDb ratings in the video player OSD controls next to the time display.
+    * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
     * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
     * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
     * **`ui.js`**: Responsible for creating, injecting, and managing all visual elements like the main settings panel, toast notifications, and various buttons.
-    * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
-    * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
-    * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
 
 * **`/jellyseerr/`**: This directory contains all components related to the Jellyseerr integration.
     * **`api.js`**: Handles all direct communication with the Jellyseerr proxy endpoints on the Jellyfin server.
+    * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
     * **`modal.js`**: A dedicated component for creating and managing the advanced request modals.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
-    * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
-
-* **`migrate.js`**: Handles one-time migration of user settings from browser localStorage to server-side storage. This allows users who upgraded from earlier versions to seamlessly migrate their settings, shortcuts, elsewhere preferences, and bookmarks to the new server-based configuration system.
-
-* **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
-
-* **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
 
 * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
 
 * **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
 
-* **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
-
 * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
-
-* **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
-
-* **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
 
 * **`genretags.js`**: Manages the display of media genre information as tags directly on the posters.
 
 * **`languagetags.js`**: Manages the display of audio language information as flag icons directly on the posters.
+
+* **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
+
+* **`migrate.js`**: Handles one-time migration of user settings from browser localStorage to server-side storage. This allows users who upgraded from earlier versions to seamlessly migrate their settings, shortcuts, elsewhere preferences, and bookmarks to the new server-based configuration system.
+
+* **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
+
+* **`plugin.js`**: The main entry point. It loads the plugin configuration and translations, then dynamically injects all other component scripts.
+
+* **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
+
+* **`ratingtags.js`**: Manages the display of IMDb ratings as badges directly on the posters.
+
+* **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
+
+* **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
 
 
 <br>

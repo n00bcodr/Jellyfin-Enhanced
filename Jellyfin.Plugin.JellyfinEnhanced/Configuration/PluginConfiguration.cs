@@ -51,11 +51,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsEnabled = false;
             GenreTagsEnabled = false;
             LanguageTagsEnabled = false;
+            RatingTagsEnabled = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
+            RatingTagsPosition = "bottom-right";
+            ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
             DefaultSubtitleSize = 2;
@@ -161,6 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
+        public bool RatingTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool DisableAllShortcuts { get; set; }
@@ -171,6 +175,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string QualityTagsPosition { get; set; } = "top-left";
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
+        public string RatingTagsPosition { get; set; } = "bottom-right";
+        public bool ShowRatingInPlayer { get; set; } = true;
+        public bool GenreTagsEnabled { get; set; }
 
         // Jellyseerr Search Settings
         public bool JellyseerrEnabled { get; set; }
@@ -199,8 +206,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ArrTagsShowAsLinks { get; set; }
         public string ArrTagsLinksFilter { get; set; }
         public string ArrTagsLinksHideFilter { get; set; }
-
-        public bool GenreTagsEnabled { get; set; }
 
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }

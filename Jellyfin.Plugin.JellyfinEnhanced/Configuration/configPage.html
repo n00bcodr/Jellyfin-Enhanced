@@ -104,6 +104,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags<div>This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div></span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="languageTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Language Tags</span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
 
                                     <fieldset style="margin-top: 1em;padding: 2em;border-radius: 20px;border-color: #ffffff25;">
                                     <div class="inputContainer">
@@ -133,19 +134,32 @@
                                             <option value="bottom-right">Bottom Right</option>
                                         </select>
                                     </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="ratingTagsPosition">Rating Tags Position</label>
+                                        <select is="emby-select" id="ratingTagsPosition" name="ratingTagsPosition" class="emby-select">
+                                            <option value="top-left">Top Left</option>
+                                            <option value="top-right">Top Right</option>
+                                            <option value="bottom-left">Bottom Left</option>
+                                            <option value="bottom-right">Bottom Right</option>
+                                        </select>
+                                    </div>
                                     <div class="inputContainer" style="margin-top: 1em;">
                                         <label class="inputLabel inputLabelUnfocused" for="tagsCacheTtlDays">Tags Cache Duration (days)</label>
                                         <input id="tagsCacheTtlDays" is="emby-input" type="number" min="1" max="365" value="30"/>
                                         <div class="fieldDescription">How long to cache the above tags data (1-365 days, default: 30)</div>
                                     </div>
+                                    <div class="checkboxContainer" style="margin-top: 1em;">
+                                        <label><input id="showRatingInPlayer" is="emby-checkbox" type="checkbox"/><span>Show Rating in Video Player</span></label>
+                                        <div class="fieldDescription">Display IMDB rating after "Ends at" time in video player</div>
+                                    </div>
                                     <div style="margin-top: 1em;">
                                         <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
                                             <span>Clear All Client Caches</span>
                                         </button>
-                                        <div class="fieldDescription">Forces all clients to clear Language, Quality and Genre tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
+                                        <div class="fieldDescription">Forces all clients to clear Language, Quality, Genre and Rating tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
                                     </div>
                                 </fieldset>
-                                <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
                                 </div>
                             </details>
                             <div style="padding-top: 1em;">
@@ -948,15 +962,24 @@
                 const qPos = (config.QualityTagsPosition || 'top-left');
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
+                const rPos = (config.RatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
+                const ratingEnabled = !!config.RatingTagsEnabled;
+                const showRatingInPlayer = config.ShowRatingInPlayer !== false;
                 const qSel = document.querySelector('#qualityTagsPosition');
                 const gSel = document.querySelector('#genreTagsPosition');
                 const lSel = document.querySelector('#languageTagsPosition');
+                const rSel = document.querySelector('#ratingTagsPosition');
                 const lChk = document.querySelector('#languageTagsEnabled');
+                const rChk = document.querySelector('#ratingTagsEnabled');
+                const rPlayerChk = document.querySelector('#showRatingInPlayer');
                 if (qSel) qSel.value = qPos;
                 if (gSel) gSel.value = gPos;
                 if (lSel) lSel.value = lPos;
+                if (rSel) rSel.value = rPos;
                 if (lChk) lChk.checked = langEnabled;
+                if (rChk) rChk.checked = ratingEnabled;
+                if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
@@ -1038,10 +1061,13 @@
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
+            config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
             config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
+            config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
+            config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
