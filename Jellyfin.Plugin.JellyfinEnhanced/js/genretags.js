@@ -431,33 +431,37 @@
                     left: ${leftVal};
                     display: flex;
                     flex-direction: column;
-                    gap: 5px;
+                    gap: 3px;
                     align-items: ${isLeft ? 'flex-start' : 'flex-end'};
                     z-index: 101;
                     pointer-events: none;
+                    max-height: 90%;
+                    overflow: hidden;
                 }
                 .${tagClass} {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    height: 30px;
-                    width: 30px;
+                    height: clamp(26px, 5vw, 34px);
+                    width: clamp(26px, 5vw, 34px);
                     border-radius: 50%;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                     overflow: hidden;
                     background-color: rgba(10, 10, 10, 0.8);
                     color: #E0E0E0;
                     border: 1px solid rgba(255, 255, 255, 0.2);
                     backdrop-filter: blur(10px);
+                    flex-shrink: 0;
+                    transition: all 0.2s ease;
                 }
                 .${tagClass} .material-symbols-outlined {
-                    font-size: 1.4em;
+                    font-size: clamp(1.1em, 3vw, 1.6em);
                     line-height: 1;
                 }
                 .${tagClass} .genre-text {
                     display: none;
                     white-space: nowrap;
-                    font-size: 13px;
+                    font-size: clamp(11px, 2vw, 13px);
                     font-weight: 500;
                     margin-left: 6px;
                     margin-right: 10px;
@@ -470,6 +474,29 @@
                 }
                 .card:hover .${tagClass} .genre-text {
                     display: inline;
+                }
+                @media (max-width: 768px) {
+                    .${containerClass} {
+                        gap: 3px;
+                    }
+                    .${tagClass} {
+                        height: clamp(24px, 4.5vw, 30px);
+                        width: clamp(24px, 4.5vw, 30px);
+                    }
+                }
+                @media (max-width: 480px) {
+                    .${containerClass} {
+                        gap: 2px;
+                        max-height: 85%;
+                    }
+                    .${tagClass} {
+                        height: clamp(22px, 4vw, 26px);
+                        width: clamp(22px, 4vw, 26px);
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    }
+                    .${tagClass} .material-symbols-outlined {
+                        font-size: clamp(0.9em, 2.5vw, 1.2em);
+                    }
                 }
             `;
             document.head.appendChild(style);

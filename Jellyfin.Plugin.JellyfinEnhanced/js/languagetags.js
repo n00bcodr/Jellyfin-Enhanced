@@ -397,12 +397,30 @@
                     gap: 3px;
                     z-index: 101;
                     pointer-events: none;
+                    max-height: 90%;
+                    overflow: hidden;
                 }
                 .${flagClass} {
-                    width: 30px;
+                    width: clamp(24px, 6vw, 32px);
                     height: auto;
                     border-radius: 2px;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    flex-shrink: 0;
+                    object-fit: cover;
+                }
+                @media (max-width: 768px) {
+                    .${flagClass} {
+                        width: clamp(20px, 5vw, 26px);
+                        gap: 2px;
+                    }
+                }
+                @media (max-width: 480px) {
+                    .${flagClass} {
+                        width: clamp(16px, 4vw, 20px);
+                    }
+                    .${containerClass} {
+                        gap: 2px;
+                    }
                 }
             `;
             document.head.appendChild(style);

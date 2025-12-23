@@ -786,24 +786,62 @@
                     left: ${leftVal};
                     display: flex;
                     flex-direction: column;
-                    gap: 3px;
+                    gap: 4px;
                     align-items: ${isLeft ? 'flex-start' : 'flex-end'};
                     z-index: 100;
                     max-width: calc(100% - 12px);
+                    max-height: 90%;
+                    overflow: hidden;
+                    pointer-events: none;
                 }
                 .${overlayClass} {
                     font-weight: bold;
-                    border-radius: 6px;
-                    padding: 2px 12px;
-                    font-size: 0.8rem;
+                    border-radius: 5px;
+                    padding: 2px 10px;
+                    font-size: clamp(0.65rem, 2vw, 0.85rem);
                     user-select: none;
                     pointer-events: none;
                     font-variant-caps: small-caps;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                    border: 1px solid rgba(255,255,255,0.2);
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+                    border: 1px solid rgba(255,255,255,0.15);
                     backdrop-filter: blur(4px);
                     opacity: 1;
                     transform: translateY(0);
+                    white-space: nowrap;
+                    flex-shrink: 0;
+                    line-height: 1.2;
+                }
+                @media (min-width: 1440px) {
+                    .${overlayClass} {
+                        padding: 3px 12px;
+                        font-size: 0.9rem;
+                        border-radius: 6px;
+                    }
+                    .${containerClass} {
+                        gap: 6px;
+                    }
+                }
+                @media (max-width: 768px) {
+                    .${overlayClass} {
+                        padding: 0px 6px;
+                        font-size: 0.65rem;
+                        border-radius: 3px;
+                    }
+                    .${containerClass} {
+                        gap: 1px;
+                    }
+                }
+                @media (max-width: 480px) {
+                    .${overlayClass} {
+                        padding: 0px 5px;
+                        font-size: 0.6rem;
+                        border-radius: 2px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    }
+                    .${containerClass} {
+                        gap: 1px;
+                        max-height: 85%;
+                    }
                 }
                 /* Generic style for low resolution content */
                 .${containerClass} .${overlayClass}[data-quality="LOW-RES"] {
