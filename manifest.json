@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Optimize tag rendering and queue handling in tag scripts\n - Improve tag overlay responsiveness and styling\n - Update Jellyseerr URL mapping examples and descriptions\n - Add rating tags and OSD rating feature\n - Improve issue reporting button logic and UI\n - Add Jellyseerr similar and recommended sections to item details\n - Add option to exclude library items from Jellyseerr Recommendations",
+        "targetAbi": "10.10.7.0",
+        "version": "9.9.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.9.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "1C0FED48736A1775E8C7803776FCC587",
+        "timestamp": "2025-12-24T15:59:54"
+      },
+      {
         "changelog": "- Fix Log spam for watchlist\n - Update AutoSeasonRequestMonitor.cs\n - Initial Commit - Issue reporter rough Integration\n - fixed some UI issues\n - Added config and checks\n - Added Season and Episode selection\n - removed files not present\n - Added Jellyseerr issue reporting to README\n - old mapping for textual problem types were removed\n - Add missing Jellyseerr report issue translations and fix modal backdrop visibility\n - Fix Translations for Issue Reporting\n - Add onClose handler to Jellyseerr modal for cleanup\n - Sync Jellyseerr requests with watchlist items",
         "targetAbi": "10.10.7.0",
         "version": "9.8.0.0",
