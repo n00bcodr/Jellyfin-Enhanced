@@ -1520,6 +1520,8 @@
     };
     // Expose the UI module on the global JE object
     ui.icons = icons;
+    ui.configureRequestButton = configureRequestButton;
+    ui.createJellyseerrCard = createJellyseerrCard;
     JE.jellyseerrUI = ui;
 
 })(window.JellyfinEnhanced);

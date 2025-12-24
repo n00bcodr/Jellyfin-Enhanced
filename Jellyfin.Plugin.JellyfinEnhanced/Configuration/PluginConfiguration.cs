@@ -90,6 +90,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowReportButton = false;
             JellyseerrEnable4KRequests = false;
             JellyseerrShowAdvanced = false;
+            JellyseerrShowSimilar = true;
+            JellyseerrShowRecommended = true;
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseJellyseerrLinks = false;
             JellyseerrUrls = "";
@@ -184,6 +186,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowReportButton { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }
+        public bool JellyseerrShowSimilar { get; set; }
+        public bool JellyseerrShowRecommended { get; set; }
         public bool ShowElsewhereOnJellyseerr { get; set; }
         public bool JellyseerrUseJellyseerrLinks { get; set; }
         public string JellyseerrUrls { get; set; }

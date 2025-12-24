@@ -159,7 +159,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var requestUri = $"{trimmedUrl.TrimEnd('/')}{apiPath}";
-                    _logger.Info($"Proxying Jellyseerr request for user {jellyfinUserId} to: {requestUri}");
+                    // Skip logging for similar/recommendations endpoints
+                    bool isSimilarOrRecommendations = apiPath.Contains("/similar") || apiPath.Contains("/recommendations");
+                    if (!isSimilarOrRecommendations)
+                    {
+                        _logger.Info($"Proxying Jellyseerr request for user {jellyfinUserId} to: {requestUri}");
+                    }
 
                     var request = new HttpRequestMessage(method, requestUri);
                     if (content != null)
@@ -173,7 +178,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     if (response.IsSuccessStatusCode)
                     {
-                        _logger.Info($"Successfully received response from Jellyseerr for user {jellyfinUserId}. Status: {response.StatusCode}");
+                        if (!isSimilarOrRecommendations)
+                        {
+                            _logger.Info($"Successfully received response from Jellyseerr for user {jellyfinUserId}. Status: {response.StatusCode}");
+                        }
                         return Content(responseContent, "application/json");
                     }
 
@@ -339,11 +347,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/movie/{tmdbId}/similar")]
+        [Authorize]
+        public Task<IActionResult> GetSimilarMovies(int tmdbId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/similar?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/movie/{tmdbId}/recommendations")]
+        [Authorize]
+        public Task<IActionResult> GetRecommendedMovies(int tmdbId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/recommendations?page={page}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/tv/{tmdbId}/seasons")]
         [Authorize]
         public Task<IActionResult> GetTvSeasons(int tmdbId)
         {
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/seasons", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/tv/{tmdbId}/similar")]
+        [Authorize]
+        public Task<IActionResult> GetSimilarTvShows(int tmdbId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/similar?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/tv/{tmdbId}/recommendations")]
+        [Authorize]
+        public Task<IActionResult> GetRecommendedTvShows(int tmdbId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/recommendations?page={page}", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/overrideRule")]
@@ -929,6 +965,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrUseJellyseerrLinks,
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
+                config.JellyseerrShowSimilar,
+                config.JellyseerrShowRecommended,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,

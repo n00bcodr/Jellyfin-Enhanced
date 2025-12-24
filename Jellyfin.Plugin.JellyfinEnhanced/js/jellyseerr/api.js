@@ -479,6 +479,66 @@
         }
     };
 
+    /**
+     * Fetches similar movies for a given TMDB ID.
+     * @param {number} tmdbId - The TMDB ID of the movie.
+     * @param {number} page - Page number for pagination (default: 1).
+     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
+     */
+    api.fetchSimilarMovies = async function(tmdbId, page = 1) {
+        try {
+            return await get(`/movie/${tmdbId}/similar?page=${page}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch similar movies for TMDB ID ${tmdbId}:`, error);
+            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
+        }
+    };
+
+    /**
+     * Fetches recommended movies for a given TMDB ID.
+     * @param {number} tmdbId - The TMDB ID of the movie.
+     * @param {number} page - Page number for pagination (default: 1).
+     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
+     */
+    api.fetchRecommendedMovies = async function(tmdbId, page = 1) {
+        try {
+            return await get(`/movie/${tmdbId}/recommendations?page=${page}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch recommended movies for TMDB ID ${tmdbId}:`, error);
+            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
+        }
+    };
+
+    /**
+     * Fetches similar TV shows for a given TMDB ID.
+     * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @param {number} page - Page number for pagination (default: 1).
+     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
+     */
+    api.fetchSimilarTvShows = async function(tmdbId, page = 1) {
+        try {
+            return await get(`/tv/${tmdbId}/similar?page=${page}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch similar TV shows for TMDB ID ${tmdbId}:`, error);
+            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
+        }
+    };
+
+    /**
+     * Fetches recommended TV shows for a given TMDB ID.
+     * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @param {number} page - Page number for pagination (default: 1).
+     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
+     */
+    api.fetchRecommendedTvShows = async function(tmdbId, page = 1) {
+        try {
+            return await get(`/tv/${tmdbId}/recommendations?page=${page}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch recommended TV shows for TMDB ID ${tmdbId}:`, error);
+            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
+        }
+    };
+
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;
 

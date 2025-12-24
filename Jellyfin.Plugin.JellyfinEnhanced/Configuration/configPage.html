@@ -293,6 +293,50 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Configuration</h3></legend>
                         <div class="configSection">
+                            <div class="inputContainer">
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Jellyseerr URL(s)</label>
+                                <textarea style="display:block; height: 8vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="http://192.168.1.10:5055&#10;https://jellyseerr.example.com"></textarea>
+                                <div class="fieldDescription">Enter your Jellyseerr instance URLs, one per line. The script will use the first one that connects successfully.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="JellyseerrApiKey">Jellyseerr API Key</label>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="JellyseerrApiKey" is="emby-input" name="JellyseerrApiKey" type="text" style="flex-grow: 1;"/>
+                                    <span id="jellyseerrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testJellyseerrBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">API key from Jellyseerr. (Settings > General Settings >  API Key)</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Jellyseerr URL Mappings (Optional)</label>
+                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
+                                <div class="fieldDescription">Map your Jellyfin URLs to specific Jellyseerr URLs for displaying links to users. Users will get the appropriate Jellyseerr link when using "Link result titles to Jellyseerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
+                            </div>
+                            <div
+                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                <div>
+                                    <strong>URL Mapping Examples:</strong><br>
+                                    • Remote access: <code>https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com</code><br>
+                                    • Local access: <code>http://192.168.1.10:8096|http://192.168.1.10:5055</code><br>
+                                    • With base URL: <code>https://example.com/jellyfin|https://example.com/jellyseerr</code><br><br>
+                                </div>
+                            </div>
+                            <div
+                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
+                                <div>
+                                    "<b>Enable Jellyfin Sign-In</b>" must be enabled in Jellyseerr User Settings (/settings/users)<br><br>
+                                    All users must be imported to Jellyseer as Jellyfin users for them to be able to request content.
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Search</h3></legend>
+                        <div class="configSection">
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
@@ -335,45 +379,25 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Displays icons of available streaming services (from your default region) on Jellyseerr Posters.<br>Requires TMDB API Key to be configured in Elsewhere Settings</div>
-                            <div class="inputContainer">
-                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Jellyseerr URL(s)</label>
-                                <textarea style="display:block; height: 8vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="http://192.168.1.10:5055&#10;https://jellyseerr.example.com"></textarea>
-                                <div class="fieldDescription">Enter your Jellyseerr instance URLs, one per line. The script will use the first one that connects successfully.</div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Recommendations</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrShowSimilar" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show similar items on item details page</span>
+                                </label>
                             </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="JellyseerrApiKey">Jellyseerr API Key</label>
-                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
-                                    <input id="JellyseerrApiKey" is="emby-input" name="JellyseerrApiKey" type="text" style="flex-grow: 1;"/>
-                                    <span id="jellyseerrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
-                                    <button is="emby-button" type="button" id="testJellyseerrBtn" class="raised button-submit">
-                                        <span>Test</span>
-                                    </button>
-                                </div>
-                                <div class="fieldDescription">API key from Jellyseerr. (Settings > General Settings >  API Key)</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays similar movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrShowRecommended" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show recommended items on item details page</span>
+                                </label>
                             </div>
-                            <div class="inputContainer">
-                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Jellyseerr URL Mappings (Optional)</label>
-                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
-                                <div class="fieldDescription">Map your Jellyfin URLs to specific Jellyseerr URLs for displaying links to users. Users will get the appropriate Jellyseerr link when using "Link result titles to Jellyseerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
-                            </div>
-                            <div
-                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
-                                <div>
-                                    <strong>URL Mapping Examples:</strong><br>
-                                    • Remote access: <code>https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com</code><br>
-                                    • Local access: <code>http://192.168.1.10:8096|http://192.168.1.10:5055</code><br>
-                                    • With base URL: <code>https://example.com/jellyfin|https://example.com/jellyseerr</code><br><br>
-                                </div>
-                            </div>
-                            <div
-                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
-                                <div>
-                                    "<b>Enable Jellyfin Sign-In</b>" must be enabled in Jellyseerr User Settings (/settings/users)<br><br>
-                                    All users must be imported to Jellyseer as Jellyfin users for them to be able to request content.
-                                </div>
-                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -989,6 +1013,8 @@
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
+                document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
+                document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
@@ -1076,6 +1102,8 @@
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
+            config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;
+            config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');

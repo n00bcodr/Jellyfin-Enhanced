@@ -106,6 +106,8 @@
     "jellyseerr_toast_filter_off": "🪼 Showing all search results",
     "jellyseerr_results_title": "Jellyseerr Results",
     "jellyseerr_discover_title": "Discover on Jellyseerr",
+    "jellyseerr_similar_title": "Similar",
+    "jellyseerr_recommended_title": "Recommended",
     "jellyseerr_icon_active_tooltip": "Jellyseerr is active\nDouble-click to show only Jellyseerr results",
     "jellyseerr_icon_active_filter_tooltip": "Jellyseerr is active\nDouble-click to show all results",
     "jellyseerr_icon_no_user_tooltip": "User not found on Jellyseerr",
