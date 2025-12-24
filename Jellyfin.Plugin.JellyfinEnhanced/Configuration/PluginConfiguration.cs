@@ -188,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowAdvanced { get; set; }
         public bool JellyseerrShowSimilar { get; set; }
         public bool JellyseerrShowRecommended { get; set; }
+        public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool ShowElsewhereOnJellyseerr { get; set; }
         public bool JellyseerrUseJellyseerrLinks { get; set; }
         public string JellyseerrUrls { get; set; }

@@ -967,6 +967,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
+                config.JellyseerrExcludeLibraryItems,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,

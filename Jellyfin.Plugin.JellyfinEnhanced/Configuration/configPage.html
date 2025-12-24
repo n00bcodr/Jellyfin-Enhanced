@@ -398,6 +398,13 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrExcludeLibraryItems" is="emby-checkbox" type="checkbox"/>
+                                    <span>Exclude items already in library</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Hide similar/recommended items that already exist in your Jellyfin library from the results.<br>If disabled, the items that are available link to the media item in the library.</div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -1015,6 +1022,7 @@
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
                 document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
+                document.querySelector('#jellyseerrExcludeLibraryItems').checked = config.JellyseerrExcludeLibraryItems !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
@@ -1104,6 +1112,7 @@
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
+            config.JellyseerrExcludeLibraryItems = document.querySelector('#jellyseerrExcludeLibraryItems').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');

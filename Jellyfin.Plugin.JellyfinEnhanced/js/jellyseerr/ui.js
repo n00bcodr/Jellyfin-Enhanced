@@ -283,6 +283,11 @@
             .jellyseerr-card .cardBox { overflow: visible !important; }
             .jellyseerr-section .scrollSlider { overflow: visible !important; }
 
+            /* Library item styling */
+            .jellyseerr-card-in-library .cardText-first a {
+                color: #00d084;
+                font-weight: 500;
+            }
             /* SPLIT BUTTON FOR 4K */
             .jellyseerr-button-group {
                 display: flex;

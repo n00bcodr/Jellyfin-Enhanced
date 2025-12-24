@@ -55,6 +55,18 @@
             return null;
         }
 
+        // Filter out library items if configured
+        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+        let filteredResults = results;
+
+        if (excludeLibraryItems) {
+            filteredResults = results.filter(item => !item.mediaInfo?.jellyfinMediaId);
+        }
+
+        if (filteredResults.length === 0) {
+            return null;
+        }
+
         const section = document.createElement('div');
         section.className = 'verticalSection emby-scroller-container jellyseerr-details-section';
         section.setAttribute('data-jellyseerr-section', 'true');
@@ -88,7 +100,26 @@
             const card = JE.jellyseerrUI && JE.jellyseerrUI.createJellyseerrCard
                 ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
                 : null;
-            if (card) itemsContainer.appendChild(card);
+            if (card) {
+                // If item exists in library, mark it and add library ID reference
+                const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+                if (jellyfinMediaId) {
+                    card.setAttribute('data-library-item', 'true');
+                    card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
+                    card.classList.add('jellyseerr-card-in-library');
+                    // Update title link to point to library item
+                    const titleLink = card.querySelector('.cardText-first a');
+                    if (titleLink) {
+                        const itemName = item.title || item.name;
+                        titleLink.textContent = itemName;
+                        titleLink.title = itemName;
+                        titleLink.href = `#!/details?id=${jellyfinMediaId}`;
+                        titleLink.removeAttribute('target');
+                        titleLink.removeAttribute('rel');
+                    }
+                }
+                itemsContainer.appendChild(card);
+            }
         });
 
         scrollerContainer.appendChild(itemsContainer);
@@ -169,6 +200,20 @@
                 return;
             }
 
+            // Filter items if configured to exclude library items
+            const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+            const filteredSimilarResults = excludeLibraryItems
+                ? similarResults.filter(item => !item.mediaInfo?.jellyfinMediaId)
+                : similarResults;
+            const filteredRecommendedResults = excludeLibraryItems
+                ? recommendedResults.filter(item => !item.mediaInfo?.jellyfinMediaId)
+                : recommendedResults;
+
+            if (filteredSimilarResults.length === 0 && filteredRecommendedResults.length === 0) {
+                console.debug(`${logPrefix} No content to display after filtering library items`);
+                return;
+            }
+
             // Find the insertion point
             const activePage = document.querySelector('.libraryPage:not(.hide)');
             if (!activePage) {
@@ -193,24 +238,24 @@
             detailPageContent.querySelectorAll('.jellyseerr-details-section').forEach(el => el.remove());
 
             // Create and insert sections
-            if (recommendedResults.length > 0) {
+            if (filteredRecommendedResults.length > 0) {
                 // Ensure title is properly translated
                 const recommendedTitle = JE.t ? (JE.t('jellyseerr_recommended_title') || 'Recommended') : 'Recommended';
                 const recommendedSection = createJellyseerrSection(
-                    recommendedResults.slice(0, 20),
+                    filteredRecommendedResults.slice(0, 20),
                     recommendedTitle
                 );
                 if (recommendedSection) {
                     moreLikeThisSection.after(recommendedSection);
-                    // console.log(`${logPrefix} Added Recommended section with ${recommendedResults.length} items`);
+                    console.log(`${logPrefix} Added Recommended section with ${filteredRecommendedResults.length} items`);
                 }
             }
 
-            if (similarResults.length > 0) {
+            if (filteredSimilarResults.length > 0) {
                 // Ensure title is properly translated
                 const similarTitle = JE.t ? (JE.t('jellyseerr_similar_title') || 'Similar') : 'Similar';
                 const similarSection = createJellyseerrSection(
-                    similarResults.slice(0, 20),
+                    filteredSimilarResults.slice(0, 20),
                     similarTitle
                 );
                 if (similarSection) {
@@ -221,7 +266,7 @@
                     } else {
                         moreLikeThisSection.after(similarSection);
                     }
-                    // console.log(`${logPrefix} Added Similar section with ${similarResults.length} items`);
+                    console.log(`${logPrefix} Added Similar section with ${filteredSimilarResults.length} items`);
                 }
             }
 
