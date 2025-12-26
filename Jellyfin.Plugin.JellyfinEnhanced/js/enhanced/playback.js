@@ -246,6 +246,7 @@
         DURATION: 500,
         SPEED_NORMAL: 1.0,
         SPEED_FAST: 2.0,
+        MOVEMENT_THRESHOLD: 10, // pixels - ignore small movements
     };
 
     let pressTimer = null;
@@ -253,6 +254,8 @@
     let videoElement = null;
     let originalSpeed = LONG_PRESS_CONFIG.SPEED_NORMAL;
     let speedOverlay = null;
+    let pressStartX = null;
+    let pressStartY = null;
 
     function createSpeedOverlay() {
         if (speedOverlay) return;
@@ -289,6 +292,10 @@
         videoElement = getVideo();
         if (!videoElement) return;
 
+        // Store initial press position
+        pressStartX = e.clientX || e.touches?.[0]?.clientX;
+        pressStartY = e.clientY || e.touches?.[0]?.clientY;
+
         originalSpeed = videoElement.playbackRate || LONG_PRESS_CONFIG.SPEED_NORMAL;
         isLongPress = false;
 
@@ -298,6 +305,10 @@
                 JE.state.pauseScreenClickTimer = null;
             }
             isLongPress = true;
+            // Make sure video is playing when we activate speed boost
+            if (videoElement.paused) {
+                videoElement.play().catch(err => console.warn("🪼 Play blocked:", err));
+            }
             videoElement.playbackRate = LONG_PRESS_CONFIG.SPEED_FAST;
             showOverlay(LONG_PRESS_CONFIG.SPEED_FAST);
             if (navigator.vibrate) navigator.vibrate(50);
@@ -310,13 +321,18 @@
         pressTimer = null;
 
         if (isLongPress) {
-            videoElement.playbackRate = originalSpeed;
+            const video = getVideo();
+            if (video) {
+                video.playbackRate = originalSpeed;
+            }
             hideOverlay();
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
         }
         isLongPress = false;
+        pressStartX = null;
+        pressStartY = null;
     };
 
     JE.handleLongPressCancel = () => {
@@ -324,10 +340,49 @@
             clearTimeout(pressTimer);
             pressTimer = null;
             if (isLongPress) {
-                videoElement.playbackRate = originalSpeed;
+                const video = getVideo();
+                if (video) {
+                    video.playbackRate = originalSpeed;
+                }
                 hideOverlay();
             }
             isLongPress = false;
+        }
+        pressStartX = null;
+        pressStartY = null;
+    };
+
+    // Handle mouse movement during press to detect drag/scrub
+    JE.handleLongPressMove = (e) => {
+        if (!pressTimer || isLongPress || !pressStartX || !pressStartY) return;
+
+        const currentX = e.clientX || e.touches?.[0]?.clientX;
+        const currentY = e.clientY || e.touches?.[0]?.clientY;
+
+        if (currentX === null || currentY === null) return;
+
+        const distanceMoved = Math.sqrt(
+            Math.pow(currentX - pressStartX, 2) + Math.pow(currentY - pressStartY, 2)
+        );
+
+        // If user moves more than threshold, cancel the long press (likely a drag attempt)
+        if (distanceMoved > LONG_PRESS_CONFIG.MOVEMENT_THRESHOLD) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+            pressStartX = null;
+            pressStartY = null;
+        }
+    };
+
+    // Block click events that would pause/play when doing a long press
+    JE.handleLongPressClick = (e) => {
+        // If long press is just completed OR user is still holding (timer active),
+        // prevent the click from pausing the video
+        if (isLongPress || pressTimer) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return;
         }
     };
 
