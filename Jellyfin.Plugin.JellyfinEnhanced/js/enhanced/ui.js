@@ -272,6 +272,12 @@
               -webkit-font-feature-settings: 'liga';
               -webkit-font-smoothing: antialiased;
             }
+            .je-extra-media-info {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            [dir] .je-extra-media-info .mediaInfoItem { margin: 0 1em 0 0; }
             .jellyseerr-issue-radio-group {
               display: flex;
               justify-content: center;
