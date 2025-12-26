@@ -186,7 +186,7 @@
                 }
             }));
 
-            saveCache();
+            if (JE._cacheManager) JE._cacheManager.markDirty();
             isProcessingQueue = false;
 
             if (requestQueue.length > 0) {
@@ -260,7 +260,10 @@
             });
 
             // Periodic cache persistence
-            setInterval(saveCache, 120000);
+            // Register with unified cache manager instead of setInterval
+            if (JE._cacheManager) {
+                JE._cacheManager.register(saveCache);
+            }
         }
 
         function injectCSS() {

@@ -15,6 +15,42 @@
             skipToastShown: false,
             pauseScreenClickTimer: null
          },
+        // Unified cache manager for tag systems
+        _cacheManager: {
+            callbacks: new Set(),
+            dirty: false,
+            scheduleId: null,
+            register(saveCallback) {
+                this.callbacks.add(saveCallback);
+            },
+            unregister(saveCallback) {
+                this.callbacks.delete(saveCallback);
+            },
+            markDirty() {
+                this.dirty = true;
+                if (!this.scheduleId) {
+                    // Use requestIdleCallback to defer cache saves
+                    if (typeof requestIdleCallback !== 'undefined') {
+                        this.scheduleId = requestIdleCallback(() => this._flush(), { timeout: 5000 });
+                    } else {
+                        this.scheduleId = setTimeout(() => this._flush(), 1000);
+                    }
+                }
+            },
+            _flush() {
+                if (this.dirty) {
+                    this.callbacks.forEach(cb => {
+                        try { cb(); } catch (e) { console.error('Cache save error:', e); }
+                    });
+                    this.dirty = false;
+                }
+                this.scheduleId = null;
+            },
+            forceSave() {
+                this.dirty = true;
+                this._flush();
+            }
+        },
         // Placeholder functions
         t: (key, params = {}) => { // Actual implementation defined later
             const translations = window.JellyfinEnhanced?.translations || {};
@@ -428,6 +464,11 @@
                 JE.themer.init();
                 console.log('🪼 Jellyfin Enhanced: Theme system initialized.');
             }
+
+            // Register unified cache save on page unload
+            window.addEventListener('beforeunload', () => {
+                JE._cacheManager.forceSave();
+            });
 
             // Stage 6: Initialize feature modules
             if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();

@@ -139,19 +139,43 @@
             return button;
         }
 
-        function processLetterboxdLinks() {
+        // Replace polling with MutationObserver for better performance
+        let processingLetterboxd = false;
+        const letterboxdObserver = new MutationObserver(() => {
             if (!JE?.pluginConfig?.LetterboxdEnabled) {
-                if (intervalId) {
-                    clearInterval(intervalId);
-                    intervalId = null;
-                    console.log(`${logPrefix} Stopped - feature disabled`);
-                }
+                letterboxdObserver.disconnect();
+                console.log(`${logPrefix} Stopped - feature disabled`);
                 return;
             }
-            addLetterboxdLinks();
+            
+            if (!processingLetterboxd) {
+                processingLetterboxd = true;
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => {
+                        addLetterboxdLinks();
+                        processingLetterboxd = false;
+                    }, { timeout: 500 });
+                } else {
+                    setTimeout(() => {
+                        addLetterboxdLinks();
+                        processingLetterboxd = false;
+                    }, 100);
+                }
+            }
+        });
+        
+        letterboxdObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributeFilter: ['class']
+        });
+        
+        // Initial check
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => addLetterboxdLinks(), { timeout: 1000 });
+        } else {
+            setTimeout(addLetterboxdLinks, 500);
         }
-
-        intervalId = setInterval(processLetterboxdLinks, 500);
 
         try {
             console.log(`${logPrefix} Letterboxd links integration initialized successfully.`);

@@ -1094,9 +1094,46 @@
         // --- Initialization ---
         loadRegionsAndProviders();
         loadSettings();
-        setTimeout(createSettingsModal, 2000);
-        setInterval(addStreamingLookup, 2000);
-        setTimeout(addStreamingLookup, 1000);
+        
+        // Use deferred initialization with requestIdleCallback
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => createSettingsModal(), { timeout: 2000 });
+        } else {
+            setTimeout(createSettingsModal, 2000);
+        }
+        
+        // Replace polling with MutationObserver for better performance
+        let processingElsewhere = false;
+        const elsewhereObserver = new MutationObserver(() => {
+            if (!processingElsewhere) {
+                processingElsewhere = true;
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => {
+                        addStreamingLookup();
+                        processingElsewhere = false;
+                    }, { timeout: 500 });
+                } else {
+                    setTimeout(() => {
+                        addStreamingLookup();
+                        processingElsewhere = false;
+                    }, 100);
+                }
+            }
+        });
+        
+        // Observe item detail pages for changes
+        elsewhereObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributeFilter: ['class']
+        });
+        
+        // Initial check
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => addStreamingLookup(), { timeout: 1000 });
+        } else {
+            setTimeout(addStreamingLookup, 1000);
+        }
 
         console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere loaded!');
     };

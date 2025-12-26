@@ -478,7 +478,7 @@
                     qualityOverlayCache[itemId] = { qualities, timestamp: Date.now() };
                     // Seed hot cache
                     Hot.quality.set(itemId, { qualities, timestamp: Date.now() });
-                    saveCache();
+                    if (JE._cacheManager) JE._cacheManager.markDirty();
                     return qualities;
                 }
                 return null;
@@ -890,7 +890,10 @@
                 mutationObserver.disconnect();
                 visibilityObserver.disconnect();
             });
-            setInterval(saveCache, 120000); // Periodically save cache every 2 minutes
+            // Register with unified cache manager instead of setInterval
+            if (JE._cacheManager) {
+                JE._cacheManager.register(saveCache);
+            }
         }
 
         // --- SCRIPT EXECUTION ---

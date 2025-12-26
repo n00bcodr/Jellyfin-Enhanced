@@ -228,7 +228,7 @@
                     const genres = sourceItem.Genres.slice(0, 3);
                     genreCache[itemId] = { genres, timestamp: Date.now() };
                     Hot.genre.set(itemId, { genres, timestamp: Date.now() });
-                    saveCache();
+                    if (JE._cacheManager) JE._cacheManager.markDirty();
                     return genres;
                 }
                 return null;
@@ -563,7 +563,10 @@
                 mo.disconnect();
                 visibilityObserver.disconnect();
             });
-            setInterval(saveCache, 120000);
+            // Register with unified cache manager instead of setInterval
+            if (JE._cacheManager) {
+                JE._cacheManager.register(saveCache);
+            }
         }
 
         initialize();

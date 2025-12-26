@@ -259,16 +259,13 @@
             attributeFilter: ['class']
         });
 
-        // Detect hash changes for navigation
+        // Detect hash changes for navigation using native event
         let currentHash = window.location.hash;
-        let hashCheckIntervalId = setInterval(() => {
+        const hashChangeHandler = () => {
             if (!JE?.pluginConfig?.ShowReviews || !JE?.pluginConfig?.TmdbEnabled) {
-                if (hashCheckIntervalId) {
-                    clearInterval(hashCheckIntervalId);
-                    hashCheckIntervalId = null;
-                    observer.disconnect();
-                    console.log(`${logPrefix} Stopped - feature disabled`);
-                }
+                window.removeEventListener('hashchange', hashChangeHandler);
+                observer.disconnect();
+                console.log(`${logPrefix} Stopped - feature disabled`);
                 return;
             }
             if (window.location.hash !== currentHash) {
@@ -276,7 +273,10 @@
                 lastProcessedItemId = null; // Reset on navigation
                 setTimeout(processPages, 500);
             }
-        }, 500);
+        };
+        
+        window.addEventListener('hashchange', hashChangeHandler);
     };
 })(window.JellyfinEnhanced);
+
 

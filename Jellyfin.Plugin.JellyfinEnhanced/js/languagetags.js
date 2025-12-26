@@ -187,6 +187,7 @@
                 }
             });
             await Promise.allSettled(promises);
+            if (JE._cacheManager) JE._cacheManager.markDirty();
             isProcessingQueue = false;
             if (requestQueue.length > 0) {
                 if (typeof requestIdleCallback !== 'undefined') {
@@ -453,7 +454,10 @@
                 mo.disconnect();
                 visibilityObserver.disconnect();
             });
-            setInterval(saveCache, 120000);
+            // Register with unified cache manager instead of setInterval
+            if (JE._cacheManager) {
+                JE._cacheManager.register(saveCache);
+            }
         }
 
         initialize();
