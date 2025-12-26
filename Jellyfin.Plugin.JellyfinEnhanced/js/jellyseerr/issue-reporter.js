@@ -29,10 +29,9 @@
     ];
 
     /**
-     * Checks if issue reporting is available (item has TMDB ID and Jellyseerr configured)
-     * Caches the result to avoid repeated checks.
-     * Returns: 'available', 'no-tmdb', or 'no-jellyseerr'
-     * @returns {Promise<string>}
+     * Checks if Jellyseerr is configured and active.
+     * TMDB ID resolution is handled separately with fallbacks.
+     * @returns {Promise<string>} 'available' or 'no-jellyseerr'
      */
     issueReporter.checkReportingAvailability = async function (item) {
         // Return cached result if available
@@ -41,10 +40,7 @@
         }
 
         try {
-            // Check if item has TMDB ID
-            const hasTmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
-
-            // Check Jellyseerr status
+            // Only check Jellyseerr status - TMDB resolution happens later with fallbacks
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
             const statusRes = await ApiClient.ajax({
                 type: 'GET',
@@ -54,19 +50,12 @@
 
             const jellyseerrActive = statusRes && statusRes.active === true;
 
-            // Determine availability
-            if (!hasTmdbId && !jellyseerrActive) {
-                cachedUserCanReport = 'no-both';
-                return 'no-both';
-            } else if (!hasTmdbId) {
-                cachedUserCanReport = 'no-tmdb';
-                return 'no-tmdb';
-            } else if (!jellyseerrActive) {
+            if (!jellyseerrActive) {
                 cachedUserCanReport = 'no-jellyseerr';
                 return 'no-jellyseerr';
             }
 
-            // Both available
+            // Jellyseerr is available - TMDB will be resolved with fallbacks
             cachedUserCanReport = 'available';
             return 'available';
         } catch (error) {
@@ -436,12 +425,9 @@
                         return;
                     }
 
-                    // Build season options
+                    // Build season options - always include "All seasons" option
                     const seasonOptions = [];
-                    // If more than one season, add 'All seasons'
-                    if (normalized.length > 1) {
-                        seasonOptions.push({ value: 0, label: 'All seasons' });
-                    }
+                    seasonOptions.push({ value: 0, label: 'All seasons' });
                     for (const s of normalized) {
                         seasonOptions.push({ value: s.seasonNumber, label: `Season ${s.seasonNumber}` });
                     }
@@ -500,17 +486,10 @@
                             }
                         }
                     } else {
-                        // Default: set to 'All seasons' if present, and disable episode select
-                        if (normalized.length > 1) {
-                            seasonSelect.value = '0';
-                            // Ensure the episode select shows the 'All episodes' option when defaulting
-                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
-                            episodeSelect.disabled = true;
-                        } else {
-                            // Single season - select it
-                            seasonSelect.value = String(normalized[0].seasonNumber);
-                            populateEpisodesForSeason(normalized[0].seasonNumber);
-                        }
+                        // Default (series level): set to 'All seasons' and 'All episodes'
+                        seasonSelect.value = '0';
+                        setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                        episodeSelect.disabled = true;
                     }
 
                     // When season changes, update episodes
@@ -535,7 +514,7 @@
     /**
      * Adds a report issue button to the item detail page
      * @param {HTMLElement} container - Container to append the button to
-     * @param {string} tmdbId - TMDB ID of the media
+     * @param {string} tmdbId - TMDB ID of the media (can be null, will be resolved on click)
      * @param {string} itemName - Name of the media item
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropPath - Optional TMDB backdrop image path
@@ -558,10 +537,48 @@
             </div>
         `;
 
-        button.addEventListener('click', (e) => {
+        button.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropPath, item);
+
+            let resolvedTmdbId = tmdbId;
+
+            // If no TMDB ID yet, try to resolve it now
+            if (!resolvedTmdbId && item) {
+                console.log(`${logPrefix} Resolving TMDB ID on click for ${itemName}...`);
+
+                // Try direct provider IDs
+                resolvedTmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb'];
+
+                // Try parent for Season/Episode
+                if (!resolvedTmdbId && (item.Type === 'Season' || item.Type === 'Episode')) {
+                    try {
+                        const parentId = item.SeriesId || item.ParentId;
+                        if (parentId) {
+                            const userId = ApiClient.getCurrentUserId();
+                            const parentItem = await ApiClient.getItem(userId, parentId);
+                            resolvedTmdbId = parentItem?.ProviderIds?.Tmdb;
+                        }
+                    } catch (err) {
+                        console.debug(`${logPrefix} Error fetching parent:`, err);
+                    }
+                }
+
+                // Try fallback lookup
+                if (!resolvedTmdbId) {
+                    resolvedTmdbId = await issueReporter.getTmdbIdFallback(itemName, mediaType, item);
+                }
+
+                if (!resolvedTmdbId) {
+                    JE.toast('Could not find TMDB ID for this item', 4000);
+                    console.warn(`${logPrefix} Failed to resolve TMDB ID for ${itemName}`);
+                    return;
+                }
+
+                console.log(`${logPrefix} Resolved TMDB ID on click: ${resolvedTmdbId}`);
+            }
+
+            issueReporter.showReportModal(resolvedTmdbId, itemName, mediaType, backdropPath, item);
         });
 
         return button;
@@ -780,53 +797,12 @@
                 return false;
             }
 
-            // Check if reporting is available (item has TMDB ID and Jellyseerr configured)
+            // Check if Jellyseerr is available
             const availability = await issueReporter.checkReportingAvailability(item);
 
-            // If services not available, show unavailable button
-            if (availability !== 'available') {
-                console.debug(`${logPrefix} Reporting not available: ${availability}`);
-
-                // Try to add an unavailable button
-                let buttonContainerUnavail = null;
-                const selectorsUnavail = [
-                    '.detailButtons',
-                    '.itemActionsBottom',
-                    '[class*="ActionButtons"]',
-                    '.mainDetailButtons',
-                    '.detailButtonsContainer',
-                    '[class*="primaryActions"]',
-                    '.topBarSecondaryMenus + *'
-                ];
-
-                for (const sel of selectorsUnavail) {
-                    const found = itemDetailPage.querySelector(sel);
-                    if (found) {
-                        buttonContainerUnavail = found;
-                        break;
-                    }
-                }
-
-                if (!buttonContainerUnavail) {
-                    const allButtons = itemDetailPage.querySelectorAll('button');
-                    if (allButtons.length > 0) {
-                        buttonContainerUnavail = allButtons[allButtons.length - 1].parentElement;
-                    }
-                }
-
-                if (buttonContainerUnavail) {
-                    const unavailButton = issueReporter.createUnavailableButton(buttonContainerUnavail, '', '', availability);
-                    if (unavailButton) {
-                        const moreButton = buttonContainerUnavail.querySelector('.btnMoreCommands');
-                        if (moreButton) {
-                            buttonContainerUnavail.insertBefore(unavailButton, moreButton);
-                        } else {
-                            buttonContainerUnavail.appendChild(unavailButton);
-                        }
-                        console.log(`${logPrefix} Added unavailable report button (${availability})`);
-                        return true;
-                    }
-                }
+            // If Jellyseerr not available, don't show button at all
+            if (availability === 'no-jellyseerr') {
+                console.debug(`${logPrefix} Jellyseerr not available, skipping button`);
                 return false;
             }
 
@@ -897,53 +873,10 @@
                 console.debug(`${logPrefix} No direct TMDB ID found for ${item.Name}, trying fallback...`);
                 tmdbId = await issueReporter.getTmdbIdFallback(item.Name, mediaType, item);
 
-                if (!tmdbId) {
-                    console.debug(`${logPrefix} No TMDB ID could be resolved for ${item.Name} (fallback also failed)`);
-
-                    // Try to add a disabled 'unavailable' button in-place to inform the user
-                    let buttonContainerFallback = null;
-                    const selectorsFallback = [
-                        '.detailButtons',
-                        '.itemActionsBottom',
-                        '[class*="ActionButtons"]',
-                        '.mainDetailButtons',
-                        '.detailButtonsContainer',
-                        '[class*="primaryActions"]',
-                        '.topBarSecondaryMenus + *'
-                    ];
-
-                    for (const sel of selectorsFallback) {
-                        const found = itemDetailPage.querySelector(sel);
-                        if (found) {
-                            buttonContainerFallback = found;
-                            break;
-                        }
-                    }
-
-                    if (!buttonContainerFallback) {
-                        const allButtons = itemDetailPage.querySelectorAll('button');
-                        if (allButtons.length > 0) {
-                            buttonContainerFallback = allButtons[allButtons.length - 1].parentElement;
-                        }
-                    }
-
-                    if (buttonContainerFallback) {
-                        const unavailableButton = issueReporter.createUnavailableButton(buttonContainerFallback, item.Name, mediaType, 'no-tmdb');
-                        if (unavailableButton) {
-                            const moreButton = buttonContainerFallback.querySelector('.btnMoreCommands');
-                            if (moreButton) {
-                                buttonContainerFallback.insertBefore(unavailableButton, moreButton);
-                            } else {
-                                buttonContainerFallback.appendChild(unavailableButton);
-                            }
-                            console.log(`${logPrefix} Added unavailable report button for ${item.Name}`);
-                            return true;
-                        }
-                    }
-
-                    return false;
-                } else {
+                if (tmdbId) {
                     console.log(`${logPrefix} Found TMDB ID via fallback: ${tmdbId}`);
+                } else {
+                    console.debug(`${logPrefix} No TMDB ID found yet for ${item.Name}, will resolve when clicked`);
                 }
             }
 
@@ -1041,26 +974,52 @@
         }
 
         let lastProcessedItemId = null;
+        let lastSuccessItemId = null;
         let processingTimeout = null;
+        let retryCount = 0;
+        const MAX_RETRIES = 5;
 
         const processDetail = async () => {
             try {
                 // Get item ID from URL (same way as reviews.js)
                 const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
 
-                // Only process if item ID changed
-                if (itemId && itemId !== lastProcessedItemId) {
+                if (!itemId) return;
+
+                // Reset retry count if item changed
+                if (itemId !== lastProcessedItemId) {
+                    retryCount = 0;
                     lastProcessedItemId = itemId;
-                    console.debug(`${logPrefix} Processing item ID: ${itemId}`);
-                    await issueReporter.tryAddButton();
+                }
+
+                // Check if button already exists for this item
+                const itemDetailPage = document.querySelector('#itemDetailPage:not(.hide)');
+                if (itemDetailPage?.querySelector('.jellyseerr-report-issue-icon')) {
+                    lastSuccessItemId = itemId;
+                    return; // Button already added
+                }
+
+                // Try to add button
+                console.debug(`${logPrefix} Processing item ID: ${itemId} (attempt ${retryCount + 1})`);
+                const success = await issueReporter.tryAddButton();
+
+                if (success) {
+                    lastSuccessItemId = itemId;
+                    retryCount = 0;
+                } else if (retryCount < MAX_RETRIES) {
+                    // Retry with increasing delay if button container not ready
+                    retryCount++;
+                    setTimeout(processDetail, 300 * retryCount);
                 }
             } catch (error) {
                 console.warn(`${logPrefix} Error processing detail:`, error);
             }
         };
 
-        // Try initial load with delay to ensure page is ready
-        setTimeout(processDetail, 500);
+        // Try initial load with multiple attempts
+        setTimeout(processDetail, 300);
+        setTimeout(processDetail, 600);
+        setTimeout(processDetail, 1000);
 
         // Use a more aggressive listener for hash changes (direct navigation)
         const originalPushState = history.pushState;

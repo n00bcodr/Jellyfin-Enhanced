@@ -241,12 +241,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _logger.Info($"Sonarr {commandName} triggered successfully for '{series.Title}'");
 
-                    // For series-level issues (no specific season), also trigger missing episode search
+                    // Always trigger missing episode search for TV shows
                     // This helps find episodes that failed to download across all monitored seasons
-                    if (seasonNumber == 0)
-                    {
-                        await TriggerMissingEpisodeSearchAsync(httpClient, commandUrl, series.Id, series.Title);
-                    }
+                    // (user can only report on seasons that exist in Jellyfin, but other seasons may be missing)
+                    await TriggerMissingEpisodeSearchAsync(httpClient, commandUrl, series.Id, series.Title);
 
                     return true;
                 }
