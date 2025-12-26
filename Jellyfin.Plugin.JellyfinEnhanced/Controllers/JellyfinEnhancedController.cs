@@ -1274,6 +1274,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Parent = item,
                         Recursive = true
                     }).Items,
+                BaseItemKind.BoxSet or BaseItemKind.Playlist => item is Folder folder
+                    ? folder.GetChildren(user, true).ToList()
+                    : [item],
                 _ => [item]
             };
 
@@ -1307,6 +1310,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Parent = item,
                         Recursive = true
                     }).Items,
+                BaseItemKind.BoxSet or BaseItemKind.Playlist => item is Folder folder
+                    ? folder.GetChildren(user, true).ToList()
+                    : [item],
                 _ => [item]
             };
 

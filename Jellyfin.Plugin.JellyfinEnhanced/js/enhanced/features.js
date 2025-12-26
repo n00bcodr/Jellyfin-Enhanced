@@ -184,6 +184,12 @@
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-watchProgress';
         placeholder.dataset.itemId = itemId;
+        placeholder.title = JE.t('watch_progress_tooltip');
+        placeholder.style.display = 'flex';
+        placeholder.style.verticalAlign = 'middle';
+        placeholder.style.alignItems = 'center';
+        // Show loading indicator
+        placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         // Insert first so subsequent observer runs are triggered
         getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
 
@@ -202,45 +208,43 @@
 
         // Helper to render the 0 state
         const renderUnavailable = () => {
-            placeholder.title = JE.t('watch_progress_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.verticalAlign = 'middle';
-            placeholder.style.alignItems = 'center';
             placeholder.innerHTML = getIconSpan(0);
         };
 
-        if (cached && (now - cached.ts) < WATCHPROGRESS_CACHE_TTL) {
-            if (!cached.progress) {
-                renderUnavailable();
+        // Use requestIdleCallback to defer the work and not block page rendering
+        const performFetch = async () => {
+            if (cached && (now - cached.ts) < WATCHPROGRESS_CACHE_TTL) {
+                if (!cached.progress) {
+                    renderUnavailable();
+                    return;
+                }
+                placeholder.innerHTML = getIconSpan(cached.progress);
                 return;
             }
-            placeholder.title = JE.t('watch_progress_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.verticalAlign = 'middle';
-            placeholder.style.alignItems = 'center';
-            placeholder.innerHTML = getIconSpan(cached.progress);
-            return;
-        }
 
-        try {
-            const itemResult = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/watch-progress/${ApiClient.getCurrentUserId()}/${itemId}`),
-                dataType: 'json'
-            });
-            const progress = itemResult?.progress ?? 0;
+            try {
+                const itemResult = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/watch-progress/${ApiClient.getCurrentUserId()}/${itemId}`),
+                    dataType: 'json'
+                });
+                const progress = itemResult?.progress ?? 0;
 
-            placeholder.title = JE.t('watch_progress_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.verticalAlign = 'middle';
-            placeholder.style.alignItems = 'center';
-            placeholder.innerHTML = getIconSpan(progress);
-            watchProgressCache[itemId] = { progress: progress, ts: now };
-        } catch (error) {
-            console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
-            // Keep placeholder with 0 to prevent repeated calls
-            renderUnavailable();
-            watchProgressCache[itemId] = { progress: 0, ts: now };
+                placeholder.innerHTML = getIconSpan(progress);
+                watchProgressCache[itemId] = { progress: progress, ts: now };
+            } catch (error) {
+                console.error(`🪼 Jellyfin Enhanced: Error fetching watch progress for ID ${itemId}:`, error);
+                // Keep placeholder with 0 to prevent repeated calls
+                renderUnavailable();
+                watchProgressCache[itemId] = { progress: 0, ts: now };
+            }
+        };
+
+        // Defer to allow page to render first
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => performFetch(), { timeout: 2000 });
+        } else {
+            setTimeout(() => performFetch(), 0);
         }
     }
 
@@ -265,54 +269,60 @@
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
         placeholder.dataset.itemId = itemId;
+        placeholder.title = JE.t('file_size_tooltip');
+        placeholder.style.display = 'flex';
+        placeholder.style.alignItems = 'center';
+        // Show loading indicator
+        placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         // Insert first so subsequent observer runs are triggered
         getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
 
         // Helper to render a dash (no data) but keep the element
         const renderUnavailable = () => {
-            placeholder.title = JE.t('file_size_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.alignItems = 'center';
             placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span> -`;
         };
 
-        if (cached && (now - cached.ts) < FILESIZE_CACHE_TTL) {
-            if (cached.unavailable || !cached.size) {
-                renderUnavailable();
+        // Use requestIdleCallback to defer the work and not block page rendering
+        const performFetch = async () => {
+            if (cached && (now - cached.ts) < FILESIZE_CACHE_TTL) {
+                if (cached.unavailable || !cached.size) {
+                    renderUnavailable();
+                    return;
+                }
+                placeholder.style.verticalAlign = 'middle';
+                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(cached.size)}`;
                 return;
             }
-            placeholder.title = JE.t('file_size_tooltip');
-            placeholder.style.display = 'flex';
-            placeholder.style.verticalAlign = 'middle';
-            placeholder.style.alignItems = 'center';
-            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(cached.size)}`;
-            return;
-        }
 
-        try {
-            const itemResult = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/file-size/${ApiClient.getCurrentUserId()}/${itemId}`),
-                dataType: 'json'
-            });
-            const totalSize = itemResult?.size ?? 0;
+            try {
+                const itemResult = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/file-size/${ApiClient.getCurrentUserId()}/${itemId}`),
+                    dataType: 'json'
+                });
+                const totalSize = itemResult?.size ?? 0;
 
-            if (totalSize > 0) {
-                placeholder.title = JE.t('file_size_tooltip');
-                placeholder.style.display = 'flex';
-                placeholder.style.verticalAlign = 'middle';
-                placeholder.style.alignItems = 'center';
-                placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
-                fileSizeCache[itemId] = { size: totalSize, unavailable: false, ts: now };
-            } else {
+                if (totalSize > 0) {
+                    placeholder.style.verticalAlign = 'middle';
+                    placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
+                    fileSizeCache[itemId] = { size: totalSize, unavailable: false, ts: now };
+                } else {
+                    renderUnavailable();
+                    fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
+                }
+            } catch (error) {
+                console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
+                // Keep placeholder with dash to prevent repeated calls
                 renderUnavailable();
                 fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
             }
-        } catch (error) {
-            console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
-            // Keep placeholder with dash to prevent repeated calls
-            renderUnavailable();
-            fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
+        };
+
+        // Defer to allow page to render first
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => performFetch(), { timeout: 2000 });
+        } else {
+            setTimeout(() => performFetch(), 0);
         }
     }
 
@@ -371,6 +381,12 @@
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
         placeholder.dataset.itemId = itemId;
+        placeholder.title = JE.t('audio_language_tooltip');
+        placeholder.style.display = 'flex';
+        placeholder.style.verticalAlign = 'middle';
+        placeholder.style.alignItems = 'center';
+        // Show loading indicator
+        placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
 
         const applyLangStyles = (el) => {
@@ -394,6 +410,8 @@
 
         // Helper to render language items with proper DOM elements
         const renderLanguages = (languages) => {
+            // Clear the loading indicator
+            placeholder.innerHTML = '';
             placeholder.style.display = 'flex';
             placeholder.style.alignItems = 'center';
             placeholder.style.gap = '0.5em';
@@ -483,72 +501,92 @@
             placeholder.appendChild(scrollContainer);
         };
 
-        // Check cache first
-        const now = Date.now();
-        const cached = audioLanguageCache[itemId];
-        if (cached && (now - cached.ts) < LANGUAGE_CACHE_TTL) {
-            if (cached.unavailable || !cached.languages || cached.languages.length === 0) {
-                renderUnavailable();
-                return;
-            }
-            // Render from cache
-            renderLanguages(cached.languages);
-            return;
-        }
-
-        try {
-            const userId = ApiClient.getCurrentUserId();
-            const item = await ApiClient.getItem(userId, itemId);
-
-            let sourceItem = item;
-
-            // For Series/Season, fetch the first episode to get language info
-            if (item.Type === 'Series' || item.Type === 'Season') {
-                const episode = await fetchFirstEpisodeForLanguage(userId, item.Id);
-                if (episode) {
-                    sourceItem = episode;
-                } else {
-                    // No episodes found
+        // Use requestIdleCallback to defer the work and not block page rendering
+        const performFetch = async () => {
+            // Check cache first
+            const now = Date.now();
+            const cached = audioLanguageCache[itemId];
+            if (cached && (now - cached.ts) < LANGUAGE_CACHE_TTL) {
+                if (cached.unavailable || !cached.languages || cached.languages.length === 0) {
                     renderUnavailable();
-                    audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: now };
                     return;
                 }
+                // Render from cache
+                renderLanguages(cached.languages);
+                return;
             }
 
-            const languages = new Set();
-            sourceItem?.MediaSources?.forEach(source => {
-                source.MediaStreams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
-                    const langCode = stream.Language;
-                    if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
-                        try {
-                            const langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
-                            languages.add(JSON.stringify({ name: langName, code: langCode }));
-                        } catch (e) {
-                            languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
-                        }
+            try {
+                const userId = ApiClient.getCurrentUserId();
+                const item = await ApiClient.getItem(userId, itemId);
+
+                let sourceItem = item;
+
+                // For Series/Season, fetch the first episode to get language info
+                if (item.Type === 'Series' || item.Type === 'Season') {
+                    const episode = await fetchFirstEpisodeForLanguage(userId, item.Id);
+                    if (episode) {
+                        sourceItem = episode;
+                    } else {
+                        // No episodes found
+                        renderUnavailable();
+                        audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
+                        return;
                     }
-                });
-            });
+                }
 
-            const uniqueLanguages = Array.from(languages).map(JSON.parse);
-            if (uniqueLanguages.length > 0) {
-                renderLanguages(uniqueLanguages);
-                // Cache the successful result
-                audioLanguageCache[itemId] = { languages: uniqueLanguages, unavailable: false, ts: now };
-            } else {
+                const languages = new Set();
+                sourceItem?.MediaSources?.forEach(source => {
+                    source.MediaStreams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
+                        const langCode = stream.Language;
+                        if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
+                            try {
+                                const langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
+                                languages.add(JSON.stringify({ name: langName, code: langCode }));
+                            } catch (e) {
+                                languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
+                            }
+                        }
+                    });
+                });
+
+                const uniqueLanguages = Array.from(languages).map(JSON.parse);
+                if (uniqueLanguages.length > 0) {
+                    renderLanguages(uniqueLanguages);
+                    // Cache the successful result
+                    audioLanguageCache[itemId] = { languages: uniqueLanguages, unavailable: false, ts: Date.now() };
+                } else {
+                    renderUnavailable();
+                    audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
+                }
+            } catch (error) {
+                console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
                 renderUnavailable();
-                audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: now };
+                audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
             }
-        } catch (error) {
-            console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
-            renderUnavailable();
-            audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: now };
+        };
+
+        // Defer to allow page to render first
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => performFetch(), { timeout: 2000 });
+        } else {
+            setTimeout(() => performFetch(), 0);
         }
     }
 
     /**
      * Handle item details page display with debounced observer
      */
+    // Cache the last item id and type to avoid repeated ApiClient calls
+    let lastDetailsItemId = null;
+    let lastDetailsItemType = null;
+    let itemTypeFetchInProgress = null;
+
+    // Types that support file size and watch progress
+    const FEATURES_SUPPORTED_TYPES = ['Episode', 'Series', 'Movie', 'BoxSet', 'Playlist'];
+    // Types that support audio languages (excludes BoxSet and Playlist)
+    const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Series', 'Movie'];
+
     const handleItemDetails = JE.helpers.debounce(() => {
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
         if (!visiblePage) return;
@@ -558,16 +596,43 @@
 
         try {
             const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-            if (itemId) {
-                if (JE.currentSettings.showWatchProgress) {
-                    displayWatchProgress(itemId, container);
+            if (!itemId) return;
+
+            // Reset cache when navigating to a new item
+            if (lastDetailsItemId !== itemId) {
+                lastDetailsItemId = itemId;
+                lastDetailsItemType = null;
+            }
+
+            // Fetch item type once per item to decide applicability
+            if (!lastDetailsItemType) {
+                if (!itemTypeFetchInProgress) {
+                    const userId = ApiClient.getCurrentUserId();
+                    itemTypeFetchInProgress = ApiClient.getItem(userId, itemId)
+                        .then(item => {
+                            lastDetailsItemType = item?.Type || null;
+                            itemTypeFetchInProgress = null;
+                            // Re-run once type is known to render features
+                            handleItemDetails();
+                        })
+                        .catch(() => { itemTypeFetchInProgress = null; });
                 }
-                if (JE.currentSettings.showFileSizes) {
-                    displayItemSize(itemId, container);
-                }
-                if (JE.currentSettings.showAudioLanguages) {
-                    displayAudioLanguages(itemId, container);
-                }
+                return;
+            }
+
+            // Skip unsupported item types
+            if (!FEATURES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
+                return;
+            }
+
+            if (JE.currentSettings.showWatchProgress) {
+                displayWatchProgress(itemId, container);
+            }
+            if (JE.currentSettings.showFileSizes) {
+                displayItemSize(itemId, container);
+            }
+            if (JE.currentSettings.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
+                displayAudioLanguages(itemId, container);
             }
         } catch (e) { /* ignore */ }
     }, 100);
