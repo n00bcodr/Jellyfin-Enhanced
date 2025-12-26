@@ -328,6 +328,58 @@
     };
 
     /**
+     * Fetches existing issues for a Jellyseerr media (by TMDB id + type).
+     * @param {number|string} tmdbId
+     * @param {'movie'|'tv'} mediaType
+     * @param {object} [options]
+     * @param {number} [options.take=20]
+     * @param {number} [options.skip=0]
+     * @param {'open'|'resolved'|'all'} [options.filter='open']
+     * @returns {Promise<{pageInfo?: object, results: Array}>}
+     */
+    api.fetchIssuesForMedia = async function(tmdbId, mediaType, options = {}) {
+        const { take = 20, skip = 0, filter = 'open', sort = 'added' } = options;
+        try {
+            const query = new URLSearchParams({
+                take: String(take),
+                skip: String(skip),
+                filter,
+                sort
+            });
+
+            const res = await get(`/issue?${query.toString()}`);
+            const issues = res && Array.isArray(res.results) ? res.results : [];
+
+            const filtered = issues.filter(issue => {
+                const media = issue.media || {};
+                const tmdbMatch = media.tmdbId && Number(media.tmdbId) === Number(tmdbId);
+                const typeMatch = (media.mediaType || '').toLowerCase() === (mediaType || '').toLowerCase();
+                return tmdbMatch && typeMatch;
+            });
+
+            return { ...res, results: filtered };
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch issues for ${mediaType} ${tmdbId}:`, error);
+            return { results: [] };
+        }
+    };
+
+    /**
+     * Fetch a single issue by ID, including full comment details.
+     * @param {number} issueId
+     * @returns {Promise<object|null>}
+     */
+    api.fetchIssueById = async function(issueId) {
+        try {
+            const res = await get(`/issue/${issueId}`);
+            return res || null;
+        } catch (error) {
+            console.warn(`${logPrefix} Failed to fetch issue ${issueId}:`, error);
+            return null;
+        }
+    };
+
+    /**
      * Fetches the necessary data for advanced request options (servers, profiles, folders).
      * @param {string} mediaType - 'movie' for Radarr, 'tv' for Sonarr.
      * @returns {Promise<{servers: Array, tags: Array}>}

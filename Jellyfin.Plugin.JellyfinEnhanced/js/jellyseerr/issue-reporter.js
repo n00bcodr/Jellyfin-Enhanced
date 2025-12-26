@@ -1,10 +1,19 @@
 // /js/jellyseerr/issue-reporter.js
-(function(JE) {
+(function (JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Issue Reporter:';
     const issueReporter = {};
-    
+    const escapeHtml = (str) => {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
     // Cache for user permission to report
     let cachedUserCanReport = null;
 
@@ -25,16 +34,16 @@
      * Returns: 'available', 'no-tmdb', or 'no-jellyseerr'
      * @returns {Promise<string>}
      */
-    issueReporter.checkReportingAvailability = async function(item) {
+    issueReporter.checkReportingAvailability = async function (item) {
         // Return cached result if available
         if (cachedUserCanReport !== null) {
             return cachedUserCanReport;
         }
-        
+
         try {
             // Check if item has TMDB ID
             const hasTmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
-            
+
             // Check Jellyseerr status
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
             const statusRes = await ApiClient.ajax({
@@ -42,9 +51,9 @@
                 url: statusUrl,
                 dataType: 'json'
             });
-            
+
             const jellyseerrActive = statusRes && statusRes.active === true;
-            
+
             // Determine availability
             if (!hasTmdbId && !jellyseerrActive) {
                 cachedUserCanReport = 'no-both';
@@ -56,7 +65,7 @@
                 cachedUserCanReport = 'no-jellyseerr';
                 return 'no-jellyseerr';
             }
-            
+
             // Both available
             cachedUserCanReport = 'available';
             return 'available';
@@ -75,10 +84,30 @@
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropPath - Optional TMDB backdrop image path
      */
-    issueReporter.showReportModal = function(tmdbId, itemName, mediaType, backdropPath = null, item = null) {
+    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropPath = null, item = null) {
         // Create the form HTML
         const ISSUE_TYPES = getIssueTypes();
         const formHtml = `
+            <style>
+                .jellyseerr-issues-container { margin-top: 12px; }
+                .jellyseerr-issues-header { font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-size: 12px; color: #888; }
+                .jellyseerr-issue-section { margin-bottom: 14px; }
+                .jellyseerr-issue-section-title { display: inline-block; padding: 4px 12px; border-radius: 999px; background: rgba(100, 100, 255, 0.2); color: #b0b0ff; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin: 0 0 10px; }
+                .jellyseerr-issue-card { border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+                .jellyseerr-issue-summary { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 600; color: #e6e6e6; }
+                .jellyseerr-issue-reporter { color: #9aa; font-weight: 500; }
+                .jellyseerr-issue-date { color: #9aa; font-size: 12px; }
+                .jellyseerr-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(0, 150, 255, 0.15); color: #8fd1ff; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+                .pill-number-open { background: rgba(0, 150, 255, 0.15); color: #8fd1ff; }
+                .pill-status-open { background: rgba(255, 200, 0, 0.18); color: #ffd666; }
+                .pill-number-resolved, .pill-status-resolved { background: rgba(0, 180, 60, 0.18); color: #8dffb0; }
+                .jellyseerr-issue-message { margin-top: 6px; color: #ddd; white-space: pre-wrap; }
+                .jellyseerr-issue-comments { margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px; display: grid; gap: 6px; }
+                .jellyseerr-issue-comment { padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+                .jellyseerr-issue-comment-meta { font-size: 12px; color: #9aa; margin-bottom: 2px; }
+                .jellyseerr-issue-comment-body { color: #eaeaea; font-size: 14px; white-space: pre-wrap; }
+                .jellyseerr-issues-empty { color: #9aa; padding: 8px 0; }
+            </style>
             <div class="jellyseerr-issue-form">
                 <div class="jellyseerr-form-group">
                     <label>${JE.t('jellyseerr_report_issue_type')}</label>
@@ -101,6 +130,12 @@
                     ></textarea>
                 </div>
                 <div id="jellyseerr-tv-controls-placeholder"></div>
+                <div class="jellyseerr-issues-container" id="jellyseerr-issues-container">
+                    <div class="jellyseerr-issues-header">${JE.t('jellyseerr_existing_issues')}</div>
+                    <div class="jellyseerr-issues-body" id="jellyseerr-issues-body">
+                        <div class="jellyseerr-issues-loading" id="jellyseerr-issues-loading">${JE.t('jellyseerr_loading_issues')}</div>
+                    </div>
+                </div>
             </div>
         `;
 
@@ -157,6 +192,134 @@
         });
 
         show();
+
+        // Load existing issues/comments for this item
+        (async () => {
+            const bodyEl = modalElement.querySelector('#jellyseerr-issues-body');
+            const loadingEl = modalElement.querySelector('#jellyseerr-issues-loading');
+
+            const renderEmpty = (msg = JE.t('jellyseerr_no_issues_yet')) => {
+                if (bodyEl) bodyEl.innerHTML = `<div class="jellyseerr-issues-empty">${msg}</div>`;
+            };
+
+            const issueTypeLabels = {
+                1: 'Video',
+                2: 'Audio',
+                3: 'Subtitles',
+                4: 'Other'
+            };
+
+            const statusLabels = {
+                1: 'Open',
+                2: 'Resolved'
+            };
+
+            const fmtDate = (iso) => {
+                if (!iso) return '';
+                const d = new Date(iso);
+                const day = String(d.getDate()).padStart(2, '0');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const mon = monthNames[d.getMonth()];
+                const year = d.getFullYear();
+                const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                return `${day}-${mon}-${year} ${time}`;
+            };
+
+            try {
+                if (loadingEl) loadingEl.textContent = JE.t('jellyseerr_loading_issues');
+                const res = await JE.jellyseerrAPI.fetchIssuesForMedia(tmdbId, mediaType, { take: 50, filter: 'all' });
+                let issues = res?.results || [];
+
+                if (!issues.length) {
+                    renderEmpty();
+                    return;
+                }
+
+                const enriched = await Promise.all(issues.map(async (issue) => {
+                    try {
+                        const full = await JE.jellyseerrAPI.fetchIssueById(issue.id);
+                        return full || issue;
+                    } catch (_) { return issue; }
+                }));
+
+                issues = enriched;
+
+                // Group by type to separate the four issue categories
+                const grouped = issues.reduce((acc, issue) => {
+                    const key = issue.issueType || issue.problemType || 'unknown';
+                    acc[key] = acc[key] || [];
+                    acc[key].push(issue);
+                    return acc;
+                }, {});
+
+                const typeOrder = [1, 2, 3, 4, 'unknown'];
+
+                const sections = typeOrder
+                    .filter(key => grouped[key] && grouped[key].length)
+                    .map(key => {
+                        const label = issueTypeLabels[key] || 'Other';
+                        const cards = grouped[key]
+                            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+                            .map(issue => {
+                                const status = issue.status;
+                                const typeLabel = issueTypeLabels[issue.issueType] || 'Other';
+                                const createdBy = escapeHtml(
+                                    issue.createdBy?.jellyfinUsername ||
+                                    issue.createdBy?.displayName ||
+                                    issue.createdBy?.username ||
+                                    issue.createdBy?.email ||
+                                    'Someone'
+                                );
+                                const createdAt = fmtDate(issue.createdAt);
+                                const comments = Array.isArray(issue.comments) ? issue.comments : [];
+
+                                // Use first comment as description when no issue.message
+                                const [firstComment, ...restComments] = comments;
+
+                                const commentHtml = restComments.map(c => {
+                                    const who = escapeHtml(
+                                        c.user?.jellyfinUsername ||
+                                        c.user?.displayName ||
+                                        c.user?.username ||
+                                        c.user?.email ||
+                                        ''
+                                    );
+                                    const when = fmtDate(c.createdAt);
+                                    const msg = escapeHtml(c.message || '');
+                                    const meta = `${when}${who ? ' • ' + who : ''}`;
+                                    return `<div class="jellyseerr-issue-comment"><div class="jellyseerr-issue-comment-meta">${meta}</div><div class="jellyseerr-issue-comment-body">${msg}</div></div>`;
+                                }).join('');
+
+                                const mainMessage = escapeHtml(issue.message || (firstComment?.message || '(No description)'));
+                                const statusText = statusLabels[status] || '';
+                                const isResolved = String(status) === '2' || String(status).toLowerCase() === 'resolved';
+                                const numberClass = isResolved ? 'pill-number-resolved' : 'pill-number-open';
+                                const statusClass = isResolved ? 'pill-status-resolved' : 'pill-status-open';
+                                const summary = `<span class="jellyseerr-pill ${numberClass}">#${escapeHtml(String(issue.id))}</span><span class="jellyseerr-pill ${statusClass}">${escapeHtml(statusText || (isResolved ? 'Resolved' : 'Open'))}</span>${createdAt ? ` <span class="jellyseerr-issue-date">${createdAt}</span>` : ''}`;
+                                return `
+                                    <div class="jellyseerr-issue-card">
+                                        <div class="jellyseerr-issue-summary">${summary}<span class="jellyseerr-issue-reporter"> — ${createdBy}</span></div>
+                                        <div class="jellyseerr-issue-message">${mainMessage}</div>
+                                        ${commentHtml ? `<div class="jellyseerr-issue-comments">${commentHtml}</div>` : ''}
+                                    </div>
+                                `;
+                            }).join('');
+
+                        return `
+                            <div class="jellyseerr-issue-section">
+                                <div class="jellyseerr-issue-section-title">${label}</div>
+                                ${cards}
+                            </div>
+                        `;
+                    }).join('');
+
+                if (bodyEl) bodyEl.innerHTML = sections;
+
+            } catch (err) {
+                console.error(`${logPrefix} Failed to load existing issues:`, err);
+                renderEmpty(JE.t('jellyseerr_load_issues_error'));
+            }
+        })();
 
         // If this is a TV item, augment the modal with season/episode selectors
         if (mediaType === 'tv') {
@@ -377,7 +540,7 @@
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropPath - Optional TMDB backdrop image path
      */
-    issueReporter.createReportButton = function(container, tmdbId, itemName, mediaType, backdropPath = null, item = null) {
+    issueReporter.createReportButton = function (container, tmdbId, itemName, mediaType, backdropPath = null, item = null) {
         if (!container) {
             console.warn(`${logPrefix} Container not found for report button`);
             return null;
@@ -410,17 +573,17 @@
      * @param {string} itemName
      * @param {string} mediaType
      */
-    issueReporter.createUnavailableButton = function(container, itemName, mediaType, reason = 'unavailable') {
+    issueReporter.createUnavailableButton = function (container, itemName, mediaType, reason = 'unavailable') {
         if (!container) return null;
 
         const button = document.createElement('button');
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-unavailable-icon';
         button.type = 'button';
-        
+
         let ariaLabel = 'Reporting unavailable';
         let title = 'Reporting unavailable';
-        
+
         if (reason === 'no-tmdb') {
             ariaLabel = 'TMDB not configured';
             title = 'TMDB is not configured';
@@ -434,7 +597,7 @@
             ariaLabel = 'Not enough permissions';
             title = 'Not enough permissions to report';
         }
-        
+
         button.setAttribute('aria-label', ariaLabel);
         button.title = title;
         button.disabled = true;
@@ -468,7 +631,7 @@
      * Attempts to fetch TMDB ID from external sources as a fallback
      * Uses OMDB API or other methods to find TMDB ID
      */
-    issueReporter.getTmdbIdFallback = async function(itemName, mediaType, item) {
+    issueReporter.getTmdbIdFallback = async function (itemName, mediaType, item) {
         try {
             console.debug(`${logPrefix} Attempting fallback TMDB lookup for ${itemName}`);
 
@@ -541,7 +704,7 @@
                     }
 
                     // Try name + year search
-                    const year = item.ProductionYear || (item.PremiereDate ? item.PremiereDate.substring(0,4) : null) || '';
+                    const year = item.ProductionYear || (item.PremiereDate ? item.PremiereDate.substring(0, 4) : null) || '';
                     const titleQuery = `${item.Name}${year ? ' ' + year : ''}`;
                     console.debug(`${logPrefix} Trying Jellyseerr search by title: "${titleQuery}"`);
                     const res2 = await JE.jellyseerrAPI.search(titleQuery);
@@ -550,7 +713,7 @@
                         const exact = res2.results.find(r => {
                             const rTitle = (r.title || r.name || '').toString().toLowerCase();
                             const itemTitle = (item.Name || '').toString().toLowerCase();
-                            const rYear = (r.releaseDate || r.firstAirDate || '').toString().substring(0,4) || '';
+                            const rYear = (r.releaseDate || r.firstAirDate || '').toString().substring(0, 4) || '';
                             return rTitle === itemTitle && (year === '' || rYear === '' || rYear === String(year));
                         });
                         if (exact && exact.id) {
@@ -580,7 +743,7 @@
     /**
      * Attempts to add the report issue button to the current detail page
      */
-    issueReporter.tryAddButton = async function() {
+    issueReporter.tryAddButton = async function () {
         const itemDetailPage = document.querySelector('#itemDetailPage:not(.hide)');
         if (!itemDetailPage) {
             return false;
@@ -619,11 +782,11 @@
 
             // Check if reporting is available (item has TMDB ID and Jellyseerr configured)
             const availability = await issueReporter.checkReportingAvailability(item);
-            
+
             // If services not available, show unavailable button
             if (availability !== 'available') {
                 console.debug(`${logPrefix} Reporting not available: ${availability}`);
-                
+
                 // Try to add an unavailable button
                 let buttonContainerUnavail = null;
                 const selectorsUnavail = [
@@ -856,7 +1019,7 @@
     /**
      * Initializes issue reporter on item detail pages
      */
-    issueReporter.initialize = async function() {
+    issueReporter.initialize = async function () {
         if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.JellyseerrShowReportButton) {
             console.debug(`${logPrefix} Jellyseerr or report-button feature disabled, skipping initialization`);
             return;
@@ -903,12 +1066,12 @@
         const originalPushState = history.pushState;
         const originalReplaceState = history.replaceState;
 
-        history.pushState = function(...args) {
+        history.pushState = function (...args) {
             originalPushState.apply(this, args);
             setTimeout(processDetail, 300);
         };
 
-        history.replaceState = function(...args) {
+        history.replaceState = function (...args) {
             originalReplaceState.apply(this, args);
             setTimeout(processDetail, 300);
         };

@@ -1398,6 +1398,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpGet("jellyseerr/issue")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrIssues(
+            [FromQuery] int? mediaId,
+            [FromQuery] int take = 20,
+            [FromQuery] int skip = 0,
+            [FromQuery] string? filter = "all",
+            [FromQuery] string? sort = "added")
+        {
+            var queryParts = new List<string>
+            {
+                $"take={take}",
+                $"skip={skip}"
+            };
+
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                queryParts.Add($"filter={Uri.EscapeDataString(filter)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(sort))
+            {
+                queryParts.Add($"sort={Uri.EscapeDataString(sort)}");
+            }
+
+            var queryString = string.Join("&", queryParts);
+            var apiPath = string.IsNullOrWhiteSpace(queryString) ? "/api/v1/issue" : $"/api/v1/issue?{queryString}";
+
+            return ProxyJellyseerrRequest(apiPath, HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/issue/{id}")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrIssueById(int id)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/issue/{id}", HttpMethod.Get);
+        }
+
         [HttpPost("jellyseerr/issue")]
         [Authorize]
         public async Task<IActionResult> ReportJellyseerrIssue([FromBody] JsonElement issueBody)
