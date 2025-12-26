@@ -473,20 +473,62 @@
         }
 
         setupInteractionListeners() {
-          const resetEvents = ['mousemove', 'mousedown', 'click', 'touchstart', 'touchmove', 'keydown', 'wheel'];
-          
+          // Track last mouse position for movement threshold
+          let lastMouseX = null;
+          let lastMouseY = null;
+          const MOUSE_MOVE_THRESHOLD = 15; // pixels - only reset if moved more than this
+
           const resetTimer = () => {
             if (this.pauseScreenTimer) {
               clearTimeout(this.pauseScreenTimer);
               this.pauseScreenTimer = null;
             }
+            // If video is paused, restart the pause screen timer
+            if (this.currentVideo && this.currentVideo.paused && !this.currentVideo.ended) {
+              this.pauseScreenTimer = setTimeout(() => {
+                if (this.pauseScreenTimer && this.currentVideo === this.currentVideo && this.currentVideo.paused && !this.currentVideo.ended) {
+                  this.showOverlay();
+                }
+                this.pauseScreenTimer = null;
+              }, 3000);
+            }
           };
+
+          // Events that always reset the timer
+          const resetEvents = ['mousedown', 'click', 'touchstart', 'touchmove', 'keydown', 'wheel'];
 
           this.interactionListeners = resetEvents.map(event => {
             const listener = resetTimer;
             document.addEventListener(event, listener, { passive: true });
             return { event, listener };
           });
+
+          // Handle mousemove based on threshold
+          const handleMouseMove = (e) => {
+            const currentX = e.clientX;
+            const currentY = e.clientY;
+
+            if (lastMouseX !== null && lastMouseY !== null) {
+              const distanceMoved = Math.sqrt(
+                Math.pow(currentX - lastMouseX, 2) + Math.pow(currentY - lastMouseY, 2)
+              );
+              // Only reset if movement exceeds threshold
+              if (distanceMoved > MOUSE_MOVE_THRESHOLD) {
+                resetTimer();
+              }
+            } else {
+              // First movement, record position
+              lastMouseX = currentX;
+              lastMouseY = currentY;
+            }
+
+            // Update last position
+            lastMouseX = currentX;
+            lastMouseY = currentY;
+          };
+
+          document.addEventListener('mousemove', handleMouseMove, { passive: true });
+          this.interactionListeners.push({ event: 'mousemove', listener: handleMouseMove });
         }
 
         checkForVideoChanges() {
@@ -544,13 +586,13 @@
                 this.pauseScreenTimer = null;
               }
 
-              // Set up delayed pause screen with 2-second delay
+              // Set up delayed pause screen with 3-second delay
               this.pauseScreenTimer = setTimeout(() => {
                 if (this.pauseScreenTimer && video === this.currentVideo && video.paused && !video.ended) {
                   this.showOverlay();
                 }
                 this.pauseScreenTimer = null;
-              }, 2000);
+              }, 3000);
             }
           };
 
@@ -818,7 +860,7 @@
         destroy() {
           this.clearState();
           if (this.observer) { this.observer.disconnect(); this.observer = null; }
-          
+
           // Clean up interaction listeners
           if (this.interactionListeners) {
             this.interactionListeners.forEach(({ event, listener }) => {
