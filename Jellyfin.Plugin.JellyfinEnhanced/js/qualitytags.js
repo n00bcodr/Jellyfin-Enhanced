@@ -811,6 +811,14 @@
                     flex-shrink: 0;
                     line-height: 1.2;
                 }
+                .layout-mobile .${overlayClass} {
+                    padding: 0px 6px;
+                    font-size: 0.65rem;
+                    border-radius: 3px;
+                }
+                .layout-mobile .${containerClass} {
+                    gap: 2px;
+                }
                 @media (min-width: 1440px) {
                     .${overlayClass} {
                         padding: 3px 12px;

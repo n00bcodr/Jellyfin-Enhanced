@@ -290,6 +290,15 @@
                     color: #ffc107 !important;
                 }
 
+                .layout-mobile .${tagClass} {
+                    padding: 2px 5px;
+                    font-size: 8px;
+                }
+                .layout-mobile .${tagClass} .rating-star-icon {
+                    font-size: 10px !important;
+                    margin-right: 1px !important;
+                }
+
                 @media (max-width: 768px) {
                     .${tagClass} {
                         padding: 3px 6px;
