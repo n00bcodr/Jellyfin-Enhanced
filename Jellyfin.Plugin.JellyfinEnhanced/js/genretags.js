@@ -242,10 +242,12 @@
             if (isProcessingQueue || requestQueue.length === 0) return;
             isProcessingQueue = true;
 
-            const batch = requestQueue.splice(0, 3);
-            const promises = batch.map(async ({ element, itemId, userId }) => {
-                try {
-                    const genres = await fetchItemGenres(userId, itemId);
+            // Use requestIdleCallback for initial batch to defer work
+            const processBatch = async () => {
+                const batch = requestQueue.splice(0, 3);
+                const promises = batch.map(async ({ element, itemId, userId }) => {
+                    try {
+                        const genres = await fetchItemGenres(userId, itemId);
                     if (genres) {
                         insertGenreTags(element, genres);
                     }
@@ -259,7 +261,18 @@
             isProcessingQueue = false;
 
             if (requestQueue.length > 0) {
-                setTimeout(processRequestQueue, 400);
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => processRequestQueue(), { timeout: 400 });
+                } else {
+                    setTimeout(processRequestQueue, 400);
+                }
+            }
+            };
+
+            if (typeof requestIdleCallback !== 'undefined') {
+                requestIdleCallback(() => processBatch(), { timeout: 200 });
+            } else {
+                processBatch();
             }
         }
 

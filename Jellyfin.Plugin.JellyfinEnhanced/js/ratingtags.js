@@ -190,7 +190,11 @@
             isProcessingQueue = false;
 
             if (requestQueue.length > 0) {
-                setTimeout(processQueue, 100);
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => processQueue(), { timeout: 100 });
+                } else {
+                    setTimeout(processQueue, 100);
+                }
             }
         }
 

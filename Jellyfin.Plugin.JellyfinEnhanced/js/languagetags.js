@@ -188,7 +188,13 @@
             });
             await Promise.allSettled(promises);
             isProcessingQueue = false;
-            if (requestQueue.length > 0) setTimeout(processRequestQueue, 300);
+            if (requestQueue.length > 0) {
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => processRequestQueue(), { timeout: 300 });
+                } else {
+                    setTimeout(processRequestQueue, 300);
+                }
+            }
         }
 
         function computePositionStyles(position) {

@@ -545,9 +545,13 @@
             await Promise.allSettled(promises);
             isProcessingQueue = false;
 
-            // If there are more items, schedule the next batch.
+            // If there are more items, schedule the next batch with deferred execution
             if (requestQueue.length > 0) {
-                setTimeout(processRequestQueue, config.QUEUE_PROCESS_INTERVAL);
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => processRequestQueue(), { timeout: config.QUEUE_PROCESS_INTERVAL });
+                } else {
+                    setTimeout(processRequestQueue, config.QUEUE_PROCESS_INTERVAL);
+                }
             }
         }
 
