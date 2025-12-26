@@ -367,6 +367,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, a small report icon will be added to item action icons allowing users to report playback/content issues to Jellyseerr.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="issueAutoSearchEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Auto-search for better quality when issues are reported</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When an issue is reported, automatically trigger a search in Sonarr/Radarr to find a better quality version. Requires Sonarr/Radarr URLs and API keys to be configured in *arr Links settings.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
                                     <span>Show advanced request options</span>
                                 </label>
@@ -1024,6 +1031,7 @@
                 document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
                 document.querySelector('#jellyseerrExcludeLibraryItems').checked = config.JellyseerrExcludeLibraryItems !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
+                document.querySelector('#issueAutoSearchEnabled').checked = !!config.IssueAutoSearchEnabled;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -1114,6 +1122,7 @@
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
             config.JellyseerrExcludeLibraryItems = document.querySelector('#jellyseerrExcludeLibraryItems').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
+            config.IssueAutoSearchEnabled = document.querySelector('#issueAutoSearchEnabled').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();

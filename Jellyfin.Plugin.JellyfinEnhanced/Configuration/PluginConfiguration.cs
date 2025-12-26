@@ -115,6 +115,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsLinksFilter = "";
             ArrTagsLinksHideFilter = "";
 
+            // Issue Auto-Search Settings
+            IssueAutoSearchEnabled = false;
+
             // Letterboxd Settings
             LetterboxdEnabled = false;
             ShowLetterboxdLinkAsText = false;
@@ -211,6 +214,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ArrTagsShowAsLinks { get; set; }
         public string ArrTagsLinksFilter { get; set; }
         public string ArrTagsLinksHideFilter { get; set; }
+
+        // Issue Auto-Search Settings
+        /// <summary>
+        /// When enabled, reporting an issue will automatically trigger a search in Sonarr/Radarr
+        /// to find a better quality version of the problematic media.
+        /// </summary>
+        public bool IssueAutoSearchEnabled { get; set; }
 
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }

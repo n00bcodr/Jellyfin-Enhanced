@@ -513,12 +513,22 @@
             }
             console.log(`${logPrefix} Retrieved internal media id for issue report:`, internalId);
 
+            // Extract TVDB ID for TV shows (needed for Sonarr auto-search)
+            let tvdbId = 0;
+            if (mediaType === 'tv' && apiResult && apiResult.externalIds) {
+                tvdbId = parseInt(apiResult.externalIds.tvdbId) || 0;
+            }
+
             const body = {
                 mediaId: parseInt(internalId),
                 issueType: issueType,
                 problemSeason: parseInt(problemSeason) || 0,
                 problemEpisode: parseInt(problemEpisode) || 0,
-                message: message || ''
+                message: message || '',
+                // Include additional info for auto-search feature
+                tmdbId: parseInt(mediaId) || 0,
+                tvdbId: tvdbId,
+                mediaType: mediaType
             };
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);

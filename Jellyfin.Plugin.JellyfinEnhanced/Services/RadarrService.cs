@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -117,6 +118,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Triggers a search in Radarr for a movie based on TMDB ID.
+        /// </summary>
+        /// <param name="radarrUrl">Radarr base URL</param>
+        /// <param name="apiKey">Radarr API key</param>
+        /// <param name="tmdbId">TMDB ID of the movie</param>
+        /// <returns>True if search was triggered successfully</returns>
+        public async Task<bool> TriggerSearchAsync(string radarrUrl, string apiKey, int tmdbId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(radarrUrl) || string.IsNullOrWhiteSpace(apiKey))
+                {
+                    _logger.Warning("Radarr URL or API key not configured");
+                    return false;
+                }
+
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+                // Find movie by TMDB ID
+                var moviesUrl = $"{radarrUrl.TrimEnd('/')}/api/v3/movie";
+                var moviesResponse = await httpClient.GetAsync(moviesUrl);
+
+                if (!moviesResponse.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Failed to fetch Radarr movies. Status: {moviesResponse.StatusCode}");
+                    return false;
+                }
+
+                var moviesContent = await moviesResponse.Content.ReadAsStringAsync();
+                var allMovies = JsonSerializer.Deserialize<List<RadarrMovie>>(moviesContent) ?? new List<RadarrMovie>();
+                var movie = allMovies.FirstOrDefault(m => m.TmdbId == tmdbId);
+
+                if (movie == null)
+                {
+                    _logger.Warning($"Movie with TMDB ID {tmdbId} not found in Radarr");
+                    return false;
+                }
+
+                _logger.Info($"Found movie '{movie.Title}' (ID: {movie.Id}) for TMDB ID {tmdbId}");
+
+                // Trigger movie search
+                var commandUrl = $"{radarrUrl.TrimEnd('/')}/api/v3/command";
+                var commandBody = new { name = "MoviesSearch", movieIds = new[] { movie.Id } };
+                var jsonContent = JsonSerializer.Serialize(commandBody);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                var commandResponse = await httpClient.PostAsync(commandUrl, content);
+
+                if (commandResponse.IsSuccessStatusCode)
+                {
+                    _logger.Info($"Radarr MoviesSearch triggered successfully for '{movie.Title}'");
+                    return true;
+                }
+                else
+                {
+                    var errorContent = await commandResponse.Content.ReadAsStringAsync();
+                    _logger.Warning($"Radarr command failed. Status: {commandResponse.StatusCode}, Response: {errorContent}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error triggering Radarr search for TMDB ID {tmdbId}: {ex.Message}");
+                return false;
+            }
         }
     }
 }

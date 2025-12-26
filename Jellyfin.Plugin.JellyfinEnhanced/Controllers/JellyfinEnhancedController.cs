@@ -1440,7 +1440,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ReportJellyseerrIssue([FromBody] JsonElement issueBody)
         {
-            return await ProxyJellyseerrRequest("/api/v1/issue", HttpMethod.Post, issueBody.ToString());
+            // First, proxy the issue to Jellyseerr
+            var result = await ProxyJellyseerrRequest("/api/v1/issue", HttpMethod.Post, issueBody.ToString());
+
+            // If the issue was successfully created and auto-search is enabled, trigger Sonarr/Radarr search
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config?.IssueAutoSearchEnabled == true && result is ContentResult contentResult && contentResult.StatusCode == null)
+            {
+                try
+                {
+                    // Extract auto-search parameters from the request body
+                    int tmdbId = 0;
+                    int tvdbId = 0;
+                    string mediaType = "";
+                    int problemSeason = 0;
+                    int problemEpisode = 0;
+
+                    if (issueBody.TryGetProperty("tmdbId", out var tmdbProp))
+                        tmdbId = tmdbProp.GetInt32();
+                    if (issueBody.TryGetProperty("tvdbId", out var tvdbProp))
+                        tvdbId = tvdbProp.GetInt32();
+                    if (issueBody.TryGetProperty("mediaType", out var typeProp))
+                        mediaType = typeProp.GetString() ?? "";
+                    if (issueBody.TryGetProperty("problemSeason", out var seasonProp))
+                        problemSeason = seasonProp.GetInt32();
+                    if (issueBody.TryGetProperty("problemEpisode", out var episodeProp))
+                        problemEpisode = episodeProp.GetInt32();
+
+                    _logger.Info($"[Issue Auto-Search] Processing: mediaType={mediaType}, tmdbId={tmdbId}, tvdbId={tvdbId}, season={problemSeason}, episode={problemEpisode}");
+
+                    if (mediaType == "tv" && tvdbId > 0 && !string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+                    {
+                        // Trigger Sonarr search for TV shows
+                        var sonarrService = new Services.SonarrService(_httpClientFactory, _logger);
+                        var searchResult = await sonarrService.TriggerSearchAsync(
+                            config.SonarrUrl,
+                            config.SonarrApiKey,
+                            tvdbId,
+                            problemSeason,
+                            problemEpisode
+                        );
+                        _logger.Info($"[Issue Auto-Search] Sonarr search triggered: {searchResult}");
+                    }
+                    else if (mediaType == "movie" && tmdbId > 0 && !string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
+                    {
+                        // Trigger Radarr search for movies
+                        var radarrService = new Services.RadarrService(_httpClientFactory, _logger);
+                        var searchResult = await radarrService.TriggerSearchAsync(
+                            config.RadarrUrl,
+                            config.RadarrApiKey,
+                            tmdbId
+                        );
+                        _logger.Info($"[Issue Auto-Search] Radarr search triggered: {searchResult}");
+                    }
+                    else
+                    {
+                        _logger.Warning($"[Issue Auto-Search] Skipped: missing required parameters or Arr configuration");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't fail the issue report if auto-search fails
+                    _logger.Error($"[Issue Auto-Search] Error triggering search: {ex.Message}");
+                }
+            }
+
+            return result;
         }
     }
 }
