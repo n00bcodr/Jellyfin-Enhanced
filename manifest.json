@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Improve mobile styles for tag overlays\n - Add container for enhanced media info items\n - Add File Size and Watched % for BoxSets and Playlists\n - Defer tag queue processing with requestIdleCallback\n - Refactor tag cache and UI observers for performance\n - Show existing Jellyseerr issues in issue reporter modal\n - Add Russian Translation\n - Add Pirate Translations, cuz why not!\n - Improve pause screen timer reset logic\n - Improve long press handling for video speed 2x\n - Add TMDB collection support to Jellyseerr search\n - Update watchlist sync to respect config and fix return value\n - Refactor and clarify *arr settings and tag sync UI\n - Add option to enable Druidblack metadata icons\n - Add support for custom languages in language selector\n - Add missed translation for Collection Modal\n - Localize collection request button label\n - Update README.md",
+        "targetAbi": "10.10.7.0",
+        "version": "9.10.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.10.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "4B39CB82ECC1C08F70349105750A974E",
+        "timestamp": "2025-12-27T14:23:32"
+      },
+      {
         "changelog": "- Optimize tag rendering and queue handling in tag scripts\n - Improve tag overlay responsiveness and styling\n - Update Jellyseerr URL mapping examples and descriptions\n - Add rating tags and OSD rating feature\n - Improve issue reporting button logic and UI\n - Add Jellyseerr similar and recommended sections to item details\n - Add option to exclude library items from Jellyseerr Recommendations",
         "targetAbi": "10.10.7.0",
         "version": "9.9.0.0",
