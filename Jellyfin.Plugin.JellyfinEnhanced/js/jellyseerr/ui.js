@@ -377,7 +377,7 @@
             }
             .jellyseerr-4k-popup-item {
                 width: 100%;
-                border: none;.jellyseerr-4k-popup-item
+                border: none;
                 background: transparent;
                 color: #f8fafc;
                 text-align: left;
