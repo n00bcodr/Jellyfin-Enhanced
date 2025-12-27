@@ -417,7 +417,7 @@
         const addLinkToMenu = () => {
             const menuContainer = document.querySelector('#myPreferencesMenuPage:not(.hide) .verticalSection');
             if (!menuContainer) return false;
-            
+
             // Check if link already exists
             if (document.querySelector('#jellyfinEnhancedUserPrefsLink')) return true;
 
@@ -431,7 +431,7 @@
             enhancedLink.style.display = 'block';
             enhancedLink.style.padding = '0';
             enhancedLink.style.margin = '0';
-            
+
             enhancedLink.innerHTML = `
                 <div class="listItem">
                     <span class="material-icons listItemIcon listItemIcon-transparent tune" aria-hidden="true"></span>
@@ -1214,6 +1214,11 @@
                 const AVAILABLE_LANGUAGES_CACHE_TS_KEY = 'JE_available_languages_ts';
                 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
+                // Custom languages not in Jellyfin's official culture list
+                const CUSTOM_LANGUAGES = {
+                    'pr': { Name: 'Pirate', DisplayName: "Pirate", TwoLetterISOLanguageName: 'pr' }
+                };
+
                 let supportedJELanguages = [];
 
                 // Try to load from cache first
@@ -1223,7 +1228,7 @@
                 if (cachedLanguages && cachedTimestamp) {
                     const age = Date.now() - parseInt(cachedTimestamp, 10);
                     if (age < CACHE_DURATION) {
-                        console.log('🪼 Jellyfin Enhanced: Using cached available languages (age: ${Math.round(age / 1000 / 60)} minutes)');
+                        console.log('🪼 Jellyfin Enhanced: Using cached available languages (age: ' + Math.round(age / 1000 / 60) + ' minutes)');
                         supportedJELanguages = JSON.parse(cachedLanguages);
                     }
                 }
@@ -1255,6 +1260,19 @@
 
                     await Promise.all(checkPromises);
 
+                    // Add custom languages that have translation files
+                    for (const langCode in CUSTOM_LANGUAGES) {
+                        try {
+                            const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                            if (response.ok) {
+                                supportedJELanguages.push(CUSTOM_LANGUAGES[langCode]);
+                                console.log('🪼 Jellyfin Enhanced: Found translation for:', CUSTOM_LANGUAGES[langCode].Name, '('+langCode+')');
+                            }
+                        } catch (err) {
+                            // Translation file doesn't exist
+                        }
+                    }
+
                     console.log('🪼 Jellyfin Enhanced: Found', supportedJELanguages.length, 'supported cultures with translations');
 
                     // Cache the results
@@ -1281,9 +1299,17 @@
                     displayLanguageSelect.appendChild(option);
                 });
 
+                // Normalize saved language code (e.g., en-GB -> en)
+                let normalizedLanguage = '';
+                if (savedLanguage) {
+                    normalizedLanguage = savedLanguage.split('-')[0].toLowerCase();
+                }
+
                 // Set the saved language after options are added
-                displayLanguageSelect.value = savedLanguage;
-                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Select element value is now:', displayLanguageSelect.value);
+                if (normalizedLanguage) {
+                    displayLanguageSelect.value = normalizedLanguage;
+                }
+                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
             })();
 
             // Save language on change
@@ -1346,6 +1372,11 @@
                 }
 
                 cacheKeys.forEach(key => localStorage.removeItem(key));
+
+                // Also clear language availability cache so new languages are detected
+                localStorage.removeItem('JE_available_languages');
+                localStorage.removeItem('JE_available_languages_ts');
+
                 JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
                 setTimeout(() => window.location.reload(), 2000);
                 resetAutoCloseTimer();
