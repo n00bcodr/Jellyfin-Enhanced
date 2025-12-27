@@ -5,6 +5,18 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr API:';
     const api = {};
 
+    // TMDB proxy helper
+    async function tmdbGet(path) {
+        return ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`),
+            headers: {
+                'X-Jellyfin-User-Id': ApiClient.getCurrentUserId()
+            },
+            dataType: 'json'
+        });
+    }
+
     /**
      * Performs a GET request to the Jellyseerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/search?query=...').
@@ -69,6 +81,50 @@
             console.error(`${logPrefix} Search failed for query "${query}":`, error);
             return { results: [] };
         }
+    };
+
+    /**
+     * Fetches collection information for a movie from TMDB via proxy
+     * @param {number} tmdbId
+     * @returns {Promise<{id:number,name:string,posterPath?:string,backdropPath?:string}|null>}
+     */
+    api.fetchMovieCollection = async function(tmdbId) {
+        try {
+            const res = await tmdbGet(`/movie/${tmdbId}`);
+            const belongs = res?.belongs_to_collection || res?.belongsToCollection;
+            if (belongs && (belongs.id || belongs.tmdbId)) {
+                return {
+                    id: belongs.id || belongs.tmdbId,
+                    name: belongs.name,
+                    posterPath: belongs.poster_path || belongs.posterPath,
+                    backdropPath: belongs.backdrop_path || belongs.backdropPath
+                };
+            }
+            return null;
+        } catch (error) {
+            console.debug(`${logPrefix} No collection found for movie ${tmdbId}:`, error);
+            return null;
+        }
+    };
+
+    /**
+     * Adds collection membership information to movie items in search results
+     * @param {Array} results
+     * @returns {Promise<Array>}
+     */
+    api.addCollections = async function(results) {
+        const movieResults = (results || []).filter(item => item.mediaType === 'movie');
+        await Promise.all(movieResults.map(async (movie) => {
+            try {
+                const collection = await api.fetchMovieCollection(movie.id);
+                if (collection) {
+                    movie.collection = collection;
+                }
+            } catch (e) {
+                // ignore per-movie errors
+            }
+        }));
+        return results;
     };
 
     /**
@@ -588,6 +644,34 @@
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch recommended TV shows for TMDB ID ${tmdbId}:`, error);
             return { results: [], page: 1, totalPages: 0, totalResults: 0 };
+        }
+    };
+
+    /**
+     * Fetches detailed information for a specific movie from Jellyseerr.
+     * @param {number} tmdbId - The TMDB ID of the movie.
+     * @returns {Promise<object|null>}
+     */
+    api.fetchMovieDetails = async function(tmdbId) {
+        try {
+            return await get(`/movie/${tmdbId}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch movie details for TMDB ID ${tmdbId}:`, error);
+            return null;
+        }
+    };
+
+    /**
+     * Fetches collection details from Jellyseerr.
+     * @param {number} collectionId - The TMDB collection ID.
+     * @returns {Promise<object|null>}
+     */
+    api.fetchCollectionDetails = async function(collectionId) {
+        try {
+            return await get(`/collection/${collectionId}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch collection details for ID ${collectionId}:`, error);
+            return null;
         }
     };
 

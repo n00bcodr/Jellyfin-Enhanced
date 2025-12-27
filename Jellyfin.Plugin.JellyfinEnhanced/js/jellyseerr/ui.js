@@ -250,6 +250,12 @@
             .layout-mobile .jellyseerr-media-badge { font-size: 0.8em !important; }
             .jellyseerr-media-badge-movie { background-color: rgba(59, 130, 246, .9); box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 8px 24px rgba(59,130,246,.25); }
             .jellyseerr-media-badge-series { background-color: rgba(243, 51, 214, .9); box-shadow: 0 0 0 1px rgba(236,72,153,.35), 0 8px 24px rgba(236,72,153,.25); }
+            .jellyseerr-media-badge-collection { background-color: rgba(16, 185, 129, .9); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); }
+            .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }
+            .cardImageContainer:has(.jellyseerr-elsewhere-icons:not(.has-icons)) .jellyseerr-collection-badge { bottom: 10px; }
+            .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }
+            .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }
+            .jellyseerr-collection-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 0; transform: translateY(6px); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; align-items: flex-end; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
             .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
             .jellyseerr-card .cardScalable:hover .jellyseerr-overview, .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview, .jellyseerr-card.is-touch .jellyseerr-overview { opacity: 1; }
@@ -485,6 +491,18 @@
             .jellyseerr-inline-progress-bar { height: .5rem; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: .5rem; }
             .jellyseerr-inline-progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.3s ease; border-radius: 3px; }
             .jellyseerr-inline-progress-text { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
+            .jellyseerr-collection-list { display: grid; gap: 4px; }
+            .jellyseerr-collection-header-row { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 12px 20px; background: rgba(51, 65, 85, 0.3); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; margin-bottom: 8px; font-weight: 600; color: #e2e8f0; }
+            .jellyseerr-collection-header-row .jellyseerr-collection-checkbox { cursor: pointer; }
+            .jellyseerr-collection-header-label { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #cbd5e1; }
+            .jellyseerr-collection-checkbox { width: 20px; height: 20px; accent-color: #4f46e5; border-radius: 4px; cursor: pointer; }
+            .jellyseerr-collection-checkbox:disabled { opacity: 0.4; cursor: not-allowed; }
+            .jellyseerr-collection-movie-row { display: grid; grid-template-columns: 40px 46px 1fr auto; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 8px; transition: all 0.2s ease; }
+            .jellyseerr-collection-movie-row:hover:not(:has(input:disabled)) { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); }
+            .jellyseerr-collection-movie-poster { width: 100%; height: 69px; object-fit: cover; border-radius: 4px; }
+            .jellyseerr-collection-movie-details { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+            .jellyseerr-collection-movie-details .title { font-weight: 600; color: #e2e8f0; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .jellyseerr-collection-movie-details .year { font-size: 0.85rem; color: #94a3b8; }
             .jellyseerr-modal-footer { padding: 20px 24px; background: rgba(15, 23, 42, 0.3); border-top: 1px solid rgba(51, 65, 85, 0.3); display: flex; gap: 12px; justify-content: flex-end; flex-shrink: 0; }
             .jellyseerr-modal-button { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 0.875rem; transition: all 0.2s ease; min-width: 120px; }
             .jellyseerr-modal-button:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -823,8 +841,10 @@
         const button = card.querySelector('.jellyseerr-request-button');
         configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
         addMediaTypeBadge(card, item);
+        // If movie belongs to a collection, show a collection badge that opens the modal
+        addCollectionMembershipBadge(card, item);
 
-        if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled) {
+        if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
             fetchProviderIcons(card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
         }
         return card;
@@ -919,7 +939,9 @@
             return;
         }
 
-        if (item.mediaType === 'tv') {
+        if (item.mediaType === 'collection') {
+            configureCollectionButton(button, item);
+        } else if (item.mediaType === 'tv') {
             button.dataset.searchResultItem = JSON.stringify(item);
             button.classList.add('jellyseerr-button-tv');
             if (item.mediaInfo) button.dataset.mediaInfo = JSON.stringify(item.mediaInfo);
@@ -929,6 +951,20 @@
         } else {
             configureMovieButton(button, item);
         }
+    }
+
+    /**
+     * Configures button for collections.
+     * @param {HTMLElement} button - Button element.
+     * @param {Object} item - Collection item data.
+     */
+    function configureCollectionButton(button, item) {
+        button.dataset.searchResultItem = JSON.stringify(item);
+        button.dataset.collectionId = item.id;
+        button.innerHTML = `${icons.request}<span>Request Collection</span>`;
+        button.className = 'jellyseerr-request-button emby-button';
+        button.classList.add('button-submit', 'jellyseerr-button-request', 'jellyseerr-button-collection');
+        button.disabled = false;
     }
 
     /**
@@ -1166,7 +1202,7 @@
      * @param {Object} item - Media item data.
      */
     function addMediaTypeBadge(card, item) {
-        if (item.mediaType === 'movie' || item.mediaType === 'tv') {
+        if (item.mediaType === 'movie' || item.mediaType === 'tv' || item.mediaType === 'collection') {
             const imageContainer = card.querySelector('.cardImageContainer');
             if (imageContainer) {
                 const badge = document.createElement('div');
@@ -1174,14 +1210,36 @@
                 if (item.mediaType === 'movie') {
                     badge.classList.add('jellyseerr-media-badge-movie');
                     badge.textContent = JE.t('jellyseerr_card_badge_movie');
-                } else {
+                } else if (item.mediaType === 'tv') {
                     badge.classList.add('jellyseerr-media-badge-series');
                     badge.textContent = JE.t('jellyseerr_card_badge_series');
+                } else {
+                    badge.classList.add('jellyseerr-media-badge-collection');
+                    badge.textContent = JE.t('jellyseerr_card_badge_collection');
                 }
                 imageContainer.appendChild(badge);
             }
         }
     }
+
+    // Adds a small badge indicating the movie belongs to a collection; clicking opens the request modal
+    function addCollectionMembershipBadge(card, item) {
+        if (!item.collection || item.mediaType !== 'movie') return;
+        const imageContainer = card.querySelector('.cardImageContainer');
+        if (!imageContainer) return;
+        const badge = document.createElement('div');
+        badge.className = 'jellyseerr-collection-badge';
+        badge.innerHTML = `<span class="material-icons">collections</span><span>${item.collection.name || JE.t('jellyseerr_card_badge_collection')}</span>`;
+        badge.title = `Part of ${item.collection.name || 'collection'}`;
+        badge.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item);
+        });
+        imageContainer.appendChild(badge);
+    }
+
+
 
     /**
      * Shows the advanced request modal for movies.
@@ -1191,10 +1249,10 @@
      */
     ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
+        const { requestMedia, fetchAdvancedRequestData, fetchMovieDetails } = JE.jellyseerrAPI;
 
         const bodyHtml = createAdvancedOptionsHTML('movie');
-        const { modalElement, show } = create({
+        const { modalElement, show, close } = create({
             title: JE.t('jellyseerr_modal_title_movie'),
             subtitle: title,
             bodyHtml,
@@ -1238,6 +1296,8 @@
             console.error(`${logPrefix} Failed to load advanced options:`, error);
             JE.toast('Failed to load server options', 3000);
         }
+
+
     };
 
     /**
@@ -1480,6 +1540,200 @@
             }
         });
     }
+
+    /**
+     * Shows a modal for requesting a collection (all movies in a TMDB collection).
+     * @param {number} collectionId - The TMDB collection ID.
+     * @param {string} collectionName - The name of the collection.
+     * @param {object} searchResultItem - Optional search result item data.
+     */
+    ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null) {
+        const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
+        const { fetchCollectionDetails, requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
+
+        // Fetch collection details
+        let collectionDetails;
+        try {
+            collectionDetails = await fetchCollectionDetails(collectionId);
+        } catch (error) {
+            JE.toast(JE.t('jellyseerr_toast_collection_fetch_failed'), 4000);
+            return;
+        }
+
+        if (!collectionDetails?.parts || collectionDetails.parts.length === 0) {
+            JE.toast(JE.t('jellyseerr_toast_no_movies_in_collection'), 4000);
+            return;
+        }
+
+        const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
+
+        // Create checkbox list of movies in the collection with posters and status badges
+        const movieListHtml = collectionDetails.parts.map(movie => {
+            const status = movie.mediaInfo?.status || 1; // 1 = not available
+            const isAvailable = status === 5;
+            const isRequested = status === 2 || status === 3;
+            const isProcessing = status === 3;
+            const isPartiallyAvailable = status === 4;
+            const isDisabled = isAvailable || isRequested;
+
+            let statusClass = 'not-requested';
+            let statusText = JE.t('jellyseerr_season_status_not_requested') || 'Not Requested';
+
+            if (isAvailable) {
+                statusClass = 'available';
+                statusText = JE.t('jellyseerr_season_status_available') || 'Available';
+            } else if (isProcessing) {
+                statusClass = 'processing';
+                statusText = JE.t('jellyseerr_season_status_processing') || 'Processing';
+            } else if (isRequested) {
+                statusClass = 'pending';
+                statusText = JE.t('jellyseerr_season_status_pending') || 'Pending';
+            } else if (isPartiallyAvailable) {
+                statusClass = 'partially-available';
+                statusText = JE.t('jellyseerr_season_status_partially_available') || 'Partially Available';
+            }
+
+            const year = movie.releaseDate ? new Date(movie.releaseDate).getFullYear() : '';
+            const poster = movie.posterPath
+                ? `https://image.tmdb.org/t/p/w92${movie.posterPath}`
+                : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
+
+            return `
+                <div class="jellyseerr-collection-movie-row">
+                    <input type="checkbox"
+                           class="jellyseerr-collection-checkbox"
+                           id="movie-${movie.id}"
+                           data-tmdb-id="${movie.id}"
+                           ${isDisabled ? 'disabled' : 'checked'}>
+                    <img src="${poster}" alt="${movie.title}" class="jellyseerr-collection-movie-poster">
+                    <div class="jellyseerr-collection-movie-details">
+                        <div class="title">${movie.title}</div>
+                        <div class="year">${year}</div>
+                    </div>
+                    <div class="jellyseerr-season-status jellyseerr-season-status-${statusClass}">${statusText}</div>
+                </div>
+            `;
+        }).join('');
+
+        const bodyHtml = `
+            <div class="jellyseerr-collection-list" style="max-height: 600px; overflow-y: auto;">
+                <div class="jellyseerr-collection-header-row">
+                    <input type="checkbox" class="jellyseerr-collection-checkbox" id="jellyseerr-select-all-movies">
+                    <label class="jellyseerr-collection-header-label" for="jellyseerr-select-all-movies">${JE.t('jellyseerr_select_all_movies') || 'Select All'}</label>
+                    <div></div>
+                    <div></div>
+                </div>
+                ${movieListHtml}
+            </div>
+            ${showAdvanced ? createAdvancedOptionsHTML('movie') : ''}
+        `;
+
+        const modalInstance = create({
+            title: JE.t('jellyseerr_modal_request_collection') || 'Request Collection',
+            subtitle: collectionName,
+            bodyHtml,
+            backdropPath: collectionDetails.backdrop_path || collectionDetails.backdropPath,
+            buttonText: JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies',
+            onSave: async (modalEl, requestBtn, closeFn) => {
+                requestBtn.disabled = true;
+                requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting') || 'Requesting'}<span class="jellyseerr-button-spinner"></span>`;
+
+                let settings = {};
+                if (showAdvanced) {
+                    const server = modalEl.querySelector('#movie-server').value;
+                    const quality = modalEl.querySelector('#movie-quality').value;
+                    const folder = modalEl.querySelector('#movie-folder').value;
+                    if (!server || !quality || !folder) {
+                        JE.toast(JE.t('jellyseerr_modal_toast_options_missing') || 'Please select all options', 3000);
+                        requestBtn.disabled = false;
+                        requestBtn.textContent = JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies';
+                        return;
+                    }
+                    settings = { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] };
+                }
+
+                try {
+                    const selectedMovies = Array.from(modalEl.querySelectorAll('.jellyseerr-collection-movie-row .jellyseerr-collection-checkbox:checked:not(:disabled)'))
+                        .map(cb => parseInt(cb.dataset.tmdbId));
+
+                    if (selectedMovies.length === 0) {
+                        JE.toast(JE.t('jellyseerr_modal_toast_select_movie') || 'Please select at least one movie', 3000);
+                        requestBtn.disabled = false;
+                        requestBtn.textContent = JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies';
+                        return;
+                    }
+
+                    let successCount = 0;
+                    for (const tmdbId of selectedMovies) {
+                        try {
+                            await requestMedia(tmdbId, 'movie', settings, false, searchResultItem);
+                            successCount++;
+                        } catch (error) {
+                            console.error(`Failed to request movie ${tmdbId}:`, error);
+                        }
+                    }
+
+                    JE.toast(`${JE.t('jellyseerr_toast_collection_requested') || 'Requested'} ${successCount} of ${selectedMovies.length} ${JE.t('jellyseerr_toast_movies') || 'movies'}`, 4000);
+                    closeFn();
+
+                    // Refresh search results
+                    setTimeout(() => {
+                        const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
+                        if (query) {
+                            const mainController = JE.jellyseerr;
+                            if (mainController) {
+                                mainController.fetchAndRenderResults(query);
+                            }
+                        }
+                    }, 1000);
+                } catch (error) {
+                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail') || 'Request failed', 4000);
+                    requestBtn.disabled = false;
+                    requestBtn.textContent = JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies';
+                }
+            }
+        });
+
+        // Populate advanced options if needed
+        if (showAdvanced) {
+            try {
+                const advancedData = await fetchAdvancedRequestData('movie');
+                populateAdvancedOptions(modalInstance.modalElement, advancedData, 'movie');
+            } catch (error) {
+                console.error('Failed to load advanced options:', error);
+            }
+        }
+
+        modalInstance.show();
+
+        // Add Select All checkbox functionality
+        const selectAllCheckbox = modalInstance.modalElement.querySelector('#jellyseerr-select-all-movies');
+        const movieList = modalInstance.modalElement.querySelector('.jellyseerr-collection-list');
+
+        if (selectAllCheckbox && movieList) {
+            const updateSelectAllState = () => {
+                const allCheckboxes = movieList.querySelectorAll('.jellyseerr-collection-movie-row .jellyseerr-collection-checkbox:not(:disabled)');
+                const checkedCount = movieList.querySelectorAll('.jellyseerr-collection-movie-row .jellyseerr-collection-checkbox:not(:disabled):checked').length;
+                selectAllCheckbox.checked = checkedCount > 0 && checkedCount === allCheckboxes.length;
+                selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < allCheckboxes.length;
+            };
+
+            selectAllCheckbox.addEventListener('change', () => {
+                const allCheckboxes = movieList.querySelectorAll('.jellyseerr-collection-movie-row .jellyseerr-collection-checkbox:not(:disabled)');
+                allCheckboxes.forEach(checkbox => {
+                    checkbox.checked = selectAllCheckbox.checked;
+                });
+            });
+
+            movieList.addEventListener('change', (e) => {
+                if (e.target.classList.contains('jellyseerr-collection-checkbox') && e.target.id !== 'jellyseerr-select-all-movies') {
+                    updateSelectAllState();
+                }
+            });
+
+            updateSelectAllState();
+        }
+    };
 
     /**
      * Updates existing Jellyseerr results in the DOM with fresh data.

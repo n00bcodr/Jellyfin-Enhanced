@@ -34,7 +34,7 @@
         const {
             addMainStyles, addSeasonModalStyles, updateJellyseerrIcon,
             renderJellyseerrResults, showMovieRequestModal, showSeasonSelectionModal,
-            hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults
+            showCollectionRequestModal, hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults
         } = JE.jellyseerrUI;
 
         /**
@@ -97,8 +97,57 @@
          */
         async function fetchAndRenderResults(query) {
             const data = await search(query);
-            if (data.results && data.results.length > 0) {
-                renderJellyseerrResults(data.results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+            let results = data.results || [];
+            if (JE.pluginConfig.ShowCollectionsInSearch !== false) {
+                try {
+                    results = await JE.jellyseerrAPI.addCollections(results);
+                } catch (e) {
+                    console.debug(`${logPrefix} Collection addition failed:`, e);
+                }
+
+                // Inject synthetic collection cards after first movie of each collection
+                try {
+                    const collectionsMap = new Map();
+                    const collectionPositions = new Map();
+
+                    // First pass: identify collections and their first occurrence
+                    for (let i = 0; i < results.length; i++) {
+                        const item = results[i];
+                        if (item.mediaType === 'movie' && item.collection && item.collection.id) {
+                            const key = String(item.collection.id);
+                            if (!collectionsMap.has(key)) {
+                                collectionsMap.set(key, {
+                                    id: item.collection.id,
+                                    mediaType: 'collection',
+                                    title: item.collection.name,
+                                    name: item.collection.name,
+                                    posterPath: item.collection.posterPath || null,
+                                    backdropPath: item.collection.backdropPath || null,
+                                    overview: `${item.collection.name} Collection`,
+                                    voteAverage: null,
+                                    releaseDate: null
+                                });
+                                collectionPositions.set(key, i);
+                            }
+                        }
+                    }
+
+                    // Second pass: insert collections after their first movie
+                    if (collectionsMap.size > 0) {
+                        const sortedCollections = Array.from(collectionPositions.entries())
+                            .sort((a, b) => b[1] - a[1]); // Sort by position descending
+
+                        for (const [collectionId, position] of sortedCollections) {
+                            const collectionCard = collectionsMap.get(collectionId);
+                            results.splice(position + 1, 0, collectionCard);
+                        }
+                    }
+                } catch (e) {
+                    console.debug(`${logPrefix} Failed injecting collections:`, e);
+                }
+            }
+            if (results.length > 0) {
+                renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
             }
         }
 
@@ -300,9 +349,15 @@
 
             const mediaType = button.dataset.mediaType;
             const tmdbId = button.dataset.tmdbId;
+            const collectionId = button.dataset.collectionId;
             const card = button.closest('.jellyseerr-card');
-            const titleText = card?.querySelector('.cardText-first bdi')?.textContent || (mediaType === 'movie' ? 'this movie' : 'this show');
+            const titleText = card?.querySelector('.cardText-first bdi')?.textContent || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
             const searchResultItem = button.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+
+            if (mediaType === 'collection' && collectionId) {
+                showCollectionRequestModal(collectionId, titleText, searchResultItem);
+                return;
+            }
 
             if (mediaType === 'tv') {
                 showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem);

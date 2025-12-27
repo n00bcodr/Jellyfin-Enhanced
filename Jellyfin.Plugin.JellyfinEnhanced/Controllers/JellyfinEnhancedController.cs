@@ -389,6 +389,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest("/api/v1/overrideRule", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/collection/{collectionId}")]
+        [Authorize]
+        public Task<IActionResult> GetCollection(int collectionId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/collection/{collectionId}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/user")]
         [Authorize]
         public Task<IActionResult> GetJellyseerrUsers([FromQuery] int take = 1000)
@@ -960,6 +967,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrEnabled,
                 config.JellyseerrShowReportButton,
                 config.JellyseerrEnable4KRequests,
+                config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseJellyseerrLinks,

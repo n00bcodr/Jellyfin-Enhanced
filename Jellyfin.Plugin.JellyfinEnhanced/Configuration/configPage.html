@@ -346,6 +346,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox" data-plugin-config/>
+                                    <span>Show Collections in Jellyseerr Search Results</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured in Elsewhere Settings</b></div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrUseJellyseerrLinks" is="emby-checkbox" type="checkbox"/>
                                     <span>Link result titles to Jellyseerr instead of TMDB</span>
                                 </label>
@@ -378,7 +385,7 @@
                                     <span>Show Streaming Providers on Jellyseerr Posters</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays icons of available streaming services (from your default region) on Jellyseerr Posters.<br>Requires TMDB API Key to be configured in Elsewhere Settings</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays icons of available streaming services (from your default region) on Jellyseerr Posters.<br><br><b>Requires TMDB API Key to be configured in Elsewhere Settings</b></div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -1017,6 +1024,7 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
+                document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrUseJellyseerrLinks').checked = config.JellyseerrUseJellyseerrLinks;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
@@ -1107,6 +1115,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
+            config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrUseJellyseerrLinks = document.querySelector('#jellyseerrUseJellyseerrLinks').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
