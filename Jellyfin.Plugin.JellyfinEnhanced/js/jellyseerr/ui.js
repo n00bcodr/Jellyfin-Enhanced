@@ -1034,10 +1034,17 @@
                     mainButtonClass = 'jellyseerr-button-pending';
                     mainButtonDisabled = true;
                 } else if (status === 3) {
-                    mainButtonText = JE.t('jellyseerr_btn_requested');
-                    mainButtonIcon = icons.requested;
-                    mainButtonClass = 'jellyseerr-button-pending';
-                    mainButtonDisabled = true;
+                    if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
+                        mainButtonText = JE.t('jellyseerr_btn_processing');
+                        mainButtonIcon = '';
+                        mainButtonClass = 'jellyseerr-button-processing';
+                        mainButtonDisabled = true;
+                    } else {
+                        mainButtonText = JE.t('jellyseerr_btn_requested');
+                        mainButtonIcon = icons.requested;
+                        mainButtonClass = 'jellyseerr-button-pending';
+                        mainButtonDisabled = true;
+                    }
                 } else if (status === 6) {
                     mainButtonText = JE.t('jellyseerr_btn_rejected');
                     mainButtonIcon = icons.cancel;
@@ -1054,10 +1061,15 @@
                 const mainButton = document.createElement('button');
                 mainButton.className = `jellyseerr-request-button emby-button button-submit ${mainButtonClass}`;
                 mainButton.disabled = mainButtonDisabled;
-                mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>`;
+                mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${mainButtonClass === 'jellyseerr-button-processing' ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
                 mainButton.dataset.tmdbId = item.id;
                 mainButton.dataset.mediaType = 'movie';
                 mainButton.dataset.searchResultItem = JSON.stringify(item);
+
+                // Add download progress hover if processing
+                if (status === 3 && (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0)) {
+                    addDownloadProgressHover(mainButton, item);
+                }
 
                 // Arrow button for 4K dropdown
                 const arrowButton = document.createElement('button');
