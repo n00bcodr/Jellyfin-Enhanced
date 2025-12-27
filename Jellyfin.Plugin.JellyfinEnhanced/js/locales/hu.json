@@ -195,6 +195,7 @@
     "remove_button_text": "Eltávolítás",
     "remove_button_removing": "Eltávolítás...",
     "jellyseerr_modal_request_selected": "Kiválasztott évad(ok) kérése",
+    "jellyseerr_modal_request_selected_movies": "Kiválasztott filmek kérése",
     "jellyseerr_report_issue_button": "Probléma bejelentése",
     "jellyseerr_report_unavailable_button": "Bejelentés nem érhető el",
     "jellyseerr_report_unavailable_toast": "A bejelentés nem elérhető erre az elemre (nincs TMDB egyezés)",

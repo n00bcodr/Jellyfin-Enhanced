@@ -195,6 +195,7 @@
     "remove_button_text": "Fjern",
     "remove_button_removing": "Fjerner...",
     "jellyseerr_modal_request_selected": "Anmod om valgte sæson(er)",
+    "jellyseerr_modal_request_selected_movies": "Anmod om valgte film",
     "jellyseerr_report_issue_button": "Anmeld problem",
     "jellyseerr_report_unavailable_button": "Anmeldelse ikke tilgængelig",
     "jellyseerr_report_unavailable_toast": "Anmeldelse er ikke tilgængelig for dette element (intet TMDB match)",

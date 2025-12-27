@@ -195,6 +195,7 @@
     "remove_button_text": "Ta bort",
     "remove_button_removing": "Tar bort...",
     "jellyseerr_modal_request_selected": "Begär valda säsong(er)",
+    "jellyseerr_modal_request_selected_movies": "Begär valda filmer",
     "jellyseerr_report_issue_button": "Rapportera problem",
     "jellyseerr_report_unavailable_button": "Rapportering inte tillgänglig",
     "jellyseerr_report_unavailable_toast": "Rapportering är inte tillgänglig för detta objekt (ingen TMDB-matchning)",

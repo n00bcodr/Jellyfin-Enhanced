@@ -195,6 +195,7 @@
     "remove_button_text": "Rimuovi",
     "remove_button_removing": "Rimozione...",
     "jellyseerr_modal_request_selected": "Richiedi stagione/i selezionata/e",
+    "jellyseerr_modal_request_selected_movies": "Richiedi film selezionati",
     "jellyseerr_report_issue_button": "Segnala problema",
     "jellyseerr_report_unavailable_button": "Segnalazione non disponibile",
     "jellyseerr_report_unavailable_toast": "La segnalazione non è disponibile per questo elemento (nessuna corrispondenza TMDB)",

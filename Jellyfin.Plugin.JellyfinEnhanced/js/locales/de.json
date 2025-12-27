@@ -195,6 +195,7 @@
     "remove_button_text": "Entfernen",
     "remove_button_removing": "Entfernen...",
     "jellyseerr_modal_request_selected": "Ausgewählte Staffel(n) anfordern",
+    "jellyseerr_modal_request_selected_movies": "Ausgewählte Filme anfordern",
     "jellyseerr_report_issue_button": "Problem melden",
     "jellyseerr_report_unavailable_button": "Meldung nicht verfügbar",
     "jellyseerr_report_unavailable_toast": "Die Meldung ist für diesen Artikel nicht verfügbar (keine TMDB-Übereinstimmung)",

@@ -195,6 +195,7 @@
     "remove_button_text": "Remover",
     "remove_button_removing": "Removendo...",
     "jellyseerr_modal_request_selected": "Solicitar Temporada(s) Selecionada(s)",
+    "jellyseerr_modal_request_selected_movies": "Solicitar filmes selecionados",
     "jellyseerr_report_issue_button": "Reportar problema",
     "jellyseerr_report_unavailable_button": "Relatório Indisponível",
     "jellyseerr_report_unavailable_toast": "O relatório não está disponível para este item (sem correspondência TMDB)",

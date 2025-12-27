@@ -195,6 +195,7 @@
     "remove_button_text": "Удалить",
     "remove_button_removing": "Удаление...",
     "jellyseerr_modal_request_selected": "Запросить выбранные сезоны",
+    "jellyseerr_modal_request_selected_movies": "Запросить выбранные фильмы",
     "jellyseerr_report_issue_button": "Сообщить о проблеме",
     "jellyseerr_report_unavailable_button": "Отчет недоступен",
     "jellyseerr_report_unavailable_toast": "Отчет недоступен для этого элемента (нет совпадения TMDB)",

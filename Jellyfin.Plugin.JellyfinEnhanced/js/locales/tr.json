@@ -195,6 +195,7 @@
     "remove_button_text": "Kaldır",
     "remove_button_removing": "Kaldırılıyor...",
     "jellyseerr_modal_request_selected": "Seçilen Sezon(lar)ı İste",
+    "jellyseerr_modal_request_selected_movies": "Seçilen Filmleri İste",
     "jellyseerr_report_issue_button": "Sorunu Bildir",
     "jellyseerr_report_unavailable_button": "Bildirim Kullanılamıyor",
     "jellyseerr_report_unavailable_toast": "Bu öğe için bildirim kullanılamıyor (TMDB eşleşmesi yok)",
