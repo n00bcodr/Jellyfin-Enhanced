@@ -120,6 +120,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LetterboxdEnabled = false;
             ShowLetterboxdLinkAsText = false;
 
+            // Metadata Icons (Druidblack)
+            MetadataIconsEnabled = false;
+
             // Auto Season Request Settings
             AutoSeasonRequestEnabled = false;
             AutoSeasonRequestThresholdValue = 2; // Number of episodes remaining to trigger request
@@ -217,6 +220,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }
         public bool ShowLetterboxdLinkAsText { get; set; }
+
+        // Metadata Icons (Druidblack)
+        public bool MetadataIconsEnabled { get; set; }
 
         // Auto Season Request Settings
         public bool AutoSeasonRequestEnabled { get; set; }

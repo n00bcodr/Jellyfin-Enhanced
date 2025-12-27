@@ -581,7 +581,6 @@
                         </div>
                     </fieldset>
                 </div>
-                </div>
                  <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>External Links</h3></legend>
@@ -600,6 +599,16 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, shows "Letterboxd" as text instead of the Letterboxd icon.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="metadataIconsEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Metadata Icons (by Druidblack)</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Shows metadata icons instead of text. From <a class="sectionTitle" target="_blank" href="https://github.com/Druidblack/jellyfin-icon-metadata">Druidblack/jellyfin-icon-metadata</a>.<br>
+                                When enabled, links from the plugin will also use icons instead of text (Letterboxd, *arr Links.).
+                            </div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -623,7 +632,6 @@
                                     If you are on Jellyfin version 10.11 and you want the default Jellyfin Banner - Change the splash screen URL to "<strong>/web/banner-light.b113d4d1c6c07fcb73f0.png</strong>"
                                 </div>
                             </div>
-                            </details>
                         </div>
                     </fieldset>
                 </div>
@@ -1067,6 +1075,16 @@
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
                 document.querySelector('#showLetterboxdLinkAsText').checked = config.ShowLetterboxdLinkAsText;
+                const metadataIconsChk = document.querySelector('#metadataIconsEnabled');
+                if (metadataIconsChk) metadataIconsChk.checked = !!config.MetadataIconsEnabled;
+                // Tie icon display settings
+                if (config.MetadataIconsEnabled) {
+                    // Force icon display where applicable
+                    const showLbText = document.querySelector('#showLetterboxdLinkAsText');
+                    const showArrText = document.querySelector('#showArrLinksAsText');
+                    if (showLbText) showLbText.checked = false;
+                    if (showArrText) showArrText.checked = false;
+                }
 
 
                 Dashboard.hideLoadingMsg();
@@ -1158,6 +1176,12 @@
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
             config.ShowLetterboxdLinkAsText = document.querySelector('#showLetterboxdLinkAsText').checked;
+            config.MetadataIconsEnabled = document.querySelector('#metadataIconsEnabled').checked;
+            // If metadata icons are enabled, ensure icons are shown for Letterboxd and *arr links
+            if (config.MetadataIconsEnabled) {
+                config.ShowLetterboxdLinkAsText = false;
+                config.ShowArrLinksAsText = false;
+            }
 
             return config;
         }

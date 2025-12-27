@@ -89,6 +89,23 @@
     }
 
     /**
+     * Injects Druidblack metadata icons CSS.
+     * @param {boolean} enabled
+     */
+    function injectMetadataIcons(enabled) {
+        const existing = document.getElementById('metadataIconsCss');
+        if (enabled && !existing) {
+            const link = document.createElement('link');
+            link.id = 'metadataIconsCss';
+            link.rel = 'stylesheet';
+            link.href = 'https://cdn.jsdelivr.net/gh/Druidblack/jellyfin-icon-metadata/public-icon.css';
+            document.head.appendChild(link);
+        } else if (!enabled && existing) {
+            existing.remove();
+        }
+    }
+
+    /**
      * Loads the appropriate language file based on the user's settings.
      * Attempts to fetch from GitHub first (with caching), falls back to bundled translations.
      * @returns {Promise<object>} A promise that resolves to the translations object.
@@ -96,7 +113,7 @@
     async function loadTranslations() {
         const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
         const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-        
+
         try {
             // Get plugin version first
             let pluginVersion = window.JellyfinEnhanced?.pluginVersion;
@@ -180,7 +197,7 @@
 
                 if (githubResponse.ok) {
                     const translations = await githubResponse.json();
-                    
+
                     // Cache the successful fetch
                     try {
                         localStorage.setItem(cacheKey, JSON.stringify(translations));
@@ -189,7 +206,7 @@
                     } catch (storageError) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to cache translations (localStorage full?)', storageError);
                     }
-                    
+
                     return translations;
                 }
 
@@ -202,7 +219,7 @@
                         cache: 'no-cache',
                         headers: { 'Accept': 'application/json' }
                     });
-                    
+
                     if (englishResponse.ok) {
                         const translations = await englishResponse.json();
                         try {
@@ -221,7 +238,7 @@
                 } else if (githubResponse.status >= 500) {
                     console.warn(`🪼 Jellyfin Enhanced: GitHub server error (${githubResponse.status}), using bundled fallback`);
                 }
-                
+
                 throw new Error(`GitHub fetch failed with status ${githubResponse.status}`);
             } catch (githubError) {
                 console.warn('🪼 Jellyfin Enhanced: GitHub fetch failed, falling back to bundled translations:', githubError.message);
@@ -367,6 +384,13 @@
             JE.translations = translations || {};
             JE.t = window.JellyfinEnhanced.t; // Ensure the real function is assigned
             await loadPrivateConfig();
+
+            // Inject metadata icons CSS if enabled
+            try {
+                injectMetadataIcons(!!JE.pluginConfig?.MetadataIconsEnabled);
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Failed to inject Metadata icons CSS', e);
+            }
 
             // Stage 2: Fetch user-specific settings
             const userId = ApiClient.getCurrentUserId();

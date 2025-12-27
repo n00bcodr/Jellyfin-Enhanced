@@ -991,6 +991,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Letterboxd Settings
                 config.LetterboxdEnabled,
                 config.ShowLetterboxdLinkAsText,
+                // Metadata Icons (Druidblack)
+                config.MetadataIconsEnabled,
 
             });
         }
