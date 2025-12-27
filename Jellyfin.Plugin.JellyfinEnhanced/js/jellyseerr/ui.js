@@ -961,7 +961,7 @@
     function configureCollectionButton(button, item) {
         button.dataset.searchResultItem = JSON.stringify(item);
         button.dataset.collectionId = item.id;
-        button.innerHTML = `${icons.request}<span>Request Collection</span>`;
+        button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_modal_request_collection')}</span>`;
         button.className = 'jellyseerr-request-button emby-button';
         button.classList.add('button-submit', 'jellyseerr-button-request', 'jellyseerr-button-collection');
         button.disabled = false;
