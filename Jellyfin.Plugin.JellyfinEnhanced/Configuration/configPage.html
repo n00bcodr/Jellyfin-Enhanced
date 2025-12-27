@@ -22,7 +22,7 @@
                 <button class="jellyfin-tab-button active" data-tab="enhanced" style="background: none; border: none; color: var(--primary-accent-color, #fff); cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid var(--primary-accent-color, #fff);"><h3>Enhanced Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3><img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" alt="Jellyseerr" style="width: 20px; height: 20px; margin-right: 8px; vertical-align: middle; filter: brightness(0.8);">Jellyseerr Settings</h3></button>
-                <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Links</h3></button>
+                <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="extras" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Other Settings</h3></button>
             </div>
             <form id="JellyfinEnhancedForm">
@@ -465,7 +465,7 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">
-                                When enabled, items from each user's Jellyseerr watchlist will be automatically synced to their Jellyfin watchlist.
+                                When enabled, items from each user's Jellyseerr watchlist will be automatically synced to their Jellyfin watchlist. <br><br>
                                 Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Jellyseerr to Jellyfin".
                             </div>
                         </div>
@@ -475,27 +475,43 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Configuration</h3></legend>
                         <div class="configSection">
+                            <div class="inputContainer"  style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="sonarrUrl">Sonarr URL</label>
+                                <input id="sonarrUrl" is="emby-input" name="sonarrUrl" type="text" placeholder="e.g., http://192.168.100.100:8989"/>
+                            </div>
+                            <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="radarrUrl">Radarr URL</label>
+                                <input id="radarrUrl" is="emby-input" name="radarrUrl" type="text" placeholder="e.g., http://192.168.100.100:7878"/>
+                            </div>
+                            <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="bazarrUrl">Bazarr URL</label>
+                                <input id="bazarrUrl" is="emby-input" name="bazarrUrl" type="text" placeholder="e.g., http://192.168.100.100:6767"/>
+                                <div class="fieldDescription">Note: This links to the main movies/series page as Bazarr does not support direct links.</div>
+                            </div>
+                            <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
+                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
+                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
+                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
+                                <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key"/>
+                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>*arr Links</h3></legend>
+                        <div class="configSection">
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="arrLinksEnabled" is="emby-checkbox" type="checkbox"/>
                                     <span>Enable *arr Links</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Show Sonarr, Radarr, and Bazarr links* of the items on item detail pages for quick access. Only for admins.<br> If no URL is added link is not shown.</div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="sonarrUrl">Sonarr URL</label>
-                                <input id="sonarrUrl" is="emby-input" name="sonarrUrl" type="text" placeholder="e.g., http://192.168.100.100:8989"/>
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrUrl">Radarr URL</label>
-                                <input id="radarrUrl" is="emby-input" name="radarrUrl" type="text" placeholder="e.g., http://192.168.100.100:7878"/>
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="bazarrUrl">Bazarr URL</label>
-                                <input id="bazarrUrl" is="emby-input" name="bazarrUrl" type="text" placeholder="e.g., http://192.168.100.100:6767"/>
-                                <div class="fieldDescription">Note: This links to the main movies/series page as Bazarr does not support direct links.</div>
-                            </div>
-                            <div class="checkboxContainer" style="margin-top: 1em;">
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. Only for admins.<br> If no URL is added above, the links are not shown.</div>
+                            <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label>
                                     <input id="showArrLinksAsText" is="emby-checkbox" type="checkbox"/>
                                     <span>Show links as text instead of icons</span>
@@ -515,24 +531,14 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">
                                 Fetches all tags from Radarr and Sonarr instances defined above and adds them as Jellyfin tags.
                                 <br><br>
-                                <strong>Note:</strong> You need to configure the API keys below and run the sync task from Dashboard > Scheduled Tasks > "Sync Tags from *arr to Jellyfin"
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
-                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
-                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
-                                <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key"/>
-                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
+                                <strong>Note:</strong> Run the sync task from Dashboard > Scheduled Tasks > "Sync Tags from *arr to Jellyfin" and configure how often it should run.
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="arrTagsPrefix">Tag Prefix</label>
                                 <input id="arrTagsPrefix" is="emby-input" name="arrTagsPrefix" type="text" placeholder="JE Arr Tag: "/>
                                 <div class="fieldDescription">Prefix to add before each tag (e.g., "JE Arr Tag: " will result in "JE Arr Tag: 1 - Jellyfish")</div>
                                 <br>
-                                <strong>Note:</strong> It is crucial to keep the tag prefix constant, it is used to remove old tags before re-adding fresh ones from the *arrs during the scheduled task. Having no prefix will remove all the tags from your items! <br> You can change it from the default, but make sure it is unique.
+                                <strong>Warning:</strong> Keep the tag prefix constant - it's used to remove old tags before syncing new ones. Having no prefix will remove ALL tags! You can change it, but make sure it's unique.
                             </div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
@@ -574,6 +580,7 @@
                             </div>
                         </div>
                     </fieldset>
+                </div>
                 </div>
                  <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
