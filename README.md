@@ -40,6 +40,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
         - [Icon States](#icon-states)
       - [How It Works?](#how-it-works)
     - [Jellyseerr Report Issue](#jellyseerr-report-issue)
+    - [Jellyseerr Item Details](#jellyseerr-item-details)
   - [🌐 Internationalization & Translations](#-internationalization--translations)
   - [🎨 Custom Styling](#-custom-styling)
     - [Pause Screen CSS](#pause-screen-css)
@@ -150,10 +151,11 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🌐 Language Tags:** Displays available audio languages as flags on posters.
-- **⭐ Rating Tags:** See IMDb ratings at a glance directly on posters in your library.
+- **⭐ Rating Tags:** See IMDb ratings at a glance directly on posters in your library. Also includes an optional on-screen display (OSD) rating during playback.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 - **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
+- **🎬 Jellyseerr Item Details:** View Jellyseerr Recommended and Similar items directly on the item details page, with the option to request media and exclude items already in your library.
 
 <br>
 
@@ -312,6 +314,38 @@ Report issues (video, audio, subtitles, or other) directly to your configured Je
 - Season/episode selectors prefer local Jellyfin data so selections reflect what is actually present on your server.
 
 #### For troubleshooting and proxy endpoints, see the **Jellyseerr API Endpoints** [section](#how-it-works) above.
+
+<p align="center">
+--------------------------------------------------
+</p>
+
+## Jellyseerr Item Details <a name="jellyseerr-item-details"></a>
+
+On any movie or TV show detail page, the plugin can display **Recommended** and **Similar** sections powered by Jellyseerr, allowing users to discover related content and request directly from these sections.
+
+#### Features
+
+- **Recommended & Similar Sections:** View items that Jellyseerr recommends or that are similar to the current item.
+- **Direct Requests:** Request media straight from the recommendation sections with full support for 4K, TV season selections, and Jellyseerr override rules.
+- **Library Awareness:** Optionally exclude items that are already in your Jellyfin library from the recommendation display.
+- **Request Status:** Real-time status indicators show whether items have been requested, are pending, or are available.
+
+#### Setup
+
+To enable this feature:
+
+1. Navigate to **Dashboard > Plugins > Jellyfin Enhanced**.
+2. Go to the **Jellyseerr Settings** tab.
+3. Check the **Show Jellyseerr Recommendations and Similar items on item details** box.
+4. **(Optional)** Enable **"Exclude already in library items"** to hide items from the recommendations that are already present in your Jellyfin library.
+5. Ensure the main Jellyseerr integration is configured with valid URLs and API key.
+6. Click **Save**.
+
+Now when you open any movie or TV show detail page, you'll see Recommended and Similar sections populated from Jellyseerr (if available for that item).
+
+<p align="center">
+--------------------------------------------------
+</p>
 
 ## 🔧 Customization & Advanced Use
 
@@ -1088,7 +1122,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── fr.json
     │   ├── hu.json
     │   ├── it.json
+    │   ├── pr.json
     │   ├── pt.json
+    │   ├── ru.json
     │   ├── sv.json
     │   └── tr.json
     ├── enhanced/
