@@ -194,16 +194,24 @@
         getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
 
         const getIconSpan = (progress) => {
-            if (progress < 5)
-                return `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">circle</span> ${progress}%`;
-            if (progress >= 95)
-                return `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">check_circle</span> ${progress}%`;
+            const circumference = 2 * Math.PI * 8; // radius = 8
+            const offset = circumference - (progress / 100) * circumference;
 
-            const supportedClockLoaderValues = [10, 20, 40, 60, 80, 90] // only god knows where the other numbers went
-            const closestValue = supportedClockLoaderValues.reduce((prev, curr) =>
-                Math.abs(curr - progress) < Math.abs(prev - progress) ? curr : prev
-            );
-            return `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">clock_loader_${closestValue}</span> ${progress}%`;
+            if (progress >= 100) {
+                // Check circle for fully completed items
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" style="margin-right: 0.3em; display: inline-block; vertical-align: middle;">
+                    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+                    <path d="M9.5 15.5l-3-3 1.4-1.4L9.5 12.7l5.6-5.6 1.4 1.4z" fill="currentColor"/>
+                </svg> ${progress}%`;
+            }
+
+            // For all other progress values (0-99%), use custom SVG
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" style="margin-right: 0.3em; display: inline-block; vertical-align: middle;">
+                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2" opacity="0.2"/>
+                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"
+                    style="stroke-dasharray: ${circumference}; stroke-dashoffset: ${offset}; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 0.3s ease;"/>
+            </svg>`;
+            return `${svg} ${progress}%`;
         }
 
         // Helper to render the 0 state
