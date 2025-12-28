@@ -61,45 +61,60 @@
      * @returns {HTMLElement|null} - Popover element or null if no download data.
      */
     function fillHoverPopover(item) {
-        const downloadStatus = item.mediaInfo?.downloadStatus?.[0] || item.mediaInfo?.downloadStatus4k?.[0];
-        if (!downloadStatus) {
+        const allDownloads = [
+            ...(item.mediaInfo?.downloadStatus || []),
+            ...(item.mediaInfo?.downloadStatus4k || [])
+        ];
+
+        if (allDownloads.length === 0) {
             console.debug(`${logPrefix} No download status found`);
-            return null;
-        }
-        const hasValidSizeData = (typeof downloadStatus.size === 'number' &&
-                                typeof downloadStatus.sizeLeft === 'number' &&
-                                downloadStatus.size > 0);
-
-        const isQueued = (downloadStatus.status && downloadStatus.status.toLowerCase() === 'queued');
-
-        if (!hasValidSizeData && !isQueued) {
-            console.debug(`${logPrefix} No valid download status or queued status`);
             return null;
         }
 
         const popover = ensureHoverPopover();
+        let popoverHTML = '';
 
-        if (isQueued || downloadStatus.size <= 0) {
-            // For queued items, show 0% progress
-            popover.innerHTML = `
-                <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
-                <div class="jellyseerr-hover-progress"><div class="bar" style="width:0%;"></div></div>
-                <div class="row">
-                    <div>0%</div>
-                    <div class="status">Queued</div>
-                </div>`;
-        } else {
-            // For downloading items, show actual progress
-            const percentage = Math.max(0, Math.min(100, Math.round(100 * (1 - downloadStatus.sizeLeft / downloadStatus.size))));
-            popover.innerHTML = `
-                <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
-                <div class="jellyseerr-hover-progress"><div class="bar" style="width:${percentage}%;"></div></div>
-                <div class="row">
-                    <div>${percentage}%</div>
-                    <div class="status">${(downloadStatus.status || 'downloading').toString().replace(/^./, c => c.toUpperCase())}</div>
-                </div>`;
-        }
-        console.debug(`${logPrefix} Popover filled for ${isQueued ? 'queued' : 'downloading'} item`);
+        allDownloads.forEach(downloadStatus => {
+            const hasValidSizeData = (typeof downloadStatus.size === 'number' &&
+                                    typeof downloadStatus.sizeLeft === 'number' &&
+                                    downloadStatus.size > 0);
+
+            const isQueued = (downloadStatus.status && downloadStatus.status.toLowerCase() === 'queued');
+            const isWarning = (downloadStatus.status && downloadStatus.status.toLowerCase() === 'warning');
+
+            if (!hasValidSizeData && !isQueued && !isWarning) {
+                return; // Skip this item
+            }
+
+            if (isQueued || downloadStatus.size <= 0) {
+                // For queued items, show 0% progress
+                popoverHTML += `
+                    <div class="jellyseerr-popover-item">
+                        <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
+                        <div class="jellyseerr-hover-progress"><div class="bar" style="width:0%;"></div></div>
+                        <div class="row">
+                            <div>0%</div>
+                            <div class="status">Queued</div>
+                        </div>
+                    </div>`;
+            } else {
+                // For downloading/warning items, show actual progress
+                const percentage = Math.max(0, Math.min(100, Math.round(100 * (1 - downloadStatus.sizeLeft / downloadStatus.size))));
+                const statusDisplay = isWarning ? 'Warning' : (downloadStatus.status || 'Downloading').toString().replace(/^./, c => c.toUpperCase());
+                popoverHTML += `
+                    <div class="jellyseerr-popover-item">
+                        <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
+                        <div class="jellyseerr-hover-progress"><div class="bar" style="width:${percentage}%;"></div></div>
+                        <div class="row">
+                            <div>${percentage}%</div>
+                            <div class="status">${statusDisplay}</div>
+                        </div>
+                    </div>`;
+            }
+        });
+
+        popover.innerHTML = popoverHTML;
+        console.debug(`${logPrefix} Popover filled for ${allDownloads.length} download item(s)`);
         return popover;
     }
 
@@ -278,6 +293,7 @@
             .jellyseerr-request-button.jellyseerr-button-rejected { background-color: #8a1c1c !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-partially-available { background-color: #4ca46c !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-available { background-color: #16a34a !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-available-updating { background-color: #0d6d30ff !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-error { background: #dc3545 !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-tv:not(.jellyseerr-button-available):not(.jellyseerr-button-offline):not(.jellyseerr-button-no-user):not(.jellyseerr-button-error)::after { content: '▼'; margin-left: 6px; font-size: 0.7em; opacity: 0.8; }
             .jellyseerr-season-summary { font-size: 0.85em; opacity: 0.9; display: block; margin-top: 2px; }
@@ -418,6 +434,9 @@
             /* HOVER POPOVER STYLES */
             .jellyseerr-hover-popover { position: fixed; min-width: 260px; max-width: 340px; padding: 10px 12px; background: #1f2937; color: #e5e7eb; border-radius: 10px; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,252, .06); opacity: 0; pointer-events: none; transition: opacity .12s ease, transform .12s ease; }
             .jellyseerr-hover-popover.show { opacity: 1; }
+            .jellyseerr-popover-item { margin-bottom: 10px; }
+            .jellyseerr-popover-item:last-child { margin-bottom: 0; }
+            .jellyseerr-popover-item:not(:last-child) { padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
             .jellyseerr-hover-popover .title { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
             .jellyseerr-hover-popover .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
             .jellyseerr-hover-popover .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; background: #4f46e5; color: #fff; }
@@ -1024,10 +1043,18 @@
                 let mainButtonText, mainButtonIcon, mainButtonClass, mainButtonDisabled;
 
                 if (status === 5) {
-                    mainButtonText = JE.t('jellyseerr_btn_available');
-                    mainButtonIcon = icons.available;
-                    mainButtonClass = 'jellyseerr-button-available';
-                    mainButtonDisabled = true;
+                    // Check if item is available but also downloading (upgrading version)
+                    if (item.mediaInfo?.downloadStatus?.length > 0) {
+                        mainButtonText = JE.t('jellyseerr_btn_available');
+                        mainButtonIcon = icons.available;
+                        mainButtonClass = 'jellyseerr-button-available-updating';
+                        mainButtonDisabled = true;
+                    } else {
+                        mainButtonText = JE.t('jellyseerr_btn_available');
+                        mainButtonIcon = icons.available;
+                        mainButtonClass = 'jellyseerr-button-available';
+                        mainButtonDisabled = true;
+                    }
                 } else if (status === 2) {
                     mainButtonText = JE.t('jellyseerr_btn_pending');
                     mainButtonIcon = icons.pending;
@@ -1061,13 +1088,13 @@
                 const mainButton = document.createElement('button');
                 mainButton.className = `jellyseerr-request-button emby-button button-submit ${mainButtonClass}`;
                 mainButton.disabled = mainButtonDisabled;
-                mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${mainButtonClass === 'jellyseerr-button-processing' ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
+                mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${(mainButtonClass === 'jellyseerr-button-processing' || mainButtonClass === 'jellyseerr-button-available-updating') ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
                 mainButton.dataset.tmdbId = item.id;
                 mainButton.dataset.mediaType = 'movie';
                 mainButton.dataset.searchResultItem = JSON.stringify(item);
 
-                // Add download progress hover if processing
-                if (status === 3 && (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0)) {
+                // Add download progress hover if processing or available-updating
+                if ((status === 3 || status === 5) && (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0)) {
                     addDownloadProgressHover(mainButton, item);
                 }
 
@@ -1148,7 +1175,18 @@
                 }
                 break;
             case 4: setButton(JE.t('jellyseerr_btn_partially_available'), icons.partially_available, 'jellyseerr-button-partially-available', true); break;
-            case 5: setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true); break;
+            case 5:
+                // Check if item is available but also downloading (upgrading version)
+                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
+                    button.innerHTML = `${icons.available}<span>${JE.t('jellyseerr_btn_available')}</span><span class="jellyseerr-button-spinner"></span>`;
+                    button.disabled = true;
+                    button.className = 'jellyseerr-request-button emby-button';
+                    button.classList.add('button-submit', 'jellyseerr-button-available-updating');
+                    addDownloadProgressHover(button, item);
+                } else {
+                    setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true);
+                }
+                break;
             case 6: setButton(JE.t('jellyseerr_btn_rejected'), icons.cancel, 'jellyseerr-button-rejected', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
         }
