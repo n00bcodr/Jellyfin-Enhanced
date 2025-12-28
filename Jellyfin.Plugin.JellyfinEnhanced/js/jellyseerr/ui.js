@@ -61,6 +61,33 @@
      * @returns {HTMLElement|null} - Popover element or null if no download data.
      */
     function fillHoverPopover(item) {
+        // Helper: format ETA text
+        const formatEtaText = (downloadStatus) => {
+            try {
+                const rawEta = downloadStatus?.estimatedCompletionTime;
+                if (!rawEta) return null;
+
+                const etaTime = new Date(rawEta);
+                const now = new Date();
+                const timeUntilMs = etaTime.getTime() - now.getTime();
+                if (isNaN(timeUntilMs)) return null;
+                if (timeUntilMs <= 0) return 'Estimated soon';
+
+                const totalMinutesRemaining = Math.round(timeUntilMs / 60000);
+                if (totalMinutesRemaining >= 1440) {
+                    const daysRemaining = Math.round(totalMinutesRemaining / 1440);
+                    return `Estimated in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`;
+                }
+                if (totalMinutesRemaining >= 60) {
+                    const hoursRemaining = Math.round(totalMinutesRemaining / 60);
+                    return `Estimated in ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''}`;
+                }
+                return `Estimated in ${totalMinutesRemaining} min`;
+            } catch (_) {
+                return null;
+            }
+        };
+
         const allDownloads = [
             ...(item.mediaInfo?.downloadStatus || []),
             ...(item.mediaInfo?.downloadStatus4k || [])
@@ -101,6 +128,7 @@
                 // For downloading/warning items, show actual progress
                 const percentage = Math.max(0, Math.min(100, Math.round(100 * (1 - downloadStatus.sizeLeft / downloadStatus.size))));
                 const statusDisplay = isWarning ? 'Warning' : (downloadStatus.status || 'Downloading').toString().replace(/^./, c => c.toUpperCase());
+                const etaText = formatEtaText(downloadStatus);
                 popoverHTML += `
                     <div class="jellyseerr-popover-item">
                         <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
@@ -108,6 +136,7 @@
                         <div class="row">
                             <div>${percentage}%</div>
                             <div class="status">${statusDisplay}</div>
+                            ${etaText ? `<div class="eta">${etaText}</div>` : ''}
                         </div>
                     </div>`;
             }
@@ -442,6 +471,7 @@
             .jellyseerr-hover-popover .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; background: #4f46e5; color: #fff; }
             .jellyseerr-hover-popover .jellyseerr-hover-progress { height: 7px; width: 100%; background: rgba(255,255,255,.12); border-radius: 999px; overflow: hidden; }
             .jellyseerr-hover-popover .jellyseerr-hover-progress .bar { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width .2s ease; }
+            .jellyseerr-hover-popover .eta { margin-left: auto; font-size: .75rem; color: #cbd5e1; opacity: .9; white-space: nowrap; }
             /* UTILITY CLASSES */
             @keyframes jellyseerr-spin { to { transform: rotate(360deg) } }
             .section-hidden { display: none !important; }
