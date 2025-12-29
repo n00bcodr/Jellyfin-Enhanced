@@ -853,6 +853,7 @@
 
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useJellyseerrLink = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseJellyseerrLinks && jellyseerrUrl);
+        const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
 
         const card = document.createElement('div');
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
@@ -869,7 +870,7 @@
                     <div class="jellyseerr-overview"><div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div></div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
-                    <a is="emby-linkbutton" href="${useJellyseerrLink ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer" title="${useJellyseerrLink ? JE.t('jellyseerr_card_view_on_jellyseerr') : JE.t('jellyseerr_card_view_on_tmdb')}"><bdi>${titleText}</bdi></a>
+                    <a is="emby-linkbutton" ${useMoreInfoModal ? 'href="#"' : `href="${useJellyseerrLink && jellyseerrUrl ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer"`} class="jellyseerr-more-info-link" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}" title="${JE.t('jellyseerr_card_view_details') || 'View Details'}"><bdi>${titleText}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <bdi>${year}</bdi>
@@ -885,6 +886,20 @@
             imageContainer.addEventListener('touchend', (e) => { e.preventDefault(); card.classList.toggle('is-touch'); }, { passive: false });
             imageContainer.setAttribute('tabindex', '0');
             imageContainer.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.classList.toggle('is-touch'); } });
+
+            // Add click handler to open more info modal only if enabled
+            if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
+                imageContainer.style.cursor = 'pointer';
+                imageContainer.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const tmdbId = parseInt(item.id);
+                    const mediaType = item.mediaType; // 'movie' or 'tv'
+                    if (tmdbId && mediaType) {
+                        JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                    }
+                });
+            }
         }
 
         const button = card.querySelector('.jellyseerr-request-button');
@@ -892,6 +907,36 @@
         addMediaTypeBadge(card, item);
         // If movie belongs to a collection, show a collection badge that opens the modal
         addCollectionMembershipBadge(card, item);
+
+        // Add click handler to overview to open more info modal
+        const overview = card.querySelector('.jellyseerr-overview');
+        if (overview && useMoreInfoModal && JE.jellyseerrMoreInfo) {
+            overview.style.cursor = 'pointer';
+            overview.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const tmdbId = parseInt(item.id);
+                const mediaType = item.mediaType; // 'movie' or 'tv'
+                if (tmdbId && mediaType) {
+                    JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                }
+            });
+        }
+
+        // Add click handler for the more info link
+        const moreInfoLink = card.querySelector('.jellyseerr-more-info-link');
+        if (moreInfoLink) {
+            if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
+                moreInfoLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const tmdbId = parseInt(moreInfoLink.dataset.tmdbId);
+                    const mediaType = moreInfoLink.dataset.mediaType; // 'movie' or 'tv'
+                    if (tmdbId && mediaType) {
+                        JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                    }
+                });
+            }
+        }
 
         if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
             fetchProviderIcons(card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);

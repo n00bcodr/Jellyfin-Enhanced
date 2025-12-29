@@ -460,6 +460,7 @@
                 'elsewhere.js',
                 'jellyseerr/api.js',
                 'jellyseerr/modal.js',
+                'jellyseerr/more-info-modal.js',
                 'jellyseerr/ui.js',
                 'jellyseerr/issue-reporter.js',
                 'jellyseerr/item-details.js',

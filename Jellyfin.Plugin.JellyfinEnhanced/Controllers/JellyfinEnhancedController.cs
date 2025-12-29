@@ -361,6 +361,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/recommendations?page={page}", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/movie/{tmdbId}/ratingscombined")]
+        [Authorize]
+        public Task<IActionResult> GetMovieRatingsCombined(int tmdbId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/ratingscombined", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/tv/{tmdbId}/seasons")]
         [Authorize]
         public Task<IActionResult> GetTvSeasons(int tmdbId)
@@ -380,6 +387,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public Task<IActionResult> GetRecommendedTvShows(int tmdbId, [FromQuery] int page = 1)
         {
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/recommendations?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/tv/{tmdbId}/ratings")]
+        [Authorize]
+        public Task<IActionResult> GetTvRatingsCombined(int tmdbId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/overrideRule")]
@@ -971,6 +985,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseJellyseerrLinks,
+                config.JellyseerrUseMoreInfoModal,
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrShowSimilar,
