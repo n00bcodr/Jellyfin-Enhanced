@@ -96,7 +96,7 @@
     "panel_settings_ui_quality_tags_desc": "Mostra tag 4K, HDR, ecc., sui poster.",
     "panel_settings_ui_remove_continue_watching": "Aggiungi pulsante Rimuovi da Continua a guardare",
     "panel_settings_ui_rating_tags": "Mostra tag valutazione",
-    "panel_settings_ui_rating_tags_desc": "Mostra valutazioni IMDB sui poster.",
+    "panel_settings_ui_rating_tags_desc": "Mostra valutazioni TMDB e Rotten Tomatoes sui poster.",
     "panel_settings_ui_remove_continue_watching_desc": "Aggiungi opzione per rimuovere elementi dalla sezione Continua a guardare",
     "panel_settings_ui_remove_continue_watching_warning": "⚠️ Questa è un'azione distruttiva, rimuove il progresso di visione dell'elemento per l'utente",
     "panel_footer_close": "Premi <kbd>?</kbd> o <kbd>Esc</kbd> per chiudere",

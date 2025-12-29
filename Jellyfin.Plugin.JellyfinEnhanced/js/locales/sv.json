@@ -95,7 +95,7 @@
     "panel_settings_ui_language_tags_desc": "Visa ljudspråksflaggor på affischer.",
     "panel_settings_ui_quality_tags_desc": "Visa 4K, HDR, etc., taggar på affischer.",
     "panel_settings_ui_rating_tags": "Visa betygstaggar",
-    "panel_settings_ui_rating_tags_desc": "Visa betygssymboler på affischer.",
+    "panel_settings_ui_rating_tags_desc": "Visa TMDB och Rotten Tomatoes betyg på affischer.",
     "panel_settings_ui_remove_continue_watching": "Lägg till knapp för att ta bort från Fortsätt titta",
     "panel_settings_ui_remove_continue_watching_desc": "Lägg till alternativ för att ta bort objekt från Fortsätt titta-sektionen",
     "panel_settings_ui_remove_continue_watching_warning": "⚠️ Detta är en destruktiv åtgärd, den tar bort tittarframstegen för objektet för användaren",

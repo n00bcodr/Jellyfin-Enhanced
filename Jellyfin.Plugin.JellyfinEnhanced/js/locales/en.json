@@ -95,7 +95,7 @@
     "panel_settings_ui_language_tags_desc": "Display audio language flags on posters.",
     "panel_settings_ui_quality_tags_desc": "Display 4K, HDR, etc., tags on posters.",
     "panel_settings_ui_rating_tags": "Show Rating Tags",
-    "panel_settings_ui_rating_tags_desc": "Display IMDB ratings on posters.",
+    "panel_settings_ui_rating_tags_desc": "Display TMDB and Rotten Tomatoes ratings on posters.",
     "panel_settings_ui_remove_continue_watching": "Add Remove from Continue Watching Button",
     "panel_settings_ui_remove_continue_watching_desc": "Add option to remove items from Continue Watching section",
     "panel_settings_ui_remove_continue_watching_warning": "⚠️ This is a destructive action, it removes the watch progress of the item for the user",

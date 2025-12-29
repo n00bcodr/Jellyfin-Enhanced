@@ -151,7 +151,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🏷️ Quality Tags:** See media quality (4K, HDR, Atmos) at a glance directly on the posters. This is a modified and rewritten version of the original script by [BobHasNoSoul](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/).
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🌐 Language Tags:** Displays available audio languages as flags on posters.
-- **⭐ Rating Tags:** See IMDb ratings at a glance directly on posters in your library. Also includes an optional on-screen display (OSD) rating during playback.
+- **⭐ Rating Tags:** See TMDB and Rotten Tomatoes ratings at a glance directly on posters in your library. Also includes an optional on-screen display (OSD) rating during playback.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 - **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
@@ -731,14 +731,20 @@ The HTML structure for language tags is as follows:
 <summary style="font-size: 1.2em;">Rating Tags</summary>
 <br>
 
-Rating tags display IMDb ratings directly on poster cards. The HTML structure is:
+Rating tags display TMDB and Rotten Tomatoes ratings directly on poster cards. Ratings are stacked vertically, with Rotten Tomatoes (critic) rating on top and TMDB rating below. The HTML structure is:
 
 ```html
 <div class="cardImageContainer">
     <div class="rating-overlay-container">
-        <div class="rating-tag">
+        <!-- Rotten Tomatoes (Critic) Rating -->
+        <div class="rating-tag rating-tag-critic">
+            <span class="rating-tomato-icon fresh"></span>
+            <span class="rating-text">85%</span>
+        </div>
+        <!-- TMDB Rating -->
+        <div class="rating-tag rating-tag-tmdb">
             <span class="material-icons rating-star-icon">star</span>
-            <span>8.7</span>
+            <span class="rating-text">8.7</span>
         </div>
     </div>
 </div>
@@ -746,9 +752,15 @@ Rating tags display IMDb ratings directly on poster cards. The HTML structure is
 
 **Classes**
 
-- **`.rating-overlay-container`**: Wrapper for the rating badge.
-- **`.rating-tag`**: The badge container holding the star and rating value.
-- **`.rating-star-icon`**: The star icon (Material Icons).
+- **`.rating-overlay-container`**: Wrapper containing both rating badges, stacked vertically
+- **`.rating-tag`**: Base class for all rating badges
+- **`.rating-tag-critic`**: Critic (Rotten Tomatoes) rating badge
+- **`.rating-tag-tmdb`**: TMDB rating badge
+- **`.rating-star-icon`**: TMDB star icon (Material Icons)
+- **`.rating-tomato-icon`**: Tomato icon for critic rating (background-image)
+- **`.rating-tomato-icon.fresh`**: Fresh tomato (≥60%)
+- **`.rating-tomato-icon.rotten`**: Rotten tomato (<60%)
+- **`.rating-text`**: Text displaying the rating value
 
 <br>
 
@@ -758,51 +770,79 @@ Rating tags display IMDb ratings directly on poster cards. The HTML structure is
 | Element | CSS Selector | Example CSS |
 | --- | --- | --- |
 | **All Rating Tags** | `.rating-tag` | `.rating-tag { background: rgba(0, 0, 0, 0.7) !important; }` |
+| **Critic Tag Only** | `.rating-tag-critic` | `.rating-tag-critic { background: rgba(220, 53, 69, 0.95) !important; }` |
+| **TMDB Tag Only** | `.rating-tag-tmdb` | `.rating-tag-tmdb { background: rgba(0, 0, 0, 0.9) !important; }` |
 | **Star Icon Color** | `.rating-star-icon` | `.rating-star-icon { color: #ffc107 !important; }` |
-| **Rating Container Position** | `.rating-overlay-container` | `.rating-overlay-container { top: 8px !important; right: 8px !important; }` |
-| **Hide All Rating Tags** | `.rating-overlay-container` | `.rating-overlay-container { display: none !important; }` |
+| **Tomato Icon Size** | `.rating-tomato-icon` | `.rating-tomato-icon { width: 18px !important; height: 18px !important; }` |
+| **Container Position** | `.rating-overlay-container` | `.rating-overlay-container { top: 8px !important; right: 8px !important; }` |
+| **Hide Critic Rating** | `.rating-tag-critic` | `.rating-tag-critic { display: none !important; }` |
+| **Hide TMDB Rating** | `.rating-tag-tmdb` | `.rating-tag-tmdb { display: none !important; }` |
 
 <br>
 
 **CSS Examples**
 ----------------
 
-- **Change Badge Background Color**
+- **Customize Critic Rating Background**
   ```css
-  .rating-tag {
-      background: rgba(255, 152, 0, 0.9) !important;
+  .rating-tag-critic {
+      background: rgba(255, 100, 50, 0.95) !important;
       color: white !important;
   }
   ```
 
-- **Make Stars Larger**
+- **Make TMDB Stars Larger**
   ```css
   .rating-star-icon {
       font-size: 20px !important;
-      margin-right: 4px !important;
   }
   ```
 
-- **Add Border and Shadow**
+- **Adjust Tomato Icon Size**
+  ```css
+  .rating-tomato-icon {
+      width: 18px !important;
+      height: 18px !important;
+  }
+  ```
+
+- **Add Border to All Tags**
   ```css
   .rating-tag {
-      border: 2px solid #ffc107 !important;
+      border: 2px solid rgba(255, 255, 255, 0.3) !important;
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5) !important;
-      border-radius: 6px !important;
   }
   ```
 
-- **Gradient Background**
+- **Horizontal Layout Instead of Stacked**
   ```css
-  .rating-tag {
-      background: linear-gradient(135deg, #ff6b6b, #ffc107) !important;
-      padding: 6px 10px !important;
+  .rating-overlay-container {
+      flex-direction: row !important;
+      gap: 6px !important;
+  }
+  ```
+
+- **Change Gap Between Stacked Tags**
+  ```css
+  .rating-overlay-container {
+      gap: 8px !important;
+  }
+  ```
+
+- **Different Colors for Fresh vs Rotten**
+  ```css
+  .rating-tag-critic:has(.rating-tomato-icon.fresh) {
+      background: rgba(0, 200, 100, 0.9) !important;
+  }
+  .rating-tag-critic:has(.rating-tomato-icon.rotten) {
+      background: rgba(200, 50, 50, 0.9) !important;
   }
   ```
 
 > **Note:**
 > - Always use `!important` to override the default styles.
-> - The star icon is always yellow by default (`#ffc107`).
+> - Ratings are stacked vertically by default (critic on top, TMDB below).
+> - Tomato icons use `assets/img/fresh.svg` and `assets/img/rotten.svg`.
 > - Position can be adjusted via the Enhanced Panel settings.
 
 </details>
@@ -1165,7 +1205,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
     * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
     * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
-    * **`osd-rating.js`**: Displays IMDb ratings in the video player OSD controls next to the time display.
+    * **`osd-rating.js`**: Displays TMDB and Rotten Tomatoes ratings in the video player OSD controls next to the time display.
     * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
     * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
     * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
@@ -1197,7 +1237,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 
 * **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
 
-* **`ratingtags.js`**: Manages the display of IMDb ratings as badges directly on the posters.
+* **`ratingtags.js`**: Manages the display of TMDB and Rotten Tomatoes ratings as badges directly on the posters.
 
 * **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
 

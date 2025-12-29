@@ -95,7 +95,7 @@
     "panel_settings_ui_language_tags_desc": "Display crew tongue flags on posters.",
     "panel_settings_ui_quality_tags_desc": "Display 4K, HDR, etc. marks on posters.",
     "panel_settings_ui_rating_tags": "Show Reputation Tags",
-    "panel_settings_ui_rating_tags_desc": "Display IMDB reputation on posters.",
+    "panel_settings_ui_rating_tags_desc": "Display TMDB 'n Rotten Tomatoes reputation on posters.",
     "panel_settings_ui_remove_continue_watching": "Add Remove from Ship's Log",
     "panel_settings_ui_remove_continue_watching_desc": "Add option to remove treasures from ship's log",
     "panel_settings_ui_remove_continue_watching_warning": "⚠️ This be destructive! Removes voyage progress for the sailor",

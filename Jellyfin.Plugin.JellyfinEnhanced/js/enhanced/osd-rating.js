@@ -11,13 +11,27 @@
     return JE.pluginConfig?.ShowRatingInPlayer !== false;
   }
 
+  function normalizeCriticPercent(raw) {
+    if (raw === null || raw === undefined) return null;
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return null;
+    const percent = num <= 10 ? Math.round(num * 10) : Math.round(num);
+    return Math.max(0, Math.min(100, percent));
+  }
+
+  function createTomatoIcon(isRotten) {
+    const span = document.createElement('span');
+    span.className = `je-tomato ${isRotten ? 'rotten' : 'fresh'}`;
+    return span;
+  }
+
   function getCurrentItemId() {
     // Pull from the favorite button in the OSD
     const favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
     return favBtn?.dataset?.id || null;
   }
 
-  async function fetchItemRating(userId, itemId) {
+  async function fetchItemRatings(userId, itemId) {
     try {
       const result = await ApiClient.ajax({
         type: 'GET',
@@ -25,12 +39,29 @@
         dataType: 'json'
       });
       const item = result?.Items?.[0];
-      if (!item) return null;
-      const rating = item.CommunityRating || item.CriticRating;
-      return rating ? Number(rating).toFixed(1) : null;
+      if (!item) return { tmdb: null, critic: null };
+
+      let sourceItem = item;
+      if ((item.Type === 'Season' || item.Type === 'Episode') && item.SeriesId) {
+        try {
+          const seriesResult = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: item.SeriesId, Fields: 'CommunityRating,CriticRating,Type' }),
+            dataType: 'json'
+          });
+          sourceItem = seriesResult?.Items?.[0] || item;
+        } catch (e) {
+          console.warn(`${logPrefix} Failed to fetch series rating for ${item.Type}`, e);
+        }
+      }
+
+      const tmdb = sourceItem.CommunityRating != null ? Number(sourceItem.CommunityRating).toFixed(1) : null;
+      const critic = normalizeCriticPercent(sourceItem.CriticRating);
+
+      return { tmdb, critic };
     } catch (e) {
       console.warn(`${logPrefix} Failed to fetch rating for ${itemId}`, e);
-      return null;
+      return { tmdb: null, critic: null };
     }
   }
 
@@ -40,37 +71,61 @@
     style.id = 'je-osd-rating-style';
     style.textContent = `
       #${CONTAINER_ID} { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: middle; }
+      #${CONTAINER_ID} .je-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.45); font-weight: 600; line-height: 1; }
+      #${CONTAINER_ID} .je-chip.tmdb { color: #ffc107; }
+      #${CONTAINER_ID} .je-chip.critic { color: #ffffff; }
       #${CONTAINER_ID} .je-star { font-family: 'Material Icons'; font-size: 16px; color: #ffc107; line-height: 1; }
       #${CONTAINER_ID} .je-text { font-size: 14px; color: inherit; font-weight: 600; line-height: 1; }
+      #${CONTAINER_ID} .je-tomato { width: 16px; height: 16px; flex-shrink: 0; background-size: contain; background-repeat: no-repeat; background-position: center; display: inline-block; }
+      #${CONTAINER_ID} .je-tomato.fresh { background-image: url(assets/img/fresh.svg); }
+      #${CONTAINER_ID} .je-tomato.rotten { background-image: url(assets/img/rotten.svg); }
     `;
     document.head.appendChild(style);
   }
 
   function injectRating(osdRoot, rating) {
-    if (!osdRoot || !rating) return;
+    if (!osdRoot || (!rating.tmdb && rating.critic === null)) return;
     ensureStyles();
 
     const osdTimeContainer = osdRoot.querySelector('.osdTimeText');
     if (!osdTimeContainer) return;
 
-    // Remove any existing instances to prevent duplicates
     osdRoot.querySelectorAll(`#${CONTAINER_ID}`).forEach(el => el.remove());
 
     const container = document.createElement('span');
     container.id = CONTAINER_ID;
 
-    const star = document.createElement('span');
-    star.className = 'je-star';
-    star.textContent = 'star';
+    if (rating.critic !== null) {
+      const criticChip = document.createElement('span');
+      criticChip.className = 'je-chip critic';
+      criticChip.appendChild(createTomatoIcon(rating.critic < 60));
 
-    const text = document.createElement('span');
-    text.className = 'je-text';
-    text.textContent = rating;
+      const criticText = document.createElement('span');
+      criticText.className = 'je-text';
+      criticText.textContent = `${rating.critic}%`;
 
-    container.appendChild(star);
-    container.appendChild(text);
+      criticChip.appendChild(criticText);
+      container.appendChild(criticChip);
+    }
 
-    // Place before the time text
+    if (rating.tmdb) {
+      const tmdbChip = document.createElement('span');
+      tmdbChip.className = 'je-chip tmdb';
+
+      const star = document.createElement('span');
+      star.className = 'je-star';
+      star.textContent = 'star';
+
+      const text = document.createElement('span');
+      text.className = 'je-text';
+      text.textContent = rating.tmdb;
+
+      tmdbChip.appendChild(star);
+      tmdbChip.appendChild(text);
+      container.appendChild(tmdbChip);
+    }
+
+    if (container.children.length === 0) return;
     osdTimeContainer.insertAdjacentElement('beforebegin', container);
   }
 
@@ -91,8 +146,8 @@
     const itemId = getCurrentItemId();
     if (!userId || !itemId) return;
 
-    const rating = await fetchItemRating(userId, itemId);
-    if (rating) injectRating(osdRoot, rating);
+    const rating = await fetchItemRatings(userId, itemId);
+    if (rating.tmdb || rating.critic !== null) injectRating(osdRoot, rating);
   }
 
   function observeOsd() {

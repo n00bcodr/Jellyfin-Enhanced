@@ -95,7 +95,7 @@
     "panel_settings_ui_language_tags_desc": "Vis lydsprogflag på plakater.",
     "panel_settings_ui_quality_tags_desc": "Vis 4K, HDR, osv., tags på plakater.",
     "panel_settings_ui_rating_tags": "Vis bedømmelsesmærker",
-    "panel_settings_ui_rating_tags_desc": "Vis bedømmelsesmærker på plakater.",
+    "panel_settings_ui_rating_tags_desc": "Vis TMDB og Rotten Tomatoes bedømmelser på plakater.",
     "panel_settings_ui_remove_continue_watching": "Tilføj fjern fra Fortsæt med at se knap",
     "panel_settings_ui_remove_continue_watching_desc": "Tilføj mulighed for at fjerne elementer fra Fortsæt med at se sektionen",
     "panel_settings_ui_remove_continue_watching_warning": "⚠️ Dette er en destruktiv handling, den fjerner seerfremdriften for elementet for brugeren",

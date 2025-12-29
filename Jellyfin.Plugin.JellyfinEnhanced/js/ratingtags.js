@@ -1,5 +1,5 @@
 // /js/ratingtags.js
-// Jellyfin Rating Tags - Display IMDB ratings on posters
+// Jellyfin Rating Tags - Display TMDB and Rotten Tomato ratings on posters
 (function(JE) {
     'use strict';
 
@@ -17,6 +17,7 @@
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
         const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
         const MUTATION_DEBOUNCE = 400;
+
 
         // CSS selectors for elements that should NOT have rating tags applied.
         const IGNORE_SELECTORS = [
@@ -44,6 +45,29 @@
         let ratingCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.rating = Hot.rating || new Map();
+
+        function normalizeCriticPercent(raw) {
+            if (raw === null || raw === undefined) return null;
+            const num = Number(raw);
+            if (!Number.isFinite(num)) return null;
+            const percent = num <= 10 ? Math.round(num * 10) : Math.round(num);
+            return Math.max(0, Math.min(100, percent));
+        }
+
+        function getCachedEntry(itemId) {
+            const entry = ratingCache[itemId] ?? Hot.rating.get(itemId);
+            if (!entry) return null;
+            if (typeof entry === 'string' || typeof entry === 'number') {
+                return { tmdb: String(entry), critic: null };
+            }
+            if (typeof entry === 'object') {
+                return {
+                    tmdb: entry.tmdb ?? null,
+                    critic: entry.critic ?? null
+                };
+            }
+            return null;
+        }
 
         let processedElements = new WeakSet();
         let requestQueue = [];
@@ -86,7 +110,7 @@
 
         function getUserId() { return ApiClient.getCurrentUserId(); }
 
-        async function fetchItemRating(userId, itemId, itemType) {
+        async function fetchItemRatings(userId, itemId, itemType) {
             try {
                 const result = await ApiClient.ajax({
                     type: 'GET',
@@ -97,11 +121,11 @@
                     dataType: 'json'
                 });
                 const item = result?.Items?.[0];
-                if (!item) return null;
+                if (!item) return { tmdb: null, critic: null };
 
-                // For Series/Season, get the rating from the series itself
+                // For Series/Season/Episode, get the rating from the series itself when available
                 let sourceItem = item;
-                if (itemType === 'Season' && item.SeriesId) {
+                if ((itemType === 'Season' || itemType === 'Episode') && item.SeriesId) {
                     try {
                         const seriesResult = await ApiClient.ajax({
                             type: 'GET',
@@ -113,16 +137,23 @@
                         });
                         sourceItem = seriesResult?.Items?.[0] || item;
                     } catch (e) {
-                        console.warn(`${logPrefix} Failed to fetch series rating for season`, e);
+                        console.warn(`${logPrefix} Failed to fetch series rating for ${itemType.toLowerCase()}`, e);
                     }
                 }
 
-                // Use CommunityRating (IMDB) if available, otherwise CriticRating
-                const rating = sourceItem.CommunityRating || sourceItem.CriticRating;
-                return rating ? parseFloat(rating).toFixed(1) : null;
+                const tmdbRating = sourceItem.CommunityRating != null
+                    ? parseFloat(sourceItem.CommunityRating).toFixed(1)
+                    : null;
+
+                const criticPercent = normalizeCriticPercent(sourceItem.CriticRating);
+
+                return {
+                    tmdb: tmdbRating,
+                    critic: criticPercent
+                };
             } catch (e) {
                 console.warn(`${logPrefix} Failed to fetch rating for ${itemId}`, e);
-                return null;
+                return { tmdb: null, critic: null };
             }
         }
 
@@ -152,10 +183,15 @@
             processedElements.add(el);
 
             // Always process, regardless of visibility
-            // Check hot cache first
-            if (ratingCache[itemId]) {
-                applyRatingTag(el, ratingCache[itemId]);
-                return;
+            const cached = getCachedEntry(itemId);
+            if (cached) {
+                if (cached.tmdb || cached.critic !== null) {
+                    applyRatingTag(el, cached);
+                }
+                if (cached.critic !== null && cached.tmdb) {
+                    return;
+                }
+                // fall through to fetch to upgrade missing critic/tmdb
             }
 
             // Queue for fetching
@@ -176,12 +212,12 @@
             const userId = getUserId();
 
             await Promise.all(batch.map(async ({ el, itemId, itemType }) => {
-                const rating = await fetchItemRating(userId, itemId, itemType);
+                const rating = await fetchItemRatings(userId, itemId, itemType);
 
                 ratingCache[itemId] = rating;
                 Hot.rating.set(itemId, rating);
 
-                if (rating) {
+                if (rating.tmdb || rating.critic !== null) {
                     applyRatingTag(el, rating);
                 }
             }));
@@ -199,37 +235,49 @@
         }
 
         function applyRatingTag(el, rating) {
-            if (!rating) return;
+            if (!rating || (!rating.tmdb && rating.critic === null)) return;
 
-            // Remove existing tag if present
             const existingContainer = el.querySelector(`.${containerClass}`);
-            if (existingContainer) {
-                existingContainer.remove();
-            }
+            if (existingContainer) existingContainer.remove();
 
             const container = document.createElement('div');
             container.className = containerClass;
 
-            const tag = document.createElement('div');
-            tag.className = tagClass;
+            if (rating.critic !== null) {
+                const criticTag = document.createElement('div');
+                criticTag.className = `${tagClass} rating-tag-critic`;
 
-            // Create star icon and rating text
-            const starIcon = document.createElement('span');
-            starIcon.className = 'material-icons rating-star-icon';
-            starIcon.textContent = 'star';
-            starIcon.style.fontSize = '14px';
-            starIcon.style.marginRight = '2px';
-            starIcon.style.verticalAlign = 'middle';
+                const icon = document.createElement('span');
+                icon.className = `rating-tomato-icon ${rating.critic < 60 ? 'rotten' : 'fresh'}`;
+                const text = document.createElement('span');
+                text.className = 'rating-text';
+                text.textContent = `${rating.critic}%`;
 
-            const ratingText = document.createElement('span');
-            ratingText.textContent = rating;
-            ratingText.style.verticalAlign = 'middle';
+                criticTag.appendChild(icon);
+                criticTag.appendChild(text);
+                container.appendChild(criticTag);
+            }
 
-            tag.appendChild(starIcon);
-            tag.appendChild(ratingText);
-            container.appendChild(tag);
+            if (rating.tmdb) {
+                const tmdbTag = document.createElement('div');
+                tmdbTag.className = `${tagClass} rating-tag-tmdb`;
 
-            el.appendChild(container);
+                const starIcon = document.createElement('span');
+                starIcon.className = 'material-icons rating-star-icon';
+                starIcon.textContent = 'star';
+
+                const ratingText = document.createElement('span');
+                ratingText.className = 'rating-text';
+                ratingText.textContent = rating.tmdb;
+
+                tmdbTag.appendChild(starIcon);
+                tmdbTag.appendChild(ratingText);
+                container.appendChild(tmdbTag);
+            }
+
+            if (container.children.length > 0) {
+                el.appendChild(container);
+            }
         }
 
         function debouncedScan() {
@@ -267,21 +315,39 @@
         }
 
         function injectCSS() {
-            const position = JE.pluginConfig?.RatingTagsPosition || 'bottom-right';
+            const position = JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right';
+            const isTop = position.includes('top');
+            const isLeft = position.includes('left');
+            const topVal = isTop ? '6px' : 'auto';
+            const bottomVal = isTop ? 'auto' : '6px';
+            const leftVal = isLeft ? '6px' : 'auto';
+            const rightVal = isLeft ? 'auto' : '6px';
+
+            const existing = document.getElementById('jellyfin-enhanced-rating-tags-css');
+            if (existing) existing.remove();
+
             const style = document.createElement('style');
             style.id = 'jellyfin-enhanced-rating-tags-css';
             style.textContent = `
                 .${containerClass} {
                     position: absolute;
-                    ${position.includes('top') ? 'top: 8px;' : 'bottom: 8px;'}
-                    ${position.includes('left') ? 'left: 8px;' : 'right: 8px;'}
+                    top: ${topVal};
+                    right: ${rightVal};
+                    bottom: ${bottomVal};
+                    left: ${leftVal};
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    align-items: ${isLeft ? 'flex-start' : 'flex-end'};
                     z-index: 10;
                     pointer-events: none;
+                    max-width: calc(100% - 12px);
                 }
 
                 .${tagClass} {
                     display: inline-flex;
                     align-items: center;
+                    gap: 4px;
                     padding: 4px 8px;
                     background: rgba(0, 0, 0, 0.8);
                     color: #ffc107;
@@ -291,46 +357,38 @@
                     backdrop-filter: blur(4px);
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
                     white-space: nowrap;
+                    line-height: 1;
+                    pointer-events: none;
                 }
 
-                .rating-star-icon {
-                    color: #ffc107 !important;
-                }
+                .${tagClass}.rating-tag-critic { color: #ffffff; }
+                .${tagClass}.rating-tag-tmdb { background: rgba(0, 0, 0, 0.85); color: #ffc107; }
+
+                .rating-star-icon { color: #ffc107 !important; font-size: 14px; line-height: 1; }
+                .rating-tomato-icon { width: 14px; height: 14px; flex-shrink: 0; background-size: contain; background-repeat: no-repeat; background-position: center; display: inline-block; }
+                .rating-tomato-icon.fresh { background-image: url(assets/img/fresh.svg); }
+                .rating-tomato-icon.rotten { background-image: url(assets/img/rotten.svg); }
+                .rating-text { line-height: 1; }
 
                 .layout-mobile .${tagClass} {
-                    padding: 2px 5px;
-                    font-size: 8px;
+                    padding: 2px 6px;
+                    font-size: 11px;
+                    border-radius: 3px;
                 }
-                .layout-mobile .${tagClass} .rating-star-icon {
-                    font-size: 10px !important;
-                    margin-right: 1px !important;
-                }
+                .layout-mobile .${containerClass} { gap: 3px; }
+                .layout-mobile .rating-star-icon { font-size: 12px !important; }
+                .layout-mobile .rating-tomato-icon { width: 12px; height: 12px; }
 
                 @media (max-width: 768px) {
-                    .${tagClass} {
-                        padding: 3px 6px;
-                        font-size: 12px;
-                    }
-                    .${tagClass} .rating-star-icon {
-                        font-size: 12px !important;
-                        margin-right: 1px !important;
-                    }
+                    .${tagClass} { padding: 3px 6px; font-size: 12px; }
+                    .${containerClass} { gap: 3px; }
                 }
 
                 @media (max-width: 480px) {
-                    .${containerClass} {
-                        ${position.includes('top') ? 'top: 4px;' : 'bottom: 4px;'}
-                        ${position.includes('left') ? 'left: 4px;' : 'right: 4px;'}
-                    }
-                    .${tagClass} {
-                        padding: 2px 4px;
-                        font-size: clamp(10px, 2vw, 11px);
-                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-                    }
-                    .${tagClass} .rating-star-icon {
-                        font-size: clamp(10px, 2.5vw, 11px) !important;
-                        margin-right: 0.5px !important;
-                    }
+                    .${containerClass} { top: ${isTop ? '4px' : 'auto'}; bottom: ${isTop ? 'auto' : '4px'}; left: ${isLeft ? '4px' : 'auto'}; right: ${isLeft ? 'auto' : '4px'}; gap: 2px; }
+                    .${tagClass} { padding: 2px 4px; font-size: clamp(10px, 2vw, 11px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+                    .rating-star-icon { font-size: clamp(10px, 2.5vw, 11px) !important; }
+                    .rating-tomato-icon { width: clamp(10px, 2.5vw, 11px); height: clamp(10px, 2.5vw, 11px); }
                 }
             `;
             document.head.appendChild(style);

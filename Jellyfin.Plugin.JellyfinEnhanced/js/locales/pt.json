@@ -94,7 +94,7 @@
     "panel_settings_ui_language_tags": "Mostrar Tags de Idioma",
     "panel_settings_ui_language_tags_desc": "Exibir bandeiras de idioma de áudio nos pôsteres.",
     "panel_settings_ui_rating_tags": "Mostrar Tags de Classificação",
-    "panel_settings_ui_rating_tags_desc": "Exibir etiquetas de classificação nos pôsteres.",
+    "panel_settings_ui_rating_tags_desc": "Exibir classificações TMDB e Rotten Tomatoes nos pôsteres.",
     "panel_settings_ui_quality_tags_desc": "Exibir tags 4K, HDR, etc., nos pôsteres.",
     "panel_settings_ui_remove_continue_watching": "Adicionar Botão 'Remover de Continuar Assistindo'",
     "panel_settings_ui_remove_continue_watching_desc": "Adicionar opção para remover itens da seção 'Continuar Assistindo'",
