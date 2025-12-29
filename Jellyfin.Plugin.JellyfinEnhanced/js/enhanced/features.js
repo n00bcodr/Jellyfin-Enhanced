@@ -143,20 +143,7 @@
         headerRight?.prepend(buttonContainer);
     };
 
-    /**
-     * Ensures we have a dedicated container for injected media-info items to avoid core `:last-child` spacing rules.
-     * @param {HTMLElement} container The parent `.itemMiscInfo` container.
-     * @returns {HTMLElement} The wrapper for injected media-info items.
-     */
-    function getOrCreateEnhancedInfoContainer(container) {
-        let wrapper = container.querySelector('.je-extra-media-info');
-        if (!wrapper) {
-            wrapper = document.createElement('div');
-            wrapper.className = 'je-extra-media-info';
-            container.appendChild(wrapper);
-        }
-        return wrapper;
-    }
+
 
     /**
      * Shows the total watch progress (in %) of an item (and its children) on its details page.
@@ -188,10 +175,11 @@
         placeholder.style.display = 'flex';
         placeholder.style.verticalAlign = 'middle';
         placeholder.style.alignItems = 'center';
+        placeholder.style.margin = '0 1em 0 0 !important';
         // Show loading indicator
         placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         // Insert first so subsequent observer runs are triggered
-        getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
+        container.appendChild(placeholder);
 
         const getIconSpan = (progress) => {
             const circumference = 2 * Math.PI * 8; // radius = 8
@@ -280,10 +268,11 @@
         placeholder.title = JE.t('file_size_tooltip');
         placeholder.style.display = 'flex';
         placeholder.style.alignItems = 'center';
+        placeholder.style.margin = '0 1em 0 0 !important';
         // Show loading indicator
         placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         // Insert first so subsequent observer runs are triggered
-        getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
+        container.appendChild(placeholder);
 
         // Helper to render a dash (no data) but keep the element
         const renderUnavailable = () => {
@@ -393,9 +382,10 @@
         placeholder.style.display = 'flex';
         placeholder.style.verticalAlign = 'middle';
         placeholder.style.alignItems = 'center';
+        placeholder.style.margin = '0 1em 0 0 !important';
         // Show loading indicator
         placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
-        getOrCreateEnhancedInfoContainer(container).appendChild(placeholder);
+        container.appendChild(placeholder);
 
         const applyLangStyles = (el) => {
             el.title = JE.t('audio_language_tooltip');
