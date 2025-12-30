@@ -222,7 +222,7 @@ function buildModalContent(data, mediaType) {
                 </button>
 
                 <div class="modal-backdrop" style="background-image: url('${backdropUrl}');">
-                    <div class="backdrop-overlay"></div>
+                    <div class="je-modal-backdrop-overlay"></div>
                 </div>
 
                 <div class="modal-content">
@@ -627,7 +627,7 @@ function buildTrailersSection(data) {
                         <a is="emby-linkbutton" href="${escapeHtml(trailer.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(trailer.name)}" class="trailer-item">
                             <div class="trailer-thumbnail">
                                 ${thumbnailUrl ? `<img src="${thumbnailUrl}" alt="${escapeHtml(trailer.name)}" />` : ''}
-                                <div class="play-button">
+                                <div class="je-modal-play-button">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                                         <path d="M8 5v14l11-7z"/>
                                     </svg>
@@ -925,7 +925,7 @@ function injectStyles() {
             flex-shrink: 0;
         }
 
-        .je-more-info-modal .backdrop-overlay {
+        .je-more-info-modal .je-modal-backdrop-overlay {
             position: absolute;
             inset: 0;
             background: linear-gradient(to bottom, transparent 0%, #0f172a 100%);
@@ -1126,8 +1126,8 @@ function injectStyles() {
         }
 
         .je-more-info-modal .person-avatar {
-            width: 5rem;
-            height: 5rem;
+            width: 6rem;
+            height: 6rem;
             border-radius: 50%;
             overflow: hidden;
             background: rgba(255, 255, 255, 0.1);
@@ -1214,7 +1214,7 @@ function injectStyles() {
             object-fit: cover;
         }
 
-        .je-more-info-modal .play-button {
+        .je-more-info-modal .je-modal-play-button {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -1230,11 +1230,11 @@ function injectStyles() {
             transition: transform 0.2s;
         }
 
-        .je-more-info-modal .trailer-item:hover .play-button {
+        .je-more-info-modal .trailer-item:hover .je-modal-play-button {
             transform: translate(-50%, -50%) scale(1.1);
         }
 
-        .je-more-info-modal .play-button svg {
+        .je-more-info-modal .je-modal-play-button svg {
             width: 25px;
             height: 25px;
             margin-left: 2px;
