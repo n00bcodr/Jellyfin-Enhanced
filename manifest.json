@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Replace icon progress indicators with SVG\n - Jellyseerr Buton Processing state fix when 4K requests are enabled.\n - Fix CSS syntax error in 4k popup item style\n - Show available items as updating when downloads active\n - Add ETA display to download popover in UI\n - Add Polish locale file\n - Refresh button in Jellyseerr Results actually does something now!\n - Add Jellyseerr More Info modal\n - Remove je-extra-media-info container and related styles\n - Add TMDB and Rotten Tomatoes ratings to UI\n - Update README.md\n - Fix some classes clashing with slideshow.css",
+        "targetAbi": "10.10.7.0",
+        "version": "9.11.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/9.11.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "EF63F81AA615A9AAC6AB77992877F7D0",
+        "timestamp": "2025-12-30T11:48:27"
+      },
+      {
         "changelog": "- Improve mobile styles for tag overlays\n - Add container for enhanced media info items\n - Add File Size and Watched % for BoxSets and Playlists\n - Defer tag queue processing with requestIdleCallback\n - Refactor tag cache and UI observers for performance\n - Show existing Jellyseerr issues in issue reporter modal\n - Add Russian Translation\n - Add Pirate Translations, cuz why not!\n - Improve pause screen timer reset logic\n - Improve long press handling for video speed 2x\n - Add TMDB collection support to Jellyseerr search\n - Update watchlist sync to respect config and fix return value\n - Refactor and clarify *arr settings and tag sync UI\n - Add option to enable Druidblack metadata icons\n - Add support for custom languages in language selector\n - Add missed translation for Collection Modal\n - Localize collection request button label\n - Update README.md",
         "targetAbi": "10.10.7.0",
         "version": "9.10.0.0",
