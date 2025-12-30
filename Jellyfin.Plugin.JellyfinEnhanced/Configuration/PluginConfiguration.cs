@@ -127,6 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Auto Season Request Settings
             AutoSeasonRequestEnabled = false;
             AutoSeasonRequestThresholdValue = 2; // Number of episodes remaining to trigger request
+            AutoSeasonRequestRequireAllWatched = false; // Require all episodes in current season to be watched
 
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
@@ -229,6 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Auto Season Request Settings
         public bool AutoSeasonRequestEnabled { get; set; }
         public int AutoSeasonRequestThresholdValue { get; set; }
+        public bool AutoSeasonRequestRequireAllWatched { get; set; }
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }

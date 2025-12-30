@@ -61,6 +61,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            // Skip if this episode is already marked played to avoid replays triggering new requests
+            var episodeUserData = _userDataManager.GetUserData(user, episode);
+            if (episodeUserData?.Played == true)
+            {
+                _logger.Debug($"[Auto-Request] Episode '{episode.Name}' is already played for {user.Username}, skipping auto-request check");
+                return;
+            }
+
             var series = episode.Series;
             var seasonNumber = episode.ParentIndexNumber.Value;
             var episodeNumber = episode.IndexNumber.Value;
@@ -111,18 +119,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var totalEpisodes = allEpisodes.Count;
 
-            // Calculate remaining episodes based on current episode number, not watch status
-            // If watching E7 out of 9 episodes, remaining = 9 - 7 = 2 episodes left
+            // Calculate remaining episodes based on current episode position
+            // If watching E8 out of 10 episodes, remaining = 10 - 8 = 2 episodes left
             var remainingAfterCurrent = totalEpisodes - currentEpisodeNumber;
             if (remainingAfterCurrent < 0) remainingAfterCurrent = 0;
 
-            _logger.Info($"[Auto-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodes}, {remainingAfterCurrent} remaining after current episode (threshold: {config.AutoSeasonRequestThresholdValue})");
+            _logger.Info($"[Auto-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodes}, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
 
-            bool shouldRequest = remainingAfterCurrent <= config.AutoSeasonRequestThresholdValue;
+            // Check if threshold is met
+            bool thresholdMet = remainingAfterCurrent <= config.AutoSeasonRequestThresholdValue;
+
+            if (!thresholdMet)
+            {
+                _logger.Debug($"[Auto-Request] Threshold not met for '{series.Name}' S{currentSeasonNumber}");
+                return;
+            }
+
+            // If "Require All Episodes Watched" is enabled, verify all episodes before the threshold are watched
+            bool shouldRequest = true;
+            AutoSeasonRequestThresholdValue
+            {
+                // Check that all episodes up to the current one are marked as watched
+                var episodesBeforeCurrent = allEpisodes.Where(e => e.IndexNumber.HasValue && e.IndexNumber.Value <= currentEpisodeNumber).ToList();
+                var unwatchedBeforeCurrent = episodesBeforeCurrent.Where(e =>
+                {
+                    var userData = _userDataManager.GetUserData(user, e);
+                    return userData == null || !userData.Played;
+                }).ToList();
+
+                if (unwatchedBeforeCurrent.Any())
+                {
+                    shouldRequest = false;
+                    var unwatchedEpisodeNumbers = string.Join(", ", unwatchedBeforeCurrent.Select(e => $"E{e.IndexNumber}"));
+                    _logger.Debug($"[Auto-Request] Threshold met but not all prior episodes watched for '{series.Name}' S{currentSeasonNumber}. Unwatched: {unwatchedEpisodeNumbers}");
+                }
+                else
+                {
+                    _logger.Info($"[Auto-Request] Threshold met and all prior episodes watched for '{series.Name}' S{currentSeasonNumber} - requesting next season");
+                }
+            }
 
             if (!shouldRequest)
             {
-                _logger.Debug($"[Auto-Request] Threshold not met for '{series.Name}' S{currentSeasonNumber}");
                 return;
             }
 

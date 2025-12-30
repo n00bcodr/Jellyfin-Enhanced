@@ -434,6 +434,15 @@
                                 Automatically request the next season in Jellyseerr when a user about to finish the current season.
                                 <br><br>
                             </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/>
+                                    <span>Require All Prior Episodes Watched</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br> This might cause requests to not be triggered if users skip episodes.
+                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
                                 <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
@@ -1060,6 +1069,7 @@
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
                 document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
                 document.querySelector('#autoSeasonRequestEnabled').checked = config.AutoSeasonRequestEnabled || false;
+                document.querySelector('#autoSeasonRequestRequireAllWatched').checked = config.AutoSeasonRequestRequireAllWatched || false;
                 document.querySelector('#autoSeasonRequestThresholdValue').value = config.AutoSeasonRequestThresholdValue || 2;
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
@@ -1162,6 +1172,7 @@
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
+            config.AutoSeasonRequestRequireAllWatched = document.querySelector('#autoSeasonRequestRequireAllWatched').checked;
             config.AutoSeasonRequestThresholdValue = parseInt(document.querySelector('#autoSeasonRequestThresholdValue').value, 10) || 2;
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
