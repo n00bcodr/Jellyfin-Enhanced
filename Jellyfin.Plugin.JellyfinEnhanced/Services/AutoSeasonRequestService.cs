@@ -137,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // If "Require All Episodes Watched" is enabled, verify all episodes before the threshold are watched
             bool shouldRequest = true;
-            AutoSeasonRequestThresholdValue
+            if (config.AutoSeasonRequestRequireAllWatched)
             {
                 // Check that all episodes up to the current one are marked as watched
                 var episodesBeforeCurrent = allEpisodes.Where(e => e.IndexNumber.HasValue && e.IndexNumber.Value <= currentEpisodeNumber).ToList();
