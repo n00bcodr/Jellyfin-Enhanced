@@ -852,20 +852,35 @@ Rating tags display TMDB and Rotten Tomatoes ratings directly on poster cards. R
 <summary style="font-size: 1.2em;">OSD Rating (Video Player)</summary>
 <br>
 
-OSD ratings appear in the video player control bar next to the time display. The structure is:
+OSD ratings appear in the video player control bar next to the time display. They show both TMDB (star) and Rotten Tomatoes (tomato icon) ratings side-by-side.
 
 ```html
-<span id="je-osd-rating-container">
-    <span class="je-star">star</span>
+<div id="je-osd-rating-container">
+  <!-- Critic Rating Chip (Rotten Tomatoes) -->
+  <span class="je-chip critic">
+    <span class="je-tomato fresh"></span>  <!-- or "rotten" if < 60% -->
+    <span class="je-text">85%</span>
+  </span>
+
+  <!-- TMDB Rating Chip -->
+  <span class="je-chip tmdb">
+    <span class="je-star">⭐</span>
     <span class="je-text">8.7</span>
-</span>
+  </span>
+</div>
 ```
 
 **Classes**
 
-- **`#je-osd-rating-container`**: Main container for the rating display.
-- **`.je-star`**: The star icon element.
-- **`.je-text`**: The rating value text.
+- **`#je-osd-rating-container`**: Main container with flexbox layout (gap: 6px).
+- **`.je-chip`**: Individual rating chip (TMDB or critic).
+  - **`.je-chip.critic`**: Rotten Tomatoes chip.
+  - **`.je-chip.tmdb`**: TMDB chip.
+- **`.je-tomato`**: Tomato icon span (background-image).
+  - **`.je-tomato.fresh`**: Fresh tomato (≥60%).
+  - **`.je-tomato.rotten`**: Rotten tomato (<60%).
+- **`.je-star`**: Star icon for TMDB rating.
+- **`.je-text`**: Rating value text.
 
 <br>
 
@@ -874,10 +889,13 @@ OSD ratings appear in the video player control bar next to the time display. The
 
 | Element | CSS Selector | Example CSS |
 | --- | --- | --- |
+| **Container Gap** | `#je-osd-rating-container` | `#je-osd-rating-container { gap: 10px !important; }` |
+| **Chip Background** | `.je-chip` | `.je-chip { background: rgba(0,0,0,0.6) !important; padding: 4px 8px !important; }` |
 | **Star Color** | `#je-osd-rating-container .je-star` | `#je-osd-rating-container .je-star { color: gold !important; }` |
-| **Rating Text Color** | `#je-osd-rating-container .je-text` | `#je-osd-rating-container .je-text { color: white !important; }` |
-| **Container Spacing** | `#je-osd-rating-container` | `#je-osd-rating-container { gap: 8px !important; }` |
-| **Hide OSD Rating** | `#je-osd-rating-container` | `#je-osd-rating-container { display: none !important; }` |
+| **Tomato Icon Size** | `.je-tomato` | `.je-tomato { width: 18px !important; height: 18px !important; }` |
+| **Rating Text** | `.je-text` | `.je-text { color: white !important; font-weight: 700 !important; }` |
+| **Hide Critic Chip** | `.je-chip.critic` | `.je-chip.critic { display: none !important; }` |
+| **Hide TMDB Chip** | `.je-chip.tmdb` | `.je-chip.tmdb { display: none !important; }` |
 
 <br>
 
@@ -892,6 +910,10 @@ OSD ratings appear in the video player control bar next to the time display. The
   #je-osd-rating-container .je-text {
       font-size: 16px !important;
   }
+  #je-osd-rating-container .je-tomato {
+      width: 18px !important;
+      height: 18px !important;
+  }
   ```
 
 - **Bold Rating with Custom Color**
@@ -902,17 +924,54 @@ OSD ratings appear in the video player control bar next to the time display. The
   }
   ```
 
-- **Add Background Pill**
+- **Add Background Pills to Chips**
   ```css
-  #je-osd-rating-container {
+  #je-osd-rating-container .je-chip {
       background: rgba(0, 0, 0, 0.5) !important;
       padding: 4px 8px !important;
       border-radius: 12px !important;
   }
+
+  /* Different styles per chip */
+  #je-osd-rating-container .je-chip.critic {
+      border: 1px solid rgba(255, 0, 0, 0.3) !important;
+  }
+
+  #je-osd-rating-container .je-chip.tmdb {
+      border: 1px solid rgba(255, 193, 7, 0.3) !important;
+  }
+  ```
+
+- **Fresh vs Rotten Tomato Styling**
+  ```css
+  /* Fresh tomato (≥60%) - green glow */
+  #je-osd-rating-container .je-tomato.fresh {
+      filter: drop-shadow(0 0 2px rgba(76, 175, 80, 0.5)) !important;
+  }
+
+  /* Rotten tomato (<60%) - red glow */
+  #je-osd-rating-container .je-tomato.rotten {
+      filter: drop-shadow(0 0 2px rgba(244, 67, 54, 0.5)) !important;
+  }
+  ```
+
+- **Hide Specific Ratings**
+  ```css
+  /* Show only TMDB rating */
+  #je-osd-rating-container .je-chip.critic {
+      display: none !important;
+  }
+
+  /* Show only Rotten Tomatoes rating */
+  #je-osd-rating-container .je-chip.tmdb {
+      display: none !important;
+  }
   ```
 
 > **Note:**
-> - The star is yellow by default, the text inherits the normal OSD text color.
+> - Tomato icons are SVG assets loaded via background-image (`assets/img/fresh.svg`, `assets/img/rotten.svg`).
+> - Fresh tomato appears when critic rating ≥60%, rotten when <60%.
+> - If critic rating is unavailable, only the TMDB chip displays.
 > - Adjust spacing and font sizes to match your player's aesthetic.
 
 </details>
