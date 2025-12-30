@@ -129,6 +129,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoSeasonRequestThresholdValue = 2; // Number of episodes remaining to trigger request
             AutoSeasonRequestRequireAllWatched = false; // Require all episodes in current season to be watched
 
+            // Auto Movie Request Settings
+            AutoMovieRequestEnabled = false;
+            AutoMovieRequestTriggerType = "OnMinutesWatched"; // "OnStart", "OnMinutesWatched", or "Both"
+            AutoMovieRequestMinutesWatched = 20; // Minutes to watch before triggering request
+            AutoMovieRequestCheckReleaseDate = true; // Only request if movie is already released
+
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
@@ -231,6 +237,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoSeasonRequestEnabled { get; set; }
         public int AutoSeasonRequestThresholdValue { get; set; }
         public bool AutoSeasonRequestRequireAllWatched { get; set; }
+
+        // Auto Movie Request Settings
+        public bool AutoMovieRequestEnabled { get; set; }
+        public string AutoMovieRequestTriggerType { get; set; } // "OnStart", "OnMinutesWatched", or "Both"
+        public int AutoMovieRequestMinutesWatched { get; set; } // Minutes to watch before triggering request
+        public bool AutoMovieRequestCheckReleaseDate { get; set; } // Only request if movie is already released
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }

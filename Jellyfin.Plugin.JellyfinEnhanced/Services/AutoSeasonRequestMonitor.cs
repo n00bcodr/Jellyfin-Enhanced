@@ -22,6 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Track which user+item combinations have already been checked to avoid duplicate checks
         private readonly Dictionary<string, DateTime> _checkedSessions = new();
+        private readonly object _sessionLock = new();
 
         public AutoSeasonRequestMonitor(
             ISessionManager sessionManager,
@@ -165,23 +166,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                         var sessionItemKey = $"{e.Session.UserId}_{e.Item.Id}";
 
-                        // Clean up expired cache entries (older than 1 hour)
-                        var expiredKeys = _checkedSessions.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
-                            .Select(kvp => kvp.Key)
-                            .ToList();
-                        foreach (var key in expiredKeys)
+                        // Thread-safe dictionary access
+                        lock (_sessionLock)
                         {
-                            _checkedSessions.Remove(key);
-                        }
+                            // Clean up expired cache entries (older than 1 hour)
+                            var expiredKeys = _checkedSessions.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
+                                .Select(kvp => kvp.Key)
+                                .ToList();
+                            foreach (var key in expiredKeys)
+                            {
+                                _checkedSessions.Remove(key);
+                            }
 
-                        // Skip if we've checked this user+item combination in the last hour
-                        if (_checkedSessions.ContainsKey(sessionItemKey))
-                        {
-                            return;
-                        }
+                            // Skip if we've checked this user+item combination in the last hour
+                            if (_checkedSessions.ContainsKey(sessionItemKey))
+                            {
+                                return;
+                            }
 
-                        // Mark as checked with current timestamp
-                        _checkedSessions[sessionItemKey] = DateTime.Now;
+                            // Mark as checked with current timestamp
+                            _checkedSessions[sessionItemKey] = DateTime.Now;
+                        }
 
                         _logger.Info($"[Auto-Season-Request] Episode '{e.Item?.Name ?? "Unknown"}' started by {e.Session?.UserName ?? "Unknown"}, checking threshold");
 

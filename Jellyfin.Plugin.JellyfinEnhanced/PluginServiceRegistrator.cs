@@ -17,6 +17,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<UserConfigurationManager>();
             serviceCollection.AddSingleton<AutoSeasonRequestService>();
             serviceCollection.AddSingleton<AutoSeasonRequestMonitor>();
+            serviceCollection.AddSingleton<AutoMovieRequestService>();
+            serviceCollection.AddSingleton<AutoMovieRequestMonitor>();
             serviceCollection.AddSingleton<WatchlistMonitor>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();

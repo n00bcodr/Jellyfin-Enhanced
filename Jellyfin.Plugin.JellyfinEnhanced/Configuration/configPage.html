@@ -242,12 +242,12 @@
                                 <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
                                     <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" style="flex-grow: 1;"/>
                                     <span id="tmdbStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
-                                    <button is="emby-button" type="button" id="testTmdbBtn" class="raised button-submit">
+                                    <button is="emby-button" type="button" class="testTmdbBtn raised button-submit">
                                         <span>Test</span>
                                     </button>
                                 </div>
                                 <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a></div>
-                                <div class="fieldDescription">Leaving this blank will not load Jellyfin Elsewhere</div>
+                                <div class="fieldDescription"><br>Shared with Jellyseerr Settings</div>
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="DEFAULT_REGION">Default Region</label>
@@ -324,6 +324,17 @@
                                     • With base URL: <code>https://example.com/jellyfin|https://example.com/jellyseerr</code><br><br>
                                 </div>
                             </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="jellyseerr_TMDB_API_KEY">TMDB API Key</label>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="jellyseerr_TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" style="flex-grow: 1;"/>
+                                    <span id="jellyseerrTmdbStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" class="testTmdbBtn raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a><br>TMDB API key for automatic movie collection requests and Jellyseerr Collection Results. Shared with Elsewhere Settings</div>
+                            </div>
                             <div
                                 style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
@@ -350,7 +361,7 @@
                                     <span>Show Collections in Jellyseerr Search Results</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured in Elsewhere Settings</b></div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured.</b></div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrUseJellyseerrLinks" is="emby-checkbox" type="checkbox"/>
@@ -456,6 +467,69 @@
                                     • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br>
                                     • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br>
                                     • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Automatic Movie Requests</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Automatic Movie Requests</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                Automatically request the next movie in a collection based on configured triggers.
+                                <br><br>
+                                <strong>Requirements:</strong> TMDB API key must be configured.
+                            </div>
+
+                            <div style="margin-bottom: 1.5em;">
+                                <label style="display: block; margin-bottom: 0.5em; font-weight: 500;">Request Triggers:</label>
+                                <div class="checkboxContainer" style="margin-bottom: 0.75em;">
+                                    <label>
+                                        <input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/>
+                                        <span>When movie starts (within first 5 minutes)</span>
+                                    </label>
+                                </div>
+                                <div class="checkboxContainer" style="margin-bottom: 0.75em;">
+                                    <label>
+                                        <input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/>
+                                        <span>After watching for a certain amount of time</span>
+                                    </label>
+                                </div>
+                                <div class="fieldDescription" style="margin-top: 0.5em;">
+                                    Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 1.5em;">
+                                <label for="autoMovieRequestMinutesWatched" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Minutes Watched Before Auto-Request Check:</label>
+                                <input id="autoMovieRequestMinutesWatched" type="text" pattern="[0-9]+" style="width: 100px; padding: 0.5em; border: 1px solid #555; border-radius: 4px;" value="20" />
+                                <span style="margin-left: 0.5em;">minutes</span>
+                                <div class="fieldDescription" style="margin-top: 0.5em;">
+                                    How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 1.5em;">
+                                <label>
+                                    <input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/>
+                                    <span>Only request if movie is already released</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-top: 0.5em;">
+                                When enabled, future releases will be skipped. Only movies that have already been released will be requested.
+                            </div>
+                            <div
+                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                <div>
+                                    • Only works for movies that are part of a TMDB collection (e.g., <a href="https://www.themoviedb.org/collection/86311" target="_blank" style="text-decoration: underline; font-weight: bolder;">The Avengers Collection</a>, <a href="https://www.themoviedb.org/collection/10" target="_blank" style="text-decoration: underline; font-weight: bolder;">Star Wars Collection</a>, etc.)<br>
+                                    • Automatically requests the next movie in the collection based on release order<br>
+                                    • Movies already available or requested will be skipped<br>
                                 </div>
                             </div>
                         </div>
@@ -685,7 +759,6 @@
             const testJellyseerrBtn = document.getElementById('testJellyseerrBtn');
             const jellyseerrStatusIndicator = document.getElementById('jellyseerrStatusIndicator');
 
-            const testTmdbBtn = document.getElementById('testTmdbBtn');
             const tmdbStatusIndicator = document.getElementById('tmdbStatusIndicator');
 
             const style = document.createElement('style');
@@ -948,7 +1021,7 @@
             }
         }
 
-        async function testTmdbConnection() {
+        async function testTmdbConnection(event) {
             const apiKey = (document.querySelector('#TMDB_API_KEY').value || '').trim();
 
             if (!apiKey) {
@@ -956,17 +1029,24 @@
                 return;
             }
 
-            testTmdbBtn.disabled = true;
-            tmdbStatusIndicator.textContent = 'sync';
-            tmdbStatusIndicator.className = 'material-icons status-check';
-            tmdbStatusIndicator.style.color = '#00a4dc';
+            // Determine which status indicator to update based on button context
+            const button = event.target.closest('button');
+            const statusIndicator = button.parentElement.querySelector('.material-icons') || tmdbStatusIndicator;
+
+            // Disable all test buttons during the test
+            const allTestButtons = document.querySelectorAll('.testTmdbBtn');
+            allTestButtons.forEach(btn => btn.disabled = true);
+
+            statusIndicator.textContent = 'sync';
+            statusIndicator.className = 'material-icons status-check';
+            statusIndicator.style.color = '#00a4dc';
 
             try {
                 const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/validate`, { apiKey: apiKey });
                 await ApiClient.ajax({ type: 'GET', url: validationUrl });
 
-                tmdbStatusIndicator.textContent = 'check_circle';
-                tmdbStatusIndicator.style.color = '#52b54b';
+                statusIndicator.textContent = 'check_circle';
+                statusIndicator.style.color = '#52b54b';
                 Dashboard.alert({ title: 'Success', message: 'Successfully connected to TMDB!' });
 
             } catch (e) {
@@ -975,13 +1055,13 @@
                     ? 'The API Key is invalid.'
                     : 'Could not connect to TMDB. Please check the key and your network.';
 
-                tmdbStatusIndicator.textContent = 'error';
-                tmdbStatusIndicator.style.color = '#dc3545';
+                statusIndicator.textContent = 'error';
+                statusIndicator.style.color = '#dc3545';
                 Dashboard.alert({ title: 'Connection Failed', message: errorMessage });
             } finally {
-                testTmdbBtn.disabled = false;
-                if (tmdbStatusIndicator) {
-                    tmdbStatusIndicator.classList.remove('status-check');
+                allTestButtons.forEach(btn => btn.disabled = false);
+                if (statusIndicator) {
+                    statusIndicator.classList.remove('status-check');
                 }
             }
         }
@@ -1012,6 +1092,19 @@
                 document.querySelector('#IGNORE_PROVIDERS').value = config.IGNORE_PROVIDERS;
                 document.querySelector('#ElsewhereCustomBrandingText').value = config.ElsewhereCustomBrandingText || '';
                 document.querySelector('#ElsewhereCustomBrandingImageUrl').value = config.ElsewhereCustomBrandingImageUrl || '';
+                document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
+
+                // Set up bidirectional sync between TMDB API key fields
+                const tmdbKeyField = document.querySelector('#TMDB_API_KEY');
+                const jellyseerrTmdbKeyField = document.querySelector('#jellyseerr_TMDB_API_KEY');
+
+                tmdbKeyField.addEventListener('input', function() {
+                    jellyseerrTmdbKeyField.value = this.value;
+                });
+
+                jellyseerrTmdbKeyField.addEventListener('input', function() {
+                    tmdbKeyField.value = this.value;
+                });
                 document.querySelector('#autoPauseEnabled').checked = config.AutoPauseEnabled;
                 document.querySelector('#autoResumeEnabled').checked = config.AutoResumeEnabled;
                 document.querySelector('#autoPipEnabled').checked = config.AutoPipEnabled;
@@ -1068,9 +1161,16 @@
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
                 document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
+                document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
                 document.querySelector('#autoSeasonRequestEnabled').checked = config.AutoSeasonRequestEnabled || false;
                 document.querySelector('#autoSeasonRequestRequireAllWatched').checked = config.AutoSeasonRequestRequireAllWatched || false;
                 document.querySelector('#autoSeasonRequestThresholdValue').value = config.AutoSeasonRequestThresholdValue || 2;
+                document.querySelector('#autoMovieRequestEnabled').checked = config.AutoMovieRequestEnabled || false;
+                const triggerType = config.AutoMovieRequestTriggerType || 'OnMinutesWatched';
+                document.querySelector('#autoMovieRequestTriggerOnStart').checked = (triggerType === 'OnStart' || triggerType === 'Both');
+                document.querySelector('#autoMovieRequestTriggerOnMinutesWatched').checked = (triggerType === 'OnMinutesWatched' || triggerType === 'Both');
+                document.querySelector('#autoMovieRequestMinutesWatched').value = config.AutoMovieRequestMinutesWatched || 20;
+                document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
 
@@ -1171,9 +1271,25 @@
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
+            config.TMDB_API_KEY = document.querySelector('#jellyseerr_TMDB_API_KEY').value;
             config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
             config.AutoSeasonRequestRequireAllWatched = document.querySelector('#autoSeasonRequestRequireAllWatched').checked;
             config.AutoSeasonRequestThresholdValue = parseInt(document.querySelector('#autoSeasonRequestThresholdValue').value, 10) || 2;
+            config.AutoMovieRequestEnabled = document.querySelector('#autoMovieRequestEnabled').checked;
+            const onStart = document.querySelector('#autoMovieRequestTriggerOnStart').checked;
+            const onMinutes = document.querySelector('#autoMovieRequestTriggerOnMinutesWatched').checked;
+            if (onStart && onMinutes) {
+                config.AutoMovieRequestTriggerType = 'Both';
+            } else if (onStart) {
+                config.AutoMovieRequestTriggerType = 'OnStart';
+            } else if (onMinutes) {
+                config.AutoMovieRequestTriggerType = 'OnMinutesWatched';
+            } else {
+                config.AutoMovieRequestTriggerType = 'OnMinutesWatched'; // Default to minutes watched if nothing selected
+            }
+            const minutesValue = parseInt(document.querySelector('#autoMovieRequestMinutesWatched').value, 10);
+            config.AutoMovieRequestMinutesWatched = isNaN(minutesValue) || minutesValue < 1 ? 20 : Math.min(minutesValue, 180);
+            config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
 
@@ -1278,7 +1394,11 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
-        testTmdbBtn.addEventListener('click', testTmdbConnection);
+
+        // click handlers to all TMDB test buttons
+        document.querySelectorAll('.testTmdbBtn').forEach(btn => {
+            btn.addEventListener('click', testTmdbConnection);
+        });
     })();
 </script>
 </div>
