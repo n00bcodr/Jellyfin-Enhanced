@@ -303,7 +303,15 @@
             .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
             .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
             .jellyseerr-overview-hidden { pointer-events: none !important; }
-            .jellyseerr-card .cardScalable:hover .jellyseerr-overview:not(.jellyseerr-overview-hidden), .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview:not(.jellyseerr-overview-hidden), .jellyseerr-card.is-touch .jellyseerr-overview:not(.jellyseerr-overview-hidden) { opacity: 1; pointer-events: auto; }
+            /* SHOW OVERVIEW: When card has 'is-touch' class (mobile/click) */
+            .jellyseerr-card.is-touch .jellyseerr-overview { opacity: 1; pointer-events: auto; }
+            .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview { opacity: 1; pointer-events: auto; }
+
+            /* SHOW OVERVIEW: Desktop Hover (Media Query Handles Desktop vs Touch separation properly) */
+            @media (hover: hover) {
+                .jellyseerr-card .cardScalable:hover .jellyseerr-overview { opacity: 1; pointer-events: auto; }
+            }
+
             .jellyseerr-overview .title { font-weight: 600; display: block; margin-bottom: .35em; }
             .jellyseerr-elsewhere-icons { display: none; position: absolute; bottom: 0; left:0; right:0; z-index: 3; justify-content: center; gap: 0.6em; pointer-events: none; background: rgba(0,0,0,0.8); border-top-left-radius: 1.5em; border-top-right-radius: 1.5em; padding: 0.5em 0 0.2em 0; }
             .jellyseerr-elsewhere-icons.has-icons {display: flex;}
@@ -898,16 +906,29 @@
 
         if (imageContainer && overview) {
             imageContainer.classList.remove('itemAction');
-            const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+            // Helper to close overview if clicked outside
+            const handleOutsideClick = (evt) => {
+                // If click is NOT inside this card, close it
+                if (!card.contains(evt.target)) {
+                    hideOverview();
+                }
+            };
 
             const showOverview = () => {
                 card.classList.add('is-touch');
                 overview.classList.remove('jellyseerr-overview-hidden');
+                // Add document listener to detect clicks outside this card
+                // Timeout ensures we don't catch the *current* click immediately
+                setTimeout(() => {
+                    document.addEventListener('click', handleOutsideClick);
+                }, 0);
             };
 
             const hideOverview = () => {
                 card.classList.remove('is-touch');
                 overview.classList.add('jellyseerr-overview-hidden');
+                document.removeEventListener('click', handleOutsideClick);
             };
 
             const toggleOverview = () => {
@@ -926,22 +947,9 @@
                 }
             });
 
-            // On desktop: hover shows overview, click does nothing (handled by overview element)
-            // On mobile: hover does nothing, click toggles overview
+
+            // On Mobile/Touch, click toggles the overview
             imageContainer.style.cursor = 'pointer';
-            imageContainer.addEventListener('mouseenter', (e) => {
-                // Only show on hover for non-touch devices
-                if (!isTouch && !e.target.closest('.jellyseerr-request-button') && !e.target.closest('.jellyseerr-overview')) {
-                    showOverview();
-                }
-            });
-
-            imageContainer.addEventListener('mouseleave', () => {
-                if (!isTouch) {
-                    hideOverview();
-                }
-            });
-
             imageContainer.addEventListener('click', (e) => {
                 // Don't toggle if clicking the button or overview
                 if (e.target.closest('.jellyseerr-request-button') || e.target.closest('.jellyseerr-overview')) {
