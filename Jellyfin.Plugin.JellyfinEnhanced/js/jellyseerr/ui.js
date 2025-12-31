@@ -290,6 +290,16 @@
             .jellyseerr-card { position: relative; }
             .jellyseerr-card .cardScalable { contain: paint; }
             .jellyseerr-icon-on-card { width: 1.2em; height: 1.2em; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); flex-shrink: 0; }
+            .jellyseerr-status-badge { position: absolute; top: 8px; right: 8px; z-index: 100; width: 1.5em; height: 1.5em; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }
+            .jellyseerr-status-badge svg { width: 1.4em; height: 1.4em; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
+            .jellyseerr-status-badge.status-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
+            .jellyseerr-status-badge.status-processing { background-color: rgba(99, 102, 241, 0.7); border-color: rgba(99, 102, 241, 0.3); }
+            .jellyseerr-status-badge.status-requested { background-color: rgba(136, 61, 206, 0.7); border-color: rgba(147, 51, 234, 0.3); }
+            .jellyseerr-status-badge.status-pending { background-color: rgba(251, 146, 60, 0.7); border-color: rgba(251, 146, 60, 0.3); }
+            .jellyseerr-status-badge.status-partially-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
+            .jellyseerr-status-badge.status-rejected { background-color: rgba(220, 38, 38, 0.7); border-color: rgba(220, 38, 38, 0.3); }
+            @keyframes jellyseerr-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            .jellyseerr-status-badge.status-processing svg { animation: jellyseerr-spin 1s linear infinite; }
             .jellyseerr-media-badge { position: absolute; top: 8px; left: 8px; z-index: 100; color: #fff; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 1em; font-weight: 500; text-transform: uppercase; letter-spacing: 1.5px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); box-shadow: 0 4px 4px -1px rgba(0,0,0,0.1), 0 2px 2px -2px rgba(0,0,0,0.1); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
             .layout-mobile .jellyseerr-media-badge { font-size: 0.8em !important; }
             .jellyseerr-media-badge-movie { background-color: rgba(59, 130, 246, .9); box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 8px 24px rgba(59,130,246,.25); }
@@ -822,6 +832,75 @@
     }
 
     /**
+     * Sets the status badge icon based on the item's media status.
+     * @param {HTMLElement} card - The card element.
+     * @param {Object} item - The search result item.
+     */
+    function setStatusBadge(card, item) {
+        const badge = card.querySelector('.jellyseerr-status-badge');
+        if (!badge || !item.mediaInfo) {
+            if (badge) badge.style.display = 'none';
+            return;
+        }
+
+        // Determine status based on media type
+        let status;
+        if (item.mediaType === 'tv' && item.mediaInfo.seasons) {
+            const seasonAnalysis = analyzeSeasonStatuses(item.mediaInfo.seasons);
+            status = seasonAnalysis ? seasonAnalysis.overallStatus : item.mediaInfo.status;
+        } else {
+            status = item.mediaInfo.status || 1;
+        }
+
+        // Status codes: 1=Unknown, 2=Pending, 3=Processing/Requested, 4=Partially Available, 5=Available, 6=Rejected/Declined, 7=Requested
+        let icon = '';
+        let statusClass = '';
+
+        switch (status) {
+            case 5: // Available
+                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg>`;
+                statusClass = 'status-available';
+                break;
+            case 2: // Pending
+                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0 24.585 24.585 0 01-4.831-1.244.75.75 0 01-.298-1.205A8.217 8.217 0 005.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0 25.057 25.057 0 01-4.496 0z" clip-rule="evenodd" /></svg>`;
+                statusClass = 'status-pending';
+                break;
+            case 3: // Status 3 can be either Processing (with downloads) or Requested (without downloads)
+                // Check if there are active downloads to differentiate
+                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
+                    // Processing - spinner icon with animation
+                    icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>`;
+                    statusClass = 'status-processing';
+                } else {
+                    // Requested - clock icon
+                    icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" clip-rule="evenodd"></path></svg>`;
+                    statusClass = 'status-requested';
+                }
+                break;
+            case 7: // Requested (clock icon)
+                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" clip-rule="evenodd"></path></svg>`;
+                statusClass = 'status-requested';
+                break;
+            case 4: // Partially Available
+                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM6.75 9.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clip-rule="evenodd" /></svg>`;
+                statusClass = 'status-partially-available';
+                break;
+            case 6: // Rejected
+                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg>`;
+                statusClass = 'status-rejected';
+                break;
+            default:
+                // Unknown status - hide badge
+                badge.style.display = 'none';
+                return;
+        }
+
+        badge.innerHTML = icon;
+        badge.className = `jellyseerr-status-badge ${statusClass}`;
+        badge.style.display = 'flex';
+    }
+
+    /**
      * Creates an individual Jellyseerr result card.
      * @param {Object} item - Search result item from Jellyseerr API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
@@ -874,6 +953,7 @@
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
                     <div class="cardImageContainer coveredImage cardContent itemAction" style="background-image: url('${posterUrl}');">
+                        <div class="jellyseerr-status-badge"></div>
                         <div class="jellyseerr-elsewhere-icons"></div>
                         <div class="cardIndicators"></div>
                     </div>
@@ -892,6 +972,9 @@
                     <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
                 </div>
             </div>`;
+
+        // Set the status badge icon based on the item's status
+        setStatusBadge(card, item);
 
         // Disable default Jellyfin card click behavior so we fully control taps/clicks
         const overlayContainer = card.querySelector('.cardOverlayContainer');
