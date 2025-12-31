@@ -300,9 +300,10 @@
             .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }
             .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }
             .jellyseerr-collection-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 0; transform: translateY(6px); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; align-items: flex-end; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
-            .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
-            .jellyseerr-card .cardScalable:hover .jellyseerr-overview, .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview, .jellyseerr-card.is-touch .jellyseerr-overview { opacity: 1; }
+            .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+            .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+            .jellyseerr-overview-hidden { pointer-events: none !important; }
+            .jellyseerr-card .cardScalable:hover .jellyseerr-overview:not(.jellyseerr-overview-hidden), .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview:not(.jellyseerr-overview-hidden), .jellyseerr-card.is-touch .jellyseerr-overview:not(.jellyseerr-overview-hidden) { opacity: 1; pointer-events: auto; }
             .jellyseerr-overview .title { font-weight: 600; display: block; margin-bottom: .35em; }
             .jellyseerr-elsewhere-icons { display: none; position: absolute; bottom: 0; left:0; right:0; z-index: 3; justify-content: center; gap: 0.6em; pointer-events: none; background: rgba(0,0,0,0.8); border-top-left-radius: 1.5em; border-top-right-radius: 1.5em; padding: 0.5em 0 0.2em 0; }
             .jellyseerr-elsewhere-icons.has-icons {display: flex;}
@@ -311,16 +312,19 @@
             .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
             .cardText-first > a[is="emby-linkbutton"] { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
             /* REQUEST BUTTONS */
-            .jellyseerr-request-button { width: 100%; display: flex; justify-content: center; align-items: center; white-space: normal; text-align: center; height: 3.5em; padding: 0.2em 0.5em; line-height: 1.2; font-size: 1em; transition: background .2s, border-color .2s, color .2s; }
-            .jellyseerr-request-button svg { width: 1.5em; height: 1.5em; flex-shrink: 0; vertical-align: middle; }
+            .jellyseerr-request-button { display: flex; justify-content: center; align-items: center; gap: 0.5em; white-space: normal; text-align: center; padding: 0.6em 1.2em; line-height: 1.2; font-size: 0.9em; transition: background .2s, border-color .2s, color .2s, transform .2s; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; position: relative; z-index: 10; }
+            .jellyseerr-request-button svg { width: 1.2em; height: 1.2em; flex-shrink: 0; vertical-align: middle; }
             .layout-mobile .jellyseerr-request-button svg { width: 1em; height: 1em; }
             .layout-mobile .jellyseerr-request-button span { font-size: 0.8em !important; }
             .jellyseerr-request-button.jellyseerr-button-offline, .jellyseerr-request-button.jellyseerr-button-no-user { opacity: .6; cursor: not-allowed; }
-            .jellyseerr-request-button.jellyseerr-button-request { background-color: #4f46e5 !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-request { background-color: #5a3fb8 !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-request:hover:not(:disabled) { background-color: #6b4bb5 !important; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(90, 63, 184, 0.4); }
             .jellyseerr-request-button.jellyseerr-button-pending { background-color: #b45309 !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-pending:hover:not(:disabled) { background-color: #d97706 !important; transform: translateY(-2px); }
             .jellyseerr-request-button.jellyseerr-button-processing { background-color: #581c87 !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-rejected { background-color: #8a1c1c !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-partially-available { background-color: #4ca46c !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-partially-available:hover:not(:disabled) { background-color: #5bb876 !important; transform: translateY(-2px); }
             .jellyseerr-request-button.jellyseerr-button-available { background-color: #16a34a !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-available-updating { background-color: #0d6d30ff !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-error { background: #dc3545 !important; color: #fff !important; }
@@ -364,7 +368,7 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            button.jellyseerr-split-arrow.emby-button.button-submit {
+            button.jellyseerr-split-arrow {
                 border-top-left-radius: 0px !important;
                 border-bottom-left-radius: 0px !important;
                 cursor: pointer;
@@ -383,7 +387,7 @@
                 font-size: 0.9em;
                 border-left: 1px solid #00000080;
             }
-            .layout-desktop button.jellyseerr-split-arrow.emby-button.button-submit { padding: 0 .5em 0 .5em !important}
+            .layout-desktop button.jellyseerr-split-arrow { padding: 0 .5em 0 .5em !important}
             .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(0.95); }
             .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.88); }
             .jellyseerr-split-arrow:disabled,
@@ -867,7 +871,10 @@
                         <div class="cardIndicators"></div>
                     </div>
                     <div class="cardOverlayContainer" data-action="link"></div>
-                    <div class="jellyseerr-overview"><div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div></div>
+                    <div class="jellyseerr-overview jellyseerr-overview-hidden">
+                        <div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
+                        <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
+                    </div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
                     <a is="emby-linkbutton" ${useMoreInfoModal ? 'href="#"' : `href="${useJellyseerrLink && jellyseerrUrl ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer"`} class="jellyseerr-more-info-link" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}" title="${JE.t('jellyseerr_card_view_details') || 'View Details'}"><bdi>${titleText}</bdi></a>
@@ -876,30 +883,108 @@
                     <bdi>${year}</bdi>
                     <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
                 </div>
-                <div class="cardFooter">
-                    <button is="emby-button" type="button" class="jellyseerr-request-button emby-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
-                </div>
+                <div class="cardFooter"></div>
             </div>`;
 
-        const imageContainer = card.querySelector('.cardImageContainer');
-        if (imageContainer) {
-            imageContainer.addEventListener('touchend', (e) => { e.preventDefault(); card.classList.toggle('is-touch'); }, { passive: false });
-            imageContainer.setAttribute('tabindex', '0');
-            imageContainer.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.classList.toggle('is-touch'); } });
+        // Disable default Jellyfin card click behavior so we fully control taps/clicks
+        const overlayContainer = card.querySelector('.cardOverlayContainer');
+        if (overlayContainer) {
+            overlayContainer.removeAttribute('data-action');
+            overlayContainer.style.pointerEvents = 'none';
+        }
 
-            // Add click handler to open more info modal only if enabled
-            if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
-                imageContainer.style.cursor = 'pointer';
-                imageContainer.addEventListener('click', (e) => {
+        const imageContainer = card.querySelector('.cardImageContainer');
+        const overview = card.querySelector('.jellyseerr-overview');
+
+        if (imageContainer && overview) {
+            imageContainer.classList.remove('itemAction');
+            const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+            const showOverview = () => {
+                card.classList.add('is-touch');
+                overview.classList.remove('jellyseerr-overview-hidden');
+            };
+
+            const hideOverview = () => {
+                card.classList.remove('is-touch');
+                overview.classList.add('jellyseerr-overview-hidden');
+            };
+
+            const toggleOverview = () => {
+                if (card.classList.contains('is-touch')) {
+                    hideOverview();
+                } else {
+                    showOverview();
+                }
+            };
+
+            imageContainer.setAttribute('tabindex', '0');
+            imageContainer.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    e.stopPropagation();
+                    toggleOverview();
+                }
+            });
+
+            // On desktop: hover shows overview, click does nothing (handled by overview element)
+            // On mobile: hover does nothing, click toggles overview
+            imageContainer.style.cursor = 'pointer';
+            imageContainer.addEventListener('mouseenter', (e) => {
+                // Only show on hover for non-touch devices
+                if (!isTouch && !e.target.closest('.jellyseerr-request-button') && !e.target.closest('.jellyseerr-overview')) {
+                    showOverview();
+                }
+            });
+
+            imageContainer.addEventListener('mouseleave', () => {
+                if (!isTouch) {
+                    hideOverview();
+                }
+            });
+
+            imageContainer.addEventListener('click', (e) => {
+                // Don't toggle if clicking the button or overview
+                if (e.target.closest('.jellyseerr-request-button') || e.target.closest('.jellyseerr-overview')) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                toggleOverview();
+            });
+
+            // Add handlers to overview to open modal/link
+            overview.style.cursor = 'pointer';
+
+            const openModalOrLink = () => {
+                if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
                     const tmdbId = parseInt(item.id);
-                    const mediaType = item.mediaType; // 'movie' or 'tv'
+                    const mediaType = item.mediaType;
                     if (tmdbId && mediaType) {
                         JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                     }
-                });
-            }
+                } else if (useJellyseerrLink && jellyseerrUrl) {
+                    window.open(jellyseerrUrl, '_blank', 'noopener,noreferrer');
+                } else {
+                    window.open(tmdbUrl, '_blank', 'noopener,noreferrer');
+                }
+            };
+
+            // Click handler - only open modal if overview is visible (not hidden)
+            overview.addEventListener('click', (e) => {
+                // Don't open modal if clicking the button
+                if (e.target.closest('.jellyseerr-request-button')) {
+                    return;
+                }
+
+                // Only open modal if overview is visible (doesn't have hidden class)
+                if (overview.classList.contains('jellyseerr-overview-hidden')) {
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+                openModalOrLink();
+            });
         }
 
         const button = card.querySelector('.jellyseerr-request-button');
@@ -908,29 +993,15 @@
         // If movie belongs to a collection, show a collection badge that opens the modal
         addCollectionMembershipBadge(card, item);
 
-        // Add click handler to overview to open more info modal
-        const overview = card.querySelector('.jellyseerr-overview');
-        if (overview && useMoreInfoModal && JE.jellyseerrMoreInfo) {
-            overview.style.cursor = 'pointer';
-            overview.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const tmdbId = parseInt(item.id);
-                const mediaType = item.mediaType; // 'movie' or 'tv'
-                if (tmdbId && mediaType) {
-                    JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
-                }
-            });
-        }
-
         // Add click handler for the more info link
         const moreInfoLink = card.querySelector('.jellyseerr-more-info-link');
         if (moreInfoLink) {
             if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
                 moreInfoLink.addEventListener('click', (e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     const tmdbId = parseInt(moreInfoLink.dataset.tmdbId);
-                    const mediaType = moreInfoLink.dataset.mediaType; // 'movie' or 'tv'
+                    const mediaType = moreInfoLink.dataset.mediaType;
                     if (tmdbId && mediaType) {
                         JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                     }
@@ -1056,8 +1127,7 @@
         button.dataset.searchResultItem = JSON.stringify(item);
         button.dataset.collectionId = item.id;
         button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_modal_request_collection')}</span>`;
-        button.className = 'jellyseerr-request-button emby-button';
-        button.classList.add('button-submit', 'jellyseerr-button-request', 'jellyseerr-button-collection');
+        button.className = 'jellyseerr-request-button jellyseerr-button-request jellyseerr-button-collection';
         button.disabled = false;
     }
 
@@ -1072,8 +1142,7 @@
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             if (summary) button.innerHTML += `<div class="jellyseerr-season-summary">${summary}</div>`;
             button.disabled = disabled;
-            button.className = 'jellyseerr-request-button emby-button jellyseerr-button-tv'; // Reset classes
-            button.classList.add('button-submit', className);
+            button.className = `jellyseerr-request-button jellyseerr-button-tv ${className}`; // Reset classes
         };
         switch (overallStatus) {
             case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending'); break;
@@ -1096,18 +1165,18 @@
         const status = item.mediaInfo ? item.mediaInfo.status : 1;
         const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
 
-        // Show split button when the 4K feature is enabled
+        // Show split button when the 4K feature is enabled - but NOT when button is in overview
         const show4KOption = !!JE.pluginConfig.JellyseerrEnable4KRequests;
+        const isInOverview = button.closest('.jellyseerr-overview');
 
         const setButton = (text, icon, className, disabled = false) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             button.disabled = disabled;
-            button.className = 'jellyseerr-request-button emby-button';
-            button.classList.add('button-submit', className);
+            button.className = `jellyseerr-request-button ${className}`;
         };
 
-        // Only add a button group if not already present in the cardFooter
-        if (show4KOption) {
+        // Only add a button group if not already present in the cardFooter AND not in overview
+        if (show4KOption && !isInOverview) {
             const cardFooter = button.closest('.cardFooter');
             if (cardFooter && !cardFooter.querySelector('.jellyseerr-button-group')) {
                 // Create button group
@@ -1161,7 +1230,7 @@
 
                 // Main button
                 const mainButton = document.createElement('button');
-                mainButton.className = `jellyseerr-request-button emby-button button-submit ${mainButtonClass}`;
+                mainButton.className = `jellyseerr-request-button ${mainButtonClass}`;
                 mainButton.disabled = mainButtonDisabled;
                 mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${(mainButtonClass === 'jellyseerr-button-processing' || mainButtonClass === 'jellyseerr-button-available-updating') ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
                 mainButton.dataset.tmdbId = item.id;
@@ -1175,7 +1244,7 @@
 
                 // Arrow button for 4K dropdown
                 const arrowButton = document.createElement('button');
-                arrowButton.className = 'jellyseerr-split-arrow emby-button button-submit';
+                arrowButton.className = 'jellyseerr-split-arrow';
                 arrowButton.innerHTML = '<span style="font-size: 1em;">▼</span>';
                 arrowButton.dataset.tmdbId = item.id;
                 arrowButton.dataset.toggle4k = 'true';
@@ -1235,15 +1304,14 @@
             return;
         }
 
-        // Standard button (no 4K option)
+        // Standard button (no 4K option or button in overview)
         switch (status) {
             case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending', true); break;
             case 3:
                 if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_processing')}</span><span class="jellyseerr-button-spinner"></span>`;
                     button.disabled = true;
-                    button.className = 'jellyseerr-request-button emby-button';
-                    button.classList.add('button-submit', 'jellyseerr-button-processing');
+                    button.className = 'jellyseerr-request-button jellyseerr-button-processing';
                     addDownloadProgressHover(button, item);
                 } else {
                     setButton(JE.t('jellyseerr_btn_requested'), icons.requested, 'jellyseerr-button-pending', true);
@@ -1255,8 +1323,7 @@
                 if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
                     button.innerHTML = `${icons.available}<span>${JE.t('jellyseerr_btn_available')}</span><span class="jellyseerr-button-spinner"></span>`;
                     button.disabled = true;
-                    button.className = 'jellyseerr-request-button emby-button';
-                    button.classList.add('button-submit', 'jellyseerr-button-available-updating');
+                    button.className = 'jellyseerr-request-button jellyseerr-button-available-updating';
                     addDownloadProgressHover(button, item);
                 } else {
                     setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true);
@@ -1264,6 +1331,36 @@
                 break;
             case 6: setButton(JE.t('jellyseerr_btn_rejected'), icons.cancel, 'jellyseerr-button-rejected', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
+        }
+
+        // Add click handler for request button (for overview button and standard button)
+        if (!button.disabled && !button.closest('.jellyseerr-button-group')) {
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
+                } else {
+                    button.disabled = true;
+                    button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
+                    try {
+                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
+                        button.classList.remove('jellyseerr-button-request');
+                        button.classList.add('jellyseerr-button-pending');
+                    } catch (error) {
+                        button.disabled = false;
+                        let errorMessage = JE.t('jellyseerr_btn_error');
+                        if (error.status === 404) {
+                            errorMessage = JE.t('jellyseerr_btn_user_not_found');
+                        } else if (error.responseJSON?.message) {
+                            errorMessage = error.responseJSON.message;
+                        }
+                        button.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
+                        button.classList.add('jellyseerr-button-error');
+                    }
+                }
+            });
         }
     }
 
