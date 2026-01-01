@@ -351,9 +351,8 @@
             .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }
             .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }
             .jellyseerr-collection-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+            .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 1; pointer-events: auto; transform: translateY(0); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
             .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
-            .jellyseerr-overview-hidden { pointer-events: none !important; }
             /* SHOW OVERVIEW: When card has 'is-touch' class (mobile/click) */
             .jellyseerr-card.is-touch .jellyseerr-overview { opacity: 1; pointer-events: auto; }
             .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview { opacity: 1; pointer-events: auto; }
@@ -1016,10 +1015,6 @@
                         <div class="cardIndicators"></div>
                     </div>
                     <div class="cardOverlayContainer" data-action="link"></div>
-                    <div class="jellyseerr-overview jellyseerr-overview-hidden">
-                        <div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
-                        <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
-                    </div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
                     <a is="emby-linkbutton" ${useMoreInfoModal ? 'href="#"' : `href="${useJellyseerrLink && jellyseerrUrl ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer"`} class="jellyseerr-more-info-link" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}" title="${JE.t('jellyseerr_card_view_details') || 'View Details'}"><bdi>${titleText}</bdi></a>
@@ -1042,101 +1037,128 @@
         }
 
         const imageContainer = card.querySelector('.cardImageContainer');
-        const overview = card.querySelector('.jellyseerr-overview');
+        const cardScalable = card.querySelector('.cardScalable');
 
-        if (imageContainer && overview) {
+        if (imageContainer && cardScalable) {
             imageContainer.classList.remove('itemAction');
 
-            // Helper to close overview if clicked outside
-            const handleOutsideClick = (evt) => {
-                // If click is NOT inside this card, close it
-                if (!card.contains(evt.target)) {
-                    hideOverview();
+            let overview = null;
+            let button = null;
+
+            // Create the overview element
+            const createOverview = () => {
+                overview = document.createElement('div');
+                overview.className = 'jellyseerr-overview';
+                overview.style.cursor = 'pointer';
+                overview.innerHTML = `
+                    <div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
+                    <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
+                `;
+                
+                cardScalable.appendChild(overview);
+                button = overview.querySelector('.jellyseerr-request-button');
+                configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
+
+                // Click handler on overview to open modal
+                overview.addEventListener('click', (e) => {
+                    if (e.target.closest('.jellyseerr-request-button')) {
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
+                        const tmdbId = parseInt(item.id);
+                        const mediaType = item.mediaType;
+                        if (tmdbId && mediaType) {
+                            JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                        }
+                    } else if (useJellyseerrLink && jellyseerrUrl) {
+                        window.open(jellyseerrUrl, '_blank', 'noopener,noreferrer');
+                    } else {
+                        window.open(tmdbUrl, '_blank', 'noopener,noreferrer');
+                    }
+                });
+            };
+
+            // Remove the overview element
+            const removeOverview = () => {
+                if (overview && overview.parentNode) {
+                    overview.parentNode.removeChild(overview);
+                    overview = null;
+                    button = null;
                 }
-            };
-
-            const showOverview = () => {
-                card.classList.add('is-touch');
-                overview.classList.remove('jellyseerr-overview-hidden');
-                // Add document listener to detect clicks outside this card
-                // Timeout ensures we don't catch the *current* click immediately
-                setTimeout(() => {
-                    document.addEventListener('click', handleOutsideClick);
-                }, 0);
-            };
-
-            const hideOverview = () => {
-                card.classList.remove('is-touch');
-                overview.classList.add('jellyseerr-overview-hidden');
                 document.removeEventListener('click', handleOutsideClick);
             };
 
-            const toggleOverview = () => {
-                if (card.classList.contains('is-touch')) {
-                    hideOverview();
-                } else {
-                    showOverview();
+            // Helper to close overview if clicked outside
+            const handleOutsideClick = (evt) => {
+                if (!card.contains(evt.target)) {
+                    removeOverview();
                 }
             };
+
+            // Desktop: hover to show/hide overview
+            cardScalable.addEventListener('mouseenter', () => {
+                if (!overview) {
+                    createOverview();
+                }
+            });
+            cardScalable.addEventListener('mouseleave', () => {
+                removeOverview();
+            });
+
+            // Mobile/Touch: touchstart to show overview, second tap (click) on overview opens modal
+            imageContainer.style.cursor = 'pointer';
+            
+            // Use touchstart for mobile to create overview (prevents touchend from immediately opening modal)
+            imageContainer.addEventListener('touchstart', (e) => {
+                if (e.target.closest('.jellyseerr-overview') || e.target.closest('.jellyseerr-request-button')) {
+                    return;
+                }
+                
+                if (!overview) {
+                    e.preventDefault();
+                    createOverview();
+                    setTimeout(() => {
+                        document.addEventListener('click', handleOutsideClick);
+                    }, 0);
+                }
+            }, { passive: false });
+            
+            // Desktop: use click event
+            imageContainer.addEventListener('click', (e) => {
+                // Skip if touch device (touchstart already handled it)
+                if (e.type === 'click' && 'ontouchstart' in window) {
+                    return;
+                }
+                
+                if (e.target.closest('.jellyseerr-overview')) {
+                    return;
+                }
+                
+                if (!overview) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    createOverview();
+                    setTimeout(() => {
+                        document.addEventListener('click', handleOutsideClick);
+                    }, 0);
+                }
+            });
 
             imageContainer.setAttribute('tabindex', '0');
             imageContainer.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    toggleOverview();
-                }
-            });
-
-
-            // On Mobile/Touch, click toggles the overview
-            imageContainer.style.cursor = 'pointer';
-            imageContainer.addEventListener('click', (e) => {
-                // Don't toggle if clicking the button or overview
-                if (e.target.closest('.jellyseerr-request-button') || e.target.closest('.jellyseerr-overview')) {
-                    return;
-                }
-                e.preventDefault();
-                e.stopPropagation();
-                toggleOverview();
-            });
-
-            // Add handlers to overview to open modal/link
-            overview.style.cursor = 'pointer';
-
-            const openModalOrLink = () => {
-                if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
-                    const tmdbId = parseInt(item.id);
-                    const mediaType = item.mediaType;
-                    if (tmdbId && mediaType) {
-                        JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                    if (!overview) {
+                        createOverview();
+                    } else {
+                        removeOverview();
                     }
-                } else if (useJellyseerrLink && jellyseerrUrl) {
-                    window.open(jellyseerrUrl, '_blank', 'noopener,noreferrer');
-                } else {
-                    window.open(tmdbUrl, '_blank', 'noopener,noreferrer');
                 }
-            };
-
-            // Click handler - only open modal if overview is visible (not hidden)
-            overview.addEventListener('click', (e) => {
-                // Don't open modal if clicking the button
-                if (e.target.closest('.jellyseerr-request-button')) {
-                    return;
-                }
-
-                // Only open modal if overview is visible (doesn't have hidden class)
-                if (overview.classList.contains('jellyseerr-overview-hidden')) {
-                    return;
-                }
-
-                e.preventDefault();
-                e.stopPropagation();
-                openModalOrLink();
             });
         }
-
-        const button = card.querySelector('.jellyseerr-request-button');
-        configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
         addMediaTypeBadge(card, item);
         // If movie belongs to a collection, show a collection badge that opens the modal
         addCollectionMembershipBadge(card, item);
