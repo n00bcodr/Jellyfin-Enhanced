@@ -363,61 +363,77 @@
             }
             /* SPLIT BUTTON FOR 4K */
             .jellyseerr-button-group {
-                display: flex;
-                padding-top: .2em;
-                width: 100%;
+                display: inline-flex;
+                width: auto;
                 position: relative;
                 gap: 0;
                 align-items: stretch;
+                border-radius: 8px;
+                overflow: hidden;
             }
-            .jellyseerr-button-group .jellyseerr-request-button {
+            .jellyseerr-button-group .jellyseerr-split-main {
                 border-top-right-radius: 0px !important;
                 border-bottom-right-radius: 0px !important;
-                flex: 1;
                 margin: 0 !important;
-                min-width: 0;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .jellyseerr-button-group .jellyseerr-request-button span {
-                display: inline-block;
-                max-width: 100%;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                flex: 1;
             }
             button.jellyseerr-split-arrow {
                 border-top-left-radius: 0px !important;
                 border-bottom-left-radius: 0px !important;
                 cursor: pointer;
-                background-color: #4f46e5 !important;
-                background: #4f46e5 !important;
                 color: #fff !important;
-                display: flex;
+                display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                transition: background .2s;
+                transition: background .2s, opacity .2s;
                 flex-shrink: 0;
                 position: relative;
                 z-index: 1;
-                margin: 0;
-                padding: 0 .2em !important;
-                font-size: 0.9em;
-                border-left: 1px solid #00000080;
+                margin: 0 !important;
+                padding: 0.6em 0.4em !important;
+                border-left: 2px solid rgba(0, 0, 0, 0.4);
+                border-bottom-width: 0px;
+                border-top-width: 0px;
             }
-            .layout-desktop button.jellyseerr-split-arrow { padding: 0 .5em 0 .5em !important}
-            .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(0.95); }
-            .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.88); }
-            .jellyseerr-split-arrow:disabled,
-            .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {
-                opacity: 0.3;
-                background: #16a34a;
-                cursor: default;
-                filter: brightness(1);
+            /* Match arrow button color to main button */
+            .jellyseerr-button-group .jellyseerr-button-request ~ .jellyseerr-split-arrow {
+                background-color: #5a3fb8 !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-pending ~ .jellyseerr-split-arrow {
+                background-color: #b45309 !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-available ~ .jellyseerr-split-arrow {
+                background-color: #16a34a !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-available-updating ~ .jellyseerr-split-arrow {
+                background-color: #16a34a !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-processing ~ .jellyseerr-split-arrow {
+                background-color: #581c87 !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-rejected ~ .jellyseerr-split-arrow {
+                background-color: #8a1c1c !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-partially-available ~ .jellyseerr-split-arrow {
+                background-color: #4ca46c !important;
+            }
+            /* Override for 4K specific states */
+            .jellyseerr-split-arrow.jellyseerr-4k-available {
+                background-color: #16a34a !important;
+            }
+            .jellyseerr-split-arrow.jellyseerr-4k-pending {
+                background-color: #b45309 !important;
             }
             .jellyseerr-split-arrow svg {
-                width: 1.5em;
-                height: 1.5em;
+                width: 1em;
+                height: 1em;
+            }
+            .jellyseerr-split-arrow:hover:not(:disabled) { opacity: 0.8; }
+            .jellyseerr-split-arrow:active:not(:disabled) { opacity: 0.7; }
+            .jellyseerr-split-arrow:disabled,
+            .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {
+                opacity: 0.5;
+                cursor: default;
             }
 
             /* 4K POPUP MENU */
@@ -1255,9 +1271,8 @@
         const status = item.mediaInfo ? item.mediaInfo.status : 1;
         const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
 
-        // Show split button when the 4K feature is enabled - but NOT when button is in overview
+        // Show split button when the 4K feature is enabled
         const show4KOption = !!JE.pluginConfig.JellyseerrEnable4KRequests;
-        const isInOverview = button.closest('.jellyseerr-overview');
 
         const setButton = (text, icon, className, disabled = false) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
@@ -1265,132 +1280,131 @@
             button.className = `jellyseerr-request-button ${className}`;
         };
 
-        // Only add a button group if not already present in the cardFooter AND not in overview
-        if (show4KOption && !isInOverview) {
-            const cardFooter = button.closest('.cardFooter');
-            if (cardFooter && !cardFooter.querySelector('.jellyseerr-button-group')) {
-                // Create button group
-                const buttonGroup = document.createElement('div');
-                buttonGroup.className = 'jellyseerr-button-group';
+        // Create split button with 4K option if enabled
+        if (show4KOption && !button.closest('.jellyseerr-button-group')) {
+            // Create button group
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'jellyseerr-button-group';
 
-                // Determine main button state based on status
-                let mainButtonText, mainButtonIcon, mainButtonClass, mainButtonDisabled;
+            // Determine main button state based on status
+            let mainButtonText, mainButtonIcon, mainButtonClass, mainButtonDisabled;
 
-                if (status === 5) {
-                    // Check if item is available but also downloading (upgrading version)
-                    if (item.mediaInfo?.downloadStatus?.length > 0) {
-                        mainButtonText = JE.t('jellyseerr_btn_available');
-                        mainButtonIcon = icons.available;
-                        mainButtonClass = 'jellyseerr-button-available-updating';
-                        mainButtonDisabled = true;
-                    } else {
-                        mainButtonText = JE.t('jellyseerr_btn_available');
-                        mainButtonIcon = icons.available;
-                        mainButtonClass = 'jellyseerr-button-available';
-                        mainButtonDisabled = true;
-                    }
-                } else if (status === 2) {
-                    mainButtonText = JE.t('jellyseerr_btn_pending');
-                    mainButtonIcon = icons.pending;
+            if (status === 5) {
+                // Check if item is available but also downloading (upgrading version)
+                if (item.mediaInfo?.downloadStatus?.length > 0) {
+                    mainButtonText = JE.t('jellyseerr_btn_available');
+                    mainButtonIcon = icons.available;
+                    mainButtonClass = 'jellyseerr-button-available-updating';
+                    mainButtonDisabled = true;
+                } else {
+                    mainButtonText = JE.t('jellyseerr_btn_available');
+                    mainButtonIcon = icons.available;
+                    mainButtonClass = 'jellyseerr-button-available';
+                    mainButtonDisabled = true;
+                }
+            } else if (status === 2) {
+                mainButtonText = JE.t('jellyseerr_btn_pending');
+                mainButtonIcon = icons.pending;
+                mainButtonClass = 'jellyseerr-button-pending';
+                mainButtonDisabled = true;
+            } else if (status === 3) {
+                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
+                    mainButtonText = JE.t('jellyseerr_btn_processing');
+                    mainButtonIcon = '';
+                    mainButtonClass = 'jellyseerr-button-processing';
+                    mainButtonDisabled = true;
+                } else {
+                    mainButtonText = JE.t('jellyseerr_btn_requested');
+                    mainButtonIcon = icons.requested;
                     mainButtonClass = 'jellyseerr-button-pending';
                     mainButtonDisabled = true;
-                } else if (status === 3) {
-                    if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
-                        mainButtonText = JE.t('jellyseerr_btn_processing');
-                        mainButtonIcon = '';
-                        mainButtonClass = 'jellyseerr-button-processing';
-                        mainButtonDisabled = true;
-                    } else {
-                        mainButtonText = JE.t('jellyseerr_btn_requested');
-                        mainButtonIcon = icons.requested;
-                        mainButtonClass = 'jellyseerr-button-pending';
-                        mainButtonDisabled = true;
-                    }
-                } else if (status === 6) {
-                    mainButtonText = JE.t('jellyseerr_btn_rejected');
-                    mainButtonIcon = icons.cancel;
-                    mainButtonClass = 'jellyseerr-button-rejected';
-                    mainButtonDisabled = true;
-                } else {
-                    mainButtonText = JE.t('jellyseerr_btn_request');
-                    mainButtonIcon = icons.request;
-                    mainButtonClass = 'jellyseerr-button-request';
-                    mainButtonDisabled = false;
                 }
+            } else if (status === 6) {
+                mainButtonText = JE.t('jellyseerr_btn_rejected');
+                mainButtonIcon = icons.cancel;
+                mainButtonClass = 'jellyseerr-button-rejected';
+                mainButtonDisabled = true;
+            } else {
+                mainButtonText = JE.t('jellyseerr_btn_request');
+                mainButtonIcon = icons.request;
+                mainButtonClass = 'jellyseerr-button-request';
+                mainButtonDisabled = false;
+            }
 
-                // Main button
-                const mainButton = document.createElement('button');
-                mainButton.className = `jellyseerr-request-button ${mainButtonClass}`;
-                mainButton.disabled = mainButtonDisabled;
-                mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${(mainButtonClass === 'jellyseerr-button-processing' || mainButtonClass === 'jellyseerr-button-available-updating') ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
-                mainButton.dataset.tmdbId = item.id;
-                mainButton.dataset.mediaType = 'movie';
-                mainButton.dataset.searchResultItem = JSON.stringify(item);
+            // Main button
+            const mainButton = document.createElement('button');
+            mainButton.className = `jellyseerr-request-button jellyseerr-split-main ${mainButtonClass}`;
+            mainButton.disabled = mainButtonDisabled;
+            mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${(mainButtonClass === 'jellyseerr-button-processing' || mainButtonClass === 'jellyseerr-button-available-updating') ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
+            mainButton.dataset.tmdbId = item.id;
+            mainButton.dataset.mediaType = 'movie';
+            mainButton.dataset.searchResultItem = JSON.stringify(item);
 
-                // Add download progress hover if processing or available-updating
-                if ((status === 3 || status === 5) && (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0)) {
-                    addDownloadProgressHover(mainButton, item);
-                }
+            // Add download progress hover if processing or available-updating
+            if ((status === 3 || status === 5) && (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0)) {
+                addDownloadProgressHover(mainButton, item);
+            }
 
-                // Arrow button for 4K dropdown
-                const arrowButton = document.createElement('button');
-                arrowButton.className = 'jellyseerr-split-arrow';
-                arrowButton.innerHTML = '<span style="font-size: 1em;">▼</span>';
-                arrowButton.dataset.tmdbId = item.id;
-                arrowButton.dataset.toggle4k = 'true';
+            // Arrow button for 4K dropdown
+            const arrowButton = document.createElement('button');
+            arrowButton.className = 'jellyseerr-split-arrow';
+            arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
+            arrowButton.dataset.tmdbId = item.id;
+            arrowButton.dataset.toggle4k = 'true';
 
-                // Determine arrow button state based on 4K status
-                if (status4k === 5) {
-                    arrowButton.disabled = true;
-                    arrowButton.classList.add('jellyseerr-split-arrow-disabled');
-                    arrowButton.title = '4K Available';
-                } else if (status4k === 2 || status4k === 3) {
-                    arrowButton.title = '4K Requested';
-                } else {
-                    arrowButton.title = 'Request in 4K';
-                }
+            // Determine arrow button state based on 4K status
+            if (status4k === 5) {
+                arrowButton.disabled = true;
+                arrowButton.classList.add('jellyseerr-split-arrow-disabled');
+                arrowButton.classList.add('jellyseerr-4k-available');
+                arrowButton.title = '4K Available';
+            } else if (status4k === 2 || status4k === 3) {
+                arrowButton.classList.add('jellyseerr-4k-pending');
+                arrowButton.title = '4K Requested';
+            } else {
+                arrowButton.title = 'Request in 4K';
+            }
 
-                buttonGroup.appendChild(mainButton);
-                buttonGroup.appendChild(arrowButton);
-                button.replaceWith(buttonGroup);
+            buttonGroup.appendChild(mainButton);
+            buttonGroup.appendChild(arrowButton);
+            button.replaceWith(buttonGroup);
 
-                if (!mainButtonDisabled) {
-                    mainButton.addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        if (JE.pluginConfig.JellyseerrShowAdvanced) {
-                            ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
-                        } else {
-                            mainButton.disabled = true;
-                            mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
-                            try {
-                                await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
-                                mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
-                                mainButton.classList.remove('jellyseerr-button-request');
-                                mainButton.classList.add('jellyseerr-button-pending');
-                            } catch (error) {
-                                mainButton.disabled = false;
-                                let errorMessage = JE.t('jellyseerr_btn_error');
-                                if (error.status === 404) {
-                                    errorMessage = JE.t('jellyseerr_btn_user_not_found');
-                                } else if (error.responseJSON?.message) {
-                                    errorMessage = error.responseJSON.message;
-                                }
-                                mainButton.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
-                                mainButton.classList.add('jellyseerr-button-error');
-                            }
-                        }
-                    });
-                }
-
-                arrowButton.addEventListener('click', (e) => {
+            if (!mainButtonDisabled) {
+                mainButton.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    if (active4KPopup && active4KPopup.parentElement === buttonGroup) {
-                        hide4KPopup();
+                    if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
                     } else {
-                        show4KPopup(buttonGroup, item);
+                        mainButton.disabled = true;
+                        mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
+                        try {
+                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
+                            mainButton.classList.remove('jellyseerr-button-request');
+                            mainButton.classList.add('jellyseerr-button-pending');
+                        } catch (error) {
+                            mainButton.disabled = false;
+                            let errorMessage = JE.t('jellyseerr_btn_error');
+                            if (error.status === 404) {
+                                errorMessage = JE.t('jellyseerr_btn_user_not_found');
+                            } else if (error.responseJSON?.message) {
+                                errorMessage = error.responseJSON.message;
+                            }
+                            mainButton.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
+                            mainButton.classList.add('jellyseerr-button-error');
+                        }
                     }
                 });
             }
+
+            arrowButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (active4KPopup && active4KPopup.parentElement === buttonGroup) {
+                    hide4KPopup();
+                } else {
+                    show4KPopup(buttonGroup, item);
+                }
+            });
             return;
         }
 
