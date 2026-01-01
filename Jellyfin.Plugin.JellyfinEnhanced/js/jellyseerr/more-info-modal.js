@@ -175,13 +175,6 @@ function showModal(data, mediaType) {
         });
     }
 
-    // Handle cast/crew image errors
-    modal.querySelectorAll('.person-image').forEach(img => {
-        img.addEventListener('error', () => {
-            img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23555"/%3E%3C/svg%3E';
-        });
-    });
-
     document.body.appendChild(modal);
     currentModal = modal;
 
@@ -1313,9 +1306,12 @@ function injectStyles() {
         }
 
         .je-more-info-modal .title-chip {
-            min-height: 32px;
             display: flex;
             align-items: center;
+        }
+
+        .je-more-info-modal .title-chip:empty {
+            display: none;
         }
 
         .je-more-info-modal .year {
