@@ -282,7 +282,7 @@
             request4KBtn.disabled = true;
         } else {
             // 4K can be requested
-            request4KBtn.innerHTML = `<span>Request in 4K</span>`;
+            request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
             request4KBtn.dataset.tmdbId = item.id;
             request4KBtn.dataset.action = 'request4k';
         }
@@ -1404,7 +1404,7 @@
                 arrowButton.classList.add('jellyseerr-4k-pending');
                 arrowButton.title = '4K Requested';
             } else {
-                arrowButton.title = 'Request in 4K';
+                arrowButton.title = JE.t('jellyseerr_btn_request_4k');
             }
 
             buttonGroup.appendChild(mainButton);
