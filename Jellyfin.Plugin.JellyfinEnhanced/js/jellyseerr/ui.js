@@ -394,6 +394,7 @@
                 border-left: 2px solid rgba(0, 0, 0, 0.4);
                 border-bottom-width: 0px;
                 border-top-width: 0px;
+                border-right-width: 0px;
             }
             /* Match arrow button color to main button */
             .jellyseerr-button-group .jellyseerr-button-request ~ .jellyseerr-split-arrow {
