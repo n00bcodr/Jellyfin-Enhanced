@@ -279,18 +279,18 @@ function buildModalContent(data, mediaType) {
 
                             ${data.overview ? `
                                 <div class="overview-section">
-                                    <h3>Overview</h3>
+                                    <h3>${JE.t('jellyseerr_modal_overview') || 'Overview'}</h3>
                                     <p>${escapeHtml(data.overview)}</p>
                                 </div>
                             ` : ''}
 
                             ${buildCrewSection(data, mediaType)}
 
-                            ${buildKeywordsSection(data)}
-
                             ${buildCastSection(data)}
 
                             ${buildTrailersSection(data)}
+
+                            ${buildKeywordsSection(data)}
                         </div>
 
                         <div class="modal-right">
@@ -299,7 +299,6 @@ function buildModalContent(data, mediaType) {
                     </div>
 
                     ${mediaType === 'tv' ? buildSeasonsSection(data) : ''}
-                    ${buildProductionSection(data)}
                 </div>
             </div>
         </div>
@@ -445,6 +444,7 @@ function buildKeywordsSection(data) {
 
     return `
         <div class="keywords-section">
+            <h3>${JE.t('jellyseerr_modal_keywords') || 'Keywords'}</h3>
             <div class="keywords-grid">
                 ${data.keywords.slice(0, 20).map(k => `<span class="keyword">${escapeHtml(k.name)}</span>`).join('')}
             </div>
@@ -600,7 +600,7 @@ function buildCrewSection(data, mediaType) {
     if (mediaType === 'tv' && data.createdBy?.length) {
         return `
             <div class="creators">
-                <h4>Created By</h4>
+                <h4>${JE.t('jellyseerr_modal_created_by') || 'Created By'}</h4>
                 <p>${data.createdBy.map(c => escapeHtml(c.name)).join(', ')}</p>
             </div>
         `;
@@ -616,7 +616,7 @@ function buildCrewSection(data, mediaType) {
         if (director) {
             html += `
                 <div class="crew-item">
-                    <h4>Director</h4>
+                    <h4>${JE.t('jellyseerr_modal_director') || 'Director'}</h4>
                     <p>${escapeHtml(director.name)}</p>
                 </div>
             `;
@@ -624,7 +624,7 @@ function buildCrewSection(data, mediaType) {
         if (writers.length) {
             html += `
                 <div class="crew-item">
-                    <h4>Writers</h4>
+                    <h4>${JE.t('jellyseerr_modal_writers') || 'Writers'}</h4>
                     <p>${writers.map(w => escapeHtml(w.name)).join(', ')}</p>
                 </div>
             `;
@@ -880,15 +880,21 @@ function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads
     const use4k = isMovie && status4k && status4k !== 1;
     const targetStatus = use4k ? status4k : status;
     const hasActiveDownloads = (use4k ? downloads4k : downloads)?.length > 0;
+    const labelAvailable = JE.t('jellyseerr_btn_available') || 'Available';
+    const labelPartial = JE.t('jellyseerr_btn_partially_available') || 'Partially Available';
+    const labelProcessing = JE.t('jellyseerr_btn_processing') || 'Processing';
+    const labelRequested = JE.t('jellyseerr_btn_requested') || 'Requested';
+    const labelRejected = JE.t('jellyseerr_btn_rejected') || 'Rejected';
+    const with4k = (text) => use4k ? `4K ${text}` : text;
     switch (targetStatus) {
-        case 5: return { text: use4k ? '4K Available' : 'Available', className: 'chip-available' };
-        case 4: return { text: use4k ? '4K Partially Available' : 'Partially Available', className: 'chip-partial' };
+        case 5: return { text: with4k(labelAvailable), className: 'chip-available' };
+        case 4: return { text: with4k(labelPartial), className: 'chip-partial' };
         case 3: return hasActiveDownloads
-            ? { text: use4k ? '4K Processing' : 'Processing', className: 'chip-processing' }
-            : { text: use4k ? '4K Requested' : 'Requested', className: 'chip-requested' };
-        case 2: return { text: use4k ? '4K Requested' : 'Requested', className: 'chip-requested' };
-        case 6: return { text: use4k ? '4K Rejected' : 'Rejected', className: 'chip-rejected' };
-        default: return { text: 'Requested', className: 'chip-requested' };
+            ? { text: with4k(labelProcessing), className: 'chip-processing' }
+            : { text: with4k(labelRequested), className: 'chip-requested' };
+        case 2: return { text: with4k(labelRequested), className: 'chip-requested' };
+        case 6: return { text: with4k(labelRejected), className: 'chip-rejected' };
+        default: return { text: labelRequested, className: 'chip-requested' };
     }
 }
 
@@ -1027,57 +1033,6 @@ function buildCastSection(data) {
                     `;
                 }).join('')}
             </div>
-        </div>
-    `;
-}
-
-/**
- * Build production section
- */
-function buildProductionSection(data) {
-    const items = [];
-
-    if (data.productionCompanies?.length) {
-        items.push({
-            title: 'Production Companies',
-            content: data.productionCompanies.map(c => escapeHtml(c.name)).join(', ')
-        });
-    }
-
-    if (data.productionCountries?.length) {
-        items.push({
-            title: 'Production Countries',
-            content: data.productionCountries.map(c => escapeHtml(c.name)).join(', ')
-        });
-    }
-
-    if (data.networks?.length) {
-        items.push({
-            title: 'Networks',
-            content: data.networks.map(n => escapeHtml(n.name)).join(', ')
-        });
-    }
-
-    if (data.keywords?.length) {
-        items.push({
-            title: 'Keywords',
-            content: data.keywords.slice(0, 10).map(k =>
-                `<span class="keyword-tag">${escapeHtml(k.name)}</span>`
-            ).join('')
-        });
-    }
-
-    if (!items.length) return '';
-
-    return `
-        <div class="production-section">
-            <h3>Production Details</h3>
-            ${items.map(item => `
-                <div class="production-item">
-                    <h4>${item.title}</h4>
-                    <div class="production-content">${item.content}</div>
-                </div>
-            `).join('')}
         </div>
     `;
 }
@@ -1607,8 +1562,14 @@ function injectStyles() {
         }
 
         .je-more-info-modal .keywords-section {
-            margin-bottom: 0.75rem;
-            display: none;
+            margin: 1.5rem 0 0.75rem;
+            display: block;
+        }
+
+        .je-more-info-modal .keywords-section h3 {
+            font-size: 1.1rem;
+            margin: 0 0 0.6rem;
+            font-weight: 600;
         }
 
         .je-more-info-modal .keywords-grid {
@@ -1624,15 +1585,6 @@ function injectStyles() {
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 20px;
             font-size: 0.75rem;
-        }
-
-        .je-more-info-modal .keyword-tag {
-            display: inline-block;
-            padding: 0.2rem 0.5rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            margin: 0 0.4rem 0.4rem 0;
-            font-size: 0.8rem;
         }
 
         .je-more-info-modal .cast-section {
@@ -2011,41 +1963,6 @@ function injectStyles() {
             height: 30px;
             border-radius: 4px;
             object-fit: cover;
-        }
-
-        .je-more-info-modal .production-section {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 6px;
-            padding: 1rem;
-            margin-top: 1rem;
-            margin-bottom: 1rem;
-        }
-
-        .je-more-info-modal .production-section h3 {
-            margin-top: 0;
-        }
-
-        .je-more-info-modal .production-item {
-            margin-bottom: 2rem;
-        }
-
-        .je-more-info-modal .production-item:last-child {
-            margin-bottom: 0;
-        }
-
-        .je-more-info-modal .production-item h4 {
-            font-size: 0.75rem;
-            opacity: 0.6;
-            margin: 0 0 0.5rem;
-            text-transform: uppercase;
-            font-weight: 600;
-        }
-
-        .je-more-info-modal .production-content {
-            line-height: 1.4;
-            opacity: 0.9;
-            font-size: 0.9rem;
         }
 
         .je-more-info-modal .seasons-grid {
