@@ -98,6 +98,41 @@ async function fetchMediaDetails(tmdbId, mediaType) {
 }
 
 /**
+ * Refresh modal data and update displays
+ */
+async function refreshModalData(data, mediaType, modal, refreshBtn) {
+    try {
+        // Show loading state on button
+        refreshBtn.classList.add('loading');
+        refreshBtn.disabled = true;
+
+        // Fetch fresh data
+        const freshData = await fetchMediaDetails(data.id, mediaType);
+        if (!freshData) {
+            showError('Failed to refresh media information');
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+            return;
+        }
+
+        // Update data object with fresh info
+        Object.assign(data, freshData);
+
+        // Re-render the action buttons/chips to show updated status (chip, downloads, request button)
+        renderActions(data, mediaType);
+
+        refreshBtn.classList.remove('loading');
+        refreshBtn.disabled = false;
+
+    } catch (error) {
+        console.error('Error refreshing modal data:', error);
+        showError('Failed to refresh modal data');
+        refreshBtn.classList.remove('loading');
+        refreshBtn.disabled = false;
+    }
+}
+
+/**
  * Get content rating for specified region
  */
 function getContentRating(data, mediaType) {
@@ -164,6 +199,16 @@ function showModal(data, mediaType) {
             moreInfoModal.close();
         }
     });
+
+    // Refresh button handler
+    const refreshBtn = modal.querySelector('.modal-refresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await refreshModalData(data, mediaType, modal, refreshBtn);
+        });
+    }
 
     // Close button handler
     const closeBtn = modal.querySelector('.modal-close');
@@ -236,6 +281,13 @@ function buildModalContent(data, mediaType) {
     return `
         <div class="modal-overlay">
             <div class="modal-container">
+                <button class="modal-refresh" aria-label="Refresh" title="Refresh status">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36"></path>
+                    </svg>
+                </button>
                 <button class="modal-close" aria-label="Close">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1198,13 +1250,10 @@ function injectStyles() {
             background: rgba(255, 255, 255, 0.3);
         }
 
+        .je-more-info-modal .modal-refresh,
         .je-more-info-modal .modal-close {
             position: absolute;
             top: 1.5rem;
-            right: 1.5rem;
-            z-index: 100;
-            width: 40px;
-            height: 40px;
             background: rgba(0, 0, 0, 0.6);
             border: none;
             border-radius: 50%;
@@ -1214,13 +1263,40 @@ function injectStyles() {
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
+            width: 40px;
+            height: 40px;
+            z-index: 100;
         }
 
+        .je-more-info-modal .modal-refresh {
+            right: 5.5rem;
+        }
+
+        .je-more-info-modal .modal-close {
+            right: 1.5rem;
+        }
+
+        .je-more-info-modal .modal-refresh:hover:not(:disabled),
         .je-more-info-modal .modal-close:hover {
             background: rgba(0, 0, 0, 0.9);
             transform: scale(1.1);
         }
 
+        .je-more-info-modal .modal-refresh:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .je-more-info-modal .modal-refresh.loading svg {
+            animation: spin 1.5s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .je-more-info-modal .modal-refresh svg,
         .je-more-info-modal .modal-close svg {
             width: 24px;
             height: 24px;
