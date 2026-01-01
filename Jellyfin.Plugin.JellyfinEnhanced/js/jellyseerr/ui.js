@@ -38,6 +38,47 @@
         request: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" role="img" style="margin-right:0.5em;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path></svg>'
     };
 
+    // Keep card buttons in sync when a request is made from other surfaces (e.g., more info modal)
+    function markCardRequested(tmdbId, mediaType, is4k = false) {
+        const button = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
+        if (!button) return;
+
+        const requestedLabel = JE?.t ? JE.t('jellyseerr_btn_requested') : 'Requested';
+        const setPending = (target) => {
+            target.innerHTML = `${icons.requested}<span>${requestedLabel}</span>`;
+            target.classList.remove('jellyseerr-button-request');
+            if (!target.classList.contains('jellyseerr-button-pending')) {
+                target.classList.add('jellyseerr-button-pending');
+            }
+            target.disabled = true;
+        };
+
+        if (button.classList.contains('jellyseerr-split-main')) {
+            setPending(button);
+            const arrow = button.parentElement?.querySelector('.jellyseerr-split-arrow');
+            if (arrow && is4k) {
+                arrow.classList.add('jellyseerr-4k-pending');
+                arrow.disabled = true;
+            }
+        } else {
+            setPending(button);
+        }
+
+        const card = button.closest('.jellyseerr-card');
+        const badge = card?.querySelector('.jellyseerr-status-badge');
+        if (badge) {
+            badge.innerHTML = icons.requested;
+            badge.className = 'jellyseerr-status-badge status-requested';
+            badge.style.display = 'flex';
+        }
+    }
+
+    document.addEventListener('jellyseerr-media-requested', (e) => {
+        const { tmdbId, mediaType, is4k } = e.detail || {};
+        if (!tmdbId || !mediaType) return;
+        markCardRequested(String(tmdbId), mediaType, is4k);
+    });
+
     // ================================
     // DOWNLOAD PROGRESS POPOVER SYSTEM
     // ================================
@@ -1711,6 +1752,13 @@
                         await requestMedia(tmdbId, 'tv', settings, false, searchResultItem);
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: showTitle }), 4000);
                     }
+                    // Notify any listening modals that TV was requested
+                    document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv' } }));
+                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv' } }));
+
+                    // Update original card button to pending state
+                    markCardRequested(tmdbId, 'tv');
+
                     closeFn();
                     setTimeout(() => {
                         const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
