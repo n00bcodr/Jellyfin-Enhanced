@@ -1215,7 +1215,7 @@ function injectStyles() {
 
         .je-more-info-modal .modal-container {
             position: relative;
-            max-width: 1400px;
+            max-width: 70vw;
             max-height: 100%;
             width: 100%;
             height: 100%;
@@ -1227,6 +1227,10 @@ function injectStyles() {
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
             display: flex;
             flex-direction: column;
+        }
+
+        .layout-mobile .je-more-info-modal .modal-container {
+            max-width: 100vw;
         }
 
         .je-more-info-modal .modal-container::-webkit-scrollbar {
@@ -1279,6 +1283,7 @@ function injectStyles() {
             height: 300px;
             background-size: cover;
             background-position: center calc(-50px);
+            background-repeat: no-repeat;
             flex-shrink: 0;
         }
 
@@ -1296,6 +1301,8 @@ function injectStyles() {
             flex: 1;
             overflow-y: auto;
             min-height: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .je-more-info-modal .modal-main {
@@ -1482,12 +1489,15 @@ function injectStyles() {
             box-sizing: border-box;
             min-width: 0;
             overflow: hidden;
+            width: 100%;
         }
 
         .je-download-title {
             font-weight: 600;
             font-size: 0.9rem;
             margin-bottom: 0.2rem;
+            word-break: break-word;
+            white-space: normal;
         }
 
         .je-download-progress {
@@ -1508,9 +1518,12 @@ function injectStyles() {
         .je-download-meta {
             display: flex;
             justify-content: space-between;
+            gap: 0.35rem;
             font-size: 0.75rem;
             opacity: 0.75;
             margin-top: 0.25rem;
+            flex-wrap: wrap;
+            word-break: break-word;
         }
 
         .je-4k-popup {
@@ -1983,6 +1996,7 @@ function injectStyles() {
             font-size: 1rem;
             line-height: 1.4;
             text-align: end;
+            word-break: break-word;
         }
 
         .je-more-info-providers-list {
@@ -2100,8 +2114,14 @@ function injectStyles() {
         }
 
         @media (max-width: 768px) {
+            .je-more-info-modal .modal-backdrop {
+                height: 200px;
+                background-position: center;
+            }
+
             .je-more-info-modal .modal-content {
                 padding: 0 1rem 1rem;
+                margin-top: -60px;
             }
 
             .je-more-info-modal .header-section {
@@ -2141,14 +2161,17 @@ function injectStyles() {
 
             .je-download-row {
                 padding: 0.4rem 0.6rem;
+                width: 100%;
             }
 
             .je-download-title {
                 font-size: 0.8rem;
+                word-break: break-word;
             }
 
             .je-download-meta {
                 font-size: 0.65rem;
+                gap: 0.25rem;
             }
         }
     `;
