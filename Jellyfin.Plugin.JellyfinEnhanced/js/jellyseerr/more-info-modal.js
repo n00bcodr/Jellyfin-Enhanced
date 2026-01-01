@@ -185,6 +185,35 @@ function showModal(data, mediaType) {
     document.body.appendChild(modal);
     currentModal = modal;
 
+    // Render action buttons/chips after mount
+    renderActions(data, mediaType);
+
+    // Listen for TV season requests to update status
+    if (mediaType === 'tv') {
+        const handleTvRequest = async (e) => {
+            if (!e.detail?.tmdbId || String(e.detail.tmdbId) !== String(data.id)) return;
+
+            try {
+                // Refresh details to pull latest status/progress
+                const fresh = await fetchMediaDetails(data.id, 'tv');
+                if (fresh?.mediaInfo) {
+                    data.mediaInfo = fresh.mediaInfo;
+                } else {
+                    // Fallback: mark requested
+                    const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
+                    mediaInfo.status = mediaInfo.status || 2;
+                }
+            } catch (_) {
+                const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
+                mediaInfo.status = mediaInfo.status || 2;
+            }
+
+            renderActions(data, mediaType);
+        };
+        document.addEventListener('jellyseerr-tv-requested', handleTvRequest);
+        modal._cleanupTvListener = () => document.removeEventListener('jellyseerr-tv-requested', handleTvRequest);
+    }
+
     // Trigger animation
     setTimeout(() => modal.classList.add('active'), 10);
 }
@@ -233,13 +262,18 @@ function buildModalContent(data, mediaType) {
                                     ${posterUrl ? `<img src="${posterUrl}" alt="${title}" />` : ''}
                                 </div>
                                 <div class="header-info">
-                                    <h1 class="title">${escapeHtml(title)} <span class="year">(${year})</span></h1>
+                                    <div class="title-row">
+                                    <h1 class="title">${escapeHtml(title)} ${year ? `<span class="year">(${year})</span>` : ''}</h1>
+                                    <div class="title-chip" data-mount="je-status-chip"></div>
+                                    </div>
                                     <div class="meta-info">
                                         <span class="rating-badge">${getContentRating(data, mediaType)}</span>
                                         <span class="runtime">${runtime}</span>
                                         <span class="genres">${data.genres?.map(g => escapeHtml(g.name)).join(', ') || 'N/A'}</span>
                                     </div>
-                                    <p class="tagline">${escapeHtml(data.tagline || 'You there?')}</p>
+                                    ${data.tagline ? `<p class="tagline">${escapeHtml(data.tagline)}</p>` : ''}
+                                    <div class="je-downloads" data-mount="je-downloads"></div>
+                                    <div class="je-more-info-actions" data-mount="je-actions"></div>
                                 </div>
                             </div>
 
@@ -647,6 +681,325 @@ function buildTrailersSection(data) {
 }
 
 /**
+ * Render request/4K actions and download progress inside the modal.
+ */
+function buildTvActions(data) {
+    const mediaInfo = data.mediaInfo || {};
+    const status = mediaInfo.status ?? 1;
+    const status4k = mediaInfo.status4k ?? 1;
+
+    // Skip rendering if TV show is already requested/processing/available
+    if ((status && status !== 1) || (status4k && status4k !== 1)) {
+        return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'je-more-info-actions-row';
+
+    const requestButton = document.createElement('button');
+    requestButton.className = 'jellyseerr-request-button jellyseerr-button-request';
+    requestButton.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+    requestButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // TV always shows season selection modal
+        if (JE.jellyseerrUI?.showSeasonSelectionModal) {
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data);
+        }
+    });
+
+    container.appendChild(requestButton);
+    return container;
+}
+
+function buildSingle4kButton(data) {
+    const button = document.createElement('button');
+    button.className = 'jellyseerr-request-button jellyseerr-button-request';
+    button.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request_4k') || 'Request in 4K'}</span>`;
+    button.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        button.disabled = true;
+        button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
+        try {
+            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+            mountRequestedChip(data, 'movie', true);
+        } catch (error) {
+            const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
+            button.disabled = false;
+            button.innerHTML = `<span>${errorMessage}</span>`;
+            button.classList.add('jellyseerr-button-error');
+        }
+    });
+    return button;
+}
+
+function buildMovieActions(data, actionMount, chipMount, show4kOption) {
+    const status = data.mediaInfo ? data.mediaInfo.status : 1;
+    const status4k = data.mediaInfo ? data.mediaInfo.status4k : 1;
+    const downloads = data.mediaInfo?.downloadStatus || [];
+    const downloads4k = data.mediaInfo?.downloadStatus4k || [];
+
+    // If already requested in any format, renderActions will handle chips/downloads
+    if ((status && status !== 1) || (status4k && status4k !== 1)) {
+        return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'je-more-info-actions-row';
+
+    // Build split button (reuse card styling)
+    if (show4kOption) {
+        const buttonGroup = document.createElement('div');
+        buttonGroup.className = 'jellyseerr-button-group je-more-info-button-group';
+
+        const mainButton = document.createElement('button');
+        mainButton.className = 'jellyseerr-request-button jellyseerr-split-main jellyseerr-button-request';
+        mainButton.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+        mainButton.dataset.tmdbId = data.id;
+        mainButton.dataset.mediaType = 'movie';
+
+        const arrowButton = document.createElement('button');
+        arrowButton.className = 'jellyseerr-split-arrow';
+        arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
+        arrowButton.title = 'Request in 4K';
+        arrowButton.dataset.tmdbId = data.id;
+        arrowButton.dataset.toggle4k = 'true';
+
+        mainButton.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
+                return;
+            }
+            mainButton.disabled = true;
+            mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
+            try {
+                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                mountRequestedChip(data, 'movie', false);
+            } catch (error) {
+                mainButton.disabled = false;
+                const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
+                mainButton.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUIIcons?.error || ''}`;
+                mainButton.classList.add('jellyseerr-button-error');
+            }
+        });
+
+    // 4K dropdown
+    let open4k = null;
+    const close4k = () => {
+        if (open4k) {
+            open4k.remove();
+            open4k = null;
+            document.removeEventListener('click', handleDocClick, true);
+        }
+    };
+    const handleDocClick = (ev) => {
+        if (!open4k) return;
+        if (!open4k.contains(ev.target) && !arrowButton.contains(ev.target)) {
+            close4k();
+        }
+    };
+
+        arrowButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (open4k) {
+            close4k();
+            return;
+        }
+        const menu = document.createElement('div');
+        menu.className = 'je-4k-popup';
+        const option = document.createElement('button');
+        option.className = 'je-4k-popup-item';
+        option.textContent = 'Request in 4K';
+        option.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            option.disabled = true;
+            option.textContent = JE.t('jellyseerr_btn_requesting');
+            try {
+                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+                mountRequestedChip(data, 'movie', true);
+                close4k();
+            } catch (error) {
+                option.disabled = false;
+                option.textContent = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
+            }
+        });
+        menu.appendChild(option);
+        document.body.appendChild(menu);
+        const rect = arrowButton.getBoundingClientRect();
+        menu.style.position = 'fixed';
+        menu.style.left = `${rect.left}px`;
+        menu.style.top = `${rect.bottom + 6}px`;
+        requestAnimationFrame(() => menu.classList.add('show'));
+        open4k = menu;
+        document.addEventListener('click', handleDocClick, true);
+    });
+
+        buttonGroup.appendChild(mainButton);
+        buttonGroup.appendChild(arrowButton);
+        container.appendChild(buttonGroup);
+    } else {
+        const requestButton = document.createElement('button');
+        requestButton.className = 'jellyseerr-request-button jellyseerr-button-request';
+        requestButton.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+        requestButton.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            requestButton.disabled = true;
+            requestButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
+            try {
+                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                mountRequestedChip(data, 'movie', false);
+            } catch (error) {
+                requestButton.disabled = false;
+                const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
+                requestButton.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUIIcons?.error || ''}`;
+                requestButton.classList.add('jellyseerr-button-error');
+            }
+        });
+        container.appendChild(requestButton);
+    }
+    return container;
+}
+
+function buildStatusChip(status, status4k, isMovie, downloads = [], downloads4k = []) {
+    const chip = document.createElement('div');
+    chip.className = 'je-status-chip';
+    const { text, className } = resolveStatusLabel(status, status4k, isMovie, downloads, downloads4k);
+    chip.textContent = text;
+    chip.classList.add(className);
+    return chip;
+}
+
+function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads4k = []) {
+    const use4k = isMovie && status4k && status4k !== 1;
+    const targetStatus = use4k ? status4k : status;
+    const hasActiveDownloads = (use4k ? downloads4k : downloads)?.length > 0;
+    switch (targetStatus) {
+        case 5: return { text: use4k ? '4K Available' : 'Available', className: 'chip-available' };
+        case 4: return { text: use4k ? '4K Partially Available' : 'Partially Available', className: 'chip-partial' };
+        case 3: return hasActiveDownloads
+            ? { text: use4k ? '4K Processing' : 'Processing', className: 'chip-processing' }
+            : { text: use4k ? '4K Requested' : 'Requested', className: 'chip-requested' };
+        case 2: return { text: use4k ? '4K Requested' : 'Requested', className: 'chip-requested' };
+        case 6: return { text: use4k ? '4K Rejected' : 'Rejected', className: 'chip-rejected' };
+        default: return { text: 'Requested', className: 'chip-requested' };
+    }
+}
+
+function buildDownloadBars(downloads = [], downloads4k = []) {
+    const all = [...downloads, ...downloads4k];
+    if (!all.length) return null;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'je-download-bars';
+
+    all.forEach(dl => {
+        if (typeof dl.size !== 'number' || typeof dl.sizeLeft !== 'number' || dl.size <= 0) return;
+        const pct = Math.max(0, Math.min(100, Math.round(100 * (1 - dl.sizeLeft / dl.size))));
+        const row = document.createElement('div');
+        row.className = 'je-download-row';
+        row.innerHTML = `
+            <div class="je-download-title">${escapeHtml(dl.title || JE.t('jellyseerr_popover_downloading'))}</div>
+            <div class="je-download-progress"><div class="fill" style="width:${pct}%"></div></div>
+            <div class="je-download-meta"><span>${pct}%</span><span>${escapeHtml((dl.status || 'Downloading').toString())}</span></div>
+        `;
+        wrapper.appendChild(row);
+    });
+
+    return wrapper;
+}
+
+function mountRequestedChip(data, mediaType, is4k) {
+    const mediaInfo = data.mediaInfo = data.mediaInfo || {};
+    if (mediaType === 'movie') {
+        if (is4k) {
+            mediaInfo.status4k = 2;
+        } else {
+            mediaInfo.status = 2;
+        }
+    } else {
+        if (is4k) {
+            mediaInfo.status4k = 2;
+        } else {
+            mediaInfo.status = 2;
+        }
+    }
+
+    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', {
+        detail: { tmdbId: data.id, mediaType, is4k: !!is4k }
+    }));
+
+    renderActions(data, mediaType);
+}
+
+function renderActions(data, mediaType) {
+    if (!currentModal) return;
+
+    const actionMount = currentModal.querySelector('[data-mount="je-actions"]');
+    const chipMount = currentModal.querySelector('[data-mount="je-status-chip"]');
+    const downloadsMount = currentModal.querySelector('[data-mount="je-downloads"]');
+    if (actionMount) actionMount.innerHTML = '';
+    if (chipMount) chipMount.innerHTML = '';
+    if (downloadsMount) downloadsMount.innerHTML = '';
+
+    if (mediaType === 'movie') {
+        const mediaInfo = data.mediaInfo || {};
+        const status = mediaInfo.status ?? 1;
+        const status4k = mediaInfo.status4k ?? 1;
+        const downloads = mediaInfo.downloadStatus || [];
+        const downloads4k = mediaInfo.downloadStatus4k || [];
+        const show4k = !!JE.pluginConfig.JellyseerrEnable4KRequests;
+
+        const hasStatus = (status && status !== 1) || (status4k && status4k !== 1);
+        if (hasStatus && chipMount) {
+            const chip = buildStatusChip(status, status4k, true, downloads, downloads4k);
+            if (chip) chipMount.appendChild(chip);
+        }
+
+        const bars = buildDownloadBars(downloads, downloads4k);
+        if (bars && downloadsMount) downloadsMount.appendChild(bars);
+
+        const alreadyRequested = hasStatus;
+        if (alreadyRequested) {
+            if (show4k && (!status4k || status4k === 1) && actionMount) {
+                const followUp = buildSingle4kButton(data);
+                if (followUp) actionMount.appendChild(followUp);
+            }
+            return;
+        }
+
+        const actions = buildMovieActions(data, actionMount, chipMount, show4k);
+        if (actions && actionMount) actionMount.appendChild(actions);
+    } else {
+        const mediaInfo = data.mediaInfo || {};
+        const status = mediaInfo.status ?? 1;
+        const status4k = mediaInfo.status4k ?? 1;
+        const downloads = mediaInfo.downloadStatus || [];
+        const downloads4k = mediaInfo.downloadStatus4k || [];
+
+        const hasStatus = (status && status !== 1) || (status4k && status4k !== 1);
+        if (hasStatus && chipMount) {
+            const chip = buildStatusChip(status, status4k, false, downloads, downloads4k);
+            if (chip) chipMount.appendChild(chip);
+        }
+
+        const bars = buildDownloadBars(downloads, downloads4k);
+        if (bars && downloadsMount) downloadsMount.appendChild(bars);
+
+        if (hasStatus) return;
+
+        const actions = buildTvActions(data);
+        if (actions && actionMount) actionMount.appendChild(actions);
+    }
+}
+
+/**
  * Build cast section (horizontal scrollable)
  */
 function buildCastSection(data) {
@@ -783,6 +1136,10 @@ function buildPersonPlaceholder() {
  */
 moreInfoModal.close = function() {
     if (currentModal) {
+        // Clean up TV request listener if exists
+        if (currentModal._cleanupTvListener) {
+            currentModal._cleanupTvListener();
+        }
         currentModal.classList.remove('active');
         setTimeout(() => {
             currentModal.remove();
@@ -986,6 +1343,19 @@ function injectStyles() {
             line-height: 1.2;
         }
 
+        .je-more-info-modal .title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .je-more-info-modal .title-chip {
+            min-height: 32px;
+            display: flex;
+            align-items: center;
+        }
+
         .je-more-info-modal .year {
             font-weight: 400;
             opacity: 0.7;
@@ -996,13 +1366,14 @@ function injectStyles() {
             display: flex;
             gap: 1rem;
             margin-bottom: 1rem;
+            margin-top: 1rem;
             font-size: 1rem;
             align-items: center;
         }
 
         .je-more-info-modal .rating-badge {
             background: rgba(255, 255, 255, 0.1);
-            padding: 0.25rem 0.75rem;
+            padding: 0.25rem 0.5rem;
             border-radius: 4px;
             font-weight: 600;
         }
@@ -1017,6 +1388,165 @@ function injectStyles() {
             font-style: italic;
             opacity: 0.7;
             margin: 0;
+        }
+
+        .je-more-info-modal .je-more-info-actions {
+            margin-top: 0.6rem;
+            flex-direction: column;
+            display: inline-flex;
+            width: auto;
+            position: relative;
+            gap: 0;
+            align-items: stretch;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .je-more-info-modal .je-downloads {
+            margin-top: 0.45rem;
+        }
+
+        .je-more-info-actions-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .je-more-info-actions-column {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            align-items: flex-start;
+        }
+
+        .je-more-info-button-group {
+            display: inline-flex;
+            align-items: stretch;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .je-more-info-button-group .jellyseerr-request-button {
+            border: none;
+            background: transparent;
+            padding: 0.5rem 0.9rem;
+        }
+
+        .je-more-info-button-group .jellyseerr-split-arrow {
+            border: none;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 0 0.55rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .je-status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .je-status-chip.chip-available { background: rgba(34, 197, 94, 0.25); color: #f0f9ff; border-color: rgba(34, 197, 94, 0.5); }
+        .je-status-chip.chip-partial { background: rgba(234, 179, 8, 0.25); color: #f0f9ff; border-color: rgba(234, 179, 8, 0.5); }
+        .je-status-chip.chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
+        .je-status-chip.chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
+        .je-status-chip.chip-rejected { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
+
+        .je-download-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            width: 100%;
+            margin-top: 0.15rem;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .je-download-row {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            box-sizing: border-box;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .je-download-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .je-download-progress {
+            position: relative;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .je-download-progress .fill {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, #31bcd1, #4450df);
+            border-radius: inherit;
+        }
+
+        .je-download-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            opacity: 0.75;
+            margin-top: 0.25rem;
+        }
+
+        .je-4k-popup {
+            position: fixed;
+            z-index: 11000;
+            background: #0b1223;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            padding: 0.25rem;
+            min-width: 160px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(-4px);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+
+        .je-4k-popup.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .je-4k-popup-item {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: #fff;
+            padding: 0.45rem 0.65rem;
+            text-align: left;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .je-4k-popup-item:hover {
+            background: rgba(255, 255, 255, 0.08);
         }
 
         .je-more-info-modal .overview-section {
@@ -1602,6 +2132,23 @@ function injectStyles() {
 
             .je-more-info-ratings-row {
                 justify-content: flex-start;
+            }
+
+            /* Mobile optimizations for download bars */
+            .je-download-bars {
+                gap: 0.25rem;
+            }
+
+            .je-download-row {
+                padding: 0.4rem 0.6rem;
+            }
+
+            .je-download-title {
+                font-size: 0.8rem;
+            }
+
+            .je-download-meta {
+                font-size: 0.65rem;
             }
         }
     `;
