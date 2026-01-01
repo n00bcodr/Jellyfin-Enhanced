@@ -322,27 +322,27 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
             </div>
             <div class="je-more-info-stats-panel">
                 <div class="je-more-info-stat-row">
-                    <div class="je-more-info-stat-label">Status</div>
+                    <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_status')}</div>
                     <div class="je-more-info-stat-value">${escapeHtml(data.status || 'N/A')}</div>
                 </div>
 
                 ${mediaType === 'tv' ? `
                     ${data.firstAirDate ? `
                         <div class="je-more-info-stat-row">
-                            <div class="je-more-info-stat-label">First Air Date</div>
+                            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_first_air_date')}</div>
                             <div class="je-more-info-stat-value">${new Date(data.firstAirDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                         </div>
                     ` : ''}
                     ${data.lastAirDate ? `
                         <div class="je-more-info-stat-row">
-                            <div class="je-more-info-stat-label">Last Air Date</div>
+                            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_last_air_date')}</div>
                             <div class="je-more-info-stat-value">${new Date(data.lastAirDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                         </div>
                     ` : ''}
                 ` : `
                     ${releaseDate ? `
                         <div class="je-more-info-stat-row">
-                            <div class="je-more-info-stat-label">Release Date</div>
+                            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_release_date')}</div>
                             <div class="je-more-info-stat-value">${new Date(releaseDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                         </div>
                     ` : ''}
@@ -350,28 +350,28 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
 
                 ${revenue ? `
                     <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">Revenue</div>
+                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_revenue')}</div>
                         <div class="je-more-info-stat-value">${revenue}</div>
                     </div>
                 ` : ''}
 
                 ${budget ? `
                     <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">Budget</div>
+                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_budget')}</div>
                         <div class="je-more-info-stat-value">${budget}</div>
                     </div>
                 ` : ''}
 
                 ${data.originalLanguage ? `
                     <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">Original Language</div>
+                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_original_language')}</div>
                         <div class="je-more-info-stat-value">${data.originalLanguage.toUpperCase()}</div>
                     </div>
                 ` : ''}
 
                 ${data.productionCountries?.length ? `
                     <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">Production Country</div>
+                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_production_country')}</div>
                         <div class="je-more-info-stat-value">${data.productionCountries.map(c => {
                             const disp = c?.name === 'United States of America' ? 'United States' : (c?.name || '');
                             const code = (c?.iso_3166_1 || '').toLowerCase();
@@ -382,7 +382,7 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
 
                 ${data.productionCompanies?.length ? `
                     <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">Studios</div>
+                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_studios')}</div>
                         <div class="je-more-info-stat-value">${data.productionCompanies.slice(0, 3).map(c => escapeHtml(c.name)).join(', ')}</div>
                     </div>
                 ` : ''}
@@ -429,7 +429,7 @@ function buildStreamingProviders(data) {
 
     return `
         <div class="je-more-info-stat-row">
-            <div class="je-more-info-stat-label">Streaming</div>
+            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_streaming')}</div>
             <div class="je-more-info-providers-list">
                 ${uniqueProviders.map(p => `<img src="https://image.tmdb.org/t/p/w92${p.logoPath}" alt="${escapeHtml(p.name)}" title="${escapeHtml(p.name)}" />`).join('')}
             </div>
@@ -649,7 +649,7 @@ function buildTrailersSection(data) {
 
     return `
         <div class="trailers-section">
-            <h3>Trailers & Videos</h3>
+            <h3>${JE.t('jellyseerr_modal_trailers')}</h3>
             <div class="trailers-grid">
                 ${trailers.map(trailer => {
                     const thumbnailUrl = trailer.site === 'YouTube'
@@ -1009,7 +1009,7 @@ function buildCastSection(data) {
 
     return `
         <div class="cast-section">
-            <h3>Cast</h3>
+            <h3>${JE.t('jellyseerr_modal_cast')}</h3>
             <div class="cast-scroll">
                 ${cast.map(person => {
                     const imageUrl = person.profilePath
