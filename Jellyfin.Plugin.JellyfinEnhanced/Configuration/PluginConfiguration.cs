@@ -93,7 +93,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowSimilar = true;
             JellyseerrShowRecommended = true;
             ShowElsewhereOnJellyseerr = false;
-            JellyseerrUseJellyseerrLinks = false;
             JellyseerrUseMoreInfoModal = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
@@ -202,7 +201,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowRecommended { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool ShowElsewhereOnJellyseerr { get; set; }
-        public bool JellyseerrUseJellyseerrLinks { get; set; }
         public bool JellyseerrUseMoreInfoModal { get; set; } = false;
         public string JellyseerrUrls { get; set; }
         public string JellyseerrApiKey { get; set; }

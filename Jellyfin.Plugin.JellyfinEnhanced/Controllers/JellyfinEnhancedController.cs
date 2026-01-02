@@ -984,7 +984,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,
-                config.JellyseerrUseJellyseerrLinks,
                 config.JellyseerrUseMoreInfoModal,
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
