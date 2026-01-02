@@ -914,25 +914,36 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
     return container;
 }
 
-function buildStatusChip(status, status4k, isMovie, downloads = [], downloads4k = []) {
+function buildStatusChip(status, status4k, isMovie, downloads = [], downloads4k = [], jellyfinMediaId = null, jellyfinMediaId4k = null, is4kChip = false) {
     const chip = document.createElement('div');
     chip.className = 'je-status-chip';
-    const { text, className } = resolveStatusLabel(status, status4k, isMovie, downloads, downloads4k);
-    chip.textContent = text;
+    const { text, className } = resolveStatusLabel(status, status4k, isMovie, downloads, downloads4k, is4kChip);
+
+    // If item is available in library, make the chip a clickable link
+    const mediaId = is4kChip ? jellyfinMediaId4k : jellyfinMediaId;
+    if (mediaId) {
+        const link = document.createElement('a');
+        link.href = `#!/details?id=${mediaId}`;
+        link.textContent = text;
+        link.style.cssText = 'color: inherit; text-decoration: none; cursor: pointer;';
+        chip.appendChild(link);
+    } else {
+        chip.textContent = text;
+    }
+
     chip.classList.add(className);
     return chip;
 }
 
-function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads4k = []) {
-    const use4k = isMovie && status4k && status4k !== 1;
-    const targetStatus = use4k ? status4k : status;
-    const hasActiveDownloads = (use4k ? downloads4k : downloads)?.length > 0;
+function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads4k = [], is4kChip = false) {
+    const targetStatus = is4kChip ? status4k : status;
+    const hasActiveDownloads = (is4kChip ? downloads4k : downloads)?.length > 0;
     const labelAvailable = JE.t('jellyseerr_btn_available') || 'Available';
     const labelPartial = JE.t('jellyseerr_btn_partially_available') || 'Partially Available';
     const labelProcessing = JE.t('jellyseerr_btn_processing') || 'Processing';
     const labelRequested = JE.t('jellyseerr_btn_requested') || 'Requested';
     const labelRejected = JE.t('jellyseerr_btn_rejected') || 'Rejected';
-    const with4k = (text) => use4k ? `4K ${text}` : text;
+    const with4k = (text) => is4kChip ? `4K ${text}` : text;
     switch (targetStatus) {
         case 5: return { text: with4k(labelAvailable), className: 'chip-available' };
         case 4: return { text: with4k(labelPartial), className: 'chip-partial' };
@@ -965,7 +976,7 @@ function buildDownloadBars(downloads = [], downloads4k = []) {
         if (typeof dl.size !== 'number' || typeof dl.sizeLeft !== 'number' || dl.size <= 0) return;
         const pct = Math.max(0, Math.min(100, Math.round(100 * (1 - dl.sizeLeft / dl.size))));
         const etaText = JE.jellyseerrUI?.formatEtaText?.(dl);
-        
+
         const row = document.createElement('div');
         row.className = 'je-download-row';
         row.innerHTML = `
@@ -1022,17 +1033,39 @@ function renderActions(data, mediaType) {
         const status4k = mediaInfo.status4k ?? 1;
         const downloads = mediaInfo.downloadStatus || [];
         const downloads4k = mediaInfo.downloadStatus4k || [];
+        const jellyfinMediaId = mediaInfo.jellyfinMediaId || null;
+        const jellyfinMediaId4k = mediaInfo.jellyfinMediaId4k || null;
         const show4k = !!JE.pluginConfig.JellyseerrEnable4KRequests;
 
-        const hasStatus = (status && status !== 1) || (status4k && status4k !== 1);
-        if (hasStatus && chipMount) {
-            const chip = buildStatusChip(status, status4k, true, downloads, downloads4k);
-            if (chip) chipMount.appendChild(chip);
+        // Show both chips if both statuses exist
+        const hasNormalStatus = status && status !== 1;
+        const has4kStatus = status4k && status4k !== 1;
+
+        if (chipMount) {
+            if (hasNormalStatus && has4kStatus) {
+                // Show both chips
+                const chipNormal = buildStatusChip(status, status4k, true, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, false);
+                const chip4k = buildStatusChip(status, status4k, true, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, true);
+                if (chipNormal) chipMount.appendChild(chipNormal);
+                if (chip4k) {
+                    chip4k.style.marginLeft = '0.5em';
+                    chipMount.appendChild(chip4k);
+                }
+            } else if (hasNormalStatus) {
+                // Show only normal chip
+                const chip = buildStatusChip(status, status4k, true, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, false);
+                if (chip) chipMount.appendChild(chip);
+            } else if (has4kStatus) {
+                // Show only 4K chip
+                const chip = buildStatusChip(status, status4k, true, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, true);
+                if (chip) chipMount.appendChild(chip);
+            }
         }
 
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
+        const hasStatus = hasNormalStatus || has4kStatus;
         const alreadyRequested = hasStatus;
         if (alreadyRequested) {
             if (show4k && (!status4k || status4k === 1) && actionMount) {
@@ -1050,16 +1083,38 @@ function renderActions(data, mediaType) {
         const status4k = mediaInfo.status4k ?? 1;
         const downloads = mediaInfo.downloadStatus || [];
         const downloads4k = mediaInfo.downloadStatus4k || [];
+        const jellyfinMediaId = mediaInfo.jellyfinMediaId || null;
+        const jellyfinMediaId4k = mediaInfo.jellyfinMediaId4k || null;
 
-        const hasStatus = (status && status !== 1) || (status4k && status4k !== 1);
-        if (hasStatus && chipMount) {
-            const chip = buildStatusChip(status, status4k, false, downloads, downloads4k);
-            if (chip) chipMount.appendChild(chip);
+        // Show both chips if both statuses exist
+        const hasNormalStatus = status && status !== 1;
+        const has4kStatus = status4k && status4k !== 1;
+
+        if (chipMount) {
+            if (hasNormalStatus && has4kStatus) {
+                // Show both chips
+                const chipNormal = buildStatusChip(status, status4k, false, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, false);
+                const chip4k = buildStatusChip(status, status4k, false, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, true);
+                if (chipNormal) chipMount.appendChild(chipNormal);
+                if (chip4k) {
+                    chip4k.style.marginLeft = '0.5em';
+                    chipMount.appendChild(chip4k);
+                }
+            } else if (hasNormalStatus) {
+                // Show only normal chip
+                const chip = buildStatusChip(status, status4k, false, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, false);
+                if (chip) chipMount.appendChild(chip);
+            } else if (has4kStatus) {
+                // Show only 4K chip
+                const chip = buildStatusChip(status, status4k, false, downloads, downloads4k, jellyfinMediaId, jellyfinMediaId4k, true);
+                if (chip) chipMount.appendChild(chip);
+            }
         }
 
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
+        const hasStatus = hasNormalStatus || has4kStatus;
         if (hasStatus) return;
 
         const actions = buildTvActions(data);
