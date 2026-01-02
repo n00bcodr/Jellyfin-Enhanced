@@ -337,7 +337,12 @@
                             if (popup) popup.remove();
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
-                            await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
+                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
+                            console.log('Jellyseerr 4K request response:', response);
+                            if (searchResultItem) {
+                                if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
+                                searchResultItem.mediaInfo.status4k = 3;
+                            }
                             JE.toast('4K request submitted successfully!', 3000);
                             if (popup) popup.remove();
 

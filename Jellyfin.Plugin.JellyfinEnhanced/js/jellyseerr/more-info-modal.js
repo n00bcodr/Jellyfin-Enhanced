@@ -824,8 +824,8 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             mainButton.disabled = true;
             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             try {
-                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
-                mountRequestedChip(data, 'movie', false);
+                const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
                 mainButton.disabled = false;
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
@@ -882,8 +882,8 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 option.disabled = true;
                 option.textContent = JE.t('jellyseerr_btn_requesting');
                 try {
-                    await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
-                    mountRequestedChip(data, 'movie', true);
+                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+                    mountRequestedChip(data, 'movie', true, response);
                     close4k();
                 } catch (error) {
                     option.disabled = false;
@@ -1010,19 +1010,19 @@ function buildDownloadBars(downloads = [], downloads4k = []) {
     return wrapper;
 }
 
-function mountRequestedChip(data, mediaType, is4k) {
+function mountRequestedChip(data, mediaType, is4k, response = null) {
     const mediaInfo = data.mediaInfo = data.mediaInfo || {};
     if (mediaType === 'movie') {
         if (is4k) {
-            mediaInfo.status4k = 2;
+            mediaInfo.status4k = response?.media?.status4k || 3;
         } else {
-            mediaInfo.status = 2;
+            mediaInfo.status = response?.media?.status || 3;
         }
     } else {
         if (is4k) {
-            mediaInfo.status4k = 2;
+            mediaInfo.status4k = response?.media?.status4k || 3;
         } else {
-            mediaInfo.status = 2;
+            mediaInfo.status = response?.media?.status || 3;
         }
     }
 

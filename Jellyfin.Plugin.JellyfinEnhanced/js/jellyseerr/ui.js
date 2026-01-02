@@ -1460,7 +1460,9 @@
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
-                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            if (!item.mediaInfo) item.mediaInfo = {};
+                            item.mediaInfo.status = 3;
                             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
                             mainButton.classList.remove('jellyseerr-button-request');
                             mainButton.classList.add('jellyseerr-button-pending');
@@ -1530,7 +1532,9 @@
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        if (!item.mediaInfo) item.mediaInfo = {};
+                        item.mediaInfo.status = 3;
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
