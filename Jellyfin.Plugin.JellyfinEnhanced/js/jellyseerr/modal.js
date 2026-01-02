@@ -11,22 +11,29 @@
      * @param {string} options.title - The main title of the modal.
      * @param {string} options.subtitle - The subtitle (usually the movie/show name).
      * @param {string} options.bodyHtml - The HTML content for the modal body.
-     * @param {string} options.backdropPath - The backdrop image path for the header.
+     * @param {string} options.backdropPath - TMDB backdrop image path (e.g., '/abc123.jpg').
+     * @param {string} options.backdropUrl - Full backdrop image URL (alternative to backdropPath).
      * @param {function} options.onSave - The callback function to execute when the primary button is clicked.
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
      * @returns {object} - An object with methods to show and close the modal.
      */
-    modal.create = function({ title, subtitle, bodyHtml, backdropPath, onSave, onClose, buttonText }) {
+    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText }) {
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
         modalElement.setAttribute('role', 'dialog');
         modalElement.setAttribute('aria-modal', 'true');
         modalElement.setAttribute('tabindex', '-1');
 
-        const backdropImage = backdropPath
-            ? `url('https://image.tmdb.org/t/p/w1280${backdropPath}')`
-            : 'linear-gradient(45deg, #3b82f6, #8b5cf6)';
+        // Support both backdropUrl (full URL) and backdropPath (TMDB path)
+        let backdropImage;
+        if (backdropUrl) {
+            backdropImage = `url('${backdropUrl}')`;
+        } else if (backdropPath) {
+            backdropImage = `url('https://image.tmdb.org/t/p/w1280${backdropPath}')`;
+        } else {
+            backdropImage = 'linear-gradient(45deg, #3b82f6, #8b5cf6)';
+        }
 
         modalElement.innerHTML = `
             <div class="jellyseerr-season-content" role="document" aria-labelledby="jellyseerr-modal-title">

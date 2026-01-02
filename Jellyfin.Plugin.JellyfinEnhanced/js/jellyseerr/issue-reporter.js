@@ -82,9 +82,9 @@
      * @param {string} tmdbId - TMDB ID of the media
      * @param {string} itemName - Name of the media item
      * @param {string} mediaType - 'movie' or 'tv'
-     * @param {string} backdropPath - Optional TMDB backdrop image path
+     * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
      */
-    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropPath = null, item = null) {
+    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
         // Create the form HTML
         const ISSUE_TYPES = getIssueTypes();
         const formHtml = `
@@ -144,7 +144,7 @@
             title: JE.t('jellyseerr_report_issue_title'),
             subtitle: itemName,
             bodyHtml: formHtml,
-            backdropPath: backdropPath,
+            backdropUrl: backdropUrl,
             buttonText: JE.t('jellyseerr_report_issue_submit'),
             onSave: async (modalEl, button, closeModal) => {
                 const issueType = modalEl.querySelector('input[name="issue-type"]:checked')?.value;
@@ -538,9 +538,9 @@
      * @param {string} tmdbId - TMDB ID of the media
      * @param {string} itemName - Name of the media item
      * @param {string} mediaType - 'movie' or 'tv'
-     * @param {string} backdropPath - Optional TMDB backdrop image path
+     * @param {string} backdropUrl - Optional backdrop image URL
      */
-    issueReporter.createReportButton = function (container, tmdbId, itemName, mediaType, backdropPath = null, item = null) {
+    issueReporter.createReportButton = function (container, tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
         if (!container) {
             console.warn(`${logPrefix} Container not found for report button`);
             return null;
@@ -561,7 +561,7 @@
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropPath, item);
+            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropUrl, item);
         });
 
         return button;
@@ -754,9 +754,10 @@
             return false;
         }
 
-        // Check if we already added the button
-        if (itemDetailPage.querySelector('.jellyseerr-report-issue-icon')) {
-            return false;
+        // Check if we already added the button (either active or unavailable)
+        if (itemDetailPage.querySelector('.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon')) {
+            console.debug(`${logPrefix} Report button already exists`);
+            return true;
         }
 
         try {
@@ -989,12 +990,24 @@
                 return false;
             }
 
+            // Extract backdrop URL from Jellyfin item
+            let backdropUrl = null;
+            if (item.BackdropImageTags && item.BackdropImageTags.length > 0) {
+                const tag = item.BackdropImageTags[0];
+                backdropUrl = ApiClient.getUrl(`Items/${item.Id}/Images/Backdrop`, { tag: tag, quality: 40 });
+            } else if (item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
+                const tag = item.ParentBackdropImageTags[0];
+                const parentId = item.ParentBackdropItemId || item.ParentId || item.SeriesId;
+                if (parentId) {
+                    backdropUrl = ApiClient.getUrl(`Items/${parentId}/Images/Backdrop`, { tag: tag, quality: 40 });
+                }
+            }
             const button = issueReporter.createReportButton(
                 buttonContainer,
                 tmdbId,
                 item.Name,
                 mediaType,
-                null,
+                backdropUrl,
                 item
             );
 
@@ -1040,61 +1053,24 @@
             return;
         }
 
-        let lastProcessedItemId = null;
-        let processingTimeout = null;
-
-        const processDetail = async () => {
+        const handleViewShow = async () => {
             try {
-                // Get item ID from URL (same way as reviews.js)
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-
-                // Only process if item ID changed
-                if (itemId && itemId !== lastProcessedItemId) {
-                    lastProcessedItemId = itemId;
-                    console.debug(`${logPrefix} Processing item ID: ${itemId}`);
+                // Small delay to ensure DOM is ready
+                setTimeout(async () => {
                     await issueReporter.tryAddButton();
-                }
+                }, 100);
             } catch (error) {
-                console.warn(`${logPrefix} Error processing detail:`, error);
+                console.warn(`${logPrefix} Error in viewShow handler:`, error);
             }
         };
 
-        // Try initial load with delay to ensure page is ready
-        setTimeout(processDetail, 500);
+        // Listen for Jellyfin's page navigation events
+        document.addEventListener('viewshow', handleViewShow);
 
-        // Use a more aggressive listener for hash changes (direct navigation)
-        const originalPushState = history.pushState;
-        const originalReplaceState = history.replaceState;
+        // Also try on initial load
+        setTimeout(handleViewShow, 500);
 
-        history.pushState = function (...args) {
-            originalPushState.apply(this, args);
-            setTimeout(processDetail, 300);
-        };
-
-        history.replaceState = function (...args) {
-            originalReplaceState.apply(this, args);
-            setTimeout(processDetail, 300);
-        };
-
-        // Listen for hash changes (browser back/forward)
-        window.addEventListener('hashchange', () => {
-            setTimeout(processDetail, 300);
-        });
-
-        // Listen for DOM mutations as fallback
-        const observer = new MutationObserver((mutations) => {
-            clearTimeout(processingTimeout);
-            processingTimeout = setTimeout(processDetail, 300);
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'href']
-        });
-
-        console.log(`${logPrefix} ✓ Initialized issue reporter with observer`);
+        console.log(`${logPrefix} ✓ Initialized issue reporter with viewshow listener`);
     };
 
     // Expose the module on the global JE object
