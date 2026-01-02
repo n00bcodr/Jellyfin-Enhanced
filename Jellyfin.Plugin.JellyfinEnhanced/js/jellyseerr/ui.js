@@ -97,37 +97,42 @@
     }
 
     /**
+     * Format ETA text for download status.
+     * @param {Object} downloadStatus - Download status object with estimatedCompletionTime.
+     * @returns {string|null} - Formatted ETA string or null.
+     */
+    function formatEtaText(downloadStatus) {
+        try {
+            const rawEta = downloadStatus?.estimatedCompletionTime;
+            if (!rawEta) return null;
+
+            const etaTime = new Date(rawEta);
+            const now = new Date();
+            const timeUntilMs = etaTime.getTime() - now.getTime();
+            if (isNaN(timeUntilMs)) return null;
+            if (timeUntilMs <= 0) return 'Estimated soon';
+
+            const totalMinutesRemaining = Math.round(timeUntilMs / 60000);
+            if (totalMinutesRemaining >= 1440) {
+                const daysRemaining = Math.round(totalMinutesRemaining / 1440);
+                return `Estimated in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`;
+            }
+            if (totalMinutesRemaining >= 60) {
+                const hoursRemaining = Math.round(totalMinutesRemaining / 60);
+                return `Estimated in ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''}`;
+            }
+            return `Estimated in ${totalMinutesRemaining} min`;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
      * Fills popover with download progress information.
      * @param {Object} item - Media item with download status.
      * @returns {HTMLElement|null} - Popover element or null if no download data.
      */
     function fillHoverPopover(item) {
-        // Helper: format ETA text
-        const formatEtaText = (downloadStatus) => {
-            try {
-                const rawEta = downloadStatus?.estimatedCompletionTime;
-                if (!rawEta) return null;
-
-                const etaTime = new Date(rawEta);
-                const now = new Date();
-                const timeUntilMs = etaTime.getTime() - now.getTime();
-                if (isNaN(timeUntilMs)) return null;
-                if (timeUntilMs <= 0) return 'Estimated soon';
-
-                const totalMinutesRemaining = Math.round(timeUntilMs / 60000);
-                if (totalMinutesRemaining >= 1440) {
-                    const daysRemaining = Math.round(totalMinutesRemaining / 1440);
-                    return `Estimated in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`;
-                }
-                if (totalMinutesRemaining >= 60) {
-                    const hoursRemaining = Math.round(totalMinutesRemaining / 60);
-                    return `Estimated in ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''}`;
-                }
-                return `Estimated in ${totalMinutesRemaining} min`;
-            } catch (_) {
-                return null;
-            }
-        };
 
         const allDownloads = [
             ...(item.mediaInfo?.downloadStatus || []),
@@ -2149,6 +2154,7 @@
     ui.icons = icons;
     ui.configureRequestButton = configureRequestButton;
     ui.createJellyseerrCard = createJellyseerrCard;
+    ui.formatEtaText = formatEtaText;
     JE.jellyseerrUI = ui;
 
 })(window.JellyfinEnhanced);

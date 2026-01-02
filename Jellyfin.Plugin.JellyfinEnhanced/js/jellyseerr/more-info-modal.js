@@ -949,18 +949,33 @@ function buildDownloadBars(downloads = [], downloads4k = []) {
     const all = [...downloads, ...downloads4k];
     if (!all.length) return null;
 
+    // Group downloads by downloadId
+    const grouped = {};
+    all.forEach(dl => {
+        const downloadId = dl.downloadId || 'unknown';
+        if (!grouped[downloadId]) {
+            grouped[downloadId] = dl;
+        }
+    });
+
     const wrapper = document.createElement('div');
     wrapper.className = 'je-download-bars';
 
-    all.forEach(dl => {
+    Object.values(grouped).forEach(dl => {
         if (typeof dl.size !== 'number' || typeof dl.sizeLeft !== 'number' || dl.size <= 0) return;
         const pct = Math.max(0, Math.min(100, Math.round(100 * (1 - dl.sizeLeft / dl.size))));
+        const etaText = JE.jellyseerrUI?.formatEtaText?.(dl);
+        
         const row = document.createElement('div');
         row.className = 'je-download-row';
         row.innerHTML = `
             <div class="je-download-title">${escapeHtml(dl.title || JE.t('jellyseerr_popover_downloading'))}</div>
             <div class="je-download-progress"><div class="fill" style="width:${pct}%"></div></div>
-            <div class="je-download-meta"><span>${pct}%</span><span>${escapeHtml((dl.status || 'Downloading').toString())}</span></div>
+            <div class="je-download-meta">
+                <span>${pct}%</span>
+                <span>${escapeHtml((dl.status || 'Downloading').toString())}</span>
+                ${etaText ? `<span class="je-download-eta">${etaText}</span>` : ''}
+            </div>
         `;
         wrapper.appendChild(row);
     });
@@ -1553,6 +1568,13 @@ function injectStyles() {
             margin-top: 0.25rem;
             flex-wrap: wrap;
             word-break: break-word;
+        }
+
+        .je-download-eta {
+            margin-left: auto;
+            color: #cbd5e1;
+            opacity: 0.9;
+            white-space: nowrap;
         }
 
         .je-4k-popup {
