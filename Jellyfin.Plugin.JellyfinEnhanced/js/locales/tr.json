@@ -113,7 +113,6 @@
     "jellyseerr_icon_no_user_tooltip": "Kullanıcı Jellyseerr üzerinde bulunamadı",
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr bağlı değil.",
     "jellyseerr_no_results_jellyfin": "Üzgünüm! \"{query}\" için Jellyfin üzerinde sonuç bulunamadı",
-    "jellyseerr_card_view_on_tmdb": "TMDB’de Görüntüle",
     "jellyseerr_card_view_on_jellyseerr": "Jellyseerr’de Görüntüle",
     "jellyseerr_card_badge_movie": "Film",
     "jellyseerr_card_badge_series": "Dizi",

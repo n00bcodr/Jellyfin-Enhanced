@@ -113,7 +113,6 @@
     "jellyseerr_icon_no_user_tooltip": "Nie znaleziono użytkownika w Jellyseerr",
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr nie jest połączony.",
     "jellyseerr_no_results_jellyfin": "Niestety nie znaleziono wyników dla \"{query}\" w Jellyfin",
-    "jellyseerr_card_view_on_tmdb": "Zobacz na TMDB",
     "jellyseerr_card_view_on_jellyseerr": "Zobacz na Jellyseerr",
     "jellyseerr_card_badge_movie": "Film",
     "jellyseerr_card_badge_series": "Serial",

@@ -113,7 +113,6 @@
     "jellyseerr_icon_no_user_tooltip": "Пользователь не найден на Jellyseerr",
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr не подключен.",
     "jellyseerr_no_results_jellyfin": "Извините! Результаты для \"{query}\" не найдены на Jellyfin",
-    "jellyseerr_card_view_on_tmdb": "Посмотреть на TMDB",
     "jellyseerr_card_view_on_jellyseerr": "Посмотреть на Jellyseerr",
     "jellyseerr_card_badge_movie": "Фильм",
     "jellyseerr_card_badge_series": "Сериал",

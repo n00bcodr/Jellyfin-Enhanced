@@ -974,15 +974,15 @@
         const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
         const titleText = item.title || item.name;
-        const tmdbUrl = `https://www.themoviedb.org/${item.mediaType}/${item.id}`;
-
         // Resolve Jellyseerr URL based on mappings or fallback to base URL
         const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
 
-        // Check if item is available in Jellyseerr
-        const isAvailable = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.status || item.mediaInfo?.status4k;
+        // Check if item is available in Jellyfin via Jellyseerr metadata
+        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId || null;
+        const jellyfinHref = jellyfinMediaId ? `#!/details?id=${jellyfinMediaId}` : null;
+        const isAvailable = jellyfinMediaId || item.mediaInfo?.status || item.mediaInfo?.status4k;
 
         const card = document.createElement('div');
         card.className = `card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card${isAvailable ? ' jellyseerr-card-in-library' : ''}`;
@@ -998,7 +998,12 @@
                     <div class="cardOverlayContainer" data-action="link"></div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
-                    <a is="emby-linkbutton" ${useMoreInfoModal ? 'href="#"' : (jellyseerrUrl ? `href="${jellyseerrUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#"')} class="jellyseerr-more-info-link" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}" title="${JE.t('jellyseerr_card_view_details') || 'View Details'}"><bdi>${titleText}</bdi></a>
+                    <a is="emby-linkbutton"
+                       ${useMoreInfoModal ? 'href="#"' : (jellyfinHref ? `href="${jellyfinHref}"` : (jellyseerrUrl ? `href="${jellyseerrUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#"'))}
+                       class="jellyseerr-more-info-link"
+                       data-tmdb-id="${item.id}"
+                       data-media-type="${item.mediaType}"
+                       title="${useMoreInfoModal ? titleText : (jellyfinHref ? titleText : (jellyseerrUrl ? (JE.t('jellyseerr_card_view_on_jellyseerr') || 'View on Jellyseerr') : titleText))}"><bdi>${titleText}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" class="jellyseerr-icon-on-card" alt="Jellyseerr"/>

@@ -113,7 +113,6 @@
     "jellyseerr_icon_no_user_tooltip": "Sailor not found on Jellyseerr",
     "jellyseerr_icon_disabled_tooltip": "Jellyseerr be anchored.",
     "jellyseerr_no_results_jellyfin": "Avast! No treasures found for \"{query}\" on Jellyfin",
-    "jellyseerr_card_view_on_tmdb": "View on TMDB",
     "jellyseerr_card_view_on_jellyseerr": "View on Jellyseerr",
     "jellyseerr_card_badge_movie": "Picture",
     "jellyseerr_card_badge_series": "Chronicles",
