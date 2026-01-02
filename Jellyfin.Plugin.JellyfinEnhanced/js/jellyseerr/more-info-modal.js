@@ -575,7 +575,7 @@ function buildMediaFacts(data, mediaType, tmdbId) {
     const rtLink = mediaType === 'tv' ? (data.ratings?.url || null) : (data.ratings?.rt?.url || null);
     const traktLink = `https://trakt.tv/search/tmdb/${tmdbId}?id_type=${mediaType === 'movie' ? 'movie' : 'show'}`;
     const letterboxdLink = mediaType === 'movie' ? `https://letterboxd.com/tmdb/${tmdbId}` : null;
-    
+
     // Resolve Jellyseerr URL based on mappings or fallback to base URL
     const jellyseerrBaseUrl = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
     const jellyseerrLink = jellyseerrBaseUrl ? `${jellyseerrBaseUrl}/${mediaType}/${tmdbId}` : null;
@@ -861,21 +861,37 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         menu.className = 'je-4k-popup';
         const option = document.createElement('button');
         option.className = 'je-4k-popup-item';
-        option.textContent = 'Request in 4K';
-        option.addEventListener('click', async (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
+
+        if (status4k === 5) {
+            // 4K is available
+            option.textContent = 'Request in 4K';
             option.disabled = true;
-            option.textContent = JE.t('jellyseerr_btn_requesting');
-            try {
-                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
-                mountRequestedChip(data, 'movie', true);
-                close4k();
-            } catch (error) {
-                option.disabled = false;
-                option.textContent = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
-            }
-        });
+            option.classList.add('je-4k-available');
+        } else if (status4k === 2 || status4k === 3) {
+            // 4K is pending or processing
+            option.textContent = 'Request in 4K';
+            option.disabled = true;
+            option.classList.add(status4k === 3 ? 'je-4k-processing' : 'je-4k-pending');
+        } else {
+            // 4K can be requested
+            option.textContent = 'Request in 4K';
+            option.classList.add('je-4k-request');
+            option.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                option.disabled = true;
+                option.textContent = JE.t('jellyseerr_btn_requesting');
+                try {
+                    await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+                    mountRequestedChip(data, 'movie', true);
+                    close4k();
+                } catch (error) {
+                    option.disabled = false;
+                    option.textContent = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
+                }
+            });
+        }
+
         menu.appendChild(option);
         document.body.appendChild(menu);
         const rect = arrowButton.getBoundingClientRect();
@@ -1667,6 +1683,12 @@ function injectStyles() {
         .je-4k-popup-item:hover {
             background: rgba(255, 255, 255, 0.08);
         }
+
+        /* Status-based popup colors matching button styles */
+        .je-4k-popup-item.je-4k-request { background-color: #5a3fb8 !important; color: #fff !important; }
+        .je-4k-popup-item.je-4k-pending { background-color: #b45309 !important; color: #fff !important; }
+        .je-4k-popup-item.je-4k-processing { background-color: #581c87 !important; color: #fff !important; }
+        .je-4k-popup-item.je-4k-available { background-color: #16a34a !important; color: #fff !important; }
 
         .je-more-info-modal .overview-section {
             margin-bottom: 1rem;

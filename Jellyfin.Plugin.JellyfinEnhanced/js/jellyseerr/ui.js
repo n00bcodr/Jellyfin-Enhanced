@@ -280,16 +280,18 @@
             // 4K is available
             request4KBtn.innerHTML = `<span>4K Available</span>${icons.available}`;
             request4KBtn.disabled = true;
-            request4KBtn.classList.add('jellyseerr-4k-available');
+            request4KBtn.classList.add('jellyseerr-4k-available', 'chip-available');
         } else if (status4k === 2 || status4k === 3) {
             // 4K is pending or processing
             request4KBtn.innerHTML = `<span>4K Requested</span>${icons.pending}`;
             request4KBtn.disabled = true;
+            request4KBtn.classList.add(status4k === 3 ? 'chip-processing' : 'chip-pending');
         } else {
             // 4K can be requested
             request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
             request4KBtn.dataset.tmdbId = item.id;
             request4KBtn.dataset.action = 'request4k';
+            request4KBtn.classList.add('chip-requested');
         }
 
         popup.appendChild(request4KBtn);
@@ -535,6 +537,13 @@
             .jellyseerr-4k-popup-item.jellyseerr-4k-available {
                 color: #16a34a;
             }
+            /* Status-based popup colors matching button styles */
+            .jellyseerr-4k-popup.show { background: #5a3fb8 !important; }
+            .jellyseerr-4k-popup.show .jellyseerr-4k-popup-item { color: #fff !important; }
+            .jellyseerr-4k-popup-item.chip-requested { background-color: #5a3fb8 !important; color: #fff !important; }
+            .jellyseerr-4k-popup-item.chip-pending { background-color: #b45309 !important; color: #fff !important; }
+            .jellyseerr-4k-popup-item.chip-processing { background-color: #581c87 !important; color: #fff !important; }
+            .jellyseerr-4k-popup-item.chip-available { background-color: #16a34a !important; color: #fff !important; }
             .jellyseerr-4k-popup-item svg {
                 flex-shrink: 0;
                 width: 18px;
@@ -1040,7 +1049,7 @@
                     <div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
                     <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
                 `;
-                
+
                 cardScalable.appendChild(overview);
                 button = overview.querySelector('.jellyseerr-request-button');
                 configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
@@ -1052,7 +1061,7 @@
                     }
                     e.preventDefault();
                     e.stopPropagation();
-                    
+
                     if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
                         const tmdbId = parseInt(item.id);
                         const mediaType = item.mediaType;
@@ -1094,13 +1103,13 @@
 
             // Mobile/Touch: touchstart to show overview, second tap (click) on overview opens modal
             imageContainer.style.cursor = 'pointer';
-            
+
             // Use touchstart for mobile to create overview (prevents touchend from immediately opening modal)
             imageContainer.addEventListener('touchstart', (e) => {
                 if (e.target.closest('.jellyseerr-overview') || e.target.closest('.jellyseerr-request-button')) {
                     return;
                 }
-                
+
                 if (!overview) {
                     e.preventDefault();
                     createOverview();
@@ -1109,18 +1118,18 @@
                     }, 0);
                 }
             }, { passive: false });
-            
+
             // Desktop: use click event
             imageContainer.addEventListener('click', (e) => {
                 // Skip if touch device (touchstart already handled it)
                 if (e.type === 'click' && 'ontouchstart' in window) {
                     return;
                 }
-                
+
                 if (e.target.closest('.jellyseerr-overview')) {
                     return;
                 }
-                
+
                 if (!overview) {
                     e.preventDefault();
                     e.stopPropagation();
