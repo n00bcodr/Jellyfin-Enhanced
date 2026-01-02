@@ -101,14 +101,15 @@
                 ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
                 : null;
             if (card) {
-                // If item exists in library, mark it and add library ID reference
+                const titleLink = card.querySelector('.cardText-first a');
+
+                // If item exists in library, link to library item
                 const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
                 if (jellyfinMediaId) {
                     card.setAttribute('data-library-item', 'true');
                     card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
                     card.classList.add('jellyseerr-card-in-library');
                     // Update title link to point to library item
-                    const titleLink = card.querySelector('.cardText-first a');
                     if (titleLink) {
                         const itemName = item.title || item.name;
                         titleLink.textContent = itemName;

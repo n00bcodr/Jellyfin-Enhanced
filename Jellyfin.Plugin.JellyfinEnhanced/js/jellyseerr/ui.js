@@ -981,13 +981,16 @@
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
 
+        // Check if item is available in Jellyseerr
+        const isAvailable = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.status || item.mediaInfo?.status4k;
+
         const card = document.createElement('div');
-        card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
+        card.className = `card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card${isAvailable ? ' jellyseerr-card-in-library' : ''}`;
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent itemAction" style="background-image: url('${posterUrl}');">
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image" style="background-image: url('${posterUrl}');">
                         <div class="jellyseerr-status-badge"></div>
                         <div class="jellyseerr-elsewhere-icons"></div>
                         <div class="cardIndicators"></div>
@@ -1139,11 +1142,36 @@
         // If movie belongs to a collection, show a collection badge that opens the modal
         addCollectionMembershipBadge(card, item);
 
-        // Add click handler for the more info link
+        // Add click handler for the poster image - opens modal
+        const posterImage = card.querySelector('.jellyseerr-poster-image');
+        if (posterImage && useMoreInfoModal && JE.jellyseerrMoreInfo) {
+            posterImage.style.cursor = 'pointer';
+            posterImage.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const tmdbId = parseInt(item.id);
+                const mediaType = item.mediaType;
+                if (tmdbId && mediaType) {
+                    JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                }
+            });
+        }
+
+        // Add click handler for the title link
         const moreInfoLink = card.querySelector('.jellyseerr-more-info-link');
         if (moreInfoLink) {
-            if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
-                moreInfoLink.addEventListener('click', (e) => {
+            moreInfoLink.addEventListener('click', (e) => {
+                // Check if this is a library item (href already set to jellyfin item)
+                const href = moreInfoLink.getAttribute('href');
+                const isLibraryLink = href && href.startsWith('#!/details?id=');
+
+                if (isLibraryLink) {
+                    // Allow default behavior for library links
+                    return;
+                }
+
+                // If using modal, prevent default and open modal
+                if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
                     e.stopPropagation();
                     const tmdbId = parseInt(moreInfoLink.dataset.tmdbId);
@@ -1151,8 +1179,8 @@
                     if (tmdbId && mediaType) {
                         JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                     }
-                });
-            }
+                }
+            });
         }
 
         if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
