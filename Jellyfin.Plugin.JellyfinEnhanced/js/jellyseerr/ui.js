@@ -1000,7 +1000,6 @@
         }
 
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
-        const useJellyseerrLink = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseJellyseerrLinks && jellyseerrUrl);
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
 
         const card = document.createElement('div');
@@ -1017,7 +1016,7 @@
                     <div class="cardOverlayContainer" data-action="link"></div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
-                    <a is="emby-linkbutton" ${useMoreInfoModal ? 'href="#"' : `href="${useJellyseerrLink && jellyseerrUrl ? jellyseerrUrl : tmdbUrl}" target="_blank" rel="noopener noreferrer"`} class="jellyseerr-more-info-link" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}" title="${JE.t('jellyseerr_card_view_details') || 'View Details'}"><bdi>${titleText}</bdi></a>
+                    <a is="emby-linkbutton" ${useMoreInfoModal ? 'href="#"' : (jellyseerrUrl ? `href="${jellyseerrUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#"')} class="jellyseerr-more-info-link" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}" title="${JE.t('jellyseerr_card_view_details') || 'View Details'}"><bdi>${titleText}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" class="jellyseerr-icon-on-card" alt="Jellyseerr"/>
@@ -1073,10 +1072,8 @@
                         if (tmdbId && mediaType) {
                             JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                         }
-                    } else if (useJellyseerrLink && jellyseerrUrl) {
+                    } else if (jellyseerrUrl) {
                         window.open(jellyseerrUrl, '_blank', 'noopener,noreferrer');
-                    } else {
-                        window.open(tmdbUrl, '_blank', 'noopener,noreferrer');
                     }
                 });
             };
