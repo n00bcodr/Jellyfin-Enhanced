@@ -2171,6 +2171,13 @@ function injectStyles() {
     // Inject styles when module loads
     injectStyles();
 
+    // Close modal on page navigation
+    document.addEventListener('viewshow', function() {
+        if (currentModal) {
+            moreInfoModal.close();
+        }
+    });
+
     // Expose the module on the global JE object
     JE.jellyseerrMoreInfo = moreInfoModal;
 
