@@ -575,7 +575,9 @@ function buildMediaFacts(data, mediaType, tmdbId) {
     const rtLink = mediaType === 'tv' ? (data.ratings?.url || null) : (data.ratings?.rt?.url || null);
     const traktLink = `https://trakt.tv/search/tmdb/${tmdbId}?id_type=${mediaType === 'movie' ? 'movie' : 'show'}`;
     const letterboxdLink = mediaType === 'movie' ? `https://letterboxd.com/tmdb/${tmdbId}` : null;
-    const jellyseerrBaseUrl = (JE?.pluginConfig?.JellyseerrBaseUrl || '').toString().trim().replace(/\/$/, '');
+    
+    // Resolve Jellyseerr URL based on mappings or fallback to base URL
+    const jellyseerrBaseUrl = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
     const jellyseerrLink = jellyseerrBaseUrl ? `${jellyseerrBaseUrl}/${mediaType}/${tmdbId}` : null;
 
     const links = [

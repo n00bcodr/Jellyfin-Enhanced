@@ -675,6 +675,45 @@
         }
     };
 
+    /**
+     * Resolves the Jellyseerr base URL based on URL mappings or falls back to the default base URL.
+     * This function checks if there are URL mappings configured and matches the current Jellyfin server URL
+     * against the mappings to determine the appropriate Jellyseerr URL.
+     * @returns {string} - The resolved Jellyseerr base URL (without trailing slash), or empty string if none configured.
+     */
+    api.resolveJellyseerrBaseUrl = function() {
+        let baseUrl = '';
+        
+        // Check if URL mappings are configured
+        if (JE?.pluginConfig?.JellyseerrUrlMappings) {
+            const serverAddress = (typeof ApiClient !== 'undefined' && ApiClient.serverAddress)
+                ? ApiClient.serverAddress()
+                : window.location.origin;
+
+            const currentUrl = serverAddress.replace(/\/+$/, '').toLowerCase();
+            const mappings = JE.pluginConfig.JellyseerrUrlMappings.toString().split('\n').map(line => line.trim()).filter(Boolean);
+
+            for (const mapping of mappings) {
+                const [jellyfinUrl, jellyseerrUrl] = mapping.split('|').map(s => s.trim());
+                if (!jellyfinUrl || !jellyseerrUrl) continue;
+
+                const normalizedJellyfinUrl = jellyfinUrl.replace(/\/+$/, '').toLowerCase();
+
+                if (currentUrl === normalizedJellyfinUrl) {
+                    baseUrl = jellyseerrUrl.replace(/\/$/, '');
+                    break;
+                }
+            }
+        }
+
+        // Fallback to the default base URL if no mapping matched
+        if (!baseUrl && JE?.pluginConfig?.JellyseerrBaseUrl) {
+            baseUrl = JE.pluginConfig.JellyseerrBaseUrl.toString().trim().replace(/\/$/, '');
+        }
+
+        return baseUrl;
+    };
+
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;
 
