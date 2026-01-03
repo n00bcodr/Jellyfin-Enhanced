@@ -646,6 +646,9 @@
           background: #00c47a;
         }
         .je-bookmark-btn-cancel {
+          display: flex;
+          align-items: center;
+          gap: 6px;
           background: rgba(255,255,255,0.1);
           color: #fff;
         }

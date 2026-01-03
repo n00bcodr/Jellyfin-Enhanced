@@ -324,6 +324,9 @@
     }
 
     .je-bookmark-btn-cancel {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       padding: 10px 20px;
       background: rgba(255, 255, 255, 0.05);
       color: #aaa;
