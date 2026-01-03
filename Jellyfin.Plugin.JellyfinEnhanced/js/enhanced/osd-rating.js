@@ -75,7 +75,7 @@
     style.id = 'je-osd-rating-style';
     style.textContent = `
       #${CONTAINER_ID} { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: middle; }
-      #${CONTAINER_ID} .je-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.45); font-weight: 600; line-height: 1; }
+      #${CONTAINER_ID} .je-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-weight: 600; line-height: 1; }
       #${CONTAINER_ID} .je-chip.tmdb { color: #ffc107; }
       #${CONTAINER_ID} .je-chip.critic { color: #ffffff; }
       #${CONTAINER_ID} .je-star { font-family: 'Material Icons'; font-size: 16px; color: #ffc107; line-height: 1; }
