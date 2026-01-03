@@ -1203,7 +1203,7 @@ Sample custom styling:
 
 ## 🫚 Project Structure
 
-The original monolithic `plugin.js` has been refactored into a modular, component-based structure to improve maintainability, readability, and scalability. The new architecture uses a single entry point (`plugin.js`) that dynamically loads all other feature components.
+The plugin architecture uses a single entry point (`plugin.js`) that dynamically loads all other feature components.
 
 ### File Structure
 
@@ -1227,6 +1227,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── sv.json
     │   └── tr.json
     ├── enhanced/
+    │   ├── bookmarks.js
+    │   ├── bookmarks-library.js
     │   ├── config.js
     │   ├── events.js
     │   ├── features.js
@@ -1237,8 +1239,11 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   └── ui.js
     ├── jellyseerr/
     │   ├── api.js
+    │   ├── issue-reporter.js
+    │   ├── item-details.js
     │   ├── jellyseerr.js
     │   ├── modal.js
+    │   ├── more-info-modal.js
     │   └── ui.js
     ├── arr-links.js
     ├── arr-tag-links.js
@@ -1260,6 +1265,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`plugin.js`**: The main entry point. It loads the plugin configuration and translations, then dynamically injects all other component scripts.
 
 * **`/enhanced/`**: Contains the core components of the "Jellyfin Enhanced" feature set.
+    * **`bookmarks.js`**: Manages video bookmarks/timestamps during playback. Handles bookmark creation (via `B` key), displays visual markers on the video timeline, and provides quick navigation to saved timestamps.
+    * **`bookmarks-library.js`**: Provides a comprehensive bookmark management interface accessible via Custom Tabs. Allows users to view all bookmarks across movies and TV shows, cleanup orphaned bookmarks, detect duplicates, and adjust time offsets for synced bookmarks.
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
     * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
     * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
@@ -1271,8 +1278,11 @@ Jellyfin.Plugin.JellyfinEnhanced/
 
 * **`/jellyseerr/`**: This directory contains all components related to the Jellyseerr integration.
     * **`api.js`**: Handles all direct communication with the Jellyseerr proxy endpoints on the Jellyfin server.
+    * **`issue-reporter.js`**: Provides the issue reporting interface for Jellyseerr, allowing users to report problems with media items directly from Jellyfin.
+    * **`item-details.js`**: Manages Jellyseerr-specific details displayed on item detail pages, including request status and availability information.
     * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
     * **`modal.js`**: A dedicated component for creating and managing the advanced request modals.
+    * **`more-info-modal.js`**: Displays detailed information about media items from Jellyseerr, including cast, crew, and extended metadata.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
 
 * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
@@ -1299,6 +1309,67 @@ Jellyfin.Plugin.JellyfinEnhanced/
 
 * **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
 
+
+<br>
+<p align="center">
+--------------------------------------------------
+</p>
+<br>
+
+## 🔌 Accessing Bookmarks from External Apps
+
+While the bookmark UI and visual markers are only available in Jellyfin's embedded Web UI, the bookmark data itself is stored server-side and can be accessed by any application with access to the Jellyfin API.
+
+### Bookmark Storage
+
+Bookmarks are stored in the server's user data directory at:
+```
+/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json
+```
+
+The data structure is:
+```json
+{
+  "Bookmarks": {
+    "unique-bookmark-id": {
+      "itemId": "jellyfin-item-id",
+      "tmdbId": "12345",
+      "tvdbId": "67890",
+      "mediaType": "movie" | "tv",
+      "name": "Item Name",
+      "timestamp": 123.45,
+      "label": "Epic scene",
+      "createdAt": "2026-01-03T12:00:00.000Z",
+      "updatedAt": "2026-01-03T12:00:00.000Z",
+      "syncedFrom": "original-item-id"
+    }
+  }
+}
+```
+
+### API Access
+
+External applications can read and write bookmarks using the Jellyfin Enhanced API endpoints:
+
+**Get Bookmarks:**
+```http
+GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
+Authorization: MediaBrowser Token="{your-api-key}"
+```
+
+**Save Bookmarks:**
+```http
+POST /JellyfinEnhanced/user-settings
+Authorization: MediaBrowser Token="{your-api-key}"
+Content-Type: application/json
+
+{
+  "fileName": "bookmarks.json",
+  "data": {
+    "Bookmarks": { ... }
+  }
+}
+```
 
 <br>
 <p align="center">
