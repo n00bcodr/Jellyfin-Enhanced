@@ -512,20 +512,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             }
                             else
                             {
-                                // If not in library yet, add to pending watchlist so it will be picked up when it arrives
-                                var pending = _userConfigurationManager.GetUserConfiguration<PendingWatchlistItems>(user.Id.ToString(), "pending-watchlist.json");
-                                var alreadyPending = pending.Items.Any(i => i.TmdbId == item.TmdbId && i.MediaType == item.MediaType);
-                                if (!alreadyPending)
-                                {
-                                    pending.Items.Add(new PendingWatchlistItem
-                                    {
-                                        TmdbId = item.TmdbId,
-                                        MediaType = item.MediaType,
-                                        RequestedAt = DateTime.UtcNow
-                                    });
-                                    _userConfigurationManager.SaveUserConfiguration(user.Id.ToString(), "pending-watchlist.json", pending);
-                                    _logger.Info($"[Manual Watchlist Sync] Added TMDB {item.TmdbId} ({item.MediaType}) to pending watchlist for {user.Username}");
-                                }
+                                // Item not in library yet - WatchlistMonitor will automatically add it when it arrives
+                                _logger.Debug($"[Manual Watchlist Sync] Item TMDB {item.TmdbId} ({item.MediaType}) not in library yet for {user.Username} - will be auto-added by WatchlistMonitor when available");
                             }
                         }
                     }
@@ -1364,66 +1352,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             int formattedProgress = (int)Math.Clamp(progress, 0, 100);
 
             return Ok(new { success = true, progress = formattedProgress });
-        }
-
-        [HttpGet("user-settings/{userId}/pending-watchlist.json")]
-        [Authorize]
-        public IActionResult GetPendingWatchlistItems(string userId)
-        {
-            var items = _userConfigurationManager.GetUserConfiguration<PendingWatchlistItems>(userId, "pending-watchlist.json");
-            return Ok(items);
-        }
-
-        [HttpPost("user-settings/{userId}/pending-watchlist/add")]
-        [Authorize]
-        [Produces("application/json")]
-        public IActionResult AddPendingWatchlistItem(string userId, [FromBody] PendingWatchlistItem item)
-        {
-            try
-            {
-                var pending = _userConfigurationManager.GetUserConfiguration<PendingWatchlistItems>(userId, "pending-watchlist.json");
-
-                // Check if item already exists
-                var exists = pending.Items.Any(i => i.TmdbId == item.TmdbId && i.MediaType == item.MediaType);
-                if (!exists)
-                {
-                    item.RequestedAt = DateTime.UtcNow;
-                    pending.Items.Add(item);
-                    _userConfigurationManager.SaveUserConfiguration(userId, "pending-watchlist.json", pending);
-                    _logger.Info($"Added pending watchlist item for user {userId}: TMDB {item.TmdbId} ({item.MediaType})");
-                }
-                else
-                {
-                    _logger.Debug($"Pending watchlist item already exists for user {userId}: TMDB {item.TmdbId} ({item.MediaType})");
-                }
-
-                return Ok(new { success = true });
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to add pending watchlist item for user {userId}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = "Failed to add pending watchlist item." });
-            }
-        }
-
-        [HttpPost("user-settings/{userId}/pending-watchlist/remove")]
-        [Authorize]
-        [Produces("application/json")]
-        public IActionResult RemovePendingWatchlistItem(string userId, [FromBody] PendingWatchlistItem item)
-        {
-            try
-            {
-                var pending = _userConfigurationManager.GetUserConfiguration<PendingWatchlistItems>(userId, "pending-watchlist.json");
-                pending.Items.RemoveAll(i => i.TmdbId == item.TmdbId && i.MediaType == item.MediaType);
-                _userConfigurationManager.SaveUserConfiguration(userId, "pending-watchlist.json", pending);
-                _logger.Info($"Removed pending watchlist item for user {userId}: TMDB {item.TmdbId} ({item.MediaType})");
-                return Ok(new { success = true });
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to remove pending watchlist item for user {userId}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = "Failed to remove pending watchlist item." });
-            }
         }
 
         [HttpGet("jellyseerr/issue")]

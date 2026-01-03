@@ -475,26 +475,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                 if (item == null)
                 {
-                    _logger.Debug($"[Jellyseerr Watchlist Sync] Item not found in library: {watchlistItem.Title} (TMDB: {watchlistItem.TmdbId}), adding to pending watchlist");
-
-                    // Add to pending watchlist so it gets added when the item arrives
-                    var pending = _userConfigurationManager.GetUserConfiguration<Configuration.PendingWatchlistItems>(user.Id.ToString(), "pending-watchlist.json");
-
-                    // Check if already in pending list
-                    var alreadyPending = pending.Items.Any(i => i.TmdbId == watchlistItem.TmdbId && i.MediaType == watchlistItem.MediaType);
-                    if (!alreadyPending)
-                    {
-                        pending.Items.Add(new Configuration.PendingWatchlistItem
-                        {
-                            TmdbId = watchlistItem.TmdbId,
-                            MediaType = watchlistItem.MediaType,
-                            RequestedAt = DateTime.UtcNow
-                        });
-                        _userConfigurationManager.SaveUserConfiguration(user.Id.ToString(), "pending-watchlist.json", pending);
-                        _logger.Info($"[Jellyseerr Watchlist Sync] ✓ Added to pending watchlist: {watchlistItem.Title} (TMDB: {watchlistItem.TmdbId}) for user {user.Username}");
-                        return Task.FromResult(WatchlistItemResult.AddedToPending);
-                    }
-
+                    // Item not in library yet - WatchlistMonitor will automatically add it when it arrives
+                    _logger.Debug($"[Jellyseerr Watchlist Sync] Item not found in library: {watchlistItem.Title} (TMDB: {watchlistItem.TmdbId}) - will be auto-added by WatchlistMonitor when available");
                     return Task.FromResult(WatchlistItemResult.Skipped);
                 }
 

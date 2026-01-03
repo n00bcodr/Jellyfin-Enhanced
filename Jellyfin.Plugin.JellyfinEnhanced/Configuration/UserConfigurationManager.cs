@@ -21,7 +21,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         private string GetUserConfigDir(string userId)
         {
-            var userDir = Path.Combine(_configBaseDir, userId);
+            var normalizedUserId = userId?.Replace("-", "") ?? "";
+            var userDir = Path.Combine(_configBaseDir, normalizedUserId);
             Directory.CreateDirectory(userDir);
             return userDir;
         }
