@@ -42,10 +42,16 @@
                 return;
             }
 
+            // Convert bookmark data back to PascalCase for server
+            let dataToSave = settings;
+            if (fileName === 'bookmark.json' && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
+                dataToSave = window.JellyfinEnhanced.toPascalCase(settings);
+            }
+
             await ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
-                data: JSON.stringify(settings),
+                data: JSON.stringify(dataToSave),
                 contentType: 'application/json'
             });
         } catch (e) {

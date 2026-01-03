@@ -42,9 +42,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<Shortcut> Shortcuts { get; set; } = new List<Shortcut>();
     }
 
-    public class UserBookmarks
+    public class BookmarkItem
     {
-        public Dictionary<string, double> Bookmarks { get; set; } = new Dictionary<string, double>();
+        public string ItemId { get; set; } = string.Empty;
+        public string TmdbId { get; set; } = string.Empty;
+        public string TvdbId { get; set; } = string.Empty;
+        public string MediaType { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public double Timestamp { get; set; }
+        public string Label { get; set; } = string.Empty;
+        public string CreatedAt { get; set; } = string.Empty;
+        public string UpdatedAt { get; set; } = string.Empty;
+        public string SyncedFrom { get; set; } = string.Empty;
+    }
+
+    public class UserBookmark
+    {
+        public Dictionary<string, BookmarkItem> Bookmarks { get; set; } = new Dictionary<string, BookmarkItem>();
     }
 
     public class ElsewhereSettings

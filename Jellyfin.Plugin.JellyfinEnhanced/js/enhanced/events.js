@@ -59,11 +59,6 @@
         } else if (combo === activeShortcuts.PlayRandomItem && !JE.isVideoPage()) {
             e.preventDefault();
             document.getElementById('randomItemButton')?.click();
-        } else if (combo === activeShortcuts.ClearAllBookmarks && !JE.isVideoPage()) {
-            e.preventDefault();
-            JE.userConfig.bookmarks.Bookmarks = {};
-            JE.saveUserSettings('bookmarks.json', JE.userConfig.bookmarks);
-            JE.toast(JE.t('toast_all_bookmarks_cleared'));
         }
 
         // --- Player-Only Shortcuts ---
@@ -73,29 +68,11 @@
             case activeShortcuts.BookmarkCurrentTime:
                 e.preventDefault();
                 e.stopPropagation();
-                const videoId = document.title?.replace(/^Playing:\s*/, '').trim() || 'unknown';
-                JE.userConfig.bookmarks.Bookmarks[videoId] = video.currentTime;
-                JE.saveUserSettings('bookmarks.json', JE.userConfig.bookmarks);
-                const h_set = Math.floor(video.currentTime / 3600);
-                const m_set = Math.floor((video.currentTime % 3600) / 60);
-                const s_set = Math.floor(video.currentTime % 60);
-                const time_set = `${h_set > 0 ? `${h_set}:` : ''}${m_set.toString().padStart(h_set > 0 ? 2 : 1, '0')}:${s_set.toString().padStart(2, '0')}`;
-                JE.toast(JE.t('toast_bookmarked_at', { time: time_set }));
-                break;
-            case activeShortcuts.GoToSavedBookmark:
-                e.preventDefault();
-                e.stopPropagation();
-                const videoId_get = document.title?.replace(/^Playing:\s*/, '').trim() || 'unknown';
-                const bookmarkTime = JE.userConfig.bookmarks.Bookmarks[videoId_get];
-                if (bookmarkTime !== undefined) {
-                    video.currentTime = bookmarkTime;
-                    const h_get = Math.floor(bookmarkTime / 3600);
-                    const m_get = Math.floor((bookmarkTime % 3600) / 60);
-                    const s_get = Math.floor(bookmarkTime % 60);
-                    const time_get = `${h_get > 0 ? `${h_get}:` : ''}${m_get.toString().padStart(h_get > 0 ? 2 : 1, '0')}:${s_get.toString().padStart(2, '0')}`;
-                    JE.toast(JE.t('toast_returned_to_bookmark', { time: time_get }));
+                // Open bookmark modal to add/view bookmarks
+                if (JE.bookmarks?.showModal) {
+                    JE.bookmarks.showModal('add');
                 } else {
-                    JE.toast(JE.t('toast_no_bookmarks_found'));
+                    console.warn('🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback');
                 }
                 break;
             case activeShortcuts.CycleAspectRatio:
@@ -222,7 +199,11 @@
             'action-sheets',
             JE.helpers.debounce(() => {
                 if (JE.currentSettings.removeContinueWatchingEnabled) {
-                    JE.addRemoveButton();
+                    if (typeof JE.addRemoveButton === 'function') {
+                        JE.addRemoveButton();
+                    } else {
+                        console.warn('🪼 Jellyfin Enhanced: addRemoveButton not available');
+                    }
                 }
             }, 150),
             document.body,
@@ -375,7 +356,7 @@
             const videoPageCheck = (handler) => (e) => {
                 if (JE.isVideoPage()) {
                     // Don't interfere with clicks on OSD buttons / the pause screen overlay / Enhanced Panel
-                    if (e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
+                    if (e.target && e.target.closest && e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
                     handler(e);
                 }
             };

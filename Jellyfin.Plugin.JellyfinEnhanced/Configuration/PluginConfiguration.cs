@@ -71,7 +71,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "GoToDashboard", Key = "D", Label = "Go to Dashboard", Category = "Global" },
                 new Shortcut { Name = "QuickConnect", Key = "Q", Label = "Quick Connect", Category = "Global" },
                 new Shortcut { Name = "PlayRandomItem", Key = "R", Label = "Play Random Item", Category = "Global" },
-                new Shortcut { Name = "ClearAllBookmarks", Key = "Ctrl+Shift+B", Label = "Clear All Bookmarks", Category = "Global" },
                 new Shortcut { Name = "CycleAspectRatio", Key = "A", Label = "Cycle Aspect Ratio", Category = "Player" },
                 new Shortcut { Name = "ShowPlaybackInfo", Key = "I", Label = "Show Playback Info", Category = "Player" },
                 new Shortcut { Name = "SubtitleMenu", Key = "S", Label = "Subtitle Menu", Category = "Player" },
@@ -81,7 +80,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "DecreasePlaybackSpeed", Key = "-", Label = "Decrease Playback Speed", Category = "Player" },
                 new Shortcut { Name = "ResetPlaybackSpeed", Key = "R", Label = "Reset Playback Speed", Category = "Player" },
                 new Shortcut { Name = "BookmarkCurrentTime", Key = "B", Label = "Bookmark Current Time", Category = "Player" },
-                new Shortcut { Name = "GoToSavedBookmark", Key = "Shift+B", Label = "Go to Saved Bookmark", Category = "Player" },
                 new Shortcut { Name = "OpenEpisodePreview", Key = "P", Label = "Open Episode Preview", Category = "Player" }
             };
 
@@ -137,6 +135,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
+
+            // Bookmarks Settings
+            BookmarksEnabled = true;
         }
 
         // Jellyfin Enhanced Settings
@@ -245,5 +246,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }
         public bool SyncJellyseerrWatchlist { get; set; }
+
+        // Bookmarks Settings
+        public bool BookmarksEnabled { get; set; }
     }
 }

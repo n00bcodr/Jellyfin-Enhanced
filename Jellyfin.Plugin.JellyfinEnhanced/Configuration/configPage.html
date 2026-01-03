@@ -159,7 +159,7 @@
                                         <div class="fieldDescription">Forces all clients to clear Language, Quality, Genre and Rating tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
                                     </div>
                                 </fieldset>
-                                <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-top: 1em;margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
                                 </div>
                             </details>
                             <div style="padding-top: 1em;">
@@ -209,6 +209,53 @@
                         <h4 class="sectionTitle" style="margin-top: 0;">Configured Overrides</h4>
                         <div id="shortcut-list-container" style="display: flex; flex-direction: column; margin-top: 1em;">
                             </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Bookmarks</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="bookmarksEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Bookmarks Feature</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1.5em;">
+                                Save custom bookmarks/timestamps while watching videos to quickly jump back to your favorite scenes or moments.
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">How to Use Bookmarks:</h4>
+                                        <ul class="fieldDescription" style="margin: 0.5em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;"><strong>During Playback:</strong> Press <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; font-family: monospace;">B</kbd> or click the bookmark icon <i class="material-icons" style="font-size: 16px; vertical-align: middle;">bookmark_add</i> in the video player controls to save a bookmark at the current time.</li>
+                                            <li style="margin-bottom: 0.5em;"><strong>Visual Markers:</strong> Bookmarks appear as location pins <i class="material-icons" style="font-size: 16px; vertical-align: middle; color: #00d4ff;">location_pin</i> on the video progress bar. Click a marker to jump to that timestamp.</li>
+                                            <li style="margin-bottom: 0.5em;"><strong>Multi-Version Support:</strong> Bookmarks track by TMDB/TVDB IDs, so they work across different file versions of the same content.</li>
+                                        </ul>
+                                        <h4 style="margin: 1em 0 0.5em 0;">To View & Manage All Your Bookmarks:</h4>
+                                        <p class="fieldDescription" style="margin: 0;">You need to create a custom view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > General > Custom Tabs and add a new tab.</li>
+                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "My Bookmarks").</li>
+                                            <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                        </ol>
+                                        <div style="position: relative;">
+                                            <button type="button" id="copyBookmarksHtmlBtn" is="emby-button" class="raised raised-mini emby-button" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
+                                                <span id="copyBookmarksBtnText" style="vertical-align: middle;">Copy</span>
+                                            </button>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="sections bookmarks"&gt;&lt;/div&gt;
+</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            Already have Custom Tabs installed?
+                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Timeout Settings</h3></legend>
@@ -838,7 +885,6 @@
             { Name: "GoToDashboard", Key: "D", Label: "Go to Dashboard", Category: "Global" },
             { Name: "QuickConnect", Key: "Q", Label: "Quick Connect", Category: "Global" },
             { Name: "PlayRandomItem", Key: "R", Label: "Play Random Item", Category: "Global" },
-            { Name: "ClearAllBookmarks", Key: "Ctrl+Shift+B", Label: "Clear All Bookmarks", Category: "Global" },
             { Name: "CycleAspectRatio", Key: "A", Label: "Cycle Aspect Ratio", Category: "Player" },
             { Name: "ShowPlaybackInfo", Key: "I", Label: "Show Playback Info", Category: "Player" },
             { Name: "SubtitleMenu", Key: "S", Label: "Subtitle Menu", Category: "Player" },
@@ -848,7 +894,6 @@
             { Name: "DecreasePlaybackSpeed", Key: "-", Label: "Decrease Playback Speed", Category: "Player" },
             { Name: "ResetPlaybackSpeed", Key: "R", Label: "Reset Playback Speed", Category: "Player" },
             { Name: "BookmarkCurrentTime", Key: "B", Label: "Bookmark Current Time", Category: "Player" },
-            { Name: "GoToSavedBookmark", Key: "Shift+B", Label: "Go to Saved Bookmark", Category: "Player" },
             { Name: "OpenEpisodePreview", Key: "P", Label: "Open Episode Preview", Category: "Player" }
         ];
 
@@ -1174,6 +1219,7 @@
                 document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
+                document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
 
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#sonarrUrl').value = config.SonarrUrl;
@@ -1292,6 +1338,7 @@
             config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
+            config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
             config.SonarrUrl = document.querySelector('#sonarrUrl').value;
@@ -1399,6 +1446,31 @@
         document.querySelectorAll('.testTmdbBtn').forEach(btn => {
             btn.addEventListener('click', testTmdbConnection);
         });
+
+        // Copy bookmarks HTML button
+        const copyBookmarksHtmlBtn = document.getElementById('copyBookmarksHtmlBtn');
+        if (copyBookmarksHtmlBtn) {
+            copyBookmarksHtmlBtn.addEventListener('click', function() {
+                const htmlCode = `<div class="sections bookmarks"></div>
+<style>
+  .sections.bookmarks {
+    padding-top: 20px; /* Adjust/remove this value as needed for your theme */
+  }
+</style>`;
+                navigator.clipboard.writeText(htmlCode).then(function() {
+                    const btnText = document.getElementById('copyBookmarksBtnText');
+                    btnText.textContent = 'Copied!';
+                    copyBookmarksHtmlBtn.style.color = '#4CAF50';
+                    setTimeout(function() {
+                        btnText.textContent = 'Copy';
+                        copyBookmarksHtmlBtn.style.color = '';
+                    }, 2000);
+                }).catch(function(err) {
+                    console.error('Failed to copy text: ', err);
+                    alert('Failed to copy to clipboard');
+                });
+            });
+        }
     })();
 </script>
 </div>

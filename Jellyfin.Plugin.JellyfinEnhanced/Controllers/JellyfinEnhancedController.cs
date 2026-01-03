@@ -991,6 +991,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowRecommended,
                 config.JellyseerrExcludeLibraryItems,
 
+                // Bookmarks Settings
+                config.BookmarksEnabled,
+
                 // Arr Links Settings
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
@@ -1128,14 +1131,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(userConfig);
         }
 
-        [HttpGet("user-settings/{userId}/bookmarks.json")]
-        [Authorize]
-        public IActionResult GetUserSettingsBookmarks(string userId)
-        {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmarks>(userId, "bookmarks.json");
-            return Ok(userConfig);
-        }
-
         [HttpGet("user-settings/{userId}/elsewhere.json")]
         [Authorize]
         public IActionResult GetUserSettingsElsewhere(string userId)
@@ -1180,21 +1175,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        [HttpPost("user-settings/{userId}/bookmarks.json")]
+        [HttpGet("user-settings/{userId}/bookmark.json")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult SaveUserSettingsBookmarks(string userId, [FromBody] UserBookmarks userConfiguration)
+        public IActionResult GetUserBookmark(string userId)
+        {
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(userId, "bookmark.json");
+            return Ok(userConfig);
+        }
+
+        [HttpPost("user-settings/{userId}/bookmark.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult SaveUserBookmark(string userId, [FromBody] UserBookmark userConfiguration)
         {
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "bookmarks.json", userConfiguration);
-                _logger.Info($"Saved user bookmarks for user {userId} to bookmarks.json");
-                return Ok(new { success = true, file = "bookmarks.json" });
+                _userConfigurationManager.SaveUserConfiguration(userId, "bookmark.json", userConfiguration);
+                _logger.Info($"Saved enhanced bookmarks for user {userId} to bookmark.json");
+                return Ok(new { success = true, file = "bookmark.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user bookmarks for user {userId}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = "Failed to save user bookmarks." });
+                _logger.Error($"Failed to save enhanced bookmarks for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save enhanced bookmarks." });
             }
         }
 
