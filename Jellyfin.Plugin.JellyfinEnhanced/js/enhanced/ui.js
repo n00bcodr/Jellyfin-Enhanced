@@ -855,17 +855,6 @@
 
         document.body.appendChild(help);
 
-        /**
-        * Remove this when removing support for Migration
-        */
-        // Hook for migrate.js to add its button
-        if (typeof JE.addMigrationButton === 'function') {
-            JE.addMigrationButton(help);
-        }
-        /**
-        * Remove this when removing support for Migration
-        */
-
         // --- Shortcut Key Binding Logic ---
         if (!JE.pluginConfig.DisableAllShortcuts) {
             const shortcutKeys = help.querySelectorAll('.shortcut-key');

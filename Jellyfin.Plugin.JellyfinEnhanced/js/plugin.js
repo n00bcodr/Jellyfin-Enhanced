@@ -476,7 +476,6 @@
                 'enhanced/helpers.js',
                 'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
-                'migrate.js',
                 'elsewhere.js',
                 'jellyseerr/api.js',
                 'jellyseerr/modal.js',
@@ -517,7 +516,6 @@
 
             // Stage 6: Initialize feature modules
             if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
-            if (typeof JE.initializeMigration === 'function') JE.initializeMigration();
             if (typeof JE.initializeElsewhereScript === 'function' && JE.pluginConfig?.ElsewhereEnabled) JE.initializeElsewhereScript();
             if (typeof JE.initializeJellyseerrScript === 'function' && JE.pluginConfig?.JellyseerrEnabled) JE.initializeJellyseerrScript();
             if (typeof JE.jellyseerrIssueReporter?.initialize === 'function' && JE.pluginConfig?.JellyseerrEnabled) JE.jellyseerrIssueReporter.initialize();

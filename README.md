@@ -1246,7 +1246,6 @@ Jellyfin.Plugin.JellyfinEnhanced/
     ├── genretags.js
     ├── languagetags.js
     ├── letterboxd-links.js
-    ├── migrate.js
     ├── pausescreen.js
     ├── plugin.js
     ├── qualitytags.js
@@ -1287,8 +1286,6 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`languagetags.js`**: Manages the display of audio language information as flag icons directly on the posters.
 
 * **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
-
-* **`migrate.js`**: Handles one-time migration of user settings from browser localStorage to server-side storage. This allows users who upgraded from earlier versions to seamlessly migrate their settings, shortcuts, elsewhere preferences, and bookmarks to the new server-based configuration system.
 
 * **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
 
