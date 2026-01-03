@@ -5,6 +5,10 @@
 
   const logPrefix = '🪼 Jellyfin Enhanced: OSD Rating:';
   const CONTAINER_ID = 'je-osd-rating-container';
+  // Hot cache (per session) so each item is fetched once
+  const ratingCache = new Map();
+  const pendingRatings = new Map();
+  let scheduledUpdate = null;
 
   function isEnabled() {
     // Controlled by server config; default true unless explicitly disabled
@@ -146,13 +150,47 @@
     const itemId = getCurrentItemId();
     if (!userId || !itemId) return;
 
-    const rating = await fetchItemRatings(userId, itemId);
-    if (rating.tmdb || rating.critic !== null) injectRating(osdRoot, rating);
+    // Serve from cache if available (including null-rating to avoid refetch loops)
+    if (ratingCache.has(itemId)) {
+      const cached = ratingCache.get(itemId);
+      if (cached && (cached.tmdb || cached.critic !== null)) injectRating(osdRoot, cached);
+      return;
+    }
+
+    // Reuse in-flight fetch
+    if (pendingRatings.has(itemId)) {
+      const rating = await pendingRatings.get(itemId);
+      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating);
+      return;
+    }
+
+    const promise = (async () => {
+      const rating = await fetchItemRatings(userId, itemId);
+      ratingCache.set(itemId, rating);
+      return rating;
+    })();
+
+    pendingRatings.set(itemId, promise);
+
+    try {
+      const rating = await promise;
+      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating);
+    } finally {
+      pendingRatings.delete(itemId);
+    }
+  }
+
+  function scheduleUpdate() {
+    if (scheduledUpdate) return;
+    scheduledUpdate = setTimeout(() => {
+      scheduledUpdate = null;
+      if (JE.isVideoPage()) updateOsdRating();
+    }, 200);
   }
 
   function observeOsd() {
     const observer = new MutationObserver(() => {
-      if (JE.isVideoPage()) updateOsdRating();
+      scheduleUpdate();
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }

@@ -8,6 +8,14 @@
             return;
         }
 
+            const isVideoPage = () => {
+                if (typeof JE.isVideoPage === 'function') return JE.isVideoPage();
+                return !!document.querySelector('.videoPlayerContainer');
+            };
+            if (isVideoPage()) {
+                return;
+            }
+
         const logPrefix = '🪼 Jellyfin Enhanced: Genre Tags:';
         const containerClass = 'genre-overlay-container';
         const tagClass = 'genre-tag';
@@ -402,7 +410,8 @@
         }
 
         function scanAndProcess() {
-            const elements = Array.from(document.querySelectorAll(
+              if (isVideoPage()) return;
+              const elements = Array.from(document.querySelectorAll(
                 '.cardImageContainer, div.listItemImage'
             ));
             elements.forEach(el => {
