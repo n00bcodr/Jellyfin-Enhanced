@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Add option to require all prior episodes watched for auto season request\n - Fix typo in Auto Season Request\n - Update logging to use 'Auto-Season-Request' label\n - Update .gitattributes\n - Add automatic movie request feature\n - Refactor and enhance Jellyseerr card UI interactions\n - Hover on desktop not working still\n - Move Jellyseerr icon to cardtext Secondary\n - Add status badge to Jellyseerr result cards\n - Fix 4k Split Button\n - Fix Border Right Width as well\n - Add request button and status chips in more-info-modal\n - Translations\n - Mobile CSS Fixes\n - Missed translations\n - Refactor overview display logic for media cards\n - Dont reserve space for status chip if it doesn't exist\n - Add refresh button to the more-info-modal\n - Remove open links with TMDB option.\n - Close more-info-modal on page navigation\n - Update Jellyseerr Link in more-info-modal to use mapping\n - Group Downloads by downloadID and show ETA in more-info-modal\n - Item exists in library, link to library item\n - Link available chips to media items\n - Remove TMDB Ghosts\n - Update 4k button styles\n - Fix the requested button status\n - Use viewShow for issue button and add backdrop\n - Use hotCache for OSD ratings and stop genre tags on video page\n - Add comprehensive bookmarks system with visual markers and library management\n - Remove Migration Support for browser to server storage\n - Update en.json\n - Cancel Button Display Flex\n - Update Readme to add Bookmarks and Jellyseerr files\n - Remove background for OSD-ratings\n - Update Watchlist to fetch all requests from Jellyseerr\n - Remove the usage of pending-watchlist.json",
+        "targetAbi": "10.10.7.0",
+        "version": "10.0.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/10.0.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "4215CBB2466B4F16C4994C414446AAEA",
+        "timestamp": "2026-01-04T00:41:10"
+      },
+      {
         "changelog": "- Replace icon progress indicators with SVG\n - Jellyseerr Buton Processing state fix when 4K requests are enabled.\n - Fix CSS syntax error in 4k popup item style\n - Show available items as updating when downloads active\n - Add ETA display to download popover in UI\n - Add Polish locale file\n - Refresh button in Jellyseerr Results actually does something now!\n - Add Jellyseerr More Info modal\n - Remove je-extra-media-info container and related styles\n - Add TMDB and Rotten Tomatoes ratings to UI\n - Update README.md\n - Fix some classes clashing with slideshow.css",
         "targetAbi": "10.10.7.0",
         "version": "9.11.0.0",
