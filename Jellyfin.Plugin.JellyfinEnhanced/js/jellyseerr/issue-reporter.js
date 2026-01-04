@@ -550,8 +550,8 @@
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-issue-icon';
         button.type = 'button';
-        button.setAttribute('aria-label', 'Report issue');
-        button.title = 'Report issue';
+        button.setAttribute('aria-label', JE.t('jellyseerr_report_issue_button'));
+        button.title = JE.t('jellyseerr_report_issue_button');
         button.innerHTML = `
             <div class="detailButton-content">
                 <span class="material-icons detailButton-icon warning" aria-hidden="true"></span>
@@ -581,8 +581,8 @@
         button.className = 'button-flat detailButton emby-button jellyseerr-report-unavailable-icon';
         button.type = 'button';
 
-        let ariaLabel = 'Reporting unavailable';
-        let title = 'Reporting unavailable';
+        let ariaLabel = JE.t('jellyseerr_report_unavailable_button');
+        let title = JE.t('jellyseerr_report_unavailable_button');
 
         if (reason === 'no-tmdb') {
             ariaLabel = 'TMDB not configured';
@@ -620,7 +620,7 @@
             } else if (reason === 'no-permissions') {
                 JE.toast('You do not have permissions to report issues', 4000);
             } else {
-                JE.toast('Reporting is unavailable for this item', 4000);
+                JE.toast(JE.t('jellyseerr_report_unavailable_toast'), 4000);
             }
         });
 

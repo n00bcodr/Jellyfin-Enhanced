@@ -1044,10 +1044,10 @@
       <div class="je-bookmarks-wrapper">
         <div class="je-bookmark-tabs">
           <button class="je-tab ${currentTab === 'movie' ? 'active' : ''}" data-tab="movie">
-            Movies
+            ${JE.t('bookmarks_library_tab_movies')}
           </button>
           <button class="je-tab ${currentTab === 'tv' ? 'active' : ''}" data-tab="tv">
-            Series
+            ${JE.t('bookmarks_library_tab_series')}
           </button>
         </div>
 
@@ -1055,23 +1055,23 @@
           ${totalBookmarks === 0 ? `
             <div class="je-bookmarks-empty">
               <div class="je-bookmarks-empty-icon material-icons" aria-hidden="true">bookmark_border</div>
-              <div class="je-bookmarks-empty-title">No bookmarks yet</div>
-              <div class="je-bookmarks-empty-hint">Press 'B' while watching to save a bookmark!</div>
+              <div class="je-bookmarks-empty-title">${JE.t('bookmarks_library_empty_title')}</div>
+              <div class="je-bookmarks-empty-hint">${JE.t('bookmarks_library_empty_hint')}</div>
             </div>
           ` : `
             <div class="je-bookmarks-grid" id="bookmarks-items-container"></div>
             <div class="je-bookmark-actions-footer">
               <button class="btnFindDuplicates je-btn-footer">
                 <span class="material-icons" aria-hidden="true">merge</span>
-                <span>Find Duplicates</span>
+                <span>${JE.t('bookmarks_library_button_find_duplicates')}</span>
               </button>
               <button class="btnCleanupBookmarks je-btn-footer">
                 <span class="material-icons" aria-hidden="true">cleaning_services</span>
-                <span>Cleanup Orphaned</span>
+                <span>${JE.t('bookmarks_library_button_cleanup')}</span>
               </button>
               <button class="btnDeleteAllBookmarks je-btn-footer je-btn-footer-delete">
                 <span class="material-icons" aria-hidden="true">delete</span>
-                <span>Delete All</span>
+                <span>${JE.t('bookmarks_library_button_delete_all')}</span>
               </button>
             </div>
           `}

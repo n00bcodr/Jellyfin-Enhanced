@@ -570,7 +570,7 @@
     console.log('🪼 Bookmarks modal: Mode =', mode, 'Existing bookmarks:', existingBookmarks);
 
     const isEdit = mode === 'edit' && existingBookmark;
-    const title = isEdit ? 'Edit Bookmark' : (mode === 'view' ? 'Your Bookmarks' : 'Add Bookmark');
+    const title = isEdit ? JE.t('bookmark_edit_title') : (mode === 'view' ? 'Your Bookmarks' : JE.t('bookmark_add_title'));
     const timestamp = isEdit ? existingBookmark.timestamp : currentTime;
     const label = isEdit ? existingBookmark.label : '';
 
@@ -893,7 +893,7 @@
       </div>
     `;
 
-    // Create custom modal (not using Jellyfin's dialog classes to avoid style conflicts)
+    // Create custom modal
     const modal = document.createElement('div');
     modal.className = 'je-bm-player-modal-overlay';
     modal.innerHTML = `
