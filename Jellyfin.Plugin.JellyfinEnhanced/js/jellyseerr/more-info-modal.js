@@ -1224,13 +1224,18 @@ function buildPersonPlaceholder() {
  */
 moreInfoModal.close = function() {
     if (currentModal) {
+        if (currentModal._isClosing) return;
+        currentModal._isClosing = true;
+
         // Clean up TV request listener if exists
         if (currentModal._cleanupTvListener) {
             currentModal._cleanupTvListener();
         }
         currentModal.classList.remove('active');
         setTimeout(() => {
-            currentModal.remove();
+            if (document.body.contains(currentModal)) {
+                document.body.removeChild(currentModal);
+            }
             currentModal = null;
         }, 300);
     }
