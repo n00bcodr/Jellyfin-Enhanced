@@ -483,6 +483,7 @@
                 'jellyseerr/ui.js',
                 'jellyseerr/issue-reporter.js',
                 'jellyseerr/item-details.js',
+                'jellyseerr/network-discovery.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
                 'qualitytags.js', 'genretags.js', 'languagetags.js', 'ratingtags.js', 'arr-links.js', 'arr-tag-links.js',

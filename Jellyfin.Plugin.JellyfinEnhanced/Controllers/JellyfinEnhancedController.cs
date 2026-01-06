@@ -396,6 +396,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/discover/tv/network/{networkId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverTvByNetwork(int networkId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/tv/network/{networkId}?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/movies/studio/{studioId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverMoviesByStudio(int studioId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/movies/studio/{studioId}?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("studio/{studioId}")]
+        [Authorize]
+        public IActionResult GetStudioInfo(Guid studioId)
+        {
+            try
+            {
+                var studio = _libraryManager.GetItemById(studioId);
+                if (studio == null)
+                {
+                    return NotFound(new { message = "Studio not found" });
+                }
+
+                // Get TMDB ID from provider IDs if available
+                string? tmdbId = null;
+                if (studio.ProviderIds != null && studio.ProviderIds.TryGetValue("Tmdb", out var id))
+                {
+                    tmdbId = id;
+                }
+
+                return Ok(new
+                {
+                    id = studio.Id,
+                    name = studio.Name,
+                    tmdbId = tmdbId,
+                    type = studio.GetType().Name
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get studio info for {studioId}: {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get studio info" });
+            }
+        }
+
         [HttpGet("jellyseerr/overrideRule")]
         [Authorize]
         public Task<IActionResult> GetOverrideRules()
@@ -977,6 +1025,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
+                config.JellyseerrShowNetworkDiscovery,
                 config.JellyseerrExcludeLibraryItems,
 
                 // Bookmarks Settings
