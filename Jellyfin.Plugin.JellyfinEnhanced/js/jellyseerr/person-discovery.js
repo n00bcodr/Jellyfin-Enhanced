@@ -264,7 +264,7 @@
         if (processedPages.has(pageKey)) return;
         processedPages.add(pageKey);
 
-        if (!JE.pluginConfig?.JellyseerrShowPersonDiscovery) return;
+        if (JE.pluginConfig?.JellyseerrShowPersonDiscovery === false) return;
 
         // Check if this is a person page
         const isPerson = await isPersonPage(itemId);

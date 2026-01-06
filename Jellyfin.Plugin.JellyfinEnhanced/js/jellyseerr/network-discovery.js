@@ -413,7 +413,9 @@
 
         if (allResults.length === 0) return;
 
-        const listPage = document.querySelector('.itemsContainer');
+        // Find container only on ACTIVE page (not hidden)
+        const listPage = document.querySelector('.page:not(.hide) .itemsContainer') ||
+                         document.querySelector('.libraryPage:not(.hide) .itemsContainer');
         if (!listPage) return;
 
         // Remove existing sections
@@ -443,13 +445,14 @@
     }
 
     /**
-     * Wait for the page to be ready (optimized)
+     * Wait for the page to be ready (active page only, not hidden)
      * @returns {Promise<void>}
      */
     function waitForPageReady() {
         return new Promise((resolve) => {
-            // Check immediately first
-            const listContainer = document.querySelector('.itemsContainer');
+            // Check immediately first (active page only)
+            const listContainer = document.querySelector('.page:not(.hide) .itemsContainer') ||
+                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer');
             if (listContainer?.children.length > 0) {
                 resolve();
                 return;
@@ -457,7 +460,8 @@
 
             // Use MutationObserver for efficient DOM watching
             const observer = new MutationObserver((mutations, obs) => {
-                const container = document.querySelector('.itemsContainer');
+                const container = document.querySelector('.page:not(.hide) .itemsContainer') ||
+                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer');
                 if (container?.children.length > 0) {
                     obs.disconnect();
                     resolve();
