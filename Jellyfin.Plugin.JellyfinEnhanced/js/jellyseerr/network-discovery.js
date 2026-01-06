@@ -237,9 +237,10 @@
         titleElement.style.marginBottom = '1em';
         section.appendChild(titleElement);
 
-        // Use same container class as native Jellyfin for consistent card sizing
+        // Use exact same container structure as native Jellyfin list pages
         const itemsContainer = document.createElement('div');
-        itemsContainer.className = 'vertical-wrap itemsContainer centered padded-left padded-right';
+        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        itemsContainer.className = 'itemsContainer vertical-wrap padded-left padded-right';
 
         // Add items to container using Jellyseerr UI card creator
         filteredResults.forEach(item => {
@@ -247,8 +248,6 @@
                 ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
                 : null;
             if (card) {
-                // Add portraitCard class to match native Jellyfin card sizing
-                card.classList.add('portraitCard');
                 const titleLink = card.querySelector('.cardText-first a');
 
                 // If item exists in library, link to library item
@@ -325,7 +324,6 @@
                         ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
                         : null;
                     if (card) {
-                        card.classList.add('portraitCard');
                         const titleLink = card.querySelector('.cardText-first a');
                         const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
                         if (jellyfinMediaId) {
