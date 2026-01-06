@@ -92,6 +92,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowSimilar = true;
             JellyseerrShowRecommended = true;
             JellyseerrShowNetworkDiscovery = true;
+            JellyseerrShowGenreDiscovery = true;
+            JellyseerrShowTagDiscovery = true;
+            JellyseerrShowPersonDiscovery = true;
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = false;
             JellyseerrUrls = "";
@@ -203,6 +206,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowSimilar { get; set; }
         public bool JellyseerrShowRecommended { get; set; }
         public bool JellyseerrShowNetworkDiscovery { get; set; }
+        public bool JellyseerrShowGenreDiscovery { get; set; }
+        public bool JellyseerrShowTagDiscovery { get; set; }
+        public bool JellyseerrShowPersonDiscovery { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool ShowElsewhereOnJellyseerr { get; set; }
         public bool JellyseerrUseMoreInfoModal { get; set; } = false;
