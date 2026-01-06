@@ -225,14 +225,14 @@
         }
 
         const section = document.createElement('div');
-        section.className = 'verticalSection jellyseerr-network-discovery-section';
+        section.className = 'verticalSection jellyseerr-network-discovery-section padded-left padded-right';
         section.setAttribute('data-jellyseerr-network-discovery', 'true');
         section.style.marginTop = '2em';
         section.style.paddingTop = '1em';
         section.style.borderTop = '1px solid rgba(255,255,255,0.1)';
 
         const titleElement = document.createElement('h2');
-        titleElement.className = 'sectionTitle sectionTitle-cards padded-left padded-right';
+        titleElement.className = 'sectionTitle sectionTitle-cards';
         titleElement.textContent = title;
         titleElement.style.marginBottom = '1em';
         section.appendChild(titleElement);
