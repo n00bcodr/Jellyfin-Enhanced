@@ -485,7 +485,31 @@
                                     <span>Show "More from [Network]" on studio/network pages</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">When viewing a network page (e.g., Netflix, HBO), displays additional content from that network available in Jellyseerr that isn't in your library yet. Uses the same display style as recommendations.</div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a network page (e.g., Netflix, HBO), displays additional content from that network available in Jellyseerr.</div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrShowGenreDiscovery" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show "More [Genre]" on genre pages</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a genre page (e.g., Action, Comedy), displays additional content in that genre from Jellyseerr.</div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrShowTagDiscovery" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show "More [Tag]" on tag pages</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a tag page (e.g., cooking, superhero), displays additional content with that keyword from Jellyseerr.</div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrShowPersonDiscovery" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show "More from [Actor]" on person pages</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When viewing an actor/person page, displays their filmography from Jellyseerr including content not in your library.</div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -1211,6 +1235,9 @@
                 document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
                 document.querySelector('#jellyseerrExcludeLibraryItems').checked = config.JellyseerrExcludeLibraryItems !== false;
                 document.querySelector('#jellyseerrShowNetworkDiscovery').checked = config.JellyseerrShowNetworkDiscovery !== false;
+                document.querySelector('#jellyseerrShowGenreDiscovery').checked = config.JellyseerrShowGenreDiscovery !== false;
+                document.querySelector('#jellyseerrShowTagDiscovery').checked = config.JellyseerrShowTagDiscovery !== false;
+                document.querySelector('#jellyseerrShowPersonDiscovery').checked = config.JellyseerrShowPersonDiscovery !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
@@ -1322,6 +1349,9 @@
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
             config.JellyseerrExcludeLibraryItems = document.querySelector('#jellyseerrExcludeLibraryItems').checked;
             config.JellyseerrShowNetworkDiscovery = document.querySelector('#jellyseerrShowNetworkDiscovery').checked;
+            config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;
+            config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;
+            config.JellyseerrShowPersonDiscovery = document.querySelector('#jellyseerrShowPersonDiscovery').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
