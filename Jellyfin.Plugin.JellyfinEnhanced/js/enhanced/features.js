@@ -581,9 +581,9 @@
     let itemTypeFetchInProgress = null;
 
     // Types that support file size and watch progress
-    const FEATURES_SUPPORTED_TYPES = ['Episode', 'Series', 'Movie', 'BoxSet', 'Playlist'];
+    const FEATURES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie', 'BoxSet', 'Playlist'];
     // Types that support audio languages (excludes BoxSet and Playlist)
-    const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Series', 'Movie'];
+    const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie'];
 
     const handleItemDetails = JE.helpers.debounce(() => {
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
