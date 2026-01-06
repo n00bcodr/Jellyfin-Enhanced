@@ -222,12 +222,49 @@
         // Helper to get time string from ticks
         const getTimeString = (ticks) => {
             const seconds = ticks / 10_000_000;
-            const minutes = seconds / 60;
-            const hours = minutes / 60;
+            const totalMinutes = Math.floor(seconds / 60);
+            const totalHours = Math.floor(totalMinutes / 60);
+            const totalDays = Math.floor(totalHours / 24);
+            const totalMonths = Math.floor(totalDays / 30);
+            const totalYears = Math.floor(totalDays / 365);
+            
             let result = '';
-            if (hours >= 1) 
-                result += `${Math.round(hours)}h `;
-            return `${result}${Math.round(minutes % 60)}m`;
+            
+            if (totalYears >= 1) {
+                // Show years and remaining months
+                result += `${totalYears}y`;
+                const months = Math.floor((totalDays % 365) / 30);
+                if (months > 0) {
+                    result += ` ${months}mo`;
+                }
+            } else if (totalMonths >= 1) {
+                // Show months and remaining days
+                result += `${totalMonths}mo`;
+                const days = totalDays % 30;
+                if (days > 0) {
+                    result += ` ${days}d`;
+                }
+            } else if (totalDays >= 1) {
+                // Show days and remaining hours
+                result += `${totalDays}d`;
+                const hours = totalHours % 24;
+                if (hours > 0) {
+                    result += ` ${hours}h`;
+                }
+            } else if (totalHours >= 1) {
+                // Show hours and remaining minutes
+                result += `${totalHours}h`;
+                const minutes = totalMinutes % 60;
+                if (minutes > 0) {
+                    result += ` ${minutes}m`;
+                }
+            } else if (totalMinutes > 0) {
+                result += `${totalMinutes}m`;
+            } else {
+                result = '0m';
+            }
+            
+            return result;
         }
         
         const getWatchProgressValue = (watchProgress) => {
