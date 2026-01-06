@@ -14,6 +14,9 @@
     "toast_aspect_ratio": "📐 Plank Ratio: {ratio}",
     "toast_auto_skipped_intro": "↪️ Intro Keelhauled",
     "toast_auto_skipped_outro": "↪️ Outro Keelhauled",
+    "toast_skipped_intro": "⏭️ Intro skipped",
+    "toast_skipped_outro": "⏭️ Outro skipped",
+    "toast_no_skip_button": "ℹ️ No skip button available",
 
     "toast_feature_status": "{feature} {status}",
     "status_enabled": "Hoisted",
@@ -248,6 +251,7 @@
     "shortcut_ResetPlaybackSpeed": "Normal Sailing",
     "shortcut_BookmarkCurrentTime": "Mark Treasure Spot",
     "shortcut_OpenEpisodePreview": "Preview Next Tale",
+    "shortcut_SkipIntroOutro": "Skip Intro/Outro",
     "shortcut_JumpToPercentage": "Jump to % of voyage",
     "reviews_title": "Sailor Reviews ({count})",
     "reviews_read_more": "Read Longer",

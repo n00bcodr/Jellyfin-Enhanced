@@ -14,6 +14,9 @@
     "toast_aspect_ratio": "📐 Соотношение сторон: {ratio}",
     "toast_auto_skipped_intro": "↪️ Вступление пропущено",
     "toast_auto_skipped_outro": "↪️ Концовка пропущена",
+    "toast_skipped_intro": "⏭️ Вступление пропущено",
+    "toast_skipped_outro": "⏭️ Концовка пропущена",
+    "toast_no_skip_button": "ℹ️ Кнопка пропуска недоступна",
 
     "toast_feature_status": "{feature} {status}",
     "status_enabled": "Включено",
@@ -248,6 +251,7 @@
     "shortcut_ResetPlaybackSpeed": "Сбросить скорость воспроизведения",
     "shortcut_BookmarkCurrentTime": "Добавить закладку на текущее время",
     "shortcut_OpenEpisodePreview": "Открыть предпросмотр эпизода",
+    "shortcut_SkipIntroOutro": "Пропустить Intro/Outro",
     "shortcut_JumpToPercentage": "Перейти к % видео",
     "reviews_title": "Рецензии ({count})",
     "reviews_read_more": "Читать далее",

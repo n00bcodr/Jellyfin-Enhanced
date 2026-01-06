@@ -76,6 +76,28 @@
     };
 
     /**
+     * Manually triggers the skip intro/outro button if it's visible.
+     */
+    JE.skipIntroOutro = () => {
+        const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
+        if (skipButton) {
+            const buttonText = skipButton.textContent || '';
+            skipButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            skipButton.click();
+            
+            if (buttonText.includes('Skip Intro')) {
+                JE.toast(JE.t('toast_skipped_intro'));
+            } else if (buttonText.includes('Skip Outro')) {
+                JE.toast(JE.t('toast_skipped_outro'));
+            } else {
+                JE.toast('⏭️ Skipped');
+            }
+        } else {
+            JE.toast(JE.t('toast_no_skip_button'));
+        }
+    };
+
+    /**
      * Cycles through available subtitle tracks in the OSD menu.
      */
     JE.cycleSubtitleTrack = () => {
