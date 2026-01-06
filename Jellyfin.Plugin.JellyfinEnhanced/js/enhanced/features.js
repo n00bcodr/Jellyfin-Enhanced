@@ -176,6 +176,23 @@
         placeholder.style.verticalAlign = 'middle';
         placeholder.style.alignItems = 'center';
         placeholder.style.margin = '0 1em 0 0 !important';
+        // onClick handler to toggle between percentage and time-based display
+        placeholder.addEventListener('click', () => {
+            const watchProgress = watchProgressCache[itemId];
+            if (!watchProgress) return;
+
+            const div = document.querySelector(`.mediaInfoItem-watchProgress[data-item-id="${itemId}"]`)
+                .querySelector('.mediaInfoItem-watchProgress-value');
+            if (!div) return;
+            
+            if (div.dataset.type === 'percentage') {
+                div.dataset.type = 'time';
+                div.innerHTML = `${getTimeString(watchProgress.totalPlaybackTicks)} / ${getTimeString(watchProgress.totalRuntimeTicks)}`;
+            } else if (div.dataset.type === 'time') {
+                div.dataset.type = 'percentage';
+                div.innerHTML = `${watchProgress.progress}%`;
+            }
+        })
         // Show loading indicator
         placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         // Insert first so subsequent observer runs are triggered
@@ -190,7 +207,7 @@
                 return `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" style="margin-right: 0.3em; display: inline-block; vertical-align: middle;">
                     <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
                     <path d="M9.5 15.5l-3-3 1.4-1.4L9.5 12.7l5.6-5.6 1.4 1.4z" fill="currentColor"/>
-                </svg> ${progress}%`;
+                </svg>`;
             }
 
             // For all other progress values (0-99%), use custom SVG
@@ -199,12 +216,33 @@
                 <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"
                     style="stroke-dasharray: ${circumference}; stroke-dashoffset: ${offset}; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 0.3s ease;"/>
             </svg>`;
-            return `${svg} ${progress}%`;
+            return `${svg}`;
+        }
+
+        // Helper to get time string from ticks
+        const getTimeString = (ticks) => {
+            const seconds = ticks / 10_000_000;
+            const minutes = seconds / 60;
+            const hours = minutes / 60;
+            let result = '';
+            if (hours >= 1) 
+                result += `${Math.round(hours)}h `;
+            return `${result}${Math.round(minutes % 60)}m`;
+        }
+        
+        const getWatchProgressValue = (watchProgress) => {
+            const valueDiv = document.createElement('div');
+            valueDiv.className = 'mediaInfoItem-watchProgress-value';
+            valueDiv.dataset.type = 'percentage';
+            valueDiv.innerHTML = `${watchProgress.progress}%`;
+                
+            return valueDiv;
         }
 
         // Helper to render the 0 state
         const renderUnavailable = () => {
             placeholder.innerHTML = getIconSpan(0);
+            placeholder.appendChild(getWatchProgressValue({ progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0 }));
         };
 
         // Use requestIdleCallback to defer the work and not block page rendering
@@ -215,6 +253,7 @@
                     return;
                 }
                 placeholder.innerHTML = getIconSpan(cached.progress);
+                placeholder.appendChild(getWatchProgressValue(cached));
                 return;
             }
 
@@ -224,15 +263,22 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/watch-progress/${ApiClient.getCurrentUserId()}/${itemId}`),
                     dataType: 'json'
                 });
-                const progress = itemResult?.progress ?? 0;
-
-                placeholder.innerHTML = getIconSpan(progress);
-                watchProgressCache[itemId] = { progress: progress, ts: now };
+                
+                const watchProgress = {
+                    progress: itemResult?.progress ?? 0,
+                    totalPlaybackTicks: itemResult?.totalPlaybackTicks ?? 0,
+                    totalRuntimeTicks: itemResult?.totalRuntimeTicks ?? 0,
+                    ts: now
+                };
+                placeholder.innerHTML = getIconSpan(watchProgress.progress);
+                placeholder.appendChild(getWatchProgressValue(watchProgress));
+                
+                watchProgressCache[itemId] = watchProgress
             } catch (error) {
                 console.error(`🪼 Jellyfin Enhanced: Error fetching watch progress for ID ${itemId}:`, error);
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
-                watchProgressCache[itemId] = { progress: 0, ts: now };
+                watchProgressCache[itemId] = { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now };
             }
         };
 
