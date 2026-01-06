@@ -8,6 +8,9 @@
     // Cache for network ID mappings (studioName -> TMDB networkId)
     const networkIdCache = new Map();
 
+    // Cache for studio info (studioId -> studioInfo)
+    const studioInfoCache = new Map();
+
     // Track processed pages to avoid duplicate renders
     const processedPages = new Set();
 
@@ -90,17 +93,21 @@
             const params = new URLSearchParams(hash.split('?')[1]);
             return params.get('studioId');
         } catch (error) {
-            console.warn(`${logPrefix} Failed to parse studioId from URL:`, error);
             return null;
         }
     }
 
     /**
-     * Gets studio information from Jellyfin
+     * Gets studio information from Jellyfin (with caching)
      * @param {string} studioId - The Jellyfin studio ID
      * @returns {Promise<{id: string, name: string, tmdbId: string|null}|null>}
      */
     async function getStudioInfo(studioId) {
+        // Check cache first
+        if (studioInfoCache.has(studioId)) {
+            return studioInfoCache.get(studioId);
+        }
+
         try {
             const response = await ApiClient.ajax({
                 type: 'GET',
@@ -108,33 +115,36 @@
                 headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
                 dataType: 'json'
             });
+            if (response) {
+                studioInfoCache.set(studioId, response);
+            }
             return response;
         } catch (error) {
-            console.warn(`${logPrefix} Failed to get studio info:`, error);
             return null;
         }
     }
 
     /**
-     * Searches TMDB for a network by name
+     * Gets TMDB network ID (synchronous for known networks, async fallback)
      * @param {string} networkName - The network name to search for
      * @returns {Promise<number|null>} - The TMDB network ID or null if not found
      */
-    async function searchTmdbNetwork(networkName) {
-        // Check cache first
+    async function getTmdbNetworkId(networkName) {
         const cacheKey = networkName.toLowerCase().trim();
+
+        // Check cache first (instant)
         if (networkIdCache.has(cacheKey)) {
             return networkIdCache.get(cacheKey);
         }
 
-        // Check known networks
+        // Check known networks (instant)
         if (KNOWN_NETWORKS[cacheKey]) {
             const id = KNOWN_NETWORKS[cacheKey];
             networkIdCache.set(cacheKey, id);
             return id;
         }
 
-        // Search TMDB for the network
+        // Search TMDB for the network (async fallback)
         try {
             const response = await ApiClient.ajax({
                 type: 'GET',
@@ -143,8 +153,7 @@
                 dataType: 'json'
             });
 
-            if (response && response.results && response.results.length > 0) {
-                // Find the best match - prioritize exact matches
+            if (response?.results?.length > 0) {
                 const exactMatch = response.results.find(r =>
                     r.name.toLowerCase() === networkName.toLowerCase()
                 );
@@ -153,7 +162,7 @@
                 return networkId;
             }
         } catch (error) {
-            console.warn(`${logPrefix} TMDB search failed for "${networkName}":`, error);
+            // Silent fail
         }
 
         return null;
@@ -163,7 +172,7 @@
      * Fetches discover results from Jellyseerr for a network
      * @param {number} networkId - The TMDB network ID
      * @param {number} page - Page number (default: 1)
-     * @returns {Promise<{results: Array}>}
+     * @returns {Promise<{results: Array, totalPages: number}>}
      */
     async function fetchNetworkDiscover(networkId, page = 1) {
         try {
@@ -173,10 +182,9 @@
                 headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
                 dataType: 'json'
             });
-            return response || { results: [] };
+            return response || { results: [], totalPages: 1 };
         } catch (error) {
-            console.warn(`${logPrefix} Failed to fetch network discover:`, error);
-            return { results: [] };
+            return { results: [], totalPages: 1 };
         }
     }
 
@@ -184,7 +192,7 @@
      * Fetches discover results from Jellyseerr for a movie studio
      * @param {number} studioId - The TMDB studio/company ID
      * @param {number} page - Page number (default: 1)
-     * @returns {Promise<{results: Array}>}
+     * @returns {Promise<{results: Array, totalPages: number}>}
      */
     async function fetchStudioDiscover(studioId, page = 1) {
         try {
@@ -194,42 +202,71 @@
                 headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
                 dataType: 'json'
             });
-            return response || { results: [] };
+            return response || { results: [], totalPages: 1 };
         } catch (error) {
-            console.warn(`${logPrefix} Failed to fetch studio discover:`, error);
-            return { results: [] };
+            return { results: [], totalPages: 1 };
         }
     }
 
     /**
-     * Creates a Jellyseerr section with vertical grid layout
+     * Creates cards and returns a DocumentFragment for batch DOM insertion
      * @param {Array} results - Array of Jellyseerr items
-     * @param {string} title - Section title
-     * @returns {HTMLElement|null} - Section element or null if no results
+     * @returns {DocumentFragment} - Fragment containing all cards
      */
-    function createDiscoverSection(results, title) {
-        if (!results || results.length === 0) {
-            return null;
-        }
-
-        // Filter out library items if configured
+    function createCardsFragment(results) {
+        const fragment = document.createDocumentFragment();
         const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-        let filteredResults = results;
 
-        if (excludeLibraryItems) {
-            filteredResults = results.filter(item => !item.mediaInfo?.jellyfinMediaId);
+        for (let i = 0; i < results.length; i++) {
+            const item = results[i];
+
+            // Skip library items if configured
+            if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) {
+                continue;
+            }
+
+            const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
+            if (!card) continue;
+
+            // Batch class changes (read then write pattern)
+            const classList = card.classList;
+            classList.remove('overflowPortraitCard');
+            classList.add('portraitCard');
+
+            // Handle library items
+            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+            if (jellyfinMediaId) {
+                card.setAttribute('data-library-item', 'true');
+                card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
+                classList.add('jellyseerr-card-in-library');
+
+                const titleLink = card.querySelector('.cardText-first a');
+                if (titleLink) {
+                    const itemName = item.title || item.name;
+                    titleLink.textContent = itemName;
+                    titleLink.title = itemName;
+                    titleLink.href = `#!/details?id=${jellyfinMediaId}`;
+                    titleLink.removeAttribute('target');
+                    titleLink.removeAttribute('rel');
+                }
+            }
+
+            fragment.appendChild(card);
         }
 
-        if (filteredResults.length === 0) {
-            return null;
-        }
+        return fragment;
+    }
 
+    /**
+     * Creates the section container (without cards)
+     * @param {string} title - Section title
+     * @returns {HTMLElement} - Section element
+     */
+    function createSectionContainer(title) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-network-discovery-section padded-left padded-right';
         section.setAttribute('data-jellyseerr-network-discovery', 'true');
-        section.style.marginTop = '2em';
-        section.style.paddingTop = '1em';
-        section.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+        section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
 
         const titleElement = document.createElement('h2');
         titleElement.className = 'sectionTitle sectionTitle-cards';
@@ -237,42 +274,11 @@
         titleElement.style.marginBottom = '1em';
         section.appendChild(titleElement);
 
-        // Use exact same container structure as native Jellyfin list pages
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
         itemsContainer.className = 'vertical-wrap itemsContainer centered';
-
-        // Add items to container using Jellyseerr UI card creator
-        filteredResults.forEach(item => {
-            const card = JE.jellyseerrUI && JE.jellyseerrUI.createJellyseerrCard
-                ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
-                : null;
-            if (card) {
-                // Replace overflowPortraitCard with portraitCard to match native Jellyfin sizing
-                card.classList.remove('overflowPortraitCard');
-                card.classList.add('portraitCard');
-                const titleLink = card.querySelector('.cardText-first a');
-
-                // If item exists in library, link to library item
-                const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-                if (jellyfinMediaId) {
-                    card.setAttribute('data-library-item', 'true');
-                    card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                    card.classList.add('jellyseerr-card-in-library');
-                    if (titleLink) {
-                        const itemName = item.title || item.name;
-                        titleLink.textContent = itemName;
-                        titleLink.title = itemName;
-                        titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                        titleLink.removeAttribute('target');
-                        titleLink.removeAttribute('rel');
-                    }
-                }
-                itemsContainer.appendChild(card);
-            }
-        });
-
         section.appendChild(itemsContainer);
+
         return section;
     }
 
@@ -287,10 +293,8 @@
         isLoading = true;
         currentPage++;
 
-        console.log(`${logPrefix} Loading page ${currentPage} for network ${currentStudioName}`);
-
         try {
-            // Fetch next page
+            // Fetch next page (parallel requests)
             const [tvResults, movieResults] = await Promise.all([
                 fetchNetworkDiscover(currentNetworkId, currentPage),
                 fetchStudioDiscover(currentNetworkId, currentPage)
@@ -301,7 +305,7 @@
                 ...(movieResults.results || [])
             ];
 
-            // Check if we have more pages
+            // Update pagination state
             const tvTotalPages = tvResults.totalPages || 1;
             const movieTotalPages = movieResults.totalPages || 1;
             hasMorePages = currentPage < Math.max(tvTotalPages, movieTotalPages);
@@ -312,43 +316,13 @@
                 return;
             }
 
-            // Filter out library items if configured
-            const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-            let filteredResults = allResults;
-            if (excludeLibraryItems) {
-                filteredResults = allResults.filter(item => !item.mediaInfo?.jellyfinMediaId);
-            }
-
-            // Find the existing container and append new items
+            // Find container and batch append
             const itemsContainer = document.querySelector('.jellyseerr-network-discovery-section .itemsContainer');
-            if (itemsContainer && filteredResults.length > 0) {
-                filteredResults.forEach(item => {
-                    const card = JE.jellyseerrUI && JE.jellyseerrUI.createJellyseerrCard
-                        ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
-                        : null;
-                    if (card) {
-                        // Replace overflowPortraitCard with portraitCard to match native Jellyfin sizing
-                        card.classList.remove('overflowPortraitCard');
-                        card.classList.add('portraitCard');
-                        const titleLink = card.querySelector('.cardText-first a');
-                        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-                        if (jellyfinMediaId) {
-                            card.setAttribute('data-library-item', 'true');
-                            card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                            card.classList.add('jellyseerr-card-in-library');
-                            if (titleLink) {
-                                const itemName = item.title || item.name;
-                                titleLink.textContent = itemName;
-                                titleLink.title = itemName;
-                                titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                                titleLink.removeAttribute('target');
-                                titleLink.removeAttribute('rel');
-                            }
-                        }
-                        itemsContainer.appendChild(card);
-                    }
-                });
-                console.log(`${logPrefix} Added ${filteredResults.length} more items (page ${currentPage})`);
+            if (itemsContainer) {
+                const fragment = createCardsFragment(allResults);
+                if (fragment.childNodes.length > 0) {
+                    itemsContainer.appendChild(fragment);
+                }
             }
         } catch (error) {
             console.error(`${logPrefix} Error loading more items:`, error);
@@ -361,29 +335,21 @@
      * Sets up infinite scroll observer
      */
     function setupInfiniteScroll() {
-        // Create a sentinel element at the bottom
+        const section = document.querySelector('.jellyseerr-network-discovery-section');
+        if (!section) return;
+
         const sentinel = document.createElement('div');
         sentinel.className = 'jellyseerr-scroll-sentinel';
-        sentinel.style.height = '20px';
-        sentinel.style.width = '100%';
+        sentinel.style.cssText = 'height:20px;width:100%';
+        section.appendChild(sentinel);
 
-        const section = document.querySelector('.jellyseerr-network-discovery-section');
-        if (section) {
-            section.appendChild(sentinel);
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting && hasMorePages && !isLoading) {
+                loadMoreItems();
+            }
+        }, { rootMargin: '200px' });
 
-            // Use Intersection Observer for efficient scroll detection
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting && hasMorePages && !isLoading) {
-                        loadMoreItems();
-                    }
-                });
-            }, {
-                rootMargin: '200px' // Start loading before user reaches the bottom
-            });
-
-            observer.observe(sentinel);
-        }
+        observer.observe(sentinel);
     }
 
     /**
@@ -391,136 +357,120 @@
      */
     async function renderNetworkDiscovery() {
         const studioId = getStudioIdFromUrl();
-        if (!studioId) {
-            return;
-        }
+        if (!studioId) return;
 
         // Prevent duplicate processing
         const pageKey = `${studioId}-${window.location.hash}`;
-        if (processedPages.has(pageKey)) {
-            return;
-        }
+        if (processedPages.has(pageKey)) return;
         processedPages.add(pageKey);
 
-        // Check if feature is enabled
-        if (!JE.pluginConfig?.JellyseerrShowNetworkDiscovery) {
-            console.debug(`${logPrefix} Network discovery is disabled in settings`);
-            return;
-        }
+        // Check if feature is enabled (sync check)
+        if (!JE.pluginConfig?.JellyseerrShowNetworkDiscovery) return;
 
-        // Check if Jellyseerr is active
-        const status = await JE.jellyseerrAPI?.checkUserStatus();
-        if (!status || !status.active) {
-            console.debug(`${logPrefix} Jellyseerr is not active, skipping`);
-            return;
-        }
+        // Start ALL async operations in parallel for maximum speed
+        const studioInfoPromise = getStudioInfo(studioId);
+        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+        const pageReadyPromise = waitForPageReady();
 
-        // Get studio info from Jellyfin
-        const studioInfo = await getStudioInfo(studioId);
-        if (!studioInfo || !studioInfo.name) {
-            console.warn(`${logPrefix} Could not get studio info for ID: ${studioId}`);
-            return;
-        }
+        // Wait for studio info and status first (needed for network ID)
+        const [studioInfo, status] = await Promise.all([studioInfoPromise, statusPromise]);
 
-        console.log(`${logPrefix} Processing studio/network: ${studioInfo.name}`);
+        if (!status?.active || !studioInfo?.name) return;
 
-        // Try to get TMDB network ID
-        let tmdbNetworkId = null;
+        // Get TMDB network ID (instant for known networks)
+        const tmdbNetworkId = studioInfo.tmdbId
+            ? parseInt(studioInfo.tmdbId)
+            : await getTmdbNetworkId(studioInfo.name);
 
-        // First check if Jellyfin has the TMDB ID
-        if (studioInfo.tmdbId) {
-            tmdbNetworkId = parseInt(studioInfo.tmdbId);
-        } else {
-            // Search TMDB for the network
-            tmdbNetworkId = await searchTmdbNetwork(studioInfo.name);
-        }
+        if (!tmdbNetworkId) return;
 
-        if (!tmdbNetworkId) {
-            console.warn(`${logPrefix} Could not find TMDB ID for: ${studioInfo.name}`);
-            return;
-        }
-
-        console.log(`${logPrefix} Found TMDB network ID ${tmdbNetworkId} for: ${studioInfo.name}`);
-
-        // Reset pagination state for new network
+        // Reset pagination state
         currentPage = 1;
         isLoading = false;
         hasMorePages = true;
         currentNetworkId = tmdbNetworkId;
         currentStudioName = studioInfo.name;
 
-        // Fetch discover results - try both TV network and movie studio endpoints
-        const [tvResults, movieResults] = await Promise.all([
+        // Fetch discover results in parallel (start immediately after getting network ID)
+        const discoverPromise = Promise.all([
             fetchNetworkDiscover(tmdbNetworkId),
             fetchStudioDiscover(tmdbNetworkId)
         ]);
 
-        // Check total pages for pagination
+        // Wait for page and discover results in parallel
+        const [[tvResults, movieResults]] = await Promise.all([discoverPromise, pageReadyPromise]);
+
+        // Update pagination state
         const tvTotalPages = tvResults.totalPages || 1;
         const movieTotalPages = movieResults.totalPages || 1;
         hasMorePages = currentPage < Math.max(tvTotalPages, movieTotalPages);
 
-        // Combine results, preferring TV shows for networks
+        // Combine results
         const allResults = [
             ...(tvResults.results || []),
             ...(movieResults.results || [])
         ];
 
-        if (allResults.length === 0) {
-            console.debug(`${logPrefix} No discover results for: ${studioInfo.name}`);
-            return;
-        }
+        if (allResults.length === 0) return;
 
-        // Wait for the page to be ready
-        await waitForPageReady();
-
-        // Find the insertion point - look for the main content area
         const listPage = document.querySelector('.itemsContainer');
-        if (!listPage) {
-            console.warn(`${logPrefix} Could not find list page content area`);
-            return;
-        }
+        if (!listPage) return;
 
-        // Remove any existing network discovery sections
-        document.querySelectorAll('.jellyseerr-network-discovery-section').forEach(el => el.remove());
+        // Remove existing sections
+        const existing = document.querySelector('.jellyseerr-network-discovery-section');
+        if (existing) existing.remove();
 
-        // Create section title - use simple string replacement since JE.t may not support params
-        const sectionTitle = `More from ${studioInfo.name}`;
+        // Create section with cards
+        const section = createSectionContainer(`More from ${studioInfo.name}`);
+        const itemsContainer = section.querySelector('.itemsContainer');
 
-        // Create and insert the section
-        const section = createDiscoverSection(allResults.slice(0, 20), sectionTitle);
-        if (section) {
-            // Find the parent container and insert AFTER the existing content
-            const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
-            if (parentContainer && parentContainer.parentElement) {
-                // Insert after the parent container (at the bottom)
-                parentContainer.parentElement.appendChild(section);
-                console.log(`${logPrefix} Added "More from ${studioInfo.name}" section with ${Math.min(allResults.length, 20)} items`);
+        // Batch insert cards using DocumentFragment
+        const fragment = createCardsFragment(allResults.slice(0, 20));
+        if (fragment.childNodes.length === 0) return;
 
-                // Setup infinite scroll if there are more pages
-                if (hasMorePages) {
-                    setupInfiniteScroll();
-                }
+        itemsContainer.appendChild(fragment);
+
+        // Insert section into DOM (single reflow)
+        const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
+        if (parentContainer?.parentElement) {
+            parentContainer.parentElement.appendChild(section);
+
+            // Setup infinite scroll if needed
+            if (hasMorePages) {
+                setupInfiniteScroll();
             }
         }
     }
 
     /**
-     * Wait for the page to be ready
+     * Wait for the page to be ready (optimized)
      * @returns {Promise<void>}
      */
     function waitForPageReady() {
         return new Promise((resolve) => {
-            const checkReady = () => {
-                const listContainer = document.querySelector('.itemsContainer');
-                if (listContainer && listContainer.children.length > 0) {
+            // Check immediately first
+            const listContainer = document.querySelector('.itemsContainer');
+            if (listContainer?.children.length > 0) {
+                resolve();
+                return;
+            }
+
+            // Use MutationObserver for efficient DOM watching
+            const observer = new MutationObserver((mutations, obs) => {
+                const container = document.querySelector('.itemsContainer');
+                if (container?.children.length > 0) {
+                    obs.disconnect();
                     resolve();
-                } else {
-                    setTimeout(checkReady, 100);
                 }
-            };
-            // Initial delay to let the page start loading
-            setTimeout(checkReady, 500);
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            // Fallback timeout
+            setTimeout(() => {
+                observer.disconnect();
+                resolve();
+            }, 3000);
         });
     }
 
@@ -530,10 +480,10 @@
     function handlePageNavigation() {
         const studioId = getStudioIdFromUrl();
         if (studioId) {
-            // Small delay to ensure page is loaded
-            setTimeout(() => {
+            // Use requestAnimationFrame for smoother integration with render cycle
+            requestAnimationFrame(() => {
                 renderNetworkDiscovery();
-            }, 800);
+            });
         }
     }
 
@@ -541,8 +491,6 @@
      * Initializes the network discovery handler
      */
     function initialize() {
-        console.log(`${logPrefix} Initializing Network Discovery`);
-
         // Listen for hash changes (navigation)
         window.addEventListener('hashchange', () => {
             processedPages.clear();
@@ -553,9 +501,7 @@
         handlePageNavigation();
 
         // Also listen for viewshow events (Jellyfin's custom event)
-        document.addEventListener('viewshow', () => {
-            handlePageNavigation();
-        });
+        document.addEventListener('viewshow', handlePageNavigation);
     }
 
     // Initialize when DOM is ready
