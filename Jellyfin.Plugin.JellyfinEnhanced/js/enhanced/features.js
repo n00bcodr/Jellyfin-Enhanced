@@ -176,6 +176,7 @@
         placeholder.style.verticalAlign = 'middle';
         placeholder.style.alignItems = 'center';
         placeholder.style.margin = '0 1em 0 0 !important';
+        placeholder.style.cursor = 'pointer';
         // onClick handler to toggle between percentage and time-based display
         placeholder.addEventListener('click', () => {
             const watchProgress = watchProgressCache[itemId];
