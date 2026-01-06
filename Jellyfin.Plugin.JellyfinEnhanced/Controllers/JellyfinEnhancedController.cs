@@ -1351,7 +1351,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Floating point numbers are not needed in the frontend ui
             int formattedProgress = (int)Math.Clamp(progress, 0, 100);
 
-            return Ok(new { success = true, progress = formattedProgress });
+            return Ok(new { success = true, progress = formattedProgress, totalPlaybackTicks, totalRuntimeTicks });
         }
 
         [HttpGet("jellyseerr/issue")]
