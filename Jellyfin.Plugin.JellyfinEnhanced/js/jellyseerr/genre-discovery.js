@@ -275,7 +275,7 @@
         if (processedPages.has(pageKey)) return;
         processedPages.add(pageKey);
 
-        if (!JE.pluginConfig?.JellyseerrShowGenreDiscovery) return;
+        if (JE.pluginConfig?.JellyseerrShowGenreDiscovery === false) return;
 
         const genreInfoPromise = getGenreInfo(genreId);
         const statusPromise = JE.jellyseerrAPI?.checkUserStatus();

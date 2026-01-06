@@ -231,7 +231,7 @@
         if (processedPages.has(pageKey)) return;
         processedPages.add(pageKey);
 
-        if (!JE.pluginConfig?.JellyseerrShowTagDiscovery) return;
+        if (JE.pluginConfig?.JellyseerrShowTagDiscovery === false) return;
 
         const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
         const pageReadyPromise = waitForPageReady();
