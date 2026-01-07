@@ -18,9 +18,67 @@
     let currentPage = 1;
     let isLoading = false;
     let hasMorePages = true;
-    let currentNetworkId = null;
+    let currentTvNetworkId = null;
+    let currentCompanyId = null;
     let currentStudioName = null;
 
+    // TMDB TV Network IDs (these are different from company/studio IDs)
+    // TMDB doesn't provide a network search API, so these must be mapped
+    const TV_NETWORKS = {
+        'netflix': 213,
+        'hbo': 49,
+        'hbo max': 3186,
+        'max': 3186,
+        'amazon': 1024,
+        'amazon prime video': 1024,
+        'prime video': 1024,
+        'apple tv+': 2552,
+        'apple tv': 2552,
+        'disney+': 2739,
+        'disney plus': 2739,
+        'hulu': 453,
+        'paramount+': 4330,
+        'paramount plus': 4330,
+        'peacock': 3353,
+        'fx': 88,
+        'fx networks': 88,
+        'amc': 174,
+        'showtime': 67,
+        'starz': 318,
+        'abc': 2,
+        'nbc': 6,
+        'cbs': 16,
+        'fox': 19,
+        'the cw': 71,
+        'cw': 71,
+        'bbc': 4,
+        'bbc one': 4,
+        'bbc two': 332,
+        'itv': 9,
+        'channel 4': 26,
+        'sky': 1063,
+        'syfy': 77,
+        'usa network': 30,
+        'tnt': 41,
+        'tbs': 68,
+        'a&e': 129,
+        'history': 65,
+        'discovery': 64,
+        'national geographic': 43,
+        'nat geo': 43,
+        'adult swim': 80,
+        'cartoon network': 56,
+        'nickelodeon': 13,
+        'comedy central': 47,
+        'mtv': 33,
+        'bet': 24,
+        'espn': 29,
+        'crunchyroll': 1112,
+        'anime network': 171,
+        'funimation': 102,
+        'youtube': 247,
+        'youtube premium': 1436
+    };
 
     /**
      * Extracts studio ID from the current URL
@@ -68,19 +126,35 @@
     }
 
     /**
-     * Gets TMDB network/company ID by searching TMDB
-     * @param {string} networkName - The network name to search for
-     * @returns {Promise<number|null>} - The TMDB network/company ID or null if not found
+     * Gets TMDB TV network ID from known networks list
+     * @param {string} networkName - The network name
+     * @returns {number|null} - The TMDB network ID or null
      */
-    async function getTmdbNetworkId(networkName) {
+    function getKnownNetworkId(networkName) {
+        const key = networkName.toLowerCase().trim();
+        if (TV_NETWORKS[key]) return TV_NETWORKS[key];
+
+        // Try partial matches
+        for (const [name, id] of Object.entries(TV_NETWORKS)) {
+            if (key.includes(name) || name.includes(key)) {
+                return id;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gets TMDB company ID by searching TMDB (for movie studios)
+     * @param {string} networkName - The network/studio name to search for
+     * @returns {Promise<number|null>} - The TMDB company ID or null
+     */
+    async function searchTmdbCompany(networkName) {
         const cacheKey = networkName.toLowerCase().trim();
 
-        // Check cache first
         if (networkIdCache.has(cacheKey)) {
             return networkIdCache.get(cacheKey);
         }
 
-        // Search TMDB for the network/company
         try {
             const response = await ApiClient.ajax({
                 type: 'GET',
@@ -93,9 +167,9 @@
                 const exactMatch = response.results.find(r =>
                     r.name.toLowerCase() === networkName.toLowerCase()
                 );
-                const networkId = exactMatch ? exactMatch.id : response.results[0].id;
-                networkIdCache.set(cacheKey, networkId);
-                return networkId;
+                const companyId = exactMatch ? exactMatch.id : response.results[0].id;
+                networkIdCache.set(cacheKey, companyId);
+                return companyId;
             }
         } catch (error) {
             // Silent fail
@@ -222,7 +296,7 @@
      * Loads more items for infinite scroll
      */
     async function loadMoreItems() {
-        if (isLoading || !hasMorePages || !currentNetworkId) {
+        if (isLoading || !hasMorePages || (!currentTvNetworkId && !currentCompanyId)) {
             return;
         }
 
@@ -230,10 +304,10 @@
         currentPage++;
 
         try {
-            // Fetch next page (parallel requests)
+            // Fetch next page using appropriate IDs
             const [tvResults, movieResults] = await Promise.all([
-                fetchNetworkDiscover(currentNetworkId, currentPage),
-                fetchStudioDiscover(currentNetworkId, currentPage)
+                currentTvNetworkId ? fetchNetworkDiscover(currentTvNetworkId, currentPage) : Promise.resolve({ results: [], totalPages: 1 }),
+                currentCompanyId ? fetchStudioDiscover(currentCompanyId, currentPage) : Promise.resolve({ results: [], totalPages: 1 })
             ]);
 
             const allResults = [
@@ -313,24 +387,29 @@
 
         if (!status?.active || !studioInfo?.name) return;
 
-        // Get TMDB network ID (instant for known networks)
-        const tmdbNetworkId = studioInfo.tmdbId
+        // Get TV network ID (from known list) and company ID (from search)
+        // These are different ID spaces in TMDB
+        const tvNetworkId = studioInfo.tmdbId
             ? parseInt(studioInfo.tmdbId)
-            : await getTmdbNetworkId(studioInfo.name);
+            : getKnownNetworkId(studioInfo.name);
+        const companyIdPromise = searchTmdbCompany(studioInfo.name);
 
-        if (!tmdbNetworkId) return;
+        // Need at least one valid ID
+        const companyId = await companyIdPromise;
+        if (!tvNetworkId && !companyId) return;
 
         // Reset pagination state
         currentPage = 1;
         isLoading = false;
         hasMorePages = true;
-        currentNetworkId = tmdbNetworkId;
+        currentTvNetworkId = tvNetworkId;
+        currentCompanyId = companyId;
         currentStudioName = studioInfo.name;
 
-        // Fetch discover results in parallel (start immediately after getting network ID)
+        // Fetch discover results in parallel using appropriate IDs
         const discoverPromise = Promise.all([
-            fetchNetworkDiscover(tmdbNetworkId),
-            fetchStudioDiscover(tmdbNetworkId)
+            tvNetworkId ? fetchNetworkDiscover(tvNetworkId) : Promise.resolve({ results: [], totalPages: 1 }),
+            companyId ? fetchStudioDiscover(companyId) : Promise.resolve({ results: [], totalPages: 1 })
         ]);
 
         // Wait for page and discover results in parallel
