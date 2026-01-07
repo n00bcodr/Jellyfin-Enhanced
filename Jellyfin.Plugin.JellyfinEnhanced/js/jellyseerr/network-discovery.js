@@ -21,63 +21,6 @@
     let currentNetworkId = null;
     let currentStudioName = null;
 
-    // Common TV networks mapping (name -> TMDB network ID)
-    // This provides instant lookup for the most popular networks
-    const KNOWN_NETWORKS = {
-        'netflix': 213,
-        'hbo': 49,
-        'hbo max': 3186,
-        'max': 3186,
-        'amazon': 1024,
-        'amazon prime video': 1024,
-        'prime video': 1024,
-        'apple tv+': 2552,
-        'apple tv': 2552,
-        'disney+': 2739,
-        'disney plus': 2739,
-        'hulu': 453,
-        'paramount+': 4330,
-        'paramount plus': 4330,
-        'peacock': 3353,
-        'fx': 88,
-        'fx networks': 88,
-        'amc': 174,
-        'showtime': 67,
-        'starz': 318,
-        'abc': 2,
-        'nbc': 6,
-        'cbs': 16,
-        'fox': 19,
-        'the cw': 71,
-        'cw': 71,
-        'bbc': 4,
-        'bbc one': 4,
-        'bbc two': 332,
-        'itv': 9,
-        'channel 4': 26,
-        'sky': 1063,
-        'syfy': 77,
-        'usa network': 30,
-        'tnt': 41,
-        'tbs': 68,
-        'a&e': 129,
-        'history': 65,
-        'discovery': 64,
-        'national geographic': 43,
-        'nat geo': 43,
-        'adult swim': 80,
-        'cartoon network': 56,
-        'nickelodeon': 13,
-        'comedy central': 47,
-        'mtv': 33,
-        'bet': 24,
-        'espn': 29,
-        'crunchyroll': 1112,
-        'anime network': 171,
-        'funimation': 102,
-        'youtube': 247,
-        'youtube premium': 1436
-    };
 
     /**
      * Extracts studio ID from the current URL
@@ -125,26 +68,19 @@
     }
 
     /**
-     * Gets TMDB network ID (synchronous for known networks, async fallback)
+     * Gets TMDB network/company ID by searching TMDB
      * @param {string} networkName - The network name to search for
-     * @returns {Promise<number|null>} - The TMDB network ID or null if not found
+     * @returns {Promise<number|null>} - The TMDB network/company ID or null if not found
      */
     async function getTmdbNetworkId(networkName) {
         const cacheKey = networkName.toLowerCase().trim();
 
-        // Check cache first (instant)
+        // Check cache first
         if (networkIdCache.has(cacheKey)) {
             return networkIdCache.get(cacheKey);
         }
 
-        // Check known networks (instant)
-        if (KNOWN_NETWORKS[cacheKey]) {
-            const id = KNOWN_NETWORKS[cacheKey];
-            networkIdCache.set(cacheKey, id);
-            return id;
-        }
-
-        // Search TMDB for the network (async fallback)
+        // Search TMDB for the network/company
         try {
             const response = await ApiClient.ajax({
                 type: 'GET',
