@@ -8,37 +8,49 @@
     const genreInfoCache = new Map();
     const processedPages = new Set();
 
-    // TMDB Genre ID mappings (name -> { tv: id, movie: id })
-    const KNOWN_GENRES = {
-        'action': { tv: 10759, movie: 28 },
-        'action & adventure': { tv: 10759, movie: 28 },
-        'adventure': { tv: 10759, movie: 12 },
-        'animation': { tv: 16, movie: 16 },
-        'comedy': { tv: 35, movie: 35 },
-        'crime': { tv: 80, movie: 80 },
-        'documentary': { tv: 99, movie: 99 },
-        'drama': { tv: 18, movie: 18 },
-        'family': { tv: 10751, movie: 10751 },
-        'fantasy': { tv: 10765, movie: 14 },
-        'history': { tv: 36, movie: 36 },
-        'horror': { tv: 9648, movie: 27 },
-        'kids': { tv: 10762, movie: 10751 },
-        'music': { tv: 10402, movie: 10402 },
-        'mystery': { tv: 9648, movie: 9648 },
-        'news': { tv: 10763, movie: null },
-        'reality': { tv: 10764, movie: null },
-        'romance': { tv: 10749, movie: 10749 },
-        'sci-fi': { tv: 10765, movie: 878 },
-        'sci-fi & fantasy': { tv: 10765, movie: 878 },
-        'science fiction': { tv: 10765, movie: 878 },
-        'soap': { tv: 10766, movie: null },
-        'talk': { tv: 10767, movie: null },
-        'thriller': { tv: 10768, movie: 53 },
-        'tv movie': { tv: null, movie: 10770 },
-        'war': { tv: 10768, movie: 10752 },
-        'war & politics': { tv: 10768, movie: 10752 },
-        'western': { tv: 37, movie: 37 }
-    };
+    // Dynamic genre cache (populated from TMDB API)
+    let tmdbGenreCache = null;
+
+    /**
+     * Fetches TMDB genre lists and caches them
+     */
+    async function fetchTmdbGenres() {
+        if (tmdbGenreCache) return tmdbGenreCache;
+
+        try {
+            const [tvResponse, movieResponse] = await Promise.all([
+                ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/tmdb/genres/tv'),
+                    headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+                    dataType: 'json'
+                }).catch(() => []),
+                ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/tmdb/genres/movie'),
+                    headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+                    dataType: 'json'
+                }).catch(() => [])
+            ]);
+
+            // Build lookup map by genre name (lowercase for matching)
+            tmdbGenreCache = {};
+            (tvResponse || []).forEach(g => {
+                const key = g.name.toLowerCase();
+                if (!tmdbGenreCache[key]) tmdbGenreCache[key] = { tv: null, movie: null };
+                tmdbGenreCache[key].tv = g.id;
+            });
+            (movieResponse || []).forEach(g => {
+                const key = g.name.toLowerCase();
+                if (!tmdbGenreCache[key]) tmdbGenreCache[key] = { tv: null, movie: null };
+                tmdbGenreCache[key].movie = g.id;
+            });
+
+            return tmdbGenreCache;
+        } catch (error) {
+            return {};
+        }
+    }
 
     // Pagination state
     let currentPage = 1;
@@ -87,19 +99,24 @@
     }
 
     /**
-     * Gets TMDB genre IDs from genre name
+     * Gets TMDB genre IDs from genre name (fetches from TMDB API)
      */
-    function getTmdbGenreIds(genreName) {
+    async function getTmdbGenreIds(genreName) {
         const cacheKey = genreName.toLowerCase().trim();
-        if (KNOWN_GENRES[cacheKey]) {
-            return KNOWN_GENRES[cacheKey];
+        const genres = await fetchTmdbGenres();
+
+        // Exact match
+        if (genres[cacheKey]) {
+            return genres[cacheKey];
         }
-        // Try partial matches
-        for (const [key, ids] of Object.entries(KNOWN_GENRES)) {
+
+        // Try partial matches (e.g., "sci-fi" matches "sci-fi & fantasy")
+        for (const [key, ids] of Object.entries(genres)) {
             if (cacheKey.includes(key) || key.includes(cacheKey)) {
                 return ids;
             }
         }
+
         return null;
     }
 
@@ -285,7 +302,7 @@
 
         if (!status?.active || !genreInfo?.name) return;
 
-        const tmdbGenreIds = getTmdbGenreIds(genreInfo.name);
+        const tmdbGenreIds = await getTmdbGenreIds(genreInfo.name);
         if (!tmdbGenreIds || (!tmdbGenreIds.tv && !tmdbGenreIds.movie)) return;
 
         // Reset pagination state

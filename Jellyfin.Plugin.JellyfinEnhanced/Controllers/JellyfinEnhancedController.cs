@@ -560,6 +560,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/search/keyword?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
         }
 
+        [HttpGet("tmdb/genres/movie")]
+        [Authorize]
+        public Task<IActionResult> GetTmdbMovieGenres()
+        {
+            return ProxyJellyseerrRequest("/api/v1/genres/movie", HttpMethod.Get);
+        }
+
+        [HttpGet("tmdb/genres/tv")]
+        [Authorize]
+        public Task<IActionResult> GetTmdbTvGenres()
+        {
+            return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/overrideRule")]
         [Authorize]
         public Task<IActionResult> GetOverrideRules()
