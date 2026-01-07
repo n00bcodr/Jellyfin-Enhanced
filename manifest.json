@@ -10,9 +10,9 @@
     "versions": [
       {
         "changelog": "- Sync with upstream v10.1.0.0\n - Network discovery with TMDB integration\n - Genre, tag, and person discovery sections\n - Infinite scroll for discovery\n - Card sizing fixes to match native Jellyfin",
-        "targetAbi": "10.10.7.0",
+        "targetAbi": "10.11.0.0",
         "version": "10.1.0.1",
-        "sourceUrl": "https://github.com/4eh5xitv6787h645ebv/Jellyfin-Enhanced/releases/download/v10.1.0.1/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "sourceUrl": "https://github.com/4eh5xitv6787h645ebv/Jellyfin-Enhanced/releases/download/v10.1.0.1/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
         "checksum": "",
         "timestamp": "2026-01-07T12:00:00"
       },
