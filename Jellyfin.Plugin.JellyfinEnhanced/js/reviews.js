@@ -46,7 +46,7 @@
             }) : '';
 
             const rating = review.author_details?.rating;
-            const ratingDisplay = rating ? `<span class="tmdb-review-rating">⭐ ${rating}/10</span>` : '';
+            const ratingDisplay = rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${rating}/10</span>` : '';
 
             reviewCard.innerHTML = `
                 <div class="tmdb-review-header">

@@ -22,10 +22,10 @@
      * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
      */
     const getIssueTypes = () => [
-        { value: '1', label: JE.t('jellyseerr_report_issue_type_video'), icon: '🎬' },
-        { value: '2', label: JE.t('jellyseerr_report_issue_type_audio'), icon: '🎵' },
-        { value: '3', label: JE.t('jellyseerr_report_issue_type_subtitles'), icon: '📝' },
-        { value: '4', label: JE.t('jellyseerr_report_issue_type_other'), icon: '❓' }
+        { value: '1', label: JE.t('jellyseerr_report_issue_type_video'), icon: JE.icon(JE.IconName.VIDEO) },
+        { value: '2', label: JE.t('jellyseerr_report_issue_type_audio'), icon: JE.icon(JE.IconName.AUDIO) },
+        { value: '3', label: JE.t('jellyseerr_report_issue_type_subtitles'), icon: JE.icon(JE.IconName.SUBTITLES) },
+        { value: '4', label: JE.t('jellyseerr_report_issue_type_other'), icon: JE.icon(JE.IconName.QUESTION) }
     ];
 
     /**

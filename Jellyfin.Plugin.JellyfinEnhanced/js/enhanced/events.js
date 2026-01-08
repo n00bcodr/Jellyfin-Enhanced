@@ -55,7 +55,7 @@
         } else if (combo === activeShortcuts.QuickConnect) {
             e.preventDefault();
             window.location.hash = '#/quickconnect';
-            JE.toast('🔗 Quick Connect');
+            JE.toast(`${JE.icon(JE.IconName.LINK)} Quick Connect`);
         } else if (combo === activeShortcuts.PlayRandomItem && !JE.isVideoPage()) {
             e.preventDefault();
             document.getElementById('randomItemButton')?.click();
