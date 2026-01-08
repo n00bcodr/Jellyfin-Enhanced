@@ -655,7 +655,7 @@
                 </div>` : ''}
                 <div id="settings-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px; width: 50vw;">
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">⏯️ ${JE.t('panel_settings_playback')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.PLAYBACK)} ${JE.t('panel_settings_playback')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -690,7 +690,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">↪️ ${JE.t('panel_settings_auto_skip')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SKIP)} ${JE.t('panel_settings_auto_skip')}</summary>
                         <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-left: 18px; margin-bottom: 10px;">${JE.t('panel_settings_auto_skip_depends')}</div>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
@@ -708,7 +708,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">📝 ${JE.t('panel_settings_subtitles')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SUBTITLES)} ${JE.t('panel_settings_subtitles')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -722,7 +722,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🎲 ${JE.t('panel_settings_random_button')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.RANDOM)} ${JE.t('panel_settings_random_button')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomButtonToggle" ${JE.currentSettings.randomButtonEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_enable')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_enable_desc')}</div></div></label>
@@ -737,7 +737,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🖥️ ${JE.t('panel_settings_ui')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.UI)} ${JE.t('panel_settings_ui')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -1071,15 +1071,15 @@
                         document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
                     }
                     requiresRefresh = false;
-                    } else if (id === 'ratingTagsToggle') {
-                        if (e.target.checked) {
-                            if (typeof JE.initializeRatingTags === 'function') {
-                                JE.initializeRatingTags();
-                            }
-                        } else {
-                            document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                } else if (id === 'ratingTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeRatingTags === 'function') {
+                            JE.initializeRatingTags();
                         }
-                        requiresRefresh = false;
+                    } else {
+                        document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                    }
+                    requiresRefresh = false;
                 }
 
                 if (requiresRefresh) {
@@ -1109,7 +1109,7 @@
         addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
         addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
-            addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
+        addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
@@ -1162,10 +1162,10 @@
                     if (typeof JE.reinitializeLanguageTags === 'function') {
                         JE.reinitializeLanguageTags();
                     }
-                    } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
-                        if (typeof JE.reinitializeRatingTags === 'function') {
-                            JE.reinitializeRatingTags();
-                        }
+                } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
+                    if (typeof JE.reinitializeRatingTags === 'function') {
+                        JE.reinitializeRatingTags();
+                    }
                 }
 
                 JE.toast(`Position updated!`);

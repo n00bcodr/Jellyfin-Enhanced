@@ -474,6 +474,7 @@
             const basePath = '/JellyfinEnhanced/js';
             const allComponentScripts = [
                 'enhanced/helpers.js',
+                'enhanced/icons.js',
                 'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
                 'elsewhere.js',

@@ -138,6 +138,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Bookmarks Settings
             BookmarksEnabled = true;
+
+            // Icon Settings
+            UseIcons = true;
+            IconStyle = "emoji";
         }
 
         // Jellyfin Enhanced Settings
@@ -249,5 +253,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Bookmarks Settings
         public bool BookmarksEnabled { get; set; }
+
+        // Icon Settings
+        public bool UseIcons { get; set; }
+        public string IconStyle { get; set; }
     }
 }

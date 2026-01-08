@@ -999,6 +999,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Metadata Icons (Druidblack)
                 config.MetadataIconsEnabled,
 
+                // Icon Settings
+                config.UseIcons,
+                config.IconStyle,
+
             });
         }
 
