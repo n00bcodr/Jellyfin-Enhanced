@@ -8,6 +8,9 @@
         userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {} },
         translations: {},
         pluginVersion: 'unknown',
+        // Stub functions that will be overwritten by modules
+        icon: () => '', // Will be replaced by icons.js, initializing early to avoid issues with loading order
+        IconName: {}, // Will be replaced -||-
         state: {
             activeShortcuts: {},
             currentContextItemId: null,
