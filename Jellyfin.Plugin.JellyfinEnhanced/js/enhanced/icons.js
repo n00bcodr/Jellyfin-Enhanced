@@ -202,15 +202,23 @@
         
         if (useIcons === false) return '';
 
+        let icon = '';
         switch (iconStyle) {
             case 'lucide':
-                return LUCIDE[name] || EMOJI[name] || '';
+                icon = LUCIDE[name] || EMOJI[name] || '';
+                // Wrap Lucide SVGs in a span for vertical alignment
+                if (icon.startsWith('<svg')) icon = `<span style="display:inline-flex;vertical-align:middle;">${icon}</span>`;
+
+                break;
             case 'mui':
-                return MUI[name] || EMOJI[name] || '';
+                icon = MUI[name] || EMOJI[name] || '';
+                break;
             case 'emoji':
             default:
-                return EMOJI[name] || '';
+                icon = EMOJI[name] || '';
+                break;
         }
+        return icon;
     };
 
     JE.IconName = IconName;
