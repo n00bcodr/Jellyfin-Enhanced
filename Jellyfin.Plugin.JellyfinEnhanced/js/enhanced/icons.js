@@ -73,7 +73,7 @@
         error: '❌',
         warning: '⚠️',
         success: '✅',
-        info: 'ℹ️',
+        info: 'ⓘ',
         note: '📝',
         video: '🎬',
         audio: '🎵',

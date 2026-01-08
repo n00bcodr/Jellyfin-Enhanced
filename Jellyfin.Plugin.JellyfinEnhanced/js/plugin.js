@@ -9,8 +9,12 @@
         translations: {},
         pluginVersion: 'unknown',
         // Stub functions that will be overwritten by modules
-        icon: () => '', // Will be replaced by icons.js, initializing early to avoid issues with loading order
-        IconName: {}, // Will be replaced -||-
+        icon: (name) => {
+            // Fallback icon function until icons.js loads
+            // Returns the token unchanged so t() can keep the placeholder
+            return name ? `{{ICON_PENDING:${name}}}` : '';
+        },
+        IconName: {}, // Will be replaced by icons.js
         state: {
             activeShortcuts: {},
             currentContextItemId: null,
@@ -63,6 +67,28 @@
                     text = text.replace(new RegExp(`{${param}}`, 'g'), value);
                 }
             }
+            // Replace {{icon:name}} tokens with JE.icon() calls
+            text = text.replace(/\{\{icon:([a-zA-Z]+)\}\}/g, (match, iconName) => {
+                const iconKey = iconName.toUpperCase();
+                const iconConstant = window.JellyfinEnhanced.IconName?.[iconKey];
+                
+                // If IconName not loaded yet, keep the placeholder
+                if (!iconConstant) {
+                    console.debug(`[JE.t] IconName.${iconKey} not available yet, keeping placeholder`);
+                    return match;
+                }
+                
+                const iconResult = window.JellyfinEnhanced.icon?.(iconConstant);
+                
+                // If icon function returns a pending token, keep original placeholder
+                if (iconResult && iconResult.startsWith('{{ICON_PENDING:')) {
+                    console.debug(`[JE.t] Icon system not ready, keeping placeholder for ${iconName}`);
+                    return match;
+                }
+                
+                return iconResult || match;
+            });
+            
             return text;
         },
         loadSettings: () => { console.warn("🪼 Jellyfin Enhanced: loadSettings called before config.js loaded"); return {}; },
@@ -207,7 +233,25 @@
                 }
             }
 
-            // Try fetching from GitHub
+            // Try fetching from bundled (local) first, then GitHub
+            /* console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${lang}...`);
+            try {
+                const bundledResponse = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
+                if (bundledResponse.ok) {
+                    const translations = await bundledResponse.json();
+                    // Cache the bundled version
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(translations));
+                        localStorage.setItem(timestampKey, Date.now().toString());
+                        console.log(`🪼 Jellyfin Enhanced: Successfully loaded and cached bundled translations for ${lang} (version: ${pluginVersion})`);
+                    } catch (e) { } // do nothing
+                    return translations;
+                }
+            } catch (bundledError) {
+                console.warn(`🪼 Jellyfin Enhanced: Bundled translations failed, falling back to GitHub:`, bundledError.message);
+            } */
+
+            // Fallback to GitHub if bundled fails
             try {
                 console.log(`🪼 Jellyfin Enhanced: Fetching translations for ${lang} from GitHub...`);
                 const githubResponse = await fetch(`${GITHUB_RAW_BASE}/${lang}.json`, {
