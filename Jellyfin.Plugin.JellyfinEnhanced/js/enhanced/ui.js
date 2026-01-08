@@ -619,7 +619,7 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${JE.pluginConfig.Shortcuts.filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
+                                ${(JE.pluginConfig.Shortcuts || []).filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
                                         <span class="shortcut-key" tabindex="0" data-action="${action.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action.Name]}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
