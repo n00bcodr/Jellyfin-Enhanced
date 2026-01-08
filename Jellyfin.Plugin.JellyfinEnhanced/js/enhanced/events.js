@@ -155,6 +155,11 @@
                     }
                 }
                 break;
+            case activeShortcuts.SkipIntroOutro:
+                e.preventDefault();
+                e.stopPropagation();
+                JE.skipIntroOutro();
+                break;
         }
 
         if (key.match(/^[0-9]$/)) {
