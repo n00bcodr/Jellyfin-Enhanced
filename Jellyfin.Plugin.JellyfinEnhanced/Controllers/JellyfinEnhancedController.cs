@@ -550,6 +550,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> SearchTmdbPerson([FromQuery] string query)
         {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { message = "Query cannot be empty" }));
+            }
             return ProxyJellyseerrRequest($"/api/v1/search?query={Uri.EscapeDataString(query)}&page=1", HttpMethod.Get);
         }
 
@@ -557,6 +561,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> SearchTmdbKeyword([FromQuery] string query)
         {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { message = "Query cannot be empty" }));
+            }
             return ProxyJellyseerrRequest($"/api/v1/search/keyword?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
         }
 
@@ -1156,6 +1164,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowNetworkDiscovery,
+                config.JellyseerrShowGenreDiscovery,
+                config.JellyseerrShowTagDiscovery,
+                config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrExcludeLibraryItems,
 
                 // Bookmarks Settings

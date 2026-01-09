@@ -339,5 +339,10 @@
     "toast_api_client_unavailable": "API istemcisi mevcut değil",
     "toast_session_not_found": "Aktif oturum bulunamadı",
     "toast_playing": "Oynatılıyor...",
-    "toast_playback_failed": "Oynatma başlatılamadı: {error}"
+    "toast_playback_failed": "Oynatma başlatılamadı: {error}",
+    "discovery_more_from_studio": "Daha fazla {studio} 'dan",
+    "discovery_more_with_genre": "Daha fazla türden - \"{genre}\"",
+    "discovery_more_with_tag": "Daha fazla etiketle - \"{tag}\"",
+    "discovery_more_from_person": "Daha fazla {person} ile",
+    "discovery_infinite_scroll": "Keşif - daha fazla için kaydırın"
 }
