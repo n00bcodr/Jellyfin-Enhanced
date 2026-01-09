@@ -438,7 +438,8 @@
         if (existing) existing.remove();
 
         // Create section with cards
-        const section = createSectionContainer(`More from ${studioInfo.name}`);
+        const sectionTitle = JE.t('discovery_more_from_studio', { studio: studioInfo.name });
+        const section = createSectionContainer(sectionTitle);
         const itemsContainer = section.querySelector('.itemsContainer');
 
         // Batch insert cards using DocumentFragment

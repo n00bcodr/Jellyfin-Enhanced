@@ -267,7 +267,8 @@
 
         // Capitalize tag name for display
         const displayName = tagName.charAt(0).toUpperCase() + tagName.slice(1);
-        const section = createSectionContainer(`More "${displayName}"`);
+        const sectionTitle = JE.t('discovery_more_with_tag', { tag: displayName });
+        const section = createSectionContainer(sectionTitle);
         const itemsContainer = section.querySelector('.itemsContainer');
 
         const fragment = createCardsFragment(discoverResults.results.slice(0, 20));

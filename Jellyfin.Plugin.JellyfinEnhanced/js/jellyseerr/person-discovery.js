@@ -314,7 +314,8 @@
         if (existing) existing.remove();
 
         // Create and insert section
-        const section = createSectionContainer(`More from ${personInfo.name}`);
+        const sectionTitle = JE.t('discovery_more_from_person', { person: personInfo.name });
+        const section = createSectionContainer(sectionTitle);
         const itemsContainer = section.querySelector('.itemsContainer');
 
         // Show up to 40 items (no pagination for person credits API)

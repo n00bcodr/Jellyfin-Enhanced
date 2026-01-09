@@ -338,5 +338,10 @@
     "toast_api_client_unavailable": "Klient API niedostępny",
     "toast_session_not_found": "Nie znaleziono aktywnej sesji",
     "toast_playing": "Odtwarzanie...",
-    "toast_playback_failed": "Nie udało się rozpocząć odtwarzania: {error}"
+    "toast_playback_failed": "Nie udało się rozpocząć odtwarzania: {error}",
+    "discovery_more_from_studio": "Więcej od {studio}",
+    "discovery_more_with_genre": "Więcej z gatunku - \"{genre}\"",
+    "discovery_more_with_tag": "Więcej ze znacznikiem - \"{tag}\"",
+    "discovery_more_from_person": "Więcej z {person}",
+    "discovery_infinite_scroll": "Odkrywanie - przewiń aby uzyskać więcej"
 }

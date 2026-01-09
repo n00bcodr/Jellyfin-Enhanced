@@ -327,7 +327,8 @@
         const existing = document.querySelector('.jellyseerr-genre-discovery-section');
         if (existing) existing.remove();
 
-        const section = createSectionContainer(`More ${genreInfo.name}`);
+        const sectionTitle = JE.t('discovery_more_with_genre', { genre: genreInfo.name });
+        const section = createSectionContainer(sectionTitle);
         const itemsContainer = section.querySelector('.itemsContainer');
 
         const fragment = createCardsFragment(discoverResults.results.slice(0, 20));
