@@ -85,7 +85,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 6.  **Restart** your Jellyfin server to complete the installation.
 
 
-> [!NOTE]
+> [!IMPORTANT]
 > It is highly recommended to have [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed. It helps avoid permission issues while modifying index.html on any kind of installation!
 >
 > **Only if you do not have file-transformation plugin installed - proceed with the below workaround!**
