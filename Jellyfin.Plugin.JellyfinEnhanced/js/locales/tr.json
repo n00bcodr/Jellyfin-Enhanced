@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Diziler",
     "panel_settings_ui": "Arayüz Ayarları",
     "panel_settings_ui_watch_progress": "İzleme ilerlemesini göster",
-    "panel_settings_ui_watch_progress_desc": "Ayrıntı sayfalarında izleme ilerlemesini % olarak göster.",
+    "panel_settings_ui_watch_progress_desc": "Öğe detay sayfalarında izleme ilerlemesini göster. Aşağıdan görüntüleme modunu seçin.",
     "panel_settings_ui_file_sizes": "Dosya Boyutlarını Göster",
     "panel_settings_ui_file_sizes_desc": "Öğe detay sayfasında toplam dosya boyutunu göster.",
     "panel_settings_ui_audio_languages": "Ses Dillerini Göster",

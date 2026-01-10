@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Сериалы",
     "panel_settings_ui": "Настройки пользовательского интерфейса",
     "panel_settings_ui_watch_progress": "Показать прогресс просмотра",
-    "panel_settings_ui_watch_progress_desc": "Отображать прогресс просмотра в % на страницах деталей элемента.",
+    "panel_settings_ui_watch_progress_desc": "Отображать прогресс просмотра на страницах с деталями элемента. Выберите режим отображения ниже.",
     "panel_settings_ui_file_sizes": "Показать размеры файлов",
     "panel_settings_ui_file_sizes_desc": "Отображать общий размер файла на страницах деталей элемента.",
     "panel_settings_ui_audio_languages": "Показать языки аудио",

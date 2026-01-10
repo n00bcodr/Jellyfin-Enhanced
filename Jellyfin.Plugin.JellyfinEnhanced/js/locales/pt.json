@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Séries",
     "panel_settings_ui": "Configurações da Interface",
     "panel_settings_ui_watch_progress": "Exibir progresso de visualização",
-    "panel_settings_ui_watch_progress_desc": "Exibir o progresso de visualização em % nas páginas de detalhes.",
+    "panel_settings_ui_watch_progress_desc": "Exibir o progresso de visualização nas páginas de detalhes. Escolha o modo de exibição abaixo.",
     "panel_settings_ui_file_sizes": "Mostrar Tamanhos de Arquivo",
     "panel_settings_ui_file_sizes_desc": "Exibir tamanho total do arquivo nas páginas de detalhes do item.",
     "panel_settings_ui_audio_languages": "Mostrar Idiomas de Áudio",

@@ -73,6 +73,8 @@
             disableCustomSubtitleStyles: false, randomButtonEnabled: true,
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
+            watchProgressMode: 'percentage',
+            watchProgressTimeFormat: 'hours',
             pauseScreenEnabled: true,
             qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false,
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right',

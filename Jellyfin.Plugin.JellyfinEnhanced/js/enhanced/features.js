@@ -189,9 +189,25 @@
             if (div.dataset.type === 'percentage') {
                 div.dataset.type = 'time';
                 div.innerHTML = `${getTimeString(watchProgress.totalPlaybackTicks)} / ${getTimeString(watchProgress.totalRuntimeTicks)}`;
+                // Persist user choice
+                if (window.JellyfinEnhanced) {
+                    window.JellyfinEnhanced.currentSettings = window.JellyfinEnhanced.currentSettings || {};
+                    window.JellyfinEnhanced.currentSettings.watchProgressMode = 'time';
+                    if (typeof window.JellyfinEnhanced.saveUserSettings === 'function') {
+                        window.JellyfinEnhanced.saveUserSettings('settings.json', window.JellyfinEnhanced.currentSettings);
+                    }
+                }
             } else if (div.dataset.type === 'time') {
                 div.dataset.type = 'percentage';
                 div.innerHTML = `${watchProgress.progress}%`;
+                // Persist user choice
+                if (window.JellyfinEnhanced) {
+                    window.JellyfinEnhanced.currentSettings = window.JellyfinEnhanced.currentSettings || {};
+                    window.JellyfinEnhanced.currentSettings.watchProgressMode = 'percentage';
+                    if (typeof window.JellyfinEnhanced.saveUserSettings === 'function') {
+                        window.JellyfinEnhanced.saveUserSettings('settings.json', window.JellyfinEnhanced.currentSettings);
+                    }
+                }
             }
         })
         // Show loading indicator
@@ -230,39 +246,40 @@
             const totalYears = Math.floor(totalDays / 365);
             
             let result = '';
-            
-            if (totalYears >= 1) {
-                // Show years and remaining months
-                result += `${totalYears}y`;
-                const months = Math.floor((totalDays % 365) / 30);
-                if (months > 0) {
-                    result += ` ${months}mo`;
+            const format = (window.JellyfinEnhanced?.currentSettings?.watchProgressTimeFormat || 'hours');
+            if (format === 'hours') {
+                // Show hours and minutes (or just minutes if under an hour)
+                if (totalHours >= 1) {
+                    result += `${totalHours}h`;
+                    const minutes = totalMinutes % 60;
+                    if (minutes > 0) result += ` ${minutes}m`;
+                } else if (totalMinutes > 0) {
+                    result = `${totalMinutes}m`;
+                } else {
+                    result = '0m';
                 }
-            } else if (totalMonths >= 1) {
-                // Show months and remaining days
-                result += `${totalMonths}mo`;
-                const days = totalDays % 30;
-                if (days > 0) {
-                    result += ` ${days}d`;
-                }
-            } else if (totalDays >= 1) {
-                // Show days and remaining hours
-                result += `${totalDays}d`;
-                const hours = totalHours % 24;
-                if (hours > 0) {
-                    result += ` ${hours}h`;
-                }
-            } else if (totalHours >= 1) {
-                // Show hours and remaining minutes
-                result += `${totalHours}h`;
-                const minutes = totalMinutes % 60;
-                if (minutes > 0) {
-                    result += ` ${minutes}m`;
-                }
-            } else if (totalMinutes > 0) {
-                result += `${totalMinutes}m`;
             } else {
-                result = '0m';
+                if (totalYears >= 1) {
+                    result += `${totalYears}y`;
+                    const months = Math.floor((totalDays % 365) / 30);
+                    if (months > 0) result += ` ${months}mo`;
+                } else if (totalMonths >= 1) {
+                    result += `${totalMonths}mo`;
+                    const days = totalDays % 30;
+                    if (days > 0) result += ` ${days}d`;
+                } else if (totalDays >= 1) {
+                    result += `${totalDays}d`;
+                    const hours = totalHours % 24;
+                    if (hours > 0) result += ` ${hours}h`;
+                } else if (totalHours >= 1) {
+                    result += `${totalHours}h`;
+                    const minutes = totalMinutes % 60;
+                    if (minutes > 0) result += ` ${minutes}m`;
+                } else if (totalMinutes > 0) {
+                    result = `${totalMinutes}m`;
+                } else {
+                    result = '0m';
+                }
             }
             
             return result;
@@ -271,9 +288,15 @@
         const getWatchProgressValue = (watchProgress) => {
             const valueDiv = document.createElement('div');
             valueDiv.className = 'mediaInfoItem-watchProgress-value';
-            valueDiv.dataset.type = 'percentage';
-            valueDiv.innerHTML = `${watchProgress.progress}%`;
-                
+            const defaultMode = (window.JellyfinEnhanced?.currentSettings?.watchProgressMode || 'percentage');
+            if (defaultMode === 'time') {
+                valueDiv.dataset.type = 'time';
+                valueDiv.innerHTML = `${getTimeString(watchProgress.totalPlaybackTicks)} / ${getTimeString(watchProgress.totalRuntimeTicks)}`;
+            } else {
+                valueDiv.dataset.type = 'percentage';
+                valueDiv.innerHTML = `${watchProgress.progress}%`;
+            }
+
             return valueDiv;
         }
 

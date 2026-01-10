@@ -81,7 +81,7 @@
     "panel_settings_random_button_shows": "Serien",
     "panel_settings_ui": "UI-Einstellungen",
     "panel_settings_ui_watch_progress": "Gesamtfortschritt anzeigen",
-    "panel_settings_ui_watch_progress_desc": "Gesamtfortschritt in % auf den Elementdetailseiten anzeigen.",
+    "panel_settings_ui_watch_progress_desc": "Zeige den Wiedergabefortschritt auf Elementdetailseiten an. Wähle den Anzeigemodus unten.",
     "panel_settings_ui_file_sizes": "Dateigrößen anzeigen",
     "panel_settings_ui_file_sizes_desc": "Gesamtdateigröße auf Elementdetailseiten anzeigen.",
     "panel_settings_ui_audio_languages": "Audiosprachen anzeigen",

@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Serier",
     "panel_settings_ui": "UI-indstillinger",
     "panel_settings_ui_watch_progress": "Vis seerfremskridt",
-    "panel_settings_ui_watch_progress_desc": "Vis seerfremskridt i % på detaljesider.",
+    "panel_settings_ui_watch_progress_desc": "Vis afspilningsfremskridt på detaljesider. Vælg visningstilstand nedenfor.",
     "panel_settings_ui_file_sizes": "Vis filstørrelser",
     "panel_settings_ui_file_sizes_desc": "Vis samlet filstørrelse på elementdetaljsider.",
     "panel_settings_ui_audio_languages": "Vis lydsprog",

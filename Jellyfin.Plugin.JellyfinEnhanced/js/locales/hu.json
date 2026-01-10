@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Sorozatok",
     "panel_settings_ui": "Felhasználói felület beállításai",
     "panel_settings_ui_watch_progress": "Nézési előrehaladás megjelenítése",
-    "panel_settings_ui_watch_progress_desc": "A nézési előrehaladás megjelenítése %-ban a részletek oldalán.",
+    "panel_settings_ui_watch_progress_desc": "A nézési előrehaladás megjelenítése a részletek oldalán. Válaszd ki a megjelenítési módot alább.",
     "panel_settings_ui_file_sizes": "Fájlméretek megjelenítése",
     "panel_settings_ui_file_sizes_desc": "A teljes fájlméret megjelenítése az elem részleteit tartalmazó oldalakon.",
     "panel_settings_ui_audio_languages": "Hangnyelvek megjelenítése",

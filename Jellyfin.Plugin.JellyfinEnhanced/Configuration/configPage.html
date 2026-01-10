@@ -98,6 +98,22 @@
                                 <summary style="cursor: pointer; font-weight: bold;" data-icon="ui" data-text="UI Settings">🖥️ UI Settings</summary>
                                 <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showWatchProgress" is="emby-checkbox" type="checkbox"/><span>Show watch progress</span></label></div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="watchProgressDefaultMode">Watch Progress Default</label>
+                                        <select is="emby-select" id="watchProgressDefaultMode" name="watchProgressDefaultMode" class="emby-select">
+                                            <option value="percentage">Percentage</option>
+                                            <option value="time">Time</option>
+                                        </select>
+                                        <div class="fieldDescription">Choose default display for watch progress.</div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="watchProgressTimeFormat">Watch Progress Time Format</label>
+                                        <select is="emby-select" id="watchProgressTimeFormat" name="watchProgressTimeFormat" class="emby-select">
+                                            <option value="hours">h:m</option>
+                                            <option value="full">y:mo:d:h:m</option>
+                                        </select>
+                                        <div class="fieldDescription">Select how time-based progress is shown.</div>
+                                    </div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showFileSizes" is="emby-checkbox" type="checkbox"/><span>Show file sizes</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showAudioLanguages" is="emby-checkbox" type="checkbox"/><span>Show available audio languages on item detail page</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
@@ -1253,6 +1269,8 @@
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
                 document.querySelector('#randomUnwatchedOnly').checked = config.RandomUnwatchedOnly;
                 document.querySelector('#showWatchProgress').checked = config.ShowWatchProgress;
+                document.querySelector('#watchProgressDefaultMode').value = (config.WatchProgressDefaultMode || 'percentage');
+                document.querySelector('#watchProgressTimeFormat').value = (config.WatchProgressTimeFormat || 'hours');
                 document.querySelector('#showFileSizes').checked = config.ShowFileSizes;
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
@@ -1388,6 +1406,8 @@
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
             config.ShowWatchProgress = document.querySelector('#showWatchProgress').checked;
+            config.WatchProgressDefaultMode = document.querySelector('#watchProgressDefaultMode').value;
+            config.WatchProgressTimeFormat = document.querySelector('#watchProgressTimeFormat').value;
             config.ShowFileSizes = document.querySelector('#showFileSizes').checked;
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;

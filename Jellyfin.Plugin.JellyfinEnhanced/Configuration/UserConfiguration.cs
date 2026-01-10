@@ -20,6 +20,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
         public bool ShowWatchProgress { get; set; }
+        public string WatchProgressMode { get; set; } = "percentage";
+        public string WatchProgressTimeFormat { get; set; } = "hours";
         public bool ShowFileSizes { get; set; }
         public bool ShowAudioLanguages { get; set; }
         public bool QualityTagsEnabled { get; set; }

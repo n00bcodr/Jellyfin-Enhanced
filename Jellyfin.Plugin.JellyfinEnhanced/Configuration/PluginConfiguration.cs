@@ -42,6 +42,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RandomIncludeShows = true;
             RandomUnwatchedOnly = false;
             ShowWatchProgress = false;
+            WatchProgressDefaultMode = "percentage";
+            WatchProgressTimeFormat = "hours";
             ShowFileSizes = false;
             RemoveContinueWatchingEnabled = false;
             ShowAudioLanguages = true;
@@ -178,6 +180,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomIncludeShows { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
         public bool ShowWatchProgress { get; set; }
+        public string WatchProgressDefaultMode { get; set; }
+        public string WatchProgressTimeFormat { get; set; }
         public bool ShowFileSizes { get; set; }
         public bool RemoveContinueWatchingEnabled { get; set; }
         public bool ShowAudioLanguages { get; set; }

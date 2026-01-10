@@ -744,6 +744,20 @@
                                     <input type="checkbox" id="showWatchProgressToggle" ${JE.currentSettings.showWatchProgress ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_watch_progress')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_watch_progress_desc')}</div></div>
                                 </label>
+                                <div style="display:flex; gap:12px; margin-top:10px;">
+                                    <div style="flex:1;">
+                                        <select id="watchProgressModeSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                            <option value="percentage" ${JE.currentSettings.watchProgressMode === 'percentage' ? 'selected' : ''}>Percentage</option>
+                                            <option value="time" ${JE.currentSettings.watchProgressMode === 'time' ? 'selected' : ''}>Time</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <select id="watchProgressTimeFormatSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                            <option value="hours" ${JE.currentSettings.watchProgressTimeFormat === 'hours' ? 'selected' : ''}>h:m</option>
+                                            <option value="full" ${JE.currentSettings.watchProgressTimeFormat === 'full' ? 'selected' : ''}>y:mo:d:h:m</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -1102,6 +1116,23 @@
         addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
         addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
         addSettingToggleListener('showWatchProgressToggle', 'showWatchProgress', 'feature_watch_progress_display');
+                // Watch progress selects
+                const modeSel = document.getElementById('watchProgressModeSelect');
+                const fmtSel = document.getElementById('watchProgressTimeFormatSelect');
+                if (modeSel) {
+                    modeSel.addEventListener('change', (e) => {
+                        JE.currentSettings.watchProgressMode = e.target.value;
+                        JE.saveUserSettings('settings.json', JE.currentSettings);
+                        resetAutoCloseTimer();
+                    });
+                }
+                if (fmtSel) {
+                    fmtSel.addEventListener('change', (e) => {
+                        JE.currentSettings.watchProgressTimeFormat = e.target.value;
+                        JE.saveUserSettings('settings.json', JE.currentSettings);
+                        resetAutoCloseTimer();
+                    });
+                }
         addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
         addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
         addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');

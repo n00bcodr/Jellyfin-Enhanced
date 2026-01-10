@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Shows",
     "panel_settings_ui": "UI Settings",
     "panel_settings_ui_watch_progress": "Show Watch Progress",
-    "panel_settings_ui_watch_progress_desc": "Display watch progress in % on item detail pages.",
+    "panel_settings_ui_watch_progress_desc": "Display watch progress on item detail pages. Choose display mode below.",
     "panel_settings_ui_file_sizes": "Show File Sizes",
     "panel_settings_ui_file_sizes_desc": "Display total file size on item detail pages.",
     "panel_settings_ui_audio_languages": "Show Audio Languages",

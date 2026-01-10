@@ -83,7 +83,7 @@
     "panel_settings_random_button_shows": "Serier",
     "panel_settings_ui": "UI-inställningar",
     "panel_settings_ui_watch_progress": "Visa tittarprogress",
-    "panel_settings_ui_watch_progress_desc": "Visa tittarprogress i % på detaljsidor.",
+    "panel_settings_ui_watch_progress_desc": "Visa uppspelningsframsteg på detaljsidor. Välj visningsläge nedan.",
     "panel_settings_ui_file_sizes": "Visa filstorlekar",
     "panel_settings_ui_file_sizes_desc": "Visa total filstorlek på objektdetaljsidor.",
     "panel_settings_ui_audio_languages": "Visa ljudspråk",

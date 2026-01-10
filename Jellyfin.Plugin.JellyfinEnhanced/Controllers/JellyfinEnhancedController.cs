@@ -1280,6 +1280,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
                         RandomIncludeShows = defaultConfig.RandomIncludeShows,
                         ShowWatchProgress = defaultConfig.ShowWatchProgress,
+                        WatchProgressMode = string.IsNullOrWhiteSpace(defaultConfig.WatchProgressDefaultMode) ? "percentage" : defaultConfig.WatchProgressDefaultMode,
+                        WatchProgressTimeFormat = string.IsNullOrWhiteSpace(defaultConfig.WatchProgressTimeFormat) ? "hours" : defaultConfig.WatchProgressTimeFormat,
                         ShowFileSizes = defaultConfig.ShowFileSizes,
                         ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
                         QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
