@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Csak megtekintetlenek",
     "feature_file_size_display": "{{icon:file}} Fájlméret megjelenítése",
     "feature_audio_language_display": "{{icon:speaker}} Hangnyelv megjelenítése",
+    "feature_watch_progress_display": "{{icon:eye}} Megtekintés állapotának megjelenítése",
     "feature_remove_continue_watching": "{{icon:eye}} Megtekintés folytatása elemek törlése",
     "feature_quality_tags": "{{icon:tag}} Minőség Címkék",
     "feature_genre_tags": "{{icon:mask}} Műfaj Címkék",

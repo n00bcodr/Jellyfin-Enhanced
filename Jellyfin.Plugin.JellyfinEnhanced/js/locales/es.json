@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Solo no vistos",
     "feature_file_size_display": "{{icon:file}} Mostrar tamaño del archivo",
     "feature_audio_language_display": "{{icon:speaker}} Mostrar idioma de audio",
+    "feature_watch_progress_display": "{{icon:eye}} Mostrar progreso de visualización",
     "feature_remove_continue_watching": "{{icon:eye}} Quitar de Seguir viendo",
     "feature_quality_tags": "{{icon:tag}} Etiquetas de calidad",
     "feature_genre_tags": "{{icon:mask}} Etiquetas de género",

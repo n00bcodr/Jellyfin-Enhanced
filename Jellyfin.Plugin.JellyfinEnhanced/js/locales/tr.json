@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Sadece İzlenmeyenler",
     "feature_file_size_display": "{{icon:file}} Dosya Boyutu Gösterimi",
     "feature_audio_language_display": "{{icon:speaker}} Ses Dili Gösterimi",
+    "feature_watch_progress_display": "{{icon:eye}} İzleme İlerleme Gösterimi",
     "feature_remove_continue_watching": "{{icon:eye}} İzlemeye Devamdan Kaldır",
     "feature_quality_tags": "{{icon:tag}} Kalite Etiketleri",
     "feature_genre_tags": "{{icon:mask}} Tür Etiketleri",

@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Только непросмотренные",
     "feature_file_size_display": "{{icon:file}} Отображение размера файла",
     "feature_audio_language_display": "{{icon:speaker}} Отображение языка аудио",
+    "feature_watch_progress_display": "{{icon:eye}} Отображение прогресса просмотра",
     "feature_remove_continue_watching": "{{icon:eye}} Удалить из продолжения просмотра",
     "feature_quality_tags": "{{icon:tag}} Теги качества",
     "feature_genre_tags": "{{icon:mask}} Теги жанра",

@@ -160,27 +160,8 @@
                                     </div>
                                 </fieldset>
                                 <div class="checkboxContainer" style="margin-top: 1em;margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
-                                <h4 class="sectionTitle" style="margin-top: 2em;">Icon Settings</h4>
-                                <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                    <label>
-                                        <input id="useIcons" is="emby-checkbox" type="checkbox"/>
-                                        <span>Use Icons</span>
-                                    </label>
-                                </div>
-                                <div class="fieldDescription" style="margin-bottom: 1.5em;">
-                                    Display icons throughout the UI (toasts, settings panel headers, etc.)
-                                </div>
-                                <div class="selectContainer" style="margin-bottom: 1.5em;">
-                                    <label class="selectLabel" for="iconStyle">Icon Style</label>
-                                    <select id="iconStyle" is="emby-select" class="emby-select-withcolor">
-                                        <option value="emoji">Emoji</option>
-                                        <option value="lucide">Lucide Icons</option>
-                                        <option value="mui">Material UI Icons</option>
-                                    </select>
-                                    <div class="fieldDescription">Choose between emoji characters, Lucide icons, or Material UI icons.</div>
-                                </div>
-                                </div>
-                            </details>
+                            </div>
+                        </details>
                             <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="disableAllShortcuts" is="emby-checkbox" type="checkbox"/><span data-icon="keyboard" data-text="Disable Keyboard Shortcuts">⌨️ Disable Keyboard Shortcuts</span></label></div>
                                     <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in enhanced panel</div>
@@ -204,6 +185,29 @@
                                 </div>
                             </div>
                         </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Icons</h3></legend>
+                        <div style="margin-bottom: 2em; padding-bottom: 1.5em; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <h4 class="sectionTitle" style="margin-top: 0;">Icon Settings</h4>
+                                <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                    <label>
+                                        <input id="useIcons" is="emby-checkbox" type="checkbox"/>
+                                        <span>Use Icons</span>
+                                    </label>
+                                </div>
+                                <div class="fieldDescription" style="margin-bottom: 1.5em;">
+                                    Display icons throughout the UI (toasts, settings panel headers, etc.)
+                                </div>
+                                <div class="selectContainer" style="margin-bottom: 1.5em;">
+                                    <label class="selectLabel" for="iconStyle">Icon Style</label>
+                                    <select id="iconStyle" is="emby-select" class="emby-select-withcolor">
+                                        <option value="emoji">Emoji</option>
+                                        <option value="lucide">Lucide Icons</option>
+                                        <option value="mui">Material UI Icons</option>
+                                    </select>
+                                    <div class="fieldDescription">Choose between emoji characters, Lucide icons, or Material UI icons.</div>
+                                </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Shortcut Overrides</h3></legend>
@@ -850,11 +854,11 @@
         (() => {
             const pluginId = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
             const JE = window.JellyfinEnhanced;
-            
+
             function updateConfigPageIcons(useIcons, iconStyle) {
                 // Temporarily set config for JE.icon() to use
                 JE.pluginConfig = { UseIcons: useIcons, IconStyle: iconStyle };
-                
+
                 // Map data-icon attributes to icon names
                 document.querySelectorAll('[data-icon]').forEach(el => {
                     const iconName = el.dataset.icon;
@@ -863,22 +867,22 @@
                     el.innerHTML = iconHtml + (iconHtml ? ' ' : '') + textContent;
                 });
             }
-            
+
             // Live preview when icon settings change
             function setupIconSettingsListeners() {
                 const useIconsCheckbox = document.querySelector('#useIcons');
                 const iconStyleSelect = document.querySelector('#iconStyle');
-                
+
                 const updateIconsPreview = () => {
                     const useIcons = useIconsCheckbox.checked;
                     const iconStyle = iconStyleSelect.value;
                     updateConfigPageIcons(useIcons, iconStyle);
                 };
-                
+
                 useIconsCheckbox.addEventListener('change', updateIconsPreview);
                 iconStyleSelect.addEventListener('change', updateIconsPreview);
             }
-            
+
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
             const resetAllUserSettingsBtn = document.querySelector('#resetAllUserSettingsBtn');
@@ -1312,7 +1316,7 @@
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
-                
+
                 // Update icons on config page based on settings
                 updateConfigPageIcons(config.UseIcons !== false, config.IconStyle || 'emoji');
 

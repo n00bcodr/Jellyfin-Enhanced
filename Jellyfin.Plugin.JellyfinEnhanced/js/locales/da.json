@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Kun ikke sete",
     "feature_file_size_display": "{{icon:file}} Vis filstørrelse",
     "feature_audio_language_display": "{{icon:speaker}} Vis lydsprog",
+    "feature_watch_progress_display": "{{icon:eye}} Vis seeprognose",
     "feature_remove_continue_watching": "{{icon:eye}} Fjern fra Fortsæt med at se",
     "feature_quality_tags": "{{icon:tag}} Kvalitetsmærker",
     "feature_genre_tags": "{{icon:mask}} Genremærker",

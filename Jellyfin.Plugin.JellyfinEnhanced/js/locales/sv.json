@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Endast osedda",
     "feature_file_size_display": "{{icon:file}} Visa filstorlek",
     "feature_audio_language_display": "{{icon:speaker}} Visa ljudspråk",
+    "feature_watch_progress_display": "{{icon:eye}} Visa tittarförlopp",
     "feature_remove_continue_watching": "{{icon:eye}} Ta bort från Fortsätt titta",
     "feature_quality_tags": "{{icon:tag}} Kvalitetstaggar",
     "feature_genre_tags": "{{icon:mask}} Genretaggar",

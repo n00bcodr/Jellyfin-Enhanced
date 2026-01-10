@@ -29,6 +29,7 @@
     "feature_unwatched_only": "{{icon:random}} Unexplored Only",
     "feature_file_size_display": "{{icon:file}} Cargo Weight",
     "feature_audio_language_display": "{{icon:speaker}} Crew Tongue Display",
+    "feature_watch_progress_display": "{{icon:eye}} Plunder Progress Display",
     "feature_remove_continue_watching": "{{icon:eye}} Remove from Log",
     "feature_quality_tags": "{{icon:tag}} Quality Marks",
     "feature_genre_tags": "{{icon:mask}} Quest Tags",

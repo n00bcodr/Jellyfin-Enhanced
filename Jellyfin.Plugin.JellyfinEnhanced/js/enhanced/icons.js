@@ -1,9 +1,9 @@
 (function (JE) {
     'use strict';
 
-    console.log('[JE-ICONS] Module loading...');
+    console.log('🪼 Jellyfin Enhanced: Icons: Module loading...');
 
-    // Poor mans enum for icon name constants   
+    // Poor mans enum for icon name constants
     // usage: JE.IconName.PLAYBACK
     //
     // This helps avoid typos when requesting icons via JE.icon(name). It will
@@ -159,7 +159,7 @@
         search: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">search</span>',
         home: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">home</span>',
         dashboard: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">dashboard</span>',
-        speed: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">bolt</span>',
+        speed: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">speed</span>',
         error: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">error</span>',
         warning: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">warning</span>',
         success: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">check_circle</span>',
@@ -172,7 +172,7 @@
         pause: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">pause</span>',
         play: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">play_arrow</span>',
         fastForward: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">fast_forward</span>',
-        pip: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">picture_in_picture</span>',
+        pip: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">picture_in_picture_alt</span>',
         file: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">insert_drive_file</span>',
         speaker: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">record_voice_over</span>',
         eye: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">visibility</span>',
@@ -180,12 +180,12 @@
         mask: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">theater_comedy</span>',
         flag: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">flag</span>',
         star: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">star</span>',
-        noEntry: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">block</span>',
+        noEntry: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">cancel</span>',
         link: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">link</span>',
-        jellyfish: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">water</span>',
+        jellyfish: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">waves</span>',
         clipboard: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">content_paste</span>',
         trash: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">delete</span>',
-        bookmark: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">bookmark</span>',
+        bookmark: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">place</span>',
         paint: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">palette</span>',
         ruler: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">straighten</span>',
         font: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">text_fields</span>',
@@ -224,6 +224,6 @@
     JE.IconName = IconName;
     JE.icons = { EMOJI, LUCIDE, MUI };
 
-    console.log('[JE-ICONS] Module loaded successfully. JE.icon is now available.');
+    console.log('[🪼 Jellyfin Enhanced: Icons: Module loaded successfully. JE.icon is now available.');
 
 })(window.JellyfinEnhanced);
