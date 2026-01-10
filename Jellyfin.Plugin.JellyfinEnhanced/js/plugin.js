@@ -69,7 +69,7 @@
             }
             // Replace {{icon:name}} tokens with JE.icon() calls
             text = text.replace(/\{\{icon:([a-zA-Z]+)\}\}/g, (match, iconName) => {
-                const iconKey = iconName.toUpperCase();
+                const iconKey = iconName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
                 const iconConstant = window.JellyfinEnhanced.IconName?.[iconKey];
                 
                 // If IconName not loaded yet, keep the placeholder
