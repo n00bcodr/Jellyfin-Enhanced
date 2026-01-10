@@ -5,6 +5,9 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr API:';
     const api = {};
 
+    // Cache for user status (shared across all modules)
+    let cachedUserStatus = null;
+
     // TMDB proxy helper
     async function tmdbGet(path) {
         return ApiClient.ajax({
@@ -49,15 +52,31 @@
 
     /**
      * Checks if the Jellyseerr server is active and if the current user is linked.
+     * Caches the result to avoid repeated API calls.
      * @returns {Promise<{active: boolean, userFound: boolean}>}
      */
     api.checkUserStatus = async function() {
+        if (cachedUserStatus !== null) {
+            return cachedUserStatus;
+        }
+
         try {
-            return await get('/user-status');
+            const status = await get('/user-status');
+            cachedUserStatus = status;
+            return status;
         } catch (error) {
             console.warn(`${logPrefix} Status check failed:`, error);
-            return { active: false, userFound: false };
+            const fallback = { active: false, userFound: false };
+            cachedUserStatus = fallback;
+            return fallback;
         }
+    };
+
+    /**
+     * Clears the cached user status (called when user logs out or on page refresh).
+     */
+    api.clearUserStatusCache = function() {
+        cachedUserStatus = null;
     };
 
     /**
