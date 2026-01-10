@@ -603,7 +603,7 @@
         button.disabled = true;
         button.innerHTML = `
             <div class="detailButton-content">
-                <span class="material-icons detailButton-icon warning_off" aria-hidden="true"></span>
+                <span class="material-icons detailButton-icon" aria-hidden="true">warning_off</span>
             </div>
         `;
 
