@@ -342,6 +342,5 @@
     "discovery_more_from_studio": "Daha fazla {studio} 'dan",
     "discovery_more_with_genre": "Daha fazla türden - \"{genre}\"",
     "discovery_more_with_tag": "Daha fazla etiketle - \"{tag}\"",
-    "discovery_more_from_person": "Daha fazla {person} ile",
-    "discovery_infinite_scroll": "Keşif - daha fazla için kaydırın"
+    "discovery_more_from_person": "Daha fazla {person} ile"
 }

@@ -342,6 +342,5 @@
     "discovery_more_from_studio": "More from {studio}",
     "discovery_more_with_genre": "More with the genre - \"{genre}\"",
     "discovery_more_with_tag": "More with the tag - \"{tag}\"",
-    "discovery_more_from_person": "More with {person}",
-    "discovery_infinite_scroll": "Discovery - scroll fer more"
+    "discovery_more_from_person": "More with {person}"
 }

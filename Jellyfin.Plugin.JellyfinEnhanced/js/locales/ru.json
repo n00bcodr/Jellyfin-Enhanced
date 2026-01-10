@@ -342,6 +342,5 @@
     "discovery_more_from_studio": "Еще от {studio}",
     "discovery_more_with_genre": "Еще из жанра - \"{genre}\"",
     "discovery_more_with_tag": "Еще с тегом - \"{tag}\"",
-    "discovery_more_from_person": "Еще с {person}",
-    "discovery_infinite_scroll": "Открытие - прокрутите для большего"
+    "discovery_more_from_person": "Еще с {person}"
 }

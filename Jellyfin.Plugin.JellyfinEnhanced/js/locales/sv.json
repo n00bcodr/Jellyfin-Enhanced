@@ -342,6 +342,5 @@
     "discovery_more_from_studio": "Mer från {studio}",
     "discovery_more_with_genre": "Mer från genren - \"{genre}\"",
     "discovery_more_with_tag": "Mer med taggen - \"{tag}\"",
-    "discovery_more_from_person": "Mer med {person}",
-    "discovery_infinite_scroll": "Upptäckt - bläddra för mer"
+    "discovery_more_from_person": "Mer med {person}"
 }
