@@ -35,11 +35,6 @@
      * @returns {Promise<string>}
      */
     issueReporter.checkReportingAvailability = async function (item) {
-        // Return cached result if available
-        if (cachedUserCanReport !== null) {
-            return cachedUserCanReport;
-        }
-
         try {
             // Check if item has TMDB ID
             const hasTmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
@@ -56,18 +51,14 @@
 
             // Determine availability
             if (!hasTmdbId && !jellyseerrActive) {
-                cachedUserCanReport = 'no-both';
                 return 'no-both';
             } else if (!hasTmdbId) {
-                cachedUserCanReport = 'no-tmdb';
                 return 'no-tmdb';
             } else if (!jellyseerrActive) {
-                cachedUserCanReport = 'no-jellyseerr';
                 return 'no-jellyseerr';
             }
 
             // Both available
-            cachedUserCanReport = 'available';
             return 'available';
         } catch (error) {
             console.debug(`${logPrefix} Error checking reporting availability:`, error);
@@ -184,7 +175,13 @@
                     }
                 } catch (error) {
                     console.error(`${logPrefix} Error reporting issue:`, error);
-                    JE.toast(JE.t('jellyseerr_report_issue_error'), 4000);
+                    // Check if error is due to Jellyseerr being unavailable
+                    const errorMsg = error?.message || error?.toString() || '';
+                    if (errorMsg.toLowerCase().includes('jellyseerr') || errorMsg.toLowerCase().includes('unavailable') || error?.status === 503 || error?.status === 0) {
+                        JE.toast('Jellyseerr is not available', 4000);
+                    } else {
+                        JE.toast(JE.t('jellyseerr_report_issue_error'), 4000);
+                    }
                     button.disabled = false;
                     button.textContent = JE.t('jellyseerr_report_issue_submit');
                 }
@@ -585,14 +582,14 @@
         let title = JE.t('jellyseerr_report_unavailable_button');
 
         if (reason === 'no-tmdb') {
-            ariaLabel = 'TMDB not configured';
-            title = 'TMDB is not configured';
+            ariaLabel = 'TMDB ID not found';
+            title = 'TMDB ID not found for this item';
         } else if (reason === 'no-jellyseerr') {
             ariaLabel = 'Jellyseerr unavailable';
             title = 'Jellyseerr is not available';
         } else if (reason === 'no-both') {
             ariaLabel = 'Reporting services unavailable';
-            title = 'TMDB and Jellyseerr are not configured';
+            title = 'TMDB ID not found and Jellyseerr is not available';
         } else if (reason === 'no-permissions') {
             ariaLabel = 'Not enough permissions';
             title = 'Not enough permissions to report';
@@ -612,11 +609,11 @@
             e.preventDefault();
             e.stopPropagation();
             if (reason === 'no-tmdb') {
-                JE.toast('TMDB is not configured', 4000);
+                JE.toast('TMDB ID not found for this item', 4000);
             } else if (reason === 'no-jellyseerr') {
                 JE.toast('Jellyseerr is not available', 4000);
             } else if (reason === 'no-both') {
-                JE.toast('TMDB and Jellyseerr are not configured', 4000);
+                JE.toast('TMDB ID not found and Jellyseerr is not available', 4000);
             } else if (reason === 'no-permissions') {
                 JE.toast('You do not have permissions to report issues', 4000);
             } else {
