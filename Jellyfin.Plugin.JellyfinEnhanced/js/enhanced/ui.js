@@ -71,7 +71,7 @@
             release = await response.json();
         } catch (error) {
             console.error('🪼 Jellyfin Enhanced: Failed to fetch release notes:', error);
-            JE.toast('❌ Could not load release notes.');
+            JE.toast(JE.icon(JE.IconName.ERROR) + ' Could not load release notes.');
             return;
         }
 
@@ -150,10 +150,10 @@
                 .replace(/^>\s*\[!(WARNING|NOTE|TIP|IMPORTANT)\]\s*\r?\n((?:>.*(?:\r?\n|$))+)/gm, (match, type, content) => {
                     const noteContent = content.replace(/^>\s?/gm, '');
                     const colors = {
-                        WARNING: { border: '#f0ad4e', bg: 'rgba(240, 173, 78, 0.1)', icon: '⚠️' },
-                        NOTE: { border: '#00a4dc', bg: 'rgba(0, 164, 220, 0.1)', icon: '📝' },
-                        TIP: { border: '#28a745', bg: 'rgba(40, 167, 69, 0.1)', icon: '💡' },
-                        IMPORTANT: { border: '#dc3545', bg: 'rgba(220, 53, 69, 0.1)', icon: '❗' }
+                        WARNING: { border: '#f0ad4e', bg: 'rgba(240, 173, 78, 0.1)', icon: JE.icon(JE.IconName.WARNING) },
+                        NOTE: { border: '#00a4dc', bg: 'rgba(0, 164, 220, 0.1)', icon: JE.icon(JE.IconName.NOTE) },
+                        TIP: { border: '#28a745', bg: 'rgba(40, 167, 69, 0.1)', icon: JE.icon(JE.IconName.INFO) },
+                        IMPORTANT: { border: '#dc3545', bg: 'rgba(220, 53, 69, 0.1)', icon: JE.icon(JE.IconName.ERROR) }
                     };
                     const style = colors[type] || colors.NOTE;
                     return `<div style="padding: 12px 16px; border-left: 4px solid ${style.border}; background-color: ${style.bg}; margin: 12px 0; border-radius: 4px;"><strong>${style.icon} ${type}:</strong><br>${noteContent}</div>`;
@@ -192,7 +192,7 @@
         notification.innerHTML = `
             <div style="padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                    <div style="width: 40px; height: 40px; background: #3e74f2bd; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px;">📋</div>
+                    <div style="width: 40px; height: 40px; background: #3e74f2bd; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px;">${JE.icon(JE.IconName.CLIPBOARD)}</div>
                     <div style="flex: 1;">
                         <div style="font-weight: 600; font-size: 16px; color: #779aeadc;">Latest Release Notes</div>
                         <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${release.tag_name} - ${new Date(release.published_at).toLocaleDateString()}</div>
@@ -605,7 +605,7 @@
                 .shake-error { animation: shake 0.5s ease-in-out; }
             </style>
             <div style="padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg};">
-                <div style="font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">🪼 Jellyfin Enhanced</div>
+                <div style="font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.8);">${JE.t('panel_version', { version: JE.pluginVersion })}</div>
             </div>
             <div class="tabs">
@@ -619,7 +619,7 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${JE.pluginConfig.Shortcuts.filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
+                                ${(JE.pluginConfig.Shortcuts || []).filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
                                         <span class="shortcut-key" tabindex="0" data-action="${action.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action.Name]}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
@@ -655,7 +655,7 @@
                 </div>` : ''}
                 <div id="settings-content" class="tab-content" style="padding-top: 20px; padding-bottom: 20px; width: 50vw;">
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">⏯️ ${JE.t('panel_settings_playback')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.PLAYBACK)} ${JE.t('panel_settings_playback')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -690,7 +690,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">↪️ ${JE.t('panel_settings_auto_skip')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SKIP)} ${JE.t('panel_settings_auto_skip')}</summary>
                         <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-left: 18px; margin-bottom: 10px;">${JE.t('panel_settings_auto_skip_depends')}</div>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
@@ -708,7 +708,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">📝 ${JE.t('panel_settings_subtitles')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SUBTITLES)} ${JE.t('panel_settings_subtitles')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -722,7 +722,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🎲 ${JE.t('panel_settings_random_button')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.RANDOM)} ${JE.t('panel_settings_random_button')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomButtonToggle" ${JE.currentSettings.randomButtonEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_enable')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_enable_desc')}</div></div></label>
@@ -737,7 +737,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🖥️ ${JE.t('panel_settings_ui')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.UI)} ${JE.t('panel_settings_ui')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -822,7 +822,7 @@
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">🌐 ${JE.t('panel_settings_language')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.LANGUAGE)} ${JE.t('panel_settings_language')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 16px;">
                                 <div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_language_display')}</div>
@@ -850,7 +850,7 @@
                     <a href="https://github.com/${GITHUB_REPO}/" target="_blank" style="color:${primaryAccentColor}; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:12px; padding:4px 8px; border-radius:4px; background:${githubButtonBg}; transition:background 0.2s;" onmouseover="this.style.background='rgba(102, 179, 255, 0.2)'" onmouseout="this.style.background='${githubButtonBg}'"><svg height="12" viewBox="0 0 24 24" width="12" fill="currentColor"><path d="M12 1C5.923 1 1 5.923 1 12c0 4.867 3.149 8.979 7.521 10.436.55.096.756-.233.756-.522 0-.262-.013-1.128-.013-2.049-2.764.509-3.479-.674-3.699-1.292-.124-.317-.66-1.293-1.127-1.554-.385-.207-.936-.715-.014-.729.866-.014 1.485.797 1.691 1.128.99 1.663 2.571 1.196 3.204.907.096-.715.385-1.196.701-1.471-2.448-.275-5.005-1.224-5.005-5.432 0-1.196.426-2.186 1.128-2.956-.111-.275-.496-1.402.11-2.915 0 0 .921-.288 3.024 1.128a10.193 10.193 0 0 1 2.75-.371c.936 0 1.871.123 2.75.371 2.104-1.43 3.025-1.128 3.025-1.128.605 1.513.221 2.64.111 2.915.701.77 1.127 1.747 1.127 2.956 0 4.222-2.571 5.157-5.019 5.432.399.344.743 1.004.743 2.035 0 1.471-.014 2.654-.014 3.025 0 .289.206.632.756.522C19.851 20.979 23 16.854 23 12c0-6.077-4.922-11-11-11Z"></path></svg> ${JE.t('panel_footer_contribute')}</a>
                 </div>
             </div>
-            <button id="closeSettingsPanel" style="position:absolute; top:24px; right:24px; background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">✕</button>
+            <button id="closeSettingsPanel" style="position:absolute; top:24px; right:24px; background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
         `;
 
         document.body.appendChild(help);
@@ -1071,15 +1071,15 @@
                         document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
                     }
                     requiresRefresh = false;
-                    } else if (id === 'ratingTagsToggle') {
-                        if (e.target.checked) {
-                            if (typeof JE.initializeRatingTags === 'function') {
-                                JE.initializeRatingTags();
-                            }
-                        } else {
-                            document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                } else if (id === 'ratingTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeRatingTags === 'function') {
+                            JE.initializeRatingTags();
                         }
-                        requiresRefresh = false;
+                    } else {
+                        document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                    }
+                    requiresRefresh = false;
                 }
 
                 if (requiresRefresh) {
@@ -1109,7 +1109,7 @@
         addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
         addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
-            addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
+        addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
@@ -1162,10 +1162,10 @@
                     if (typeof JE.reinitializeLanguageTags === 'function') {
                         JE.reinitializeLanguageTags();
                     }
-                    } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
-                        if (typeof JE.reinitializeRatingTags === 'function') {
-                            JE.reinitializeRatingTags();
-                        }
+                } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
+                    if (typeof JE.reinitializeRatingTags === 'function') {
+                        JE.reinitializeRatingTags();
+                    }
                 }
 
                 JE.toast(`Position updated!`);
@@ -1331,7 +1331,7 @@
                 }
 
                 if (newLang && !translationExists) {
-                    JE.toast(`⚠️ Translation file not available for selected language. Falling back to English.`);
+                    JE.toast(`${JE.icon(JE.IconName.WARNING)} Translation file not available for selected language. Falling back to English.`);
                 } else {
                     JE.toast(JE.t('toast_language_changed'));
                 }

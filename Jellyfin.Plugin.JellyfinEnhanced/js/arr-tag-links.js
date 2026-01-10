@@ -143,7 +143,7 @@
                     const icon = document.createElement('span');
                     icon.className = 'arr-tag-link-icon';
                     icon.setAttribute('aria-hidden', 'true');
-                    icon.textContent = '🏷️';
+                    icon.innerHTML = JE.icon(JE.IconName.TAG);
                     icon.style.marginRight = '5px';
 
                     const text = document.createElement('span');
@@ -170,6 +170,23 @@
             }
         }
 
+        function checkAndAddLinks() {
+            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+            if (visiblePage) {
+                const externalLinksContainer = visiblePage.querySelector('.itemExternalLinks');
+                if (externalLinksContainer) {
+                    try {
+                        const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                        if (itemId) {
+                            addTagLinks(itemId, externalLinksContainer);
+                        }
+                    } catch (e) {
+                        // Ignore URL parsing errors
+                    }
+                }
+            }
+        }
+
         const observer = new MutationObserver((mutations) => {
             if (!JE?.pluginConfig?.ArrTagsShowAsLinks) {
                 return;
@@ -180,22 +197,7 @@
                 clearTimeout(debounceTimer);
             }
 
-            debounceTimer = setTimeout(() => {
-                const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                if (visiblePage) {
-                    const externalLinksContainer = visiblePage.querySelector('.itemExternalLinks');
-                    if (externalLinksContainer) {
-                        try {
-                            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                            if (itemId) {
-                                addTagLinks(itemId, externalLinksContainer);
-                            }
-                        } catch (e) {
-                            // Ignore URL parsing errors
-                        }
-                    }
-                }
-            }, 100); // Wait 100ms after last mutation before processing
+            debounceTimer = setTimeout(checkAndAddLinks, 100);
         });
 
         observer.observe(document.body, {
@@ -204,6 +206,15 @@
             attributes: true,
             attributeFilter: ['class']
         });
+
+        // Also check immediately on hash change (navigation)
+        window.addEventListener('hashchange', () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(checkAndAddLinks, 200);
+        });
+
+        // Run once immediately in case were already on an item detail page
+        setTimeout(checkAndAddLinks, 500);
 
         console.log(`${logPrefix} Initialized successfully`);
     };
