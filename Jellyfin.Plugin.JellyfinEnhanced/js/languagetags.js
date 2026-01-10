@@ -250,6 +250,12 @@
             const pos = computePositionStyles();
             wrap.style.position = 'absolute';
             wrap.style.top = pos.top; wrap.style.right = pos.right; wrap.style.bottom = pos.bottom; wrap.style.left = pos.left;
+            // If positioned top-right and the card has indicators, add a top margin to avoid overlap
+            const hasIndicators = !!container.querySelector('.cardIndicators');
+            const isTopRight = pos.top !== 'auto' && pos.right !== 'auto';
+            if (hasIndicators && isTopRight) {
+                wrap.style.marginTop = 'clamp(18px, 3vw, 28px)';
+            }
 
             const normalized = normalizeLanguages(languages);
             const maxToShow = 3;

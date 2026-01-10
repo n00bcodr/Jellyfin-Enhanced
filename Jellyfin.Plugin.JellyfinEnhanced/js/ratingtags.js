@@ -322,6 +322,7 @@
             const bottomVal = isTop ? 'auto' : '6px';
             const leftVal = isLeft ? '6px' : 'auto';
             const rightVal = isLeft ? 'auto' : '6px';
+            const needsTopRightOffset = isTop && !isLeft; // top-right
 
             const existing = document.getElementById('jellyfin-enhanced-rating-tags-css');
             if (existing) existing.remove();
@@ -344,6 +345,7 @@
                     max-width: calc(100% - 12px);
                 }
 
+                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(18px, 3vw, 28px); }` : ''}
                 .${tagClass} {
                     display: inline-flex;
                     align-items: center;

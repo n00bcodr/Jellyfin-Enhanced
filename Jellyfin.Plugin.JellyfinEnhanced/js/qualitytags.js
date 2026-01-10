@@ -780,6 +780,7 @@
             const bottomVal = isTop ? 'auto' : '6px';
             const leftVal = isLeft ? '6px' : 'auto';
             const rightVal = isLeft ? 'auto' : '6px';
+            const needsTopRightOffset = isTop && !isLeft; // top-right
 
             style.textContent = `
                 .${containerClass} {
@@ -798,6 +799,7 @@
                     overflow: hidden;
                     pointer-events: none;
                 }
+                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(18px, 3vw, 28px); }` : ''}
                 .${overlayClass} {
                     font-weight: bold;
                     border-radius: 5px;
