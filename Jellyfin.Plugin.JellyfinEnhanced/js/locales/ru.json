@@ -335,8 +335,13 @@
     "bookmark_merge_failed": "Объединение не удалось",
     "bookmark_time_placeholder": "ЧЧ:ММ:СС или секунды",
     "bookmark_time_format_hint": "Введите время в секундах или ЧЧ:ММ:СС",
-    "toast_api_client_unavailable": "API client not available",
-    "toast_session_not_found": "Active session not found",
-    "toast_playing": "Playing...",
-    "toast_playback_failed": "Failed to start playback: {error}"
+    "toast_api_client_unavailable": "API-клиент недоступен",
+    "toast_session_not_found": "Активная сессия не найдена",
+    "toast_playing": "Воспроизведение...",
+    "toast_playback_failed": "Не удалось запустить воспроизведение: {error}",
+    "discovery_more_from_studio": "Еще от {studio}",
+    "discovery_more_with_genre": "Еще из жанра - \"{genre}\"",
+    "discovery_more_with_tag": "Еще с тегом - \"{tag}\"",
+    "discovery_more_from_person": "Еще с {person}",
+    "discovery_infinite_scroll": "Открытие - прокрутите для большего"
 }

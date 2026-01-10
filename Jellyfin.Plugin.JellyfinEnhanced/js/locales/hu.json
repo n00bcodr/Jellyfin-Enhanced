@@ -338,5 +338,10 @@
     "toast_api_client_unavailable": "API kliens nem elérhető",
     "toast_session_not_found": "Aktív munkamenet nem található",
     "toast_playing": "Lejátszás...",
-    "toast_playback_failed": "Lejátszás indítása sikertelen: {error}"
+    "toast_playback_failed": "Lejátszás indítása sikertelen: {error}",
+    "discovery_more_from_studio": "Még {studio} -tól",
+    "discovery_more_with_genre": "Több a műfajból - \"{genre}\"",
+    "discovery_more_with_tag": "Több a címkével - \"{tag}\"",
+    "discovery_more_from_person": "Több {person} -tól",
+    "discovery_infinite_scroll": "Felderítés - görgesson tovább"
 }

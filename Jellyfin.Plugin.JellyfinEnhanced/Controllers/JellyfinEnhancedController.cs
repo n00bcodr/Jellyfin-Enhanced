@@ -396,6 +396,192 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/discover/tv/network/{networkId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverTvByNetwork(int networkId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/tv/network/{networkId}?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/movies/studio/{studioId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverMoviesByStudio(int studioId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/movies/studio/{studioId}?page={page}", HttpMethod.Get);
+        }
+
+        [HttpGet("studio/{studioId}")]
+        [Authorize]
+        public IActionResult GetStudioInfo(Guid studioId)
+        {
+            try
+            {
+                var studio = _libraryManager.GetItemById(studioId);
+                if (studio == null)
+                {
+                    return NotFound(new { message = "Studio not found" });
+                }
+
+                // Get TMDB ID from provider IDs if available
+                string? tmdbId = null;
+                if (studio.ProviderIds != null && studio.ProviderIds.TryGetValue("Tmdb", out var id))
+                {
+                    tmdbId = id;
+                }
+
+                return Ok(new
+                {
+                    id = studio.Id,
+                    name = studio.Name,
+                    tmdbId = tmdbId,
+                    type = studio.GetType().Name
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get studio info for {studioId}: {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get studio info" });
+            }
+        }
+
+        [HttpGet("person/{personId}")]
+        [Authorize]
+        public IActionResult GetPersonInfo(Guid personId)
+        {
+            try
+            {
+                var person = _libraryManager.GetItemById(personId);
+                if (person == null)
+                {
+                    return NotFound(new { message = "Person not found" });
+                }
+
+                // Get TMDB ID from provider IDs if available
+                string? tmdbId = null;
+                if (person.ProviderIds != null && person.ProviderIds.TryGetValue("Tmdb", out var id))
+                {
+                    tmdbId = id;
+                }
+
+                return Ok(new
+                {
+                    id = person.Id,
+                    name = person.Name,
+                    tmdbId = tmdbId,
+                    type = person.GetType().Name
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get person info for {personId}: {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get person info" });
+            }
+        }
+
+        [HttpGet("genre/{genreId}")]
+        [Authorize]
+        public IActionResult GetGenreInfo(Guid genreId)
+        {
+            try
+            {
+                var genre = _libraryManager.GetItemById(genreId);
+                if (genre == null)
+                {
+                    return NotFound(new { message = "Genre not found" });
+                }
+
+                return Ok(new
+                {
+                    id = genre.Id,
+                    name = genre.Name,
+                    type = genre.GetType().Name
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get genre info for {genreId}: {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get genre info" });
+            }
+        }
+
+        [HttpGet("jellyseerr/person/{personId}")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrPerson(int personId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/person/{personId}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/person/{personId}/combined_credits")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrPersonCredits(int personId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/person/{personId}/combined_credits", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/tv/genre/{genreId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverTvByGenre(int genreId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/tv?page={page}&genre={genreId}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/movies/genre/{genreId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverMoviesByGenre(int genreId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/movies?page={page}&genre={genreId}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/tv/keyword/{keywordId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverTvByKeyword(int keywordId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/tv?page={page}&keywords={keywordId}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/movies/keyword/{keywordId}")]
+        [Authorize]
+        public Task<IActionResult> DiscoverMoviesByKeyword(int keywordId, [FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/discover/movies?page={page}&keywords={keywordId}", HttpMethod.Get);
+        }
+
+        [HttpGet("tmdb/search/person")]
+        [Authorize]
+        public Task<IActionResult> SearchTmdbPerson([FromQuery] string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { message = "Query cannot be empty" }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/search?query={Uri.EscapeDataString(query)}&page=1", HttpMethod.Get);
+        }
+
+        [HttpGet("tmdb/search/keyword")]
+        [Authorize]
+        public Task<IActionResult> SearchTmdbKeyword([FromQuery] string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { message = "Query cannot be empty" }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/search/keyword?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
+        }
+
+        [HttpGet("tmdb/genres/movie")]
+        [Authorize]
+        public Task<IActionResult> GetTmdbMovieGenres()
+        {
+            return ProxyJellyseerrRequest("/api/v1/genres/movie", HttpMethod.Get);
+        }
+
+        [HttpGet("tmdb/genres/tv")]
+        [Authorize]
+        public Task<IActionResult> GetTmdbTvGenres()
+        {
+            return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/overrideRule")]
         [Authorize]
         public Task<IActionResult> GetOverrideRules()
@@ -977,6 +1163,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
+                config.JellyseerrShowNetworkDiscovery,
+                config.JellyseerrShowGenreDiscovery,
+                config.JellyseerrShowTagDiscovery,
+                config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrExcludeLibraryItems,
 
                 // Bookmarks Settings

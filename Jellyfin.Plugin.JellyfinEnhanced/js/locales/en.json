@@ -107,6 +107,7 @@
     "jellyseerr_discover_title": "Discover on Jellyseerr",
     "jellyseerr_similar_title": "Similar",
     "jellyseerr_recommended_title": "Recommended",
+    "jellyseerr_more_from_network": "More from {network}",
     "jellyseerr_icon_active_tooltip": "Jellyseerr is active\nDouble-click to show only Jellyseerr results",
     "jellyseerr_icon_active_filter_tooltip": "Jellyseerr is active\nDouble-click to show all results",
     "jellyseerr_icon_no_user_tooltip": "User not found on Jellyseerr",
@@ -338,5 +339,10 @@
     "toast_api_client_unavailable": "API client not available",
     "toast_session_not_found": "Active session not found",
     "toast_playing": "Playing...",
-    "toast_playback_failed": "Failed to start playback: {error}"
+    "toast_playback_failed": "Failed to start playback: {error}",
+    "discovery_more_from_studio": "More from {studio}",
+    "discovery_more_with_genre": "More from the genre - \"{genre}\"",
+    "discovery_more_with_tag": "More with the tag - \"{tag}\"",
+    "discovery_more_from_person": "More with {person}",
+    "discovery_infinite_scroll": "Discovery - scroll for more"
 }
