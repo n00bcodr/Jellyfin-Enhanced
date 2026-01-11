@@ -19,6 +19,7 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Genre Tags:';
         const containerClass = 'genre-overlay-container';
         const tagClass = 'genre-tag';
+        const TAGGED_ATTR = 'jeGenreTagged';
         const CACHE_KEY = 'JellyfinEnhanced-genreTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-genreTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
@@ -308,6 +309,7 @@
             });
 
             container.appendChild(genreContainer);
+            markCardTagged(container);
             processedElements.add(container);
         }
 
@@ -348,8 +350,26 @@
             });
         }
 
+        function isCardAlreadyTagged(el) {
+            const card = el.closest('.card');
+            if (!card) return false;
+            const hasAttr = card.dataset?.[TAGGED_ATTR] === '1';
+            const hasOverlay = !!card.querySelector(`.${containerClass}`);
+            return hasAttr && hasOverlay;
+        }
+
+        function markCardTagged(el) {
+            const card = el.closest('.card');
+            if (card) card.dataset[TAGGED_ATTR] = '1';
+        }
+
         function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
+
+            if (isCardAlreadyTagged(element)) {
+                processedElements.add(element);
+                return;
+            }
 
             // Check for standard .card parent (poster/card view)
             const card = element.closest('.card');
@@ -461,7 +481,7 @@
                     max-height: 90%;
                     overflow: hidden;
                 }
-                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(18px, 3vw, 28px); }` : ''}
+                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
                     display: flex;
                     align-items: center;

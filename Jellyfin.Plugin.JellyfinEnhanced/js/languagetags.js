@@ -12,6 +12,7 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Language Tags:';
         const containerClass = 'language-overlay-container';
         const flagClass = 'language-flag';
+        const TAGGED_ATTR = 'jeLanguageTagged';
         const CACHE_KEY = 'JellyfinEnhanced-languageTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-languageTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
@@ -240,6 +241,7 @@
 
         function insertLanguageTags(container, languages) {
             if (!container || processedElements.has(container)) return;
+            if (isCardAlreadyTagged(container)) return;
             const existing = container.querySelector(`.${containerClass}`);
             // Always re-render to handle cache migrations or setting changes
             if (existing) existing.remove();
@@ -254,7 +256,7 @@
             const hasIndicators = !!container.querySelector('.cardIndicators');
             const isTopRight = pos.top !== 'auto' && pos.right !== 'auto';
             if (hasIndicators && isTopRight) {
-                wrap.style.marginTop = 'clamp(18px, 3vw, 28px)';
+                wrap.style.marginTop = 'clamp(20px, 3vw, 30px)';
             }
 
             const normalized = normalizeLanguages(languages);
@@ -292,6 +294,7 @@
             });
             if (wrap.children.length > 0) {
                 container.appendChild(wrap);
+                markCardTagged(container);
                 processedElements.add(container);
             }
         }
@@ -332,8 +335,26 @@
             });
         }
 
+        function isCardAlreadyTagged(el) {
+            const card = el.closest('.card');
+            if (!card) return false;
+            const hasAttr = card.dataset?.[TAGGED_ATTR] === '1';
+            const hasOverlay = !!card.querySelector(`.${containerClass}`);
+            return hasAttr && hasOverlay;
+        }
+
+        function markCardTagged(el) {
+            const card = el.closest('.card');
+            if (card) card.dataset[TAGGED_ATTR] = '1';
+        }
+
         function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
+
+            if (isCardAlreadyTagged(element)) {
+                processedElements.add(element);
+                return;
+            }
 
             // Check for standard .card parent (poster/card view)
             const card = element.closest('.card');

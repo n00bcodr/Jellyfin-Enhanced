@@ -19,6 +19,7 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Quality Tags:';
         const overlayClass = 'quality-overlay-label';
         const containerClass = 'quality-overlay-container';
+        const TAGGED_ATTR = 'jeQualityTagged';
         // Use static cache key (not version-based) to persist across plugin updates
         const CACHE_KEY = 'JellyfinEnhanced-qualityTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-qualityTagsCacheTimestamp';
@@ -598,6 +599,7 @@
             });
 
             container.appendChild(qualityContainer);
+            markCardTagged(container);
             processedElements.add(container);
         }
 
@@ -640,6 +642,19 @@
             });
         }
 
+        function isCardAlreadyTagged(el) {
+            const card = el.closest('.card');
+            if (!card) return false;
+            const hasAttr = card.dataset?.[TAGGED_ATTR] === '1';
+            const hasOverlay = !!card.querySelector(`.${containerClass}`);
+            return hasAttr && hasOverlay;
+        }
+
+        function markCardTagged(el) {
+            const card = el.closest('.card');
+            if (card) card.dataset[TAGGED_ATTR] = '1';
+        }
+
         /**
          * Main processing function for a single DOM element.
          * @param {HTMLElement} element - The element to process.
@@ -647,6 +662,12 @@
          */
         async function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
+
+            // Skip if this card already has quality tags attached (prevents hover-duplication)
+            if (isCardAlreadyTagged(element)) {
+                processedElements.add(element);
+                return;
+            }
 
             const itemId = getItemIdFromElement(element);
             if (!itemId) return;
@@ -799,7 +820,7 @@
                     overflow: hidden;
                     pointer-events: none;
                 }
-                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(18px, 3vw, 28px); }` : ''}
+                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${overlayClass} {
                     font-weight: bold;
                     border-radius: 5px;

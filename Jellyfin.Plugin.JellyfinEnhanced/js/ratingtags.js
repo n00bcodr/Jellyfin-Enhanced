@@ -12,6 +12,7 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Rating Tags:';
         const containerClass = 'rating-overlay-container';
         const tagClass = 'rating-tag';
+        const TAGGED_ATTR = 'jeRatingTagged';
         const CACHE_KEY = 'JellyfinEnhanced-ratingTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-ratingTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
@@ -161,6 +162,19 @@
             return IGNORE_SELECTORS.some(sel => el.matches(sel) || el.closest(sel));
         }
 
+        function isCardAlreadyTagged(el) {
+            const card = el.closest('.card');
+            if (!card) return false;
+            const hasAttr = card.dataset?.[TAGGED_ATTR] === '1';
+            const hasOverlay = !!card.querySelector(`.${containerClass}`);
+            return hasAttr && hasOverlay;
+        }
+
+        function markCardTagged(el) {
+            const card = el.closest('.card');
+            if (card) card.dataset[TAGGED_ATTR] = '1';
+        }
+
         function getItemIdFromElement(el) {
             const card = el.closest('[data-id]');
             return card?.getAttribute('data-id') || null;
@@ -174,6 +188,12 @@
         async function processElement(el, isVisible = false) {
             if (processedElements.has(el)) return;
             if (shouldIgnoreElement(el)) return;
+
+            // Skip if this card already has rating tags (prevents hover-duplication)
+            if (isCardAlreadyTagged(el)) {
+                processedElements.add(el);
+                return;
+            }
 
             const itemId = getItemIdFromElement(el);
             const itemType = getItemTypeFromElement(el);
@@ -277,6 +297,7 @@
 
             if (container.children.length > 0) {
                 el.appendChild(container);
+                markCardTagged(el);
             }
         }
 
@@ -345,7 +366,7 @@
                     max-width: calc(100% - 12px);
                 }
 
-                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(18px, 3vw, 28px); }` : ''}
+                ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
                     display: inline-flex;
                     align-items: center;
