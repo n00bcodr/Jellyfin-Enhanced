@@ -821,6 +821,79 @@
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Custom Branding</h3></legend>
+                        <div class="configSection">
+                            <div style="padding-top: 1em;">
+                                <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
+                                    <div>
+                                        Requires the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation">File Transformation Plugin</a> to be installed and enabled. Upload custom PNG images to replace Jellyfin's default web logos.
+                                    </div>
+                                </div>
+                                <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #dc2100; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                    <i class="material-icons" style="color: #dc2100; font-size: 18px;">warning</i>
+                                    <div>
+                                        Not supported for 10.10.x.<br>Only works on Jellyfin Server version <b>10.11.x</b>.
+                                    </div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5em; margin-bottom: 1.5em;">
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                        <label style="font-weight: bold; color: #eee;">Icon Transparent</label>
+                                        <label style="color: #eee;">The icon in the top-left beside the server version</label>
+                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="iconTransparentDropZone">
+                                            <input type="file" id="iconTransparentInput" accept="image/png" style="display: none;" />
+                                            <div style="margin-bottom: 0.5em;">
+                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
+                                            </div>
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop .png here or click to upload</div>
+                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
+                                            <div id="iconTransparentStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                        <label style="font-weight: bold; color: #eee;">Favicon</label>
+                                        <label style="color: #eee;">Favicon in the browser tab</label>
+                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="faviconDropZone">
+                                            <input type="file" id="faviconInput" accept=".ico,image/x-icon" style="display: none;" />
+                                            <div style="margin-bottom: 0.5em;">
+                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
+                                            </div>
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop .ico here or click to upload</div>
+                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
+                                            <div id="faviconStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                        <label style="font-weight: bold; color: #eee;">Banner Light</label>
+                                        <label style="color: #eee;">Splash Screen Banner for Dark Mode</label>
+                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="bannerLightDropZone">
+                                            <input type="file" id="bannerLightInput" accept="image/png" style="display: none;" />
+                                            <div style="margin-bottom: 0.5em;">
+                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
+                                            </div>
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop .png here or click to upload</div>
+                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
+                                            <div id="bannerLightStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                        <label style="font-weight: bold; color: #eee;">Banner Dark</label>
+                                        <label style="color: #eee;">Splash Screen Banner for Light Mode</label>
+                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="bannerDarkDropZone">
+                                            <input type="file" id="bannerDarkInput" accept="image/png" style="display: none;" />
+                                            <div style="margin-bottom: 0.5em;">
+                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
+                                            </div>
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop .png here or click to upload</div>
+                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
+                                            <div id="bannerDarkStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3></h3></legend>
                         <div class="configSection">
                                 <div style="padding-top: 1em;">
@@ -1541,6 +1614,107 @@
                 }
             }
         }
+
+        // Setup branding file uploads
+        function setupBrandingUploads() {
+            const uploadConfigs = [
+                { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png' },
+                { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico' },
+                { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png' },
+                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png' }
+            ];
+
+            uploadConfigs.forEach(config => {
+                const input = document.getElementById(config.inputId);
+                const dropZone = document.getElementById(config.dropZoneId);
+                const statusDiv = document.getElementById(config.statusId);
+
+                if (!input || !dropZone || !statusDiv) return;
+
+                // Click to upload
+                dropZone.addEventListener('click', () => input.click());
+
+                // Handle file selection
+                input.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        uploadBrandingImage(e.target.files[0], config.fileName, statusDiv);
+                    }
+                });
+
+                // Drag and drop
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.style.borderColor = '#00a4dc';
+                    dropZone.style.backgroundColor = 'rgba(0,164,220,0.1)';
+                });
+
+                dropZone.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    dropZone.style.borderColor = 'rgba(0,164,220,0.5)';
+                    dropZone.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                });
+
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.style.borderColor = 'rgba(0,164,220,0.5)';
+                    dropZone.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                    if (e.dataTransfer.files.length > 0) {
+                        uploadBrandingImage(e.dataTransfer.files[0], config.fileName, statusDiv);
+                    }
+                });
+            });
+        }
+
+        async function uploadBrandingImage(file, fileName, statusDiv) {
+            // Validate that it's an image file
+            if (!file.type || !file.type.startsWith('image/')) {
+                statusDiv.textContent = '✗ Only image files allowed';
+                statusDiv.style.color = '#ff6b6b';
+                return;
+            }
+
+            const maxFileSize = 10 * 1024 * 1024; // 10MB
+            if (file.size > maxFileSize) {
+                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.style.color = '#ff6b6b';
+                return;
+            }
+
+            statusDiv.textContent = 'Uploading...';
+            statusDiv.style.color = '#ffa500';
+
+            try {
+                const formData = new FormData();
+                const renamedFile = new File([file], fileName, { type: file.type });
+                formData.append('file', renamedFile);
+                formData.append('fileName', fileName);
+
+                const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+                const response = await fetch('/JellyfinEnhanced/UploadBrandingImage', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-MediaBrowser-Token': token
+                    }
+                });
+
+                if (response.ok) {
+                    statusDiv.textContent = '✓ Uploaded';
+                    statusDiv.style.color = '#51cf66';
+                    setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+                } else {
+                    const error = await response.text();
+                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    statusDiv.style.color = '#ff6b6b';
+                }
+            } catch (error) {
+                console.error('Upload exception:', error);
+                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.style.color = '#ff6b6b';
+            }
+        }
+
+        setupBrandingUploads();
 
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);

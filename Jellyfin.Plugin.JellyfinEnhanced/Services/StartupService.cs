@@ -87,11 +87,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _logger.Info("Could not find PluginInterface in FileTransformation assembly. Using fallback injection method.");
                     JellyfinEnhanced.Instance?.InjectScript();
                 }
+                RegisterAssetTransformations(fileTransformationAssembly);
             }
             else
             {
                 _logger.Info("File Transformation Plugin not found. Using fallback injection method.");
                 JellyfinEnhanced.Instance?.InjectScript();
+            }
+        }
+
+        private void RegisterAssetTransformations(Assembly fileTransformationAssembly)
+        {
+            try
+            {
+                Type? pluginType = fileTransformationAssembly.GetType("Jellyfin.Plugin.FileTransformation.FileTransformationPlugin");
+                PropertyInfo? instanceProperty = pluginType?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                object? pluginInstance = instanceProperty?.GetValue(null);
+                PropertyInfo? serviceProviderProperty = pluginType?.GetProperty("ServiceProvider", BindingFlags.Public | BindingFlags.Instance);
+                object? serviceProviderValue = serviceProviderProperty?.GetValue(pluginInstance);
+
+                if (serviceProviderValue is not IServiceProvider serviceProvider)
+                {
+                    _logger.Info("File Transformation Plugin located, but service provider unavailable. Skipping logo replacement registration.");
+                    return;
+                }
+
+                Type? writeServiceType = fileTransformationAssembly.GetType("Jellyfin.Plugin.FileTransformation.Library.IWebFileTransformationWriteService");
+                Type? transformDelegateType = fileTransformationAssembly.GetType("Jellyfin.Plugin.FileTransformation.Library.TransformFile");
+                MethodInfo? addTransformationMethod = writeServiceType?.GetMethod("AddTransformation");
+
+                if (writeServiceType == null || transformDelegateType == null || addTransformationMethod == null)
+                {
+                    _logger.Info("File Transformation Plugin types not found. Skipping logo replacement registration.");
+                    return;
+                }
+
+                object? writeService = serviceProvider.GetService(writeServiceType);
+                if (writeService == null)
+                {
+                    _logger.Info("Could not resolve IWebFileTransformationWriteService. Skipping logo replacement registration.");
+                    return;
+                }
+
+                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
+                    Guid.Parse("c207f6d2-67a7-4a63-9c50-7f7e2c6f2b0a"),
+                    ".*icon-transparent.*\\.png$",
+                    nameof(TransformationPatches.IconTransparent));
+
+                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
+                    Guid.Parse("6f4b2e4b-6273-4a2d-b1ea-42c0d8f90c01"),
+                    ".*banner-light.*\\.png$",
+                    nameof(TransformationPatches.BannerLight));
+
+                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
+                    Guid.Parse("a1aa3c3d-5e9f-4b45-bda0-43be64dae124"),
+                    ".*banner-dark.*\\.png$",
+                    nameof(TransformationPatches.BannerDark));
+
+                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
+                    Guid.Parse("d5b8f4c2-9a1e-4f7b-8c3d-7e2a5b9c1d4f"),
+                    ".*favicon.*\\.ico$",
+                    nameof(TransformationPatches.Favicon));
+
+                _logger.Info("Registered Jellyfin Enhanced Custom Branding with File Transformation Plugin.");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to register Custom Branding via File Transformation Plugin: {ex.Message}");
+            }
+        }
+
+        private void RegisterAssetTransformation(object writeService, MethodInfo addTransformationMethod, Type delegateType, Guid id, string pathPattern, string callbackName)
+        {
+            MethodInfo? callbackMethod = typeof(TransformationPatches).GetMethod(callbackName, BindingFlags.Public | BindingFlags.Static);
+            if (callbackMethod == null)
+            {
+                _logger.Warning($"Could not find callback '{callbackName}' for asset replacement.");
+                return;
+            }
+
+            try
+            {
+                Delegate transformDelegate = Delegate.CreateDelegate(delegateType, callbackMethod);
+                addTransformationMethod.Invoke(writeService, new object?[] { id, pathPattern, transformDelegate });
+                _logger.Info($"Registered asset replacement for pattern '{pathPattern}' with ID {id:D}.");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to register asset replacement for pattern '{pathPattern}': {ex.Message}");
             }
         }
 

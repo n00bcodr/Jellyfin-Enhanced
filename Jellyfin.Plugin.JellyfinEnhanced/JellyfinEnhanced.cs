@@ -33,6 +33,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
         private string IndexHtmlPath => Path.Combine(_applicationPaths.WebPath, "index.html");
 
+        public static string BrandingDirectory
+        {
+            get
+            {
+                if (Instance == null)
+                    return string.Empty;
+
+                var configPath = Instance.ConfigurationFilePath;
+                if (string.IsNullOrWhiteSpace(configPath))
+                    return string.Empty;
+
+                var configDir = Path.GetDirectoryName(configPath);
+                if (string.IsNullOrWhiteSpace(configDir))
+                    return string.Empty;
+
+                var pluginFolderName = Path.GetFileNameWithoutExtension(configPath) ?? "Jellyfin.Plugin.JellyfinEnhanced";
+                return Path.Combine(configDir, pluginFolderName, "custom_branding");
+            }
+        }
+
         public void InjectScript()
         {
             UpdateIndexHtml(true);

@@ -1594,5 +1594,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             return await ProxyJellyseerrRequest("/api/v1/issue", HttpMethod.Post, issueBody.ToString());
         }
+
+        [HttpPost("UploadBrandingImage")]
+        [Authorize]
+        public async Task<IActionResult> UploadBrandingImage()
+        {
+            try
+            {
+                if (Request.Form.Files.Count == 0)
+                    return BadRequest("No file uploaded");
+
+                var uploadedFile = Request.Form.Files[0];
+
+                // Get fileName from form data
+                string? fileName = Request.Form["fileName"].FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return BadRequest("fileName parameter is required in form data");
+                }
+
+                // Validate file type - accept only image files
+                if (!uploadedFile.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                    return BadRequest("Only image files are allowed");
+
+                const long maxFileSize = 10 * 1024 * 1024; // 10MB
+                if (uploadedFile.Length > maxFileSize)
+                    return BadRequest($"File too large (max 10MB)");
+
+                // Get branding directory from central location
+                var brandingDir = JellyfinEnhanced.BrandingDirectory;
+                if (string.IsNullOrWhiteSpace(brandingDir))
+                    return StatusCode(500, "Could not determine branding directory");
+
+                Directory.CreateDirectory(brandingDir);
+                var filePath = Path.Combine(brandingDir, fileName);
+
+                // Save file
+                using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                {
+                    await uploadedFile.CopyToAsync(stream);
+                }
+
+                _logger.Info($"Successfully uploaded branding image: {fileName} ({uploadedFile.Length} bytes) to {brandingDir}");
+                return Ok("File uploaded successfully");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.Error($"Permission denied when uploading branding image: {ex.Message}");
+                return StatusCode(403, $"Permission denied: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error uploading branding image: {ex.Message}");
+                return StatusCode(500, $"Error: {ex.Message}");
+            }
+        }
     }
 }

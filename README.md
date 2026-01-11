@@ -347,6 +347,26 @@ Now when you open any movie or TV show detail page, you'll see Recommended and S
 --------------------------------------------------
 </p>
 
+## Custom Branding
+
+You can upload your custom Jellyfin Banners, Logo and Favicon. With the use [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)'s dark magic (seriously go check it out), you can override the default Jellyfin logos without touching your `jellyfin-web` folder:
+
+1. Navigate to **Dashboard > Plugins > Jellyfin Enhanced > Other Settings**.
+2. In the **Custom Branding** section. Upload your custom image files for:
+   - **Icon Transparent** - Jellyfin logo used in the header
+   - **Banner Light** - Dark theme splash/banner image
+   - **Banner Dark** - Light theme splash/banner image
+   - **Favicon** - Browser tab icon
+3. Do a force refresh and/or clear cache
+
+
+The files are stored in `/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/custom_branding/` so they should survive a jellyfin server/web update :)
+
+<p align="center">
+--------------------------------------------------
+</p>
+
+
 ## 🔧 Customization & Advanced Use
 
 ### 🌐 Internationalization & Translations
