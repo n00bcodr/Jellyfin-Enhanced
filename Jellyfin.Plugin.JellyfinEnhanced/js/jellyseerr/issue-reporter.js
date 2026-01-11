@@ -29,30 +29,43 @@
     ];
 
     /**
-     * Checks if issue reporting is available (item has TMDB ID and Jellyseerr configured)
-     * Caches the result to avoid repeated checks.
-     * Returns: 'available', 'no-tmdb', or 'no-jellyseerr'
+     * Checks if issue reporting is available.
+     * Resolves TMDB via parent series or fallback for Season/Episode items.
+     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', or 'no-both'
      * @returns {Promise<string>}
      */
     issueReporter.checkReportingAvailability = async function (item) {
         try {
-            // Check if item has TMDB ID
-            const hasTmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
-
-            // Check Jellyseerr status
+            // Check Jellyseerr status first
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
-            const statusRes = await ApiClient.ajax({
-                type: 'GET',
-                url: statusUrl,
-                dataType: 'json'
-            });
-
+            const statusRes = await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
             const jellyseerrActive = statusRes && statusRes.active === true;
 
+            // Resolve TMDB ID: direct, parent (for Season/Episode), or fallback search
+            let tmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
+            const type = item?.Type;
+
+            // If Season or Episode without TMDB, attempt parent series
+            if (!tmdbId && (type === 'Season' || type === 'Episode')) {
+                try {
+                    const parentId = item.SeriesId || item.ParentId || (item.Series && item.Series.Id) || null;
+                    const userId = ApiClient.getCurrentUserId();
+                    if (parentId && userId) {
+                        const parentItem = await ApiClient.getItem(userId, parentId);
+                        tmdbId = parentItem?.ProviderIds?.Tmdb || parentItem?.ProviderIds?.['Tmdb'] || null;
+                        if (tmdbId) {
+                            console.debug(`${logPrefix} Availability check resolved TMDB via parent: ${tmdbId}`);
+                        }
+                    }
+                } catch (e) {
+                    console.debug(`${logPrefix} Availability check: parent TMDB resolution failed:`, e);
+                }
+            }
             // Determine availability
-            if (!hasTmdbId && !jellyseerrActive) {
+            const hasTmdb = !!tmdbId;
+            if (!hasTmdb && !jellyseerrActive) {
                 return 'no-both';
-            } else if (!hasTmdbId) {
+            } else if (!hasTmdb) {
                 return 'no-tmdb';
             } else if (!jellyseerrActive) {
                 return 'no-jellyseerr';
