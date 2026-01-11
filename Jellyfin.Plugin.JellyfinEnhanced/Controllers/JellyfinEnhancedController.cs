@@ -18,6 +18,7 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.StaticFiles;
 using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
@@ -44,6 +45,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
         private readonly UserConfigurationManager _userConfigurationManager;
+        private static readonly HashSet<string> BrandingFileNames = new(new[]
+        {
+            "icon-transparent.png",
+            "banner-light.png",
+            "banner-dark.png",
+            "favicon.ico"
+        }, StringComparer.OrdinalIgnoreCase);
 
         public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IDtoService dtoService, UserConfigurationManager userConfigurationManager)
         {
@@ -1646,6 +1654,78 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (Exception ex)
             {
                 _logger.Error($"Error uploading branding image: {ex.Message}");
+                return StatusCode(500, $"Error: {ex.Message}");
+            }
+        }
+
+        [HttpGet("BrandingImage")]
+        [Authorize]
+        public IActionResult GetBrandingImage([FromQuery] string? fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return BadRequest("fileName query parameter is required");
+            }
+
+            if (!BrandingFileNames.Contains(fileName))
+            {
+                return BadRequest("Invalid fileName");
+            }
+
+            var brandingDir = JellyfinEnhanced.BrandingDirectory;
+            if (string.IsNullOrWhiteSpace(brandingDir))
+                return StatusCode(500, "Could not determine branding directory");
+
+            var filePath = Path.Combine(brandingDir, fileName);
+            if (!System.IO.File.Exists(filePath))
+                return NotFound();
+
+            var provider = new FileExtensionContentTypeProvider();
+            if (!provider.TryGetContentType(filePath, out var contentType))
+            {
+                contentType = "application/octet-stream";
+            }
+
+            return PhysicalFile(filePath, contentType);
+        }
+
+        [HttpPost("DeleteBrandingImage")]
+        [Authorize]
+        public IActionResult DeleteBrandingImage()
+        {
+            try
+            {
+                string? fileName = Request.Form["fileName"].FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return BadRequest("fileName parameter is required in form data");
+                }
+
+                if (!BrandingFileNames.Contains(fileName))
+                {
+                    return BadRequest("Invalid fileName");
+                }
+
+                var brandingDir = JellyfinEnhanced.BrandingDirectory;
+                if (string.IsNullOrWhiteSpace(brandingDir))
+                    return StatusCode(500, "Could not determine branding directory");
+
+                var filePath = Path.Combine(brandingDir, fileName);
+                if (!System.IO.File.Exists(filePath))
+                    return NotFound("File not found");
+
+                System.IO.File.Delete(filePath);
+                _logger.Info($"Deleted branding image: {fileName} from {brandingDir}");
+                return Ok("File deleted successfully");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.Error($"Permission denied when deleting branding image: {ex.Message}");
+                return StatusCode(403, $"Permission denied: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error deleting branding image: {ex.Message}");
                 return StatusCode(500, $"Error: {ex.Message}");
             }
         }

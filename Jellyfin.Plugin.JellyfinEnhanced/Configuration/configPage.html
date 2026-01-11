@@ -836,57 +836,73 @@
                                         Not supported for 10.10.x.<br>Only works on Jellyfin Server version <b>10.11.x</b>.
                                     </div>
                                 </div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5em; margin-bottom: 1.5em;">
-                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5em; margin-bottom: 1.5em; align-items: stretch;">
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Icon Transparent</label>
                                         <label style="color: #eee;">The icon in the top-left beside the server version</label>
-                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="iconTransparentDropZone">
-                                            <input type="file" id="iconTransparentInput" accept="image/png" style="display: none;" />
-                                            <div style="margin-bottom: 0.5em;">
+                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="iconTransparentDropZone">
+                                            <input type="file" id="iconTransparentInput" accept="image/*" style="display: none;" />
+                                            <div id="iconTransparentPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
-                                            <div style="font-size: 0.9em; color: #ccc;">Drop .png here or click to upload</div>
+                                            <img id="iconTransparentPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="iconTransparentStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                            <button type="button" class="raised button-submit" id="iconTransparentDelete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
+                                                <i class="material-icons">delete</i>
+                                            </button>
                                         </div>
                                     </div>
-                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Favicon</label>
                                         <label style="color: #eee;">Favicon in the browser tab</label>
-                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="faviconDropZone">
-                                            <input type="file" id="faviconInput" accept=".ico,image/x-icon" style="display: none;" />
-                                            <div style="margin-bottom: 0.5em;">
+                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="faviconDropZone">
+                                            <input type="file" id="faviconInput" accept="image/*" style="display: none;" />
+                                            <div id="faviconPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
-                                            <div style="font-size: 0.9em; color: #ccc;">Drop .ico here or click to upload</div>
+                                            <img id="faviconPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="faviconStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                            <button type="button" class="raised button-submit" id="faviconDelete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
+                                                <i class="material-icons">delete</i>
+                                            </button>
                                         </div>
                                     </div>
-                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Banner Light</label>
                                         <label style="color: #eee;">Splash Screen Banner for Dark Mode</label>
-                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="bannerLightDropZone">
-                                            <input type="file" id="bannerLightInput" accept="image/png" style="display: none;" />
-                                            <div style="margin-bottom: 0.5em;">
+                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="bannerLightDropZone">
+                                            <input type="file" id="bannerLightInput" accept="image/*" style="display: none;" />
+                                            <div id="bannerLightPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
-                                            <div style="font-size: 0.9em; color: #ccc;">Drop .png here or click to upload</div>
+                                            <img id="bannerLightPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="bannerLightStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                            <button type="button" class="raised button-submit" id="bannerLightDelete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
+                                                <i class="material-icons">delete</i>
+                                            </button>
                                         </div>
                                     </div>
-                                    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Banner Dark</label>
                                         <label style="color: #eee;">Splash Screen Banner for Light Mode</label>
-                                        <div style="background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 1em; text-align: center; cursor: pointer;" id="bannerDarkDropZone">
-                                            <input type="file" id="bannerDarkInput" accept="image/png" style="display: none;" />
-                                            <div style="margin-bottom: 0.5em;">
+                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="bannerDarkDropZone">
+                                            <input type="file" id="bannerDarkInput" accept="image/*" style="display: none;" />
+                                            <div id="bannerDarkPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
-                                            <div style="font-size: 0.9em; color: #ccc;">Drop .png here or click to upload</div>
+                                            <img id="bannerDarkPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="bannerDarkStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                            <button type="button" class="raised button-submit" id="bannerDarkDelete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
+                                                <i class="material-icons">delete</i>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -1615,29 +1631,35 @@
             }
         }
 
-        // Setup branding file uploads
+        // Setup branding file uploads and previews
         function setupBrandingUploads() {
             const uploadConfigs = [
-                { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png' },
-                { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico' },
-                { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png' },
-                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png' }
+                { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png', previewId: 'iconTransparentPreview', placeholderId: 'iconTransparentPlaceholder', deleteId: 'iconTransparentDelete' },
+                { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete' },
+                { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete' },
+                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete' }
             ];
 
             uploadConfigs.forEach(config => {
                 const input = document.getElementById(config.inputId);
                 const dropZone = document.getElementById(config.dropZoneId);
                 const statusDiv = document.getElementById(config.statusId);
+                const previewImg = document.getElementById(config.previewId);
+                const placeholder = document.getElementById(config.placeholderId);
+                const deleteButton = document.getElementById(config.deleteId);
 
                 if (!input || !dropZone || !statusDiv) return;
 
-                // Click to upload
-                dropZone.addEventListener('click', () => input.click());
+                // Click to upload (ignore clicks on Delete button)
+                dropZone.addEventListener('click', (e) => {
+                    if (e.target && e.target.closest && e.target.closest('button')) return;
+                    input.click();
+                });
 
                 // Handle file selection
                 input.addEventListener('change', (e) => {
                     if (e.target.files.length > 0) {
-                        uploadBrandingImage(e.target.files[0], config.fileName, statusDiv);
+                        uploadBrandingImage(e.target.files[0], config, statusDiv);
                     }
                 });
 
@@ -1659,13 +1681,24 @@
                     dropZone.style.borderColor = 'rgba(0,164,220,0.5)';
                     dropZone.style.backgroundColor = 'rgba(255,255,255,0.05)';
                     if (e.dataTransfer.files.length > 0) {
-                        uploadBrandingImage(e.dataTransfer.files[0], config.fileName, statusDiv);
+                        uploadBrandingImage(e.dataTransfer.files[0], config, statusDiv);
                     }
                 });
+
+                if (deleteButton) {
+                    deleteButton.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteBrandingImage(config, statusDiv);
+                    });
+                }
+
+                // Load existing preview if present
+                refreshBrandingPreview(config);
             });
         }
 
-        async function uploadBrandingImage(file, fileName, statusDiv) {
+        async function uploadBrandingImage(file, config, statusDiv) {
             // Validate that it's an image file
             if (!file.type || !file.type.startsWith('image/')) {
                 statusDiv.textContent = '✗ Only image files allowed';
@@ -1685,12 +1718,12 @@
 
             try {
                 const formData = new FormData();
-                const renamedFile = new File([file], fileName, { type: file.type });
+                const renamedFile = new File([file], config.fileName, { type: file.type });
                 formData.append('file', renamedFile);
-                formData.append('fileName', fileName);
+                formData.append('fileName', config.fileName);
 
                 const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
-                const response = await fetch('/JellyfinEnhanced/UploadBrandingImage', {
+                const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/UploadBrandingImage'), {
                     method: 'POST',
                     body: formData,
                     headers: {
@@ -1701,6 +1734,7 @@
                 if (response.ok) {
                     statusDiv.textContent = '✓ Uploaded';
                     statusDiv.style.color = '#51cf66';
+                    await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
                     const error = await response.text();
@@ -1710,6 +1744,69 @@
             } catch (error) {
                 console.error('Upload exception:', error);
                 statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.style.color = '#ff6b6b';
+            }
+        }
+
+        async function refreshBrandingPreview(config) {
+            const previewImg = document.getElementById(config.previewId);
+            const placeholder = document.getElementById(config.placeholderId);
+            const deleteButton = document.getElementById(config.deleteId);
+            if (!previewImg) return;
+
+            const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+            try {
+                const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingImage', { fileName: config.fileName, t: Date.now() }), {
+                    headers: { 'X-MediaBrowser-Token': token }
+                });
+
+                if (!response.ok) {
+                    previewImg.style.display = 'none';
+                    if (placeholder) placeholder.style.display = 'block';
+                    if (deleteButton) deleteButton.style.display = 'none';
+                    return;
+                }
+
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                previewImg.src = objectUrl;
+                previewImg.style.display = 'block';
+                if (placeholder) placeholder.style.display = 'none';
+                if (deleteButton) deleteButton.style.display = 'inline-block';
+            } catch (err) {
+                previewImg.style.display = 'none';
+                if (placeholder) placeholder.style.display = 'block';
+                if (deleteButton) deleteButton.style.display = 'none';
+            }
+        }
+
+        async function deleteBrandingImage(config, statusDiv) {
+            statusDiv.textContent = 'Deleting...';
+            statusDiv.style.color = '#ffa500';
+
+            const formData = new FormData();
+            formData.append('fileName', config.fileName);
+            const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+
+            try {
+                const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/DeleteBrandingImage'), {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-MediaBrowser-Token': token }
+                });
+
+                if (response.ok) {
+                    statusDiv.textContent = '✓ Deleted';
+                    statusDiv.style.color = '#51cf66';
+                    await refreshBrandingPreview(config);
+                    setTimeout(() => { statusDiv.textContent = ''; }, 2000);
+                } else {
+                    const error = await response.text();
+                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    statusDiv.style.color = '#ff6b6b';
+                }
+            } catch (err) {
+                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
                 statusDiv.style.color = '#ff6b6b';
             }
         }
