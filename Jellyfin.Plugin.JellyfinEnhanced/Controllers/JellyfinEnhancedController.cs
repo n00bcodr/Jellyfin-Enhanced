@@ -1487,18 +1487,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            var allAffectedItems = item.GetBaseItemKind() switch
-            {
-                BaseItemKind.Series or BaseItemKind.Season => _libraryManager
-                    .GetItemsResult(new InternalItemsQuery(user) {
-                        Parent = item,
-                        Recursive = true
-                    }).Items,
-                BaseItemKind.BoxSet or BaseItemKind.Playlist => item is Folder folder
-                    ? folder.GetChildren(user, true).ToList()
-                    : [item],
-                _ => [item]
-            };
+            var allAffectedItems = GetLeafPlayableItems(user, item);
 
             long totalSize = allAffectedItems
                 .Sum(affectedItem => affectedItem.GetMediaSources(false).Sum(source => source.Size ?? 0));
@@ -1523,18 +1512,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            var allAffectedItems = item.GetBaseItemKind() switch
-            {
-                BaseItemKind.Series or BaseItemKind.Season => _libraryManager
-                    .GetItemsResult(new InternalItemsQuery(user) {
-                        Parent = item,
-                        Recursive = true
-                    }).Items,
-                BaseItemKind.BoxSet or BaseItemKind.Playlist => item is Folder folder
-                    ? folder.GetChildren(user, true).ToList()
-                    : [item],
-                _ => [item]
-            };
+            var allAffectedItems = GetLeafPlayableItems(user, item);
 
             long totalRuntimeTicks = allAffectedItems.Sum(affectedItem =>
                 // Only one of the MediaSources should count into the watch progress
@@ -1556,6 +1534,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             int formattedProgress = (int)Math.Clamp(progress, 0, 100);
 
             return Ok(new { success = true, progress = formattedProgress, totalPlaybackTicks, totalRuntimeTicks });
+        }
+
+        private List<BaseItem> GetLeafPlayableItems(JUser user, BaseItem root)
+        {
+            var result = new List<BaseItem>();
+            var visited = new HashSet<Guid>();
+
+            void Traverse(BaseItem current)
+            {
+                if (!visited.Add(current.Id))
+                {
+                    return;
+                }
+
+                var kind = current.GetBaseItemKind();
+
+                if (current is Folder folder)
+                {
+                    var children = folder.GetChildren(user, true).ToList();
+                    foreach (var child in children)
+                    {
+                        Traverse(child);
+                    }
+                    return;
+                }
+
+                var mediaSources = current.GetMediaSources(false);
+                if (mediaSources != null && mediaSources.Any())
+                {
+                    result.Add(current);
+                }
+            }
+
+            Traverse(root);
+            return result;
         }
 
         [HttpGet("jellyseerr/issue")]
