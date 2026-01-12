@@ -54,12 +54,14 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
   - [🫚 Project Structure](#-project-structure)
     - [File Structure](#file-structure)
     - [Component Breakdown](#component-breakdown)
+  - [🔌 Accessing Bookmarks from External Apps](#-accessing-bookmarks-from-external-apps)
   - [🧪 Compatibility](#-compatibility)
   - [💡 FAQ \& Troubleshooting](#-faq--troubleshooting)
     - [FAQ](#faq)
     - [Troubleshooting](#troubleshooting)
     - [Common Errors](#common-errors)
   - [📸 Screenshots](#-screenshots)
+  - [⭐ Star History](#-star-history)
   - [📄 License](#-license)
 - [Enjoying Jellyfin Enhanced?](#enjoying-jellyfin-enhanced)
 
@@ -1401,7 +1403,7 @@ Content-Type: application/json
 
 - Official Jellyfin Web UI
 - Official Jellyfin Android and iOS Apps
-- Official Jellyfin Desktop Apps (Not tested, but ideally should work)
+- Official Jellyfin Desktop Apps like JMP (Not tested, but ideally should work)
 
 
 > [!IMPORTANT]
@@ -1528,6 +1530,16 @@ Here is a list of common errors you might see in your Jellyfin server logs or yo
 </p>
 <br>
 
+
+## ⭐ Star History
+
+<a href="https://star-history.com/#n00bcodr/Jellyfin-Enhanced&Date&legend=bottom-right">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=n00bcodr/Jellyfin-Enhanced&type=Date&legend=bottom-right&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=n00bcodr/Jellyfin-Enhanced&type=Date&legend=bottom-right" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=n00bcodr/Jellyfin-Enhanced&type=Date&legend=bottom-right" />
+  </picture>
+</a>
 
 ## 📄 License
 
