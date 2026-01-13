@@ -223,6 +223,15 @@ function showModal(data, mediaType) {
     document.body.appendChild(modal);
     currentModal = modal;
 
+    // Add Escape key handler
+    const handleEscape = (e) => {
+        if (e.key === 'Escape') {
+            moreInfoModal.close();
+        }
+    };
+    document.addEventListener('keydown', handleEscape);
+    modal._cleanupEscapeListener = () => document.removeEventListener('keydown', handleEscape);
+
     // Render action buttons/chips after mount
     renderActions(data, mediaType);
 
@@ -1230,6 +1239,10 @@ moreInfoModal.close = function() {
         // Clean up TV request listener if exists
         if (currentModal._cleanupTvListener) {
             currentModal._cleanupTvListener();
+        }
+        // Clean up Escape key listener if exists
+        if (currentModal._cleanupEscapeListener) {
+            currentModal._cleanupEscapeListener();
         }
         currentModal.classList.remove('active');
         setTimeout(() => {
