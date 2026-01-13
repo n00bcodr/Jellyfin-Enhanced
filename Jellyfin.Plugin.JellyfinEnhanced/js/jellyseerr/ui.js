@@ -969,6 +969,15 @@
         badge.innerHTML = icon;
         badge.className = `jellyseerr-status-badge ${statusClass}`;
         badge.style.display = 'flex';
+
+        // Add hover tooltip for Partially Available TV shows with active downloads
+        if (status === 4 && item.mediaType === 'tv') {
+            const hasDownloads = (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0);
+            if (hasDownloads) {
+                badge.style.cursor = 'pointer';
+                addDownloadProgressHover(badge, item);
+            }
+        }
     }
 
     /**
@@ -1324,8 +1333,9 @@
      * @param {HTMLElement} button - Button element.
      * @param {number} overallStatus - Calculated overall status.
      * @param {Object|null} seasonAnalysis - Season analysis results.
+     * @param {Object} item - Media item data.
      */
-    function configureTvShowButton(button, overallStatus, seasonAnalysis) {
+    function configureTvShowButton(button, overallStatus, seasonAnalysis, item) {
         const setButton = (text, icon, className, disabled = false, summary = seasonAnalysis?.statusSummary) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
             if (summary) button.innerHTML += `<div class="jellyseerr-season-summary">${summary}</div>`;
@@ -1336,7 +1346,13 @@
             case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending'); break;
             case 3: setButton(JE.t('jellyseerr_btn_request_more'), icons.request, 'jellyseerr-button-request'); break;
             case 7: setButton(JE.t('jellyseerr_btn_view_status'), icons.requested, 'jellyseerr-button-pending'); break;
-            case 4: setButton(JE.t('jellyseerr_btn_request_missing'), icons.request, 'jellyseerr-button-partially-available'); break;
+            case 4: 
+                setButton(JE.t('jellyseerr_btn_request_missing'), icons.request, 'jellyseerr-button-partially-available'); 
+                // Add download progress hover if there are active downloads
+                if (item?.mediaInfo?.downloadStatus?.length > 0 || item?.mediaInfo?.downloadStatus4k?.length > 0) {
+                    addDownloadProgressHover(button, item);
+                }
+                break;
             case 5: setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_all_seasons', {count: seasonAnalysis.total}) : null); break;
             case 6: setButton(JE.t('jellyseerr_btn_rejected'), icons.cancel, 'jellyseerr-button-rejected', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request', false, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_seasons_available', {count: seasonAnalysis.total}) : null); break;
