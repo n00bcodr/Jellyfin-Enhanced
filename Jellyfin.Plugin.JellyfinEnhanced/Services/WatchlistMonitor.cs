@@ -87,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
-                _logger.Info($"[Watchlist] {eventType} event triggered for: {e.Item?.Name ?? "Unknown"} (Type: {itemKind})");
+                // _logger.Info($"[Watchlist] {eventType} event triggered for: {e.Item?.Name ?? "Unknown"} (Type: {itemKind})");
 
                 // Check if watchlist feature is enabled
                 var config = JellyfinEnhanced.Instance?.Configuration as PluginConfiguration;
@@ -129,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var mediaType = itemKind == BaseItemKind.Movie ? "movie" : "tv";
-                _logger.Info($"[Watchlist] New {mediaType} added to library: '{e.Item.Name}' (TMDB: {tmdbId})");
+                // _logger.Info($"[Watchlist] New {mediaType} added to library: '{e.Item.Name}' (TMDB: {tmdbId})");
 
                 // Query Jellyseerr for ALL requests in a single API call
                 var jellyseerrUrl = config.JellyseerrUrls?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
@@ -157,9 +157,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
-                _logger.Info($"[Watchlist] Found {matchingRequests.Count} matching request(s) for '{e.Item.Name}' (TMDB: {tmdbId})");
-
-                // Add to watchlist for each user who requested it
+                // Add to watchlist for each user who requested it (only log if actually added)
+                var addedCount = 0;
+                var addedUsers = new List<string>();
+                
                 foreach (var request in matchingRequests)
                 {
                     var jellyfinUserId = request.RequestedByJellyfinUserId!.Replace("-", "");
@@ -175,8 +176,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         userData.Likes = true;
                         _userDataManager.SaveUserData(user, e.Item, userData, UserDataSaveReason.UpdateUserRating, default);
-                        _logger.Info($"[Watchlist] ✓ Added '{e.Item.Name}' to watchlist for user {user.Username}");
+                        addedCount++;
+                        addedUsers.Add(user.Username);
                     }
+                }
+
+                // Only log if we actually added the item to at least one watchlist
+                if (addedCount > 0)
+                {
+                    _logger.Info($"[Watchlist] ✓ Added '{e.Item.Name}' to watchlist for {string.Join(", ", addedUsers)}");
                 }
             }
             catch (Exception ex)

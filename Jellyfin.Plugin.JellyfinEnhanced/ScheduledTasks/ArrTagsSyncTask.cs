@@ -110,6 +110,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var updatedCount = 0;
             var totalItems = allItems.Count;
             var processedItems = 0;
+            var updatedItemNames = new List<string>(); // Track updated items for batch logging
 
             string tagPrefix = config.ArrTagsPrefix ?? "Requested by: ";
             bool clearOldTags = config.ArrTagsClearOldTags;
@@ -187,12 +188,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     item.Tags = existingTags.ToArray();
                     await item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
                     updatedCount++;
-                    _logger.Info($"Updated tags for: {item.Name}");
+                    updatedItemNames.Add(item.Name);
+                    
+                    // Log in batches of 50 items to reduce log spam
+                    if (updatedItemNames.Count >= 50)
+                    {
+                        _logger.Info($"Updated tags for {updatedItemNames.Count} items: {string.Join(", ", updatedItemNames.Take(10))}...");
+                        updatedItemNames.Clear();
+                    }
                 }
 
                 processedItems++;
                 var currentProgress = 50 + (int)((double)processedItems / totalItems * 50);
                 progress?.Report(currentProgress);
+            }
+
+            // Log any remaining updated items
+            if (updatedItemNames.Count > 0)
+            {
+                if (updatedItemNames.Count <= 10)
+                {
+                    _logger.Info($"Updated tags for: {string.Join(", ", updatedItemNames)}");
+                }
+                else
+                {
+                    _logger.Info($"Updated tags for {updatedItemNames.Count} items: {string.Join(", ", updatedItemNames.Take(10))}...");
+                }
             }
 
             _logger.Info($"Arr Tags Sync completed. Updated {updatedCount} items out of {totalItems}");

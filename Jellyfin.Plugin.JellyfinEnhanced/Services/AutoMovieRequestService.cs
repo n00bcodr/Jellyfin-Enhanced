@@ -77,7 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var collectionInfo = await GetTmdbCollectionIdAsync(tmdbId);
             if (collectionInfo == null)
             {
-                _logger.Debug($"[Auto-Movie-Request] '{movie.Name}' is not part of a TMDB collection");
+                // _logger.Debug($"[Auto-Movie-Request] '{movie.Name}' is not part of a TMDB collection");
                 return;
             }
 
@@ -295,7 +295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 }
                                 else
                                 {
-                                    _logger.Debug($"[Auto-Movie-Request] Current movie is the last in collection or not found");
+                                    // _logger.Debug($"[Auto-Movie-Request] Current movie is the last in collection or not found");
                                     return null;
                                 }
                             }
