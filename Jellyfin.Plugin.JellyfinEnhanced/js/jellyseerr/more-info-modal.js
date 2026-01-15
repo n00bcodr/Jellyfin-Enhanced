@@ -373,6 +373,7 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
                     </div>
                 `}
             </div>
+            ${mediaType === 'movie' && data.collection ? buildCollectionCard(data.collection) : ''}
             <div class="je-more-info-stats-panel">
                 <div class="je-more-info-stat-row">
                     <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_status')}</div>
@@ -485,6 +486,32 @@ function buildStreamingProviders(data) {
             <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_streaming')}</div>
             <div class="je-more-info-providers-list">
                 ${uniqueProviders.map(p => `<img src="https://image.tmdb.org/t/p/w92${p.logoPath}" alt="${escapeHtml(p.name)}" title="${escapeHtml(p.name)}" />`).join('')}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Build collection card (Jellyseerr-style)
+ */
+function buildCollectionCard(collection) {
+    if (!collection) return '';
+
+    const backdropUrl = collection.backdropPath
+        ? `https://image.tmdb.org/t/p/w1440_and_h320_multi_faces/${collection.backdropPath}`
+        : 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22200%22%3E%3Crect fill=%22%23374151%22 width=%22400%22 height=%22200%22/%3E%3C/svg%3E';
+
+    return `
+        <div class="je-collection-card">
+            <div class="je-collection-card-backdrop">
+                <img src="${escapeHtml(backdropUrl)}" alt="${escapeHtml(collection.name)}" loading="lazy" />
+                <div class="je-collection-card-overlay"></div>
+            </div>
+            <div class="je-collection-card-content">
+                <div class="je-collection-card-title">${escapeHtml(collection.name)}</div>
+                <button class="je-collection-card-button" onclick="JE.jellyseerrUI.showCollectionRequestModal(${collection.id}, '${collection.name.replace(/'/g, "\\'")}')">
+                    ${JE.t('jellyseerr_btn_view_collection') || 'View'}
+                </button>
             </div>
         </div>
     `;
@@ -2072,6 +2099,103 @@ function injectStyles() {
         .je-more-info-ratings-cell {
             display: flex;
             justify-content: flex-end;
+        }
+
+        /* Collection Card (Jellyseerr-style) */
+        .je-collection-card {
+            position: relative;
+            z-index: 0;
+            cursor: pointer;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #1f2937;
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s duration;
+            margin-bottom: 1rem;
+        }
+
+        .je-collection-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .je-collection-card-backdrop {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .je-collection-card-backdrop img {
+            position: absolute;
+            height: 100%;
+            width: 100%;
+            inset: 0;
+            object-fit: cover;
+            color: transparent;
+        }
+
+        .je-collection-card-overlay {
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(rgba(31, 41, 55, 0.47) 0%, rgba(31, 41, 55, 0.8) 100%);
+        }
+
+        .je-collection-card-content {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            height: 100%;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            color: #e5e7eb;
+            transition: all 0.3s duration;
+        }
+
+        .je-collection-card:hover .je-collection-card-content {
+            color: #ffffff;
+        }
+
+        .je-collection-card-title {
+            font-weight: 600;
+            font-size: 1rem;
+            flex: 1;
+        }
+
+        .je-collection-card-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            font-weight: 500;
+            border-radius: 4px;
+            outline: none;
+            transition: all 0.15s ease-in-out;
+            cursor: pointer;
+            color: #e5e7eb;
+            background: rgba(31, 41, 55, 0.8);
+            border-color: rgba(107, 114, 128, 0.7);
+            padding: 0.375rem 0.625rem;
+            font-size: 0.875rem;
+            white-space: nowrap;
+            margin-left: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .je-collection-card:hover .je-collection-card-button {
+            color: #ffffff;
+            background: rgba(55, 65, 81, 0.9);
+            border-color: rgba(107, 114, 128, 0.9);
+        }
+
+        .je-collection-card-button:active {
+            color: #e5e7eb;
+            background: rgba(55, 65, 81, 0.8);
+            border-color: rgba(107, 114, 128, 0.7);
         }
 
         .je-more-info-media-facts {
