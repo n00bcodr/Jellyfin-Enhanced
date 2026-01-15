@@ -295,7 +295,7 @@
 
     function showOverlay(speed) {
         createSpeedOverlay();
-        speedOverlay.textContent = `${speed}x${speed > 1 ? ' ' + JE.icon(JE.IconName.FAST_FORWARD) : ' ' + JE.icon(JE.IconName.PLAY)}`;
+        speedOverlay.innerHTML = `${speed}x${speed > 1 ? ' ' + JE.icon(JE.IconName.FAST_FORWARD) : ' ' + JE.icon(JE.IconName.PLAY)}`;
         speedOverlay.style.display = 'block';
         setTimeout(() => speedOverlay.style.opacity = '1', 10);
     }
