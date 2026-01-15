@@ -220,6 +220,20 @@ function showModal(data, mediaType) {
         });
     }
 
+    // Collection button handler
+    const collectionBtn = modal.querySelector('.je-collection-card-button');
+    if (collectionBtn) {
+        collectionBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const collectionId = parseInt(collectionBtn.dataset.collectionId, 10);
+            const collectionName = collectionBtn.dataset.collectionName;
+            if (collectionId && collectionName) {
+                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName);
+            }
+        });
+    }
+
     document.body.appendChild(modal);
     currentModal = modal;
 
@@ -509,7 +523,7 @@ function buildCollectionCard(collection) {
             </div>
             <div class="je-collection-card-content">
                 <div class="je-collection-card-title">${escapeHtml(collection.name)}</div>
-                <button class="je-collection-card-button" onclick="JE.jellyseerrUI.showCollectionRequestModal(${collection.id}, '${collection.name.replace(/'/g, "\\'")}')">
+                <button class="je-collection-card-button" data-collection-id="${collection.id}" data-collection-name="${escapeHtml(collection.name)}">
                     ${JE.t('jellyseerr_btn_view_collection') || 'View'}
                 </button>
             </div>

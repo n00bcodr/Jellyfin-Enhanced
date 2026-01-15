@@ -1071,7 +1071,9 @@
                     e.preventDefault();
                     e.stopPropagation();
 
-                    if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
+                    if (item.mediaType === 'collection') {
+                        ui.showCollectionRequestModal(item.id, item.name || item.title, item);
+                    } else if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
                         const tmdbId = parseInt(item.id);
                         const mediaType = item.mediaType;
                         if (tmdbId && mediaType) {
@@ -1190,6 +1192,14 @@
 
                 if (isLibraryLink) {
                     // Allow default behavior for library links
+                    return;
+                }
+
+                // If collection, open collection modal
+                if (item.mediaType === 'collection') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    ui.showCollectionRequestModal(item.id, item.name || item.title, item);
                     return;
                 }
 
@@ -1322,6 +1332,7 @@
      */
     function configureCollectionButton(button, item) {
         button.dataset.searchResultItem = JSON.stringify(item);
+        button.dataset.mediaType = 'collection';
         button.dataset.collectionId = item.id;
         button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_modal_request_collection')}</span>`;
         button.className = 'jellyseerr-request-button jellyseerr-button-request jellyseerr-button-collection';
