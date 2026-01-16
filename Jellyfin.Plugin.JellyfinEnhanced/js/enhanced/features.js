@@ -86,9 +86,17 @@
      */
     function navigateToItem(item) {
         if (item && item.Id) {
-            const serverId = ApiClient.serverId();
-            const itemUrl = `#!/details?id=${item.Id}${serverId ? `&serverId=${serverId}` : ''}`;
-            window.location.hash = itemUrl;
+            if (window.Emby && window.Emby.Page && typeof window.Emby.Page.show === 'function') {
+                const serverId = ApiClient.serverId();
+                window.Emby.Page.show(`/details?id=${item.Id}${serverId ? `&serverId=${serverId}` : ''}`);
+            } else if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
+                window.Dashboard.navigate(`details.html?id=${item.Id}`);
+            } else {
+                // Fallback to hash navigation for older versions
+                const serverId = ApiClient.serverId();
+                const itemUrl = `#!/details?id=${item.Id}${serverId ? `&serverId=${serverId}` : ''}`;
+                window.location.hash = itemUrl;
+            }
             JE.toast(JE.t('toast_random_item_loaded'), 2000);
         } else {
             console.error('🪼 Jellyfin Enhanced: Invalid item object or ID:', item);
@@ -185,7 +193,7 @@
             const div = document.querySelector(`.mediaInfoItem-watchProgress[data-item-id="${itemId}"]`)
                 .querySelector('.mediaInfoItem-watchProgress-value');
             if (!div) return;
-            
+
             if (div.dataset.type === 'percentage') {
                 div.dataset.type = 'time';
                 div.innerHTML = `${getTimeString(watchProgress.totalPlaybackTicks)} / ${getTimeString(watchProgress.totalRuntimeTicks)}`;
@@ -244,7 +252,7 @@
             const totalDays = Math.floor(totalHours / 24);
             const totalMonths = Math.floor(totalDays / 30);
             const totalYears = Math.floor(totalDays / 365);
-            
+
             let result = '';
             const format = (window.JellyfinEnhanced?.currentSettings?.watchProgressTimeFormat || 'hours');
             if (format === 'hours') {
@@ -281,10 +289,10 @@
                     result = '0m';
                 }
             }
-            
+
             return result;
         }
-        
+
         const getWatchProgressValue = (watchProgress) => {
             const valueDiv = document.createElement('div');
             valueDiv.className = 'mediaInfoItem-watchProgress-value';
@@ -324,7 +332,7 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/watch-progress/${ApiClient.getCurrentUserId()}/${itemId}`),
                     dataType: 'json'
                 });
-                
+
                 const watchProgress = {
                     progress: itemResult?.progress ?? 0,
                     totalPlaybackTicks: itemResult?.totalPlaybackTicks ?? 0,
@@ -333,7 +341,7 @@
                 };
                 placeholder.innerHTML = getIconSpan(watchProgress.progress);
                 placeholder.appendChild(getWatchProgressValue(watchProgress));
-                
+
                 watchProgressCache[itemId] = watchProgress
             } catch (error) {
                 console.error(`🪼 Jellyfin Enhanced: Error fetching watch progress for ID ${itemId}:`, error);
