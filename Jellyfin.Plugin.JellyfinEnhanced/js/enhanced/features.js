@@ -61,16 +61,33 @@
         if (JE.currentSettings.randomIncludeShows) itemTypes.push('Series');
         const includeItemTypes = itemTypes.join(',');
 
-        let apiUrl = ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=${includeItemTypes}&Recursive=true&SortBy=Random&Limit=20&Fields=ExternalUrls`);
-        if (JE.currentSettings.randomUnwatchedOnly) {
-            apiUrl += '&IsPlayed=false';
-        }
-
+        let apiUrl = ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=${includeItemTypes}&Recursive=true&SortBy=Random&Limit=100&Fields=ExternalUrls`);
+        
         try {
             const response = await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
             if (response && response.Items && response.Items.length > 0) {
-                const randomIndex = Math.floor(Math.random() * response.Items.length);
-                return response.Items[randomIndex];
+                let items = response.Items;
+                
+                if (JE.currentSettings.randomUnwatchedOnly) {
+                    items = items.filter(item => {
+                        // For movies: check if not played
+                        if (item.Type === 'Movie') {
+                            return !item.UserData?.Played;
+                        }
+                        // For series: check if there are unplayed episodes
+                        if (item.Type === 'Series') {
+                            return item.UserData?.UnplayedItemCount > 0;
+                        }
+                        return false;
+                    });
+                    // If no unwatched items found, show error
+                    if (items.length === 0) {
+                        throw new Error('No unwatched items found in selected libraries.');
+                    }
+                }
+                
+                const randomIndex = Math.floor(Math.random() * items.length);
+                return items[randomIndex];
             }
             throw new Error('No items found in selected libraries.');
         } catch (error) {
