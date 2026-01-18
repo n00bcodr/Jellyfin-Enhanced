@@ -463,16 +463,16 @@
             const userId = ApiClient.getCurrentUserId();
 
             const fetchPromises = [
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json`), dataType: 'json' })
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'settings', status: 'fulfilled', value: data }))
                          .catch(e => ({ name: 'settings', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/shortcuts.json`), dataType: 'json' })
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/shortcuts.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'shortcuts', status: 'fulfilled', value: data }))
                          .catch(e => ({ name: 'shortcuts', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark.json`), dataType: 'json' })
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'bookmark', status: 'fulfilled', value: data }))
                          .catch(e => ({ name: 'bookmark', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json`), dataType: 'json' })
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'elsewhere', status: 'fulfilled', value: data }))
                          .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e }))
             ];
@@ -509,7 +509,6 @@
                     else if (name) JE.userConfig[name] = {};
                 }
             });
-            // console.log('🪼 Jellyfin Enhanced: User configuration FETCHED (Raw Results):', JSON.stringify(JE.userConfig));
 
 
             // Initialize splash screen

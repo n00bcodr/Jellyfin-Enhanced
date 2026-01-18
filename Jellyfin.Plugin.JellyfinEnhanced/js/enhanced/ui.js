@@ -461,7 +461,33 @@
     /**
      * Toggles the main settings and help panel for the plugin.
      */
-    JE.showEnhancedPanel = () => {
+    JE.showEnhancedPanel = async () => {
+        // Refresh user settings when panel opens to ensure correct user's settings are displayed
+        const currentUserId = ApiClient.getCurrentUserId();
+        if (currentUserId) {
+            try {
+                // Fetch fresh settings for the current user
+                const settingsResponse = await ApiClient.ajax({ 
+                    type: 'GET', 
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`), 
+                    dataType: 'json' 
+                });
+                
+                // Update the userConfig with fresh data
+                if (settingsResponse) {
+                    JE.userConfig = JE.userConfig || {};
+                    JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsResponse);
+                    
+                    // Reload current settings
+                    if (typeof JE.loadSettings === 'function') {
+                        JE.currentSettings = JE.loadSettings();
+                    }
+                }
+            } catch (e) {
+                console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
+            }
+        }
+        
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
