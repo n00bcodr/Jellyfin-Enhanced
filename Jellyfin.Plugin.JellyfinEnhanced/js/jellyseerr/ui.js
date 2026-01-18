@@ -1357,8 +1357,8 @@
             case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending'); break;
             case 3: setButton(JE.t('jellyseerr_btn_request_more'), icons.request, 'jellyseerr-button-request'); break;
             case 7: setButton(JE.t('jellyseerr_btn_view_status'), icons.requested, 'jellyseerr-button-pending'); break;
-            case 4: 
-                setButton(JE.t('jellyseerr_btn_request_missing'), icons.request, 'jellyseerr-button-partially-available'); 
+            case 4:
+                setButton(JE.t('jellyseerr_btn_request_missing'), icons.request, 'jellyseerr-button-partially-available');
                 // Add download progress hover if there are active downloads
                 if (item?.mediaInfo?.downloadStatus?.length > 0 || item?.mediaInfo?.downloadStatus4k?.length > 0) {
                     addDownloadProgressHover(button, item);
@@ -2015,28 +2015,33 @@
 
         // Create checkbox list of movies in the collection with posters and status badges
         const movieListHtml = collectionDetails.parts.map(movie => {
-            const status = movie.mediaInfo?.status || 1; // 1 = not available
+            const status = movie.mediaInfo?.status || 1; // 1 = not available, 2 = requested, 3 = pending/processing, 4 = partially available, 5 = available
+            const downloads = movie.mediaInfo?.downloadStatus || [];
+            const hasActiveDownloads = downloads && downloads.length > 0;
             const isAvailable = status === 5;
             const isRequested = status === 2 || status === 3;
-            const isProcessing = status === 3;
-            const isPartiallyAvailable = status === 4;
             const isDisabled = isAvailable || isRequested;
 
             let statusClass = 'not-requested';
             let statusText = JE.t('jellyseerr_season_status_not_requested') || 'Not Requested';
 
-            if (isAvailable) {
+            if (status === 5) {
                 statusClass = 'available';
-                statusText = JE.t('jellyseerr_season_status_available') || 'Available';
-            } else if (isProcessing) {
-                statusClass = 'processing';
-                statusText = JE.t('jellyseerr_season_status_processing') || 'Processing';
-            } else if (isRequested) {
-                statusClass = 'pending';
-                statusText = JE.t('jellyseerr_season_status_pending') || 'Pending';
-            } else if (isPartiallyAvailable) {
+                statusText = JE.t('jellyseerr_btn_available') || 'Available';
+            } else if (status === 4) {
                 statusClass = 'partially-available';
-                statusText = JE.t('jellyseerr_season_status_partially_available') || 'Partially Available';
+                statusText = JE.t('jellyseerr_btn_partially_available') || 'Partially Available';
+            } else if (status === 3) {
+                if (hasActiveDownloads) {
+                    statusClass = 'processing';
+                    statusText = JE.t('jellyseerr_btn_processing') || 'Processing';
+                } else {
+                    statusClass = 'pending';
+                    statusText = JE.t('jellyseerr_btn_requested') || 'Requested';
+                }
+            } else if (status === 2) {
+                statusClass = 'pending';
+                statusText = JE.t('jellyseerr_btn_pending') || 'Pending';
             }
 
             const year = movie.releaseDate ? new Date(movie.releaseDate).getFullYear() : '';
