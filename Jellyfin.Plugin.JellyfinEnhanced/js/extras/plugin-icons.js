@@ -86,18 +86,8 @@
 
         replaceIcons();
 
-        const observer = new MutationObserver((mutations) => {
-            let shouldCheck = false;
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType === 1 && (node.matches?.('a[href*="configurationpage"]') || node.querySelector?.('a[href*="configurationpage"]'))) {
-                        shouldCheck = true;
-                        break;
-                    }
-                }
-                if (shouldCheck) break;
-            }
-            if (shouldCheck && document.body.classList.contains('dashboardDocument')) {
+        const observer = new MutationObserver(() => {
+            if (document.body.classList.contains('dashboardDocument')) {
                 replaceIcons();
             }
         });

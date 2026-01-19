@@ -76,6 +76,7 @@
     let processedAnchors = new WeakSet();
 
     function initialize() {
+        console.log('🪼 Jellyfin Enhanced: Activity Icons initializing...');
         injectCSS();
         updateActivityIcons();
 
@@ -102,9 +103,13 @@
 
         observer.observe(document.body, { childList: true, subtree: true });
 
-        window.addEventListener('hashchange', () => {
+        // Run on hashchange for navigation
+        const handleHashChange = () => {
             setTimeout(updateActivityIcons, 200);
-        });
+        };
+        window.addEventListener('hashchange', handleHashChange);
+
+        console.log('🪼 Jellyfin Enhanced: Activity Icons initialized.');
     }
 
     window.ActivityIconsInit = initialize;
