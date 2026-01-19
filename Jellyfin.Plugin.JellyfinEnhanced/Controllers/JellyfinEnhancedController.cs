@@ -1201,6 +1201,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.UseIcons,
                 config.IconStyle,
 
+                // Extras Settings
+                config.ColoredRatingsEnabled,
+                config.ThemeSelectorEnabled,
+                config.ColoredActivityIconsEnabled,
+                config.PluginIconsEnabled,
+
             });
         }
 

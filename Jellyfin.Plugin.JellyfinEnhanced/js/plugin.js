@@ -71,24 +71,24 @@
             text = text.replace(/\{\{icon:([a-zA-Z]+)\}\}/g, (match, iconName) => {
                 const iconKey = iconName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
                 const iconConstant = window.JellyfinEnhanced.IconName?.[iconKey];
-                
+
                 // If IconName not loaded yet, keep the placeholder
                 if (!iconConstant) {
                     console.debug(`[JE.t] IconName.${iconKey} not available yet, keeping placeholder`);
                     return match;
                 }
-                
+
                 const iconResult = window.JellyfinEnhanced.icon?.(iconConstant);
-                
+
                 // If icon function returns a pending token, keep original placeholder
                 if (iconResult && iconResult.startsWith('{{ICON_PENDING:')) {
                     console.debug(`[JE.t] Icon system not ready, keeping placeholder for ${iconName}`);
                     return match;
                 }
-                
+
                 return iconResult || match;
             });
-            
+
             return text;
         },
         loadSettings: () => { console.warn("🪼 Jellyfin Enhanced: loadSettings called before config.js loaded"); return {}; },
@@ -537,7 +537,11 @@
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
                 'qualitytags.js', 'genretags.js', 'languagetags.js', 'ratingtags.js', 'arr-links.js', 'arr-tag-links.js',
-                'letterboxd-links.js'
+                'letterboxd-links.js',
+                'extras/colored-ratings.js',
+                'extras/theme-selector.js',
+                'extras/colored-activity-icons.js',
+                'extras/plugin-icons.js'
             ];
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
@@ -581,6 +585,19 @@
             if (typeof JE.initializeReviewsScript === 'function' && JE.pluginConfig?.ShowReviews) JE.initializeReviewsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
+
+            if (JE.pluginConfig?.ColoredRatingsEnabled && typeof window.JellyfinRatingScriptInit === 'function') {
+                window.JellyfinRatingScriptInit();
+            }
+            if (JE.pluginConfig?.ThemeSelectorEnabled && typeof window.ThemeSelectorInit === 'function') {
+                window.ThemeSelectorInit();
+            }
+            if (JE.pluginConfig?.ColoredActivityIconsEnabled && typeof window.ActivityIconsInit === 'function') {
+                window.ActivityIconsInit();
+            }
+            if (JE.pluginConfig?.PluginIconsEnabled && typeof window.PluginIconsInit === 'function') {
+                window.PluginIconsInit();
+            }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 

@@ -149,6 +149,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Icon Settings
             UseIcons = true;
             IconStyle = "emoji";
+
+            // Extras Settings
+            ColoredRatingsEnabled = false;
+            ThemeSelectorEnabled = false;
+            ColoredActivityIconsEnabled = false;
+            PluginIconsEnabled = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -270,5 +276,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Icon Settings
         public bool UseIcons { get; set; }
         public string IconStyle { get; set; }
+
+        // Extras Settings
+        public bool ColoredRatingsEnabled { get; set; }
+        public bool ThemeSelectorEnabled { get; set; }
+        public bool ColoredActivityIconsEnabled { get; set; }
+        public bool PluginIconsEnabled { get; set; }
     }
 }

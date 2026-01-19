@@ -792,6 +792,73 @@
                 </div>
                  <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>n00bcodr's Personal Scripts</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label>
+                                    <input id="coloredRatingsEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Colored Ratings</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Applies color-coded backgrounds to media ratings.
+                                <br><img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced/images/ratings.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 4px;" alt="Colored Ratings Example">
+                                <br>If you notice missing or incorrect ratings, please submit a PR to <a class="sectionTitle" target="_blank" href="https://github.com/n00bcodr/Jellyfin-Enhanced/">Jellyfin-Enhanced</a>.
+                            </div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label>
+                                    <input id="themeSelectorEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Theme Selector</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Adds a theme selector to quickly switch between Jellyfish color themes.
+                                <br><img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced/images/theme-selector.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 4px;" alt="Theme Selector Example">
+                                <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #ffc107; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                    <i class="material-icons" style="color: #ffc107; font-size: 18px;">note</i>
+                                    <div>
+                                        Only changes the color theme of Jellyfish when used natively, not through KefinTweaks.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label>
+                                    <input id="coloredActivityIconsEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Colored Activity Icons</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Replaces Dashboard Activity Icons with Material Design icons and background color.
+                                <br><img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced/images/colored-activity-icons.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 4px;" alt="Colored Activity Icons Example">
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
+                                <div>
+                                    Currently works with English activity logs only. PRs welcome for additional languages.
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label>
+                                    <input id="pluginIconsEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Plugin Icons</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Replaces default plugin folder icons with custom icons on the Dashboard sidebar.
+                                <br><img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced/images/plugin-icons.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 4px;" alt="Plugin Icons Example">
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #ffc107; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                <i class="material-icons" style="color: #ffc107; font-size: 18px;">note</i>
+                                <div>
+                                    Currently replaces icons for (if installed): Jellyfin Enhanced, JavaScript Injector, Intro Skipper, Reports, JellySleep, Home Screen Sections, and File Transformation.
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>External Links</h3></legend>
                         <div class="configSection">
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
@@ -1457,6 +1524,12 @@
                     if (showArrText) showArrText.checked = false;
                 }
 
+                // Load extras settings
+                document.querySelector('#coloredRatingsEnabled').checked = config.ColoredRatingsEnabled;
+                document.querySelector('#themeSelectorEnabled').checked = config.ThemeSelectorEnabled;
+                document.querySelector('#coloredActivityIconsEnabled').checked = config.ColoredActivityIconsEnabled;
+                document.querySelector('#pluginIconsEnabled').checked = config.PluginIconsEnabled;
+
                 // Setup live preview for icon settings
                 setupIconSettingsListeners();
 
@@ -1581,6 +1654,12 @@
                 config.ShowLetterboxdLinkAsText = false;
                 config.ShowArrLinksAsText = false;
             }
+
+            // Extras settings
+            config.ColoredRatingsEnabled = document.querySelector('#coloredRatingsEnabled').checked;
+            config.ThemeSelectorEnabled = document.querySelector('#themeSelectorEnabled').checked;
+            config.ColoredActivityIconsEnabled = document.querySelector('#coloredActivityIconsEnabled').checked;
+            config.PluginIconsEnabled = document.querySelector('#pluginIconsEnabled').checked;
 
             return config;
         }
