@@ -61,7 +61,7 @@
             localStorage.removeItem(getStorageKey(userId, key));
             return true;
         } catch (e) {
-            console.error('[🪼🎨Jellyfish Theme Selector] localStorage remove error:', e);
+            console.error('🪼🎨Jellyfish Theme Selector : localStorage remove error:', e);
             return false;
         }
     };
@@ -138,7 +138,7 @@
             }
         `;
         document.head.appendChild(style);
-        console.log('[🪼🎨Jellyfish Theme Selector] Custom CSS injected');
+        console.log('🪼🎨Jellyfish Theme Selector :  Custom CSS injected');
     };
 
 
@@ -149,9 +149,9 @@
             const userId = window.ApiClient?.getCurrentUserId?.();
             if (userId && userId.trim() !== '') return userId;
         } catch (e) {
-            console.error('[🪼🎨Jellyfish Theme Selector] Error extracting user ID:', e);
+            console.error('🪼🎨Jellyfish Theme Selector :  Error extracting user ID:', e);
         }
-        console.error('[🪼🎨Jellyfish Theme Selector] Could not extract user ID');
+        console.error('🪼🎨Jellyfish Theme Selector :  Could not extract user ID');
         return null;
     };
 
@@ -162,10 +162,10 @@
         const themeValue = getThemeImport(themeFilename);
         if (themeValue) {
             setLocalStorageValue(userId, 'customCss', themeValue);
-            console.log(`[🪼🎨Jellyfish Theme Selector] Theme set to: ${themeName}`);
+            console.log(`🪼🎨Jellyfish Theme Selector :  Theme set to: ${themeName}`);
         } else {
             removeLocalStorageValue(userId, 'customCss');
-            console.log('[🪼🎨Jellyfish Theme Selector] Theme cleared (default)');
+            console.log('🪼🎨Jellyfish Theme Selector :  Theme cleared (default)');
         }
     };
 
@@ -177,10 +177,10 @@
             } else if (window.require) {
                 window.require(['toast'], (toast) => toast(message));
             } else {
-                console.log(`[🪼🎨Jellyfish Theme Selector] Notification: ${message}`);
+                console.log(`🪼🎨Jellyfish Theme Selector :  Notification: ${message}`);
             }
         } catch (e) {
-            console.error('[🪼🎨Jellyfish Theme Selector] Failed to show notification:', e);
+            console.error('🪼🎨Jellyfish Theme Selector :  Failed to show notification:', e);
         }
     };
 
@@ -192,7 +192,7 @@
                 setTimeout(() => showNotification(`Theme applied: ${pendingNotification}`), NOTIFICATION_DELAY);
             }
         } catch (e) {
-            console.error('[🪼🎨Jellyfish Theme Selector] Session storage error:', e);
+            console.error('🪼🎨Jellyfish Theme Selector :  Session storage error:', e);
         }
     };
 
@@ -205,7 +205,7 @@
         const lastDate = getLastRandomDate(userId);
 
         if (today !== lastDate) {
-            console.log('[🪼🎨Jellyfish Theme Selector] New day detected! Applying a random theme.');
+            console.log('🪼🎨Jellyfish Theme Selector :  New day detected! Applying a random theme.');
             const availableThemes = Object.keys(THEMES).filter(name => name !== 'Default');
             const randomThemeName = availableThemes[Math.floor(Math.random() * availableThemes.length)];
             const randomThemeFilename = THEMES[randomThemeName];
@@ -216,11 +216,11 @@
             try {
                 sessionStorage.setItem('jellyfin-theme-applied', `Random Daily (${randomThemeName})`);
             } catch (e) {
-                console.error('[🪼🎨Jellyfish Theme Selector] Could not set session storage:', e);
+                console.error('🪼🎨Jellyfish Theme Selector :  Could not set session storage:', e);
             }
             window.location.reload();
         } else {
-            console.log('[🪼🎨Jellyfish Theme Selector] Random theme already applied for today.');
+            console.log('🪼🎨Jellyfish Theme Selector :  Random theme already applied for today.');
         }
     };
 
@@ -280,12 +280,12 @@
             try {
                 sessionStorage.setItem('jellyfin-theme-applied', newThemeName);
             } catch (e) {
-                console.error('[🪼🎨Jellyfish Theme Selector] Session storage error:', e);
+                console.error('🪼🎨Jellyfish Theme Selector :  Session storage error:', e);
             }
 
             // Wait for fade-out transition, then reload
             setTimeout(() => {
-                console.log(`[🪼🎨Jellyfish Theme Selector] Reloading to apply theme: ${newThemeName}`);
+                console.log(`🪼🎨Jellyfish Theme Selector :  Reloading to apply theme: ${newThemeName}`);
                 window.location.reload();
             }, TRANSITION_DURATION);
         });
@@ -320,7 +320,7 @@
             const newState = !isRandomThemeEnabled(userId);
             setRandomThemeEnabled(userId, newState);
             showNotification(`Random daily theme turned ${newState ? 'ON' : 'OFF'}.`);
-            console.log(`[🪼🎨Jellyfish Theme Selector] Random daily theme set to: ${newState}`);
+            console.log(`🪼🎨Jellyfish Theme Selector :  Random daily theme set to: ${newState}`);
             updateButtonState();
 
             if (newState) {
@@ -378,13 +378,13 @@
             const userId = extractUserId();
             if (!userId) return false;
 
-            console.log('[🪼🎨Jellyfish Theme Selector] Creating theme selector element...');
+            console.log('🪼🎨Jellyfish Theme Selector :  Creating theme selector element...');
             const themeSelector = createThemeSelector(userId);
             parentSection.appendChild(themeSelector);
-            console.log('[🪼🎨Jellyfish Theme Selector] Successfully injected!');
+            console.log('🪼🎨Jellyfish Theme Selector :  Successfully injected!');
             return true;
         } catch (e) {
-            console.error('[🪼🎨Jellyfish Theme Selector] Injection error:', e);
+            console.error('🪼🎨Jellyfish Theme Selector :  Injection error:', e);
             return false;
         }
     };
@@ -403,12 +403,12 @@
 
     const initialize = () => {
         if (typeof ApiClient === 'undefined' || typeof ApiClient.getCurrentUserId !== 'function') {
-            console.log('[🪼🎨Jellyfish Theme Selector] Waiting for ApiClient...');
+            console.log('🪼🎨Jellyfish Theme Selector :  Waiting for ApiClient...');
             setTimeout(initialize, INIT_DELAY);
             return;
         }
 
-        console.log('[🪼🎨Jellyfish Theme Selector] ApiClient is available. Starting persistent element monitoring.');
+        console.log('🪼🎨Jellyfish Theme Selector :  ApiClient is available. Starting persistent element monitoring.');
         applyRandomThemeIfNeeded();
         injectCustomCss();
         checkPostRefreshNotification();
@@ -423,7 +423,7 @@
             debounceTimer = setTimeout(() => {
                 const selectorExists = document.getElementById(SELECTOR_ID);
                 if (isOnPreferencesPage() && !selectorExists) {
-                    console.log('[🪼🎨Jellyfish Theme Selector] Preferences page detected and selector is missing. Injecting...');
+                    console.log('🪼🎨Jellyfish Theme Selector :  Preferences page detected and selector is missing. Injecting...');
                     injectThemeSelector();
                 }
             }, DEBOUNCE_DELAY);
@@ -435,6 +435,8 @@
         });
     };
 
-    window.ThemeSelectorInit = initialize;
+    if (window.JellyfinEnhanced) {
+        window.JellyfinEnhanced.initializeThemeSelector = initialize;
+    }
 
 })();

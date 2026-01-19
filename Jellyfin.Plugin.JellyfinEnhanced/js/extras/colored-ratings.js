@@ -192,6 +192,8 @@
     }).observe(document, { subtree: true, childList: true });
 
     window.addEventListener('beforeunload', cleanup);
-    window.JellyfinRatingScriptInit = initialize;
+    if (window.JellyfinEnhanced) {
+        window.JellyfinEnhanced.initializeColoredRatings = initialize;
+    }
 
 })();

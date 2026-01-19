@@ -586,17 +586,17 @@
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
 
-            if (JE.pluginConfig?.ColoredRatingsEnabled && typeof window.JellyfinRatingScriptInit === 'function') {
-                window.JellyfinRatingScriptInit();
+            if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
+                JE.initializeColoredRatings();
             }
-            if (JE.pluginConfig?.ThemeSelectorEnabled && typeof window.ThemeSelectorInit === 'function') {
-                window.ThemeSelectorInit();
+            if (JE.pluginConfig?.ThemeSelectorEnabled && typeof JE.initializeThemeSelector === 'function') {
+                JE.initializeThemeSelector();
             }
-            if (JE.pluginConfig?.ColoredActivityIconsEnabled && typeof window.ActivityIconsInit === 'function') {
-                window.ActivityIconsInit();
+            if (JE.pluginConfig?.ColoredActivityIconsEnabled && typeof JE.initializeActivityIcons === 'function') {
+                JE.initializeActivityIcons();
             }
-            if (JE.pluginConfig?.PluginIconsEnabled && typeof window.PluginIconsInit === 'function') {
-                window.PluginIconsInit();
+            if (JE.pluginConfig?.PluginIconsEnabled && typeof JE.initializePluginIcons === 'function') {
+                JE.initializePluginIcons();
             }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');

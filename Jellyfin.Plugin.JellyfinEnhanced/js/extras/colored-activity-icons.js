@@ -4,6 +4,7 @@
 (function() {
     'use strict';
 
+    // Inject CSS to hide original SVG icons ONLY in Activity & Alerts
     function injectCSS() {
         const styleId = 'activity-icons-hide-svg';
         if (document.getElementById(styleId)) return;
@@ -48,70 +49,62 @@
         { text: 'updated', icon: 'update', color: '#00bcd4' }
     ];
 
+    let isProcessing = false;
+
     function updateActivityIcons() {
-    const anchors = document.querySelectorAll('a[href^="#/dashboard/activity"]');
+        if (isProcessing) return;
+        isProcessing = true;
 
-        anchors.forEach(anchor => {
-            const textEl = anchor.querySelector('.MuiTypography-body1');
-            const avatar = anchor.querySelector('.MuiAvatar-root');
+        try {
+            // Check if activity links are visible
+            const activityLinks = document.querySelectorAll('a[href^="#/dashboard/activity"]');
 
-            if (!textEl || !avatar) return;
+            if (activityLinks.length === 0) {
+                return;
+            }
 
-            const text = textEl.textContent.toLowerCase();
-            const match = ICON_MAP.find(item => text.includes(item.text));
+            activityLinks.forEach(anchor => {
+                const textEl = anchor.querySelector('.MuiTypography-body1');
+                const avatar = anchor.querySelector('.MuiAvatar-root');
 
-            if (!match) return;
+                if (!textEl || !avatar) return;
 
-            const existing = avatar.querySelector('.material-icons');
-            if (existing?.textContent === match.icon &&
-                avatar.style.backgroundColor === match.color) return;
+                const text = textEl.textContent.toLowerCase();
+                const match = ICON_MAP.find(item => text.includes(item.text));
 
-            avatar.innerHTML = `<span class="material-icons">${match.icon}</span>`;
-            avatar.style.setProperty('background-color', match.color, 'important');
-        });
+                if (!match) return;
+
+                // Skip if already set correctly
+                const existing = avatar.querySelector('.material-icons');
+                if (existing?.textContent === match.icon &&
+                    avatar.style.backgroundColor === match.color) return;
+
+                avatar.innerHTML = `<span class="material-icons">${match.icon}</span>`;
+                avatar.style.setProperty('background-color', match.color, 'important');
+            });
+        } finally {
+            isProcessing = false;
+        }
     }
 
     let debounceTimer;
-    let observer = null;
-    let processedAnchors = new WeakSet();
+    function debouncedUpdateActivityIcons() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(updateActivityIcons, 100);
+    }
 
     function initialize() {
-        console.log('🪼 Jellyfin Enhanced: Activity Icons initializing...');
+        // Inject CSS for Material Icons
         injectCSS();
         updateActivityIcons();
 
-        if (observer) {
-            observer.disconnect();
-        }
-
-        observer = new MutationObserver((mutations) => {
-            let shouldCheck = false;
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType === 1 && (node.matches?.('a[href^="#/dashboard/activity"]') || node.querySelector?.('a[href^="#/dashboard/activity"]'))) {
-                        shouldCheck = true;
-                        break;
-                    }
-                }
-                if (shouldCheck) break;
-            }
-            if (shouldCheck) {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(updateActivityIcons, 100);
-            }
-        });
-
+        const observer = new MutationObserver(debouncedUpdateActivityIcons);
         observer.observe(document.body, { childList: true, subtree: true });
-
-        // Run on hashchange for navigation
-        const handleHashChange = () => {
-            setTimeout(updateActivityIcons, 200);
-        };
-        window.addEventListener('hashchange', handleHashChange);
-
-        console.log('🪼 Jellyfin Enhanced: Activity Icons initialized.');
+        window.addEventListener('hashchange', debouncedUpdateActivityIcons);
     }
 
-    window.ActivityIconsInit = initialize;
+    if (window.JellyfinEnhanced) {
+        window.JellyfinEnhanced.initializeActivityIcons = initialize;
+    }
 
-})()
+})();
