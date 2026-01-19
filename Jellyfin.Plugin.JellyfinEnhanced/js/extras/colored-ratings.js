@@ -10,7 +10,7 @@
         fallbackInterval: 1000,
         debounceDelay: 100,
         maxRetries: 3,
-        cssUrl: 'https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced/css/ratings.css',
+        cssUrl: 'https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/css/ratings.css',
         cssId: 'jellyfin-ratings-style'
     };
 
