@@ -1017,7 +1017,7 @@
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
                     <a is="emby-linkbutton"
-                       ${jellyfinHref ? `href="${jellyfinHref}"` : (useMoreInfoModal ? 'href="#"' : (jellyseerrUrl ? `href="${jellyseerrUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#"'))}
+                       ${jellyfinHref ? `href="${jellyfinHref}"` : (useMoreInfoModal ? 'href="#"' : (jellyseerrUrl ? `href="${jellyseerrUrl}"` : 'href="#"'))}
                        class="jellyseerr-more-info-link"
                        data-tmdb-id="${item.id}"
                        data-media-type="${item.mediaType}"
