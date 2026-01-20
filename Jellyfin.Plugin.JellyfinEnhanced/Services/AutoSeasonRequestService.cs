@@ -88,35 +88,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Query all episodes in the current season using the series as parent
-            var episodesQuery = new InternalItemsQuery(user)
+            // Get the total episode count for this season from TMDB/Jellyseerr
+            var totalEpisodesInSeason = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, currentSeasonNumber);
+            if (totalEpisodesInSeason == null || totalEpisodesInSeason <= 0)
             {
-                AncestorIds = new[] { series.Id },
-                IncludeItemTypes = new[] { BaseItemKind.Episode },
-                Recursive = true,
-                OrderBy = new[] { (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending), (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
-            };
-
-            var allEpisodes = _libraryManager.GetItemsResult(episodesQuery).Items
-                .OfType<Episode>()
-                .Where(e => e.ParentIndexNumber == currentSeasonNumber)
-                .OrderBy(e => e.IndexNumber)
-                .ToList();
-
-            if (allEpisodes.Count == 0)
-            {
-                _logger.Debug($"[Auto-Season-Request] No episodes found in season {currentSeasonNumber} of '{series.Name}'");
+                _logger.Warning($"[Auto-Season-Request] Could not determine total episodes for '{series.Name}' S{currentSeasonNumber} from TMDB");
                 return;
             }
 
-            var totalEpisodes = allEpisodes.Count;
-
-            // Calculate remaining episodes based on current episode position
-            // If watching E8 out of 10 episodes, remaining = 10 - 8 = 2 episodes left
-            var remainingAfterCurrent = totalEpisodes - currentEpisodeNumber;
+            // Calculate remaining episodes based on current episode position and TMDB total
+            // If watching E8 out of 15 total episodes, remaining = 15 - 8 = 7 episodes left
+            var remainingAfterCurrent = totalEpisodesInSeason.Value - currentEpisodeNumber;
             if (remainingAfterCurrent < 0) remainingAfterCurrent = 0;
 
-            _logger.Info($"[Auto-Season-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodes}, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
+            // Query episodes in Jellyfin for "require all watched" check if needed
+            var availableEpisodesInJellyfin = 0;
+            List<Episode> allEpisodes = new List<Episode>();
+
+            if (config.AutoSeasonRequestRequireAllWatched)
+            {
+                var episodesQuery = new InternalItemsQuery(user)
+                {
+                    AncestorIds = new[] { series.Id },
+                    IncludeItemTypes = new[] { BaseItemKind.Episode },
+                    Recursive = true,
+                    OrderBy = new[] { (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending), (ItemSortBy.IndexNumber, JSortOrder.Ascending) }
+                };
+
+                allEpisodes = _libraryManager.GetItemsResult(episodesQuery).Items
+                    .OfType<Episode>()
+                    .Where(e => e.ParentIndexNumber == currentSeasonNumber)
+                    .OrderBy(e => e.IndexNumber)
+                    .ToList();
+
+                availableEpisodesInJellyfin = allEpisodes.Count;
+            }
+
+            _logger.Info($"[Auto-Season-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodesInSeason} (TMDB total), {availableEpisodesInJellyfin} available in Jellyfin, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
 
             // Check if threshold is met
             bool thresholdMet = remainingAfterCurrent <= config.AutoSeasonRequestThresholdValue;
@@ -217,6 +225,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Warning($"[Auto-Season-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
             }
+        }
+
+        // Gets the total number of episodes in a season from TMDB
+        private async Task<int?> GetTotalEpisodesInSeasonFromTmdb(string tmdbId, int seasonNumber)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return null;
+            }
+
+            try
+            {
+                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Clear();
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+
+                foreach (var url in urls)
+                {
+                    var trimmedUrl = url.Trim().TrimEnd('/');
+                    var requestUrl = $"{trimmedUrl}/api/v1/tv/{tmdbId}";
+
+                    try
+                    {
+                        var response = await httpClient.GetAsync(requestUrl);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            _logger.Debug($"[Auto-Season-Request] Jellyseerr returned {response.StatusCode} for TMDB {tmdbId}");
+                            continue;
+                        }
+
+                        var content = await response.Content.ReadAsStringAsync();
+                        using (JsonDocument doc = JsonDocument.Parse(content))
+                        {
+                            var root = doc.RootElement;
+
+                            // Look for the season in the response
+                            if (root.TryGetProperty("seasons", out var seasonsArray))
+                            {
+                                foreach (var season in seasonsArray.EnumerateArray())
+                                {
+                                    if (season.TryGetProperty("seasonNumber", out var seasonNumProp) &&
+                                        seasonNumProp.GetInt32() == seasonNumber)
+                                    {
+                                        // Get episode count for this season
+                                        if (season.TryGetProperty("episodeCount", out var episodeCountProp))
+                                        {
+                                            var episodeCount = episodeCountProp.GetInt32();
+                                            _logger.Debug($"[Auto-Season-Request] TMDB reports {episodeCount} episodes in season {seasonNumber}");
+                                            return episodeCount;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Season not found in response
+                        _logger.Debug($"[Auto-Season-Request] Season {seasonNumber} not found in TMDB data");
+                        return null;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug($"[Auto-Season-Request] Error checking TMDB data at {trimmedUrl}: {ex.Message}");
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[Auto-Season-Request] Error querying TMDB episode count: {ex.Message}");
+            }
+
+            return null;
         }
 
         // Jellyseerr season status
