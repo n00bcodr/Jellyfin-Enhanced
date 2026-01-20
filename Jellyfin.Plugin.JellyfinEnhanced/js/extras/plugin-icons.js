@@ -77,28 +77,23 @@
             const materialIconConfigs = [
                 {
                     selector: 'a[href*="Intro%20Skipper"]',
-                    icon: 'skip_next',
-                    color: '#ff6b35'
+                    icon: 'redo'
                 },
                 {
                     selector: 'a[href*="reports"]',
-                    icon: 'assessment',
-                    color: '#4caf50'
+                    icon: 'insert_chart_outlined'
                 },
                 {
                     selector: 'a[href*="Jellysleep"]',
-                    icon: 'bedtime',
-                    color: '#9c27b0'
+                    icon: 'dark_mode'
                 },
                 {
                     selector: 'a[href*="Home%20Screen%20Sections"]',
-                    icon: 'dashboard',
-                    color: '#2196f3'
+                    icon: 'dashboard_customize'
                 },
                 {
                     selector: 'a[href*="File%20Transformation"]',
-                    icon: 'transform',
-                    color: '#ff9800'
+                    icon: 'file_open'
                 }
             ];
 
@@ -115,7 +110,6 @@
                     const materialIcon = document.createElement('span');
                     materialIcon.className = 'material-icons plugin-material-icon';
                     materialIcon.textContent = config.icon;
-                    materialIcon.style.color = config.color;
                     materialIcon.setAttribute('aria-hidden', 'true');
 
                     oldSvg.replaceWith(materialIcon);

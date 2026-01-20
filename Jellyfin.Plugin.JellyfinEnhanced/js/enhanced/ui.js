@@ -467,17 +467,17 @@
         if (currentUserId) {
             try {
                 // Fetch fresh settings for the current user
-                const settingsResponse = await ApiClient.ajax({ 
-                    type: 'GET', 
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`), 
-                    dataType: 'json' 
+                const settingsResponse = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
+                    dataType: 'json'
                 });
-                
+
                 // Update the userConfig with fresh data
                 if (settingsResponse) {
                     JE.userConfig = JE.userConfig || {};
                     JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsResponse);
-                    
+
                     // Reload current settings
                     if (typeof JE.loadSettings === 'function') {
                         JE.currentSettings = JE.loadSettings();
@@ -487,7 +487,12 @@
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
             }
         }
-        
+
+        // Re-initialize shortcuts to ensure they're populated before building the panel
+        if (typeof JE.initializeShortcuts === 'function') {
+            JE.initializeShortcuts();
+        }
+
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
@@ -542,6 +547,14 @@
 
         const pluginShortcuts = Array.isArray(JE.pluginConfig.Shortcuts) ? JE.pluginConfig.Shortcuts : [];
         const shortcuts = pluginShortcuts.reduce((acc, s) => ({ ...acc, [s.Name]: s }), {});
+
+        // Ensure activeShortcuts is initialized before building the panel
+        if (!JE.state.activeShortcuts || Object.keys(JE.state.activeShortcuts).length === 0) {
+            console.warn('🪼 Jellyfin Enhanced: activeShortcuts not initialized, initializing now...');
+            if (typeof JE.initializeShortcuts === 'function') {
+                JE.initializeShortcuts();
+            }
+        }
 
         // --- Draggable Panel Logic ---------
         let isDragging = false;
@@ -647,7 +660,7 @@
                             <div style="display: grid; gap: 8px; font-size: 14px;">
                                 ${(JE.pluginConfig.Shortcuts || []).filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${action.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action.Name]}</span>
+                                        <span class="shortcut-key" tabindex="0" data-action="${action.Name}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action.Name] || ''}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
                                             <span>${JE.t('shortcut_' + action.Name)}</span>
@@ -661,7 +674,7 @@
                             <div style="display: grid; gap: 8px; font-size: 14px;">
                                 ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro'].map(action => `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${action}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action]}</span>
+                                        <span class="shortcut-key" tabindex="0" data-action="${action}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${JE.state.activeShortcuts[action] || ''}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
                                             <span>${JE.t('shortcut_' + action)}${action === 'OpenEpisodePreview' ? ' <span style="font-size: 11px; opacity: 0.7;" title="Requires InPlayerEpisodePreview plugin from https://github.com/Namo2/InPlayerEpisodePreview/">ⓘ</span>' : ''}</span>
