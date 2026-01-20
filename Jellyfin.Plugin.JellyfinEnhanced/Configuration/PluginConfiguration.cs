@@ -155,6 +155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ThemeSelectorEnabled = false;
             ColoredActivityIconsEnabled = false;
             PluginIconsEnabled = false;
+            EnableLoginImage = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -282,5 +283,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ThemeSelectorEnabled { get; set; }
         public bool ColoredActivityIconsEnabled { get; set; }
         public bool PluginIconsEnabled { get; set; }
+        public bool EnableLoginImage { get; set; }
     }
 }

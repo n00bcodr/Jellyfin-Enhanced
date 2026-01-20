@@ -430,6 +430,33 @@
     }
 
     /**
+     * Loads the login image script early (checks config first).
+     */
+    function loadLoginImageEarly() {
+        if (typeof ApiClient === 'undefined') {
+            setTimeout(loadLoginImageEarly, 50);
+            return;
+        }
+
+        // Fetch the public config to check if login image is enabled
+        ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
+            dataType: 'json'
+        }).then((config) => {
+            // Only load if enabled (default to false)
+            if (config?.EnableLoginImage === true) {
+                const loginImageScript = document.createElement('script');
+                loginImageScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/extras/login-image.js?v=' + Date.now());
+                loginImageScript.onerror = () => console.error('🪼 Jellyfin Enhanced: Failed to load login image script.');
+                document.head.appendChild(loginImageScript);
+            }
+        }).catch(() => {
+            console.warn('🪼 Jellyfin Enhanced: Could not fetch config for login image, skipping.');
+        });
+    }
+
+    /**
      * Main initialization function.
      */
     async function initialize() {
@@ -616,6 +643,9 @@
 
     // Load splash screen immediately (before main initialization)
     loadSplashScreenEarly();
+
+    // Load login image immediately (before main initialization)
+    loadLoginImageEarly();
 
     // Then start main initialization
     initialize();

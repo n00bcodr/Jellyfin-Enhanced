@@ -1206,6 +1206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ThemeSelectorEnabled,
                 config.ColoredActivityIconsEnabled,
                 config.PluginIconsEnabled,
+                config.EnableLoginImage,
 
             });
         }
