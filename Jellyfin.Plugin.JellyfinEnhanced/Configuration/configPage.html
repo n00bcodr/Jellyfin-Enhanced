@@ -377,7 +377,7 @@
                 </div>
                 <div id="jellyseerr" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Configuration</h3></legend>
+                        <legend class="sectionTitle"><h3>Setup</h3></legend>
                         <div class="configSection">
                             <div class="inputContainer">
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Jellyseerr URL(s)</label>
@@ -396,28 +396,6 @@
                                 <div class="fieldDescription">API key from Jellyseerr. (Settings > General Settings >  API Key)</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Jellyseerr URL Mappings (Optional)</label>
-                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
-                                <div class="fieldDescription">Map your Jellyfin URLs to specific Jellyseerr URLs for displaying links to users. Users will get the appropriate Jellyseerr link when using "Link result titles to Jellyseerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
-                            </div>
-                            <div
-                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
-                                <div>
-                                    <strong>URL Mapping Examples:</strong><br>
-                                    • Remote access: <code>https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com</code><br>
-                                    • Local access: <code>http://192.168.1.10:8096|http://192.168.1.10:5055</code><br>
-                                    • With base URL: <code>https://example.com/jellyfin|https://example.com/jellyseerr</code><br><br>
-                                </div>
-                            </div>
-                            <div
-                                style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #ffc107; font-size: 18px; margin-top: 2px;">phone_android</i>
-                                <div>
-                                     Make sure proper mappings are added to appropriate URLs in order for mobile clients to open Jellyseerr links correctly.
-                                </div>
-                            </div>
-                            <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="jellyseerr_TMDB_API_KEY">TMDB API Key</label>
                                 <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
                                     <input id="jellyseerr_TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" style="flex-grow: 1;"/>
@@ -428,6 +406,35 @@
                                 </div>
                                 <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a><br>TMDB API key for automatic movie collection requests and Jellyseerr Collection Results. Shared with Elsewhere Settings</div>
                             </div>
+
+                            <details style="margin: 2em 0; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Advanced URL Mappings (Optional)</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="inputContainer">
+                                        <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Jellyseerr URL Mappings</label>
+                                        <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
+                                        <div class="fieldDescription">Map your Jellyfin URLs to specific Jellyseerr URLs for displaying links to users. Users will get the appropriate Jellyseerr link when using "Link result titles to Jellyseerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
+                                    </div>
+                                    <div
+                                        style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                        <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                        <div>
+                                            <strong>URL Mapping Examples:</strong><br>
+                                            • Remote access: <code>https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com</code><br>
+                                            • Local access: <code>http://192.168.1.10:8096|http://192.168.1.10:5055</code><br>
+                                            • With base URL: <code>https://example.com/jellyfin|https://example.com/jellyseerr</code><br><br>
+                                        </div>
+                                    </div>
+                                    <div
+                                        style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                        <i class="material-icons" style="color: #ffc107; font-size: 18px; margin-top: 2px;">phone_android</i>
+                                        <div>
+                                             Make sure proper mappings are added to appropriate URLs in order for mobile clients to open Jellyseerr links correctly.
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+
                             <div
                                 style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
@@ -450,34 +457,57 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Search</h3></legend>
                         <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show Jellyseerr Results in Search</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox" data-plugin-config/>
-                                    <span>Show Collections in Jellyseerr Search Results</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured.</b></div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrUseMoreInfoModal" is="emby-checkbox" type="checkbox"/>
-                                    <span>Open result titles and posters in "More Info" modal</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title or poster opens an in-app More Info modal.<br>When disabled, clicking will open the item in Jellyseerr.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrEnable4kRequests" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable 4K Requests</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, movie request buttons include a dropdown to request a 4K version.</div>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Search Integration</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show Jellyseerr Results in Search</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox" data-plugin-config/>
+                                            <span>Show Collections in Jellyseerr Search Results</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured.</b></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrUseMoreInfoModal" is="emby-checkbox" type="checkbox"/>
+                                            <span>Open result titles and posters in "More Info" modal</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title or poster opens an in-app More Info modal.<br>When disabled, clicking will open the item in Jellyseerr.</div>
+                                </div>
+                            </details>
+
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Request Options</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrEnable4kRequests" is="emby-checkbox" type="checkbox"/>
+                                            <span>Enable 4K Requests</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, movie request buttons include a dropdown to request a 4K version.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show advanced request options</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Enable this if you want users to be able to choose between Servers, Quality and Paths while requesting. <br> Note: This will disregard any Override Rules set in Jellyseerr.</div>
+                                </div>
+                            </details>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Other Features</h3></legend>
+                        <div class="configSection">
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrShowReportButton" is="emby-checkbox" type="checkbox"/>
@@ -485,13 +515,6 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, a small report icon will be added to item action icons allowing users to report playback/content issues to Jellyseerr.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show advanced request options</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Enable this if you want users to be able to choose between Servers, Quality and Paths while requesting. <br> Note: This will disregard any Override Rules set in Jellyseerr.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="showElsewhereOnJellyseerr" is="emby-checkbox" type="checkbox"/>
@@ -502,162 +525,179 @@
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Recommendations</h3></legend>
+                        <legend class="sectionTitle"><h3>Discovery & Recommendations</h3></legend>
                         <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowSimilar" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show similar items on item details page</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays similar movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowRecommended" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show recommended items on item details page</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrExcludeLibraryItems" is="emby-checkbox" type="checkbox"/>
-                                    <span>Exclude items already in library</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Hide similar/recommended items that already exist in your Jellyfin library from the results.<br>If disabled, the items that are available link to the media item in the library.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowNetworkDiscovery" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show "More from [Network]" on studio/network pages</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a network page (e.g., Netflix, HBO), displays additional content from that network available in Jellyseerr.</div>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Item Detail Page</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowSimilar" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show similar items on item details page</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Displays similar movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowRecommended" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show recommended items on item details page</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrExcludeLibraryItems" is="emby-checkbox" type="checkbox"/>
+                                            <span>Exclude items already in library</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Hide similar/recommended items that already exist in your Jellyfin library from the results.<br>If disabled, the items that are available link to the media item in the library.</div>
+                                </div>
+                            </details>
 
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowGenreDiscovery" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show "More [Genre]" on genre pages</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a genre page (e.g., Action, Comedy), displays additional content in that genre from Jellyseerr.</div>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">"More" Discovery</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowNetworkDiscovery" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show "More from [Network]" on studio/network pages</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a network page (e.g., Netflix, HBO), displays additional content from that network available in Jellyseerr.</div>
 
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowTagDiscovery" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show "More [Tag]" on tag pages</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a tag page (e.g., cooking, superhero), displays additional content with that keyword from Jellyseerr.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowGenreDiscovery" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show "More [Genre]" on genre pages</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a genre page (e.g., Action, Comedy), displays additional content in that genre from Jellyseerr.</div>
 
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="jellyseerrShowPersonDiscovery" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show "More from [Actor]" on person pages</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">When viewing an actor/person page, displays their filmography from Jellyseerr including content not in your library.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowTagDiscovery" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show "More [Tag]" on tag pages</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 1em;">When viewing a tag page (e.g., cooking, superhero), displays additional content with that keyword from Jellyseerr.</div>
+
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowPersonDiscovery" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show "More from [Actor]" on person pages</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">When viewing an actor/person page, displays their filmography from Jellyseerr including content not in your library.</div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Automatic Advance Season Requests</h3></legend>
+                        <legend class="sectionTitle"><h3>Automatic Requests</h3></legend>
                         <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Automatic Advance Season Requests</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">
-                                Automatically request the next season in Jellyseerr when a user about to finish the current season.
-                                <br><br>
-                            </div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/>
-                                    <span>Require All Prior Episodes Watched</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">
-                                Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br> This might cause requests to not be triggered if users skip episodes.
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
-                                <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
-                                <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
-                            </div>
-                            <div
-                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
-                                <div>
-                                    • Requests are triggered when users start or complete watching episodes<br>
-                                    • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br>
-                                    • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br>
-                                    • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Advanced Season Requests</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/>
+                                            <span>Enable Automatic Advance Season Requests</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">
+                                        Automatically request the next season in Jellyseerr when a user about to finish the current season.
+                                        <br><br>
+                                    </div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/>
+                                            <span>Require All Prior Episodes Watched</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">
+                                        Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br> This might cause requests to not be triggered if users skip episodes.
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
+                                        <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
+                                        <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
+                                    </div>
+                                    <div
+                                        style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                        <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                        <div>
+                                            • Requests are triggered when users start or complete watching episodes<br>
+                                            • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br>
+                                            • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br>
+                                            • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    </fieldset>
-                    <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Automatic Movie Requests</h3></legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Automatic Movie Requests</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">
-                                Automatically request the next movie in a collection based on configured triggers.
-                                <br><br>
-                                <strong>Requirements:</strong> TMDB API key must be configured.
-                            </div>
+                            </details>
 
-                            <div style="margin-bottom: 1.5em;">
-                                <label style="display: block; margin-bottom: 0.5em; font-weight: 500;">Request Triggers:</label>
-                                <div class="checkboxContainer" style="margin-bottom: 0.75em;">
-                                    <label>
-                                        <input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/>
-                                        <span>When movie starts (within first 5 minutes)</span>
-                                    </label>
-                                </div>
-                                <div class="checkboxContainer" style="margin-bottom: 0.75em;">
-                                    <label>
-                                        <input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/>
-                                        <span>After watching for a certain amount of time</span>
-                                    </label>
-                                </div>
-                                <div class="fieldDescription" style="margin-top: 0.5em;">
-                                    Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
-                                </div>
-                            </div>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;">Movie Collection Requests</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/>
+                                            <span>Enable Automatic Movie Requests</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">
+                                        Automatically request the next movie in a collection based on configured triggers.
+                                        <br><br>
+                                        <strong>Requirements:</strong> TMDB API key must be configured.
+                                    </div>
 
-                            <div style="margin-bottom: 1.5em;">
-                                <label for="autoMovieRequestMinutesWatched" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Minutes Watched Before Auto-Request Check:</label>
-                                <input id="autoMovieRequestMinutesWatched" type="text" pattern="[0-9]+" style="width: 100px; padding: 0.5em; border: 1px solid #555; border-radius: 4px;" value="20" />
-                                <span style="margin-left: 0.5em;">minutes</span>
-                                <div class="fieldDescription" style="margin-top: 0.5em;">
-                                    How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
-                                </div>
-                            </div>
+                                    <div style="margin-bottom: 1.5em;">
+                                        <label style="display: block; margin-bottom: 0.5em; font-weight: 500;">Request Triggers:</label>
+                                        <div class="checkboxContainer" style="margin-bottom: 0.75em;">
+                                            <label>
+                                                <input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/>
+                                                <span>When movie starts (within first 5 minutes)</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkboxContainer" style="margin-bottom: 0.75em;">
+                                            <label>
+                                                <input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/>
+                                                <span>After watching for a certain amount of time</span>
+                                            </label>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 0.5em;">
+                                            Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
+                                        </div>
+                                    </div>
 
-                            <div class="checkboxContainer" style="margin-bottom: 1.5em;">
-                                <label>
-                                    <input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/>
-                                    <span>Only request if movie is already released</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-top: 0.5em;">
-                                When enabled, future releases will be skipped. Only movies that have already been released will be requested.
-                            </div>
-                            <div
-                                style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
-                                <div>
-                                    • Only works for movies that are part of a TMDB collection (e.g., <a href="https://www.themoviedb.org/collection/86311" target="_blank" style="text-decoration: underline; font-weight: bolder;">The Avengers Collection</a>, <a href="https://www.themoviedb.org/collection/10" target="_blank" style="text-decoration: underline; font-weight: bolder;">Star Wars Collection</a>, etc.)<br>
-                                    • Automatically requests the next movie in the collection based on release order<br>
-                                    • Movies already available or requested will be skipped<br>
+                                    <div style="margin-bottom: 1.5em;">
+                                        <label for="autoMovieRequestMinutesWatched" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Minutes Watched Before Auto-Request Check:</label>
+                                        <input id="autoMovieRequestMinutesWatched" type="text" pattern="[0-9]+" style="width: 100px; padding: 0.5em; border: 1px solid #555; border-radius: 4px;" value="20" />
+                                        <span style="margin-left: 0.5em;">minutes</span>
+                                        <div class="fieldDescription" style="margin-top: 0.5em;">
+                                            How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
+                                        </div>
+                                    </div>
+
+                                    <div class="checkboxContainer" style="margin-bottom: 1.5em;">
+                                        <label>
+                                            <input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/>
+                                            <span>Only request if movie is already released</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-top: 0.5em;">
+                                        When enabled, future releases will be skipped. Only movies that have already been released will be requested.
+                                    </div>
+                                    <div
+                                        style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
+                                        <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
+                                        <div>
+                                            • Only works for movies that are part of a TMDB collection (e.g., <a href="https://www.themoviedb.org/collection/86311" target="_blank" style="text-decoration: underline; font-weight: bolder;">The Avengers Collection</a>, <a href="https://www.themoviedb.org/collection/10" target="_blank" style="text-decoration: underline; font-weight: bolder;">Star Wars Collection</a>, etc.)<br>
+                                            • Automatically requests the next movie in the collection based on release order<br>
+                                            • Movies already available or requested will be skipped<br>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            </details>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
