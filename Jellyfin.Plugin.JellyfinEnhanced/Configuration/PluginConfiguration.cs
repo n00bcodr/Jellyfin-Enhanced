@@ -156,6 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ColoredActivityIconsEnabled = false;
             PluginIconsEnabled = false;
             EnableLoginImage = false;
+            CustomPluginLinks = "";
         }
 
         // Jellyfin Enhanced Settings
@@ -284,5 +285,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ColoredActivityIconsEnabled { get; set; }
         public bool PluginIconsEnabled { get; set; }
         public bool EnableLoginImage { get; set; }
+        public string CustomPluginLinks { get; set; }
     }
 }

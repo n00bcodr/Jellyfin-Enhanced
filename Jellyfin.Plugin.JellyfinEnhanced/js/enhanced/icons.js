@@ -199,7 +199,7 @@
         const config = JE.pluginConfig || {};
         const useIcons = config.UseIcons !== undefined ? config.UseIcons : (config.useIcons !== undefined ? config.useIcons : true);
         const iconStyle = config.IconStyle || config.iconStyle || 'emoji';
-        
+
         if (useIcons === false) return '';
 
         let icon = '';
@@ -224,6 +224,6 @@
     JE.IconName = IconName;
     JE.icons = { EMOJI, LUCIDE, MUI };
 
-    console.log('[🪼 Jellyfin Enhanced: Icons: Module loaded successfully. JE.icon is now available.');
+    console.log('🪼 Jellyfin Enhanced: Icons: Module loaded successfully. JE.icon is now available.');
 
 })(window.JellyfinEnhanced);

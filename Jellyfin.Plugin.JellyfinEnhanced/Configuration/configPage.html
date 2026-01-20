@@ -861,6 +861,27 @@
                                     Currently works with English activity logs only. PRs welcome for additional languages.
                                 </div>
                             </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label>
+                                    <input id="loginImageEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Login Image</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Displays the user's profile picture on the manual login screen instead of the name. When a user is selected, their avatar appears above the password field.
+                                <details style="margin: 0.5em 0;">
+                                    <summary style="cursor: pointer; color: #00a4dc;">View Screenshot</summary>
+                                    <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/login-image.png" target="_blank">
+                                        <img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/login-image.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 10px;" alt="Login Image Example">
+                                    </a>
+                                </details>
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #dc3545; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                <i class="material-icons" style="color: #dc3545; font-size: 18px;">warning</i>
+                                <div>
+                                    Only use this script if all your users are visible on the login screen. This completely hides the username text input field, making it difficult to manually login.
+                                </div>
+                            </div>
 
                             <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label>
@@ -883,25 +904,29 @@
                                     Currently replaces icons for (if installed): Jellyfin Enhanced, JavaScript Injector, Intro Skipper, Reports, JellySleep, Home Screen Sections, and File Transformation.
                                 </div>
                             </div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
-                                <label>
-                                    <input id="loginImageEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Login Image</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 1em;">
-                                Displays the user's profile picture on the manual login screen instead of the name. When a user is selected, their avatar appears above the password field.
-                                <details style="margin: 0.5em 0;">
-                                    <summary style="cursor: pointer; color: #00a4dc;">View Screenshot</summary>
-                                    <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/login-image.png" target="_blank">
-                                        <img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/login-image.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 10px;" alt="Login Image Example">
-                                    </a>
-                                </details>
-                            </div>
-                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #dc3545; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
-                                <i class="material-icons" style="color: #dc3545; font-size: 18px;">warning</i>
-                                <div>
-                                    Only use this script if all your users are visible on the login screen. This completely hides the username text input field, making it difficult to manually login.
+
+                            <div style="margin-top: 2em; padding-top: 1.5em; border-top: 1px solid rgba(255,255,255,0.1);">
+                                <h4 class="sectionTitle" style="margin-top: 0;">Custom Plugin Links</h4>
+                                <div class="fieldDescription" style="margin-bottom: 1em;">
+                                    Add custom plugin links to the Dashboard sidebar. Each link should be on a new line in the format: <code>Configuration Page Name | icon_name</code>
+                                    <br><br>
+                                    <strong>Note:</strong> You must enable "Plugin Icons" above for custom plugin links to work.
+                                </div>
+                                <div class="inputContainer" style="margin-bottom: 1em;">
+                                    <label class="inputLabel inputLabelUnfocused" for="customPluginLinks">Custom Plugin Links</label>
+                                    <textarea id="customPluginLinks" class="emby-textarea emby-input" rows="6" placeholder="Jellyfin Tweaks | build&#10;Newsletters | news"></textarea>
+                                    <div class="fieldDescription">
+                                        <strong>Format:</strong> <code>Configuration Page Name | Material Icon Name</code><br>
+                                        <strong>Important:</strong> Use the exact name that appears in the configuration page URL (e.g., "Jellyfin%20Tweaks" becomes "Jellyfin Tweaks")<br>
+                                        <br>
+                                        <a href="https://fonts.google.com/icons?icon.set=Material+Icons" target="_blank" class="sectionTitle">Browse Material Icons</a>
+                                    </div>
+                                </div>
+                                <button id="testCustomPluginLinksBtn" class="raised button-submit emby-button" is="emby-button" type="button">
+                                    <span>Test Links</span>
+                                </button>
+                                <div class="fieldDescription" style="margin-top: 0.5em;">
+                                    Use "Test Links" to preview your custom plugin links in the sidebar. Test links will appear immediately and disappear on page refresh.
                                 </div>
                             </div>
                         </div>
@@ -1578,6 +1603,7 @@
                 document.querySelector('#coloredActivityIconsEnabled').checked = config.ColoredActivityIconsEnabled;
                 document.querySelector('#pluginIconsEnabled').checked = config.PluginIconsEnabled;
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
+                document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
                 // Setup live preview for icon settings
                 setupIconSettingsListeners();
@@ -1710,6 +1736,7 @@
             config.ColoredActivityIconsEnabled = document.querySelector('#coloredActivityIconsEnabled').checked;
             config.PluginIconsEnabled = document.querySelector('#pluginIconsEnabled').checked;
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
+            config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';
 
             return config;
         }
@@ -1968,6 +1995,64 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+
+        // Custom Plugin Links functionality
+        const testCustomPluginLinksBtn = document.getElementById('testCustomPluginLinksBtn');
+        const customPluginLinksTextarea = document.getElementById('customPluginLinks');
+
+        if (testCustomPluginLinksBtn) {
+            testCustomPluginLinksBtn.addEventListener('click', async () => {
+                const linksText = customPluginLinksTextarea.value.trim();
+                if (!linksText) {
+                    Dashboard.alert({
+                        title: 'No Links',
+                        message: 'Please add some custom plugin links first.'
+                    });
+                    return;
+                }
+
+                // Parse and validate the links
+                const lines = linksText.split('\n');
+                const validLinks = [];
+                const invalidLines = [];
+
+                lines.forEach((line, index) => {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) return;
+
+                    const parts = trimmedLine.split('|').map(part => part.trim());
+                    if (parts.length >= 2 && parts[0] && parts[1]) {
+                        validLinks.push({ name: parts[0], icon: parts[1] });
+                    } else {
+                        invalidLines.push(`Line ${index + 1}: "${trimmedLine}"`);
+                    }
+                });
+
+                if (invalidLines.length > 0) {
+                    Dashboard.alert({
+                        title: 'Invalid Format',
+                        message: `The following lines have invalid format:\n\n${invalidLines.join('\n')}\n\nPlease use the format: Configuration Page Name | icon_name`
+                    });
+                    return;
+                }
+
+                if (validLinks.length === 0) {
+                    Dashboard.alert({
+                        title: 'No Valid Links',
+                        message: 'No valid plugin links found. Please check the format.'
+                    });
+                    return;
+                }
+
+                // Test the links by temporarily adding them to the sidebar
+                // Trigger the plugin icons script to refresh with test data
+                if (window.JellyfinEnhanced && window.JellyfinEnhanced.customPlugins) {
+                    // Temporarily store test data
+                    window.testCustomPluginLinks = validLinks;
+                    window.JellyfinEnhanced.customPlugins.refresh();
+                }
+            });
+        }
 
         // click handlers to all TMDB test buttons
         document.querySelectorAll('.testTmdbBtn').forEach(btn => {

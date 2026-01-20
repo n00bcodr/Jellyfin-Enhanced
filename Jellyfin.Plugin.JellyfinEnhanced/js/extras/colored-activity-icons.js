@@ -50,6 +50,8 @@
     ];
 
     let isProcessing = false;
+    let observer = null;
+    let debounceTimer = null;
 
     function updateActivityIcons() {
         if (isProcessing) return;
@@ -60,6 +62,7 @@
             const activityLinks = document.querySelectorAll('a[href^="#/dashboard/activity"]');
 
             if (activityLinks.length === 0) {
+                isProcessing = false;
                 return;
             }
 
@@ -74,37 +77,91 @@
 
                 if (!match) return;
 
-                // Skip if already set correctly
-                const existing = avatar.querySelector('.material-icons');
-                if (existing?.textContent === match.icon &&
-                    avatar.style.backgroundColor === match.color) return;
+                // Mark as processed to avoid re-processing
+                const dataAttr = 'data-jellyfin-enhanced-activity-icon';
+                if (avatar.hasAttribute(dataAttr)) {
+                    const existing = avatar.querySelector('.material-icons');
+                    if (existing?.textContent === match.icon &&
+                        avatar.style.backgroundColor === match.color) return;
+                }
 
                 avatar.innerHTML = `<span class="material-icons">${match.icon}</span>`;
                 avatar.style.setProperty('background-color', match.color, 'important');
+                avatar.setAttribute(dataAttr, 'true');
             });
         } finally {
             isProcessing = false;
         }
     }
 
-    let debounceTimer;
     function debouncedUpdateActivityIcons() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(updateActivityIcons, 100);
+    }
+
+    function startMonitoring() {
+        if (observer) return;
+
+        observer = new MutationObserver((mutations) => {
+            let shouldProcess = false;
+
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList') {
+                    const target = mutation.target;
+
+                    // Check if activity links section was modified
+                    if (target.matches && (
+                        target.matches('a[href^="#/dashboard/activity"]') ||
+                        target.querySelector('a[href^="#/dashboard/activity"]') ||
+                        target.closest('a[href^="#/dashboard/activity"]')
+                    )) {
+                        shouldProcess = true;
+                    }
+
+                    // Check for activity page container changes
+                    if (target.classList && (target.classList.contains('dashboardDocument') || target.classList.contains('activityPage'))) {
+                        shouldProcess = true;
+                    }
+                }
+            });
+
+            if (shouldProcess) {
+                debouncedUpdateActivityIcons();
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    function stopMonitoring() {
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+        }
     }
 
     function initialize() {
         // Inject CSS for Material Icons
         injectCSS();
         updateActivityIcons();
+        startMonitoring();
 
-        const observer = new MutationObserver(debouncedUpdateActivityIcons);
-        observer.observe(document.body, { childList: true, subtree: true });
-        window.addEventListener('hashchange', debouncedUpdateActivityIcons);
+        // Re-process icons when navigating to activity page or configuration page
+        window.addEventListener('hashchange', (event) => {
+            const hash = window.location.hash;
+            if (hash.includes('#/dashboard/activity') || hash.includes('#/configurationpage')) {
+                // Use a longer timeout to ensure page is rendered
+                setTimeout(updateActivityIcons, 300);
+            }
+        });
     }
 
     if (window.JellyfinEnhanced) {
         window.JellyfinEnhanced.initializeActivityIcons = initialize;
+        window.JellyfinEnhanced.stopActivityIconsMonitoring = stopMonitoring;
     }
 
 })();
