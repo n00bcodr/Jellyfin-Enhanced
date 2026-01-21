@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Add cache-busting for settings.json\n - Fix random button showing watched series\n - Improve status handling for movie collections UI\n - Add extras: colored ratings, theme selector, activity and plugin icons\n - Fix links\n - Add logging and simplify observers in icon scripts\n - Wrap example images in links and update styles\n - Refactor feature initializers to use JellyfinEnhanced namespace\n - Improve config UI and plugin icon handling\n - Add login image feature to manual login screen\n - Use TMDB for total episode count in auto season requests\n - Add mobile client mapping warning to config page\n - Add custom plugin links to dashboard sidebar\n - Fix jellyseerr links opening in app\n - Refactor Jellyseerr config UI with collapsible sections\n - Fix placeholder examples for custom plugin links\n - Add warning about 10.10 compatibility for plugin icons\n - Add section for personal scripts and update file structure",
+        "targetAbi": "10.10.7.0",
+        "version": "10.5.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/10.5.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "EE84869C5D1D73E84BC2B7E48EDA98BB",
+        "timestamp": "2026-01-21T15:15:31"
+      },
+      {
         "changelog": "- Update README.md\n - Add Esc to close more-info-modal\n - Minor fixes for Jellyseerr in-library items\n - Add hover tooltip for Partially Available TV shows with active downloads\n - Reduce Logging\n - Update playback.js\n - Collections in More Info Modal\n - Fix Collection results opening more-info-modal\n - Update redirect for random button [Bang Redirect]",
         "targetAbi": "10.10.7.0",
         "version": "10.4.0.0",
