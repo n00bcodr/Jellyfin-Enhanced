@@ -949,9 +949,15 @@
                                 <h4 class="sectionTitle" style="margin-top: 0;">Custom Plugin Links</h4>
                                 <div class="fieldDescription" style="margin-bottom: 1em;">
                                     Add custom plugin links to the Dashboard sidebar. Each link should be on a new line in the format: <code>Configuration Page Name | icon_name</code>
-                                    <br><br>
-                                    <strong>Note:</strong> You must enable "Plugin Icons" above for custom plugin links to work.
                                 </div>
+                                <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #dc2100; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                    <i class="material-icons" style="color: #dc2100; font-size: 18px;">warning</i>
+                                    <div>
+                                        You must enable "Plugin Icons" above for custom plugin links to work.<br>
+                                        Not supported for 10.10.x. Only works on Jellyfin Server version <b>10.11.x</b>.
+                                    </div>
+                                </div>
+
                                 <div class="inputContainer" style="margin-bottom: 1em;">
                                     <label class="inputLabel inputLabelUnfocused" for="customPluginLinks">Custom Plugin Links</label>
                                     <textarea id="customPluginLinks" class="emby-textarea emby-input" rows="6" placeholder="Jellyfin Tweaks | auto_awesome&#10;Newsletters | newspaper&#10;Webhook | webhook"></textarea>
