@@ -8,15 +8,29 @@
     // Track processed items to avoid duplicate renders
     const processedItems = new Set();
 
+    // Current abort controller for cancellation
+    let currentAbortController = null;
+
     /**
      * Gets the TMDB ID from a Jellyfin item
      * @param {string} itemId - Jellyfin item ID
+     * @param {AbortSignal} [signal] - Optional abort signal
      * @returns {Promise<{tmdbId: number|null, type: string|null}>}
      */
-    async function getTmdbIdFromItem(itemId) {
+    async function getTmdbIdFromItem(itemId, signal) {
         try {
+            // Check for abort before making request
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             const userId = ApiClient.getCurrentUserId();
             const item = await ApiClient.getItem(userId, itemId);
+
+            // Check for abort after request
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
 
             if (!item) {
                 console.warn(`${logPrefix} Item not found:`, itemId);
@@ -39,9 +53,85 @@
             const type = itemType === 'Movie' ? 'movie' : 'tv';
             return { tmdbId: parseInt(tmdbId), type };
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Error getting TMDB ID:`, error);
             return { tmdbId: null, type: null };
         }
+    }
+
+    /**
+     * Wait for the detail page content to be ready
+     * @param {AbortSignal} [signal] - Optional abort signal
+     * @returns {Promise<HTMLElement|null>}
+     */
+    function waitForDetailPageReady(signal) {
+        return new Promise((resolve) => {
+            // Check for abort
+            if (signal?.aborted) {
+                resolve(null);
+                return;
+            }
+
+            const checkPage = () => {
+                const activePage = document.querySelector('.libraryPage:not(.hide)');
+                if (!activePage) return null;
+
+                const detailPageContent = activePage.querySelector('.detailPageContent');
+                const moreLikeThisSection = detailPageContent?.querySelector('#similarCollapsible');
+
+                if (detailPageContent && moreLikeThisSection) {
+                    return { detailPageContent, moreLikeThisSection };
+                }
+                return null;
+            };
+
+            // Try immediately
+            const immediate = checkPage();
+            if (immediate) {
+                resolve(immediate);
+                return;
+            }
+
+            // Set up observer
+            let observer = null;
+            let timeoutId = null;
+
+            const cleanup = () => {
+                if (observer) {
+                    observer.disconnect();
+                    observer = null;
+                }
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+            };
+
+            // Handle abort
+            if (signal) {
+                signal.addEventListener('abort', () => {
+                    cleanup();
+                    resolve(null);
+                }, { once: true });
+            }
+
+            observer = new MutationObserver(() => {
+                const result = checkPage();
+                if (result) {
+                    cleanup();
+                    resolve(result);
+                }
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            // Timeout fallback (3 seconds)
+            timeoutId = setTimeout(() => {
+                cleanup();
+                const result = checkPage();
+                resolve(result);
+            }, 3000);
+        });
     }
 
     /**
@@ -95,8 +185,11 @@
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider animatedScrollX';
         itemsContainer.style.whiteSpace = 'nowrap';
 
+        // Use DocumentFragment for batch DOM insertion
+        const fragment = document.createDocumentFragment();
+
         // Add items to container
-        results.forEach(item => {
+        for (const item of filteredResults) {
             const card = JE.jellyseerrUI && JE.jellyseerrUI.createJellyseerrCard
                 ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
                 : null;
@@ -119,29 +212,37 @@
                         titleLink.removeAttribute('rel');
                     }
                 }
-                itemsContainer.appendChild(card);
+                fragment.appendChild(card);
             }
-        });
+        }
 
+        itemsContainer.appendChild(fragment);
         scrollerContainer.appendChild(itemsContainer);
         section.appendChild(scrollerContainer);
         return section;
     }
-
-
 
     /**
      * Renders Similar and Recommended sections for an item
      * @param {string} itemId - Jellyfin item ID
      */
     async function renderSimilarAndRecommended(itemId) {
-        // Prevent duplicate renders
+        // Prevent duplicate renders (check only - add after success)
         if (processedItems.has(itemId)) {
-            // console.debug(`${logPrefix} Item already processed:`, itemId);
             return;
         }
 
-        processedItems.add(itemId);
+        // Cancel any previous in-flight requests
+        if (currentAbortController) {
+            currentAbortController.abort();
+        }
+        currentAbortController = new AbortController();
+        const signal = currentAbortController.signal;
+
+        // Start metrics if enabled
+        if (JE.requestManager?.metrics?.enabled) {
+            JE.requestManager.startMeasurement('similar-recommended');
+        }
 
         try {
             // Check configuration settings early
@@ -155,27 +256,33 @@
 
             // Check if Jellyseerr is active
             const status = await JE.jellyseerrAPI.checkUserStatus();
+            if (signal.aborted) return;
+
             if (!status || !status.active) {
                 console.debug(`${logPrefix} Jellyseerr is not active, skipping`);
                 return;
             }
 
             // Get TMDB ID and type
-            const { tmdbId, type } = await getTmdbIdFromItem(itemId);
+            const { tmdbId, type } = await getTmdbIdFromItem(itemId, signal);
+            if (signal.aborted) return;
+
             if (!tmdbId || !type) {
                 console.debug(`${logPrefix} No valid TMDB ID found for item, skipping`);
                 return;
             }
 
-            console.log(`${logPrefix} Fetching similar and recommended content for TMDB ID ${tmdbId} (${type})`);
+            console.debug(`${logPrefix} Fetching similar and recommended content for TMDB ID ${tmdbId} (${type})`);
 
-            // Fetch only the data that's enabled
+            // Fetch only the data that's enabled, passing signal for cancellation
+            const fetchOptions = { signal };
             const promises = [];
+
             if (showSimilar) {
                 promises.push(
                     type === 'movie'
-                        ? JE.jellyseerrAPI.fetchSimilarMovies(tmdbId)
-                        : JE.jellyseerrAPI.fetchSimilarTvShows(tmdbId)
+                        ? JE.jellyseerrAPI.fetchSimilarMovies(tmdbId, fetchOptions)
+                        : JE.jellyseerrAPI.fetchSimilarTvShows(tmdbId, fetchOptions)
                 );
             } else {
                 promises.push(Promise.resolve({ results: [] }));
@@ -184,14 +291,20 @@
             if (showRecommended) {
                 promises.push(
                     type === 'movie'
-                        ? JE.jellyseerrAPI.fetchRecommendedMovies(tmdbId)
-                        : JE.jellyseerrAPI.fetchRecommendedTvShows(tmdbId)
+                        ? JE.jellyseerrAPI.fetchRecommendedMovies(tmdbId, fetchOptions)
+                        : JE.jellyseerrAPI.fetchRecommendedTvShows(tmdbId, fetchOptions)
                 );
             } else {
                 promises.push(Promise.resolve({ results: [] }));
             }
 
-            const [similarData, recommendedData] = await Promise.all(promises);
+            // Wait for page to be ready in parallel with data fetch
+            const [similarData, recommendedData, pageReady] = await Promise.all([
+                ...promises,
+                waitForDetailPageReady(signal)
+            ]);
+
+            if (signal.aborted) return;
 
             const similarResults = similarData?.results || [];
             const recommendedResults = recommendedData?.results || [];
@@ -200,6 +313,14 @@
                 console.debug(`${logPrefix} No similar or recommended content to display`);
                 return;
             }
+
+            // Check page readiness
+            if (!pageReady) {
+                console.warn(`${logPrefix} Page not ready for insertion`);
+                return;
+            }
+
+            const { detailPageContent, moreLikeThisSection } = pageReady;
 
             // Filter items if configured to exclude library items
             const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
@@ -215,32 +336,14 @@
                 return;
             }
 
-            // Find the insertion point
-            const activePage = document.querySelector('.libraryPage:not(.hide)');
-            if (!activePage) {
-                console.warn(`${logPrefix} Active page not found`);
-                return;
-            }
-
-            const detailPageContent = activePage.querySelector('.detailPageContent');
-            if (!detailPageContent) {
-                console.warn(`${logPrefix} detailPageContent not found`);
-                return;
-            }
-
-            // Find insertion point: always after "More Like This" section
-            const moreLikeThisSection = detailPageContent.querySelector('#similarCollapsible');
-            if (!moreLikeThisSection) {
-                console.warn(`${logPrefix} "More Like This" section not found, cannot insert sections`);
-                return;
-            }
+            // Final abort check before DOM manipulation
+            if (signal.aborted) return;
 
             // Remove any existing Jellyseerr sections to avoid duplicates
             detailPageContent.querySelectorAll('.jellyseerr-details-section').forEach(el => el.remove());
 
             // Create and insert sections
             if (filteredRecommendedResults.length > 0) {
-                // Ensure title is properly translated
                 const recommendedTitle = JE.t ? (JE.t('jellyseerr_recommended_title') || 'Recommended') : 'Recommended';
                 const recommendedSection = createJellyseerrSection(
                     filteredRecommendedResults.slice(0, 20),
@@ -248,30 +351,41 @@
                 );
                 if (recommendedSection) {
                     moreLikeThisSection.after(recommendedSection);
-                    console.log(`${logPrefix} Added Recommended section with ${filteredRecommendedResults.length} items`);
+                    console.debug(`${logPrefix} Added Recommended section with ${filteredRecommendedResults.length} items`);
                 }
             }
 
             if (filteredSimilarResults.length > 0) {
-                // Ensure title is properly translated
                 const similarTitle = JE.t ? (JE.t('jellyseerr_similar_title') || 'Similar') : 'Similar';
                 const similarSection = createJellyseerrSection(
                     filteredSimilarResults.slice(0, 20),
                     similarTitle
                 );
                 if (similarSection) {
-                    // Insert after the recommended section if it was created, otherwise after "More Like This"
                     const lastJellyseerrSection = detailPageContent.querySelector('.jellyseerr-details-section:last-of-type');
                     if (lastJellyseerrSection) {
                         lastJellyseerrSection.after(similarSection);
                     } else {
                         moreLikeThisSection.after(similarSection);
                     }
-                    console.log(`${logPrefix} Added Similar section with ${filteredSimilarResults.length} items`);
+                    console.debug(`${logPrefix} Added Similar section with ${filteredSimilarResults.length} items`);
                 }
             }
 
+            // Mark as successfully processed AFTER successful render
+            processedItems.add(itemId);
+
+            // End metrics
+            if (JE.requestManager?.metrics?.enabled) {
+                JE.requestManager.endMeasurement('similar-recommended');
+            }
+
         } catch (error) {
+            // Silently ignore abort errors (don't mark as processed so retry is possible)
+            if (error.name === 'AbortError') {
+                console.debug(`${logPrefix} Request aborted for item ${itemId}`);
+                return;
+            }
             console.error(`${logPrefix} Error rendering similar and recommended sections:`, error);
         }
     }
@@ -289,10 +403,11 @@
         try {
             const itemId = new URLSearchParams(hash.split('?')[1]).get('id');
             if (itemId) {
-                // Small delay to ensure page is fully loaded
-                setTimeout(() => {
+                // Use requestAnimationFrame instead of fixed timeout
+                // This ensures we're in sync with the rendering cycle
+                requestAnimationFrame(() => {
                     renderSimilarAndRecommended(itemId);
-                }, 500);
+                });
             }
         } catch (error) {
             console.error(`${logPrefix} Error parsing item ID from URL:`, error);
@@ -300,14 +415,27 @@
     }
 
     /**
+     * Cleanup function for navigation
+     */
+    function cleanup() {
+        // Abort any in-flight requests
+        if (currentAbortController) {
+            currentAbortController.abort();
+            currentAbortController = null;
+        }
+        // Clear processed items cache
+        processedItems.clear();
+    }
+
+    /**
      * Initializes the item details handler
      */
     function initialize() {
-        console.log(`${logPrefix} Initializing Recommendations and Similar sections`);
+        console.debug(`${logPrefix} Initializing Recommendations and Similar sections`);
 
         // Listen for hash changes (navigation)
         window.addEventListener('hashchange', () => {
-            processedItems.clear(); // Clear cache on navigation
+            cleanup();
             handleItemDetailsPage();
         });
 

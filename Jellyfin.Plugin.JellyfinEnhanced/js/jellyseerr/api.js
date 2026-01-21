@@ -8,30 +8,78 @@
     // Cache for user status (shared across all modules)
     let cachedUserStatus = null;
 
-    // TMDB proxy helper
-    async function tmdbGet(path) {
+    /**
+     * Internal fetch helper using request manager when available
+     * Falls back to ApiClient.ajax for compatibility
+     */
+    async function managedFetch(url, options = {}) {
+        const { signal, skipCache = false, skipRetry = false, cacheKey } = options;
+
+        // Use request manager if available
+        if (JE.requestManager) {
+            // Check cache first
+            if (!skipCache && cacheKey) {
+                const cached = JE.requestManager.getCached(cacheKey);
+                if (cached) return cached;
+            }
+
+            const fetchFn = async () => {
+                const response = await JE.requestManager.fetchWithRetry(
+                    url,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
+                            'X-Emby-Token': ApiClient.accessToken(),
+                            'Accept': 'application/json'
+                        },
+                        signal
+                    },
+                    skipRetry ? { ...JE.requestManager.CONFIG.retry, maxAttempts: 1 } : undefined
+                );
+                const data = await response.json();
+
+                // Cache the response
+                if (cacheKey) {
+                    JE.requestManager.setCache(cacheKey, data);
+                }
+                return data;
+            };
+
+            // Use concurrency limit and deduplication
+            return JE.requestManager.withConcurrencyLimit(() =>
+                cacheKey
+                    ? JE.requestManager.deduplicatedFetch(cacheKey, fetchFn)
+                    : fetchFn()
+            );
+        }
+
+        // Fallback to ApiClient.ajax (no request manager)
         return ApiClient.ajax({
             type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`),
-            headers: {
-                'X-Jellyfin-User-Id': ApiClient.getCurrentUserId()
-            },
+            url: url,
+            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
             dataType: 'json'
         });
+    }
+
+    // TMDB proxy helper
+    async function tmdbGet(path, options = {}) {
+        const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
+        const cacheKey = options.skipCache ? null : `tmdb:${path}`;
+        return managedFetch(url, { ...options, cacheKey });
     }
 
     /**
      * Performs a GET request to the Jellyseerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/search?query=...').
+     * @param {object} [options] - Optional settings (signal, skipCache, skipRetry).
      * @returns {Promise<any>} - The JSON response from the server.
      */
-    async function get(path) {
-        return ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${path}`),
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-            dataType: 'json'
-        });
+    async function get(path, options = {}) {
+        const url = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${path}`);
+        const cacheKey = options.skipCache ? null : `jellyseerr:${path}`;
+        return managedFetch(url, { ...options, cacheKey });
     }
 
     /**
@@ -288,7 +336,7 @@
                 }
 
                 if (matches) {
-                    console.log(`${logPrefix} Matched override rule ${rule.id}:`, {
+                    console.debug(`${logPrefix} Matched override rule ${rule.id}:`, {
                         language: rule.language,
                         genre: rule.genre,
                         profileId: rule.profileId,
@@ -344,7 +392,7 @@
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
             if (overrideSettings) {
-                console.log(`${logPrefix} Applying override rule settings:`, overrideSettings);
+                console.debug(`${logPrefix} Applying override rule settings:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
             }
         }
@@ -381,7 +429,7 @@
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', false);
             if (overrideSettings) {
-                console.log(`${logPrefix} Applying override rule settings for TV seasons:`, overrideSettings);
+                console.debug(`${logPrefix} Applying override rule settings for TV seasons:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
             }
         }
@@ -524,7 +572,7 @@
             }
 
             // WatchlistMonitor service automatically handles adding requested items to watchlist
-            console.log(`${logPrefix} Request tracked - WatchlistMonitor will automatically add TMDB ${tmdbId} (${mediaType}) to watchlist when it appears in library`);
+            console.debug(`${logPrefix} Request tracked - WatchlistMonitor will automatically add TMDB ${tmdbId} (${mediaType}) to watchlist when it appears in library`);
             return true;
         } catch (error) {
             console.error(`${logPrefix} Error queuing item for watchlist:`, error);
@@ -567,7 +615,7 @@
             if (!internalId) {
                 throw new Error(`Could not find Jellyseerr media id (mediaInfo.id) for TMDB id ${mediaId} (${mediaType})`);
             }
-            console.log(`${logPrefix} Retrieved internal media id for issue report:`, internalId);
+            console.debug(`${logPrefix} Retrieved internal media id for issue report:`, internalId);
 
             const body = {
                 mediaId: parseInt(internalId),
@@ -579,7 +627,7 @@
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
             const result = await post('/issue', body);
-            console.log(`${logPrefix} Issue reported for Jellyseerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
+            console.debug(`${logPrefix} Issue reported for Jellyseerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {
             console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
@@ -590,13 +638,16 @@
     /**
      * Fetches similar movies for a given TMDB ID.
      * @param {number} tmdbId - The TMDB ID of the movie.
-     * @param {number} page - Page number for pagination (default: 1).
+     * @param {number|object} pageOrOptions - Page number or options object.
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.fetchSimilarMovies = async function(tmdbId, page = 1) {
+    api.fetchSimilarMovies = async function(tmdbId, pageOrOptions = 1) {
+        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
+        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            return await get(`/movie/${tmdbId}/similar?page=${page}`);
+            return await get(`/movie/${tmdbId}/similar?page=${page}`, options);
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Failed to fetch similar movies for TMDB ID ${tmdbId}:`, error);
             return { results: [], page: 1, totalPages: 0, totalResults: 0 };
         }
@@ -605,13 +656,16 @@
     /**
      * Fetches recommended movies for a given TMDB ID.
      * @param {number} tmdbId - The TMDB ID of the movie.
-     * @param {number} page - Page number for pagination (default: 1).
+     * @param {number|object} pageOrOptions - Page number or options object.
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.fetchRecommendedMovies = async function(tmdbId, page = 1) {
+    api.fetchRecommendedMovies = async function(tmdbId, pageOrOptions = 1) {
+        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
+        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            return await get(`/movie/${tmdbId}/recommendations?page=${page}`);
+            return await get(`/movie/${tmdbId}/recommendations?page=${page}`, options);
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Failed to fetch recommended movies for TMDB ID ${tmdbId}:`, error);
             return { results: [], page: 1, totalPages: 0, totalResults: 0 };
         }
@@ -620,13 +674,16 @@
     /**
      * Fetches similar TV shows for a given TMDB ID.
      * @param {number} tmdbId - The TMDB ID of the TV show.
-     * @param {number} page - Page number for pagination (default: 1).
+     * @param {number|object} pageOrOptions - Page number or options object.
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.fetchSimilarTvShows = async function(tmdbId, page = 1) {
+    api.fetchSimilarTvShows = async function(tmdbId, pageOrOptions = 1) {
+        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
+        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            return await get(`/tv/${tmdbId}/similar?page=${page}`);
+            return await get(`/tv/${tmdbId}/similar?page=${page}`, options);
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Failed to fetch similar TV shows for TMDB ID ${tmdbId}:`, error);
             return { results: [], page: 1, totalPages: 0, totalResults: 0 };
         }
@@ -635,13 +692,16 @@
     /**
      * Fetches recommended TV shows for a given TMDB ID.
      * @param {number} tmdbId - The TMDB ID of the TV show.
-     * @param {number} page - Page number for pagination (default: 1).
+     * @param {number|object} pageOrOptions - Page number or options object.
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.fetchRecommendedTvShows = async function(tmdbId, page = 1) {
+    api.fetchRecommendedTvShows = async function(tmdbId, pageOrOptions = 1) {
+        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
+        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            return await get(`/tv/${tmdbId}/recommendations?page=${page}`);
+            return await get(`/tv/${tmdbId}/recommendations?page=${page}`, options);
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Failed to fetch recommended TV shows for TMDB ID ${tmdbId}:`, error);
             return { results: [], page: 1, totalPages: 0, totalResults: 0 };
         }
