@@ -19,6 +19,10 @@
     let debounceTimer = null;
     let processedElements = new WeakSet();
 
+    function isFeatureEnabled() {
+        return Boolean(window?.JellyfinEnhanced?.pluginConfig?.ColoredRatingsEnabled);
+    }
+
     function injectCSS() {
         if (document.getElementById(CONFIG.cssId)) return;
 
@@ -167,6 +171,10 @@
     }
 
     function initialize() {
+        if (!isFeatureEnabled()) {
+            cleanup();
+            return;
+        }
         cleanup();
         injectCSS();
         processRatingElements();
@@ -176,7 +184,7 @@
 
     if (typeof document.visibilityState !== 'undefined') {
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
+            if (document.visibilityState === 'visible' && isFeatureEnabled()) {
                 setTimeout(processRatingElements, 100);
             }
         });
@@ -187,7 +195,9 @@
         const url = location.href;
         if (url !== lastUrl) {
             lastUrl = url;
-            setTimeout(initialize, 500);
+            if (isFeatureEnabled()) {
+                setTimeout(initialize, 500);
+            }
         }
     }).observe(document, { subtree: true, childList: true });
 
