@@ -35,6 +35,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
   - [🔧 Installation](#-installation)
     - [🐳 Docker Installation Workaround](#docker-installation)
   - [✨ Features](#-features)
+    - [n00bcodr's Personal Scripts](#n00bcodrs-personal-scripts)
     - [🪼 Jellyseerr Search](#jellyseerr-search-integration)
         - [Setup](#setup)
         - [Icon States](#icon-states)
@@ -158,6 +159,35 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 - **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
 - **🎬 Jellyseerr Item Details:** View Jellyseerr Recommended and Similar items directly on the item details page, with the option to request media and exclude items already in your library.
+- **🎬 Jellyseerr Item Details:** View Jellyseerr Recommendations for Tags, Networks, Genres and People details pages.
+
+## n00bcodr's Personal Scripts
+
+These are some scripts I have used for a while with JS injector, finally decided to add them to the plugin.
+
+- **🎨 Colored Activity Icons:** Replace default activity icons with Material Design icons with custom colors for better visual distinction.
+- **🎪 Colored Ratings:** Apply color-coded backgrounds to media ratings on item detail pages based on rating type and value. From [Jellyfish](https://github.com/n00bcodr/Jellyfish/tree/main/scripts#ratingjs)
+- **🖼️ Login Image Display:** Show user profile images on manual login page. From [Jellyfish](https://github.com/n00bcodr/Jellyfish/tree/main/scripts#loginimagejs)
+- **🧩 Plugin Icons:** Replace default plugin icons with custom Material Design icons on the dashboard for improved aesthetics.
+- **🎭 Theme Selector:** Choose from multiple Jellyfin theme color variants (Aurora, Jellyblue, Ocean, etc.) directly from the settings and also an option to randomize a color everyday.
+<br>
+<br>
+ <table>
+    <tr>
+        <th style="text-align:center">Colored Activity Icons</th>
+        <th style="text-align:center">Colored Ratings</th>
+        <th style="text-align:center">Login Image</th>
+        <th style="text-align:center">Plugin Icons</th>
+        <th style="text-align:center">Theme Selector</th>
+    </tr>
+    <tr>
+        <td><img src="images/colored-activity-icons.png" width="300" /></td>
+        <td><img src="images/ratings.png" width="300" /></td>
+        <td><img src="images/login-image.png" width="300" /></td>
+        <td><img src="images/plugin-icons.png" width="130" /></td>
+        <td><img src="images/theme-selector.png" width="300" /></td>
+    </tr>
+</table>
 
 <br>
 
@@ -1254,18 +1284,30 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── config.js
     │   ├── events.js
     │   ├── features.js
+    │   ├── helpers.js
+    │   ├── icons.js
     │   ├── osd-rating.js
     │   ├── playback.js
     │   ├── subtitles.js
     │   ├── themer.js
     │   └── ui.js
+    ├── extras/
+    │   ├── colored-activity-icons.js
+    │   ├── colored-ratings.js
+    │   ├── login-image.js
+    │   ├── plugin-icons.js
+    │   └── theme-selector.js
     ├── jellyseerr/
     │   ├── api.js
+    │   ├── genre-discovery.js
     │   ├── issue-reporter.js
     │   ├── item-details.js
     │   ├── jellyseerr.js
     │   ├── modal.js
     │   ├── more-info-modal.js
+    │   ├── network-discovery.js
+    │   ├── person-discovery.js
+    │   ├── tag-discovery.js
     │   └── ui.js
     ├── arr-links.js
     ├── arr-tag-links.js
@@ -1292,19 +1334,32 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
     * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
     * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
+    * **`helpers.js`**: Provides utility functions and helper methods used across the enhanced components for common tasks like DOM manipulation and data processing.
+    * **`icons.js`**: Manages icon selection and rendering logic, allowing users to choose between emoji and Lucide icons throughout the interface.
     * **`osd-rating.js`**: Displays TMDB and Rotten Tomatoes ratings in the video player OSD controls next to the time display.
     * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
     * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
     * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
     * **`ui.js`**: Responsible for creating, injecting, and managing all visual elements like the main settings panel, toast notifications, and various buttons.
 
+* **`/extras/`**: Contains optional personal scripts that extend functionality with additional features.
+    * **`colored-activity-icons.js`**: Replaces default activity icons with Material Design icons and applies custom colors for better visual distinction.
+    * **`colored-ratings.js`**: Applies color-coded backgrounds to media ratings on item detail pages based on rating type and value.
+    * **`login-image.js`**: Displays user profile images instead of text on manual login page
+    * **`plugin-icons.js`**: Replaces default plugin icons with custom Material Design icons on the dashboard for improved aesthetics and also adds the ability to add custom plugin config page links
+    * **`theme-selector.js`**: Provides options to quickly choose form Jellyfish color Pallete and an option to load random theme everyday.
+
 * **`/jellyseerr/`**: This directory contains all components related to the Jellyseerr integration.
     * **`api.js`**: Handles all direct communication with the Jellyseerr proxy endpoints on the Jellyfin server.
+    * **`genre-discovery.js`**: Provides genre-based media discovery, allowing users to browse and request content filtered by specific genres from Jellyseerr.
     * **`issue-reporter.js`**: Provides the issue reporting interface for Jellyseerr, allowing users to report problems with media items directly from Jellyfin.
     * **`item-details.js`**: Manages Jellyseerr-specific details displayed on item detail pages, including request status and availability information.
     * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
     * **`modal.js`**: A dedicated component for creating and managing the advanced request modals.
     * **`more-info-modal.js`**: Displays detailed information about media items from Jellyseerr, including cast, crew, and extended metadata.
+    * **`network-discovery.js`**: Enables network-based discovery, allowing users to browse content from specific TV networks or streaming services available in Jellyseerr.
+    * **`person-discovery.js`**: Facilitates person-based discovery, letting users explore media featuring specific actors, directors, or crew members from Jellyseerr.
+    * **`tag-discovery.js`**: Implements tag-based content discovery, enabling users to find and request media based on custom tags and categories in Jellyseerr.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
 
 * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
