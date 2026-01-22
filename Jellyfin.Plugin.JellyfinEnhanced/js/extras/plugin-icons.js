@@ -11,17 +11,14 @@
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
-        .material-icons {
+        .plugin-material-icon {
           font-family: 'Material Icons';
           font-size: 24px;
           line-height: 1;
-          display: inline-block;
-          -webkit-font-smoothing: antialiased;
-        }
-        .plugin-material-icon {
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
+          -webkit-font-smoothing: antialiased;
         }
       `;
         document.head.appendChild(style);
