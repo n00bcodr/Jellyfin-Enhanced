@@ -322,7 +322,6 @@
 
             const { detailPageContent, moreLikeThisSection } = pageReady;
 
-            // Filter items if configured to exclude library items
             // Filter items if configured to exclude library items or rejected items
             const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
             const filteredSimilarResults = excludeLibraryItems
