@@ -1299,6 +1299,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   └── theme-selector.js
     ├── jellyseerr/
     │   ├── api.js
+    │   ├── discovery-filter-utils.js
     │   ├── genre-discovery.js
     │   ├── issue-reporter.js
     │   ├── item-details.js
@@ -1307,6 +1308,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── more-info-modal.js
     │   ├── network-discovery.js
     │   ├── person-discovery.js
+    │   ├── request-manager.js
     │   ├── tag-discovery.js
     │   └── ui.js
     ├── arr-links.js
@@ -1351,15 +1353,17 @@ Jellyfin.Plugin.JellyfinEnhanced/
 
 * **`/jellyseerr/`**: This directory contains all components related to the Jellyseerr integration.
     * **`api.js`**: Handles all direct communication with the Jellyseerr proxy endpoints on the Jellyfin server.
-    * **`genre-discovery.js`**: Provides genre-based media discovery, allowing users to browse and request content filtered by specific genres from Jellyseerr.
+    * **`discovery-filter-utils.js`**: Provides shared utility functions for all discovery modules, including content type filtering (TV/Movies/All), pagination management, card creation with deduplication, and infinite scroll handling. Manages filter state persistence via localStorage.
+    * **`genre-discovery.js`**: Provides genre-based media discovery with TV/Movies/All content type filtering, allowing users to browse and request content filtered by specific genres from Jellyseerr with separate pagination tracking per content type.
     * **`issue-reporter.js`**: Provides the issue reporting interface for Jellyseerr, allowing users to report problems with media items directly from Jellyfin.
-    * **`item-details.js`**: Manages Jellyseerr-specific details displayed on item detail pages, including request status and availability information.
+    * **`item-details.js`**: Manages Jellyseerr-specific details displayed on item detail pages, including request status, availability information, similar and recommended content with library/rejected item exclusion options.
     * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
     * **`modal.js`**: A dedicated component for creating and managing the advanced request modals.
     * **`more-info-modal.js`**: Displays detailed information about media items from Jellyseerr, including cast, crew, and extended metadata.
-    * **`network-discovery.js`**: Enables network-based discovery, allowing users to browse content from specific TV networks or streaming services available in Jellyseerr.
-    * **`person-discovery.js`**: Facilitates person-based discovery, letting users explore media featuring specific actors, directors, or crew members from Jellyseerr.
-    * **`tag-discovery.js`**: Implements tag-based content discovery, enabling users to find and request media based on custom tags and categories in Jellyseerr.
+    * **`network-discovery.js`**: Enables network-based discovery with TV/Movies/All filtering, allowing users to browse content from specific TV networks or streaming services available in Jellyseerr with separate pagination per content type.
+    * **`person-discovery.js`**: Facilitates person-based discovery with TV/Movies/All filtering, letting users explore media featuring specific actors, directors, or crew members from Jellyseerr with independent pagination tracking.
+    * **`request-manager.js`**: Provides centralized request management with concurrency control (max 6 concurrent requests), automatic retry logic (3 attempts with exponential backoff), response caching (5-minute TTL), request deduplication, and AbortController support for cancellation.
+    * **`tag-discovery.js`**: Implements tag-based content discovery with TV/Movies/All filtering, enabling users to find and request media based on custom tags and categories in Jellyseerr with separate page tracking per content type.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
 
 * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
