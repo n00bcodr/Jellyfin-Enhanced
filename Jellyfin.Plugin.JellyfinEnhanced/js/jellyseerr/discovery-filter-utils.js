@@ -284,6 +284,7 @@
         const { cardClass = 'portraitCard' } = options;
         const fragment = document.createDocumentFragment();
         const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+        const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
         const seen = new Set();
 
         for (let i = 0; i < results.length; i++) {
@@ -298,6 +299,9 @@
                 continue;
             }
 
+            if (excludeRejectedItems && item.mediaInfo?.status === 6) {
+                continue;
+            }
             const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
             if (!card) continue;
 
