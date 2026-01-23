@@ -32,6 +32,9 @@
     let cachedTvResults = [];
     let cachedMovieResults = [];
 
+    // Global deduplicator for cross-page uniqueness
+    let itemDeduplicator = null;
+
     // Abort controller for cancellation
     let currentAbortController = null;
 
@@ -345,22 +348,34 @@
         const itemsContainer = document.querySelector('.jellyseerr-network-discovery-section .itemsContainer');
         if (!itemsContainer) return;
 
-        // Clear existing cards
-        itemsContainer.innerHTML = '';
+        // Clear existing cards safely
+        while (itemsContainer.firstChild) {
+            itemsContainer.removeChild(itemsContainer.firstChild);
+        }
 
-        // Get filtered results
+        // Reset deduplicator for fresh filter view
+        if (itemDeduplicator) {
+            itemDeduplicator.clear();
+        }
+
+        // Get filtered results - show ALL cached results, not just first 20
         const filtered = getFilteredResults(newMode);
 
-        // Render cards
-        const fragment = createCardsFragment(filtered.slice(0, 20));
+        // Render all cached cards
+        const fragment = createCardsFragment(filtered);
         if (fragment.childNodes.length > 0) {
             itemsContainer.appendChild(fragment);
+        }
+
+        // Seed deduplicator with all displayed items
+        if (itemDeduplicator) {
+            filtered.forEach(item => itemDeduplicator.add(item));
         }
 
         // Update hasMorePages based on filter mode
         updateHasMorePages(newMode);
 
-        // Re-setup infinite scroll if needed
+        // Re-setup infinite scroll if there are more API pages to fetch
         if (hasMorePages) {
             setupInfiniteScroll();
         }
@@ -465,6 +480,16 @@
                 return;
             }
 
+            // Deduplicate items across pages using global deduplicator
+            if (itemDeduplicator) {
+                itemsToAdd = itemDeduplicator.filter(itemsToAdd);
+                if (itemsToAdd.length === 0) {
+                    console.debug(`${logPrefix} All items were duplicates, skipping render`);
+                    isLoading = false;
+                    return;
+                }
+            }
+
             const itemsContainer = document.querySelector('.jellyseerr-network-discovery-section .itemsContainer');
             if (itemsContainer) {
                 const fragment = createCardsFragment(itemsToAdd);
@@ -475,6 +500,7 @@
         } catch (error) {
             if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
+            throw error; // Re-throw so seamless scroll can handle retry
         }
 
         isLoading = false;
@@ -577,6 +603,9 @@
             cachedTvResults = [];
             cachedMovieResults = [];
 
+            // Initialize deduplicator for cross-page uniqueness
+            itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+
             // Fetch TV and Movies separately (only if IDs available)
             const fetchPromises = [];
             if (tvNetworkId) {
@@ -638,10 +667,16 @@
             const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
             const itemsContainer = section.querySelector('.itemsContainer');
 
-            const fragment = createCardsFragment(displayResults.slice(0, 20));
+            // Show all results from initial fetch (not sliced - page 1 is already limited by API)
+            const fragment = createCardsFragment(displayResults);
             if (fragment.childNodes.length === 0) return;
 
             itemsContainer.appendChild(fragment);
+
+            // Seed deduplicator with initially displayed items to prevent duplicates on scroll
+            if (itemDeduplicator) {
+                displayResults.forEach(item => itemDeduplicator.add(item));
+            }
 
             const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
             if (parentContainer?.parentElement) {
@@ -699,6 +734,12 @@
         // Clear cached results
         cachedTvResults = [];
         cachedMovieResults = [];
+
+        // Reset deduplicator
+        if (itemDeduplicator) {
+            itemDeduplicator.clear();
+        }
+        itemDeduplicator = null;
     }
 
     /**

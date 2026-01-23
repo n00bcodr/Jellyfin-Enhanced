@@ -552,6 +552,7 @@
                 'enhanced/playback.js', 'enhanced/features.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
                 'elsewhere.js',
                 'jellyseerr/request-manager.js',
+                'jellyseerr/seamless-scroll.js',
                 'jellyseerr/api.js',
                 'jellyseerr/modal.js',
                 'jellyseerr/more-info-modal.js',

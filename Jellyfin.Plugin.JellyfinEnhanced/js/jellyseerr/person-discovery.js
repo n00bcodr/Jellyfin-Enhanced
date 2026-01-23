@@ -20,6 +20,9 @@
     // Cached results for filter switching (avoid refetch)
     let cachedAllResults = [];
 
+    // Global deduplicator for cross-page uniqueness
+    let itemDeduplicator = null;
+
     // Abort controller for cancellation
     let currentAbortController = null;
 
@@ -266,16 +269,28 @@
         const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
         if (!itemsContainer) return;
 
-        // Clear existing cards
-        itemsContainer.innerHTML = '';
+        // Clear existing cards safely
+        while (itemsContainer.firstChild) {
+            itemsContainer.removeChild(itemsContainer.firstChild);
+        }
 
-        // Get filtered results
+        // Reset deduplicator for fresh filter view
+        if (itemDeduplicator) {
+            itemDeduplicator.clear();
+        }
+
+        // Get filtered results - show ALL cached results
         const filtered = getFilteredResults(newMode);
 
-        // Render cards (up to 40 for person discovery)
-        const fragment = createCardsFragment(filtered.slice(0, 40));
+        // Render all cached cards
+        const fragment = createCardsFragment(filtered);
         if (fragment.childNodes.length > 0) {
             itemsContainer.appendChild(fragment);
+        }
+
+        // Seed deduplicator with all displayed items
+        if (itemDeduplicator) {
+            filtered.forEach(item => itemDeduplicator.add(item));
         }
     }
 
@@ -322,6 +337,16 @@
                 filteredNew = allResults;
             }
 
+            // Deduplicate items across pages using global deduplicator
+            if (itemDeduplicator) {
+                filteredNew = itemDeduplicator.filter(filteredNew);
+                if (filteredNew.length === 0) {
+                    console.debug(`${logPrefix} All items were duplicates, skipping render`);
+                    isLoading = false;
+                    return;
+                }
+            }
+
             const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
             if (itemsContainer) {
                 const fragment = createCardsFragment(filteredNew);
@@ -332,6 +357,7 @@
         } catch (error) {
             if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
+            throw error; // Re-throw so seamless scroll can handle retry
         }
 
         isLoading = false;
@@ -436,6 +462,9 @@
             // Store all results for filter switching
             cachedAllResults = allResults;
 
+            // Initialize deduplicator for cross-page uniqueness
+            itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+
             // Check if we have both media types
             const hasBoth = hasBothMediaTypes();
 
@@ -468,14 +497,19 @@
             const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
             const itemsContainer = section.querySelector('.itemsContainer');
 
-            // Show up to 40 items (no pagination for person credits API)
-            const fragment = createCardsFragment(displayResults.slice(0, 40));
+            // Show all results from initial fetch
+            const fragment = createCardsFragment(displayResults);
             if (fragment.childNodes.length === 0) {
                 console.debug(`${logPrefix} No cards created from results`);
                 return;
             }
 
             itemsContainer.appendChild(fragment);
+
+            // Seed deduplicator with initially displayed items to prevent duplicates on scroll
+            if (itemDeduplicator) {
+                displayResults.forEach(item => itemDeduplicator.add(item));
+            }
             detailSection.appendChild(section);
             console.debug(`${logPrefix} Section added with ${fragment.childNodes.length} cards`);
 
@@ -520,6 +554,12 @@
 
         // Clear cached results
         cachedAllResults = [];
+
+        // Reset deduplicator
+        if (itemDeduplicator) {
+            itemDeduplicator.clear();
+        }
+        itemDeduplicator = null;
     }
 
     /**

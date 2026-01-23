@@ -402,14 +402,33 @@
 
     /**
      * Creates and manages an IntersectionObserver for infinite scroll
+     * Delegates to seamlessScroll module for enhanced functionality:
+     * - Larger prefetch window (~2 viewport heights)
+     * - Retry UI on failure
+     * - Scroll event fallback
+     * - Backpressure control
      * @param {object} state - State object with activeScrollObserver property
      * @param {string} sectionSelector - CSS selector for the section
      * @param {Function} loadMoreFn - Function to call when more items needed
      * @param {Function} hasMoreCheck - Function that returns whether more pages exist
      * @param {Function} isLoadingCheck - Function that returns whether currently loading
+     * @param {object} [options] - Additional options
      */
-    function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck) {
-        // Clean up previous observer
+    function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options = {}) {
+        // Use seamlessScroll if available (enhanced functionality)
+        if (JE.seamlessScroll?.setupInfiniteScroll) {
+            JE.seamlessScroll.setupInfiniteScroll(
+                state,
+                sectionSelector,
+                loadMoreFn,
+                hasMoreCheck,
+                isLoadingCheck,
+                options
+            );
+            return;
+        }
+
+        // Fallback implementation (for backward compatibility)
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
             state.activeScrollObserver = null;
@@ -418,7 +437,6 @@
         const section = document.querySelector(sectionSelector);
         if (!section) return;
 
-        // Remove old sentinel
         const oldSentinel = section.querySelector('.jellyseerr-scroll-sentinel');
         if (oldSentinel) oldSentinel.remove();
 
@@ -438,9 +456,17 @@
 
     /**
      * Cleanup scroll observer
+     * Delegates to seamlessScroll module for complete cleanup
      * @param {object} state - State object with activeScrollObserver property
      */
     function cleanupScrollObserver(state) {
+        // Use seamlessScroll cleanup if available (handles scroll handlers, retry UI, etc.)
+        if (JE.seamlessScroll?.cleanupInfiniteScroll) {
+            JE.seamlessScroll.cleanupInfiniteScroll(state);
+            return;
+        }
+
+        // Fallback cleanup
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
             state.activeScrollObserver = null;
