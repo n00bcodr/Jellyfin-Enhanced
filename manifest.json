@@ -12,7 +12,7 @@
         "changelog": "- Add seamless infinite scroll with prefetch and retry\n - Fix discovery sections showing all cached results when filtering\n - Fix deduplication seeding for filter changes\n - Safe DOM manipulation (no innerHTML)",
         "targetAbi": "10.11.0.0",
         "version": "10.6.0.0",
-        "sourceUrl": "https://github.com/4eh5xitv6787h645ebv/Jellyfin-Enhanced/releases/download/10.6.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "sourceUrl": "https://github.com/4eh5xitv6787h645ebv/Jellyfin-Enhanced/releases/download/10.6.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.zip",
         "checksum": "840D5E51E2C506CCEC6B4C72375FB915",
         "timestamp": "2026-01-23T12:00:00"
       }
