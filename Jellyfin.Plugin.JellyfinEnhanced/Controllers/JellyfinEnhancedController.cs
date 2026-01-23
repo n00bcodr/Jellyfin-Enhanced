@@ -1176,6 +1176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowTagDiscovery,
                 config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrExcludeLibraryItems,
+                config.JellyseerrExcludeRejectedItems,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
