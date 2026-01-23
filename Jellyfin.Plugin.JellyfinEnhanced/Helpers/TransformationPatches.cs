@@ -42,6 +42,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         public static Task Favicon(string path, Stream contents) => ReplaceImageAsync(path, "favicon.ico", contents);
 
+        public static Task AppleIcon(string path, Stream contents) => ReplaceImageAsync(path, "apple-touch-icon.png", contents);
+
+        public static Task AppleIcon144(string path, Stream contents) => ReplaceImageAsync(path, "apple-touch-icon-144.png", contents);
+
         private static async Task ReplaceImageAsync(string requestPath, string fileName, Stream stream)
         {
             if (stream == null)

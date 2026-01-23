@@ -1091,6 +1091,40 @@
                                             </button>
                                         </div>
                                     </div>
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
+                                        <label style="font-weight: bold; color: #eee;">Apple Touch Icon</label>
+                                        <label style="color: #eee;">Icon used when sharing URL (I think)</label>
+                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="touchiconDropZone">
+                                            <input type="file" id="touchiconInput" accept="image/*" style="display: none;" />
+                                            <div id="touchiconPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
+                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
+                                            </div>
+                                            <img id="touchiconPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
+                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
+                                            <div id="touchiconStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                            <button type="button" class="raised button-submit" id="touchiconDelete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
+                                                <i class="material-icons">delete</i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
+                                        <label style="font-weight: bold; color: #eee;">Apple Touch Icon (144px)</label>
+                                        <label style="color: #eee;">Icon used when adding to Home Screen (I think)</label>
+                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="touchicon144DropZone">
+                                            <input type="file" id="touchicon144Input" accept="image/*" style="display: none;" />
+                                            <div id="touchicon144Placeholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
+                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
+                                            </div>
+                                            <img id="touchicon144Preview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
+                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
+                                            <div id="touchicon144Status" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
+                                            <button type="button" class="raised button-submit" id="touchicon144Delete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
+                                                <i class="material-icons">delete</i>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1839,7 +1873,9 @@
                 { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png', previewId: 'iconTransparentPreview', placeholderId: 'iconTransparentPlaceholder', deleteId: 'iconTransparentDelete' },
                 { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete' },
                 { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete' },
-                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete' }
+                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete' },
+                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete' },
+                { inputId: 'touchicon144Input', dropZoneId: 'touchicon144DropZone', statusId: 'touchicon144Status', fileName: 'apple-touch-icon-144.png', previewId: 'touchicon144Preview', placeholderId: 'touchicon144Placeholder', deleteId: 'touchicon144Delete' }
             ];
 
             uploadConfigs.forEach(config => {

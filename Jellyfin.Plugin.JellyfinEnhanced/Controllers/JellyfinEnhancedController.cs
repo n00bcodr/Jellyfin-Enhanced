@@ -1687,10 +1687,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest("fileName query parameter is required");
             }
 
-            if (!BrandingFileNames.Contains(fileName))
-            {
-                return BadRequest("Invalid fileName");
-            }
 
             var brandingDir = JellyfinEnhanced.BrandingDirectory;
             if (string.IsNullOrWhiteSpace(brandingDir))
@@ -1721,10 +1717,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest("fileName parameter is required in form data");
                 }
 
-                if (!BrandingFileNames.Contains(fileName))
-                {
-                    return BadRequest("Invalid fileName");
-                }
 
                 var brandingDir = JellyfinEnhanced.BrandingDirectory;
                 if (string.IsNullOrWhiteSpace(brandingDir))

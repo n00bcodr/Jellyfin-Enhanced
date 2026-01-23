@@ -149,6 +149,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ".*favicon.*\\.ico$",
                     nameof(TransformationPatches.Favicon));
 
+                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
+                    Guid.Parse("a8f3b2b3-7c9d-4c0f-9f2a-1c2d3e4f5a67"),
+                    ".*touchicon\\.f5bbb798cb2c65908633\\.png$",
+                    nameof(TransformationPatches.AppleIcon));
+
+                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
+                    Guid.Parse("b9c4d5e6-8f10-4a2b-b3c4-d5e6f7a8b9c0"),
+                    ".*touchicon144\\.39209dd2362c0db7c673\\.png$",
+                    nameof(TransformationPatches.AppleIcon144));
+
                 _logger.Info("Registered Jellyfin Enhanced Custom Branding with File Transformation Plugin.");
             }
             catch (Exception ex)
