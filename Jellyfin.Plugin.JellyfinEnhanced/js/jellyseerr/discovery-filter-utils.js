@@ -129,12 +129,16 @@
 
         const container = document.createElement('div');
         container.className = 'jellyseerr-discovery-filter';
-        container.style.cssText = 'display:inline-flex;gap:0;margin-left:1em;font-size:0.85em;vertical-align:middle;';
+        container.style.cssText = 'display:inline-flex;gap:0;font-size:0.85em;vertical-align:middle;';
+
+        const allLabel = (typeof JE?.t === 'function') ? JE.t('jellyseerr_discover_all') || 'All' : 'All';
+        const moviesLabel = (typeof JE?.t === 'function') ? JE.t('jellyseerr_card_badge_movie') || 'Movies' : 'Movies';
+        const seriesLabel = (typeof JE?.t === 'function') ? JE.t('jellyseerr_card_badge_series') || 'Series' : 'Series';
 
         const buttons = [
-            { mode: FILTER_MODES.MIXED, label: 'All' },
-            { mode: FILTER_MODES.MOVIES, label: 'Movies' },
-            { mode: FILTER_MODES.TV, label: 'TV' }
+            { mode: FILTER_MODES.MIXED, label: allLabel },
+            { mode: FILTER_MODES.MOVIES, label: moviesLabel },
+            { mode: FILTER_MODES.TV, label: seriesLabel }
         ];
 
         buttons.forEach((btn, index) => {
@@ -154,13 +158,14 @@
                 padding: 4px 10px;
                 border: 1px solid rgba(255,255,255,0.3);
                 border-radius: ${borderRadius};
-                background: ${isActive ? 'rgba(0,164,220,0.8)' : 'rgba(255,255,255,0.1)'};
-                color: ${isActive ? '#fff' : 'rgba(255,255,255,0.7)'};
+                background: ${isActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)'};
+                color: rgba(255,255,255,0.8);
                 cursor: pointer;
                 font-size: inherit;
                 font-family: inherit;
                 margin-left: ${index > 0 ? '-1px' : '0'};
-                transition: background 0.15s, color 0.15s;
+                transition: background 0.15s, border-color 0.15s;
+                font-weight: ${isActive ? '600' : '400'};
             `;
 
             button.addEventListener('click', (e) => {
@@ -175,8 +180,8 @@
                 // Update button states
                 container.querySelectorAll('.jellyseerr-filter-btn').forEach(b => {
                     const isNowActive = b.getAttribute('data-mode') === newMode;
-                    b.style.background = isNowActive ? 'rgba(0,164,220,0.8)' : 'rgba(255,255,255,0.1)';
-                    b.style.color = isNowActive ? '#fff' : 'rgba(255,255,255,0.7)';
+                    b.style.background = isNowActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)';
+                    b.style.fontWeight = isNowActive ? '600' : '400';
                 });
 
                 if (onFilterChange) {
@@ -187,12 +192,12 @@
             // Hover effects
             button.addEventListener('mouseenter', () => {
                 if (getFilterMode(moduleName) !== btn.mode) {
-                    button.style.background = 'rgba(255,255,255,0.2)';
+                    button.style.background = 'rgba(255,255,255,0.1)';
                 }
             });
             button.addEventListener('mouseleave', () => {
                 const isActive = getFilterMode(moduleName) === btn.mode;
-                button.style.background = isActive ? 'rgba(0,164,220,0.8)' : 'rgba(255,255,255,0.1)';
+                button.style.background = isActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)';
             });
 
             container.appendChild(button);
@@ -212,12 +217,12 @@
     function createSectionHeader(title, moduleName, showFilter, onFilterChange) {
         const header = document.createElement('div');
         header.className = 'jellyseerr-discovery-header';
-        header.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:0.5em;margin-bottom:1em;';
+        header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;';
 
         const titleElement = document.createElement('h2');
         titleElement.className = 'sectionTitle sectionTitle-cards';
         titleElement.textContent = title;
-        titleElement.style.marginBottom = '0';
+        titleElement.style.margin = '0';
         header.appendChild(titleElement);
 
         if (showFilter) {
