@@ -1,13 +1,21 @@
 [
   {
-    "name": "Jellyfin Enhanced",
+    "name": "Jellyfin Enhanced (Personal)",
     "guid": "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b",
-    "description": "A combination of the Jellyfin Enhanced and Jellyfin Elsewhere userscripts, providing a comprehensive set of tweaks and features for Jellyfin.",
-    "overview": "Jellyfin Enhanced and Jellyfin Elsewhere for a better Jellyfin experience.",
-    "owner": "n00bcodr",
+    "description": "Personal fork with seamless infinite scroll and discovery filter fixes.",
+    "overview": "Jellyfin Enhanced with personal improvements.",
+    "owner": "4eh5xitv6787h645ebv",
     "category": "General",
-    "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
+    "imageUrl": "https://raw.githubusercontent.com/4eh5xitv6787h645ebv/Jellyfin-Enhanced/main/images/icon.png",
     "versions": [
+      {
+        "changelog": "- Add seamless infinite scroll with prefetch and retry\n - Fix discovery sections showing all cached results when filtering\n - Fix deduplication seeding for filter changes\n - Safe DOM manipulation (no innerHTML)",
+        "targetAbi": "10.10.7.0",
+        "version": "10.6.0.0",
+        "sourceUrl": "https://github.com/4eh5xitv6787h645ebv/Jellyfin-Enhanced/releases/download/10.6.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "840D5E51E2C506CCEC6B4C72375FB915",
+        "timestamp": "2026-01-23T12:00:00"
+      },
       {
         "changelog": "- Add cache-busting for settings.json\n - Fix random button showing watched series\n - Improve status handling for movie collections UI\n - Add extras: colored ratings, theme selector, activity and plugin icons\n - Fix links\n - Add logging and simplify observers in icon scripts\n - Wrap example images in links and update styles\n - Refactor feature initializers to use JellyfinEnhanced namespace\n - Improve config UI and plugin icon handling\n - Add login image feature to manual login screen\n - Use TMDB for total episode count in auto season requests\n - Add mobile client mapping warning to config page\n - Add custom plugin links to dashboard sidebar\n - Fix jellyseerr links opening in app\n - Refactor Jellyseerr config UI with collapsible sections\n - Fix placeholder examples for custom plugin links\n - Add warning about 10.10 compatibility for plugin icons\n - Add section for personal scripts and update file structure",
         "targetAbi": "10.10.7.0",
