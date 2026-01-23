@@ -4,6 +4,7 @@
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Person Discovery:';
+    const MODULE_NAME = 'person';
 
     // Cache for person ID mappings (personName -> TMDB personId)
     const personIdCache = new Map();
@@ -11,11 +12,26 @@
     const processedPages = new Set();
 
     // Pagination state
-    let currentPage = 1;
     let isLoading = false;
     let hasMorePages = true;
     let currentPersonId = null;
     let currentPersonName = null;
+
+    // Cached results for filter switching (avoid refetch)
+    let cachedAllResults = [];
+
+    // Abort controller for cancellation
+    let currentAbortController = null;
+
+    // Track current rendering to prevent duplicate renders
+    let currentRenderingPageKey = null;
+
+    // State object for scroll observer (used by shared utilities)
+    const scrollState = { activeScrollObserver: null };
+
+    // Alias for shared utilities
+    const fetchWithManagedRequest = (path, options) =>
+        JE.discoveryFilter.fetchWithManagedRequest(path, 'person', options);
 
     /**
      * Extracts person ID from the current URL (detail page)
@@ -35,69 +51,108 @@
 
     /**
      * Gets person information from Jellyfin (with caching)
+     * @param {string} personId
+     * @param {AbortSignal} [signal]
      */
-    async function getPersonInfo(personId) {
+    async function getPersonInfo(personId, signal) {
         if (personInfoCache.has(personId)) {
             return personInfoCache.get(personId);
         }
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/person/${personId}`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/person/${personId}`, { signal });
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             if (response) {
                 personInfoCache.set(personId, response);
             }
             return response;
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             return null;
         }
     }
 
     /**
      * Check if current page is a Person detail page
+     * @param {string} itemId
+     * @param {AbortSignal} [signal]
      */
-    async function isPersonPage(itemId) {
+    async function isPersonPage(itemId, signal) {
         try {
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             return item && item.Type === 'Person';
-        } catch {
+        } catch (error) {
+            if (error.name === 'AbortError') throw error;
             return false;
         }
     }
 
     /**
      * Searches for TMDB person ID by name
+     * @param {string} personName
+     * @param {AbortSignal} [signal]
      */
-    async function searchTmdbPerson(personName) {
+    async function searchTmdbPerson(personName, signal) {
         const cacheKey = personName.toLowerCase().trim();
         if (personIdCache.has(cacheKey)) {
             return personIdCache.get(cacheKey);
         }
 
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tmdb/search/person?query=${encodeURIComponent(personName)}`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(
+                `/JellyfinEnhanced/tmdb/search/person?query=${encodeURIComponent(personName)}`,
+                { signal }
+            );
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
 
             if (response?.results?.length > 0) {
-                // Find person results
                 const personResults = response.results.filter(r => r.mediaType === 'person');
                 if (personResults.length > 0) {
-                    const exactMatch = personResults.find(r =>
+                    // Filter to exact name matches first
+                    const exactMatches = personResults.filter(r =>
                         r.name?.toLowerCase() === personName.toLowerCase()
                     );
-                    const personId = exactMatch ? exactMatch.id : personResults[0].id;
+
+                    // Score matches: prefer those with profile images and more known works
+                    const scored = (exactMatches.length > 0 ? exactMatches : personResults).map(r => ({
+                        ...r,
+                        score: (r.profilePath ? 2 : 0) + Math.min(r.knownFor?.length || 0, 3)
+                    }));
+
+                    scored.sort((a, b) => b.score - a.score);
+
+                    if (scored.length === 0) return null;
+                    const personId = scored[0].id;
+
                     personIdCache.set(cacheKey, personId);
                     return personId;
                 }
             }
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             // Silent fail
         }
         return null;
@@ -105,94 +160,94 @@
 
     /**
      * Fetches person credits from Jellyseerr
+     * @param {number} personId
+     * @param {AbortSignal} [signal]
      */
-    async function fetchPersonCredits(personId) {
+    async function fetchPersonCredits(personId, signal) {
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/person/${personId}/combined_credits`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(
+                `/JellyfinEnhanced/jellyseerr/person/${personId}/combined_credits`,
+                { signal }
+            );
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             return response || { cast: [], crew: [] };
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Error fetching credits:`, error);
             return { cast: [], crew: [] };
         }
     }
 
     /**
-     * Creates cards and returns a DocumentFragment for batch DOM insertion
+     * Gets filtered results based on current filter mode
+     * @param {string} mode - 'mixed', 'movies', or 'tv'
+     * @returns {Array}
      */
-    function createCardsFragment(results) {
-        const fragment = document.createDocumentFragment();
-        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-        const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
-        const seen = new Set();
-
-        for (let i = 0; i < results.length; i++) {
-            const item = results[i];
-
-            // Deduplicate by TMDB ID
-            const key = `${item.mediaType}-${item.id}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-
-            // Skip library items if configured
-            if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) {
-                continue;
-            }
-
-            // Skip rejected items if configured
-            if (excludeRejectedItems && item.mediaInfo?.status === 6) {
-                continue;
-            }
-
-            const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
-            if (!card) continue;
-
-            // Use overflowPortraitCard to match native person page card sizing
-            const classList = card.classList;
-            classList.remove('portraitCard');
-            classList.add('overflowPortraitCard');
-
-            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-            if (jellyfinMediaId) {
-                card.setAttribute('data-library-item', 'true');
-                card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                classList.add('jellyseerr-card-in-library');
-
-                const titleLink = card.querySelector('.cardText-first a');
-                if (titleLink) {
-                    const itemName = item.title || item.name;
-                    titleLink.textContent = itemName;
-                    titleLink.title = itemName;
-                    titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                    titleLink.removeAttribute('target');
-                    titleLink.removeAttribute('rel');
-                }
-            }
-
-            fragment.appendChild(card);
+    function getFilteredResults(mode) {
+        const filter = JE.discoveryFilter;
+        if (!filter) {
+            return cachedAllResults;
         }
 
-        return fragment;
+        if (mode === filter.MODES.MOVIES) {
+            return filter.filterByMediaType(cachedAllResults, mode);
+        }
+        if (mode === filter.MODES.TV) {
+            return filter.filterByMediaType(cachedAllResults, mode);
+        }
+
+        // Mixed mode - interleave TV and Movies for balanced display
+        const tvResults = cachedAllResults.filter(item => item.mediaType === 'tv');
+        const movieResults = cachedAllResults.filter(item => item.mediaType === 'movie');
+        return filter.interleaveArrays(tvResults, movieResults);
     }
 
     /**
-     * Creates the section container - matching native Jellyfin person page styling
+     * Checks if cached results have both movie and TV content
+     * @returns {boolean}
      */
-    function createSectionContainer(title) {
+    function hasBothMediaTypes() {
+        return JE.discoveryFilter?.resultHasBothTypes(cachedAllResults) || false;
+    }
+
+    /**
+     * Creates cards using shared utility (overflowPortraitCard for person page)
+     */
+    function createCardsFragment(results) {
+        return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' });
+    }
+
+    /**
+     * Creates the section container with optional filter control
+     * @param {string} title
+     * @param {boolean} showFilter
+     * @param {Function} onFilterChange
+     */
+    function createSectionContainer(title, showFilter, onFilterChange) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-person-discovery-section';
         section.setAttribute('data-jellyseerr-person-discovery', 'true');
         section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
 
-        const titleElement = document.createElement('h2');
-        titleElement.className = 'sectionTitle sectionTitle-cards';
-        titleElement.textContent = title;
-        titleElement.style.marginBottom = '1em';
-        section.appendChild(titleElement);
+        // Use shared header helper if available, otherwise create basic header
+        if (JE.discoveryFilter?.createSectionHeader) {
+            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange);
+            section.appendChild(header);
+        } else {
+            const titleElement = document.createElement('h2');
+            titleElement.className = 'sectionTitle sectionTitle-cards';
+            titleElement.textContent = title;
+            titleElement.style.marginBottom = '1em';
+            section.appendChild(titleElement);
+        }
 
         // Match native container: itemsContainer padded-right vertical-wrap
         const itemsContainer = document.createElement('div');
@@ -204,16 +259,40 @@
     }
 
     /**
+     * Re-renders the section with the new filter mode
+     * @param {string} newMode
+     */
+    function handleFilterChange(newMode) {
+        const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
+        if (!itemsContainer) return;
+
+        // Clear existing cards
+        itemsContainer.innerHTML = '';
+
+        // Get filtered results
+        const filtered = getFilteredResults(newMode);
+
+        // Render cards (up to 40 for person discovery)
+        const fragment = createCardsFragment(filtered.slice(0, 40));
+        if (fragment.childNodes.length > 0) {
+            itemsContainer.appendChild(fragment);
+        }
+    }
+
+    /**
      * Loads more items for infinite scroll
      */
     async function loadMoreItems() {
         if (isLoading || !hasMorePages || !currentPersonId) return;
 
         isLoading = true;
-        currentPage++;
 
         try {
-            const credits = await fetchPersonCredits(currentPersonId, currentPage);
+            const signal = currentAbortController?.signal;
+            const credits = await fetchPersonCredits(currentPersonId, signal);
+
+            if (signal?.aborted) return;
+
             const allResults = [...(credits.cast || []), ...(credits.crew || [])];
 
             hasMorePages = allResults.length >= 20;
@@ -224,14 +303,34 @@
                 return;
             }
 
+            // Update cached results
+            cachedAllResults = [...cachedAllResults, ...allResults];
+
+            // Get current filter mode
+            const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+
+            // Filter/interleave the new results based on mode
+            let filteredNew;
+            if (filterMode === 'mixed' && JE.discoveryFilter) {
+                // Interleave for balanced display
+                const tvNew = allResults.filter(item => item.mediaType === 'tv');
+                const movieNew = allResults.filter(item => item.mediaType === 'movie');
+                filteredNew = JE.discoveryFilter.interleaveArrays(tvNew, movieNew);
+            } else if (JE.discoveryFilter) {
+                filteredNew = JE.discoveryFilter.filterByMediaType(allResults, filterMode);
+            } else {
+                filteredNew = allResults;
+            }
+
             const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
             if (itemsContainer) {
-                const fragment = createCardsFragment(allResults);
+                const fragment = createCardsFragment(filteredNew);
                 if (fragment.childNodes.length > 0) {
                     itemsContainer.appendChild(fragment);
                 }
             }
         } catch (error) {
+            if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
         }
 
@@ -239,24 +338,31 @@
     }
 
     /**
-     * Sets up infinite scroll observer
+     * Sets up infinite scroll observer using shared utility
      */
     function setupInfiniteScroll() {
-        const section = document.querySelector('.jellyseerr-person-discovery-section');
-        if (!section) return;
+        JE.discoveryFilter.setupInfiniteScroll(
+            scrollState,
+            '.jellyseerr-person-discovery-section',
+            loadMoreItems,
+            () => hasMorePages,
+            () => isLoading
+        );
+    }
 
-        const sentinel = document.createElement('div');
-        sentinel.className = 'jellyseerr-scroll-sentinel';
-        sentinel.style.cssText = 'height:20px;width:100%';
-        section.appendChild(sentinel);
+    /**
+     * Cleanup scroll observer using shared utility
+     */
+    function cleanupScrollObserver() {
+        JE.discoveryFilter.cleanupScrollObserver(scrollState);
+    }
 
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && hasMorePages && !isLoading) {
-                loadMoreItems();
-            }
-        }, { rootMargin: '200px' });
-
-        observer.observe(sentinel);
+    /**
+     * Wait for the page to be ready using shared utility (detail page type)
+     * @param {AbortSignal} [signal]
+     */
+    function waitForPageReady(signal) {
+        return JE.discoveryFilter.waitForPageReady(signal, { type: 'detail' });
     }
 
     /**
@@ -268,98 +374,152 @@
 
         const pageKey = `person-${itemId}-${window.location.hash}`;
         if (processedPages.has(pageKey)) return;
-        processedPages.add(pageKey);
+
+        // Prevent re-entry if already rendering this same page
+        if (currentRenderingPageKey === pageKey) return;
 
         if (JE.pluginConfig?.JellyseerrShowPersonDiscovery === false) return;
 
-        // Check if this is a person page
-        const isPerson = await isPersonPage(itemId);
-        if (!isPerson) return;
+        // Set rendering key before potentially aborting
+        currentRenderingPageKey = pageKey;
 
-        const personInfoPromise = getPersonInfo(itemId);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+        // Cancel any previous requests (for different pages)
+        if (currentAbortController) {
+            currentAbortController.abort();
+        }
+        currentAbortController = new AbortController();
+        const signal = currentAbortController.signal;
 
-        const [personInfo, status] = await Promise.all([personInfoPromise, statusPromise]);
-
-        if (!status?.active || !personInfo?.name) return;
-
-        // Get TMDB person ID
-        const tmdbPersonId = personInfo.tmdbId
-            ? parseInt(personInfo.tmdbId)
-            : await searchTmdbPerson(personInfo.name);
-
-        if (!tmdbPersonId) return;
-
-        // Store for reference
-        currentPersonId = tmdbPersonId;
-        currentPersonName = personInfo.name;
-
-        // Fetch credits
-        const credits = await fetchPersonCredits(tmdbPersonId);
-        const allResults = [...(credits.cast || []), ...(credits.crew || [])];
-
-        console.log(`${logPrefix} Fetched ${allResults.length} credits for ${personInfo.name}`);
-
-        if (allResults.length === 0) return;
-
-        // Wait for page content
-        await waitForPageReady();
-
-        // Find insertion point (after the existing content) - only on ACTIVE page (not hidden)
-        const detailSection = document.querySelector('.itemDetailPage:not(.hide) .detailPageContent') ||
-                             document.querySelector('.itemDetailPage:not(.hide)') ||
-                             document.querySelector('.page:not(.hide) .detailPageContent');
-
-        if (!detailSection) {
-            console.log(`${logPrefix} Could not find detail section to insert into`);
-            return;
+        // Start metrics if enabled
+        if (JE.requestManager?.metrics?.enabled) {
+            JE.requestManager.startMeasurement('person-discovery');
         }
 
-        // Remove existing section
-        const existing = document.querySelector('.jellyseerr-person-discovery-section');
-        if (existing) existing.remove();
+        try {
+            // Check if this is a person page
+            const isPerson = await isPersonPage(itemId, signal);
+            if (signal.aborted) return;
+            if (!isPerson) return;
 
-        // Create and insert section
-        const sectionTitle = JE.t('discovery_more_from_person', { person: personInfo.name });
-        const section = createSectionContainer(sectionTitle);
-        const itemsContainer = section.querySelector('.itemsContainer');
+            const personInfoPromise = getPersonInfo(itemId, signal);
+            const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
 
-        // Show up to 40 items (no pagination for person credits API)
-        const fragment = createCardsFragment(allResults.slice(0, 40));
-        if (fragment.childNodes.length === 0) {
-            console.log(`${logPrefix} No cards created from results`);
-            return;
-        }
+            const [personInfo, status] = await Promise.all([personInfoPromise, statusPromise]);
 
-        itemsContainer.appendChild(fragment);
-        detailSection.appendChild(section);
-        console.log(`${logPrefix} Section added with ${fragment.childNodes.length} cards`);
-    }
+            if (signal.aborted) return;
 
-    /**
-     * Wait for the page to be ready (active page only, not hidden)
-     */
-    function waitForPageReady() {
-        return new Promise((resolve) => {
-            const detailContent = document.querySelector('.itemDetailPage:not(.hide) .detailPageContent') ||
-                                  document.querySelector('.itemDetailPage:not(.hide)');
-            if (detailContent) {
-                resolve();
+            if (!status?.active || !personInfo?.name) return;
+
+            // Get TMDB person ID
+            const tmdbPersonId = personInfo.tmdbId
+                ? parseInt(personInfo.tmdbId)
+                : await searchTmdbPerson(personInfo.name, signal);
+
+            if (signal.aborted) return;
+
+            if (!tmdbPersonId) return;
+
+            // Store for reference
+            currentPersonId = tmdbPersonId;
+            currentPersonName = personInfo.name;
+
+            // Fetch credits
+            const credits = await fetchPersonCredits(tmdbPersonId, signal);
+            if (signal.aborted) return;
+
+            const allResults = [...(credits.cast || []), ...(credits.crew || [])];
+
+            console.debug(`${logPrefix} Fetched ${allResults.length} credits for ${personInfo.name}`);
+
+            if (allResults.length === 0) return;
+
+            // Store all results for filter switching
+            cachedAllResults = allResults;
+
+            // Check if we have both media types
+            const hasBoth = hasBothMediaTypes();
+
+            // Get current filter mode
+            const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+
+            // Get filtered results
+            let displayResults = getFilteredResults(filterMode);
+
+            // If filtered results are empty but we have some content, fall back to showing all
+            if (displayResults.length === 0 && cachedAllResults.length > 0) {
+                displayResults = cachedAllResults;
+            }
+
+            // Wait for page content
+            const detailSection = await waitForPageReady(signal);
+            if (signal.aborted) return;
+
+            if (!detailSection) {
+                console.debug(`${logPrefix} Could not find detail section to insert into`);
                 return;
             }
 
-            const observer = new MutationObserver((mutations, obs) => {
-                const content = document.querySelector('.itemDetailPage:not(.hide) .detailPageContent') ||
-                               document.querySelector('.itemDetailPage:not(.hide)');
-                if (content) {
-                    obs.disconnect();
-                    resolve();
-                }
-            });
+            // Remove existing section
+            const existing = document.querySelector('.jellyseerr-person-discovery-section');
+            if (existing) existing.remove();
 
-            observer.observe(document.body, { childList: true, subtree: true });
-            setTimeout(() => { observer.disconnect(); resolve(); }, 3000);
-        });
+            // Create and insert section
+            const sectionTitle = JE.t('discovery_more_from_person', { person: personInfo.name });
+            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
+            const itemsContainer = section.querySelector('.itemsContainer');
+
+            // Show up to 40 items (no pagination for person credits API)
+            const fragment = createCardsFragment(displayResults.slice(0, 40));
+            if (fragment.childNodes.length === 0) {
+                console.debug(`${logPrefix} No cards created from results`);
+                return;
+            }
+
+            itemsContainer.appendChild(fragment);
+            detailSection.appendChild(section);
+            console.debug(`${logPrefix} Section added with ${fragment.childNodes.length} cards`);
+
+            // Mark as successfully processed AFTER successful render
+            processedPages.add(pageKey);
+
+            // End metrics
+            if (JE.requestManager?.metrics?.enabled) {
+                JE.requestManager.endMeasurement('person-discovery');
+            }
+
+        } catch (error) {
+            // Don't mark as processed on failure so retry is possible
+            if (error.name === 'AbortError') {
+                console.debug(`${logPrefix} Request aborted`);
+                return;
+            }
+            console.error(`${logPrefix} Error rendering person discovery:`, error);
+        } finally {
+            // Clear rendering key after completion (success, abort, or failure)
+            currentRenderingPageKey = null;
+        }
+    }
+
+    /**
+     * Cleanup function
+     */
+    function cleanup() {
+        if (currentAbortController) {
+            currentAbortController.abort();
+            currentAbortController = null;
+        }
+        cleanupScrollObserver();
+        processedPages.clear();
+
+        // Reset pagination state
+        isLoading = false;
+        hasMorePages = true;
+        currentPersonId = null;
+        currentPersonName = null;
+        currentRenderingPageKey = null;
+
+        // Clear cached results
+        cachedAllResults = [];
     }
 
     /**
@@ -377,7 +537,7 @@
      */
     function initialize() {
         window.addEventListener('hashchange', () => {
-            processedPages.clear();
+            cleanup();
             handlePageNavigation();
         });
 

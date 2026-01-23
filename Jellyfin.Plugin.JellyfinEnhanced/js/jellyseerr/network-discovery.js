@@ -4,6 +4,7 @@
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Network Discovery:';
+    const MODULE_NAME = 'network';
 
     // Cache for network ID mappings (studioName -> TMDB networkId)
     const networkIdCache = new Map();
@@ -15,15 +16,36 @@
     const processedPages = new Set();
 
     // Pagination state
-    let currentPage = 1;
     let isLoading = false;
     let hasMorePages = true;
     let currentTvNetworkId = null;
     let currentCompanyId = null;
     let currentStudioName = null;
 
+    // Separate page tracking for TV and Movies
+    let tvCurrentPage = 1;
+    let movieCurrentPage = 1;
+    let tvHasMorePages = true;
+    let movieHasMorePages = true;
+
+    // Cached results for filter switching (avoid refetch)
+    let cachedTvResults = [];
+    let cachedMovieResults = [];
+
+    // Abort controller for cancellation
+    let currentAbortController = null;
+
+    // Track current rendering to prevent duplicate renders
+    let currentRenderingPageKey = null;
+
+    // State object for scroll observer (used by shared utilities)
+    const scrollState = { activeScrollObserver: null };
+
+    // Alias for shared utilities
+    const fetchWithManagedRequest = (path, options) =>
+        JE.discoveryFilter.fetchWithManagedRequest(path, 'network', options);
+
     // TMDB TV Network IDs (these are different from company/studio IDs)
-    // TMDB doesn't provide a network search API, so these must be mapped
     const TV_NETWORKS = {
         'netflix': 213,
         'hbo': 49,
@@ -82,7 +104,6 @@
 
     /**
      * Extracts studio ID from the current URL
-     * @returns {string|null} - The studio ID or null if not on a studio page
      */
     function getStudioIdFromUrl() {
         const hash = window.location.hash;
@@ -100,41 +121,42 @@
 
     /**
      * Gets studio information from Jellyfin (with caching)
-     * @param {string} studioId - The Jellyfin studio ID
-     * @returns {Promise<{id: string, name: string, tmdbId: string|null}|null>}
+     * @param {string} studioId
+     * @param {AbortSignal} [signal]
      */
-    async function getStudioInfo(studioId) {
-        // Check cache first
+    async function getStudioInfo(studioId, signal) {
         if (studioInfoCache.has(studioId)) {
             return studioInfoCache.get(studioId);
         }
 
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/studio/${studioId}`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/studio/${studioId}`, { signal });
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             if (response) {
                 studioInfoCache.set(studioId, response);
             }
             return response;
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             return null;
         }
     }
 
     /**
      * Gets TMDB TV network ID from known networks list
-     * @param {string} networkName - The network name
-     * @returns {number|null} - The TMDB network ID or null
      */
     function getKnownNetworkId(networkName) {
         const key = networkName.toLowerCase().trim();
         if (TV_NETWORKS[key]) return TV_NETWORKS[key];
 
-        // Try partial matches
         for (const [name, id] of Object.entries(TV_NETWORKS)) {
             if (key.includes(name) || name.includes(key)) {
                 return id;
@@ -145,10 +167,10 @@
 
     /**
      * Gets TMDB company ID by searching TMDB (for movie studios)
-     * @param {string} networkName - The network/studio name to search for
-     * @returns {Promise<number|null>} - The TMDB company ID or null
+     * @param {string} networkName
+     * @param {AbortSignal} [signal]
      */
-    async function searchTmdbCompany(networkName) {
+    async function searchTmdbCompany(networkName, signal) {
         const cacheKey = networkName.toLowerCase().trim();
 
         if (networkIdCache.has(cacheKey)) {
@@ -156,22 +178,42 @@
         }
 
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tmdb/search/company?query=${encodeURIComponent(networkName)}`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(
+                `/JellyfinEnhanced/tmdb/search/company?query=${encodeURIComponent(networkName)}`,
+                { signal }
+            );
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
 
             if (response?.results?.length > 0) {
-                const exactMatch = response.results.find(r =>
+                // Filter to exact name matches first
+                const exactMatches = response.results.filter(r =>
                     r.name.toLowerCase() === networkName.toLowerCase()
                 );
-                const companyId = exactMatch ? exactMatch.id : response.results[0].id;
+
+                // Score matches: prefer US origin + logo, then US origin, then any logo
+                const scored = (exactMatches.length > 0 ? exactMatches : response.results).map(r => ({
+                    ...r,
+                    score: (r.origin_country === 'US' ? 2 : 0) + (r.logo_path ? 1 : 0)
+                }));
+
+                // Sort by score descending, pick highest
+                scored.sort((a, b) => b.score - a.score);
+
+                if (scored.length === 0) return null;
+                const companyId = scored[0].id;
+
                 networkIdCache.set(cacheKey, companyId);
                 return companyId;
             }
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             // Silent fail
         }
 
@@ -179,116 +221,113 @@
     }
 
     /**
-     * Fetches discover results from Jellyseerr for a network
-     * @param {number} networkId - The TMDB network ID
-     * @param {number} page - Page number (default: 1)
-     * @returns {Promise<{results: Array, totalPages: number}>}
+     * Fetches discover results from Jellyseerr for a network (TV)
+     * @param {number} networkId
+     * @param {number} page
+     * @param {AbortSignal} [signal]
      */
-    async function fetchNetworkDiscover(networkId, page = 1) {
+    async function fetchNetworkDiscover(networkId, page = 1, signal) {
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/discover/tv/network/${networkId}?page=${page}`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(
+                `/JellyfinEnhanced/jellyseerr/discover/tv/network/${networkId}?page=${page}`,
+                { signal }
+            );
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             return response || { results: [], totalPages: 1 };
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             return { results: [], totalPages: 1 };
         }
     }
 
     /**
      * Fetches discover results from Jellyseerr for a movie studio
-     * @param {number} studioId - The TMDB studio/company ID
-     * @param {number} page - Page number (default: 1)
-     * @returns {Promise<{results: Array, totalPages: number}>}
+     * @param {number} studioId
+     * @param {number} page
+     * @param {AbortSignal} [signal]
      */
-    async function fetchStudioDiscover(studioId, page = 1) {
+    async function fetchStudioDiscover(studioId, page = 1, signal) {
         try {
-            const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studioId}?page=${page}`),
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
+            const response = await fetchWithManagedRequest(
+                `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studioId}?page=${page}`,
+                { signal }
+            );
+
+            if (signal?.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
+            }
+
             return response || { results: [], totalPages: 1 };
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             return { results: [], totalPages: 1 };
         }
     }
 
     /**
-     * Creates cards and returns a DocumentFragment for batch DOM insertion
-     * @param {Array} results - Array of Jellyseerr items
-     * @returns {DocumentFragment} - Fragment containing all cards
+     * Gets filtered/interleaved results based on current filter mode
+     * @param {string} mode - 'mixed', 'movies', or 'tv'
+     * @returns {Array}
      */
-    function createCardsFragment(results) {
-        const fragment = document.createDocumentFragment();
-        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-        const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
-
-        for (let i = 0; i < results.length; i++) {
-            const item = results[i];
-
-            // Skip library items if configured
-            if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) {
-                continue;
-            }
-
-            // Skip rejected items if configured
-            if (excludeRejectedItems && item.mediaInfo?.status === 6) {
-                continue;
-            }
-
-            const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
-            if (!card) continue;
-
-            // Batch class changes (read then write pattern)
-            const classList = card.classList;
-            classList.remove('overflowPortraitCard');
-            classList.add('portraitCard');
-
-            // Handle library items
-            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-            if (jellyfinMediaId) {
-                card.setAttribute('data-library-item', 'true');
-                card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                classList.add('jellyseerr-card-in-library');
-
-                const titleLink = card.querySelector('.cardText-first a');
-                if (titleLink) {
-                    const itemName = item.title || item.name;
-                    titleLink.textContent = itemName;
-                    titleLink.title = itemName;
-                    titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                    titleLink.removeAttribute('target');
-                    titleLink.removeAttribute('rel');
-                }
-            }
-
-            fragment.appendChild(card);
+    function getFilteredResults(mode) {
+        const filter = JE.discoveryFilter;
+        if (!filter) {
+            // Fallback if utility not loaded
+            return [...cachedTvResults, ...cachedMovieResults];
         }
 
-        return fragment;
+        if (mode === filter.MODES.MOVIES) {
+            return cachedMovieResults;
+        }
+        if (mode === filter.MODES.TV) {
+            return cachedTvResults;
+        }
+        // Mixed mode - interleave
+        return filter.interleaveArrays(cachedTvResults, cachedMovieResults);
     }
 
     /**
-     * Creates the section container (without cards)
-     * @param {string} title - Section title
-     * @returns {HTMLElement} - Section element
+     * Creates cards using shared utility
      */
-    function createSectionContainer(title) {
+    function createCardsFragment(results) {
+        return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });
+    }
+
+    /**
+     * Creates the section container with optional filter control
+     * @param {string} title
+     * @param {boolean} showFilter
+     * @param {Function} onFilterChange
+     */
+    function createSectionContainer(title, showFilter, onFilterChange) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-network-discovery-section padded-left padded-right';
         section.setAttribute('data-jellyseerr-network-discovery', 'true');
         section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
 
-        const titleElement = document.createElement('h2');
-        titleElement.className = 'sectionTitle sectionTitle-cards';
-        titleElement.textContent = title;
-        titleElement.style.marginBottom = '1em';
-        section.appendChild(titleElement);
+        // Use shared header helper if available, otherwise create basic header
+        if (JE.discoveryFilter?.createSectionHeader) {
+            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange);
+            section.appendChild(header);
+        } else {
+            const titleElement = document.createElement('h2');
+            titleElement.className = 'sectionTitle sectionTitle-cards';
+            titleElement.textContent = title;
+            titleElement.style.marginBottom = '1em';
+            section.appendChild(titleElement);
+        }
 
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
@@ -299,6 +338,55 @@
     }
 
     /**
+     * Re-renders the section with the new filter mode
+     * @param {string} newMode
+     */
+    function handleFilterChange(newMode) {
+        const itemsContainer = document.querySelector('.jellyseerr-network-discovery-section .itemsContainer');
+        if (!itemsContainer) return;
+
+        // Clear existing cards
+        itemsContainer.innerHTML = '';
+
+        // Get filtered results
+        const filtered = getFilteredResults(newMode);
+
+        // Render cards
+        const fragment = createCardsFragment(filtered.slice(0, 20));
+        if (fragment.childNodes.length > 0) {
+            itemsContainer.appendChild(fragment);
+        }
+
+        // Update hasMorePages based on filter mode
+        updateHasMorePages(newMode);
+
+        // Re-setup infinite scroll if needed
+        if (hasMorePages) {
+            setupInfiniteScroll();
+        }
+    }
+
+    /**
+     * Updates hasMorePages based on current filter mode
+     * @param {string} mode
+     */
+    function updateHasMorePages(mode) {
+        const filter = JE.discoveryFilter;
+        if (!filter) {
+            hasMorePages = tvHasMorePages || movieHasMorePages;
+            return;
+        }
+
+        if (mode === filter.MODES.TV) {
+            hasMorePages = tvHasMorePages;
+        } else if (mode === filter.MODES.MOVIES) {
+            hasMorePages = movieHasMorePages;
+        } else {
+            hasMorePages = tvHasMorePages || movieHasMorePages;
+        }
+    }
+
+    /**
      * Loads more items for infinite scroll
      */
     async function loadMoreItems() {
@@ -306,41 +394,86 @@
             return;
         }
 
+        const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+
         isLoading = true;
-        currentPage++;
 
         try {
-            // Fetch next page using appropriate IDs
-            const [tvResults, movieResults] = await Promise.all([
-                currentTvNetworkId ? fetchNetworkDiscover(currentTvNetworkId, currentPage) : Promise.resolve({ results: [], totalPages: 1 }),
-                currentCompanyId ? fetchStudioDiscover(currentCompanyId, currentPage) : Promise.resolve({ results: [], totalPages: 1 })
-            ]);
+            const signal = currentAbortController?.signal;
+            const promises = [];
 
-            const allResults = [
-                ...(tvResults.results || []),
-                ...(movieResults.results || [])
-            ];
+            // Determine which endpoints to fetch based on filter mode and available IDs
+            const needTv = currentTvNetworkId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages;
+            const needMovies = currentCompanyId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
 
-            // Update pagination state
-            const tvTotalPages = tvResults.totalPages || 1;
-            const movieTotalPages = movieResults.totalPages || 1;
-            hasMorePages = currentPage < Math.max(tvTotalPages, movieTotalPages);
+            if (needTv) {
+                tvCurrentPage++;
+                promises.push(
+                    fetchNetworkDiscover(currentTvNetworkId, tvCurrentPage, signal)
+                        .then(r => ({ type: 'tv', data: r }))
+                );
+            }
+            if (needMovies) {
+                movieCurrentPage++;
+                promises.push(
+                    fetchStudioDiscover(currentCompanyId, movieCurrentPage, signal)
+                        .then(r => ({ type: 'movie', data: r }))
+                );
+            }
 
-            if (allResults.length === 0) {
+            if (promises.length === 0) {
                 hasMorePages = false;
                 isLoading = false;
                 return;
             }
 
-            // Find container and batch append
+            const results = await Promise.all(promises);
+
+            if (signal?.aborted) return;
+
+            let newTvResults = [];
+            let newMovieResults = [];
+
+            results.forEach(r => {
+                if (r.type === 'tv') {
+                    newTvResults = r.data.results || [];
+                    tvHasMorePages = tvCurrentPage < (r.data.totalPages || 1);
+                    cachedTvResults = [...cachedTvResults, ...newTvResults];
+                } else {
+                    newMovieResults = r.data.results || [];
+                    movieHasMorePages = movieCurrentPage < (r.data.totalPages || 1);
+                    cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
+                }
+            });
+
+            updateHasMorePages(filterMode);
+
+            // Get items to add based on filter mode
+            let itemsToAdd;
+            if (filterMode === 'tv') {
+                itemsToAdd = newTvResults;
+            } else if (filterMode === 'movies') {
+                itemsToAdd = newMovieResults;
+            } else {
+                // Mixed - interleave the new results
+                itemsToAdd = JE.discoveryFilter?.interleaveArrays(newTvResults, newMovieResults) ||
+                             [...newTvResults, ...newMovieResults];
+            }
+
+            if (itemsToAdd.length === 0) {
+                isLoading = false;
+                return;
+            }
+
             const itemsContainer = document.querySelector('.jellyseerr-network-discovery-section .itemsContainer');
             if (itemsContainer) {
-                const fragment = createCardsFragment(allResults);
+                const fragment = createCardsFragment(itemsToAdd);
                 if (fragment.childNodes.length > 0) {
                     itemsContainer.appendChild(fragment);
                 }
             }
         } catch (error) {
+            if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
         }
 
@@ -348,24 +481,31 @@
     }
 
     /**
-     * Sets up infinite scroll observer
+     * Sets up infinite scroll observer using shared utility
      */
     function setupInfiniteScroll() {
-        const section = document.querySelector('.jellyseerr-network-discovery-section');
-        if (!section) return;
+        JE.discoveryFilter.setupInfiniteScroll(
+            scrollState,
+            '.jellyseerr-network-discovery-section',
+            loadMoreItems,
+            () => hasMorePages,
+            () => isLoading
+        );
+    }
 
-        const sentinel = document.createElement('div');
-        sentinel.className = 'jellyseerr-scroll-sentinel';
-        sentinel.style.cssText = 'height:20px;width:100%';
-        section.appendChild(sentinel);
+    /**
+     * Cleanup scroll observer using shared utility
+     */
+    function cleanupScrollObserver() {
+        JE.discoveryFilter.cleanupScrollObserver(scrollState);
+    }
 
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && hasMorePages && !isLoading) {
-                loadMoreItems();
-            }
-        }, { rootMargin: '200px' });
-
-        observer.observe(sentinel);
+    /**
+     * Wait for the page to be ready using shared utility
+     * @param {AbortSignal} [signal]
+     */
+    function waitForPageReady(signal) {
+        return JE.discoveryFilter.waitForPageReady(signal, { type: 'list' });
     }
 
     /**
@@ -375,129 +515,190 @@
         const studioId = getStudioIdFromUrl();
         if (!studioId) return;
 
-        // Prevent duplicate processing
         const pageKey = `${studioId}-${window.location.hash}`;
         if (processedPages.has(pageKey)) return;
-        processedPages.add(pageKey);
 
-        // Check if feature is enabled (sync check)
+        // Prevent re-entry if already rendering this same page
+        if (currentRenderingPageKey === pageKey) return;
+
         if (!JE.pluginConfig?.JellyseerrShowNetworkDiscovery) return;
 
-        // Start ALL async operations in parallel for maximum speed
-        const studioInfoPromise = getStudioInfo(studioId);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
-        const pageReadyPromise = waitForPageReady();
+        // Set rendering key before potentially aborting
+        currentRenderingPageKey = pageKey;
 
-        // Wait for studio info and status first (needed for network ID)
-        const [studioInfo, status] = await Promise.all([studioInfoPromise, statusPromise]);
+        // Cancel any previous requests (for different pages)
+        if (currentAbortController) {
+            currentAbortController.abort();
+        }
+        currentAbortController = new AbortController();
+        const signal = currentAbortController.signal;
 
-        if (!status?.active || !studioInfo?.name) return;
+        // Start metrics if enabled
+        if (JE.requestManager?.metrics?.enabled) {
+            JE.requestManager.startMeasurement('network-discovery');
+        }
 
-        // Get TV network ID (from known list) and company ID (from search)
-        // These are different ID spaces in TMDB
-        const tvNetworkId = studioInfo.tmdbId
-            ? parseInt(studioInfo.tmdbId)
-            : getKnownNetworkId(studioInfo.name);
-        const companyIdPromise = searchTmdbCompany(studioInfo.name);
+        try {
+            const studioInfoPromise = getStudioInfo(studioId, signal);
+            const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+            const pageReadyPromise = waitForPageReady(signal);
 
-        // Need at least one valid ID
-        const companyId = await companyIdPromise;
-        if (!tvNetworkId && !companyId) return;
+            const [studioInfo, status] = await Promise.all([studioInfoPromise, statusPromise]);
 
-        // Reset pagination state
-        currentPage = 1;
-        isLoading = false;
-        hasMorePages = true;
-        currentTvNetworkId = tvNetworkId;
-        currentCompanyId = companyId;
-        currentStudioName = studioInfo.name;
+            if (signal.aborted) return;
 
-        // Fetch discover results in parallel using appropriate IDs
-        const discoverPromise = Promise.all([
-            tvNetworkId ? fetchNetworkDiscover(tvNetworkId) : Promise.resolve({ results: [], totalPages: 1 }),
-            companyId ? fetchStudioDiscover(companyId) : Promise.resolve({ results: [], totalPages: 1 })
-        ]);
+            if (!status?.active || !studioInfo?.name) return;
 
-        // Wait for page and discover results in parallel
-        const [[tvResults, movieResults]] = await Promise.all([discoverPromise, pageReadyPromise]);
+            // TV network IDs are different from company IDs in TMDB
+            // Always use name lookup for TV networks
+            const tvNetworkId = getKnownNetworkId(studioInfo.name);
 
-        // Update pagination state
-        const tvTotalPages = tvResults.totalPages || 1;
-        const movieTotalPages = movieResults.totalPages || 1;
-        hasMorePages = currentPage < Math.max(tvTotalPages, movieTotalPages);
+            // For movie studios, use stored tmdbId if available, otherwise search
+            const companyId = studioInfo.tmdbId
+                ? parseInt(studioInfo.tmdbId)
+                : await searchTmdbCompany(studioInfo.name, signal);
 
-        // Combine results
-        const allResults = [
-            ...(tvResults.results || []),
-            ...(movieResults.results || [])
-        ];
+            if (signal.aborted) return;
 
-        if (allResults.length === 0) return;
+            if (!tvNetworkId && !companyId) return;
 
-        // Find container only on ACTIVE page (not hidden)
-        const listPage = document.querySelector('.page:not(.hide) .itemsContainer') ||
-                         document.querySelector('.libraryPage:not(.hide) .itemsContainer');
-        if (!listPage) return;
+            // Reset pagination state
+            tvCurrentPage = 1;
+            movieCurrentPage = 1;
+            isLoading = false;
+            hasMorePages = true;
+            tvHasMorePages = true;
+            movieHasMorePages = true;
+            currentTvNetworkId = tvNetworkId;
+            currentCompanyId = companyId;
+            currentStudioName = studioInfo.name;
 
-        // Remove existing sections
-        const existing = document.querySelector('.jellyseerr-network-discovery-section');
-        if (existing) existing.remove();
+            // Clear cached results
+            cachedTvResults = [];
+            cachedMovieResults = [];
 
-        // Create section with cards
-        const sectionTitle = JE.t('discovery_more_from_studio', { studio: studioInfo.name });
-        const section = createSectionContainer(sectionTitle);
-        const itemsContainer = section.querySelector('.itemsContainer');
-
-        // Batch insert cards using DocumentFragment
-        const fragment = createCardsFragment(allResults.slice(0, 20));
-        if (fragment.childNodes.length === 0) return;
-
-        itemsContainer.appendChild(fragment);
-
-        // Insert section into DOM (single reflow)
-        const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
-        if (parentContainer?.parentElement) {
-            parentContainer.parentElement.appendChild(section);
-
-            // Setup infinite scroll if needed
-            if (hasMorePages) {
-                setupInfiniteScroll();
+            // Fetch TV and Movies separately (only if IDs available)
+            const fetchPromises = [];
+            if (tvNetworkId) {
+                fetchPromises.push(
+                    fetchNetworkDiscover(tvNetworkId, 1, signal)
+                        .then(r => ({ type: 'tv', data: r }))
+                );
             }
+            if (companyId) {
+                fetchPromises.push(
+                    fetchStudioDiscover(companyId, 1, signal)
+                        .then(r => ({ type: 'movie', data: r }))
+                );
+            }
+
+            const [fetchResults, listPage] = await Promise.all([
+                Promise.all(fetchPromises),
+                pageReadyPromise
+            ]);
+
+            if (signal.aborted) return;
+
+            // Process results
+            fetchResults.forEach(r => {
+                if (r.type === 'tv') {
+                    cachedTvResults = r.data.results || [];
+                    tvHasMorePages = 1 < (r.data.totalPages || 1);
+                } else {
+                    cachedMovieResults = r.data.results || [];
+                    movieHasMorePages = 1 < (r.data.totalPages || 1);
+                }
+            });
+
+            // Determine if we have both types (only show filter if BOTH have results)
+            const hasBoth = JE.discoveryFilter?.hasBothTypes(cachedTvResults, cachedMovieResults) || false;
+
+            // Get current filter mode
+            const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+
+            // Update hasMorePages
+            updateHasMorePages(filterMode);
+
+            // Get results based on filter mode
+            let displayResults = getFilteredResults(filterMode);
+
+            // If filtered results are empty but we have some content, fall back to showing all
+            if (displayResults.length === 0 && (cachedTvResults.length > 0 || cachedMovieResults.length > 0)) {
+                displayResults = [...cachedTvResults, ...cachedMovieResults];
+            }
+
+            if (displayResults.length === 0) return;
+
+            if (!listPage) return;
+
+            const existing = document.querySelector('.jellyseerr-network-discovery-section');
+            if (existing) existing.remove();
+
+            const sectionTitle = JE.t('discovery_more_from_studio', { studio: studioInfo.name });
+            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
+            const itemsContainer = section.querySelector('.itemsContainer');
+
+            const fragment = createCardsFragment(displayResults.slice(0, 20));
+            if (fragment.childNodes.length === 0) return;
+
+            itemsContainer.appendChild(fragment);
+
+            const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
+            if (parentContainer?.parentElement) {
+                parentContainer.parentElement.appendChild(section);
+
+                if (hasMorePages) {
+                    setupInfiniteScroll();
+                }
+
+                // Mark as successfully processed AFTER successful render
+                processedPages.add(pageKey);
+            }
+
+            // End metrics
+            if (JE.requestManager?.metrics?.enabled) {
+                JE.requestManager.endMeasurement('network-discovery');
+            }
+
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.debug(`${logPrefix} Request aborted`);
+                return;
+            }
+            console.error(`${logPrefix} Error rendering network discovery:`, error);
+        } finally {
+            // Clear rendering key after completion (success, abort, or failure)
+            // processedPages guards against duplicate successful renders
+            currentRenderingPageKey = null;
         }
     }
 
     /**
-     * Wait for the page to be ready (active page only, not hidden)
-     * @returns {Promise<void>}
+     * Cleanup function
      */
-    function waitForPageReady() {
-        return new Promise((resolve) => {
-            // Check immediately first (active page only)
-            const listContainer = document.querySelector('.page:not(.hide) .itemsContainer') ||
-                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer');
-            if (listContainer?.children.length > 0) {
-                resolve();
-                return;
-            }
+    function cleanup() {
+        if (currentAbortController) {
+            currentAbortController.abort();
+            currentAbortController = null;
+        }
+        cleanupScrollObserver();
+        processedPages.clear();
 
-            // Use MutationObserver for efficient DOM watching
-            const observer = new MutationObserver((mutations, obs) => {
-                const container = document.querySelector('.page:not(.hide) .itemsContainer') ||
-                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer');
-                if (container?.children.length > 0) {
-                    obs.disconnect();
-                    resolve();
-                }
-            });
+        // Reset pagination state
+        tvCurrentPage = 1;
+        movieCurrentPage = 1;
+        isLoading = false;
+        hasMorePages = true;
+        tvHasMorePages = true;
+        movieHasMorePages = true;
+        currentTvNetworkId = null;
+        currentCompanyId = null;
+        currentStudioName = null;
+        currentRenderingPageKey = null;
 
-            observer.observe(document.body, { childList: true, subtree: true });
-
-            // Fallback timeout
-            setTimeout(() => {
-                observer.disconnect();
-                resolve();
-            }, 3000);
-        });
+        // Clear cached results
+        cachedTvResults = [];
+        cachedMovieResults = [];
     }
 
     /**
@@ -506,7 +707,6 @@
     function handlePageNavigation() {
         const studioId = getStudioIdFromUrl();
         if (studioId) {
-            // Use requestAnimationFrame for smoother integration with render cycle
             requestAnimationFrame(() => {
                 renderNetworkDiscovery();
             });
@@ -514,23 +714,18 @@
     }
 
     /**
-     * Initializes the network discovery handler
+     * Initialize
      */
     function initialize() {
-        // Listen for hash changes (navigation)
         window.addEventListener('hashchange', () => {
-            processedPages.clear();
+            cleanup();
             handlePageNavigation();
         });
 
-        // Check current page on load
         handlePageNavigation();
-
-        // Also listen for viewshow events (Jellyfin's custom event)
         document.addEventListener('viewshow', handlePageNavigation);
     }
 
-    // Initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initialize);
     } else {
