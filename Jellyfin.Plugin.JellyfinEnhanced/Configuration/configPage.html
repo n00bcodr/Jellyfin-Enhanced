@@ -1237,6 +1237,16 @@
                 .shake {
                     animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
                 }
+                .jellyfin-tab-button {
+                    position: relative;
+                    z-index: 1000;
+                }
+                .jellyfin-tab-button h3 {
+                    pointer-events: none;
+                }
+                .jellyfin-tab-button img {
+                    pointer-events: none;
+                }
             `;
             document.head.appendChild(style);
 
