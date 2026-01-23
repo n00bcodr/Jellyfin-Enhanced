@@ -100,6 +100,7 @@
     function createCardsFragment(results) {
         const fragment = document.createDocumentFragment();
         const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+        const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
         const seen = new Set();
 
         for (let i = 0; i < results.length; i++) {
@@ -109,7 +110,13 @@
             if (seen.has(key)) continue;
             seen.add(key);
 
+            // Skip library items if configured
             if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) {
+                continue;
+            }
+
+            // Skip rejected items if configured
+            if (excludeRejectedItems && item.mediaInfo?.status === 6) {
                 continue;
             }
 

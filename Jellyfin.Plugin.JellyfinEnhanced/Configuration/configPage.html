@@ -517,6 +517,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, a small report icon will be added to item action icons allowing users to report playback/content issues to Jellyseerr.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="jellyseerrExcludeRejectedItems" is="emby-checkbox" type="checkbox"/>
+                                    <span>Exclude rejected movies/series from suggestions</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, items marked as rejected in Jellyseerr will not appear in similar/recommended suggestions.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="showElsewhereOnJellyseerr" is="emby-checkbox" type="checkbox"/>
                                     <span>Show Streaming Providers on Jellyseerr Posters</span>
                                 </label>
@@ -1634,6 +1641,7 @@
                 document.querySelector('#jellyseerrShowTagDiscovery').checked = config.JellyseerrShowTagDiscovery !== false;
                 document.querySelector('#jellyseerrShowPersonDiscovery').checked = config.JellyseerrShowPersonDiscovery !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
+                document.querySelector('#jellyseerrExcludeRejectedItems').checked = !!config.JellyseerrExcludeRejectedItems;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -1760,6 +1768,7 @@
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
             config.JellyseerrExcludeLibraryItems = document.querySelector('#jellyseerrExcludeLibraryItems').checked;
+            config.JellyseerrExcludeRejectedItems = document.querySelector('#jellyseerrExcludeRejectedItems').checked;
             config.JellyseerrShowNetworkDiscovery = document.querySelector('#jellyseerrShowNetworkDiscovery').checked;
             config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;
             config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;

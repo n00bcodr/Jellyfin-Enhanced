@@ -201,14 +201,21 @@
                 return;
             }
 
-            // Filter items if configured to exclude library items
+            // Filter items if configured to exclude library items or rejected items
             const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-            const filteredSimilarResults = excludeLibraryItems
-                ? similarResults.filter(item => !item.mediaInfo?.jellyfinMediaId)
-                : similarResults;
-            const filteredRecommendedResults = excludeLibraryItems
-                ? recommendedResults.filter(item => !item.mediaInfo?.jellyfinMediaId)
-                : recommendedResults;
+            const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
+
+            const filteredSimilarResults = similarResults.filter(item => {
+                if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
+                if (excludeRejectedItems && item.mediaInfo?.status === 6) return false;
+                return true;
+            });
+
+            const filteredRecommendedResults = recommendedResults.filter(item => {
+                if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
+                if (excludeRejectedItems && item.mediaInfo?.status === 6) return false;
+                return true;
+            });
 
             if (filteredSimilarResults.length === 0 && filteredRecommendedResults.length === 0) {
                 console.debug(`${logPrefix} No content to display after filtering library items`);
