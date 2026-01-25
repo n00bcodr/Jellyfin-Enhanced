@@ -1311,8 +1311,11 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── request-manager.js
     │   ├── tag-discovery.js
     │   └── ui.js
-    ├── arr-links.js
-    ├── arr-tag-links.js
+    ├── arr/
+    │   ├── arr-links.js
+    │   ├── arr-tag-links.js
+    │   ├── calendar-page.js
+    │   └── requests-page.js
     ├── elsewhere.js
     ├── genretags.js
     ├── languagetags.js
@@ -1366,9 +1369,11 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`tag-discovery.js`**: Implements tag-based content discovery with TV/Movies/All filtering, enabling users to find and request media based on custom tags and categories in Jellyseerr with separate page tracking per content type.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
 
-* **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
-
-* **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
+* **`/jellyseerr/`**: This directory contains all components related to the Jellyseerr integration.
+  * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
+  * **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
+  * **`calendar-page.js`**: Adds a calendar button in the sidebar which opens a view that shows the calendar of upcoming items from Radarr and Sonarr
+  * **`requests-page.js`**: Adds a Requests button in the sidebar which opens a view that shows requests and download status from the arrs and Jellyseerr
 
 * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
 
