@@ -347,5 +347,17 @@
     "discovery_more_with_tag": "Daha fazla etiketle - \"{tag}\"",
     "discovery_more_from_person": "Daha fazla {person} ile",
     "jellyseerr_active_downloads": "Aktif indirmeler",
-    "jellyseerr_requests": "İstekler"
+    "jellyseerr_requests": "İstekler",
+    "calendar_title": "Takvim",
+    "calendar_today": "Bugün",
+    "calendar_month": "Ay",
+    "calendar_week": "Hafta",
+    "calendar_agenda": "Ajanda",
+    "calendar_cinema_release": "Sinema yayını",
+    "calendar_digital_release": "Dijital yayın",
+    "calendar_physical_release": "Fiziksel yayın",
+    "calendar_episode": "Bölüm",
+    "calendar_series": "Diziler",
+    "calendar_loading": "Takvim yükleniyor...",
+    "calendar_no_releases": "Yaklaşan yayın yok"
 }

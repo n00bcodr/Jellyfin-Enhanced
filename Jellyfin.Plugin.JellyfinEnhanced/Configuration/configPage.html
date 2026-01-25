@@ -752,14 +752,14 @@
                                 <div class="fieldDescription">Note: This links to the main movies/series page as Bazarr does not support direct links.</div>
                             </div>
                             <div class="inputContainer" style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
-                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
-                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
                                 <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key"/>
                                 <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
+                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
+                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
+                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
                             </div>
                         </div>
                     </fieldset>
@@ -846,16 +846,6 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Requests Page</h3></legend>
                         <div class="configSection">
-                            <div style="background-color: rgba(0, 164, 220, 0.1); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin-bottom: 1.5em;">
-                                <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
-                                    <div>
-                                        <strong>Requests Page</strong> shows a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
-                                        <br><br>
-                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Jellyseerr URLs and API keys above.
-                                    </div>
-                                </div>
-                            </div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="downloadsPageEnabled" is="emby-checkbox" type="checkbox"/>
@@ -868,6 +858,57 @@
                                 <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="10" max="300" value="30"/>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 1em;">How often to refresh download status (10-300 seconds).</div>
+                        </div>
+                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
+                                        <br><br>
+                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Jellyseerr URLs and API keys.
+                                    </div>
+                                </div>
+                            </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Calendar Page</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarPageEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Calendar Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Calendar" link to the navigation showing upcoming releases from Sonarr/Radarr.</div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="calendarFirstDayOfWeek">First Day of Week</label>
+                                <select id="calendarFirstDayOfWeek" is="emby-select">
+                                    <option value="Sunday">Sunday</option>
+                                    <option value="Monday">Monday</option>
+                                    <option value="Tuesday">Tuesday</option>
+                                    <option value="Wednesday">Wednesday</option>
+                                    <option value="Thursday">Thursday</option>
+                                    <option value="Friday">Friday</option>
+                                    <option value="Saturday">Saturday</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="calendarTimeFormat">Time Format</label>
+                                <select id="calendarTimeFormat" is="emby-select">
+                                    <option value="5pm/5:30pm">5pm/5:30pm</option>
+                                    <option value="17:00/17:30">17:00/17:30</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                            <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">calendar_today</i>
+                                <div>
+                                    <strong>Calendar Page</strong> adds a Calendar Button in sidebar with a dedicated view that displays upcoming releases from Sonarr and Radarr in a calendar view.
+                                    <br><br>
+                                    <strong>Requirements:</strong> Configure Sonarr and/or Radarr URLs and API keys.
+                                </div>
+                            </div>
                         </div>
                     </fieldset>
                 </div>
@@ -1732,6 +1773,11 @@
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#downloadsPollIntervalSeconds').value = config.DownloadsPollIntervalSeconds || 30;
 
+                // Calendar Page settings
+                document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
+                document.querySelector('#calendarFirstDayOfWeek').value = config.CalendarFirstDayOfWeek || 'Monday';
+                document.querySelector('#calendarTimeFormat').value = config.CalendarTimeFormat || '5pm/5:30pm';
+
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
@@ -1870,6 +1916,11 @@
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
             config.DownloadsPollIntervalSeconds = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10) || 30;
+
+            // Calendar Page settings
+            config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
+            config.CalendarFirstDayOfWeek = document.querySelector('#calendarFirstDayOfWeek').value || 'Monday';
+            config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';

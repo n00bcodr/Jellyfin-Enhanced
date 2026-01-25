@@ -1,4 +1,4 @@
-// /js/arr-tag-links.js
+// /js/arr/arr-tag-links.js
 (function (JE) {
     'use strict';
 

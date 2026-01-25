@@ -347,5 +347,17 @@
     "discovery_more_with_tag": "Еще с тегом - \"{tag}\"",
     "discovery_more_from_person": "Еще с {person}",
     "jellyseerr_active_downloads": "Активные загрузки",
-    "jellyseerr_requests": "Запросы"
+    "jellyseerr_requests": "Запросы",
+    "calendar_title": "Календарь",
+    "calendar_today": "Сегодня",
+    "calendar_month": "Месяц",
+    "calendar_week": "Неделя",
+    "calendar_agenda": "Повестка",
+    "calendar_cinema_release": "Выход в кинотеатрах",
+    "calendar_digital_release": "Цифровой релиз",
+    "calendar_physical_release": "Физический релиз",
+    "calendar_episode": "Эпизод",
+    "calendar_series": "Сериалы",
+    "calendar_loading": "Загрузка календаря...",
+    "calendar_no_releases": "Нет предстоящих релизов"
 }

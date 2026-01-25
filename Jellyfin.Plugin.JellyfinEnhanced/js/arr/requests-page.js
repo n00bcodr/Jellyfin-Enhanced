@@ -1,4 +1,4 @@
-// /js/requests/requests-page.js
+// /js/arr/requests-page.js
 // Requests Page - Shows active downloads from Sonarr/Radarr and requests from Jellyseerr
 (function () {
   "use strict";

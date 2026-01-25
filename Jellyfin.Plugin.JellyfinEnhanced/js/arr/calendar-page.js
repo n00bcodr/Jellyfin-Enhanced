@@ -1,0 +1,1154 @@
+// /js/arr/calendar-page.js
+// Calendar Page - Shows upcoming releases from Sonarr and Radarr
+(function () {
+  "use strict";
+
+  const JE = window.JellyfinEnhanced;
+
+  // State management
+  const state = {
+    events: [],
+    isLoading: false,
+    navInjected: false,
+    pageVisible: false,
+    previousPage: null,
+    currentDate: new Date(),
+    viewMode: "month",
+    rangeStart: null,
+    rangeEnd: null,
+    settings: {
+      firstDayOfWeek: "Monday",
+      timeFormat: "5pm/5:30pm",
+    },
+  };
+
+  // Status color mapping
+  const STATUS_COLORS = {
+    CinemaRelease: "#2196f3",
+    DigitalRelease: "#9c27b0",
+    PhysicalRelease: "#ff5722",
+    Episode: "#4caf50",
+  };
+
+  const SONARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg";
+  const RADARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg";
+
+  // CSS Styles
+  const CSS_STYLES = `
+    .je-calendar-page {
+      padding: 2em;
+      max-width: 95vw;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .je-calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2em;
+      flex-wrap: wrap;
+      gap: 1em;
+    }
+
+    .je-calendar-title {
+      font-size: 2em;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .je-calendar-actions {
+      display: flex;
+      gap: 1em;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .je-calendar-nav {
+      display: inline-flex;
+      gap: 0.5em;
+      align-items: center;
+    }
+
+    .je-calendar-nav-btn,
+    .je-calendar-view-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: inherit;
+      padding: 0.45em 0.9em;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-weight: 600;
+    }
+
+    .je-calendar-nav-btn:hover,
+    .je-calendar-view-btn:hover {
+      background: rgba(255,255,255,0.14);
+    }
+
+    .je-calendar-view-btn.active {
+      background: var(--theme-primary-color, #00a4dc);
+      border-color: var(--theme-primary-color, #00a4dc);
+    }
+
+    .je-calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1em;
+      margin-bottom: 2em;
+    }
+
+    .je-calendar-day {
+      background: rgba(128,128,128,0.05);
+      border-radius: 0.5em;
+      padding: 1em;
+      min-height: 150px;
+      border: 1px solid rgba(128,128,128,0.2);
+    }
+
+    .je-calendar-day-header {
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 0.5em;
+      padding-bottom: 0.5em;
+      border-bottom: 1px solid rgba(128,128,128,0.2);
+    }
+
+    .je-calendar-day-number {
+      display: inline-block;
+      font-size: 1.2em;
+      font-weight: 700;
+    }
+
+    .je-calendar-day-name {
+      display: block;
+      font-size: 0.85em;
+      opacity: 0.7;
+      margin-top: 0.25em;
+    }
+
+    .je-calendar-events-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5em;
+    }
+
+    .je-calendar-event {
+      padding: 0.5em;
+      border-radius: 0.25em;
+      font-size: 0.85em;
+      cursor: pointer;
+      transition: all 0.2s;
+      border-left: 3px solid;
+      padding-left: 0.7em;
+    }
+
+    .je-calendar-event:hover {
+      transform: translateX(2px);
+      opacity: 0.9;
+    }
+
+    .je-calendar-event-title {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+
+    .je-calendar-event-subtitle {
+      font-size: 0.8em;
+      opacity: 0.75;
+      display: block;
+      margin-top: 0.2em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .je-calendar-event-type {
+      font-size: 0.75em;
+      opacity: 0.85;
+      margin-top: 0.35em;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      flex-wrap: wrap;
+    }
+
+    .je-calendar-event-type img {
+      width: 12px;
+      height: 12px;
+      object-fit: contain;
+    }
+
+    .je-calendar-event-time {
+      font-weight: 600;
+      opacity: 0.95;
+    }
+
+    .je-calendar-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5em;
+      margin-top: 2em;
+      padding: 1em;
+      background: rgba(128,128,128,0.1);
+      border-radius: 0.5em;
+    }
+
+    .je-calendar-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      font-size: 0.9em;
+    }
+
+    .je-calendar-empty {
+      text-align: center;
+      padding: 2em;
+      opacity: 0.7;
+    }
+
+    .je-calendar-agenda {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .je-calendar-agenda-row {
+      display: flex;
+      border-bottom: 1px solid rgba(128,128,128,0.15);
+      padding: 0.75em 0;
+      align-items: flex-start;
+      gap: 1.5em;
+    }
+
+    .je-calendar-agenda-row:hover {
+      background: rgba(128,128,128,0.05);
+    }
+
+    .je-calendar-agenda-date {
+      min-width: 140px;
+      flex-shrink: 0;
+      padding: 0.5em;
+      font-weight: 600;
+      font-size: 0.95em;
+      opacity: 0.85;
+    }
+
+    .je-calendar-agenda-events {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75em;
+    }
+
+    .je-calendar-agenda-event {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+
+    .je-calendar-agenda-event-marker {
+      width: 4px;
+      height: 24px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .je-calendar-agenda-event-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .je-calendar-agenda-event-title {
+      font-weight: 600;
+      font-size: 1em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .je-calendar-agenda-event-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      margin-top: 0.25em;
+      font-size: 0.85em;
+      opacity: 0.8;
+    }
+
+    .je-calendar-agenda-event-meta img {
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+    }
+
+    @media (max-width: 1024px) {
+      .je-calendar-page {
+        padding: 1em;
+      }
+
+      .je-calendar-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .je-calendar-title {
+        font-size: 1.5em;
+      }
+
+      .je-calendar-actions {
+        width: 100%;
+        flex-direction: column;
+      }
+
+      .je-calendar-nav {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .je-calendar-grid {
+        gap: 0.5em;
+      }
+
+      .je-calendar-day {
+        min-height: 120px;
+        padding: 0.5em;
+      }
+
+      .je-calendar-legend {
+        gap: 1em;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .je-calendar-page {
+        padding: 0.25em;
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+
+      .je-calendar-title {
+        font-size: 1.1em;
+      }
+
+      .je-calendar-nav-btn,
+      .je-calendar-view-btn {
+        padding: 0.35em 0.6em;
+        font-size: 0.85em;
+      }
+
+      .je-calendar-grid {
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.15em;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      .je-calendar-day {
+        min-height: 80px;
+        min-width: 0;
+        padding: 0.15em;
+        font-size: 0.8em;
+      }
+
+      .je-calendar-day-header {
+        font-size: 0.7em;
+        padding-bottom: 0.2em;
+        margin-bottom: 0.2em;
+      }
+
+      .je-calendar-day-number {
+        font-size: 0.9em;
+      }
+
+      .je-calendar-day-name {
+        display: none;
+      }
+
+      .je-calendar-events-list {
+        gap: 0.2em;
+      }
+
+      .je-calendar-event {
+        font-size: 0.65em;
+        padding: 0.2em;
+        padding-left: 0.4em;
+        border-left-width: 2px;
+      }
+
+      .je-calendar-event-title {
+        font-size: 0.85em;
+        line-height: 1.2;
+      }
+
+      .je-calendar-event-subtitle {
+        font-size: 0.75em;
+        margin-top: 0.15em;
+      }
+
+      .je-calendar-event-type {
+        font-size: 0.7em;
+        margin-top: 0.25em;
+      }
+
+      .je-calendar-event-type img {
+        width: 10px;
+        height: 10px;
+      }
+
+      .je-calendar-agenda-row {
+        flex-direction: column;
+        gap: 0.5em;
+      }
+
+      .je-calendar-agenda-date {
+        min-width: auto;
+      }
+
+      .je-calendar-agenda-event {
+        gap: 0.5em;
+      }
+
+      .je-calendar-legend {
+        gap: 0.5em;
+        font-size: 0.8em;
+        padding: 0.75em;
+      }
+
+      .je-calendar-legend-item {
+        flex: 1 1 45%;
+      }
+    }
+  `;
+
+  /**
+   * Initialize calendar page
+   */
+  function initialize() {
+    console.log("[JE Calendar] Initializing calendar page module");
+
+    injectStyles();
+    loadSettings();
+    injectNavigation();
+
+    // Setup event listeners
+    document.addEventListener("viewshow", handleViewShow);
+    document.addEventListener("click", handleNavClick);
+    window.addEventListener("hashchange", handleNavigation);
+
+    // Check URL on init
+    handleNavigation();
+
+    console.log("[JE Calendar] Calendar page module initialized");
+  }
+
+  // Load calendar settings from plugin config
+  function loadSettings() {
+    const config = JE.pluginConfig || {};
+    state.settings = {
+      firstDayOfWeek: config.CalendarFirstDayOfWeek || "Monday",
+      timeFormat: config.CalendarTimeFormat || "5pm/5:30pm",
+    };
+  }
+
+  // Inject CSS styles into page
+  function injectStyles() {
+    if (document.getElementById("je-calendar-styles")) return;
+    const style = document.createElement("style");
+    style.id = "je-calendar-styles";
+    style.textContent = CSS_STYLES;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Get API authentication headers
+   */
+  function getAuthHeaders() {
+    const token = ApiClient.accessToken ? ApiClient.accessToken() : "";
+    return {
+      "X-MediaBrowser-Token": token,
+      "Content-Type": "application/json",
+    };
+  }
+
+  /**
+   * Fetch calendar events from backend
+   */
+  async function fetchCalendarEvents(startDate, endDate) {
+    try {
+      const response = await fetch(
+        ApiClient.getUrl("/JellyfinEnhanced/arr/calendar", {
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+        }),
+        { headers: getAuthHeaders() },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      state.events = (data.events || []).filter((evt) => evt && evt.releaseDate);
+      return data;
+    } catch (error) {
+      console.error("[JE Calendar] Failed to fetch calendar events:", error);
+      state.events = [];
+      return null;
+    }
+  }
+
+  /**
+   * Load all data
+   */
+  async function loadAllData() {
+    state.isLoading = true;
+    renderPage();
+
+    const { start, end } = getRangeForView(state.currentDate, state.viewMode);
+    state.rangeStart = start;
+    state.rangeEnd = end;
+
+    await fetchCalendarEvents(start, end);
+
+    state.isLoading = false;
+    renderPage();
+  }
+
+  /**
+   * Group events by date
+   */
+  function groupEventsByDate(events) {
+    const grouped = {};
+
+    events.forEach((event) => {
+      if (!event.releaseDate) {
+        return;
+      }
+      // Convert UTC timestamp to user's local date
+      const date = new Date(event.releaseDate);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateKey = `${year}-${month}-${day}`;
+
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+
+      grouped[dateKey].push(event);
+    });
+
+    return grouped;
+  }
+
+  // Get start and end dates for current view
+  function getRangeForView(anchorDate, viewMode) {
+    const start = new Date(anchorDate);
+    start.setHours(0, 0, 0, 0);
+
+    if (viewMode === "month") {
+      start.setDate(1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+      return { start, end };
+    }
+
+    if (viewMode === "week") {
+      const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const firstDayIndex = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
+      const currentDayIndex = start.getDay();
+      const diff = (currentDayIndex - firstDayIndex + 7) % 7;
+      start.setDate(start.getDate() - diff);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+
+    // Agenda: 30-day rolling window
+    const endAgenda = new Date(start);
+    endAgenda.setDate(start.getDate() + 29);
+    endAgenda.setHours(23, 59, 59, 999);
+    return { start, end: endAgenda };
+  }
+
+  /**
+   * Get days in month
+   */
+  function getDaysInMonth(date) {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  }
+
+  /**
+   * Get first day of month
+   */
+  function getFirstDayOfMonth(date) {
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+    const dayOfWeek = firstDay.getDay();
+
+    // Convert based on first day of week setting
+    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const firstDayOfWeek = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
+
+    return (dayOfWeek - firstDayOfWeek + 7) % 7;
+  }
+
+  /**
+   * Filter event by settings
+   */
+  function shouldShowEvent(_event) {
+    return true;
+  }
+
+  /**
+   * Get event color
+   */
+  function getEventColor(event) {
+    const map = {
+      CinemaRelease: STATUS_COLORS.CinemaRelease,
+      DigitalRelease: STATUS_COLORS.DigitalRelease,
+      PhysicalRelease: STATUS_COLORS.PhysicalRelease,
+      Episode: STATUS_COLORS.Episode,
+    };
+
+    return map[event.releaseType] || "var(--theme-primary-color, #00a4dc)";
+  }
+
+  // Get translated release type label
+  function formatReleaseLabel(event) {
+    const JE = window.JellyfinEnhanced;
+    if (event.releaseType === "CinemaRelease") return JE.t("calendar_cinema_release");
+    if (event.releaseType === "DigitalRelease") return JE.t("calendar_digital_release");
+    if (event.releaseType === "PhysicalRelease") return JE.t("calendar_physical_release");
+    if (event.releaseType === "Episode") return JE.t("calendar_episode");
+    return "Release";
+  }
+
+  // Format event time for display
+  function formatEventTime(releaseDate) {
+    if (!releaseDate) return null;
+    const date = new Date(releaseDate);
+    if (Number.isNaN(date.getTime())) return null;
+
+    if (date.getHours() === 0 && date.getMinutes() === 0) return null;
+
+    const hour12 = state.settings.timeFormat === "5pm/5:30pm";
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12 });
+  }
+
+  // Format date range label for header
+  function formatRangeLabel() {
+    if (!state.rangeStart || !state.rangeEnd) {
+      return new Date(state.currentDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    }
+
+    if (state.viewMode === "month") {
+      return new Date(state.currentDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    }
+
+    const startLabel = state.rangeStart.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const endLabel = state.rangeEnd.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+    if (state.viewMode === "week") {
+      return `${startLabel} – ${endLabel}`;
+    }
+
+    return `${window.JellyfinEnhanced.t("calendar_agenda")} • ${startLabel} → ${endLabel}`;
+  }
+
+  // Switch between month/week/agenda views
+  function setViewMode(mode) {
+    if (state.viewMode === mode) return;
+    state.viewMode = mode;
+    loadAllData();
+  }
+
+  // Navigate forward or backward
+  function shiftPeriod(direction) {
+    const delta = direction === "next" ? 1 : -1;
+    const current = new Date(state.currentDate);
+
+    if (state.viewMode === "month") {
+      current.setMonth(current.getMonth() + delta);
+    } else if (state.viewMode === "week") {
+      current.setDate(current.getDate() + delta * 7);
+    } else {
+      current.setDate(current.getDate() + delta * 30);
+    }
+
+    state.currentDate = current;
+    loadAllData();
+  }
+
+  // Jump to today's date
+  function goToday() {
+    state.currentDate = new Date();
+    loadAllData();
+  }
+
+  /**
+   * Render calendar event
+   */
+  function renderEvent(event) {
+    const color = getEventColor(event);
+    const releaseTypeLabel = formatReleaseLabel(event);
+    const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
+    const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
+    const timeLabel = formatEventTime(event.releaseDate);
+
+    return `
+      <div class="je-calendar-event" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}">
+        <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
+        ${subtitle}
+        <div class="je-calendar-event-type">
+          <img src="${typeIcon}" alt="${escapeHtml(event.type)}" />
+          <span>${releaseTypeLabel} • ${sourceLabel}</span>
+          ${timeLabel ? `<span class="je-calendar-event-time">${escapeHtml(timeLabel)}</span>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  // Render month grid view
+  function renderMonthView() {
+    const anchor = new Date(state.currentDate);
+    anchor.setHours(0, 0, 0, 0);
+    anchor.setDate(1);
+
+    const daysInMonth = getDaysInMonth(anchor);
+    const firstDay = getFirstDayOfMonth(anchor);
+    const groupedEvents = groupEventsByDate(state.events);
+
+    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const firstDayOfWeekIndex = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
+    const orderedDaysOfWeek = [...daysOfWeek.slice(firstDayOfWeekIndex), ...daysOfWeek.slice(0, firstDayOfWeekIndex)];
+
+    let html = '<div class="je-calendar-grid">';
+
+    orderedDaysOfWeek.forEach((day) => {
+      html += `<div class="je-calendar-day je-calendar-day-header" style="text-align: center; background: transparent; border: none; min-height: auto; padding: 0.5em;">${day.substring(0, 3)}</div>`;
+    });
+
+    for (let i = 0; i < firstDay; i++) {
+      html += '<div class="je-calendar-day" style="opacity: 0.3;"></div>';
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const year = anchor.getFullYear();
+      const month = String(anchor.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
+      const dateStr = `${year}-${month}-${dayStr}`;
+
+      const dayEvents = (groupedEvents[dateStr] || []).filter(shouldShowEvent);
+      dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+
+      html += `
+        <div class="je-calendar-day">
+          <div class="je-calendar-day-header">
+            <span class="je-calendar-day-number">${day}</span>
+          </div>
+          <div class="je-calendar-events-list">
+            ${dayEvents.map((event) => renderEvent(event)).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    html += "</div>";
+    return html;
+  }
+
+  // Render week grid view
+  function renderWeekView() {
+    const { start } = getRangeForView(state.currentDate, "week");
+    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const groupedEvents = groupEventsByDate(state.events);
+
+    let html = '<div class="je-calendar-grid">';
+
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      const year = day.getFullYear();
+      const month = String(day.getMonth() + 1).padStart(2, '0');
+      const dayNum = String(day.getDate()).padStart(2, '0');
+      const dateKey = `${year}-${month}-${dayNum}`;
+      const dayEvents = (groupedEvents[dateKey] || []).filter(shouldShowEvent);
+      dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+
+      html += `
+        <div class="je-calendar-day">
+          <div class="je-calendar-day-header">
+            <span class="je-calendar-day-number">${day.getDate()}</span>
+            <span class="je-calendar-day-name">${daysOfWeek[day.getDay()].substring(0, 3)}</span>
+          </div>
+          <div class="je-calendar-events-list">
+            ${dayEvents.map((event) => renderEvent(event)).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    html += "</div>";
+    return html;
+  }
+
+  // Render agenda list view
+  function renderAgendaView() {
+    const groupedEvents = groupEventsByDate(state.events);
+    const dates = Object.keys(groupedEvents).sort();
+
+    if (dates.length === 0) {
+      return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
+    }
+
+    let html = '<div class="je-calendar-agenda">';
+    dates.forEach((dateKey) => {
+      const [year, month, day] = dateKey.split('-');
+      const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      const weekday = dateObj.toLocaleDateString(undefined, { weekday: 'short' });
+      const monthDay = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+      const dayEvents = (groupedEvents[dateKey] || []).filter(shouldShowEvent);
+      dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+
+      html += `
+        <div class="je-calendar-agenda-row">
+          <div class="je-calendar-agenda-date">
+            <div>${weekday}, ${monthDay}</div>
+          </div>
+          <div class="je-calendar-agenda-events">
+            ${dayEvents.map((event) => renderAgendaEvent(event)).join("")}
+          </div>
+        </div>
+      `;
+    });
+
+    html += "</div>";
+    return html;
+  }
+
+  // Render single event in agenda view
+  function renderAgendaEvent(event) {
+    const color = getEventColor(event);
+    const releaseTypeLabel = formatReleaseLabel(event);
+    const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
+    const subtitle = event.subtitle || "";
+    const timeLabel = formatEventTime(event.releaseDate);
+
+    // Get material icon based on release type
+    let materialIcon = "movie";
+    if (event.releaseType === "CinemaRelease") materialIcon = "local_movies";
+    else if (event.releaseType === "DigitalRelease") materialIcon = "ondemand_video";
+    else if (event.releaseType === "PhysicalRelease") materialIcon = "album";
+    else if (event.releaseType === "Episode") materialIcon = "tv_guide";
+
+    return `
+      <div class="je-calendar-agenda-event">
+        <span class="material-icons" style="font-size: 20px;">${materialIcon}</span>
+        <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
+        <div class="je-calendar-agenda-event-content">
+          <div class="je-calendar-agenda-event-title">${escapeHtml(event.title)}${subtitle ? ` • ${escapeHtml(subtitle)}` : ""}</div>
+          <div class="je-calendar-agenda-event-meta">
+            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" />
+            <span>${releaseTypeLabel}</span>
+            <span>•</span>
+            <span>${sourceLabel}</span>
+            ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Render calendar based on current view mode
+  function renderCalendar() {
+    if (state.viewMode === "week") return renderWeekView();
+    if (state.viewMode === "agenda") return renderAgendaView();
+    return renderMonthView();
+  }
+
+  // Render color legend
+  function renderLegend() {
+    return `
+      <div class="je-calendar-legend">
+        <div class="je-calendar-legend-item">
+          <span class="material-icons" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
+          <span>${window.JellyfinEnhanced.t("calendar_cinema_release")}</span>
+        </div>
+        <div class="je-calendar-legend-item">
+          <span class="material-icons" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
+          <span>${window.JellyfinEnhanced.t("calendar_digital_release")}</span>
+        </div>
+        <div class="je-calendar-legend-item">
+          <span class="material-icons" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
+          <span>${window.JellyfinEnhanced.t("calendar_physical_release")}</span>
+        </div>
+        <div class="je-calendar-legend-item">
+          <span class="material-icons" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
+          <span>${window.JellyfinEnhanced.t("calendar_series")}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Create or get page container element
+  function createPageContainer() {
+    let page = document.getElementById("je-calendar-page");
+    if (!page) {
+      page = document.createElement("div");
+      page.id = "je-calendar-page";
+      page.className = "page type-interior mainAnimatedPage hide";
+      page.setAttribute("data-title", "Calendar");
+      page.setAttribute("data-backbutton", "true");
+      page.setAttribute("data-type", "custom");
+      page.innerHTML = `
+        <div data-role="content">
+          <div class="content-primary je-calendar-page">
+            <div id="je-calendar-container" style="padding-top: 60px;"></div>
+          </div>
+        </div>
+      `;
+
+      const mainContent = document.querySelector(".mainAnimatedPages");
+      if (mainContent) {
+        mainContent.appendChild(page);
+      } else {
+        document.body.appendChild(page);
+      }
+    }
+
+    return page;
+  }
+
+  /**
+   * Render the full page
+   */
+  function renderPage() {
+    const page = createPageContainer();
+    const container = document.getElementById("je-calendar-container");
+    if (!page || !container) return;
+
+    container.innerHTML = `
+      <div class="je-calendar-header">
+        <h1 class="je-calendar-title">${formatRangeLabel()}</h1>
+        <div class="je-calendar-actions">
+          <div class="je-calendar-nav">
+            <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.shiftPeriod('prev'); event.stopPropagation();">‹</button>
+            <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.goToday(); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_today")}</button>
+            <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.shiftPeriod('next'); event.stopPropagation();">›</button>
+          </div>
+          <div class="je-calendar-nav">
+            <button class="je-calendar-view-btn ${state.viewMode === 'month' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('month'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_month")}</button>
+            <button class="je-calendar-view-btn ${state.viewMode === 'week' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('week'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_week")}</button>
+            <button class="je-calendar-view-btn ${state.viewMode === 'agenda' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('agenda'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_agenda")}</button>
+          </div>
+        </div>
+      </div>
+
+      ${state.isLoading ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_loading")}</div>` : ""}
+
+      ${!state.isLoading ? renderCalendar() : ""}
+
+      ${
+        !state.isLoading && state.events.length === 0
+          ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`
+          : ""
+      }
+
+      ${renderLegend()}
+    `;
+  }
+
+  /**
+   * Show page
+   */
+  function showPage() {
+    if (state.pageVisible) return;
+
+    const config = JE.pluginConfig || {};
+    if (!config.CalendarPageEnabled) return;
+
+    injectStyles();
+    const page = createPageContainer();
+
+    const activePage = document.querySelector(".mainAnimatedPage:not(.hide):not(#je-calendar-page)");
+    if (activePage) {
+      state.previousPage = activePage;
+      activePage.classList.add("hide");
+      activePage.dispatchEvent(
+        new CustomEvent("viewhide", {
+          bubbles: true,
+          detail: { type: "interior" },
+        }),
+      );
+    }
+
+    page.classList.remove("hide");
+    state.pageVisible = true;
+
+    if (window.location.hash !== "#/calendar") {
+      history.pushState({ page: "calendar" }, "Calendar", "#/calendar");
+    }
+
+    page.dispatchEvent(
+      new CustomEvent("viewshow", {
+        bubbles: true,
+        detail: {
+          type: "custom",
+          isRestored: false,
+          options: {},
+        },
+      }),
+    );
+
+    page.dispatchEvent(
+      new CustomEvent("pageshow", {
+        bubbles: true,
+        detail: {},
+      }),
+    );
+
+    loadAllData();
+  }
+
+  /**
+   * Hide page
+   */
+  function hidePage() {
+    if (!state.pageVisible) return;
+
+    const page = document.getElementById("je-calendar-page");
+    if (page) {
+      page.classList.add("hide");
+      page.dispatchEvent(
+        new CustomEvent("viewhide", {
+          bubbles: true,
+          detail: { type: "custom" },
+        }),
+      );
+    }
+
+    // Restore the previous page if Jellyfin's router hasn't already shown another page
+    if (state.previousPage && !document.querySelector(".mainAnimatedPage:not(.hide):not(#je-calendar-page)")) {
+      state.previousPage.classList.remove("hide");
+      state.previousPage.dispatchEvent(
+        new CustomEvent("viewshow", {
+          bubbles: true,
+          detail: { type: "interior", isRestored: true },
+        }),
+      );
+    }
+
+    state.pageVisible = false;
+    state.previousPage = null;
+  }
+
+  /**
+   * Handle navigation
+   */
+  function handleNavigation() {
+    const hash = window.location.hash;
+    if (hash === "#/calendar") {
+      showPage();
+    } else if (state.pageVisible) {
+      hidePage();
+    }
+  }
+
+  /**
+   * Handle viewshow events
+   */
+  function handleViewShow(e) {
+    const targetPage = e.target;
+    if (state.pageVisible && targetPage && targetPage.id !== "je-calendar-page") {
+      hidePage();
+    }
+  }
+
+  /**
+   * Handle nav click
+   */
+  function handleNavClick(e) {
+    if (!state.pageVisible) return;
+
+    const btn = e.target.closest(".headerTabs button, .navMenuOption, .headerButton");
+    if (btn && !btn.classList.contains("je-nav-calendar-item")) {
+      hidePage();
+    }
+  }
+
+  /**
+   * Inject navigation item into sidebar
+   */
+  function injectNavigation() {
+    if (state.navInjected) return;
+
+    const config = JE.pluginConfig || {};
+    if (!config.CalendarPageEnabled) return;
+
+    if (document.querySelector(".je-nav-calendar-item")) {
+      state.navInjected = true;
+      return;
+    }
+
+    const homeLink =
+      document.querySelector('.navMenuOption[href="#/home.html"]') ||
+      document.querySelector('.navMenuOption[href="#/home"]');
+
+    if (homeLink && homeLink.parentNode) {
+      const navItem = document.createElement("a");
+      navItem.className =
+        "navMenuOption lnkMediaFolder emby-button je-nav-calendar-item";
+      navItem.href = "#/calendar";
+      navItem.innerHTML = `
+        <span class="navMenuOptionIcon material-icons">calendar_today</span>
+        <span class="navMenuOptionText">${window.JellyfinEnhanced.t("calendar_title")}</span>
+      `;
+      navItem.addEventListener("click", (e) => {
+        e.preventDefault();
+        showPage();
+      });
+
+      homeLink.parentNode.insertBefore(navItem, homeLink.nextSibling);
+      state.navInjected = true;
+      console.log("[JE Calendar] Navigation item injected");
+    } else {
+      setTimeout(injectNavigation, 1000);
+    }
+  }
+
+  // Escape HTML characters
+  function escapeHtml(text) {
+    if (text === null || text === undefined) {
+      return "";
+    }
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    };
+    return String(text).replace(/[&<>"']/g, (m) => map[m]);
+  }
+
+  console.log("[JE Calendar] Calendar page module initialized");
+
+  // Export to JE namespace
+  JE.calendarPage = {
+    initialize,
+    showPage,
+    hidePage,
+    refresh: loadAllData,
+    setViewMode,
+    shiftPeriod,
+    goToday,
+  };
+
+  JE.initializeCalendarPage = initialize;
+})();

@@ -1213,6 +1213,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DownloadsPageEnabled,
                 config.DownloadsPollIntervalSeconds,
 
+                // Calendar Page Settings
+                config.CalendarPageEnabled,
+                config.CalendarFirstDayOfWeek,
+                config.CalendarTimeFormat,
+
             });
         }
 
@@ -2051,6 +2056,302 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"Failed to fetch Jellyseerr requests: {ex.Message}");
                 return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
             }
+        }
+
+        /// <summary>
+        /// Get calendar events from Sonarr and Radarr for upcoming releases
+        /// </summary>
+        [HttpGet("arr/calendar")]
+        [Authorize]
+        public async Task<IActionResult> GetCalendarEvents()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, "Plugin configuration not available");
+
+            var events = new List<object>();
+
+            var todayUtc = DateTime.UtcNow.Date;
+            DateTime startDate = todayUtc;
+            DateTime endDate = todayUtc.AddDays(90);
+
+            if (Request.Query.TryGetValue("start", out var startValues))
+            {
+                if (DateTime.TryParse(startValues.ToString(), out var parsedStart))
+                {
+                    startDate = parsedStart.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(parsedStart, DateTimeKind.Utc) : parsedStart.ToUniversalTime();
+                }
+            }
+
+            if (Request.Query.TryGetValue("end", out var endValues))
+            {
+                if (DateTime.TryParse(endValues.ToString(), out var parsedEnd))
+                {
+                    endDate = parsedEnd.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(parsedEnd, DateTimeKind.Utc) : parsedEnd.ToUniversalTime();
+                }
+            }
+
+            if (endDate < startDate)
+            {
+                (startDate, endDate) = (endDate, startDate);
+            }
+
+            DateTime? ParseDate(object? value)
+            {
+                if (value == null)
+                {
+                    return null;
+                }
+
+                if (value is DateTime dateTimeValue)
+                {
+                    return dateTimeValue.Kind == DateTimeKind.Unspecified
+                        ? DateTime.SpecifyKind(dateTimeValue, DateTimeKind.Utc)
+                        : dateTimeValue;
+                }
+
+                var asString = Convert.ToString(value);
+                if (string.IsNullOrWhiteSpace(asString))
+                {
+                    return null;
+                }
+
+                // Try parsing with invariant culture and assume UTC to avoid local timezone interpretation
+                if (DateTime.TryParse(asString, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out var parsed))
+                {
+                    return parsed;
+                }
+
+                // Fallback to regular parsing if above fails
+                if (DateTime.TryParse(asString, out parsed))
+                {
+                    if (parsed.Kind == DateTimeKind.Unspecified)
+                    {
+                        parsed = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+                    }
+                    return parsed;
+                }
+
+                return null;
+            }
+
+            void AddRelease(Dictionary<string, DateTime> releases, string type, object? value)
+            {
+                var parsed = ParseDate(value);
+                if (!parsed.HasValue)
+                {
+                    return;
+                }
+
+                if (!releases.TryGetValue(type, out var existing) || parsed.Value < existing)
+                {
+                    releases[type] = parsed.Value;
+                }
+            }
+
+            // Fetch Sonarr calendar events
+            if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+            {
+                try
+                {
+                    var sonarrUrl = config.SonarrUrl.TrimEnd('/');
+                    var client = _httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
+                    client.Timeout = TimeSpan.FromSeconds(30);
+
+                    // First, fetch all series to get their names
+                    var seriesCache = new Dictionary<int, string>();
+                    try
+                    {
+                        var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
+                        if (seriesResponse.IsSuccessStatusCode)
+                        {
+                            var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
+                            var seriesData = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(seriesJson);
+                            if (seriesData != null)
+                            {
+                                foreach (var series in seriesData)
+                                {
+                                    var seriesId = (int?)series.id;
+                                    var seriesTitle = (string?)series.title;
+                                    if (seriesId.HasValue && !string.IsNullOrWhiteSpace(seriesTitle))
+                                    {
+                                        seriesCache[seriesId.Value] = seriesTitle;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Failed to fetch Sonarr series list: {ex.Message}");
+                    }
+
+                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?start={startDate:yyyy-MM-dd}&end={endDate:yyyy-MM-dd}");
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync();
+                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
+
+                        if (data != null)
+                        {
+                            foreach (var episode in data)
+                            {
+                                var airDate = ParseDate((string?)episode.airDateUtc ?? (string?)episode.airDate);
+                                if (!airDate.HasValue)
+                                {
+                                    continue;
+                                }
+
+                                var seriesId = (int?)episode.seriesId;
+                                var seriesTitle = "Unknown Series";
+                                if (seriesId.HasValue && seriesCache.TryGetValue(seriesId.Value, out var cachedTitle))
+                                {
+                                    seriesTitle = cachedTitle;
+                                }
+
+                                var seasonNumber = (int?)episode.seasonNumber ?? 0;
+                                var episodeNumber = (int?)episode.episodeNumber ?? 0;
+                                var episodeTitle = (string?)episode.title ?? "Unknown Episode";
+
+                                events.Add(new
+                                {
+                                    id = (string?)episode.id?.ToString(),
+                                    source = "sonarr",
+                                    type = "Series",
+                                    title = seriesTitle,
+                                    subtitle = $"S{seasonNumber:D2}E{episodeNumber:D2} - {episodeTitle}",
+                                    releaseDate = airDate.Value.ToUniversalTime().ToString("o"),
+                                    releaseType = "Episode",
+                                    hasFile = (bool?)episode.hasFile ?? false,
+                                    monitored = (bool?)episode.monitored ?? false,
+                                    seriesId = seriesId,
+                                    seasonNumber = seasonNumber,
+                                    episodeNumber = episodeNumber,
+                                    episodeTitle = episodeTitle,
+                                    overview = (string?)episode.overview
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to fetch Sonarr calendar: {ex.Message}");
+                }
+            }
+
+            // Fetch Radarr calendar events
+            if (!string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
+            {
+                try
+                {
+                    var radarrUrl = config.RadarrUrl.TrimEnd('/');
+                    var client = _httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
+                    client.Timeout = TimeSpan.FromSeconds(10);
+
+                    var response = await client.GetAsync($"{radarrUrl}/api/v3/calendar?start={startDate:yyyy-MM-dd}&end={endDate:yyyy-MM-dd}");
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync();
+                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
+
+                        if (data != null)
+                        {
+                            foreach (var movie in data)
+                            {
+                                var releaseDates = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+                                string? posterUrl = null;
+                                if (movie.images != null)
+                                {
+                                    foreach (var img in movie.images)
+                                    {
+                                        if ((string?)img.coverType == "poster")
+                                        {
+                                            posterUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                AddRelease(releaseDates, "CinemaRelease", (string?)movie.inCinemas);
+                                AddRelease(releaseDates, "PhysicalRelease", (string?)movie.physicalRelease);
+                                AddRelease(releaseDates, "DigitalRelease", (string?)movie.digitalRelease);
+
+                                if (movie.releases != null)
+                                {
+                                    foreach (var release in movie.releases)
+                                    {
+                                        var releaseDate = (object?)release.releaseDate ?? release.date;
+                                        var type = Convert.ToString(release.type)?.ToLowerInvariant();
+                                        var isPhysical = (bool?)release.isPhysical ?? false;
+
+                                        if (isPhysical)
+                                        {
+                                            AddRelease(releaseDates, "PhysicalRelease", releaseDate);
+                                        }
+                                        else if (type == "digital")
+                                        {
+                                            AddRelease(releaseDates, "DigitalRelease", releaseDate);
+                                        }
+                                        else if (type == "theatrical" || type == "cinema" || type == "theater")
+                                        {
+                                            AddRelease(releaseDates, "CinemaRelease", releaseDate);
+                                        }
+                                    }
+                                }
+
+                                if (releaseDates.Count == 0)
+                                {
+                                    continue;
+                                }
+
+                                var movieTitle = (string?)movie.title ?? (string?)movie.originalTitle ?? "Unknown";
+                                string? movieYear = null;
+                                var yearValue = (object?)movie.year;
+                                if (yearValue != null)
+                                {
+                                    movieYear = Convert.ToString(yearValue);
+                                }
+
+                                foreach (var kvp in releaseDates)
+                                {
+                                    // Only include releases within the requested date range
+                                    var releaseUtc = kvp.Value.ToUniversalTime();
+                                    if (releaseUtc < startDate || releaseUtc > endDate)
+                                    {
+                                        continue;
+                                    }
+
+                                    events.Add(new
+                                    {
+                                        id = $"{movie.id}-{kvp.Key}",
+                                        source = "radarr",
+                                        type = "Movie",
+                                        title = movieTitle,
+                                        subtitle = movieYear,
+                                        releaseDate = releaseUtc.ToString("o"),
+                                        releaseType = kvp.Key,
+                                        hasFile = (bool?)movie.hasFile ?? false,
+                                        monitored = (bool?)movie.monitored ?? false,
+                                        posterUrl = posterUrl
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to fetch Radarr calendar: {ex.Message}");
+                }
+            }
+
+            return Ok(new { events = events });
         }
 
         /// <summary>

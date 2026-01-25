@@ -347,5 +347,17 @@
     "discovery_more_with_tag": "Mere med tag - \"{tag}\"",
     "discovery_more_from_person": "Mere med {person}",
     "jellyseerr_active_downloads": "Aktive downloads",
-    "jellyseerr_requests": "Anmodninger"
+    "jellyseerr_requests": "Anmodninger",
+    "calendar_title": "Kalender",
+    "calendar_today": "I dag",
+    "calendar_month": "Måned",
+    "calendar_week": "Uge",
+    "calendar_agenda": "Dagsorden",
+    "calendar_cinema_release": "Biografpremière",
+    "calendar_digital_release": "Digital udgivelse",
+    "calendar_physical_release": "Fysisk udgivelse",
+    "calendar_episode": "Episode",
+    "calendar_series": "Serier",
+    "calendar_loading": "Indlæser kalender...",
+    "calendar_no_releases": "Ingen kommende udgivelser"
 }

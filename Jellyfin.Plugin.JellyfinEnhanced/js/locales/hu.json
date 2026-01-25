@@ -347,5 +347,17 @@
     "discovery_more_with_tag": "Több a címkével - \"{tag}\"",
     "discovery_more_from_person": "Több {person} -tól",
     "jellyseerr_active_downloads": "Aktív letöltések",
-    "jellyseerr_requests": "Kérések"
+    "jellyseerr_requests": "Kérelmek",
+    "calendar_title": "Naptár",
+    "calendar_today": "Ma",
+    "calendar_month": "Hónap",
+    "calendar_week": "Hét",
+    "calendar_agenda": "Napló",
+    "calendar_cinema_release": "Mozi premiér",
+    "calendar_digital_release": "Digitális megjelenés",
+    "calendar_physical_release": "Fizikai megjelenés",
+    "calendar_episode": "Epizód",
+    "calendar_series": "Sorozatok",
+    "calendar_loading": "Naptár betöltése...",
+    "calendar_no_releases": "Nincsenek közelgő megjelenések"
 }

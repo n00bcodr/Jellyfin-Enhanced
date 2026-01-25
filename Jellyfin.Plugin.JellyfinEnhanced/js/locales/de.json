@@ -345,5 +345,17 @@
     "discovery_more_with_tag": "Mehr mit dem Tag - \"{tag}\"",
     "discovery_more_from_person": "Mehr mit {person}",
     "jellyseerr_active_downloads": "Aktive Downloads",
-    "jellyseerr_requests": "Anfragen"
+    "jellyseerr_requests": "Anfragen",
+    "calendar_title": "Kalender",
+    "calendar_today": "Heute",
+    "calendar_month": "Monat",
+    "calendar_week": "Woche",
+    "calendar_agenda": "Agenda",
+    "calendar_cinema_release": "Kinostart",
+    "calendar_digital_release": "Digitale Veröffentlichung",
+    "calendar_physical_release": "Physische Veröffentlichung",
+    "calendar_episode": "Episode",
+    "calendar_series": "Serien",
+    "calendar_loading": "Kalender wird geladen...",
+    "calendar_no_releases": "Keine bevorstehenden Veröffentlichungen"
 }

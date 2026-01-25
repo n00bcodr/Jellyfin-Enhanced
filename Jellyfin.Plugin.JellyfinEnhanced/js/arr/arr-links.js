@@ -1,4 +1,4 @@
-// /js/arr-links.js
+// /js/arr/arr-links.js
 (function (JE) {
     'use strict';
 
@@ -138,7 +138,7 @@
                     if (!itemId) return;
 
                     const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-                    
+
                     // Only process movies and TV shows
                     if (item?.Type !== 'Movie' && item?.Type !== 'Series') return;
 
@@ -222,7 +222,7 @@
             // Listen for configuration changes
             window.addEventListener('JE:configUpdated', () => {
                 const isEnabled = JE?.pluginConfig?.ArrLinksEnabled;
-                
+
                 if (!isEnabled) {
                     // Disable: disconnect observer
                     if (observer) {

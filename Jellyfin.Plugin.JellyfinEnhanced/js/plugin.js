@@ -565,13 +565,16 @@
                 'jellyseerr/tag-discovery.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'genretags.js', 'languagetags.js', 'ratingtags.js', 'arr-links.js', 'arr-tag-links.js',
+                'qualitytags.js', 'genretags.js', 'languagetags.js', 'ratingtags.js',
                 'letterboxd-links.js',
                 'extras/colored-ratings.js',
                 'extras/theme-selector.js',
                 'extras/colored-activity-icons.js',
                 'extras/plugin-icons.js',
-                'requests/requests-page.js'
+                'arr/arr-links.js',
+                'arr/arr-tag-links.js',
+                'arr/requests-page.js',
+                'arr/calendar-page.js'
             ];
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
@@ -630,6 +633,9 @@
             }
             if (JE.pluginConfig?.DownloadsPageEnabled && typeof JE.initializeDownloadsPage === 'function') {
                 JE.initializeDownloadsPage();
+            }
+            if (JE.pluginConfig?.CalendarPageEnabled && typeof JE.initializeCalendarPage === 'function') {
+                JE.initializeCalendarPage();
             }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
