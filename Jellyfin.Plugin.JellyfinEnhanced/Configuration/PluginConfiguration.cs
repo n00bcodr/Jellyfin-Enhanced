@@ -157,6 +157,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             PluginIconsEnabled = false;
             EnableLoginImage = false;
             CustomPluginLinks = "";
+
+            // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
+            DownloadsPageEnabled = true;
+            DownloadsPollIntervalSeconds = 30;
+            DownloadsMaxItems = 20;
+            DownloadsShowPosters = true;
+            DownloadsShowProgress = true;
+            DownloadsShowEta = true;
+            DownloadsShowSize = true;
         }
 
         // Jellyfin Enhanced Settings
@@ -287,5 +296,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool PluginIconsEnabled { get; set; }
         public bool EnableLoginImage { get; set; }
         public string CustomPluginLinks { get; set; }
+
+        // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
+        public bool DownloadsPageEnabled { get; set; }
+        public int DownloadsPollIntervalSeconds { get; set; }
+        public int DownloadsMaxItems { get; set; }
+        public bool DownloadsShowPosters { get; set; }
+        public bool DownloadsShowProgress { get; set; }
+        public bool DownloadsShowEta { get; set; }
+        public bool DownloadsShowSize { get; set; }
     }
 }

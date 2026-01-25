@@ -570,7 +570,8 @@
                 'extras/colored-ratings.js',
                 'extras/theme-selector.js',
                 'extras/colored-activity-icons.js',
-                'extras/plugin-icons.js'
+                'extras/plugin-icons.js',
+                'requests/requests-page.js'
             ];
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
@@ -626,6 +627,9 @@
             }
             if (JE.pluginConfig?.PluginIconsEnabled && typeof JE.initializePluginIcons === 'function') {
                 JE.initializePluginIcons();
+            }
+            if (JE.pluginConfig?.DownloadsPageEnabled && typeof JE.initializeDownloadsPage === 'function') {
+                JE.initializeDownloadsPage();
             }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');

@@ -1209,6 +1209,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.PluginIconsEnabled,
                 config.EnableLoginImage,
 
+                // Requests Page Settings
+                config.DownloadsPageEnabled,
+                config.DownloadsPollIntervalSeconds,
+                config.DownloadsMaxItems,
+                config.DownloadsShowPosters,
+                config.DownloadsShowProgress,
+                config.DownloadsShowEta,
+                config.DownloadsShowSize,
+
             });
         }
 
@@ -1740,6 +1749,420 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Error deleting branding image: {ex.Message}");
                 return StatusCode(500, $"Error: {ex.Message}");
+            }
+        }
+
+        // ==================== Requests Page (Sonarr/Radarr Queue) ====================
+
+        /// <summary>
+        /// Get combined download queue from Sonarr and Radarr.
+        /// </summary>
+        [HttpGet("arr/queue")]
+        [Authorize]
+        public async Task<IActionResult> GetDownloadQueue()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, "Plugin configuration not available");
+
+            var items = new List<object>();
+            bool sonarrConnected = false;
+            bool radarrConnected = false;
+
+            // Fetch Sonarr queue
+            if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+            {
+                try
+                {
+                    var sonarrUrl = config.SonarrUrl.TrimEnd('/');
+                    using var client = new HttpClient();
+                    client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
+                    client.Timeout = TimeSpan.FromSeconds(10);
+
+                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/queue?includeEpisode=true&includeSeries=true");
+                    if (response.IsSuccessStatusCode)
+                    {
+                        sonarrConnected = true;
+                        var json = await response.Content.ReadAsStringAsync();
+                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
+
+                        if (data?.records != null)
+                        {
+                            foreach (var record in data.records)
+                            {
+                                string? posterUrl = null;
+                                if (record.series?.images != null)
+                                {
+                                    foreach (var img in record.series.images)
+                                    {
+                                        if ((string?)img.coverType == "poster")
+                                        {
+                                            posterUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                items.Add(new
+                                {
+                                    id = (string?)record.id?.ToString(),
+                                    source = "sonarr",
+                                    title = (string?)record.series?.title ?? "Unknown",
+                                    subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
+                                    seasonNumber = (int?)record.episode?.seasonNumber,
+                                    episodeNumber = (int?)record.episode?.episodeNumber,
+                                    status = (string?)record.status ?? "Unknown",
+                                    progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
+                                    totalSize = (long?)record.size,
+                                    sizeRemaining = (long?)record.sizeleft,
+                                    timeRemaining = (string?)record.timeleft,
+                                    posterUrl = posterUrl
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to fetch Sonarr queue: {ex.Message}");
+                }
+            }
+
+            // Fetch Radarr queue
+            if (!string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
+            {
+                try
+                {
+                    var radarrUrl = config.RadarrUrl.TrimEnd('/');
+                    using var client = new HttpClient();
+                    client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
+                    client.Timeout = TimeSpan.FromSeconds(10);
+
+                    var response = await client.GetAsync($"{radarrUrl}/api/v3/queue?includeMovie=true");
+                    if (response.IsSuccessStatusCode)
+                    {
+                        radarrConnected = true;
+                        var json = await response.Content.ReadAsStringAsync();
+                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
+
+                        if (data?.records != null)
+                        {
+                            foreach (var record in data.records)
+                            {
+                                string? posterUrl = null;
+                                if (record.movie?.images != null)
+                                {
+                                    foreach (var img in record.movie.images)
+                                    {
+                                        if ((string?)img.coverType == "poster")
+                                        {
+                                            posterUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                items.Add(new
+                                {
+                                    id = (string?)record.id?.ToString(),
+                                    source = "radarr",
+                                    title = (string?)record.movie?.title ?? "Unknown",
+                                    subtitle = (string?)record.movie?.year?.ToString(),
+                                    seasonNumber = (int?)null,
+                                    episodeNumber = (int?)null,
+                                    status = (string?)record.status ?? "Unknown",
+                                    progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
+                                    totalSize = (long?)record.size,
+                                    sizeRemaining = (long?)record.sizeleft,
+                                    timeRemaining = (string?)record.timeleft,
+                                    posterUrl = posterUrl
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to fetch Radarr queue: {ex.Message}");
+                }
+            }
+
+            return Ok(new
+            {
+                items = items,
+                sonarrConnected = sonarrConnected,
+                radarrConnected = radarrConnected
+            });
+        }
+
+        private static double CalculateProgress(double? size, double? sizeleft)
+        {
+            if (size == null || size == 0) return 0;
+            if (sizeleft == null) return 100;
+            return Math.Round((1 - (sizeleft.Value / size.Value)) * 100, 1);
+        }
+
+        /// <summary>
+        /// Get requests from Jellyseerr with pagination and filtering.
+        /// </summary>
+        [HttpGet("arr/requests")]
+        [Authorize]
+        public async Task<IActionResult> GetRequests([FromQuery] int take = 20, [FromQuery] int skip = 0, [FromQuery] string? filter = null)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, "Plugin configuration not available");
+
+            if (string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+            {
+                return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
+            }
+
+            try
+            {
+                var jellyseerrUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim().TrimEnd('/');
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+                client.Timeout = TimeSpan.FromSeconds(15);
+
+                // Build filter parameter
+                var filterParam = filter?.ToLower() switch
+                {
+                    "pending" => "&filter=pending",
+                    "approved" => "&filter=approved",
+                    "available" => "&filter=available",
+                    "processing" => "&filter=processing",
+                    _ => ""
+                };
+
+                var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/request?take={take}&skip={skip}{filterParam}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Jellyseerr request failed with status {response.StatusCode}");
+                    return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                var data = JObject.Parse(json);
+
+                var requests = new List<object>();
+                var results = data["results"] as JArray;
+                if (results != null)
+                {
+                    // Enrich all requests in parallel for better performance
+                    var enrichmentTasks = results.Select(async req =>
+                    {
+                        var media = req["media"] as JObject;
+                        var requestedBy = req["requestedBy"] as JObject;
+
+                        int? reqStatus = req["status"]?.Value<int>();
+                        int? mediaStatusVal = media?["status"]?.Value<int>();
+                        string mediaStatus = GetMediaStatus(reqStatus, mediaStatusVal);
+
+                        string? type = req["type"]?.Value<string>();
+                        int? tmdbId = media?["tmdbId"]?.Value<int>();
+
+                        // Enrich with TMDB data to get title and poster
+                        string? title = null;
+                        int? year = null;
+                        string? posterUrl = null;
+
+                        if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
+                        {
+                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl);
+                            title = enrichedData.Title;
+                            year = enrichedData.Year;
+                            posterUrl = enrichedData.PosterUrl;
+                        }
+
+                        // Fallback to media object if enrichment didn't work
+                        if (string.IsNullOrEmpty(title))
+                        {
+                            title = media?["title"]?.Value<string>();
+                            if (string.IsNullOrEmpty(title))
+                                title = media?["name"]?.Value<string>();
+                            if (string.IsNullOrEmpty(title))
+                                title = media?["originalTitle"]?.Value<string>();
+                            if (string.IsNullOrEmpty(title))
+                                title = media?["originalName"]?.Value<string>();
+                            if (string.IsNullOrEmpty(title))
+                                title = "Unknown";
+                        }
+
+                        // Fallback year from media object
+                        if (!year.HasValue)
+                        {
+                            string? releaseDate = media?["releaseDate"]?.Value<string>();
+                            string? firstAirDate = media?["firstAirDate"]?.Value<string>();
+                            if (!string.IsNullOrEmpty(releaseDate) && releaseDate.Length >= 4)
+                                year = int.TryParse(releaseDate.Substring(0, 4), out var y) ? y : null;
+                            else if (!string.IsNullOrEmpty(firstAirDate) && firstAirDate.Length >= 4)
+                                year = int.TryParse(firstAirDate.Substring(0, 4), out var y2) ? y2 : null;
+                        }
+
+                        // Fallback poster from media object
+                        if (string.IsNullOrEmpty(posterUrl))
+                        {
+                            string? posterPath = media?["posterPath"]?.Value<string>();
+                            if (!string.IsNullOrEmpty(posterPath))
+                                posterUrl = $"https://image.tmdb.org/t/p/w300{posterPath}";
+                        }
+
+                        // Get requester info
+                        string? displayName = requestedBy?["displayName"]?.Value<string>();
+                        string? username = requestedBy?["username"]?.Value<string>();
+                        string? avatar = requestedBy?["avatar"]?.Value<string>();
+
+                        // Proxy avatar through our backend to avoid CORS/mixed content issues
+                        string? avatarUrl = null;
+                        if (!string.IsNullOrEmpty(avatar))
+                        {
+                            avatarUrl = $"/JellyfinEnhanced/proxy/avatar?path={Uri.EscapeDataString(avatar)}";
+                        }
+
+                        // Handle createdAt - could be string or DateTime
+                        string? createdAtStr = null;
+                        var createdAtToken = req["createdAt"];
+                        if (createdAtToken != null)
+                        {
+                            createdAtStr = createdAtToken.Type == Newtonsoft.Json.Linq.JTokenType.Date
+                                ? createdAtToken.Value<DateTime>().ToString("o")
+                                : createdAtToken.ToString();
+                        }
+
+                        return new
+                        {
+                            id = req["id"]?.Value<int>(),
+                            type = type,
+                            title = title,
+                            year = year,
+                            posterUrl = posterUrl,
+                            mediaStatus = mediaStatus,
+                            requestedBy = displayName ?? username ?? "Unknown",
+                            requestedByAvatar = avatarUrl,
+                            createdAt = createdAtStr,
+                            jellyfinMediaId = media?["jellyfinMediaId"]?.Value<string>()
+                        };
+                    }).ToList();
+
+                    var enrichedRequests = await Task.WhenAll(enrichmentTasks);
+                    requests.AddRange(enrichedRequests);
+                }
+
+                var pageInfo = data["pageInfo"] as JObject;
+                var totalResults = pageInfo?["results"]?.Value<int>() ?? 0;
+                var totalPages = (int)Math.Ceiling((double)totalResults / take);
+
+                return Ok(new
+                {
+                    requests = requests,
+                    totalPages = totalPages,
+                    totalResults = totalResults
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to fetch Jellyseerr requests: {ex.Message}");
+                return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
+            }
+        }
+
+        /// <summary>
+        /// Fetch title and poster from Jellyseerr's movie/tv endpoints using TMDB ID.
+        /// </summary>
+        private async Task<(string? Title, int? Year, string? PosterUrl)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl)
+        {
+            try
+            {
+                var endpoint = type == "movie" ? "movie" : "tv";
+                var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/{endpoint}/{tmdbId}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var data = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
+
+                    string? title = null;
+                    int? year = null;
+                    string? posterUrl = null;
+
+                    if (type == "movie")
+                    {
+                        if (data.TryGetProperty("title", out var titleProp))
+                            title = titleProp.GetString();
+                        if (data.TryGetProperty("releaseDate", out var rd) && !string.IsNullOrEmpty(rd.GetString()) && rd.GetString()!.Length >= 4)
+                            year = int.TryParse(rd.GetString()!.Substring(0, 4), out var y) ? y : null;
+                    }
+                    else
+                    {
+                        if (data.TryGetProperty("name", out var nameProp))
+                            title = nameProp.GetString();
+                        if (data.TryGetProperty("firstAirDate", out var fad) && !string.IsNullOrEmpty(fad.GetString()) && fad.GetString()!.Length >= 4)
+                            year = int.TryParse(fad.GetString()!.Substring(0, 4), out var y) ? y : null;
+                    }
+
+                    if (data.TryGetProperty("posterPath", out var poster) && poster.ValueKind != System.Text.Json.JsonValueKind.Null)
+                    {
+                        posterUrl = $"https://image.tmdb.org/t/p/w300{poster.GetString()}";
+                    }
+
+                    return (title, year, posterUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to enrich request with TMDB data: {ex.Message}");
+            }
+
+            return (null, null, null);
+        }
+
+        private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
+        {
+            // Jellyseerr media status values
+            // 1 = Unknown, 2 = Pending, 3 = Processing, 4 = Partially Available, 5 = Available
+            if (mediaStatus == 5) return "Available";
+            if (mediaStatus == 4) return "Partially Available";
+            if (mediaStatus == 3) return "Processing";
+            if (requestStatus == 2) return "Approved";
+            if (requestStatus == 3) return "Declined";
+            if (requestStatus == 1) return "Pending";
+            return "Processing";
+        }
+
+        /// <summary>
+        /// Proxy avatar images from Jellyseerr to avoid CORS/mixed content issues.
+        /// </summary>
+        [HttpGet("proxy/avatar")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
+            {
+                return NotFound();
+            }
+
+            try
+            {
+                var jellyseerrUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim().TrimEnd('/');
+                var client = _httpClientFactory.CreateClient();
+                var url = $"{jellyseerrUrl}{path}";
+
+                var response = await client.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return NotFound();
+                }
+
+                var content = await response.Content.ReadAsByteArrayAsync();
+                var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+
+                return File(content, contentType);
+            }
+            catch
+            {
+                return NotFound();
             }
         }
     }
