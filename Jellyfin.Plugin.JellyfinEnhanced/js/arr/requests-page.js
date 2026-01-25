@@ -78,11 +78,12 @@
         }
         .je-download-poster {
           width: 72px;
-          height: fit-content;
+          height: 108px;
         }
         .je-request-poster {
             width: 80px;
-            height: fit-content;
+            height: 120px;
+            max-height: 120px;
         }
         .je-download-poster.placeholder, .je-request-poster.placeholder {
             display: flex;
