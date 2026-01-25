@@ -345,5 +345,7 @@
     "discovery_more_from_studio": "Más de {studio}",
     "discovery_more_with_genre": "Más del género - \"{genre}\"",
     "discovery_more_with_tag": "Más con la etiqueta - \"{tag}\"",
-    "discovery_more_from_person": "Más con {person}"
+    "discovery_more_from_person": "Más con {person}",
+    "jellyseerr_active_downloads": "Descargas activas",
+    "jellyseerr_requests": "Solicitudes"
 }

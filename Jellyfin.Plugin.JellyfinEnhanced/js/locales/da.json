@@ -345,5 +345,7 @@
     "discovery_more_from_studio": "Mere fra {studio}",
     "discovery_more_with_genre": "Mere fra genre - \"{genre}\"",
     "discovery_more_with_tag": "Mere med tag - \"{tag}\"",
-    "discovery_more_from_person": "Mere med {person}"
+    "discovery_more_from_person": "Mere med {person}",
+    "jellyseerr_active_downloads": "Aktive downloads",
+    "jellyseerr_requests": "Anmodninger"
 }

@@ -133,7 +133,7 @@
     "jellyseerr_btn_request": "Demand",
     "jellyseerr_btn_request_4k": "Demand in 4K",
     "jellyseerr_btn_processing": "Fetchin'",
-    "jellyseerr_btn_partially_available": "Partial Haul",
+    "jellyseerr_btn_partially_available": "Partially Available",
     "jellyseerr_btn_view_collection": "See",
     "jellyseerr_popover_downloading": "Fetchin' from the Seas",
     "jellyseerr_modal_title": "Demand a Chronicle",
@@ -345,5 +345,7 @@
     "discovery_more_from_studio": "More from {studio}",
     "discovery_more_with_genre": "More with the genre - \"{genre}\"",
     "discovery_more_with_tag": "More with the tag - \"{tag}\"",
-    "discovery_more_from_person": "More with {person}"
+    "discovery_more_from_person": "More with {person}",
+    "jellyseerr_active_downloads": "Active Downloads",
+    "jellyseerr_requests": "Requests"
 }
