@@ -50,7 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             "icon-transparent.png",
             "banner-light.png",
             "banner-dark.png",
-            "favicon.ico"
+            "favicon.ico",
+            "apple-touch-icon.png"
         }, StringComparer.OrdinalIgnoreCase);
 
         public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IDtoService dtoService, UserConfigurationManager userConfigurationManager)

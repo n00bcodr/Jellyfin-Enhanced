@@ -154,11 +154,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ".*touchicon\\.f5bbb798cb2c65908633\\.png$",
                     nameof(TransformationPatches.AppleIcon));
 
-                RegisterAssetTransformation(writeService, addTransformationMethod, transformDelegateType,
-                    Guid.Parse("b9c4d5e6-8f10-4a2b-b3c4-d5e6f7a8b9c0"),
-                    ".*touchicon144\\.39209dd2362c0db7c673\\.png$",
-                    nameof(TransformationPatches.AppleIcon144));
-
                 _logger.Info("Registered Jellyfin Enhanced Custom Branding with File Transformation Plugin.");
             }
             catch (Exception ex)

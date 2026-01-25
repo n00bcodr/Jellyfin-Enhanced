@@ -1101,12 +1101,17 @@
                                     <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Icon Transparent</label>
                                         <label style="color: #eee;">The icon in the top-left beside the server version</label>
+                                        <div style="font-size: 0.75em; color: #999; margin-bottom: 0.5em;">
+                                            <strong>Jellyfin Default:</strong> 536x536px (square)<br>
+                                            <strong>Format:</strong> PNG with transparency
+                                        </div>
                                         <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="iconTransparentDropZone">
                                             <input type="file" id="iconTransparentInput" accept="image/*" style="display: none;" />
                                             <div id="iconTransparentPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
                                             <img id="iconTransparentPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div id="iconTransparentDimensions" style="display:none; font-size: 0.75em; color: #00a4dc; margin-top: 0.25em;"></div>
                                             <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="iconTransparentStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
@@ -1118,12 +1123,17 @@
                                     <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Favicon</label>
                                         <label style="color: #eee;">Favicon in the browser tab</label>
+                                        <div style="font-size: 0.75em; color: #999; margin-bottom: 0.5em;">
+                                            <strong>Jellyfin Default:</strong> 16x16px, 32x32px, or 48x48px<br>
+                                            <strong>Format:</strong> ICO, PNG, or SVG
+                                        </div>
                                         <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="faviconDropZone">
                                             <input type="file" id="faviconInput" accept="image/*" style="display: none;" />
                                             <div id="faviconPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
                                             <img id="faviconPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div id="faviconDimensions" style="display:none; font-size: 0.75em; color: #00a4dc; margin-top: 0.25em;"></div>
                                             <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="faviconStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
@@ -1135,12 +1145,17 @@
                                     <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Banner Light</label>
                                         <label style="color: #eee;">Splash Screen Banner for Dark Mode</label>
+                                        <div style="font-size: 0.75em; color: #999; margin-bottom: 0.5em;">
+                                            <strong>Jellyfin Default:</strong> 1302x378px<br>
+                                            <strong>Format:</strong> PNG, JPG, or WebP
+                                        </div>
                                         <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="bannerLightDropZone">
                                             <input type="file" id="bannerLightInput" accept="image/*" style="display: none;" />
                                             <div id="bannerLightPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
                                             <img id="bannerLightPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div id="bannerLightDimensions" style="display:none; font-size: 0.75em; color: #00a4dc; margin-top: 0.25em;"></div>
                                             <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="bannerLightStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
@@ -1152,12 +1167,17 @@
                                     <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Banner Dark</label>
                                         <label style="color: #eee;">Splash Screen Banner for Light Mode</label>
+                                        <div style="font-size: 0.75em; color: #999; margin-bottom: 0.5em;">
+                                            <strong>Jellyfin Default:</strong> 1302x378px<br>
+                                            <strong>Format:</strong> PNG, JPG, or WebP
+                                        </div>
                                         <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="bannerDarkDropZone">
                                             <input type="file" id="bannerDarkInput" accept="image/*" style="display: none;" />
                                             <div id="bannerDarkPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
                                             <img id="bannerDarkPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div id="bannerDarkDimensions" style="display:none; font-size: 0.75em; color: #00a4dc; margin-top: 0.25em;"></div>
                                             <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="bannerDarkStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
@@ -1168,34 +1188,22 @@
                                     </div>
                                     <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
                                         <label style="font-weight: bold; color: #eee;">Apple Touch Icon</label>
-                                        <label style="color: #eee;">Icon used when sharing URL (I think)</label>
+                                        <label style="color: #eee;">Icon shown when adding to iOS Home Screen</label>
+                                        <div style="font-size: 0.75em; color: #999; margin-bottom: 0.5em;">
+                                            <strong>Jellyfin Default:</strong> 180x180px<br>
+                                            <strong>Format:</strong> PNG
+                                        </div>
                                         <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="touchiconDropZone">
                                             <input type="file" id="touchiconInput" accept="image/*" style="display: none;" />
                                             <div id="touchiconPlaceholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
                                                 <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
                                             </div>
                                             <img id="touchiconPreview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
+                                            <div id="touchiconDimensions" style="display:none; font-size: 0.75em; color: #00a4dc; margin-top: 0.25em;"></div>
                                             <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
                                             <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
                                             <div id="touchiconStatus" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
                                             <button type="button" class="raised button-submit" id="touchiconDelete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
-                                                <i class="material-icons">delete</i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div style="display: flex; flex-direction: column; gap: 0.5em; height: 100%;">
-                                        <label style="font-weight: bold; color: #eee;">Apple Touch Icon (144px)</label>
-                                        <label style="color: #eee;">Icon used when adding to Home Screen (I think)</label>
-                                        <div style="position: relative; background: rgba(255,255,255,0.05); border: 2px dashed rgba(0,164,220,0.5); border-radius: 4px; padding: 0.85em; text-align: center; cursor: pointer; min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1;" id="touchicon144DropZone">
-                                            <input type="file" id="touchicon144Input" accept="image/*" style="display: none;" />
-                                            <div id="touchicon144Placeholder" class="branding-placeholder" style="margin-bottom: 0.5em;">
-                                                <i class="material-icons" style="font-size: 32px; color: #00a4dc;">image</i>
-                                            </div>
-                                            <img id="touchicon144Preview" style="display:none; max-height:80px; border-radius:4px; display:block; margin: 0 auto .5em auto" />
-                                            <div style="font-size: 0.9em; color: #ccc;">Drop image here or click to upload</div>
-                                            <div style="font-size: 0.8em; color: #999; margin-top: 0.5em;">Max 10MB</div>
-                                            <div id="touchicon144Status" style="font-size: 0.8em; margin-top: 0.5em; color: #999;"></div>
-                                            <button type="button" class="raised button-submit" id="touchicon144Delete" title="Delete" style="display:none; position:absolute; top:8px; right:8px; background: rgba(0,0,0,0.4) !important; border:none; color:#fff !important; padding:6px !important; border-radius:4px !important;" onmouseover="this.style.setProperty('background','#c62828','important')" onmouseout="this.style.setProperty('background','rgba(0,0,0,0.4)','important')">
                                                 <i class="material-icons">delete</i>
                                             </button>
                                         </div>
@@ -1977,12 +1985,11 @@
         // Setup branding file uploads and previews
         function setupBrandingUploads() {
             const uploadConfigs = [
-                { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png', previewId: 'iconTransparentPreview', placeholderId: 'iconTransparentPlaceholder', deleteId: 'iconTransparentDelete' },
-                { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete' },
-                { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete' },
-                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete' },
-                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete' },
-                { inputId: 'touchicon144Input', dropZoneId: 'touchicon144DropZone', statusId: 'touchicon144Status', fileName: 'apple-touch-icon-144.png', previewId: 'touchicon144Preview', placeholderId: 'touchicon144Placeholder', deleteId: 'touchicon144Delete' }
+                { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png', previewId: 'iconTransparentPreview', placeholderId: 'iconTransparentPlaceholder', deleteId: 'iconTransparentDelete', dimensionsId: 'iconTransparentDimensions' },
+                { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete', dimensionsId: 'faviconDimensions' },
+                { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete', dimensionsId: 'bannerLightDimensions' },
+                { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete', dimensionsId: 'bannerDarkDimensions' },
+                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' }
             ];
 
             uploadConfigs.forEach(config => {
@@ -2058,6 +2065,31 @@
                 return;
             }
 
+            // Show image preview and dimensions
+            const previewImg = document.getElementById(config.previewId);
+            const dimensionsDiv = document.getElementById(config.dimensionsId);
+            const placeholder = document.getElementById(config.placeholderId);
+
+            if (previewImg) {
+                const objectUrl = URL.createObjectURL(file);
+                previewImg.src = objectUrl;
+                previewImg.style.display = 'block';
+                if (placeholder) placeholder.style.display = 'none';
+
+                // Get image dimensions
+                previewImg.onload = function() {
+                    const img = new Image();
+                    img.onload = function() {
+                        if (dimensionsDiv) {
+                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.style.display = 'block';
+                        }
+                        URL.revokeObjectURL(objectUrl);
+                    };
+                    img.src = objectUrl;
+                };
+            }
+
             statusDiv.textContent = 'Uploading...';
             statusDiv.style.color = '#ffa500';
 
@@ -2097,6 +2129,7 @@
             const previewImg = document.getElementById(config.previewId);
             const placeholder = document.getElementById(config.placeholderId);
             const deleteButton = document.getElementById(config.deleteId);
+            const dimensionsDiv = document.getElementById(config.dimensionsId);
             if (!previewImg) return;
 
             const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
@@ -2109,6 +2142,7 @@
                     previewImg.style.display = 'none';
                     if (placeholder) placeholder.style.display = 'block';
                     if (deleteButton) deleteButton.style.display = 'none';
+                    if (dimensionsDiv) dimensionsDiv.style.display = 'none';
                     return;
                 }
 
@@ -2118,10 +2152,19 @@
                 previewImg.style.display = 'block';
                 if (placeholder) placeholder.style.display = 'none';
                 if (deleteButton) deleteButton.style.display = 'inline-block';
+
+                // Show dimensions for existing images
+                if (dimensionsDiv) {
+                    previewImg.onload = function() {
+                        dimensionsDiv.textContent = previewImg.naturalWidth + ' × ' + previewImg.naturalHeight + 'px';
+                        dimensionsDiv.style.display = 'block';
+                    };
+                }
             } catch (err) {
                 previewImg.style.display = 'none';
                 if (placeholder) placeholder.style.display = 'block';
                 if (deleteButton) deleteButton.style.display = 'none';
+                if (dimensionsDiv) dimensionsDiv.style.display = 'none';
             }
         }
 
@@ -2143,6 +2186,11 @@
                 if (response.ok) {
                     statusDiv.textContent = '✓ Deleted';
                     statusDiv.style.color = '#51cf66';
+
+                    // Hide dimensions when image is deleted
+                    const dimensionsDiv = document.getElementById(config.dimensionsId);
+                    if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
