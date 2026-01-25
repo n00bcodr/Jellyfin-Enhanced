@@ -333,22 +333,23 @@
      */
     JE.addPluginMenuButton = () => {
         const addMenuButton = (sidebar) => {
-            let pluginSettingsSection = sidebar.querySelector('.pluginMenuOptions');
+            let jellyfinEnhancedSection = sidebar.querySelector('.jellyfinEnhancedSection');
 
-            if (!pluginSettingsSection) {
-                pluginSettingsSection = document.createElement('div');
-                pluginSettingsSection.className = 'pluginMenuOptions';
-                pluginSettingsSection.innerHTML = '<h3 class="sidebarHeader">Plugin Settings</h3>';
+            if (!jellyfinEnhancedSection) {
+                jellyfinEnhancedSection = document.createElement('div');
+                jellyfinEnhancedSection.className = 'jellyfinEnhancedSection';
+                jellyfinEnhancedSection.innerHTML = '<h3 class="sidebarHeader">Jellyfin Enhanced</h3>';
 
-                const settingsSection = sidebar.querySelector('.navMenuOption[href*="settings"]')?.closest('.drawerSection');
-                if (settingsSection && settingsSection.nextSibling) {
-                    sidebar.insertBefore(pluginSettingsSection, settingsSection.nextSibling);
+                // Insert just above Media section
+                const mediaSection = sidebar.querySelector('.libraryMenuOptions');
+                if (mediaSection) {
+                    sidebar.insertBefore(jellyfinEnhancedSection, mediaSection);
                 } else {
-                    sidebar.appendChild(pluginSettingsSection);
+                    sidebar.appendChild(jellyfinEnhancedSection);
                 }
             }
 
-            if (!pluginSettingsSection.querySelector('#jellyfinEnhancedSettingsLink')) {
+            if (!jellyfinEnhancedSection.querySelector('#jellyfinEnhancedSettingsLink')) {
                 const jellyfinEnhancedLink = document.createElement('a');
                 jellyfinEnhancedLink.setAttribute('is', 'emby-linkbutton');
                 jellyfinEnhancedLink.className = 'lnkMediaFolder navMenuOption emby-button';
@@ -356,7 +357,7 @@
                 jellyfinEnhancedLink.id = 'jellyfinEnhancedSettingsLink';
                 jellyfinEnhancedLink.innerHTML = `
                     <span class="material-icons navMenuOptionIcon" aria-hidden="true">tune</span>
-                    <span class="sectionName navMenuOptionText">Jellyfin Enhanced</span>
+                    <span class="sectionName navMenuOptionText">Enhanced Panel</span>
                 `;
 
                 jellyfinEnhancedLink.addEventListener('click', (e) => {
@@ -364,7 +365,7 @@
                     JE.showEnhancedPanel();
                 });
 
-                pluginSettingsSection.appendChild(jellyfinEnhancedLink);
+                jellyfinEnhancedSection.appendChild(jellyfinEnhancedLink);
             }
         };
 

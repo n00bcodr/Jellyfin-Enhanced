@@ -427,11 +427,13 @@
     }
   `;
 
+  const logPrefix = '🪼 Jellyfin Enhanced: Calendar Page:';
+
   /**
    * Initialize calendar page
    */
   function initialize() {
-    console.log("[JE Calendar] Initializing calendar page module");
+    console.log(`${logPrefix} Initializing calendar page module`);
 
     injectStyles();
     loadSettings();
@@ -445,7 +447,7 @@
     // Check URL on init
     handleNavigation();
 
-    console.log("[JE Calendar] Calendar page module initialized");
+    console.log(`${logPrefix} Calendar page module initialized`);
   }
 
   // Load calendar settings from plugin config
@@ -494,7 +496,7 @@
       state.events = (data.events || []).filter((evt) => evt && evt.releaseDate);
       return data;
     } catch (error) {
-      console.error("[JE Calendar] Failed to fetch calendar events:", error);
+      console.error(`${logPrefix} Failed to fetch calendar events:`, error);
       state.events = [];
       return null;
     }
@@ -909,7 +911,7 @@
       page.innerHTML = `
         <div data-role="content">
           <div class="content-primary je-calendar-page">
-            <div id="je-calendar-container" style="padding-top: 60px;"></div>
+            <div id="je-calendar-container" style="padding-top: 5em;"></div>
           </div>
         </div>
       `;
@@ -1096,27 +1098,26 @@
       return;
     }
 
-    const homeLink =
-      document.querySelector('.navMenuOption[href="#/home.html"]') ||
-      document.querySelector('.navMenuOption[href="#/home"]');
+    const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
-    if (homeLink && homeLink.parentNode) {
+    if (jellyfinEnhancedSection) {
       const navItem = document.createElement("a");
+      navItem.setAttribute('is', 'emby-linkbutton');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-calendar-item";
       navItem.href = "#/calendar";
       navItem.innerHTML = `
         <span class="navMenuOptionIcon material-icons">calendar_today</span>
-        <span class="navMenuOptionText">${window.JellyfinEnhanced.t("calendar_title")}</span>
+        <span class="sectionName navMenuOptionText">${window.JellyfinEnhanced.t("calendar_title")}</span>
       `;
       navItem.addEventListener("click", (e) => {
         e.preventDefault();
         showPage();
       });
 
-      homeLink.parentNode.insertBefore(navItem, homeLink.nextSibling);
+      jellyfinEnhancedSection.appendChild(navItem);
       state.navInjected = true;
-      console.log("[JE Calendar] Navigation item injected");
+      console.log(`${logPrefix} Navigation item injected`);
     } else {
       setTimeout(injectNavigation, 1000);
     }
@@ -1137,7 +1138,7 @@
     return String(text).replace(/[&<>"']/g, (m) => map[m]);
   }
 
-  console.log("[JE Calendar] Calendar page module initialized");
+  console.log(`${logPrefix} Calendar page module initialized`);
 
   // Export to JE namespace
   JE.calendarPage = {

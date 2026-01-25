@@ -39,6 +39,8 @@
   const SONARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg";
   const RADARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg";
 
+  const logPrefix = '🪼 Jellyfin Enhanced: Requests Page:';
+
   // CSS Styles - minimal styling to fit Jellyfin's theme
   const CSS_STYLES = `
         .je-downloads-page {
@@ -335,7 +337,7 @@
       state.downloads = data.items || [];
       return data;
     } catch (error) {
-      console.error("[JE Downloads] Failed to fetch downloads:", error);
+      console.error(`${logPrefix} Failed to fetch downloads:`, error);
       state.downloads = [];
       return null;
     }
@@ -366,7 +368,7 @@
 
       return data;
     } catch (error) {
-      console.error("[JE Downloads] Failed to fetch requests:", error);
+      console.error(`${logPrefix} Failed to fetch requests:`, error);
       state.requests = [];
       return null;
     }
@@ -804,7 +806,7 @@
       page.innerHTML = `
         <div data-role="content">
           <div class="content-primary je-downloads-page">
-            <div id="je-downloads-container" style="padding-top: 60px;"></div>
+            <div id="je-downloads-container" style="padding-top: 5em;"></div>
           </div>
         </div>
       `;
@@ -990,27 +992,26 @@
       return;
     }
 
-    const homeLink =
-      document.querySelector('.navMenuOption[href="#/home.html"]') ||
-      document.querySelector('.navMenuOption[href="#/home"]');
+    const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
-    if (homeLink && homeLink.parentNode) {
+    if (jellyfinEnhancedSection) {
       const navItem = document.createElement("a");
+      navItem.setAttribute('is', 'emby-linkbutton');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-downloads-item";
       navItem.href = "#/downloads";
       navItem.innerHTML = `
-        <span class="navMenuOptionIcon material-icons">pending_actions</span>
-        <span class="navMenuOptionText">Requests</span>
+        <span class="navMenuOptionIcon material-icons">download</span>
+        <span class="sectionName navMenuOptionText">Requests</span>
       `;
       navItem.addEventListener("click", (e) => {
         e.preventDefault();
         showPage();
       });
 
-      homeLink.parentNode.insertBefore(navItem, homeLink.nextSibling);
+      jellyfinEnhancedSection.appendChild(navItem);
       state.navInjected = true;
-      console.log("[JE Downloads] Navigation item injected");
+      console.log(`${logPrefix} Navigation item injected`);
     } else {
       setTimeout(injectNavigation, 1000);
     }
@@ -1032,11 +1033,11 @@
    * Initialize the downloads page module
    */
   function initialize() {
-    console.log("[JE Downloads] Initializing downloads page module");
+    console.log(`${logPrefix} Initializing downloads page module`);
 
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) {
-      console.log("[JE Downloads] Downloads page is disabled");
+      console.log(`${logPrefix} Downloads page is disabled`);
       return;
     }
 
@@ -1082,7 +1083,7 @@
     // Check current URL on init
     handleNavigation();
 
-    console.log("[JE Downloads] Downloads page module initialized");
+    console.log(`${logPrefix} Downloads page module initialized`);
   }
 
   // Export to JE namespace
