@@ -9,7 +9,6 @@
   const state = {
     events: [],
     isLoading: false,
-    navInjected: false,
     pageVisible: false,
     previousPage: null,
     currentDate: new Date(),
@@ -437,7 +436,10 @@
 
     injectStyles();
     loadSettings();
+
+    // Inject navigation and set up one-time re-injection on sidebar rebuild
     injectNavigation();
+    setupNavigationWatcher();
 
     // Setup event listeners
     document.addEventListener("viewshow", handleViewShow);
@@ -1088,13 +1090,11 @@
    * Inject navigation item into sidebar
    */
   function injectNavigation() {
-    if (state.navInjected) return;
-
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
 
+    // Check if already exists
     if (document.querySelector(".je-nav-calendar-item")) {
-      state.navInjected = true;
       return;
     }
 
@@ -1116,10 +1116,35 @@
       });
 
       jellyfinEnhancedSection.appendChild(navItem);
-      state.navInjected = true;
       console.log(`${logPrefix} Navigation item injected`);
     } else {
-      setTimeout(injectNavigation, 1000);
+      console.log(`${logPrefix} jellyfinEnhancedSection not found, will wait for it`);
+    }
+  }
+
+  /**
+   * Setup navigation watcher - observes only when link is missing
+   */
+  function setupNavigationWatcher() {
+    const config = JE.pluginConfig || {};
+    if (!config.CalendarPageEnabled) return;
+
+    // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('.je-nav-calendar-item')) {
+        const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
+        if (jellyfinEnhancedSection) {
+          console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
+          injectNavigation();
+        }
+      }
+    });
+
+    // Observe the main drawer
+    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
+    if (navDrawer) {
+      observer.observe(navDrawer, { childList: true, subtree: true });
+      console.log(`${logPrefix} Navigation watcher setup`);
     }
   }
 

@@ -14,7 +14,6 @@
     requestsFilter: "all",
     isLoading: false,
     pollTimer: null,
-    navInjected: false,
     pageVisible: false,
     previousPage: null,
   };
@@ -827,7 +826,12 @@
   function showPage() {
     if (state.pageVisible) return;
 
+    // Ensure page exists first
     const page = createPageContainer();
+    if (!page) {
+      console.error(`${logPrefix} Failed to create page container`);
+      return;
+    }
 
     // Hide other Jellyfin pages - but track which one was active so we can restore it
     const activePage = document.querySelector(
@@ -982,13 +986,11 @@
    * Inject navigation item into sidebar
    */
   function injectNavigation() {
-    if (state.navInjected) return;
-
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
 
+    // Check if already exists
     if (document.querySelector(".je-nav-downloads-item")) {
-      state.navInjected = true;
       return;
     }
 
@@ -1010,10 +1012,35 @@
       });
 
       jellyfinEnhancedSection.appendChild(navItem);
-      state.navInjected = true;
       console.log(`${logPrefix} Navigation item injected`);
     } else {
-      setTimeout(injectNavigation, 1000);
+      console.log(`${logPrefix} jellyfinEnhancedSection not found, will wait for it`);
+    }
+  }
+
+  /**
+   * Setup navigation watcher - observes only when link is missing
+   */
+  function setupNavigationWatcher() {
+    const config = JE.pluginConfig || {};
+    if (!config.DownloadsPageEnabled) return;
+
+    // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('.je-nav-downloads-item')) {
+        const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
+        if (jellyfinEnhancedSection) {
+          console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
+          injectNavigation();
+        }
+      }
+    });
+
+    // Observe the main drawer
+    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
+    if (navDrawer) {
+      observer.observe(navDrawer, { childList: true, subtree: true });
+      console.log(`${logPrefix} Navigation watcher setup`);
     }
   }
 
@@ -1043,7 +1070,10 @@
 
     injectStyles();
     createPageContainer();
+
+    // Inject navigation and set up one-time re-injection on sidebar rebuild
     injectNavigation();
+    setupNavigationWatcher();
 
     // Listen for hash changes - handles browser back/forward and direct URL changes
     window.addEventListener("hashchange", handleNavigation);
