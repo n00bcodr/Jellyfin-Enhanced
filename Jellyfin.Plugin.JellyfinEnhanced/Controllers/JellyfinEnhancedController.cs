@@ -1212,11 +1212,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Requests Page Settings
                 config.DownloadsPageEnabled,
                 config.DownloadsPollIntervalSeconds,
-                config.DownloadsMaxItems,
-                config.DownloadsShowPosters,
-                config.DownloadsShowProgress,
-                config.DownloadsShowEta,
-                config.DownloadsShowSize,
 
             });
         }
@@ -1766,8 +1761,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, "Plugin configuration not available");
 
             var items = new List<object>();
-            bool sonarrConnected = false;
-            bool radarrConnected = false;
 
             // Fetch Sonarr queue
             if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
@@ -1775,14 +1768,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var sonarrUrl = config.SonarrUrl.TrimEnd('/');
-                    using var client = new HttpClient();
+                    var client = _httpClientFactory.CreateClient();
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(10);
 
                     var response = await client.GetAsync($"{sonarrUrl}/api/v3/queue?includeEpisode=true&includeSeries=true");
                     if (response.IsSuccessStatusCode)
                     {
-                        sonarrConnected = true;
                         var json = await response.Content.ReadAsStringAsync();
                         var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
 
@@ -1834,14 +1826,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var radarrUrl = config.RadarrUrl.TrimEnd('/');
-                    using var client = new HttpClient();
+                    var client = _httpClientFactory.CreateClient();
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(10);
 
                     var response = await client.GetAsync($"{radarrUrl}/api/v3/queue?includeMovie=true");
                     if (response.IsSuccessStatusCode)
                     {
-                        radarrConnected = true;
                         var json = await response.Content.ReadAsStringAsync();
                         var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
 
@@ -1887,12 +1878,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return Ok(new
-            {
-                items = items,
-                sonarrConnected = sonarrConnected,
-                radarrConnected = radarrConnected
-            });
+            return Ok(new { items = items });
         }
 
         private static double CalculateProgress(double? size, double? sizeleft)
