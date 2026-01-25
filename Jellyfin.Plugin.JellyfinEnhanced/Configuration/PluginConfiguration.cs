@@ -161,11 +161,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
             DownloadsPageEnabled = true;
             DownloadsPollIntervalSeconds = 30;
-            DownloadsMaxItems = 20;
-            DownloadsShowPosters = true;
-            DownloadsShowProgress = true;
-            DownloadsShowEta = true;
-            DownloadsShowSize = true;
         }
 
         // Jellyfin Enhanced Settings
@@ -300,10 +295,5 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
         public bool DownloadsPageEnabled { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
-        public int DownloadsMaxItems { get; set; }
-        public bool DownloadsShowPosters { get; set; }
-        public bool DownloadsShowProgress { get; set; }
-        public bool DownloadsShowEta { get; set; }
-        public bool DownloadsShowSize { get; set; }
     }
 }
