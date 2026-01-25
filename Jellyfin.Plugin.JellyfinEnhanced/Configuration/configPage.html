@@ -843,6 +843,33 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Requests Page</h3></legend>
+                        <div class="configSection">
+                            <div style="background-color: rgba(0, 164, 220, 0.1); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin-bottom: 1.5em;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <strong>Requests Page</strong> shows a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
+                                        <br><br>
+                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Jellyseerr URLs and API keys above.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsPageEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Requests Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Requests" link to the navigation showing active downloads and requests.</div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
+                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="10" max="300" value="30"/>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">How often to refresh download status (10-300 seconds).</div>
+                        </div>
+                    </fieldset>
                 </div>
                  <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
@@ -1700,6 +1727,16 @@
                 document.querySelector('#themeSelectorEnabled').checked = config.ThemeSelectorEnabled;
                 document.querySelector('#coloredActivityIconsEnabled').checked = config.ColoredActivityIconsEnabled;
                 document.querySelector('#pluginIconsEnabled').checked = config.PluginIconsEnabled;
+
+                // Requests Page settings
+                document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
+                document.querySelector('#downloadsPollIntervalSeconds').value = config.DownloadsPollIntervalSeconds || 30;
+                document.querySelector('#downloadsMaxItems').value = config.DownloadsMaxItems || 20;
+                document.querySelector('#downloadsShowPosters').checked = config.DownloadsShowPosters !== false;
+                document.querySelector('#downloadsShowProgress').checked = config.DownloadsShowProgress !== false;
+                document.querySelector('#downloadsShowEta').checked = config.DownloadsShowEta !== false;
+                document.querySelector('#downloadsShowSize').checked = config.DownloadsShowSize !== false;
+
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
@@ -1834,6 +1871,16 @@
             config.ThemeSelectorEnabled = document.querySelector('#themeSelectorEnabled').checked;
             config.ColoredActivityIconsEnabled = document.querySelector('#coloredActivityIconsEnabled').checked;
             config.PluginIconsEnabled = document.querySelector('#pluginIconsEnabled').checked;
+
+            // Requests Page settings
+            config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
+            config.DownloadsPollIntervalSeconds = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10) || 30;
+            config.DownloadsMaxItems = parseInt(document.querySelector('#downloadsMaxItems').value, 10) || 20;
+            config.DownloadsShowPosters = document.querySelector('#downloadsShowPosters').checked;
+            config.DownloadsShowProgress = document.querySelector('#downloadsShowProgress').checked;
+            config.DownloadsShowEta = document.querySelector('#downloadsShowEta').checked;
+            config.DownloadsShowSize = document.querySelector('#downloadsShowSize').checked;
+
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';
 
