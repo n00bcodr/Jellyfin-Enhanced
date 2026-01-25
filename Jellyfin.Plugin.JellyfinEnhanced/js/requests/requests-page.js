@@ -36,11 +36,14 @@
     Declined: "#f44336",
   };
 
+  const SONARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg";
+  const RADARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg";
+
   // CSS Styles - minimal styling to fit Jellyfin's theme
   const CSS_STYLES = `
         .je-downloads-page {
             padding: 2em;
-            max-width: 1400px;
+            max-width: 85vw;
             margin: 0 auto;
             position: relative;
             z-index: 1;
@@ -49,13 +52,13 @@
             margin-bottom: 2em;
         }
         .je-downloads-section h2 {
-            font-size: 1.3em;
+            font-size: 1.5em;
             margin-bottom: 1em;
         }
         .je-downloads-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1em;
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+          gap: 1.1em;
         }
         .je-download-card, .je-request-card {
             background: rgba(128,128,128,0.1);
@@ -63,22 +66,22 @@
             overflow: hidden;
         }
         .je-download-card-content {
-            display: flex;
-            gap: 1em;
-            padding: 1em;
+          display: flex;
+          gap: 1em;
+          padding: 1.15em;
         }
         .je-download-poster, .je-request-poster {
-            border-radius: 0.25em;
+            border-radius: 0.5em;
             object-fit: cover;
             flex-shrink: 0;
         }
         .je-download-poster {
-            width: 60px;
-            height: 90px;
+          width: 72px;
+          height: fit-content;
         }
         .je-request-poster {
             width: 80px;
-            height: 120px;
+            height: fit-content;
         }
         .je-download-poster.placeholder, .je-request-poster.placeholder {
             display: flex;
@@ -111,11 +114,26 @@
             margin-top: auto;
         }
         .je-download-badge, .je-request-status {
-            font-size: 0.7em;
-            padding: 0.2em 0.5em;
-            border-radius: 3px;
-            text-transform: uppercase;
-            font-weight: 600;
+          font-size: 0.95em;
+          padding: 0.35em 0.7em;
+          border-radius: 999px;
+          text-transform: uppercase;
+          font-weight: 700;
+          color: #fff;
+        }
+        .je-arr-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.25em;
+          padding: 0;
+          background: transparent;
+        }
+        .je-arr-badge img {
+          width: 18px;
+          height: 18px;
+          object-fit: contain;
+          filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
         }
         .je-download-progress-container {
             padding: 0 1em 1em;
@@ -131,11 +149,11 @@
             transition: width 0.3s ease;
         }
         .je-download-stats {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75em;
-            opacity: 0.6;
-            margin-top: 0.5em;
+          display: flex;
+          justify-content: space-between;
+          font-size: 1em;
+          opacity: 0.95;
+          margin-top: 0.6em;
         }
         .je-requests-tabs {
             display: flex;
@@ -195,13 +213,15 @@
             flex-shrink: 0;
         }
         .je-request-meta {
-            display: flex;
-            align-items: center;
-            gap: 0.5em;
-            font-size: 0.85em;
-            opacity: 0.7;
-            margin-top: 0.5em;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.5em;
+          font-size: 0.85em;
+          opacity: 0.8;
+          margin-top: 0.5em;
         }
+        .je-request-meta-left { display: inline-flex; align-items: center; gap: 0.5em; min-width: 0; }
         .je-request-avatar {
             width: 24px;
             height: 24px;
@@ -212,15 +232,21 @@
             margin-top: 1em;
         }
         .je-request-watch-btn {
-            background: var(--theme-primary-color, #00a4dc);
-            color: inherit;
-            border: none;
-            padding: 0.4em 0.8em;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85em;
+          background: var(--theme-primary-color, #00a4dc);
+          color: inherit;
+          border: none;
+          padding: 0.45em;
+          border-radius: 50%;
+          cursor: pointer;
+          width: 36px;
+          height: 36px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.25);
         }
         .je-request-watch-btn:hover { opacity: 0.9; }
+        .je-request-watch-btn .material-icons { font-size: 20px; }
         .je-pagination {
             display: flex;
             justify-content: center;
@@ -253,6 +279,24 @@
             justify-content: center;
             padding: 2em;
         }
+        .je-requests-status-chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 0.3rem 0.6rem;
+          margin-top: 0.7rem;
+          border-radius: 999px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .je-requests-status-chip.je-chip-available { background: rgba(34, 197, 94, 0.25); color: #f0f9ff; border-color: rgba(34, 197, 94, 0.5); }
+        .je-requests-status-chip.je-chip-partial { background: rgba(234, 179, 8, 0.25); color: #f0f9ff; border-color: rgba(234, 179, 8, 0.5); }
+        .je-requests-status-chip.je-chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
+        .je-requests-status-chip.je-chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
+        .je-requests-status-chip.je-chip-rejected { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
     `;
 
   /**
@@ -413,11 +457,52 @@
   }
 
   /**
+   * Format downloaded/total stats with clamping
+   */
+  function formatDownloadStats(totalSize, sizeRemaining) {
+    if (!totalSize || totalSize <= 0) return "";
+    const remaining = Math.max(0, Math.min(totalSize, sizeRemaining || 0));
+    const downloaded = Math.max(0, Math.min(totalSize, totalSize - remaining));
+    return `${formatBytes(downloaded)} / ${formatBytes(totalSize)}`;
+  }
+
+  /**
+   * Jellyseerr like chips
+   */
+  function resolveRequestStatus(status) {
+    const normalized = (status || "").toLowerCase();
+    const labelAvailable = JE.t?.("jellyseerr_btn_available") || "Available";
+    const labelPartial = JE.t?.("jellyseerr_btn_partially_available") || "Partially Available";
+    const labelProcessing = JE.t?.("jellyseerr_btn_processing") || "Processing";
+    const labelPending = JE.t?.("jellyseerr_btn_pending") || "Pending Approval";
+    const labelRequested = JE.t?.("jellyseerr_btn_requested") || "Requested";
+    const labelRejected = JE.t?.("jellyseerr_btn_rejected") || "Rejected";
+
+    switch (normalized) {
+      case "available":
+        return { label: labelAvailable, className: "je-chip-available" };
+      case "partially available":
+        return { label: labelPartial, className: "je-chip-partial" };
+      case "processing":
+        return { label: labelProcessing, className: "je-chip-processing" };
+      case "approved":
+        return { label: labelRequested, className: "je-chip-requested" };
+      case "pending":
+        return { label: labelPending, className: "je-chip-requested" };
+      case "declined":
+        return { label: labelRejected, className: "je-chip-rejected" };
+      default:
+        return { label: status || labelRequested, className: "je-chip-requested" };
+    }
+  }
+
+  /**
    * Render a download card
    */
   function renderDownloadCard(item) {
     const statusColor = STATUS_COLORS[item.status] || STATUS_COLORS.Unknown;
-    const sourceColor = item.source === "sonarr" ? "#00a4dc" : "#ffa500";
+    const sourceIcon = item.source === "sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const sourceLabel = item.source === "sonarr" ? "Sonarr" : "Radarr";
 
     const posterHtml = item.posterUrl
       ? `<img class="je-download-poster" src="${item.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
@@ -431,7 +516,7 @@
         <div class="je-download-stats">
           <span>${item.progress || 0}%</span>
           ${item.timeRemaining ? `<span>ETA: ${formatTimeRemaining(item.timeRemaining)}</span>` : ""}
-          ${item.totalSize ? `<span>${formatBytes(item.totalSize - (item.sizeRemaining || 0))} / ${formatBytes(item.totalSize)}</span>` : ""}
+          ${item.totalSize ? `<span>${formatDownloadStats(item.totalSize, item.sizeRemaining)}</span>` : ""}
         </div>
       </div>
     `;
@@ -444,7 +529,7 @@
             <div class="je-download-title" title="${item.title || ""}">${item.title || "Unknown"}</div>
             ${item.subtitle ? `<div class="je-download-subtitle" title="${item.subtitle}">${item.subtitle}</div>` : ""}
             <div class="je-download-meta">
-              <span class="je-download-badge" style="background: ${sourceColor}">${item.source}</span>
+                <span class="je-download-badge je-arr-badge" title="${sourceLabel}"><img src="${sourceIcon}" alt="${sourceLabel}" loading="lazy"></span>
               <span class="je-download-badge" style="background: ${statusColor}">${item.status}</span>
             </div>
           </div>
@@ -458,8 +543,7 @@
    * Render a request card
    */
   function renderRequestCard(item) {
-    const statusColor =
-      STATUS_COLORS[item.mediaStatus] || STATUS_COLORS.Unknown;
+    const status = resolveRequestStatus(item.mediaStatus);
 
     let posterHtml = "";
     if (item.posterUrl) {
@@ -474,8 +558,10 @@
     }
 
     let watchButton = "";
-    if (item.jellyfinMediaId && item.mediaStatus === "Available") {
-      watchButton = `<button class="je-request-watch-btn" onclick="Emby.Page.showItem('${item.jellyfinMediaId}')">Watch</button>`;
+    if (item.jellyfinMediaId && (item.mediaStatus === "Available" || item.mediaStatus === "Partially Available")) {
+      const playLabel = JE.t?.("jellyseerr_btn_available") || "Available";
+      const playIcon = '<span class="material-icons">play_arrow</span>';
+      watchButton = `<button class="je-request-watch-btn" title="${playLabel}" aria-label="${playLabel}" onclick="Emby.Page.showItem('${item.jellyfinMediaId}')">${playIcon}</button>`;
     }
 
     return `
@@ -483,16 +569,20 @@
                 ${posterHtml}
                 <div class="je-request-info">
                     <div class="je-request-header">
-                        <div>
-                            <div class="je-request-title">${item.title || "Unknown"}</div>
-                            ${item.year ? `<span class="je-request-year">(${item.year})</span>` : ""}
+                      <div>
+                        <div class="je-request-title-row">
+                          <div class="je-request-title">${item.title || "Unknown"}</div>
+                          ${item.year ? `<span class="je-request-year">(${item.year})</span>` : ""}
                         </div>
-                        <span class="je-request-status" style="background: ${statusColor}">${item.mediaStatus}</span>
+                        <span class="je-requests-status-chip ${status.className}">${status.label}</span>
+                      </div>
                     </div>
                     <div class="je-request-meta">
+                      <div class="je-request-meta-left">
                         ${avatarHtml}
                         <span>${item.requestedBy || "Unknown"}</span>
                         ${item.createdAt ? `<span>&#8226;</span><span>${formatRelativeDate(item.createdAt)}</span>` : ""}
+                      </div>
                     </div>
                     ${watchButton ? `<div class="je-request-actions">${watchButton}</div>` : ""}
                 </div>
@@ -582,7 +672,7 @@
         <div class="je-download-stats">
           <span>${item.progress || 0}%</span>
           ${item.timeRemaining ? `<span>ETA: ${formatTimeRemaining(item.timeRemaining)}</span>` : ""}
-          ${totalSize ? `<span>${formatBytes(totalSize - sizeRemaining)} / ${formatBytes(totalSize)}</span>` : ""}
+          ${totalSize ? `<span>${formatDownloadStats(totalSize, sizeRemaining)}</span>` : ""}
         </div>
       </div>
     `;
@@ -595,7 +685,7 @@
             <div class="je-download-title" title="${item.title || ""}">${item.title || "Unknown"}</div>
             <div class="je-download-subtitle">Season ${item.seasonNumber} (${group.episodeCount} episodes)</div>
             <div class="je-download-meta">
-              <span class="je-download-badge" style="background: #00a4dc">sonarr</span>
+              <span class="je-download-badge je-arr-badge" title="Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr" loading="lazy"></span>
               <span class="je-download-badge" style="background: ${statusColor}">${item.status}</span>
               <span class="je-download-badge" style="background: rgba(128,128,128,0.4)">${group.episodeRange}</span>
             </div>
@@ -617,7 +707,8 @@
 
     // Active Downloads Section
     html += `<div class="je-downloads-section" style="margin-top: 2em;">`;
-    html += `<h2 style="margin-top: 0.5em;">Active Downloads</h2>`;
+    const labelActiveDownloads = (JE.t && JE.t('jellyseerr_active_downloads')) || 'Active Downloads';
+    html += `<h2 style="margin-top: 0.5em;">${labelActiveDownloads}</h2>`;
 
     if (state.isLoading && state.downloads.length === 0) {
       html += `<div class="je-loading">Loading...</div>`;
@@ -646,17 +737,23 @@
     // Requests Section
     if (JE.pluginConfig?.JellyseerrEnabled) {
       html += `<div class="je-downloads-section">`;
-      html += `<h2>Requests</h2>`;
+      const labelRequests = (JE.t && JE.t('jellyseerr_requests')) || 'Requests';
+      html += `<h2>${labelRequests}</h2>`;
 
-      // Filter tabs
-      html += `
-                <div class="je-requests-tabs">
-                    <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "all" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('all')">All</button>
-                    <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "pending" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('pending')">Pending</button>
-                    <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "processing" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('processing')">Processing</button>
-                    <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "available" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('available')">Available</button>
-                </div>
-            `;
+        // Filter tabs
+        const labelAll = (JE.t && JE.t('jellyseerr_discover_all')) || 'All';
+        const labelPending = (JE.t && JE.t('jellyseerr_btn_pending')) || 'Pending Approval';
+        const labelProcessing = (JE.t && JE.t('jellyseerr_btn_processing')) || 'Processing';
+        const labelAvailable = (JE.t && JE.t('jellyseerr_btn_available')) || 'Available';
+
+        html += `
+            <div class="je-requests-tabs">
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "all" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('all')">${labelAll}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "pending" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('pending')">${labelPending}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "processing" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('processing')">${labelProcessing}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "available" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('available')">${labelAvailable}</button>
+            </div>
+          `;
 
       if (state.isLoading && state.requests.length === 0) {
         html += `<div class="je-loading">Loading...</div>`;

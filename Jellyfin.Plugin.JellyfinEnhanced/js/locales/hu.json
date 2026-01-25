@@ -345,5 +345,7 @@
     "discovery_more_from_studio": "Még {studio} -tól",
     "discovery_more_with_genre": "Több a műfajból - \"{genre}\"",
     "discovery_more_with_tag": "Több a címkével - \"{tag}\"",
-    "discovery_more_from_person": "Több {person} -tól"
+    "discovery_more_from_person": "Több {person} -tól",
+    "jellyseerr_active_downloads": "Aktív letöltések",
+    "jellyseerr_requests": "Kérések"
 }
