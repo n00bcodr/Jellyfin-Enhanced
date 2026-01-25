@@ -195,10 +195,13 @@ These are some scripts I have used for a while with JS injector, finally decided
 --------------------------------------------------
 </p>
 
-## Jellyseerr Search Integration <a name="jellyseerr-search-integration"></a> <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" width="40" height="50" align="center">
+## Jellyseerr Search Integration <a name="jellyseerr-search-integration"></a>
 
 The Jellyfin Enhanced plugin can integrate with your Jellyseerr instance, allowing users to search for and request media directly from the Jellyfin search interface.
 Additionally, requested media can be automatically added to your Jellyfin watchlist (from [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks)) once it becomes available in your library.
+
+> [!IMPORTANT]
+> This plugin is not affiliated with Jellyseerr/Seerr. Jellyseerr/Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. Please report any issues with this plugin to the plugin repository, not to the Jellyseerr/Seerr team.
 
 #### Setup
 
