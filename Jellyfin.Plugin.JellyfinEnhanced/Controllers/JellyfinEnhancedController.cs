@@ -22,18 +22,12 @@ using Microsoft.AspNetCore.StaticFiles;
 using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.Seerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Seerr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
-    public class JellyseerrUser
-    {
-        [JsonPropertyName("id")]
-        public int Id { get; set; }
-
-        [JsonPropertyName("jellyfinUserId")]
-        public string? JellyfinUserId { get; set; }
-    }
-
     [Route("JellyfinEnhanced")]
     [ApiController]
     public class JellyfinEnhancedController : ControllerBase
@@ -65,7 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _userConfigurationManager = userConfigurationManager;
         }
 
-        private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+        private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
@@ -95,11 +89,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             var users = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
                             // _logger.Info($"Found {users?.Count ?? 0} users at {url.Trim()}");
-                            var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, jellyfinUserId, StringComparison.OrdinalIgnoreCase));
+                            var normalizedJellyfinUserId = jellyfinUserId.Replace("-", "");
+                            var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedJellyfinUserId, StringComparison.OrdinalIgnoreCase));
                             if (user != null)
                             {
                                 // _logger.Info($"Found Jellyseerr user ID {user.Id} for Jellyfin user ID {jellyfinUserId} at {url.Trim()}");
-                                return user.Id.ToString();
+                                return user;
                             }
                             else
                             {
@@ -123,6 +118,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return null;
         }
 
+        private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+            => (await GetJellyseerrUser(jellyfinUserId))?.Id.ToString();
+        
         [Authorize]
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
@@ -1916,6 +1914,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var client = _httpClientFactory.CreateClient();
                 client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
                 client.Timeout = TimeSpan.FromSeconds(15);
+                bool hasRequestViewPermission = false;
+
+                var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+
+                if (string.IsNullOrEmpty(jellyfinUserId))
+                {
+                    _logger.Warning("Could not find Jellyfin User ID in claims.");
+                    return BadRequest(new { message = "Jellyfin User ID was not provided in claims." });
+                }
+
+                var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+
+                if (jellyseerrUser == null)
+                {
+                    _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                    return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
+                }
+
+                // Check if user has permission to view all requests
+                hasRequestViewPermission = JellyseerrPermissionHelper.HasAnyPermission(
+                    jellyseerrUser.Permissions,
+                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
+                );
 
                 // Build filter parameter
                 var filterParam = filter?.ToLower() switch
@@ -1926,6 +1947,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     "processing" => "&filter=processing",
                     _ => ""
                 };
+
+                // If user lacks permission, filter to only their requests
+                if (!hasRequestViewPermission)
+                {
+                    filterParam += $"&requestedBy={jellyseerrUser.Id}";
+                }
 
                 var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/request?take={take}&skip={skip}{filterParam}");
                 if (!response.IsSuccessStatusCode)
@@ -2232,7 +2259,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     seasonNumber = seasonNumber,
                                     episodeNumber = episodeNumber,
                                     episodeTitle = episodeTitle,
-                                    overview = (string?)episode.overview
+                                    overview = (string?)episode.overview,
+                                    tvdbId = (int?)episode.tvdbId,
+                                    imdbId = (string?)episode.imdbId
                                 });
                             }
                         }
@@ -2339,7 +2368,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         releaseType = kvp.Key,
                                         hasFile = (bool?)movie.hasFile ?? false,
                                         monitored = (bool?)movie.monitored ?? false,
-                                        posterUrl = posterUrl
+                                        posterUrl = posterUrl,
+                                        tmdbId = (int?)movie.tmdbId,
+                                        imdbId = (string?)movie.imdbId
                                     });
                                 }
                             }
