@@ -717,9 +717,10 @@
     if (state.isLoading && state.downloads.length === 0) {
       html += `<div class="je-loading">Loading...</div>`;
     } else if (state.downloads.length === 0) {
+      const labelNoActiveDownloads = (JE.t && JE.t('requests_no_active_downloads')) || 'No active downloads';
       html += `
         <div class="je-empty-state">
-          <div>No active downloads</div>
+          <div>${labelNoActiveDownloads}</div>
         </div>
       `;
     } else {
@@ -741,7 +742,7 @@
     // Requests Section
     if (JE.pluginConfig?.JellyseerrEnabled) {
       html += `<div class="je-downloads-section">`;
-      const labelRequests = (JE.t && JE.t('jellyseerr_requests')) || 'Requests';
+      const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
       html += `<h2>${labelRequests}</h2>`;
 
         // Filter tabs
@@ -1023,9 +1024,10 @@
         color: inherit;
         font: inherit;
       `;
+      const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
       navItem.innerHTML = `
         <span class="navMenuOptionIcon material-icons">download</span>
-        <span class="sectionName navMenuOptionText">Requests</span>
+        <span class="sectionName navMenuOptionText">${labelRequests}</span>
       `;
       navItem.addEventListener("click", (e) => {
         e.preventDefault();
