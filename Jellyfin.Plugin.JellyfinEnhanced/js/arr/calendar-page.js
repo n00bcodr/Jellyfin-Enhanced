@@ -94,7 +94,7 @@
 
     .je-calendar-grid {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 1em;
       margin-bottom: 2em;
     }
