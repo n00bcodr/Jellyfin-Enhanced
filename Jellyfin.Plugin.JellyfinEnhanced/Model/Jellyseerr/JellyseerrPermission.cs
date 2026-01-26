@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Seerr {
+namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr {
     [Flags]
     public enum JellyseerrPermission {
         NONE = 0,
