@@ -16,6 +16,8 @@
     pollTimer: null,
     pageVisible: false,
     previousPage: null,
+    locationSignature: null,
+    locationTimer: null,
   };
 
   // Status color mapping - using CSS variables with fallbacks
@@ -802,6 +804,7 @@
       // Data attributes for header/back button integration
       page.setAttribute("data-title", "Requests");
       page.setAttribute("data-backbutton", "true");
+      page.setAttribute("data-url", "#/downloads");
       page.setAttribute("data-type", "custom");
       page.innerHTML = `
         <div data-role="content">
@@ -827,11 +830,18 @@
   function showPage() {
     if (state.pageVisible) return;
 
+    state.pageVisible = true;
+
     // Ensure page exists first
     const page = createPageContainer();
     if (!page) {
       console.error(`${logPrefix} Failed to create page container`);
+      state.pageVisible = false;
       return;
+    }
+
+    if (window.location.hash !== "#/downloads") {
+      history.pushState({ page: "downloads" }, "Requests", "#/downloads");
     }
 
     // Hide other Jellyfin pages - but track which one was active so we can restore it
@@ -852,12 +862,6 @@
 
     // Show our page
     page.classList.remove("hide");
-    state.pageVisible = true;
-
-    // Update URL for back button support
-    if (window.location.hash !== "#/downloads") {
-      history.pushState({ page: "downloads" }, "Requests", "#/downloads");
-    }
 
     // Dispatch viewshow event so Jellyfin's libraryMenu updates header/back button
     page.dispatchEvent(
@@ -882,8 +886,11 @@
       }),
     );
 
-    loadAllData();
-    startPolling();
+    // Only load data once (guard against forceShowPage retries)
+    if (!state.isLoading) {
+      loadAllData();
+      startPolling();
+    }
   }
 
   /**
@@ -927,6 +934,7 @@
     state.pageVisible = false;
     state.previousPage = null;
     stopPolling();
+    stopLocationWatcher();
   }
 
   /**
@@ -998,19 +1006,38 @@
     const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("a");
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = document.createElement("button");
+      navItem.setAttribute('is', 'emby-button');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-downloads-item";
-      navItem.href = "#/downloads";
+      navItem.type = "button";
+      // Reset button styles to match anchor nav items
+      navItem.style.cssText = `
+        background: transparent;
+        border: none;
+        width: 100%;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        padding: 0.5em 0.5em 0.5em 1.5em;
+        color: inherit;
+        font: inherit;
+      `;
       navItem.innerHTML = `
         <span class="navMenuOptionIcon material-icons">download</span>
         <span class="sectionName navMenuOptionText">Requests</span>
       `;
       navItem.addEventListener("click", (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        // Close the drawer first
+        const drawer = document.querySelector('.mainDrawer');
+        if (drawer && drawer.classList.contains('mainDrawer-visible')) {
+          import('../../libraries/navdrawer/navdrawer').then(m => m.close?.()).catch(() => {});
+        }
         showPage();
-      });
+      }, true);
 
       jellyfinEnhancedSection.appendChild(navItem);
       console.log(`${logPrefix} Navigation item injected`);
@@ -1050,11 +1077,19 @@
    */
   function handleNavigation() {
     const hash = window.location.hash;
-    if (hash === "#/downloads") {
-      showPage();
+    const path = window.location.pathname;
+    if (hash === "#/downloads" || path === "/downloads") {
+      console.log(`${logPrefix} handleNavigation matched downloads (hash=${hash} path=${path})`);
+      // Force showing multiple times to win races against Jellyfin's router rendering 404
+      forceShowPage();
     } else if (state.pageVisible) {
+      console.log(`${logPrefix} handleNavigation hiding page (hash=${hash} path=${path})`);
       hidePage();
     }
+  }
+
+  function forceShowPage() {
+    showPage();
   }
 
   /**
@@ -1076,9 +1111,15 @@
     injectNavigation();
     setupNavigationWatcher();
 
+    // Intercept router changes before Jellyfin handles them
+    window.addEventListener("hashchange", interceptNavigation, true);
+    window.addEventListener("popstate", interceptNavigation, true);
+
     // Listen for hash changes - handles browser back/forward and direct URL changes
     window.addEventListener("hashchange", handleNavigation);
     window.addEventListener("popstate", handleNavigation);
+
+    startLocationWatcher();
 
     // Listen for Jellyfin's viewshow events - hide our page when other pages show
     document.addEventListener("viewshow", (e) => {
@@ -1115,6 +1156,41 @@
     handleNavigation();
 
     console.log(`${logPrefix} Downloads page module initialized`);
+  }
+
+  /**
+   * Intercept hash/popstate changes for our route before Jellyfin router
+   */
+  function interceptNavigation(e) {
+    const url = e?.newURL ? new URL(e.newURL) : window.location;
+    const hash = url.hash;
+    const path = url.pathname;
+    const matches = hash === "#/downloads" || path === "/downloads";
+    if (matches) {
+      if (e?.stopImmediatePropagation) e.stopImmediatePropagation();
+      if (e?.preventDefault) e.preventDefault();
+      showPage();
+    }
+  }
+
+  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
+  function startLocationWatcher() {
+    if (state.locationTimer) return;
+    state.locationSignature = `${window.location.pathname}${window.location.hash}`;
+    state.locationTimer = setInterval(() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    }, 150);
+  }
+
+  function stopLocationWatcher() {
+    if (state.locationTimer) {
+      clearInterval(state.locationTimer);
+      state.locationTimer = null;
+    }
   }
 
   // Export to JE namespace

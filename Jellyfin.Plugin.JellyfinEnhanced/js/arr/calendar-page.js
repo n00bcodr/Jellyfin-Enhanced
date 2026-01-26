@@ -19,6 +19,8 @@
       firstDayOfWeek: "Monday",
       timeFormat: "5pm/5:30pm",
     },
+    locationSignature: null,
+    locationTimer: null,
   };
 
   // Status color mapping
@@ -442,14 +444,54 @@
     setupNavigationWatcher();
 
     // Setup event listeners
+    window.addEventListener("hashchange", interceptNavigation, true);
+    window.addEventListener("popstate", interceptNavigation, true);
     document.addEventListener("viewshow", handleViewShow);
     document.addEventListener("click", handleNavClick);
     window.addEventListener("hashchange", handleNavigation);
+    window.addEventListener("popstate", handleNavigation);
+
+    startLocationWatcher();
 
     // Check URL on init
     handleNavigation();
 
     console.log(`${logPrefix} Calendar page module initialized`);
+  }
+
+  /**
+   * Intercept hash/popstate changes for our route before Jellyfin router
+   */
+  function interceptNavigation(e) {
+    const url = e?.newURL ? new URL(e.newURL) : window.location;
+    const hash = url.hash;
+    const path = url.pathname;
+    const matches = hash === "#/calendar" || path === "/calendar";
+    if (matches) {
+      if (e?.stopImmediatePropagation) e.stopImmediatePropagation();
+      if (e?.preventDefault) e.preventDefault();
+      showPage();
+    }
+  }
+
+  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
+  function startLocationWatcher() {
+    if (state.locationTimer) return;
+    state.locationSignature = `${window.location.pathname}${window.location.hash}`;
+    state.locationTimer = setInterval(() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    }, 150);
+  }
+
+  function stopLocationWatcher() {
+    if (state.locationTimer) {
+      clearInterval(state.locationTimer);
+      state.locationTimer = null;
+    }
   }
 
   // Load calendar settings from plugin config
@@ -909,6 +951,7 @@
       page.className = "page type-interior mainAnimatedPage hide";
       page.setAttribute("data-title", "Calendar");
       page.setAttribute("data-backbutton", "true");
+      page.setAttribute("data-url", "#/calendar");
       page.setAttribute("data-type", "custom");
       page.innerHTML = `
         <div data-role="content">
@@ -977,8 +1020,14 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
 
+    state.pageVisible = true;
+
     injectStyles();
     const page = createPageContainer();
+
+    if (window.location.hash !== "#/calendar") {
+      history.pushState({ page: "calendar" }, "Calendar", "#/calendar");
+    }
 
     const activePage = document.querySelector(".mainAnimatedPage:not(.hide):not(#je-calendar-page)");
     if (activePage) {
@@ -993,11 +1042,6 @@
     }
 
     page.classList.remove("hide");
-    state.pageVisible = true;
-
-    if (window.location.hash !== "#/calendar") {
-      history.pushState({ page: "calendar" }, "Calendar", "#/calendar");
-    }
 
     page.dispatchEvent(
       new CustomEvent("viewshow", {
@@ -1017,7 +1061,10 @@
       }),
     );
 
-    loadAllData();
+    // Only load data once (guard against forceShowPage retries)
+    if (!state.isLoading) {
+      loadAllData();
+    }
   }
 
   /**
@@ -1050,6 +1097,7 @@
 
     state.pageVisible = false;
     state.previousPage = null;
+    stopLocationWatcher();
   }
 
   /**
@@ -1057,11 +1105,16 @@
    */
   function handleNavigation() {
     const hash = window.location.hash;
-    if (hash === "#/calendar") {
-      showPage();
+    const path = window.location.pathname;
+    if (hash === "#/calendar" || path === "/calendar") {
+      forceShowPage();
     } else if (state.pageVisible) {
       hidePage();
     }
+  }
+
+  function forceShowPage() {
+    showPage();
   }
 
   /**
@@ -1101,19 +1154,38 @@
     const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("a");
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = document.createElement("button");
+      navItem.setAttribute('is', 'emby-button');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-calendar-item";
-      navItem.href = "#/calendar";
+      navItem.type = "button";
+      // Reset button styles to match anchor nav items
+      navItem.style.cssText = `
+        background: transparent;
+        border: none;
+        width: 100%;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        padding: 0.5em 0.5em 0.5em 1.5em;
+        color: inherit;
+        font: inherit;
+      `;
       navItem.innerHTML = `
         <span class="navMenuOptionIcon material-icons">calendar_today</span>
         <span class="sectionName navMenuOptionText">${window.JellyfinEnhanced.t("calendar_title")}</span>
       `;
       navItem.addEventListener("click", (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        // Close the drawer first
+        const drawer = document.querySelector('.mainDrawer');
+        if (drawer && drawer.classList.contains('mainDrawer-visible')) {
+          import('../../libraries/navdrawer/navdrawer').then(m => m.close?.()).catch(() => {});
+        }
         showPage();
-      });
+      }, true);
 
       jellyfinEnhancedSection.appendChild(navItem);
       console.log(`${logPrefix} Navigation item injected`);
