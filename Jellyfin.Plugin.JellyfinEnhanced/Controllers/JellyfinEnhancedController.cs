@@ -23,8 +23,8 @@ using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
-using Jellyfin.Plugin.JellyfinEnhanced.Model.Seerr;
-using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Seerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -120,7 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
             => (await GetJellyseerrUser(jellyfinUserId))?.Id.ToString();
-        
+
         [Authorize]
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {

@@ -1,6 +1,6 @@
-using Jellyfin.Plugin.JellyfinEnhanced.Model.Seerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 
-namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Seerr
+namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 {
     public static class JellyseerrPermissionHelper
     {
