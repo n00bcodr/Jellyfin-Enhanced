@@ -328,16 +328,16 @@
             .jellyseerr-section .itemsContainer { white-space: nowrap; }
             #jellyseerr-search-icon { position: absolute; right: 10px; top: 68%; transform: translateY(-50%); user-select: none; z-index: 10; transition: filter .2s, opacity .2s, transform .2s; }
             .inputContainer { position: relative !important; }
-            .jellyseerr-icon { width: 30px; height: 50px; filter: drop-shadow(2px 2px 6px #000); }
-            #jellyseerr-search-icon.is-active { filter: drop-shadow(2px 2px 6px #000); opacity: 1; }
-            #jellyseerr-search-icon.is-disabled { filter: grayscale(1); opacity: .8; }
-            #jellyseerr-search-icon.is-no-user { filter: hue-rotate(125deg) brightness(100%); }
+            .jellyseerr-icon { width: 30px; height: 30px; filter: drop-shadow(2px 2px 6px rgba(0,0,0,0.8)); }
+            #jellyseerr-search-icon.is-active { filter: drop-shadow(2px 2px 6px rgba(0,0,0,0.8)); opacity: 1; }
+            #jellyseerr-search-icon.is-disabled { filter: grayscale(1) opacity(0.4) drop-shadow(2px 2px 6px rgba(0,0,0,0.5)); }
+            #jellyseerr-search-icon.is-no-user { filter: drop-shadow(2px 2px 6px rgba(255, 0, 0, 0.8)); }
             #jellyseerr-search-icon.is-filter-active { filter: drop-shadow(2px 2px 6px #3b82f6) brightness(1.2); transform: translateY(-50%) scale(1.1); }
             #jellyseerr-search-icon:hover { transform: translateY(-50%) scale(1.05); transition: transform 0.2s ease; }
             /* CARDS & BADGES */
             .jellyseerr-card { position: relative; }
             .jellyseerr-card .cardScalable { contain: paint; }
-            .jellyseerr-icon-on-card { width: 1.2em; height: 1.2em; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); flex-shrink: 0; }
+            .jellyseerr-icon-on-card { width: 1.2em; height: 1.2em; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8)); flex-shrink: 0; }
             .jellyseerr-status-badge { position: absolute; top: 8px; right: 8px; z-index: 100; width: 1.5em; height: 1.5em; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }
             .jellyseerr-status-badge svg { width: 1.4em; height: 1.4em; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
             .jellyseerr-status-badge.status-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
@@ -678,7 +678,7 @@
             icon = document.createElement('img');
             icon.id = 'jellyseerr-search-icon';
             icon.className = 'jellyseerr-icon';
-            icon.src = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg';
+            icon.src = 'https://cdn.jsdelivr.net/gh/n00bcodr/jellyfish/logos/favicon.ico';
             icon.alt = 'Jellyseerr';
 
             let tapCount = 0;
@@ -1024,7 +1024,7 @@
                        title="${jellyfinHref ? titleText : (useMoreInfoModal ? titleText : (jellyseerrUrl ? (JE.t('jellyseerr_card_view_on_jellyseerr') || 'View on Jellyseerr') : titleText))}"><bdi>${titleText}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
-                    <img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/jellyseerr.svg" class="jellyseerr-icon-on-card" alt="Jellyseerr"/>
+                    <img src="https://cdn.jsdelivr.net/gh/n00bcodr/jellyfish/logos/favicon.ico" class="jellyseerr-icon-on-card" alt="Jellyseerr"/>
                     <bdi>${year}</bdi>
                     <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
                 </div>
