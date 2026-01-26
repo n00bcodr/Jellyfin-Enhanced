@@ -565,7 +565,7 @@
     if (item.jellyfinMediaId && (item.mediaStatus === "Available" || item.mediaStatus === "Partially Available")) {
       const playLabel = JE.t?.("jellyseerr_btn_available") || "Available";
       const playIcon = '<span class="material-icons">play_arrow</span>';
-      watchButton = `<button class="je-request-watch-btn" title="${playLabel}" aria-label="${playLabel}" onclick="Emby.Page.showItem('${item.jellyfinMediaId}')">${playIcon}</button>`;
+      watchButton = `<button class="je-request-watch-btn" title="${playLabel}" aria-label="${playLabel}" data-media-id="${item.jellyfinMediaId}">${playIcon}</button>`;
     }
 
     return `
@@ -1141,6 +1141,19 @@
       "click",
       (e) => {
         if (!state.pageVisible) return;
+
+        // Handle play button clicks
+        const playBtn = e.target.closest(".je-request-watch-btn");
+        if (playBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          const mediaId = playBtn.getAttribute("data-media-id");
+          if (mediaId && window.Emby?.Page?.showItem) {
+            window.Emby.Page.showItem(mediaId);
+          }
+          return;
+        }
 
         const btn = e.target.closest(
           ".headerTabs button, .navMenuOption, .headerButton",
