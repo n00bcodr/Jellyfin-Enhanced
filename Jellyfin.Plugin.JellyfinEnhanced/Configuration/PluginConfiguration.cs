@@ -159,11 +159,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CustomPluginLinks = "";
 
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
-            DownloadsPageEnabled = true;
+            DownloadsPageEnabled = false;
             DownloadsPollIntervalSeconds = 30;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
-            CalendarPageEnabled = true;
+            CalendarPageEnabled = false;
             CalendarFirstDayOfWeek = "Monday";
             CalendarTimeFormat = "5pm/5:30pm";
         }
