@@ -1268,42 +1268,8 @@
         </div>
     </div>
 <script type="text/javascript">
-        // Initialize JellyfinEnhanced namespace for icons.js
-        window.JellyfinEnhanced = window.JellyfinEnhanced || {};
-</script>
-<script type="text/javascript" src="/JellyfinEnhanced/js/enhanced/icons.js"></script>
-<script type="text/javascript">
         (() => {
             const pluginId = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
-            const JE = window.JellyfinEnhanced;
-
-            function updateConfigPageIcons(useIcons, iconStyle) {
-                // Temporarily set config for JE.icon() to use
-                JE.pluginConfig = { UseIcons: useIcons, IconStyle: iconStyle };
-
-                // Map data-icon attributes to icon names
-                document.querySelectorAll('[data-icon]').forEach(el => {
-                    const iconName = el.dataset.icon;
-                    const iconHtml = JE.icon ? JE.icon(iconName) : '';
-                    const textContent = el.dataset.text || '';
-                    el.innerHTML = iconHtml + (iconHtml ? ' ' : '') + textContent;
-                });
-            }
-
-            // Live preview when icon settings change
-            function setupIconSettingsListeners() {
-                const useIconsCheckbox = document.querySelector('#useIcons');
-                const iconStyleSelect = document.querySelector('#iconStyle');
-
-                const updateIconsPreview = () => {
-                    const useIcons = useIconsCheckbox.checked;
-                    const iconStyle = iconStyleSelect.value;
-                    updateConfigPageIcons(useIcons, iconStyle);
-                };
-
-                useIconsCheckbox.addEventListener('change', updateIconsPreview);
-                iconStyleSelect.addEventListener('change', updateIconsPreview);
-            }
 
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
@@ -1751,10 +1717,6 @@
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
-
-                // Update icons on config page based on settings
-                updateConfigPageIcons(config.UseIcons !== false, config.IconStyle || 'emoji');
-
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#sonarrUrl').value = config.SonarrUrl;
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
@@ -1804,9 +1766,6 @@
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
-
-                // Setup live preview for icon settings
-                setupIconSettingsListeners();
 
                 Dashboard.hideLoadingMsg();
             });
