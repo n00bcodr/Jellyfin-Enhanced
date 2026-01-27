@@ -1103,7 +1103,6 @@
             ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
           </div>
         </div>
-        ${availableIndicator}
       </div>
     `;
   }
@@ -1614,75 +1613,6 @@
     e.stopPropagation();
     navigateToJellyfinItem(event);
   }
-
-  /**
-   * Navigate to Jellyfin item by searching provider IDs
-   */
-  async function navigateToJellyfinItem(event) {
-    if (!event.hasFile) return;
-
-    try {
-      // Build provider ID search query
-      const providerIds = [];
-      if (event.imdbId) providerIds.push(`Imdb.${event.imdbId}`);
-      if (event.tmdbId) providerIds.push(`Tmdb.${event.tmdbId}`);
-      if (event.tvdbId) providerIds.push(`Tvdb.${event.tvdbId}`);
-
-      if (providerIds.length === 0) {
-        console.log(`${logPrefix} No provider IDs available for navigation`);
-        return;
-      }
-
-      // Search for the item in Jellyfin library
-      const includeItemTypes = event.type === "Series" ? "Series" : "Movie";
-
-      for (const providerId of providerIds) {
-        const response = await ApiClient.ajax({
-          url: ApiClient.getUrl("/Items", {
-            Recursive: true,
-            IncludeItemTypes: includeItemTypes,
-            AnyProviderIdEquals: providerId,
-            Limit: 1,
-            Fields: "Path",
-          }),
-          type: "GET",
-        });
-
-        if (response?.Items?.[0]) {
-          const item = response.Items[0];
-          console.log(`${logPrefix} Found Jellyfin item:`, item.Id, item.Name);
-
-          // Navigate to the item detail page
-          const detailUrl = `#/details?id=${item.Id}`;
-          window.location.hash = detailUrl;
-          return;
-        }
-      }
-
-      console.log(`${logPrefix} Item not found in Jellyfin library`);
-    } catch (error) {
-      console.error(`${logPrefix} Failed to navigate to item:`, error);
-    }
-  }
-
-  /**
-   * Handle click on calendar event
-   */
-  function handleEventClick(e) {
-    const eventEl = e.target.closest(".je-calendar-event, .je-calendar-agenda-event");
-    if (!eventEl) return;
-
-    const eventId = eventEl.dataset.eventId;
-    if (!eventId) return;
-
-    const event = state.events.find((ev) => ev.id === eventId);
-    if (!event || !event.hasFile) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    navigateToJellyfinItem(event);
-  }
-
 
   // Export to JE namespace
   JE.calendarPage = {
