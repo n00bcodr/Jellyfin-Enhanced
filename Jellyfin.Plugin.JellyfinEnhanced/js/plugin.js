@@ -457,14 +457,155 @@
     }
 
     /**
+     * Checks if a server ID mismatch exists (stale credentials from previous server installation)
+     * @returns {boolean} True if there's a mismatch that should prevent initialization
+     */
+    function hasServerIdMismatch() {
+        try {
+            if (typeof ApiClient === 'undefined') return false;
+
+            const creds = localStorage.getItem('jellyfin_credentials');
+            if (!creds) return false;
+
+            const servers = JSON.parse(creds)?.Servers;
+            if (!Array.isArray(servers) || servers.length === 0) return false;
+
+            // Get current server ID (handle both function and property access)
+            const currentServerId = ApiClient._serverInfo?.Id ||
+                (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId);
+            if (!currentServerId) return false;
+
+            // Check if any stored server matches the current server
+            const hasMatchingServer = servers.some(server =>
+                server.Id === currentServerId || server.ServerId === currentServerId
+            );
+
+            if (!hasMatchingServer) {
+                const storedIds = servers.map(s => s.Id || s.ServerId).filter(Boolean);
+                if (storedIds.length > 0) {
+                    console.warn(`🪼 Jellyfin Enhanced: Server ID mismatch detected. Stored: [${storedIds.join(', ')}], Current: ${currentServerId}`);
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Error checking server ID:', e);
+            return false;
+        }
+    }
+
+    /**
+     * Check if user is on a login-related page.
+     * Uses shared implementation from splashscreen.js if available, with inline fallback.
+     * @returns {boolean}
+     */
+    function isOnLoginPage() {
+        // Use shared function if available (includes forgotpassword, more selectors)
+        if (typeof window.JellyfinEnhanced?.isLoginPage === 'function') {
+            return window.JellyfinEnhanced.isLoginPage();
+        }
+        // Fallback if splashscreen.js hasn't loaded yet
+        const hash = window.location.hash.toLowerCase();
+        return hash.includes('login') || hash.includes('selectserver') || hash.includes('addserver') ||
+               document.querySelector('.manualLoginForm, .selectServerPage') !== null;
+    }
+
+    // Retry/polling configuration
+    const MAX_INIT_RETRIES = 100;      // ~30s at 300ms intervals
+    const MAX_LOGIN_POLL_TICKS = 100;  // ~50s at 500ms intervals
+    const INIT_RETRY_MS = 300;
+    const LOGIN_POLL_MS = 500;
+
+    // Track initialization retries
+    let initRetryCount = 0;
+
+    // Login poll state with timer for proper cancellation
+    let loginPollActive = false;
+    let loginPollTimer = null;
+
+    /**
+     * Cancels any active login poll
+     */
+    function cancelLoginPoll() {
+        loginPollActive = false;
+        if (loginPollTimer) {
+            clearTimeout(loginPollTimer);
+            loginPollTimer = null;
+        }
+    }
+
+    /**
+     * Starts polling for successful login (with its own counter to prevent infinite loops)
+     */
+    function startLoginPoll() {
+        if (loginPollActive) return; // Prevent multiple concurrent pollers
+        loginPollActive = true;
+
+        let loginPollCount = 0;
+        const checkForLogin = () => {
+            // Exit if cancelled
+            if (!loginPollActive) return;
+
+            // Check if user logged in (safe reference via typeof)
+            if (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId?.()) {
+                cancelLoginPoll();
+                initRetryCount = 0;
+                initialize();
+                return;
+            }
+            loginPollCount++;
+            if (loginPollCount >= MAX_LOGIN_POLL_TICKS) {
+                cancelLoginPoll();
+                console.warn('🪼 Jellyfin Enhanced: Login poll timeout, user did not authenticate');
+                return;
+            }
+            loginPollTimer = setTimeout(checkForLogin, LOGIN_POLL_MS);
+        };
+        loginPollTimer = setTimeout(checkForLogin, LOGIN_POLL_MS);
+    }
+
+    /**
      * Main initialization function.
      */
     async function initialize() {
-        // Ensure ApiClient exists and user is logged in
-        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId?.()) {
-            setTimeout(initialize, 300); // Increased retry delay slightly
+        // Check for server ID mismatch - if detected, abort initialization to let native login work
+        if (hasServerIdMismatch()) {
+            console.warn('🪼 Jellyfin Enhanced: Server ID mismatch - aborting initialization to allow re-authentication');
+            // Hide splash screen if it's shown (safe global reference)
+            window.JE?.hideSplashScreen?.();
+            // Don't retry - user needs to log in again
             return;
         }
+
+        // Ensure ApiClient exists and user is logged in
+        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId?.()) {
+            initRetryCount++;
+
+            // If on login page, don't keep retrying - let user log in
+            if (isOnLoginPage()) {
+                console.log('🪼 Jellyfin Enhanced: Login page detected, waiting for authentication...');
+                // Hide splash screen to allow login (safe global reference)
+                window.JE?.hideSplashScreen?.();
+                // Start login polling (guarded against duplicates)
+                startLoginPoll();
+                return;
+            }
+
+            // Max retry limit to prevent infinite loops
+            if (initRetryCount >= MAX_INIT_RETRIES) {
+                console.warn('🪼 Jellyfin Enhanced: Max initialization retries reached, aborting');
+                window.JE?.hideSplashScreen?.();
+                return;
+            }
+
+            setTimeout(initialize, INIT_RETRY_MS);
+            return;
+        }
+
+        // Reset retry count and cancel any pending login poll
+        initRetryCount = 0;
+        cancelLoginPoll();
 
         try {
             // Stage 1: Load base configs and translations

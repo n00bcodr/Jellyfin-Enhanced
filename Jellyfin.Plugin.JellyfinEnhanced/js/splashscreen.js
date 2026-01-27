@@ -7,12 +7,16 @@
         fadeOutDuration: 400,         // Duration of fade out animation (ms)
         progressUpdateInterval: 150,  // How often to update progress bar (ms)
         hardTimeout: 20000,           // Max time before force-hiding splash (ms)
+        loginCheckTimeout: 3000,      // Early timeout for login page detection (ms)
         removalInterval: 100,
         removalDuration: 5000
     };
 
     const READY_SELECTORS = [
         '.manualLoginForm',
+        '.selectServerPage',
+        '.loginPage',
+        '.serverAddressForm',
         '#mainAnimatedPage',
         '.homeSectionsContainer',
         '.pageContainer',
@@ -135,10 +139,58 @@
     }
 
     /**
+     * Checks if the current URL explicitly indicates a login/auth page
+     * @returns {boolean}
+     */
+    function isExplicitLoginUrl() {
+        const hash = window.location.hash.toLowerCase();
+        return hash.includes('login') ||
+               hash.includes('selectserver') ||
+               hash.includes('addserver') ||
+               hash.includes('forgotpassword');
+    }
+
+    /**
+     * Checks if a login-related DOM element exists
+     * @returns {boolean}
+     */
+    function hasLoginElement() {
+        return document.querySelector('.manualLoginForm, .selectServerPage, .loginPage, .serverAddressForm') !== null;
+    }
+
+    /**
+     * Checks if we're on a login page (URL or DOM-based)
+     * For empty hash, requires DOM confirmation to avoid flashes
+     * @returns {boolean}
+     */
+    function isLoginUrl() {
+        if (isExplicitLoginUrl()) {
+            return true;
+        }
+
+        // For empty/root hash, require a login element to be present
+        const hash = window.location.hash.toLowerCase();
+        const isEmptyHash = hash === '' || hash === '#' || hash === '#!/';
+
+        return isEmptyHash && hasLoginElement();
+    }
+
+    /**
      * Checks if the Jellyfin UI is ready for interaction
      * @returns {boolean}
      */
     function isUIReady() {
+        // Yield to explicit login URLs immediately
+        if (isExplicitLoginUrl()) {
+            return true;
+        }
+
+        // Check for login elements without visibility requirement - login forms
+        // should dismiss splash immediately, even before fully rendered
+        if (hasLoginElement()) {
+            return true;
+        }
+
         for (const selector of READY_SELECTORS) {
             const element = document.querySelector(selector);
             if (isElementShown(element) || (element && selector === '#mainAnimatedPage')) {
@@ -361,6 +413,13 @@
             return;
         }
 
+        // Early login detection timeout - check for login pages sooner
+        setTimeout(() => {
+            if (!isHidden && isLoginUrl()) {
+                hideSplashScreen('login page detected (early check)');
+            }
+        }, CONFIG.loginCheckTimeout);
+
         readyObserver = new MutationObserver(() => {
             removeMediaBarSplash();
 
@@ -456,6 +515,7 @@
     window.JellyfinEnhanced = window.JellyfinEnhanced || {};
     window.JellyfinEnhanced.initializeSplashScreen = initializeSplashScreen;
     window.JellyfinEnhanced.hideSplashScreen = publicHideSplashScreen;
+    window.JellyfinEnhanced.isLoginPage = isLoginUrl;
 
     console.log('🪼 Jellyfin Enhanced: Splash screen module loaded.');
 
