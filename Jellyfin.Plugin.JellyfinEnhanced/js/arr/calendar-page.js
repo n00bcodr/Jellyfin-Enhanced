@@ -22,6 +22,7 @@
       highlightWatchedSeries: false,
     },
     userDataMap: new Map(),
+    activeFilters: new Set(), // Track active filters
     locationSignature: null,
     locationTimer: null,
   };
@@ -276,6 +277,25 @@
       align-items: center;
       gap: 0.5em;
       font-size: 0.9em;
+      padding: 0.5em 0.75em;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+      border: 2px solid transparent;
+    }
+
+    .je-calendar-legend-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .je-calendar-legend-item.active {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: var(--primary-accent-color, #00a4dc);
+    }
+
+    .je-calendar-legend-item.inactive {
+      opacity: 0.4;
     }
 
     .je-calendar-empty {
@@ -757,6 +777,48 @@
   }
 
   /**
+   * Filter events based on active filters
+   */
+  function filterEvents(events) {
+    if (state.activeFilters.size === 0) return events;
+
+    return events.filter((event) => {
+      // Check release type filters
+      const releaseTypeMatch =
+        state.activeFilters.has('CinemaRelease') && event.releaseType === 'CinemaRelease' ||
+        state.activeFilters.has('DigitalRelease') && event.releaseType === 'DigitalRelease' ||
+        state.activeFilters.has('PhysicalRelease') && event.releaseType === 'PhysicalRelease' ||
+        state.activeFilters.has('Episode') && event.releaseType === 'Episode';
+
+      // Check user data filters
+      const userData = state.userDataMap?.get(event.id);
+      const watchlistMatch = state.activeFilters.has('Watchlist') && userData?.isFavorite;
+      const watchedMatch = state.activeFilters.has('Watched') && userData?.isWatched;
+
+      // Count how many filter types are active
+      const hasReleaseTypeFilters = ['CinemaRelease', 'DigitalRelease', 'PhysicalRelease', 'Episode'].some(f => state.activeFilters.has(f));
+      const hasUserDataFilters = state.activeFilters.has('Watchlist') || state.activeFilters.has('Watched');
+
+      // If only release type filters are active, match those
+      if (hasReleaseTypeFilters && !hasUserDataFilters) {
+        return releaseTypeMatch;
+      }
+
+      // If only user data filters are active, match those
+      if (!hasReleaseTypeFilters && hasUserDataFilters) {
+        return watchlistMatch || watchedMatch;
+      }
+
+      // If both types of filters are active, must match at least one from each category
+      if (hasReleaseTypeFilters && hasUserDataFilters) {
+        return releaseTypeMatch && (watchlistMatch || watchedMatch);
+      }
+
+      return false;
+    });
+  }
+
+  /**
    * Group events by date
    */
   function groupEventsByDate(events) {
@@ -920,6 +982,16 @@
     loadAllData();
   }
 
+  // Toggle filter on/off
+  function toggleFilter(filterType) {
+    if (state.activeFilters.has(filterType)) {
+      state.activeFilters.delete(filterType);
+    } else {
+      state.activeFilters.add(filterType);
+    }
+    renderPage();
+  }
+
   /**
    * Build tooltip text for calendar event
    */
@@ -982,7 +1054,8 @@
 
     const daysInMonth = getDaysInMonth(anchor);
     const firstDay = getFirstDayOfMonth(anchor);
-    const groupedEvents = groupEventsByDate(state.events);
+    const filteredEvents = filterEvents(state.events);
+    const groupedEvents = groupEventsByDate(filteredEvents);
 
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const firstDayOfWeekIndex = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
@@ -1027,7 +1100,8 @@
   function renderWeekView() {
     const { start } = getRangeForView(state.currentDate, "week");
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const groupedEvents = groupEventsByDate(state.events);
+    const filteredEvents = filterEvents(state.events);
+    const groupedEvents = groupEventsByDate(filteredEvents);
 
     let html = '<div class="je-calendar-grid">';
 
@@ -1060,7 +1134,8 @@
 
   // Render agenda list view
   function renderAgendaView() {
-    const groupedEvents = groupEventsByDate(state.events);
+    const filteredEvents = filterEvents(state.events);
+    const groupedEvents = groupEventsByDate(filteredEvents);
     const dates = Object.keys(groupedEvents).sort();
 
     if (dates.length === 0) {
@@ -1157,15 +1232,21 @@
   // Render color legend
   function renderLegend() {
     const JE = window.JellyfinEnhanced;
+    const hasActiveFilters = state.activeFilters.size > 0;
+    const getItemClass = (filterType) => {
+      if (!hasActiveFilters) return '';
+      return state.activeFilters.has(filterType) ? 'active' : 'inactive';
+    };
+
     const watchlistLegend = state.settings.highlightFavorites
-      ? `<div class="je-calendar-legend-item">
+      ? `<div class="je-calendar-legend-item ${getItemClass('Watchlist')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Watchlist'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: #ffd700; font-size: 18px;">bookmark</span>
           <span>${JE.t("calendar_watchlist")}</span>
         </div>`
       : "";
 
     const watchedLegend = state.settings.highlightWatchedSeries
-      ? `<div class="je-calendar-legend-item">
+      ? `<div class="je-calendar-legend-item ${getItemClass('Watched')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Watched'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: #64b5f6; font-size: 18px;">visibility</span>
           <span>${JE.t("calendar_watched")}</span>
         </div>`
@@ -1173,19 +1254,19 @@
 
     return `
       <div class="je-calendar-legend">
-        <div class="je-calendar-legend-item">
+        <div class="je-calendar-legend-item ${getItemClass('CinemaRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('CinemaRelease'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
           <span>${JE.t("calendar_cinema_release")}</span>
         </div>
-        <div class="je-calendar-legend-item">
+        <div class="je-calendar-legend-item ${getItemClass('DigitalRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('DigitalRelease'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
           <span>${JE.t("calendar_digital_release")}</span>
         </div>
-        <div class="je-calendar-legend-item">
+        <div class="je-calendar-legend-item ${getItemClass('PhysicalRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('PhysicalRelease'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
           <span>${JE.t("calendar_physical_release")}</span>
         </div>
-        <div class="je-calendar-legend-item">
+        <div class="je-calendar-legend-item ${getItemClass('Episode')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Episode'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${JE.t("calendar_episode")}</span>
         </div>
@@ -1644,6 +1725,7 @@
     setViewMode,
     shiftPeriod,
     goToday,
+    toggleFilter,
   };
 
   JE.initializeCalendarPage = initialize;
