@@ -20,21 +20,25 @@
     locationTimer: null,
   };
 
-  // Status color mapping - using CSS variables with fallbacks
-  const STATUS_COLORS = {
-    Downloading: "var(--theme-primary-color, #00a4dc)",
-    Importing: "#4caf50",
-    Queued: "rgba(128,128,128,0.6)",
-    Paused: "#ff9800",
-    Delayed: "#ff9800",
-    Warning: "#ff9800",
-    Failed: "#f44336",
-    Unknown: "rgba(128,128,128,0.5)",
-    Pending: "#ff9800",
-    Processing: "var(--theme-primary-color, #00a4dc)",
-    Available: "#4caf50",
-    Approved: "#4caf50",
-    Declined: "#f44336",
+  // Status color mapping - using theme-aware colors
+  const getStatusColors = () => {
+    const themeVars = JE.themer?.getThemeVariables() || {};
+    const primaryAccent = themeVars.primaryAccent || '#00a4dc';
+    return {
+      Downloading: primaryAccent,
+      Importing: "#4caf50",
+      Queued: "rgba(128,128,128,0.6)",
+      Paused: "#ff9800",
+      Delayed: "#ff9800",
+      Warning: "#ff9800",
+      Failed: "#f44336",
+      Unknown: "rgba(128,128,128,0.5)",
+      Pending: "#ff9800",
+      Processing: primaryAccent,
+      Available: "#4caf50",
+      Approved: "#4caf50",
+      Declined: "#f44336",
+    };
   };
 
   const SONARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg";
@@ -180,8 +184,6 @@
             background: rgba(255,255,255,0.1);
         }
         .je-requests-tab.emby-button.active {
-            background: var(--theme-primary-color, #00a4dc);
-            border-color: var(--theme-primary-color, #00a4dc);
             opacity: 1;
         }
         .je-request-card {
@@ -236,7 +238,6 @@
             margin-top: 1em;
         }
         .je-request-watch-btn {
-          background: var(--theme-primary-color, #00a4dc);
           color: inherit;
           border: none;
           padding: 0.45em;
@@ -312,6 +313,35 @@
     style.id = "je-downloads-styles";
     style.textContent = CSS_STYLES;
     document.head.appendChild(style);
+
+    // Inject dynamic theme colors
+    injectThemeColors();
+  }
+
+  /**
+   * Inject dynamic theme colors
+   */
+  function injectThemeColors() {
+    const existingThemeStyle = document.getElementById("je-downloads-theme-colors");
+    if (existingThemeStyle) {
+      existingThemeStyle.remove();
+    }
+
+    const themeVars = JE.themer?.getThemeVariables() || {};
+    const primaryAccent = themeVars.primaryAccent || '#00a4dc';
+
+    const themeStyle = document.createElement("style");
+    themeStyle.id = "je-downloads-theme-colors";
+    themeStyle.textContent = `
+      .je-requests-tab.emby-button.active {
+        background: ${primaryAccent} !important;
+        border-color: ${primaryAccent} !important;
+      }
+      .je-request-watch-btn {
+        background: ${primaryAccent} !important;
+      }
+    `;
+    document.head.appendChild(themeStyle);
   }
 
   /**
@@ -504,6 +534,7 @@
    * Render a download card
    */
   function renderDownloadCard(item) {
+    const STATUS_COLORS = getStatusColors();
     const statusColor = STATUS_COLORS[item.status] || STATUS_COLORS.Unknown;
     const sourceIcon = item.source === "sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
     const sourceLabel = item.source === "sonarr" ? "Sonarr" : "Radarr";
@@ -651,6 +682,7 @@
    * Render a season pack card (collapsed view of multiple episodes)
    */
   function renderSeasonPackCard(group) {
+    const STATUS_COLORS = getStatusColors();
     const item = group.item;
     const statusColor = STATUS_COLORS[item.status] || STATUS_COLORS.Unknown;
 

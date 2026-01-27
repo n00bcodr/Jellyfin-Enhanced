@@ -55,6 +55,7 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 2em;
+      padding-top: 2em;
       flex-wrap: wrap;
       gap: 1em;
     }
@@ -93,11 +94,6 @@
     .je-calendar-nav-btn:hover,
     .je-calendar-view-btn:hover {
       background: rgba(255,255,255,0.14);
-    }
-
-    .je-calendar-view-btn.active {
-      background: var(--theme-primary-color, #00a4dc);
-      border-color: var(--theme-primary-color, #00a4dc);
     }
 
     .je-calendar-grid {
@@ -291,7 +287,6 @@
 
     .je-calendar-legend-item.active {
       background: rgba(255, 255, 255, 0.12);
-      border-color: var(--primary-accent-color, #00a4dc);
     }
 
     .je-calendar-legend-item.inactive {
@@ -648,6 +643,33 @@
     style.id = "je-calendar-styles";
     style.textContent = CSS_STYLES;
     document.head.appendChild(style);
+
+    // Inject dynamic theme colors
+    injectThemeColors();
+  }
+
+  // Inject dynamic theme colors
+  function injectThemeColors() {
+    const existingThemeStyle = document.getElementById("je-calendar-theme-colors");
+    if (existingThemeStyle) {
+      existingThemeStyle.remove();
+    }
+
+    const themeVars = JE.themer?.getThemeVariables() || {};
+    const primaryAccent = themeVars.primaryAccent || '#00a4dc';
+
+    const themeStyle = document.createElement("style");
+    themeStyle.id = "je-calendar-theme-colors";
+    themeStyle.textContent = `
+      .je-calendar-view-btn.active {
+        background: ${primaryAccent} !important;
+        border-color: ${primaryAccent} !important;
+      }
+      .je-calendar-legend-item.active {
+        border-color: ${primaryAccent} !important;
+      }
+    `;
+    document.head.appendChild(themeStyle);
   }
 
   /**
@@ -907,7 +929,9 @@
       Episode: STATUS_COLORS.Episode,
     };
 
-    return map[event.releaseType] || "var(--theme-primary-color, #00a4dc)";
+    const themeVars = JE.themer?.getThemeVariables() || {};
+    const primaryAccent = themeVars.primaryAccent || '#00a4dc';
+    return map[event.releaseType] || primaryAccent;
   }
 
   // Get translated release type label
