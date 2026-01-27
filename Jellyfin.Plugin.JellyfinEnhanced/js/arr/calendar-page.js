@@ -352,32 +352,31 @@
       margin: -0.5em;
     }
 
-    .je-calendar-agenda-event.je-has-file .je-available-indicator {
-      color: #4caf50;
-      font-size: 20px;
+    .je-calendar-agenda-indicators {
+      display: flex;
+      align-items: center;
+      gap: 0.25em;
+      min-width: 70px;
       flex-shrink: 0;
     }
 
-    .je-available-indicator-placeholder {
-      width: 20px;
-      flex-shrink: 0;
+    .je-calendar-agenda-event.je-has-file .je-available-indicator {
+      color: #4caf50;
+      font-size: 20px;
+    }
+
+    .je-available-indicator {
+      font-size: 20px;
     }
 
     .je-watchlist-indicator-agenda {
       color: #ffd700;
       font-size: 20px;
-      flex-shrink: 0;
     }
 
     .je-watched-indicator-agenda {
       color: #64b5f6;
       font-size: 20px;
-      flex-shrink: 0;
-    }
-
-    .je-indicator-placeholder {
-      width: 20px;
-      flex-shrink: 0;
     }
 
     .je-calendar-agenda-event-marker {
@@ -1201,22 +1200,23 @@
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const availableIndicator = event.hasFile
-      ? `<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"}">check_circle</span>`
-      : `<span class="je-available-indicator-placeholder"></span>`;
 
     // Get user data indicators
     const userData = state.userDataMap?.get(event.id);
     const isWatchlist = state.settings.highlightFavorites && userData?.isFavorite;
     const isWatched = state.settings.highlightWatchedSeries && userData?.isWatched;
 
-    const watchlistIndicator = isWatchlist
-      ? `<span class="je-watchlist-indicator-agenda material-symbols-rounded" title="Watchlist">bookmark</span>`
-      : `<span class="je-indicator-placeholder"></span>`;
-
-    const watchedIndicator = isWatched
-      ? `<span class="je-watched-indicator-agenda material-symbols-rounded" title="Watched">visibility</span>`
-      : `<span class="je-indicator-placeholder"></span>`;
+    // Build indicators array (only add if they exist)
+    const indicators = [];
+    if (event.hasFile) {
+      indicators.push(`<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"}">check_circle</span>`);
+    }
+    if (isWatchlist) {
+      indicators.push(`<span class="je-watchlist-indicator-agenda material-symbols-rounded" title="Watchlist">bookmark</span>`);
+    }
+    if (isWatched) {
+      indicators.push(`<span class="je-watched-indicator-agenda material-symbols-rounded" title="Watched">visibility</span>`);
+    }
 
     // Get material icon based on release type
     let materialIcon = "movie";
@@ -1227,9 +1227,9 @@
 
     return `
       <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
-        ${availableIndicator}
-        ${watchlistIndicator}
-        ${watchedIndicator}
+        <div class="je-calendar-agenda-indicators">
+          ${indicators.join('')}
+        </div>
         <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
@@ -1314,7 +1314,7 @@
       page.innerHTML = `
         <div data-role="content">
           <div class="content-primary je-calendar-page">
-            <div id="je-calendar-container" style="padding-top: 5em;"></div>
+            <div id="je-calendar-container" style="padding-top: 5em; padding-left: 0.5em; padding-right: 0.5em;"></div>
           </div>
         </div>
       `;
