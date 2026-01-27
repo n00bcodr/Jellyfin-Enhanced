@@ -36,6 +36,8 @@
 
   // CSS Styles
   const CSS_STYLES = `
+    @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
     .je-calendar-page {
       padding: 2em;
       max-width: 95vw;
@@ -344,7 +346,7 @@
 
       .je-calendar-nav {
         width: 100%;
-        justify-content: space-between;
+        justify-content: center;
       }
 
       .je-calendar-grid {
@@ -928,7 +930,7 @@
 
     return `
       <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
-        <span class="material-icons" style="font-size: 20px;">${materialIcon}</span>
+        <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
           <div class="je-calendar-agenda-event-title">${escapeHtml(event.title)}${subtitle ? ` • ${escapeHtml(subtitle)}` : ""}</div>
@@ -957,19 +959,19 @@
     return `
       <div class="je-calendar-legend">
         <div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
+          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
           <span>${window.JellyfinEnhanced.t("calendar_cinema_release")}</span>
         </div>
         <div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
+          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
           <span>${window.JellyfinEnhanced.t("calendar_digital_release")}</span>
         </div>
         <div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
+          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
           <span>${window.JellyfinEnhanced.t("calendar_physical_release")}</span>
         </div>
         <div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
+          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${window.JellyfinEnhanced.t("calendar_series")}</span>
         </div>
       </div>
@@ -1202,7 +1204,7 @@
         font: inherit;
       `;
       navItem.innerHTML = `
-        <span class="navMenuOptionIcon material-icons">calendar_today</span>
+        <span class="navMenuOptionIcon material-symbols-rounded">calendar_today</span>
         <span class="sectionName navMenuOptionText">${window.JellyfinEnhanced.t("calendar_title")}</span>
       `;
       navItem.addEventListener("click", (e) => {
