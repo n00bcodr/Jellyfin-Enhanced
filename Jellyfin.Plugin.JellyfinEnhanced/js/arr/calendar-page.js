@@ -153,6 +153,25 @@
       opacity: 0.9;
     }
 
+    .je-calendar-event.je-has-file {
+      position: relative;
+    }
+
+    .je-calendar-event.je-has-file::after {
+      content: "✓";
+      position: absolute;
+      top: 0.3em;
+      right: 0.4em;
+      font-size: 0.7em;
+      font-weight: bold;
+      color: #4caf50;
+      opacity: 0.9;
+    }
+
+    .je-calendar-event.je-has-file:hover {
+      box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+    }
+
     .je-calendar-event-title {
       font-weight: 600;
       white-space: nowrap;
@@ -219,6 +238,7 @@
       display: flex;
       flex-direction: column;
       gap: 0;
+      padding-left: 1em;
     }
 
     .je-calendar-agenda-row {
@@ -226,7 +246,7 @@
       border-bottom: 1px solid rgba(128,128,128,0.15);
       padding: 0.75em 0;
       align-items: flex-start;
-      gap: 1.5em;
+      gap: 0.5em;
     }
 
     .je-calendar-agenda-row:hover {
@@ -253,6 +273,29 @@
       display: flex;
       align-items: center;
       gap: 0.75em;
+      cursor: default;
+    }
+
+    .je-calendar-agenda-event.je-has-file {
+      cursor: pointer;
+    }
+
+    .je-calendar-agenda-event.je-has-file:hover {
+      background: rgba(76, 175, 80, 0.1);
+      border-radius: 4px;
+      padding: 0.5em;
+      margin: -0.5em;
+    }
+
+    .je-calendar-agenda-event.je-has-file .je-available-indicator {
+      color: #4caf50;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .je-available-indicator-placeholder {
+      width: 20px;
+      flex-shrink: 0;
     }
 
     .je-calendar-agenda-event-marker {
@@ -273,6 +316,9 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
     }
 
     .je-calendar-agenda-event-meta {
@@ -450,6 +496,7 @@
     window.addEventListener("popstate", interceptNavigation, true);
     document.addEventListener("viewshow", handleViewShow);
     document.addEventListener("click", handleNavClick);
+    document.addEventListener("click", handleEventClick);
     window.addEventListener("hashchange", handleNavigation);
     window.addEventListener("popstate", handleNavigation);
 
@@ -644,13 +691,6 @@
   }
 
   /**
-   * Filter event by settings
-   */
-  function shouldShowEvent(_event) {
-    return true;
-  }
-
-  /**
    * Get event color
    */
   function getEventColor(event) {
@@ -746,9 +786,11 @@
     const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
+    const hasFileClass = event.hasFile ? " je-has-file" : "";
+    const hasFileTitle = event.hasFile ? ` (${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"})` : "";
 
     return `
-      <div class="je-calendar-event" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}">
+      <div class="je-calendar-event${hasFileClass}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}${hasFileTitle}" data-event-id="${escapeHtml(event.id)}">
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
@@ -790,7 +832,7 @@
       const dayStr = String(day).padStart(2, '0');
       const dateStr = `${year}-${month}-${dayStr}`;
 
-      const dayEvents = (groupedEvents[dateStr] || []).filter(shouldShowEvent);
+      const dayEvents = groupedEvents[dateStr] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
       html += `
@@ -824,7 +866,7 @@
       const month = String(day.getMonth() + 1).padStart(2, '0');
       const dayNum = String(day.getDate()).padStart(2, '0');
       const dateKey = `${year}-${month}-${dayNum}`;
-      const dayEvents = (groupedEvents[dateKey] || []).filter(shouldShowEvent);
+      const dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
       html += `
@@ -860,7 +902,7 @@
       const weekday = dateObj.toLocaleDateString(undefined, { weekday: 'short' });
       const monthDay = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-      const dayEvents = (groupedEvents[dateKey] || []).filter(shouldShowEvent);
+      const dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
       html += `
@@ -887,6 +929,10 @@
     const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
+    const hasFileClass = event.hasFile ? " je-has-file" : "";
+    const availableIndicator = event.hasFile
+      ? `<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"}">check_circle</span>`
+      : `<span class="je-available-indicator-placeholder"></span>`;
 
     // Get material icon based on release type
     let materialIcon = "movie";
@@ -896,7 +942,8 @@
     else if (event.releaseType === "Episode") materialIcon = "tv_guide";
 
     return `
-      <div class="je-calendar-agenda-event">
+      <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
+        ${availableIndicator}
         <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
@@ -1063,7 +1110,7 @@
       }),
     );
 
-    // Only load data once (guard against forceShowPage retries)
+    // Only load data once (guard against showPage retries)
     if (!state.isLoading) {
       loadAllData();
     }
@@ -1109,14 +1156,10 @@
     const hash = window.location.hash;
     const path = window.location.pathname;
     if (hash === "#/calendar" || path === "/calendar") {
-      forceShowPage();
+      showPage();
     } else if (state.pageVisible) {
       hidePage();
     }
-  }
-
-  function forceShowPage() {
-    showPage();
   }
 
   /**
@@ -1235,6 +1278,175 @@
       "'": "&#039;",
     };
     return String(text).replace(/[&<>"']/g, (m) => map[m]);
+  }
+
+  /**
+   * Helper to search Jellyfin items using fetch API
+   */
+  async function searchJellyfinItems(params) {
+    const userId = ApiClient.getCurrentUserId();
+    const token = ApiClient.accessToken();
+    const queryString = Object.entries(params)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+    const url = `${ApiClient.serverAddress()}/Users/${userId}/Items?${queryString}`;
+
+    const response = await fetch(url, {
+      headers: {
+        "X-MediaBrowser-Token": token,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Strip year suffix from title (e.g., "Invincible (2021)" -> "Invincible")
+   * @param {string} title - Title that may contain year suffix
+   * @returns {string} Title without year suffix
+   */
+  function stripYearFromTitle(title) {
+    return title.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+  }
+
+  /**
+   * Search for an item, with fallback to title without year suffix
+   * @param {string} itemType - Jellyfin item type ("Movie" or "Series")
+   * @param {string} title - Title to search for
+   * @param {Object} event - Calendar event with provider IDs for validation
+   * @returns {Promise<Object|null>} Matched item or null
+   */
+  async function searchWithYearFallback(itemType, title, event) {
+    // First try with full title
+    let response = await searchJellyfinItems({
+      Recursive: true,
+      IncludeItemTypes: itemType,
+      SearchTerm: title,
+      Limit: 10,
+      Fields: "ProviderIds",
+    });
+
+    let item = findMatchingItem(response?.Items, event);
+    if (item) return item;
+
+    // If not found and title has year suffix, try without it
+    const titleWithoutYear = stripYearFromTitle(title);
+    if (titleWithoutYear !== title) {
+      response = await searchJellyfinItems({
+        Recursive: true,
+        IncludeItemTypes: itemType,
+        SearchTerm: titleWithoutYear,
+        Limit: 10,
+        Fields: "ProviderIds",
+      });
+      item = findMatchingItem(response?.Items, event);
+    }
+
+    return item;
+  }
+
+  /**
+   * Navigate to Jellyfin item by searching title and validating with provider IDs
+   * Note: AnyProviderIdEquals parameter does NOT work in Jellyfin (only Emby)
+   * See: https://github.com/jellyfin/jellyfin/issues/1990
+   */
+  async function navigateToJellyfinItem(event) {
+    if (!event.hasFile) return;
+
+    try {
+      // For movies, search directly
+      if (event.type !== "Series") {
+        const item = await searchWithYearFallback("Movie", event.title, event);
+        if (item) {
+          window.location.hash = `#/details?id=${item.Id}`;
+        }
+        return;
+      }
+
+      // For series/episodes: first find the series
+      const series = await searchWithYearFallback("Series", event.title, event);
+      if (!series) return;
+
+      // If no season/episode info, navigate to series
+      if (!event.seasonNumber || !event.episodeNumber) {
+        window.location.hash = `#/details?id=${series.Id}`;
+        return;
+      }
+
+      // Find the specific episode within the series
+      const episodeResponse = await searchJellyfinItems({
+        ParentId: series.Id,
+        IncludeItemTypes: "Episode",
+        Recursive: true,
+        Fields: "ParentIndexNumber,IndexNumber",
+      });
+
+      // Match by season and episode number
+      const episode = episodeResponse?.Items?.find(
+        (ep) =>
+          ep.ParentIndexNumber === event.seasonNumber &&
+          ep.IndexNumber === event.episodeNumber
+      );
+
+      if (episode) {
+        window.location.hash = `#/details?id=${episode.Id}`;
+      } else {
+        // Fallback to series if episode not found
+        window.location.hash = `#/details?id=${series.Id}`;
+      }
+    } catch (error) {
+      console.error(`${logPrefix} Navigation failed:`, error);
+    }
+  }
+
+  /**
+   * Find matching item by provider IDs or exact title match
+   * @param {Array} items - Jellyfin search results
+   * @param {Object} event - Calendar event with provider IDs and title
+   * @returns {Object|null} Matched item or null if no confident match
+   */
+  function findMatchingItem(items, event) {
+    if (!items?.length) return null;
+
+    // First try to match by provider IDs (most reliable)
+    for (const item of items) {
+      const ids = item.ProviderIds || {};
+      if (
+        (event.tvdbId && ids.Tvdb === String(event.tvdbId)) ||
+        (event.imdbId && ids.Imdb === event.imdbId) ||
+        (event.tmdbId && ids.Tmdb === String(event.tmdbId))
+      ) {
+        return item;
+      }
+    }
+
+    // Fallback to exact title match only (don't guess with items[0])
+    return items.find(
+      (item) => item.Name?.toLowerCase() === event.title.toLowerCase()
+    ) || null;
+  }
+
+  /**
+   * Handle click on calendar event
+   */
+  function handleEventClick(e) {
+    const eventEl = e.target.closest(".je-calendar-event, .je-calendar-agenda-event");
+    if (!eventEl) return;
+
+    const eventId = eventEl.dataset.eventId;
+    if (!eventId) return;
+
+    const event = state.events.find((ev) => ev.id === eventId);
+    if (!event || !event.hasFile) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    navigateToJellyfinItem(event);
   }
 
   console.log(`${logPrefix} Calendar page module initialized`);
