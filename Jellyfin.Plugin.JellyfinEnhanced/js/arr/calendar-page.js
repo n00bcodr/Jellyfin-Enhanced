@@ -18,7 +18,10 @@
     settings: {
       firstDayOfWeek: "Monday",
       timeFormat: "5pm/5:30pm",
+      highlightFavorites: false,
+      highlightWatchedSeries: false,
     },
+    userDataMap: new Map(),
     locationSignature: null,
     locationTimer: null,
   };
@@ -170,6 +173,34 @@
       box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
     }
 
+    /* Favorite/Watchlist highlighting - golden border */
+    .je-calendar-event.je-favorite {
+      border-left-width: 4px;
+      border-left-color: #ffd700 !important;
+      box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+    }
+
+    .je-calendar-event.je-favorite:hover {
+      box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    }
+
+    /* Watched series highlighting - subtle blue border */
+    .je-calendar-event.je-watched {
+      border-left-width: 4px;
+      border-left-color: #64b5f6 !important;
+      box-shadow: inset 0 0 0 1px rgba(100, 181, 246, 0.3);
+    }
+
+    .je-calendar-event.je-watched:hover {
+      box-shadow: 0 0 8px rgba(100, 181, 246, 0.5);
+    }
+
+    /* Favorite takes priority over watched */
+    .je-calendar-event.je-favorite.je-watched {
+      border-left-color: #ffd700 !important;
+      box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+    }
+
     .je-calendar-event-title {
       font-weight: 600;
       white-space: nowrap;
@@ -286,6 +317,24 @@
       color: #4caf50;
       font-size: 14px;
       margin-left: auto;
+    }
+
+    /* Agenda view favorite highlighting */
+    .je-calendar-agenda-event.je-favorite .je-calendar-agenda-event-marker {
+      background: #ffd700 !important;
+      box-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
+    }
+
+    .je-calendar-agenda-event.je-favorite::before {
+      content: "★";
+      color: #ffd700;
+      font-size: 12px;
+      margin-right: -0.5em;
+    }
+
+    /* Agenda view watched series highlighting */
+    .je-calendar-agenda-event.je-watched .je-calendar-agenda-event-marker {
+      background: #64b5f6 !important;
     }
 
     .je-calendar-agenda-event-marker {
@@ -536,6 +585,8 @@
     state.settings = {
       firstDayOfWeek: config.CalendarFirstDayOfWeek || "Monday",
       timeFormat: config.CalendarTimeFormat || "5pm/5:30pm",
+      highlightFavorites: config.CalendarHighlightFavorites || false,
+      highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
     };
   }
 
@@ -583,6 +634,77 @@
   }
 
   /**
+   * Fetch user data (favorite/watched status) for calendar events
+   * Uses POST endpoint to only check specific calendar events, not entire library
+   */
+  async function fetchUserData() {
+    if (!state.settings.highlightFavorites && !state.settings.highlightWatchedSeries) {
+      state.userDataMap = new Map();
+      return;
+    }
+
+    if (!state.events?.length) {
+      state.userDataMap = new Map();
+      return;
+    }
+
+    try {
+      // Send only the events we need to check
+      const eventsToCheck = state.events.map((evt) => ({
+        id: evt.id,
+        type: evt.type,
+        title: evt.title,
+        tvdbId: evt.tvdbId,
+        imdbId: evt.imdbId,
+        tmdbId: evt.tmdbId,
+        seasonNumber: evt.seasonNumber,
+        episodeNumber: evt.episodeNumber,
+      }));
+
+      const response = await fetch(
+        ApiClient.getUrl("/JellyfinEnhanced/arr/calendar/user-data"),
+        {
+          method: "POST",
+          headers: {
+            ...getAuthHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ events: eventsToCheck }),
+        }
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+
+      // Build Map for O(1) lookup by event ID
+      state.userDataMap = new Map();
+      (data.results || []).forEach((result) => {
+        state.userDataMap.set(result.id, {
+          isFavorite: result.isFavorite,
+          isWatched: result.isWatched,
+        });
+      });
+    } catch (error) {
+      // Silently handle error - highlighting is optional
+      state.userDataMap = new Map();
+    }
+  }
+
+  /**
+   * Get highlight CSS classes for an event
+   */
+  function getHighlightClasses(event) {
+    let classes = "";
+    const userData = state.userDataMap?.get(event.id);
+    if (state.settings.highlightFavorites && userData?.isFavorite) {
+      classes += " je-favorite";
+    }
+    if (state.settings.highlightWatchedSeries && userData?.isWatched) {
+      classes += " je-watched";
+    }
+    return classes;
+  }
+
+  /**
    * Load all data
    */
   async function loadAllData() {
@@ -593,7 +715,11 @@
     state.rangeStart = start;
     state.rangeEnd = end;
 
+    // First fetch calendar events
     await fetchCalendarEvents(start, end);
+
+    // Then fetch user data for those specific events
+    await fetchUserData();
 
     state.isLoading = false;
     renderPage();
@@ -771,6 +897,25 @@
   }
 
   /**
+   * Build tooltip text for calendar event
+   */
+  function buildEventTooltip(event) {
+    let tooltip = event.title;
+
+    // Add episode info for series (e.g., "S01E05 - Episode Title")
+    if (event.type === "Series" && event.subtitle) {
+      tooltip += ` ${event.subtitle}`;
+    }
+
+    // Add availability indicator
+    if (event.hasFile) {
+      tooltip += ` ✓`;
+    }
+
+    return tooltip;
+  }
+
+  /**
    * Render calendar event
    */
   function renderEvent(event) {
@@ -781,10 +926,11 @@
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const hasFileTitle = event.hasFile ? ` (${window.JellyfinEnhanced.t("calendar_in_library") || "In Library"})` : "";
+    const highlightClasses = getHighlightClasses(event);
+    const tooltip = buildEventTooltip(event);
 
     return `
-      <div class="je-calendar-event${hasFileClass}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}${hasFileTitle}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-event${hasFileClass}${highlightClasses}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}">
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
@@ -924,7 +1070,8 @@
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const availableIndicator = event.hasFile ? `<span class="je-available-indicator material-icons" title="${window.JellyfinEnhanced.t("calendar_in_library") || "In Library"}">check_circle</span>` : "";
+    const highlightClasses = getHighlightClasses(event);
+    const availableIndicator = event.hasFile ? `<span class="je-available-indicator material-icons" title="Available">check_circle</span>` : "";
 
     // Get material icon based on release type
     let materialIcon = "movie";
@@ -934,7 +1081,7 @@
     else if (event.releaseType === "Episode") materialIcon = "tv_guide";
 
     return `
-      <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-agenda-event${hasFileClass}${highlightClasses}" data-event-id="${escapeHtml(event.id)}">
         <span class="material-icons" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
@@ -961,24 +1108,41 @@
 
   // Render color legend
   function renderLegend() {
+    const JE = window.JellyfinEnhanced;
+    const favoriteLegend = state.settings.highlightFavorites
+      ? `<div class="je-calendar-legend-item">
+          <span class="material-icons" style="color: #ffd700; font-size: 18px;">star</span>
+          <span>${JE.t("calendar_favorite")}</span>
+        </div>`
+      : "";
+
+    const watchedLegend = state.settings.highlightWatchedSeries
+      ? `<div class="je-calendar-legend-item">
+          <span class="material-icons" style="color: #64b5f6; font-size: 18px;">visibility</span>
+          <span>${JE.t("calendar_watched")}</span>
+        </div>`
+      : "";
+
     return `
       <div class="je-calendar-legend">
         <div class="je-calendar-legend-item">
           <span class="material-icons" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
-          <span>${window.JellyfinEnhanced.t("calendar_cinema_release")}</span>
+          <span>${JE.t("calendar_cinema_release")}</span>
         </div>
         <div class="je-calendar-legend-item">
           <span class="material-icons" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
-          <span>${window.JellyfinEnhanced.t("calendar_digital_release")}</span>
+          <span>${JE.t("calendar_digital_release")}</span>
         </div>
         <div class="je-calendar-legend-item">
           <span class="material-icons" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
-          <span>${window.JellyfinEnhanced.t("calendar_physical_release")}</span>
+          <span>${JE.t("calendar_physical_release")}</span>
         </div>
         <div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
-          <span>${window.JellyfinEnhanced.t("calendar_series")}</span>
+          <span class="material-icons" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv</span>
+          <span>${JE.t("calendar_episode")}</span>
         </div>
+        ${favoriteLegend}
+        ${watchedLegend}
       </div>
     `;
   }
@@ -1343,8 +1507,6 @@
     e.stopPropagation();
     navigateToJellyfinItem(event);
   }
-
-  console.log(`${logPrefix} Calendar page module initialized`);
 
   // Export to JE namespace
   JE.calendarPage = {
