@@ -887,7 +887,7 @@
       }),
     );
 
-    // Only load data once (guard against forceShowPage retries)
+    // Only load data once (guard against showPage retries)
     if (!state.isLoading) {
       loadAllData();
       startPolling();
@@ -1082,16 +1082,12 @@
     const path = window.location.pathname;
     if (hash === "#/downloads" || path === "/downloads") {
       console.log(`${logPrefix} handleNavigation matched downloads (hash=${hash} path=${path})`);
-      // Force showing multiple times to win races against Jellyfin's router rendering 404
-      forceShowPage();
+      // Show page to win races against Jellyfin's router rendering 404
+      showPage();
     } else if (state.pageVisible) {
       console.log(`${logPrefix} handleNavigation hiding page (hash=${hash} path=${path})`);
       hidePage();
     }
-  }
-
-  function forceShowPage() {
-    showPage();
   }
 
   /**
