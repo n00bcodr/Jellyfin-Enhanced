@@ -691,14 +691,21 @@
       : `<div class="je-download-poster placeholder"></div>`;
 
     // Calculate total size for the pack
-    const totalSize = group.episodes.reduce(
-      (sum, ep) => sum + (ep.totalSize || 0),
-      0,
+    // Check if all episodes have identical sizes (season pack download)
+    const firstSize = group.episodes[0]?.totalSize || 0;
+    const firstRemaining = group.episodes[0]?.sizeRemaining || 0;
+    const isSeasonPackDownload = group.episodes.every(
+      (ep) => ep.totalSize === firstSize && ep.sizeRemaining === firstRemaining
     );
-    const sizeRemaining = group.episodes.reduce(
-      (sum, ep) => sum + (ep.sizeRemaining || 0),
-      0,
-    );
+
+    // If it's a season pack download (same size for all), use the size once
+    // Otherwise, sum individual episode sizes
+    const totalSize = isSeasonPackDownload
+      ? firstSize
+      : group.episodes.reduce((sum, ep) => sum + (ep.totalSize || 0), 0);
+    const sizeRemaining = isSeasonPackDownload
+      ? firstRemaining
+      : group.episodes.reduce((sum, ep) => sum + (ep.sizeRemaining || 0), 0);
 
     const progressHtml = `
       <div class="je-download-progress-container">
