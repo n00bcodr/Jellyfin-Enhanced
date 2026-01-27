@@ -194,7 +194,7 @@
                 {
                     selector: 'a[href*="Jellyfin%20Enhanced"]',
                     type: 'image',
-                    src: 'http://cdn.jsdelivr.net/gh/n00bcodr/jellyfish/logos/favicon.ico',
+                    src: 'https://cdn.jsdelivr.net/gh/n00bcodr/jellyfish/logos/favicon.ico',
                     alt: 'Jellyfin Enhanced'
                 },
                 {
