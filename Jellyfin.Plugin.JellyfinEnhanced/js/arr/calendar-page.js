@@ -175,32 +175,51 @@
       box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
     }
 
-    /* Favorite/Watchlist highlighting - golden border */
-    .je-calendar-event.je-favorite {
-      border-left-width: 4px;
-      border-left-color: #ffd700 !important;
-      box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+    /* Watchlist indicator - bookmark icon */
+    .je-calendar-event.je-watchlist::before {
+      content: "bookmark";
+      font-family: 'Material Symbols Rounded';
+      position: absolute;
+      top: 0.15em;
+      right: 1.1em;
+      font-size: 0.9em;
+      font-weight: normal;
+      color: #ffd700;
+      opacity: 0.9;
     }
 
-    .je-calendar-event.je-favorite:hover {
-      box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    /* Watched indicator - visibility icon (shifts left if watchlist is present) */
+    .je-calendar-event.je-watched::before {
+      content: "visibility";
+      font-family: 'Material Symbols Rounded';
+      position: absolute;
+      top: 0.15em ;
+      right: 1.1em;
+      font-size: 0.9em;
+      font-weight: normal;
+      color: #64b5f6;
+      opacity: 0.9;
     }
 
-    /* Watched series highlighting - subtle blue border */
-    .je-calendar-event.je-watched {
-      border-left-width: 4px;
-      border-left-color: #64b5f6 !important;
-      box-shadow: inset 0 0 0 1px rgba(100, 181, 246, 0.3);
+    /* When both watchlist and watched, show both icons side by side */
+    .je-calendar-event.je-watchlist.je-watched::before {
+      content: "bookmark visibility";
+      letter-spacing: 0.5em;
+      right: 1.1em;
+      background: linear-gradient(to right, #ffd700 0%, #ffd700 45%, #64b5f6 55%, #64b5f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
 
-    .je-calendar-event.je-watched:hover {
-      box-shadow: 0 0 8px rgba(100, 181, 246, 0.5);
+    /* Adjust checkmark position when indicators are present */
+    .je-calendar-event.je-has-file.je-watchlist::after,
+    .je-calendar-event.je-has-file.je-watched::after {
+      right: 0.4em;
     }
 
-    /* Favorite takes priority over watched */
-    .je-calendar-event.je-favorite.je-watched {
-      border-left-color: #ffd700 !important;
-      box-shadow: inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+    .je-calendar-event.je-has-file.je-watchlist.je-watched::after {
+      right: 0.4em;
     }
 
     .je-calendar-event-title {
@@ -328,22 +347,22 @@
       width: 20px;
       flex-shrink: 0;
     }
-    /* Agenda view favorite highlighting */
-    .je-calendar-agenda-event.je-favorite .je-calendar-agenda-event-marker {
-      background: #ffd700 !important;
-      box-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
-    }
 
-    .je-calendar-agenda-event.je-favorite::before {
-      content: "★";
+    .je-watchlist-indicator-agenda {
       color: #ffd700;
-      font-size: 12px;
-      margin-right: -0.5em;
+      font-size: 20px;
+      flex-shrink: 0;
     }
 
-    /* Agenda view watched series highlighting */
-    .je-calendar-agenda-event.je-watched .je-calendar-agenda-event-marker {
-      background: #64b5f6 !important;
+    .je-watched-indicator-agenda {
+      color: #64b5f6;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .je-indicator-placeholder {
+      width: 20px;
+      flex-shrink: 0;
     }
 
     .je-calendar-agenda-event-marker {
@@ -931,12 +950,19 @@
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const hasFileTitle = event.hasFile ? ` (${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"})` : "";
-    const highlightClasses = getHighlightClasses(event);
     const tooltip = buildEventTooltip(event);
 
+    // Get user data indicators
+    const userData = state.userDataMap?.get(event.id);
+    const isWatchlist = state.settings.highlightFavorites && userData?.isFavorite;
+    const isWatched = state.settings.highlightWatchedSeries && userData?.isWatched;
+
+    // Build CSS classes for indicators (will show via ::before/::after pseudo-elements)
+    const watchlistClass = isWatchlist ? " je-watchlist" : "";
+    const watchedClass = isWatched ? " je-watched" : "";
+
     return `
-      <div class="je-calendar-event${hasFileClass}${highlightClasses}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-event${hasFileClass}${watchlistClass}${watchedClass}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}">
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
@@ -1076,10 +1102,22 @@
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const highlightClasses = getHighlightClasses(event);
     const availableIndicator = event.hasFile
       ? `<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"}">check_circle</span>`
       : `<span class="je-available-indicator-placeholder"></span>`;
+
+    // Get user data indicators
+    const userData = state.userDataMap?.get(event.id);
+    const isWatchlist = state.settings.highlightFavorites && userData?.isFavorite;
+    const isWatched = state.settings.highlightWatchedSeries && userData?.isWatched;
+
+    const watchlistIndicator = isWatchlist
+      ? `<span class="je-watchlist-indicator-agenda material-symbols-rounded" title="Watchlist">bookmark</span>`
+      : `<span class="je-indicator-placeholder"></span>`;
+
+    const watchedIndicator = isWatched
+      ? `<span class="je-watched-indicator-agenda material-symbols-rounded" title="Watched">visibility</span>`
+      : `<span class="je-indicator-placeholder"></span>`;
 
     // Get material icon based on release type
     let materialIcon = "movie";
@@ -1089,8 +1127,10 @@
     else if (event.releaseType === "Episode") materialIcon = "tv_guide";
 
     return `
-      <div class="je-calendar-agenda-event${hasFileClass}${highlightClasses}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
         ${availableIndicator}
+        ${watchlistIndicator}
+        ${watchedIndicator}
         <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
@@ -1117,16 +1157,16 @@
   // Render color legend
   function renderLegend() {
     const JE = window.JellyfinEnhanced;
-    const favoriteLegend = state.settings.highlightFavorites
+    const watchlistLegend = state.settings.highlightFavorites
       ? `<div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: #ffd700; font-size: 18px;">star</span>
-          <span>${JE.t("calendar_favorite")}</span>
+          <span class="material-symbols-rounded" style="color: #ffd700; font-size: 18px;">bookmark</span>
+          <span>${JE.t("calendar_watchlist")}</span>
         </div>`
       : "";
 
     const watchedLegend = state.settings.highlightWatchedSeries
       ? `<div class="je-calendar-legend-item">
-          <span class="material-icons" style="color: #64b5f6; font-size: 18px;">visibility</span>
+          <span class="material-symbols-rounded" style="color: #64b5f6; font-size: 18px;">visibility</span>
           <span>${JE.t("calendar_watched")}</span>
         </div>`
       : "";
@@ -1149,7 +1189,7 @@
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${JE.t("calendar_episode")}</span>
         </div>
-        ${favoriteLegend}
+        ${watchlistLegend}
         ${watchedLegend}
       </div>
     `;
