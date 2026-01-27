@@ -678,13 +678,6 @@
   }
 
   /**
-   * Filter event by settings
-   */
-  function shouldShowEvent(_event) {
-    return true;
-  }
-
-  /**
    * Get event color
    */
   function getEventColor(event) {
@@ -826,7 +819,7 @@
       const dayStr = String(day).padStart(2, '0');
       const dateStr = `${year}-${month}-${dayStr}`;
 
-      const dayEvents = (groupedEvents[dateStr] || []).filter(shouldShowEvent);
+      const dayEvents = groupedEvents[dateStr] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
       html += `
@@ -860,7 +853,7 @@
       const month = String(day.getMonth() + 1).padStart(2, '0');
       const dayNum = String(day.getDate()).padStart(2, '0');
       const dateKey = `${year}-${month}-${dayNum}`;
-      const dayEvents = (groupedEvents[dateKey] || []).filter(shouldShowEvent);
+      const dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
       html += `
@@ -896,7 +889,7 @@
       const weekday = dateObj.toLocaleDateString(undefined, { weekday: 'short' });
       const monthDay = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-      const dayEvents = (groupedEvents[dateKey] || []).filter(shouldShowEvent);
+      const dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
       html += `
@@ -1102,7 +1095,7 @@
       }),
     );
 
-    // Only load data once (guard against forceShowPage retries)
+    // Only load data once (guard against showPage retries)
     if (!state.isLoading) {
       loadAllData();
     }
@@ -1148,14 +1141,10 @@
     const hash = window.location.hash;
     const path = window.location.pathname;
     if (hash === "#/calendar" || path === "/calendar") {
-      forceShowPage();
+      showPage();
     } else if (state.pageVisible) {
       hidePage();
     }
-  }
-
-  function forceShowPage() {
-    showPage();
   }
 
   /**
@@ -1277,53 +1266,154 @@
   }
 
   /**
-   * Navigate to Jellyfin item by searching provider IDs
+   * Helper to search Jellyfin items using fetch API
+   */
+  async function searchJellyfinItems(params) {
+    const userId = ApiClient.getCurrentUserId();
+    const token = ApiClient.accessToken();
+    const queryString = Object.entries(params)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+    const url = `${ApiClient.serverAddress()}/Users/${userId}/Items?${queryString}`;
+
+    const response = await fetch(url, {
+      headers: {
+        "X-MediaBrowser-Token": token,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Strip year suffix from title (e.g., "Invincible (2021)" -> "Invincible")
+   * @param {string} title - Title that may contain year suffix
+   * @returns {string} Title without year suffix
+   */
+  function stripYearFromTitle(title) {
+    return title.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+  }
+
+  /**
+   * Search for an item, with fallback to title without year suffix
+   * @param {string} itemType - Jellyfin item type ("Movie" or "Series")
+   * @param {string} title - Title to search for
+   * @param {Object} event - Calendar event with provider IDs for validation
+   * @returns {Promise<Object|null>} Matched item or null
+   */
+  async function searchWithYearFallback(itemType, title, event) {
+    // First try with full title
+    let response = await searchJellyfinItems({
+      Recursive: true,
+      IncludeItemTypes: itemType,
+      SearchTerm: title,
+      Limit: 10,
+      Fields: "ProviderIds",
+    });
+
+    let item = findMatchingItem(response?.Items, event);
+    if (item) return item;
+
+    // If not found and title has year suffix, try without it
+    const titleWithoutYear = stripYearFromTitle(title);
+    if (titleWithoutYear !== title) {
+      response = await searchJellyfinItems({
+        Recursive: true,
+        IncludeItemTypes: itemType,
+        SearchTerm: titleWithoutYear,
+        Limit: 10,
+        Fields: "ProviderIds",
+      });
+      item = findMatchingItem(response?.Items, event);
+    }
+
+    return item;
+  }
+
+  /**
+   * Navigate to Jellyfin item by searching title and validating with provider IDs
+   * Note: AnyProviderIdEquals parameter does NOT work in Jellyfin (only Emby)
+   * See: https://github.com/jellyfin/jellyfin/issues/1990
    */
   async function navigateToJellyfinItem(event) {
     if (!event.hasFile) return;
 
     try {
-      // Build provider ID search query
-      const providerIds = [];
-      if (event.imdbId) providerIds.push(`Imdb.${event.imdbId}`);
-      if (event.tmdbId) providerIds.push(`Tmdb.${event.tmdbId}`);
-      if (event.tvdbId) providerIds.push(`Tvdb.${event.tvdbId}`);
-
-      if (providerIds.length === 0) {
-        console.log(`${logPrefix} No provider IDs available for navigation`);
+      // For movies, search directly
+      if (event.type !== "Series") {
+        const item = await searchWithYearFallback("Movie", event.title, event);
+        if (item) {
+          window.location.hash = `#/details?id=${item.Id}`;
+        }
         return;
       }
 
-      // Search for the item in Jellyfin library
-      const includeItemTypes = event.type === "Series" ? "Series" : "Movie";
+      // For series/episodes: first find the series
+      const series = await searchWithYearFallback("Series", event.title, event);
+      if (!series) return;
 
-      for (const providerId of providerIds) {
-        const response = await ApiClient.ajax({
-          url: ApiClient.getUrl("/Items", {
-            Recursive: true,
-            IncludeItemTypes: includeItemTypes,
-            AnyProviderIdEquals: providerId,
-            Limit: 1,
-            Fields: "Path",
-          }),
-          type: "GET",
-        });
-
-        if (response?.Items?.[0]) {
-          const item = response.Items[0];
-          console.log(`${logPrefix} Found Jellyfin item:`, item.Id, item.Name);
-
-          // Navigate to the item detail page
-          const detailUrl = `#/details?id=${item.Id}`;
-          window.location.hash = detailUrl;
-          return;
-        }
+      // If no season/episode info, navigate to series
+      if (!event.seasonNumber || !event.episodeNumber) {
+        window.location.hash = `#/details?id=${series.Id}`;
+        return;
       }
 
-      console.log(`${logPrefix} Item not found in Jellyfin library`);
+      // Find the specific episode within the series
+      const episodeResponse = await searchJellyfinItems({
+        ParentId: series.Id,
+        IncludeItemTypes: "Episode",
+        Recursive: true,
+        Fields: "ParentIndexNumber,IndexNumber",
+      });
+
+      // Match by season and episode number
+      const episode = episodeResponse?.Items?.find(
+        (ep) =>
+          ep.ParentIndexNumber === event.seasonNumber &&
+          ep.IndexNumber === event.episodeNumber
+      );
+
+      if (episode) {
+        window.location.hash = `#/details?id=${episode.Id}`;
+      } else {
+        // Fallback to series if episode not found
+        window.location.hash = `#/details?id=${series.Id}`;
+      }
     } catch (error) {
-      console.error(`${logPrefix} Failed to navigate to item:`, error);
+      console.error(`${logPrefix} Navigation failed:`, error);
     }
+  }
+
+  /**
+   * Find matching item by provider IDs or exact title match
+   * @param {Array} items - Jellyfin search results
+   * @param {Object} event - Calendar event with provider IDs and title
+   * @returns {Object|null} Matched item or null if no confident match
+   */
+  function findMatchingItem(items, event) {
+    if (!items?.length) return null;
+
+    // First try to match by provider IDs (most reliable)
+    for (const item of items) {
+      const ids = item.ProviderIds || {};
+      if (
+        (event.tvdbId && ids.Tvdb === String(event.tvdbId)) ||
+        (event.imdbId && ids.Imdb === event.imdbId) ||
+        (event.tmdbId && ids.Tmdb === String(event.tmdbId))
+      ) {
+        return item;
+      }
+    }
+
+    // Fallback to exact title match only (don't guess with items[0])
+    return items.find(
+      (item) => item.Name?.toLowerCase() === event.title.toLowerCase()
+    ) || null;
   }
 
   /**
