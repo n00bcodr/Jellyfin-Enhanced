@@ -457,14 +457,58 @@
     }
 
     /**
+     * Checks if there's a server ID mismatch (stale credentials from previous server)
+     * @returns {boolean}
+     */
+    function hasServerIdMismatch() {
+        try {
+            if (typeof ApiClient === 'undefined') return false;
+
+            const creds = localStorage.getItem('jellyfin_credentials');
+            if (!creds) return false;
+
+            const servers = JSON.parse(creds)?.Servers;
+            if (!Array.isArray(servers) || servers.length === 0) return false;
+
+            const currentServerId = ApiClient._serverInfo?.Id ||
+                (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId);
+            if (!currentServerId) return false;
+
+            // Check if stored server matches current server
+            const hasMatch = servers.some(s => s.Id === currentServerId || s.ServerId === currentServerId);
+            return !hasMatch;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    let mismatchRetryCount = 0;
+    const MAX_MISMATCH_RETRIES = 100; // ~30s at 300ms intervals
+
+    /**
      * Main initialization function.
      */
     async function initialize() {
-        // Ensure ApiClient exists and user is logged in
-        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId?.()) {
-            setTimeout(initialize, 300); // Increased retry delay slightly
+        // Check for server ID mismatch - stop retrying if credentials are stale
+        if (hasServerIdMismatch()) {
+            mismatchRetryCount++;
+            if (mismatchRetryCount >= MAX_MISMATCH_RETRIES) {
+                console.warn('🪼 Jellyfin Enhanced: Server ID mismatch detected - stopping to allow re-authentication');
+                window.JE?.hideSplashScreen?.();
+                return;
+            }
+            setTimeout(initialize, 300);
             return;
         }
+
+        // Normal retry logic (no mismatch)
+        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId?.()) {
+            setTimeout(initialize, 300);
+            return;
+        }
+
+        // Reset mismatch counter on success
+        mismatchRetryCount = 0;
 
         try {
             // Stage 1: Load base configs and translations
