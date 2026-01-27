@@ -899,6 +899,20 @@
                                     <option value="17:00/17:30">17:00/17:30</option>
                                 </select>
                             </div>
+                            <div class="checkboxContainer" style="margin-top: 1.5em; margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarHighlightFavorites" is="emby-checkbox" type="checkbox"/>
+                                    <span>Highlight Favorites/Watchlist</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">Show a golden border on calendar entries for items in your Jellyfin favorites.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarHighlightWatchedSeries" is="emby-checkbox" type="checkbox"/>
+                                    <span>Highlight Watched Series</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription">Show a border on calendar entries for series you have watched episodes from.</div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                             <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -1785,6 +1799,8 @@
                 document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
                 document.querySelector('#calendarFirstDayOfWeek').value = config.CalendarFirstDayOfWeek || 'Monday';
                 document.querySelector('#calendarTimeFormat').value = config.CalendarTimeFormat || '5pm/5:30pm';
+                document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
+                document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -1929,6 +1945,8 @@
             config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
             config.CalendarFirstDayOfWeek = document.querySelector('#calendarFirstDayOfWeek').value || 'Monday';
             config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
+            config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;
+            config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';

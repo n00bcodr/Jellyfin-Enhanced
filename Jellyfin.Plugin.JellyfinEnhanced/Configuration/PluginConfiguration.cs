@@ -166,6 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarPageEnabled = false;
             CalendarFirstDayOfWeek = "Monday";
             CalendarTimeFormat = "5pm/5:30pm";
+            CalendarHighlightFavorites = false;
+            CalendarHighlightWatchedSeries = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -305,5 +307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarPageEnabled { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
         public string CalendarTimeFormat { get; set; }
+        public bool CalendarHighlightFavorites { get; set; }
+        public bool CalendarHighlightWatchedSeries { get; set; }
     }
 }
