@@ -151,6 +151,25 @@
       opacity: 0.9;
     }
 
+    .je-calendar-event.je-has-file {
+      position: relative;
+    }
+
+    .je-calendar-event.je-has-file::after {
+      content: "✓";
+      position: absolute;
+      top: 0.3em;
+      right: 0.4em;
+      font-size: 0.7em;
+      font-weight: bold;
+      color: #4caf50;
+      opacity: 0.9;
+    }
+
+    .je-calendar-event.je-has-file:hover {
+      box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+    }
+
     .je-calendar-event-title {
       font-weight: 600;
       white-space: nowrap;
@@ -251,6 +270,22 @@
       display: flex;
       align-items: center;
       gap: 0.75em;
+      cursor: default;
+    }
+
+    .je-calendar-agenda-event.je-has-file {
+      cursor: pointer;
+    }
+
+    .je-calendar-agenda-event.je-has-file:hover {
+      background: rgba(76, 175, 80, 0.1);
+      border-radius: 4px;
+    }
+
+    .je-calendar-agenda-event.je-has-file .je-available-indicator {
+      color: #4caf50;
+      font-size: 14px;
+      margin-left: auto;
     }
 
     .je-calendar-agenda-event-marker {
@@ -448,6 +483,7 @@
     window.addEventListener("popstate", interceptNavigation, true);
     document.addEventListener("viewshow", handleViewShow);
     document.addEventListener("click", handleNavClick);
+    document.addEventListener("click", handleEventClick);
     window.addEventListener("hashchange", handleNavigation);
     window.addEventListener("popstate", handleNavigation);
 
@@ -744,9 +780,11 @@
     const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
+    const hasFileClass = event.hasFile ? " je-has-file" : "";
+    const hasFileTitle = event.hasFile ? ` (${window.JellyfinEnhanced.t("calendar_in_library") || "In Library"})` : "";
 
     return `
-      <div class="je-calendar-event" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}">
+      <div class="je-calendar-event${hasFileClass}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}${hasFileTitle}" data-event-id="${escapeHtml(event.id)}">
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
@@ -885,6 +923,8 @@
     const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
+    const hasFileClass = event.hasFile ? " je-has-file" : "";
+    const availableIndicator = event.hasFile ? `<span class="je-available-indicator material-icons" title="${window.JellyfinEnhanced.t("calendar_in_library") || "In Library"}">check_circle</span>` : "";
 
     // Get material icon based on release type
     let materialIcon = "movie";
@@ -894,7 +934,7 @@
     else if (event.releaseType === "Episode") materialIcon = "tv_guide";
 
     return `
-      <div class="je-calendar-agenda-event">
+      <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
         <span class="material-icons" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
@@ -907,6 +947,7 @@
             ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
           </div>
         </div>
+        ${availableIndicator}
       </div>
     `;
   }
@@ -1233,6 +1274,74 @@
       "'": "&#039;",
     };
     return String(text).replace(/[&<>"']/g, (m) => map[m]);
+  }
+
+  /**
+   * Navigate to Jellyfin item by searching provider IDs
+   */
+  async function navigateToJellyfinItem(event) {
+    if (!event.hasFile) return;
+
+    try {
+      // Build provider ID search query
+      const providerIds = [];
+      if (event.imdbId) providerIds.push(`Imdb.${event.imdbId}`);
+      if (event.tmdbId) providerIds.push(`Tmdb.${event.tmdbId}`);
+      if (event.tvdbId) providerIds.push(`Tvdb.${event.tvdbId}`);
+
+      if (providerIds.length === 0) {
+        console.log(`${logPrefix} No provider IDs available for navigation`);
+        return;
+      }
+
+      // Search for the item in Jellyfin library
+      const includeItemTypes = event.type === "Series" ? "Series" : "Movie";
+
+      for (const providerId of providerIds) {
+        const response = await ApiClient.ajax({
+          url: ApiClient.getUrl("/Items", {
+            Recursive: true,
+            IncludeItemTypes: includeItemTypes,
+            AnyProviderIdEquals: providerId,
+            Limit: 1,
+            Fields: "Path",
+          }),
+          type: "GET",
+        });
+
+        if (response?.Items?.[0]) {
+          const item = response.Items[0];
+          console.log(`${logPrefix} Found Jellyfin item:`, item.Id, item.Name);
+
+          // Navigate to the item detail page
+          const detailUrl = `#/details?id=${item.Id}`;
+          window.location.hash = detailUrl;
+          return;
+        }
+      }
+
+      console.log(`${logPrefix} Item not found in Jellyfin library`);
+    } catch (error) {
+      console.error(`${logPrefix} Failed to navigate to item:`, error);
+    }
+  }
+
+  /**
+   * Handle click on calendar event
+   */
+  function handleEventClick(e) {
+    const eventEl = e.target.closest(".je-calendar-event, .je-calendar-agenda-event");
+    if (!eventEl) return;
+
+    const eventId = eventEl.dataset.eventId;
+    if (!eventId) return;
+
+    const event = state.events.find((ev) => ev.id === eventId);
+    if (!event || !event.hasFile) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    navigateToJellyfinItem(event);
   }
 
   console.log(`${logPrefix} Calendar page module initialized`);
