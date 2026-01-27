@@ -360,5 +360,7 @@
     "calendar_episode": "Episodio",
     "calendar_series": "Serie",
     "calendar_loading": "Caricamento calendario...",
-    "calendar_no_releases": "Nessuna uscita imminente"
+    "calendar_no_releases": "Nessuna uscita imminente",
+    "calendar_watchlist": "Lista da guardare",
+    "calendar_watched": "Visto"
 }

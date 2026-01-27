@@ -360,5 +360,7 @@
     "calendar_episode": "Episode",
     "calendar_series": "Serier",
     "calendar_loading": "Indlæser kalender...",
-    "calendar_no_releases": "Ingen kommende udgivelser"
+    "calendar_no_releases": "Ingen kommende udgivelser",
+    "calendar_watchlist": "Overvågningsliste",
+    "calendar_watched": "Set"
 }

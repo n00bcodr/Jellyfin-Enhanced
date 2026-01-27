@@ -360,5 +360,7 @@
     "calendar_episode": "Эпизод",
     "calendar_series": "Сериалы",
     "calendar_loading": "Загрузка календаря...",
-    "calendar_no_releases": "Нет предстоящих релизов"
+    "calendar_no_releases": "Нет предстоящих релизов",
+    "calendar_watchlist": "Список отслеживания",
+    "calendar_watched": "Просмотрено"
 }

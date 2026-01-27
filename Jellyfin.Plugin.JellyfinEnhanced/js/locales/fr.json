@@ -360,5 +360,7 @@
     "calendar_episode": "Épisode",
     "calendar_series": "Séries",
     "calendar_loading": "Chargement du calendrier...",
-    "calendar_no_releases": "Aucune sortie à venir"
+    "calendar_no_releases": "Aucune sortie à venir",
+    "calendar_watchlist": "Liste de suivi",
+    "calendar_watched": "Vu"
 }

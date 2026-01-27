@@ -360,5 +360,7 @@
     "calendar_episode": "Avsnitt",
     "calendar_series": "Serier",
     "calendar_loading": "Laddar kalender...",
-    "calendar_no_releases": "Inga kommande släpp"
+    "calendar_no_releases": "Inga kommande utgåvor",
+    "calendar_watchlist": "Bevakningslista",
+    "calendar_watched": "Sedd"
 }

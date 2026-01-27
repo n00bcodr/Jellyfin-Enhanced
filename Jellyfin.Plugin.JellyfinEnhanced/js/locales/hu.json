@@ -360,5 +360,7 @@
     "calendar_episode": "Epizód",
     "calendar_series": "Sorozatok",
     "calendar_loading": "Naptár betöltése...",
-    "calendar_no_releases": "Nincsenek közelgő megjelenések"
+    "calendar_no_releases": "Nincs közelgő megjelenés",
+    "calendar_watchlist": "Figyelőlista",
+    "calendar_watched": "Megtekintve"
 }

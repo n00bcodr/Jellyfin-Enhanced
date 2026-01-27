@@ -360,5 +360,7 @@
     "calendar_episode": "Odcinek",
     "calendar_series": "Seriale",
     "calendar_loading": "Ładowanie kalendarza...",
-    "calendar_no_releases": "Brak nadchodzących premier"
+    "calendar_no_releases": "Brak nadchodzących premier",
+    "calendar_watchlist": "Lista obserwowanych",
+    "calendar_watched": "Obejrzane"
 }

@@ -358,5 +358,7 @@
     "calendar_episode": "Episode",
     "calendar_series": "Serien",
     "calendar_loading": "Kalender wird geladen...",
-    "calendar_no_releases": "Keine bevorstehenden Veröffentlichungen"
+    "calendar_no_releases": "Keine bevorstehenden Veröffentlichungen",
+    "calendar_watchlist": "Merkliste",
+    "calendar_watched": "Gesehen"
 }
