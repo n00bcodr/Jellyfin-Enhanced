@@ -238,6 +238,7 @@
       display: flex;
       flex-direction: column;
       gap: 0;
+      padding-left: 1em;
     }
 
     .je-calendar-agenda-row {
@@ -245,7 +246,7 @@
       border-bottom: 1px solid rgba(128,128,128,0.15);
       padding: 0.75em 0;
       align-items: flex-start;
-      gap: 1.5em;
+      gap: 0.5em;
     }
 
     .je-calendar-agenda-row:hover {
@@ -282,12 +283,19 @@
     .je-calendar-agenda-event.je-has-file:hover {
       background: rgba(76, 175, 80, 0.1);
       border-radius: 4px;
+      padding: 0.5em;
+      margin: -0.5em;
     }
 
     .je-calendar-agenda-event.je-has-file .je-available-indicator {
       color: #4caf50;
-      font-size: 14px;
-      margin-left: auto;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .je-available-indicator-placeholder {
+      width: 20px;
+      flex-shrink: 0;
     }
 
     .je-calendar-agenda-event-marker {
@@ -308,6 +316,9 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
     }
 
     .je-calendar-agenda-event-meta {
@@ -776,7 +787,7 @@
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const hasFileTitle = event.hasFile ? ` (${window.JellyfinEnhanced.t("calendar_in_library") || "In Library"})` : "";
+    const hasFileTitle = event.hasFile ? ` (${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"})` : "";
 
     return `
       <div class="je-calendar-event${hasFileClass}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(event.title)} - ${releaseTypeLabel}${hasFileTitle}" data-event-id="${escapeHtml(event.id)}">
@@ -919,7 +930,9 @@
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
-    const availableIndicator = event.hasFile ? `<span class="je-available-indicator material-icons" title="${window.JellyfinEnhanced.t("calendar_in_library") || "In Library"}">check_circle</span>` : "";
+    const availableIndicator = event.hasFile
+      ? `<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"}">check_circle</span>`
+      : `<span class="je-available-indicator-placeholder"></span>`;
 
     // Get material icon based on release type
     let materialIcon = "movie";
@@ -930,6 +943,7 @@
 
     return `
       <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
+        ${availableIndicator}
         <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
@@ -942,7 +956,6 @@
             ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
           </div>
         </div>
-        ${availableIndicator}
       </div>
     `;
   }

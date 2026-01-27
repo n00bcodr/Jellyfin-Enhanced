@@ -360,6 +360,5 @@
     "calendar_episode": "Episode",
     "calendar_series": "Series",
     "calendar_loading": "Loading calendar...",
-    "calendar_no_releases": "No upcoming releases",
-    "calendar_in_library": "In Library"
+    "calendar_no_releases": "No upcoming releases"
 }
