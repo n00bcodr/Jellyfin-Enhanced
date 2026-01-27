@@ -1007,23 +1007,11 @@
     const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("button");
-      navItem.setAttribute('is', 'emby-button');
+      const navItem = document.createElement("a");
+      navItem.setAttribute('is', 'emby-linkbutton');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-downloads-item";
-      navItem.type = "button";
-      // Reset button styles to match anchor nav items
-      navItem.style.cssText = `
-        background: transparent;
-        border: none;
-        width: 100%;
-        text-align: left;
-        display: flex;
-        align-items: center;
-        padding: 0.5em 0.5em 0.5em 1.5em;
-        color: inherit;
-        font: inherit;
-      `;
+      navItem.href = "#";
       const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
       navItem.innerHTML = `
         <span class="navMenuOptionIcon material-icons">download</span>
@@ -1031,15 +1019,8 @@
       `;
       navItem.addEventListener("click", (e) => {
         e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        // Close the drawer first
-        const drawer = document.querySelector('.mainDrawer');
-        if (drawer && drawer.classList.contains('mainDrawer-visible')) {
-          import('../../libraries/navdrawer/navdrawer').then(m => m.close?.()).catch(() => {});
-        }
         showPage();
-      }, true);
+      });
 
       jellyfinEnhancedSection.appendChild(navItem);
       console.log(`${logPrefix} Navigation item injected`);
