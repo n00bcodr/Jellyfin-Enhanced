@@ -1381,7 +1381,7 @@
         font: inherit;
       `;
       navItem.innerHTML = `
-        <span class="navMenuOptionIcon material-symbols-rounded">calendar_today</span>
+        <span class="navMenuOptionIcon material-icons">calendar_today</span>
         <span class="sectionName navMenuOptionText">${window.JellyfinEnhanced.t("calendar_title")}</span>
       `;
       navItem.addEventListener("click", (e) => {
