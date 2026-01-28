@@ -1105,7 +1105,6 @@
     const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
     if (navDrawer) {
       observer.observe(navDrawer, { childList: true, subtree: true });
-      console.log(`${logPrefix} Navigation watcher setup`);
     }
   }
 
@@ -1133,7 +1132,11 @@
 
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled || (pluginPagesExists && config.DownloadsUsePluginPages)) {
-      console.log(`${logPrefix} Downloads page is disabled`);
+      if (pluginPagesExists && config.DownloadsUsePluginPages) {
+        console.log(`${logPrefix} Downloads page is injected via Plugin Pages`);
+      } else {
+        console.log(`${logPrefix} Downloads page is disabled`);
+      }
       return;
     }
 

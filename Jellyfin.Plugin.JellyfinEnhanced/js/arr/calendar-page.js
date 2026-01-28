@@ -584,7 +584,11 @@
 
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled || (pluginPagesExists && config.CalendarUsePluginPages)) {
-      console.log(`${logPrefix} Calendar page is disabled`);
+      if (pluginPagesExists && config.CalendarUsePluginPages) {
+        console.log(`${logPrefix} Calendar page is injected via Plugin Pages`);
+      } else {
+        console.log(`${logPrefix} Calendar page is disabled`);
+      }
       return;
     }
 
@@ -1612,7 +1616,6 @@
     const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
     if (navDrawer) {
       observer.observe(navDrawer, { childList: true, subtree: true });
-      console.log(`${logPrefix} Navigation watcher setup`);
     }
   }
 
