@@ -1,0 +1,97 @@
+<div id="je-loading">Loading…</div>
+<div data-role="content">
+  <div class="content-primary je-downloads-page">
+    <div id="je-downloads-container"></div>
+  </div>
+</div>
+<div id="je-error" style="display:none">
+  Jellyfin Enhanced not ready.
+</div>
+<script>
+(function () {
+  const MAX_WAIT = 5000;
+  const INTERVAL = 50;
+  let waited = 0;
+
+  const loadingEl = document.getElementById("je-loading");
+  const errorEl = document.getElementById("je-error");
+  const preferencesPages = Array.from(document.querySelectorAll("#userPluginPreferencesPage"));
+  const preferencesPage = preferencesPages.find(p => p.offsetWidth > 0 && p.offsetHeight > 0);
+
+  document.querySelectorAll("#je-downloads-container").forEach(el => {
+    if (!preferencesPage || !preferencesPage.contains(el)) {
+      el.remove();
+    }
+  });
+
+  if (preferencesPage && !preferencesPage.querySelector("#je-downloads-container")) {
+    const newContainer = document.createElement("div");
+    newContainer.id = "je-downloads-container";
+    const target = document.querySelector(".je-downloads-page") || document.body;
+    target.appendChild(newContainer);
+  }
+
+  const JE = window.JellyfinEnhanced;
+
+  const timer = setInterval(() => {
+
+    if (JE && JE.downloadsPage) {
+      clearInterval(timer);
+
+      loadingEl.remove();
+      JE.downloadsPage.injectStyles();
+      JE.downloadsPage.renderPage();
+      JE.downloadsPage.refresh();
+      startPolling();
+      handleClickOnPlay();
+      console.log('🪼 Jellyfin Enhanced: Downloads Page Loaded.');
+      return;
+    }
+
+    waited += INTERVAL;
+    if (waited >= MAX_WAIT) {
+      clearInterval(timer);
+
+      loadingEl.style.display = "none";
+      errorEl.style.display = "block";
+    }
+  }, INTERVAL);
+})();
+
+function startPolling() {
+  const JE = window.JellyfinEnhanced;
+  if (!JE || !JE.downloadsPage || typeof JE.downloadsPage.refresh !== "function") return;
+
+  const POLL_INTERVAL = (JE.pluginConfig?.DownloadsPollIntervalSeconds || 30) * 1000;
+
+  if (JE.downloadsPage._pollTimer) {
+    clearInterval(JE.downloadsPage._pollTimer);
+  }
+
+  JE.downloadsPage._pollTimer = setInterval(() => {
+    const container = document.getElementById("je-downloads-container");
+
+    if (container && container.offsetHeight > 0 && container.offsetWidth > 0) {
+      JE.downloadsPage.refresh();
+    }
+  }, POLL_INTERVAL);
+}
+
+function handleClickOnPlay() {
+  if (handleClickOnPlay._initialized) return;
+  handleClickOnPlay._initialized = true;
+
+  document.addEventListener("click", (e) => {
+    const playBtn = e.target.closest(".je-request-watch-btn");
+    if (!playBtn) return;
+
+    e.preventDefault();
+
+    const mediaId = playBtn.getAttribute("data-media-id");
+    if (mediaId && window.Emby?.Page?.showItem) {
+      window.Emby.Page.showItem(mediaId);
+    }
+  });
+}
+</script>
+

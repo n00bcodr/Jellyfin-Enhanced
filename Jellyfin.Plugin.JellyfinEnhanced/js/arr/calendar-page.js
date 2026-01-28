@@ -4,6 +4,10 @@
   "use strict";
 
   const JE = window.JellyfinEnhanced;
+  const sidebar = document.querySelector('.mainDrawer-scrollContainer');
+  const pluginPagesExists = !!sidebar?.querySelector(
+    'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.CalendarPage"]'
+  );
 
   // State management
   const state = {
@@ -581,6 +585,12 @@
   function initialize() {
     console.log(`${logPrefix} Initializing calendar page module`);
 
+    const config = JE.pluginConfig || {};
+    if (!config.CalendarPageEnabled || pluginPagesExists) {
+      console.log(`${logPrefix} Calendar page is disabled`);
+      return;
+    }
+
     injectStyles();
     loadSettings();
 
@@ -1008,7 +1018,7 @@
 
     // Update URL hash to reflect view mode
     const newHash = `#/calendar/${mode}`;
-    if (window.location.hash !== newHash) {
+    if (window.location.hash !== newHash && !pluginPagesExists) {
       history.replaceState({ page: "calendar", view: mode }, "Calendar", newHash);
     }
 
@@ -1410,6 +1420,7 @@
 
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
+    if (pluginPagesExists) return;
 
     state.pageVisible = true;
 
@@ -1541,6 +1552,7 @@
   function injectNavigation() {
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
+    if (pluginPagesExists) return;
 
     // Check if already exists
     if (document.querySelector(".je-nav-calendar-item")) {
@@ -1577,6 +1589,7 @@
   function setupNavigationWatcher() {
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
+    if (pluginPagesExists) return;
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
@@ -1792,6 +1805,10 @@
     shiftPeriod,
     goToday,
     toggleFilter,
+    renderPage,
+    injectStyles,
+    loadSettings,
+    handleEventClick
   };
 
   JE.initializeCalendarPage = initialize;
