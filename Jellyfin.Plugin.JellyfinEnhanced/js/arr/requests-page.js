@@ -4,6 +4,10 @@
   "use strict";
 
   const JE = window.JellyfinEnhanced;
+  const sidebar = document.querySelector('.mainDrawer-scrollContainer');
+  const pluginPagesExists = !!sidebar?.querySelector(
+    'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.DownloadPage"]',
+  );
 
   // State management
   const state = {
@@ -1037,6 +1041,7 @@
   function injectNavigation() {
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
+    if (pluginPagesExists) return;
 
     // Check if already exists
     if (document.querySelector(".je-nav-downloads-item")) {
@@ -1074,6 +1079,7 @@
   function setupNavigationWatcher() {
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
+    if (pluginPagesExists) return;
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
@@ -1117,7 +1123,7 @@
     console.log(`${logPrefix} Initializing downloads page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.DownloadsPageEnabled) {
+    if (!config.DownloadsPageEnabled || pluginPagesExists) {
       console.log(`${logPrefix} Downloads page is disabled`);
       return;
     }
@@ -1233,6 +1239,8 @@
     filterRequests,
     nextPage,
     prevPage,
+    renderPage,
+    injectStyles
   };
 
   JE.initializeDownloadsPage = initialize;

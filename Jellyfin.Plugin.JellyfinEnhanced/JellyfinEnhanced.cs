@@ -9,6 +9,12 @@ using System.Collections.Generic;
 using System;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using MediaBrowser.Controller.Configuration;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
+using MediaBrowser.Common.Net;
+using System.Reflection;
+using System.Runtime.Loader;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced
 {
@@ -18,13 +24,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         private readonly Logger _logger;
         private const string PluginName = "Jellyfin Enhanced";
 
-        public JellyfinEnhanced(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, Logger logger) : base(applicationPaths, xmlSerializer)
+        public JellyfinEnhanced(IApplicationPaths applicationPaths, IServerConfigurationManager serverConfigurationManager, IXmlSerializer xmlSerializer, Logger logger) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             _applicationPaths = applicationPaths;
             _logger = logger;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
             CleanupOldScript();
+            CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
         }
 
         public override string Name => PluginName;
@@ -90,6 +97,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 _logger.Error($"Error during cleanup of old script from index.html: {ex.Message}");
             }
         }
+        private void CheckPluginPages(IApplicationPaths applicationPaths, IServerConfigurationManager serverConfigurationManager, int pluginPageConfigVersion)
+        {
+            string pluginPagesConfig = Path.Combine(applicationPaths.PluginConfigurationsPath, "Jellyfin.Plugin.PluginPages", "config.json");
+        
+            JObject config = new JObject();
+            if (!File.Exists(pluginPagesConfig))
+            {
+                FileInfo info = new FileInfo(pluginPagesConfig);
+                info.Directory?.Create();
+            }
+            else
+            {
+                config = JObject.Parse(File.ReadAllText(pluginPagesConfig));
+            }
+
+            if (!config.ContainsKey("pages"))
+            {
+                config.Add("pages", new JArray());
+            }
+
+            var namespaceName = typeof(JellyfinEnhanced).Namespace;
+
+            JObject? hssPageConfig = config.Value<JArray>("pages")!.FirstOrDefault(x =>
+                x.Value<string>("Id") == namespaceName) as JObject;
+
+            if (hssPageConfig != null)
+            {
+                if ((hssPageConfig.Value<int?>("Version") ?? 0) < pluginPageConfigVersion)
+                {
+                    config.Value<JArray>("pages")!.Remove(hssPageConfig);
+                }
+            }
+            
+            if (!config.Value<JArray>("pages")!.Any(x => x.Value<string>("Id") == namespaceName))
+            {
+                Assembly? pluginPagesAssembly = AssemblyLoadContext.All.SelectMany(x => x.Assemblies).FirstOrDefault(x => x.FullName?.Contains("Jellyfin.Plugin.PluginPages") ?? false);
+                
+                Version earliestVersionWithSubUrls = new Version("2.4.1.0");
+                bool supportsSubUrls = pluginPagesAssembly != null && pluginPagesAssembly.GetName().Version >= earliestVersionWithSubUrls;
+                
+                string rootUrl = serverConfigurationManager.GetNetworkConfiguration().BaseUrl.TrimStart('/').Trim();
+                if (!string.IsNullOrEmpty(rootUrl))
+                {
+                    rootUrl = $"/{rootUrl}";
+                }
+                
+                // Calendar Page
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.CalendarPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/calendarPage" },
+                    { "DisplayText", "Calendar" },
+                    { "Icon", "calendar_today" },
+                    { "Version", pluginPageConfigVersion }
+                });
+
+                // Request Page
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.DownloadPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/downloadPage" },
+                    { "DisplayText", "Requests" },
+                    { "Icon", "download" },
+                    { "Version", pluginPageConfigVersion }
+                });
+        
+                File.WriteAllText(pluginPagesConfig, config.ToString(Formatting.Indented));
+            }
+        }
         private void UpdateIndexHtml(bool inject)
         {
             try
@@ -147,6 +223,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     EnableInMainMenu = true,
                     EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html"
                     //Custom Icons are not supported - https://github.com/jellyfin/jellyfin-web/blob/38ac3355447a91bf280df419d745f5d49d05aa9b/src/apps/dashboard/components/drawer/sections/PluginDrawerSection.tsx#L61
+                }
+            };
+        }
+
+        public IEnumerable<PluginPageInfo> GetViews()
+        {
+            return new[]
+            {
+                new PluginPageInfo {
+                    Name = "calendarPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.CalendarPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "downloadPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.DownloadsPage.html"
                 }
             };
         }

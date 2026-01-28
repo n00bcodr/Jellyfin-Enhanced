@@ -25,6 +25,8 @@ using MediaBrowser.Controller;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
+using MediaBrowser.Model.Plugins;
+using MediaBrowser.Model;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -1778,7 +1780,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(10);
 
-                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/queue?includeEpisode=true&includeSeries=true");
+                    var response = await client.GetAsync(
+                        $"{sonarrUrl}/api/v3/queue?" +
+                        $"includeEpisode=true&" +
+                        $"includeSeries=true&" +
+                        $"sortKey=timeleft&" +
+                        $"sortDirection=ascending&" +
+                        $"status=downloading&" +
+                        $"pageSize=1000"
+                    );
+
                     if (response.IsSuccessStatusCode)
                     {
                         var json = await response.Content.ReadAsStringAsync();
@@ -2667,6 +2678,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return NotFound();
             }
+        }
+
+        [Authorize]
+        [HttpGet("{viewName}")]
+        public ActionResult GetView([FromRoute] string viewName)
+        {
+            if (JellyfinEnhanced.Instance == null)
+            {
+                return BadRequest("No plugin instance found");
+            }
+
+            IEnumerable<PluginPageInfo> pages = JellyfinEnhanced.Instance.GetViews();
+
+            if (pages == null)
+            {
+                return NotFound("Pages is null or empty");
+            }
+
+            PluginPageInfo? view = pages.FirstOrDefault(pageInfo => pageInfo?.Name == viewName, null);
+
+            if (view == null)
+            {
+                return NotFound("No matching view found");
+            }
+
+            Stream? stream = JellyfinEnhanced.Instance.GetType().Assembly.GetManifestResourceStream(view.EmbeddedResourcePath);
+
+            if (stream == null)
+            {
+                _logger.Warning($"Failed to get resource {view.EmbeddedResourcePath}");
+                return NotFound();
+            }
+
+            return File(stream, MimeTypes.GetMimeType(view.EmbeddedResourcePath));
         }
     }
 }
