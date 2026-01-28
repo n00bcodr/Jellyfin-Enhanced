@@ -1086,6 +1086,7 @@
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
     const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
+    const iconClass = event.source === "sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
@@ -1105,8 +1106,8 @@
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
-          <img src="${typeIcon}" alt="${escapeHtml(event.type)}" />
-          <span>${releaseTypeLabel} • ${sourceLabel}</span>
+          <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+          <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span></span>
           ${timeLabel ? `<span class="je-calendar-event-time">${escapeHtml(timeLabel)}</span>` : ""}
         </div>
       </div>
@@ -1241,6 +1242,7 @@
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
     const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
+    const iconClass = event.source === "sonarr" ? "je-sonarr-icon" : "je-radarr-icon";
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
@@ -1279,10 +1281,10 @@
         <div class="je-calendar-agenda-event-content">
           <div class="je-calendar-agenda-event-title">${escapeHtml(event.title)}${subtitle ? ` • ${escapeHtml(subtitle)}` : ""}</div>
           <div class="je-calendar-agenda-event-meta">
-            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" />
+            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
             <span>${releaseTypeLabel}</span>
             <span>•</span>
-            <span>${sourceLabel}</span>
+            <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span>
             ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
           </div>
         </div>
