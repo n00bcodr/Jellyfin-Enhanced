@@ -315,6 +315,9 @@
             classList.remove('portraitCard', 'overflowPortraitCard');
             classList.add(cardClass);
 
+            // Add media type for fast CSS-based filtering
+            card.setAttribute('data-media-type', item.mediaType);
+
             const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
             if (jellyfinMediaId) {
                 card.setAttribute('data-library-item', 'true');
@@ -411,6 +414,10 @@
 
     /**
      * Creates and manages an IntersectionObserver for infinite scroll
+     * Delegates to seamlessScroll module when available for enhanced features:
+     * - Larger prefetch window (~2 viewport heights)
+     * - Retry UI on failure
+     * - Scroll event fallback
      * @param {object} state - State object with activeScrollObserver property
      * @param {string} sectionSelector - CSS selector for the section
      * @param {Function} loadMoreFn - Function to call when more items needed
@@ -418,7 +425,15 @@
      * @param {Function} isLoadingCheck - Function that returns whether currently loading
      */
     function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck) {
-        // Clean up previous observer
+        // Use seamlessScroll if available (enhanced functionality)
+        if (JE.seamlessScroll?.setupInfiniteScroll) {
+            JE.seamlessScroll.setupInfiniteScroll(
+                state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck
+            );
+            return;
+        }
+
+        // Fallback: Clean up previous observer
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
             state.activeScrollObserver = null;
@@ -450,11 +465,55 @@
      * @param {object} state - State object with activeScrollObserver property
      */
     function cleanupScrollObserver(state) {
+        // Use seamlessScroll cleanup if available
+        if (JE.seamlessScroll?.cleanupInfiniteScroll) {
+            JE.seamlessScroll.cleanupInfiniteScroll(state);
+            return;
+        }
+
+        // Fallback cleanup
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
             state.activeScrollObserver = null;
         }
     }
+
+    /**
+     * Applies filter visibility using CSS classes (fast, no DOM rebuild)
+     * @param {HTMLElement} container - The items container
+     * @param {string} mode - 'mixed', 'movies', or 'tv'
+     */
+    function applyFilterVisibility(container, mode) {
+        if (!container) return;
+
+        // Remove existing filter class from container
+        container.classList.remove('filter-movies', 'filter-tv');
+
+        if (mode === FILTER_MODES.MOVIES) {
+            container.classList.add('filter-movies');
+        } else if (mode === FILTER_MODES.TV) {
+            container.classList.add('filter-tv');
+        }
+        // 'mixed' mode: no class = all visible
+    }
+
+    /**
+     * Injects CSS rules for fast filter visibility (once per page)
+     */
+    function injectFilterStyles() {
+        if (document.getElementById('jellyseerr-filter-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'jellyseerr-filter-styles';
+        style.textContent = `
+            .filter-movies [data-media-type="tv"] { display: none !important; }
+            .filter-tv [data-media-type="movie"] { display: none !important; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Inject styles on load
+    injectFilterStyles();
 
     // Export utilities
     JE.discoveryFilter = {
@@ -472,7 +531,8 @@
         createCardsFragment,
         waitForPageReady,
         setupInfiniteScroll,
-        cleanupScrollObserver
+        cleanupScrollObserver,
+        applyFilterVisibility
     };
 
 })(window.JellyfinEnhanced || (window.JellyfinEnhanced = {}));
