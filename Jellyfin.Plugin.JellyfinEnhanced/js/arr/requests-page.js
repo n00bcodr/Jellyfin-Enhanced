@@ -6,7 +6,7 @@
   const JE = window.JellyfinEnhanced;
   const sidebar = document.querySelector('.mainDrawer-scrollContainer');
   const pluginPagesExists = !!sidebar?.querySelector(
-    'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.DownloadPage"]',
+    'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.DownloadsPage"]',
   );
 
   // State management
@@ -1041,7 +1041,16 @@
   function injectNavigation() {
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
-    if (pluginPagesExists) return;
+    if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+
+    // Hide plugin page link if it exists
+    const pluginPageItem = sidebar?.querySelector(
+      'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.DownloadsPage"]'
+    );
+
+    if (pluginPageItem) {
+      pluginPageItem.style.setProperty('display', 'none', 'important');
+    }
 
     // Check if already exists
     if (document.querySelector(".je-nav-downloads-item")) {
@@ -1079,7 +1088,7 @@
   function setupNavigationWatcher() {
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
-    if (pluginPagesExists) return;
+    if (pluginPagesExists && config.DownloadsUsePluginPages) return;
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
@@ -1123,7 +1132,7 @@
     console.log(`${logPrefix} Initializing downloads page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.DownloadsPageEnabled || pluginPagesExists) {
+    if (!config.DownloadsPageEnabled || (pluginPagesExists && config.DownloadsUsePluginPages)) {
       console.log(`${logPrefix} Downloads page is disabled`);
       return;
     }

@@ -160,10 +160,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
             DownloadsPageEnabled = false;
+            DownloadsUsePluginPages = false;
             DownloadsPollIntervalSeconds = 30;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
             CalendarPageEnabled = false;
+            CalendarUsePluginPages = false;
             CalendarFirstDayOfWeek = "Monday";
             CalendarTimeFormat = "5pm/5:30pm";
             CalendarHighlightFavorites = false;
@@ -301,10 +303,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
         public bool DownloadsPageEnabled { get; set; }
+        public bool DownloadsUsePluginPages { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
 
         // Calendar Page Settings (Sonarr/Radarr Releases)
         public bool CalendarPageEnabled { get; set; }
+        public bool CalendarUsePluginPages { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
         public string CalendarTimeFormat { get; set; }
         public bool CalendarHighlightFavorites { get; set; }

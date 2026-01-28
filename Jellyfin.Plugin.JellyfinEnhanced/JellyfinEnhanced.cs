@@ -130,20 +130,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
             }
             
-            if (!config.Value<JArray>("pages")!.Any(x => x.Value<string>("Id") == namespaceName))
+            Assembly? pluginPagesAssembly = AssemblyLoadContext.All.SelectMany(x => x.Assemblies).FirstOrDefault(x => x.FullName?.Contains("Jellyfin.Plugin.PluginPages") ?? false);
+            
+            Version earliestVersionWithSubUrls = new Version("2.4.1.0");
+            bool supportsSubUrls = pluginPagesAssembly != null && pluginPagesAssembly.GetName().Version >= earliestVersionWithSubUrls;
+            
+            string rootUrl = serverConfigurationManager.GetNetworkConfiguration().BaseUrl.TrimStart('/').Trim();
+            if (!string.IsNullOrEmpty(rootUrl))
             {
-                Assembly? pluginPagesAssembly = AssemblyLoadContext.All.SelectMany(x => x.Assemblies).FirstOrDefault(x => x.FullName?.Contains("Jellyfin.Plugin.PluginPages") ?? false);
-                
-                Version earliestVersionWithSubUrls = new Version("2.4.1.0");
-                bool supportsSubUrls = pluginPagesAssembly != null && pluginPagesAssembly.GetName().Version >= earliestVersionWithSubUrls;
-                
-                string rootUrl = serverConfigurationManager.GetNetworkConfiguration().BaseUrl.TrimStart('/').Trim();
-                if (!string.IsNullOrEmpty(rootUrl))
-                {
-                    rootUrl = $"/{rootUrl}";
-                }
-                
-                // Calendar Page
+                rootUrl = $"/{rootUrl}";
+            }
+
+            bool calendarExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.CalendarPage");
+
+            bool downloadsExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.DownloadsPage");
+            
+            if (!calendarExists)
+            {
                 config.Value<JArray>("pages")!.Add(new JObject
                 {
                     { "Id", $"{namespaceName}.CalendarPage" },
@@ -152,19 +157,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     { "Icon", "calendar_today" },
                     { "Version", pluginPageConfigVersion }
                 });
+            }
 
-                // Request Page
+            if (!downloadsExists)
+            {
                 config.Value<JArray>("pages")!.Add(new JObject
                 {
-                    { "Id", $"{namespaceName}.DownloadPage" },
-                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/downloadPage" },
+                    { "Id", $"{namespaceName}.DownloadsPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/downloadsPage" },
                     { "DisplayText", "Requests" },
                     { "Icon", "download" },
                     { "Version", pluginPageConfigVersion }
                 });
-        
-                File.WriteAllText(pluginPagesConfig, config.ToString(Formatting.Indented));
             }
+
+            File.WriteAllText(pluginPagesConfig, config.ToString(Formatting.Indented));
         }
         private void UpdateIndexHtml(bool inject)
         {
@@ -236,7 +243,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.CalendarPage.html"
                 },
                 new PluginPageInfo {
-                    Name = "downloadPage",
+                    Name = "downloadsPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.DownloadsPage.html"
                 }
             };

@@ -853,6 +853,13 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Requests" link to the navigation showing active downloads and requests.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Plugin Pages for Requests Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Requests page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.</div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
                                 <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="10" max="300" value="30"/>
@@ -880,6 +887,13 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Calendar" link to the navigation showing upcoming releases from Sonarr/Radarr.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarUsePluginPages" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Plugin Pages for Calendar Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Calendar page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.</div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="calendarFirstDayOfWeek">First Day of Week</label>
                                 <select id="calendarFirstDayOfWeek" is="emby-select">
@@ -1755,10 +1769,12 @@
 
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
+                document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsPollIntervalSeconds').value = config.DownloadsPollIntervalSeconds || 30;
 
                 // Calendar Page settings
                 document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
+                document.querySelector('#calendarUsePluginPages').checked = config.CalendarUsePluginPages !== false;
                 document.querySelector('#calendarFirstDayOfWeek').value = config.CalendarFirstDayOfWeek || 'Monday';
                 document.querySelector('#calendarTimeFormat').value = config.CalendarTimeFormat || '5pm/5:30pm';
                 document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
@@ -1898,10 +1914,12 @@
 
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
+            config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
             config.DownloadsPollIntervalSeconds = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10) || 30;
 
             // Calendar Page settings
             config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
+            config.CalendarUsePluginPages = document.querySelector('#calendarUsePluginPages').checked;
             config.CalendarFirstDayOfWeek = document.querySelector('#calendarFirstDayOfWeek').value || 'Monday';
             config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
             config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;

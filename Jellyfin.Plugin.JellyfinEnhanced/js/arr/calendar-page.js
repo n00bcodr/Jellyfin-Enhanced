@@ -583,7 +583,7 @@
     console.log(`${logPrefix} Initializing calendar page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.CalendarPageEnabled || pluginPagesExists) {
+    if (!config.CalendarPageEnabled || (pluginPagesExists && config.CalendarUsePluginPages)) {
       console.log(`${logPrefix} Calendar page is disabled`);
       return;
     }
@@ -1012,10 +1012,10 @@
   function setViewMode(mode) {
     if (state.viewMode === mode) return;
     state.viewMode = mode;
-
+    const config = JE.pluginConfig || {};
     // Update URL hash to reflect view mode
     const newHash = `#/calendar/${mode}`;
-    if (window.location.hash !== newHash && !pluginPagesExists) {
+    if (window.location.hash !== newHash && !(pluginPagesExists && config.CalendarUsePluginPages)) {
       history.replaceState({ page: "calendar", view: mode }, "Calendar", newHash);
     }
 
@@ -1417,7 +1417,7 @@
 
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
-    if (pluginPagesExists) return;
+    if (pluginPagesExists && config.CalendarUsePluginPages) return;
 
     state.pageVisible = true;
 
@@ -1549,7 +1549,16 @@
   function injectNavigation() {
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
-    if (pluginPagesExists) return;
+    if (pluginPagesExists && config.CalendarUsePluginPages) return;
+
+    // Hide plugin page link if it exists
+    const pluginPageItem = sidebar?.querySelector(
+      'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.CalendarPage"]'
+    );
+
+    if (pluginPageItem) {
+      pluginPageItem.style.setProperty('display', 'none', 'important');
+    }
 
     // Check if already exists
     if (document.querySelector(".je-nav-calendar-item")) {
@@ -1586,7 +1595,7 @@
   function setupNavigationWatcher() {
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
-    if (pluginPagesExists) return;
+    if (pluginPagesExists && config.CalendarUsePluginPages) return;
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
