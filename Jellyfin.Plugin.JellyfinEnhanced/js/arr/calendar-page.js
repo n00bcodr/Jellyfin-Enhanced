@@ -150,15 +150,12 @@
       transition: all 0.2s;
       border-left: 3px solid;
       padding-left: 0.7em;
+      position: relative;
     }
 
     .je-calendar-event:hover {
       transform: translateX(2px);
       opacity: 0.9;
-    }
-
-    .je-calendar-event.je-has-file {
-      position: relative;
     }
 
     .je-calendar-event.je-has-file::after {
