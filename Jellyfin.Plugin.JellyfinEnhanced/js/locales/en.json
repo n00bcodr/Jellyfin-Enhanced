@@ -362,5 +362,10 @@
     "calendar_loading": "Loading calendar...",
     "calendar_no_releases": "No upcoming releases",
     "calendar_watchlist": "Watchlist",
-    "calendar_watched": "Watched"
+    "calendar_watched": "Watched",
+    "requests_coming_soon": "Coming Soon",
+    "requests_today": "today",
+    "requests_tomorrow": "tomorrow",
+    "requests_in_days": "in {days} days",
+    "requests_on_date": "on {date}"
 }
