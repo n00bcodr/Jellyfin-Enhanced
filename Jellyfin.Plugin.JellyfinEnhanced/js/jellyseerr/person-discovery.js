@@ -15,10 +15,12 @@
     let isLoading = false;
     let hasMorePages = true;
     let currentPersonId = null;
-    let currentPersonName = null;
 
     // Cached results for filter switching (avoid refetch)
     let cachedAllResults = [];
+
+    // Deduplicator for infinite scroll (prevents duplicate cards)
+    let itemDeduplicator = null;
 
     // Abort controller for cancellation
     let currentAbortController = null;
@@ -266,17 +268,8 @@
         const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
         if (!itemsContainer) return;
 
-        // Clear existing cards
-        itemsContainer.innerHTML = '';
-
-        // Get filtered results
-        const filtered = getFilteredResults(newMode);
-
-        // Render cards (up to 40 for person discovery)
-        const fragment = createCardsFragment(filtered.slice(0, 40));
-        if (fragment.childNodes.length > 0) {
-            itemsContainer.appendChild(fragment);
-        }
+        // Use fast CSS-based visibility (no DOM rebuild)
+        JE.discoveryFilter.applyFilterVisibility(itemsContainer, newMode);
     }
 
     /**
@@ -291,7 +284,7 @@
             const signal = currentAbortController?.signal;
             const credits = await fetchPersonCredits(currentPersonId, signal);
 
-            if (signal?.aborted) return;
+            if (signal?.aborted) { isLoading = false; return; }
 
             const allResults = [...(credits.cast || []), ...(credits.crew || [])];
 
@@ -322,6 +315,15 @@
                 filteredNew = allResults;
             }
 
+            // Deduplicate items using deduplicator (if available)
+            if (itemDeduplicator) {
+                filteredNew = itemDeduplicator.filter(filteredNew);
+                if (filteredNew.length === 0) {
+                    isLoading = false;
+                    return;
+                }
+            }
+
             const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
             if (itemsContainer) {
                 const fragment = createCardsFragment(filteredNew);
@@ -332,6 +334,7 @@
         } catch (error) {
             if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
+            throw error; // Re-throw for seamlessScroll retry handling
         }
 
         isLoading = false;
@@ -421,7 +424,7 @@
 
             // Store for reference
             currentPersonId = tmdbPersonId;
-            currentPersonName = personInfo.name;
+
 
             // Fetch credits
             const credits = await fetchPersonCredits(tmdbPersonId, signal);
@@ -435,6 +438,9 @@
 
             // Store all results for filter switching
             cachedAllResults = allResults;
+
+            // Initialize deduplicator for infinite scroll
+            itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
             // Check if we have both media types
             const hasBoth = hasBothMediaTypes();
@@ -469,13 +475,20 @@
             const itemsContainer = section.querySelector('.itemsContainer');
 
             // Show up to 40 items (no pagination for person credits API)
-            const fragment = createCardsFragment(displayResults.slice(0, 40));
+            const initialItems = displayResults.slice(0, 40);
+            const fragment = createCardsFragment(initialItems);
             if (fragment.childNodes.length === 0) {
                 console.debug(`${logPrefix} No cards created from results`);
                 return;
             }
 
             itemsContainer.appendChild(fragment);
+
+            // Seed deduplicator with initial items to prevent duplicates on scroll
+            if (itemDeduplicator) {
+                initialItems.forEach(item => itemDeduplicator.add(item));
+            }
+
             detailSection.appendChild(section);
             console.debug(`${logPrefix} Section added with ${fragment.childNodes.length} cards`);
 
@@ -515,11 +528,17 @@
         isLoading = false;
         hasMorePages = true;
         currentPersonId = null;
-        currentPersonName = null;
+
         currentRenderingPageKey = null;
 
         // Clear cached results
         cachedAllResults = [];
+
+        // Clear deduplicator
+        if (itemDeduplicator) {
+            itemDeduplicator.clear();
+        }
+        itemDeduplicator = null;
     }
 
     /**
