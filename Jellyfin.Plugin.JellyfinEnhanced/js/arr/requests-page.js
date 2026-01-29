@@ -657,8 +657,8 @@
   function renderDownloadCard(item) {
     const STATUS_COLORS = getStatusColors();
     const statusColor = STATUS_COLORS[item.status] || STATUS_COLORS.Unknown;
-    const sourceIcon = item.source === "sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = item.source === "sonarr" ? "Sonarr" : "Radarr";
+    const sourceIcon = item.source === "Sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const sourceLabel = item.source
 
     const posterHtml = item.posterUrl
       ? `<img class="je-download-poster" src="${item.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
@@ -757,7 +757,7 @@
 
     for (const item of downloads) {
       // Only group sonarr items with season numbers
-      if (item.source === "sonarr" && item.seasonNumber != null) {
+      if (item.source === "Sonarr" && item.seasonNumber != null) {
         // Group by show title + season + progress (same progress = likely season pack)
         const key = `${item.title}|${item.seasonNumber}|${item.progress}`;
 
