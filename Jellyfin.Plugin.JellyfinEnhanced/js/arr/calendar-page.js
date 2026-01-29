@@ -1085,8 +1085,8 @@
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
-    const iconClass = event.source === "sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
+    const sourceLabel = event.source;
+    const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
@@ -1241,8 +1241,8 @@
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = event.source === "sonarr" ? "Sonarr" : "Radarr";
-    const iconClass = event.source === "sonarr" ? "je-sonarr-icon" : "je-radarr-icon";
+    const sourceLabel = event.source;
+    const iconClass = event.source === "Sonarr" ? "je-sonarr-icon" : "je-radarr-icon";
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
