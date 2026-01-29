@@ -413,8 +413,8 @@
     }
 
     /**
-     * Creates and manages an IntersectionObserver for infinite scroll
-     * Delegates to seamlessScroll module when available for enhanced features:
+     * Sets up infinite scroll using seamlessScroll module
+     * Features:
      * - Larger prefetch window (~2 viewport heights)
      * - Retry UI on failure
      * - Scroll event fallback
@@ -425,39 +425,9 @@
      * @param {Function} isLoadingCheck - Function that returns whether currently loading
      */
     function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck) {
-        // Use seamlessScroll if available (enhanced functionality)
-        if (JE.seamlessScroll?.setupInfiniteScroll) {
-            JE.seamlessScroll.setupInfiniteScroll(
-                state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck
-            );
-            return;
-        }
-
-        // Fallback: Clean up previous observer
-        if (state.activeScrollObserver) {
-            state.activeScrollObserver.disconnect();
-            state.activeScrollObserver = null;
-        }
-
-        const section = document.querySelector(sectionSelector);
-        if (!section) return;
-
-        // Remove old sentinel
-        const oldSentinel = section.querySelector('.jellyseerr-scroll-sentinel');
-        if (oldSentinel) oldSentinel.remove();
-
-        const sentinel = document.createElement('div');
-        sentinel.className = 'jellyseerr-scroll-sentinel';
-        sentinel.style.cssText = 'height:20px;width:100%';
-        section.appendChild(sentinel);
-
-        state.activeScrollObserver = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && hasMoreCheck() && !isLoadingCheck()) {
-                loadMoreFn();
-            }
-        }, { rootMargin: '200px' });
-
-        state.activeScrollObserver.observe(sentinel);
+        JE.seamlessScroll.setupInfiniteScroll(
+            state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck
+        );
     }
 
     /**
@@ -465,17 +435,7 @@
      * @param {object} state - State object with activeScrollObserver property
      */
     function cleanupScrollObserver(state) {
-        // Use seamlessScroll cleanup if available
-        if (JE.seamlessScroll?.cleanupInfiniteScroll) {
-            JE.seamlessScroll.cleanupInfiniteScroll(state);
-            return;
-        }
-
-        // Fallback cleanup
-        if (state.activeScrollObserver) {
-            state.activeScrollObserver.disconnect();
-            state.activeScrollObserver = null;
-        }
+        JE.seamlessScroll.cleanupInfiniteScroll(state);
     }
 
     /**
