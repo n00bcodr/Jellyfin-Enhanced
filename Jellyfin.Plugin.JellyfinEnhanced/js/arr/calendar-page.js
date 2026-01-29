@@ -1714,6 +1714,10 @@
    */
   async function navigateToJellyfinItem(event) {
     if (!event.hasFile) return;
+    if (event.itemId) {
+      window.location.hash = `#/details?id=${event.itemId}`;
+      return;
+    }
 
     try {
       // For movies, search directly

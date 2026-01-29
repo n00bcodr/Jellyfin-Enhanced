@@ -30,13 +30,13 @@
     </ItemGroup>
 
   <ItemGroup>
-    <None Remove="PluginPages\CalendarPage.html"/>
-    <EmbeddedResource Include="PluginPages\CalendarPage.html"/>
-    <None Remove="PluginPages\DownloadsPage.html"/>
-    <EmbeddedResource Include="PluginPages\DownloadsPage.html"/>
-    <None Remove="Configuration\configPage.html"/>
-    <EmbeddedResource Include="Configuration\configPage.html"/>
-    <None Remove="plugin.js"/>
+    <None Remove="PluginPages\CalendarPage.html" />
+    <EmbeddedResource Include="PluginPages\CalendarPage.html" />
+    <None Remove="PluginPages\DownloadsPage.html" />
+    <EmbeddedResource Include="PluginPages\DownloadsPage.html" />
+    <None Remove="Configuration\configPage.html" />
+    <EmbeddedResource Include="Configuration\configPage.html" />
+    <None Remove="plugin.js" />
     <EmbeddedResource Include="js\**" />
   </ItemGroup>
 

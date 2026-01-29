@@ -27,6 +27,11 @@ using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model;
+using MediaBrowser.Controller.Persistence;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
+using Jellyfin.Database.Implementations;
+using Microsoft.EntityFrameworkCore;
+using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -41,6 +46,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
         private readonly UserConfigurationManager _userConfigurationManager;
+        private readonly IItemRepository _itemRepository;
+
+        private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+
         private static readonly HashSet<string> BrandingFileNames = new(new[]
         {
             "icon-transparent.png",
@@ -50,7 +59,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             "apple-touch-icon.png"
         }, StringComparer.OrdinalIgnoreCase);
 
-        public JellyfinEnhancedController(IHttpClientFactory httpClientFactory, Logger logger, IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IDtoService dtoService, UserConfigurationManager userConfigurationManager)
+        public JellyfinEnhancedController(
+            IHttpClientFactory httpClientFactory, 
+            Logger logger, 
+            IUserManager userManager, 
+            IUserDataManager userDataManager, 
+            ILibraryManager libraryManager, 
+            IDtoService dtoService, 
+            UserConfigurationManager userConfigurationManager,
+            IItemRepository itemRepository,
+            IDbContextFactory<JellyfinDbContext> dbContextFactory)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -59,6 +77,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _libraryManager = libraryManager;
             _dtoService = dtoService;
             _userConfigurationManager = userConfigurationManager;
+            _itemRepository = itemRepository;
+            _dbContextFactory = dbContextFactory;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
@@ -1817,7 +1837,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 items.Add(new
                                 {
                                     id = (string?)record.id?.ToString(),
-                                    source = "sonarr",
+                                    source = nameof(ArrType.Sonarr),
                                     title = (string?)record.series?.title ?? "Unknown",
                                     subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
                                     seasonNumber = (int?)record.episode?.seasonNumber,
@@ -1875,7 +1895,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 items.Add(new
                                 {
                                     id = (string?)record.id?.ToString(),
-                                    source = "radarr",
+                                    source = nameof(ArrType.Radarr),
                                     title = (string?)record.movie?.title ?? "Unknown",
                                     subtitle = (string?)record.movie?.year?.ToString(),
                                     seasonNumber = (int?)null,
@@ -2112,7 +2132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
 
-            var events = new List<object>();
+            var events = new List<ArrItem>();
 
             var todayUtc = DateTime.UtcNow.Date;
             DateTime startDate = todayUtc;
@@ -2204,37 +2224,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(30);
 
-                    // First, fetch all series to get their names and provider IDs
-                    var seriesCache = new Dictionary<int, (string Title, int? TvdbId, string? ImdbId)>();
-                    try
-                    {
-                        var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
-                        if (seriesResponse.IsSuccessStatusCode)
-                        {
-                            var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
-                            var seriesData = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(seriesJson);
-                            if (seriesData != null)
-                            {
-                                foreach (var series in seriesData)
-                                {
-                                    var seriesId = (int?)series.id;
-                                    var seriesTitle = (string?)series.title;
-                                    var seriesTvdbId = (int?)series.tvdbId;
-                                    var seriesImdbId = (string?)series.imdbId;
-                                    if (seriesId.HasValue && !string.IsNullOrWhiteSpace(seriesTitle))
-                                    {
-                                        seriesCache[seriesId.Value] = (seriesTitle, seriesTvdbId, seriesImdbId);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Failed to fetch Sonarr series list: {ex.Message}");
-                    }
-
-                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?start={startDate:yyyy-MM-dd}&end={endDate:yyyy-MM-dd}");
+                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?includeSeries=true&start={startDate:yyyy-MM-dd}&end={endDate:yyyy-MM-dd}");
                     if (response.IsSuccessStatusCode)
                     {
                         var json = await response.Content.ReadAsStringAsync();
@@ -2254,35 +2244,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 var seriesTitle = "Unknown Series";
                                 int? seriesTvdbId = null;
                                 string? seriesImdbId = null;
-                                if (seriesId.HasValue && seriesCache.TryGetValue(seriesId.Value, out var cachedSeries))
-                                {
-                                    seriesTitle = cachedSeries.Title;
-                                    seriesTvdbId = cachedSeries.TvdbId;
-                                    seriesImdbId = cachedSeries.ImdbId;
-                                }
+                                
+                                seriesTitle = episode.series.title;
+                                seriesTvdbId = episode.series.tvdbId;
+                                seriesImdbId = episode.series.imdbId;
 
                                 var seasonNumber = (int?)episode.seasonNumber ?? 0;
                                 var episodeNumber = (int?)episode.episodeNumber ?? 0;
                                 var episodeTitle = (string?)episode.title ?? "Unknown Episode";
 
-                                events.Add(new
+                                events.Add(new ArrItem
                                 {
-                                    id = (string?)episode.id?.ToString(),
-                                    source = "sonarr",
-                                    type = "Series",
-                                    title = seriesTitle,
-                                    subtitle = $"S{seasonNumber:D2}E{episodeNumber:D2} - {episodeTitle}",
-                                    releaseDate = airDate.Value.ToUniversalTime().ToString("o"),
-                                    releaseType = "Episode",
-                                    hasFile = (bool?)episode.hasFile ?? false,
-                                    monitored = (bool?)episode.monitored ?? false,
-                                    seriesId = seriesId,
-                                    seasonNumber = seasonNumber,
-                                    episodeNumber = episodeNumber,
-                                    episodeTitle = episodeTitle,
-                                    overview = (string?)episode.overview,
-                                    tvdbId = seriesTvdbId,
-                                    imdbId = seriesImdbId
+                                    Id = (string?)episode.id?.ToString(),
+                                    Source = nameof(ArrType.Sonarr),
+                                    Type = "Series",
+                                    Title = seriesTitle,
+                                    Subtitle = $"S{seasonNumber:D2}E{episodeNumber:D2} - {episodeTitle}",
+                                    ReleaseDate = airDate.Value.ToUniversalTime().ToString("o"),
+                                    ReleaseType = "Episode",
+                                    HasFile = (bool?)episode.hasFile ?? false,
+                                    Monitored = (bool?)episode.monitored ?? false,
+                                    SeriesId = seriesId,
+                                    SeasonNumber = seasonNumber,
+                                    EpisodeNumber = episodeNumber,
+                                    EpisodeTitle = episodeTitle,
+                                    Overview = (string?)episode.overview,
+                                    SeriesTvdbId = seriesTvdbId,
+                                    SeriesImdbId = seriesImdbId,
+                                    TvdbId = (int?)episode.tvdbId,
+                                    ImdbId = (string?)episode.imdbId
                                 });
                             }
                         }
@@ -2378,20 +2368,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         continue;
                                     }
 
-                                    events.Add(new
+                                    events.Add(new ArrItem
                                     {
-                                        id = $"{movie.id}-{kvp.Key}",
-                                        source = "radarr",
-                                        type = "Movie",
-                                        title = movieTitle,
-                                        subtitle = movieYear,
-                                        releaseDate = releaseUtc.ToString("o"),
-                                        releaseType = kvp.Key,
-                                        hasFile = (bool?)movie.hasFile ?? false,
-                                        monitored = (bool?)movie.monitored ?? false,
-                                        posterUrl = posterUrl,
-                                        tmdbId = (int?)movie.tmdbId,
-                                        imdbId = (string?)movie.imdbId
+                                        Id = $"{movie.id}-{kvp.Key}",
+                                        Source = nameof(ArrType.Radarr),
+                                        Type = "Movie",
+                                        Title = movieTitle,
+                                        Subtitle = movieYear,
+                                        ReleaseDate = releaseUtc.ToString("o"),
+                                        ReleaseType = kvp.Key,
+                                        HasFile = (bool?)movie.hasFile ?? false,
+                                        Monitored = (bool?)movie.monitored ?? false,
+                                        PosterUrl = posterUrl,
+                                        TmdbId = (int?)movie.tmdbId,
+                                        ImdbId = (string?)movie.imdbId
                                     });
                                 }
                             }
@@ -2404,7 +2394,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return Ok(new { events = events });
+            var providerKeys = events
+                .SelectMany(e =>
+                {
+                    var list = new List<(string, string)>();
+                    if (e.TvdbId.HasValue) list.Add(("Tvdb", e.TvdbId.Value.ToString()));
+                    if (e.TmdbId.HasValue) list.Add(("Tmdb", e.TmdbId.Value.ToString()));
+                    if (!string.IsNullOrWhiteSpace(e.ImdbId)) list.Add(("Imdb", e.ImdbId));
+                    return list;
+                })
+                .Distinct()
+                .ToList();
+
+            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys);
+
+            foreach (var evt in events)
+            {
+                var providers = new List<(string Provider, string Value)>();
+                if (evt.TvdbId.HasValue) providers.Add(("Tvdb", evt.TvdbId.Value.ToString()));
+                if (evt.TmdbId.HasValue) providers.Add(("Tmdb", evt.TmdbId.Value.ToString()));
+                if (!string.IsNullOrWhiteSpace(evt.ImdbId)) providers.Add(("Imdb", evt.ImdbId));
+
+                evt.ItemId = ItemIdHelper.GetBestItemId(providers, itemMap);
+            }
+
+            return Ok(new { events });
         }
 
         /// <summary>
@@ -2681,6 +2695,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
         }
+
+        /// <summary>
+        /// Retrieves the first matching item ID for the specified provider IDs.
+        /// If multiple items match, the item with the most matching providers is returned.
+        /// </summary>
+        /// <param name="providers">A dictionary of provider names and their corresponding IDs (e.g., "Imdb" => "tt123456"). Keys are case-insensitive.</param>
+        /// <returns>The first matching item GUID, or null if no item matches the provided providers.</returns>
+        [Authorize]
+        [HttpGet("items/by-providers")]
+        public ActionResult<Guid?> GetItemIdByProviders([FromQuery] Dictionary<string, string>? providers)
+        {
+            var itemIds = _itemRepository.GetItemIdsByProviders(providers);
+
+            if (itemIds.Count == 0)
+                return BadRequest("No provider ids supplied or no items found");
+
+            return Ok(itemIds.FirstOrDefault());
+        }
+
+        /// <summary>
+        /// Retrieves the first matching item ID for each set of provider IDs in the input list.
+        /// Each dictionary represents a set of providers (e.g., "Imdb", "Tvdb", "Tmdb") for which the repository will be queried.
+        /// </summary>
+        /// <param name="providerSets">A list of dictionaries, each containing provider names and their corresponding IDs. Keys are case-insensitive.</param>
+        /// <returns>A list of nullable GUIDs, one for each provider set. If no item matches a set, the corresponding entry is null.</returns>
+        [Authorize]
+        [HttpPost("items/by-providers-lists")]
+        public async Task<ActionResult<List<Guid?>>> GetItemIdsByProvidersListsWithScoreAsync(
+            [FromBody] List<Dictionary<string, string>> providerSets,
+            CancellationToken ct)
+        {
+            var results = new List<Guid?>();
+
+            var providerKeys = providerSets
+                .Where(ps => ps != null)
+                .SelectMany(ps => ps.Select(kv => (Provider: kv.Key, Value: kv.Value)))
+                .ToList();
+
+            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys, ct);
+
+            foreach (var providers in providerSets)
+            {
+                if (providers == null || providers.Count == 0)
+                {
+                    results.Add(null);
+                    continue;
+                }
+
+                var providerList = providers.Select(kv => (kv.Key, kv.Value));
+
+                var bestMatch = ItemIdHelper.GetBestItemId(providerList, itemMap);
+
+                results.Add(bestMatch);
+            }
+
+            return results;
+        }
+
 
         [Authorize]
         [HttpGet("{viewName}")]
