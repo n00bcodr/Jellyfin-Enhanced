@@ -306,6 +306,30 @@
         .je-requests-status-chip.je-chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
         .je-requests-status-chip.je-chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
         .je-requests-status-chip.je-chip-rejected { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
+        .je-requests-status-chip.je-chip-coming-soon { background: rgba(156, 39, 176, 0.25); color: #f0f9ff; border-color: rgba(156, 39, 176, 0.5); }
+        .je-release-date-chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 0.25rem 0.5rem;
+          margin-left: 0.5rem;
+          border-radius: 999px;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          font-size: 0.68rem;
+          text-transform: uppercase;
+          background: rgba(156, 39, 176, 0.25);
+          border: 1px solid rgba(156, 39, 176, 0.5);
+          color: #f0f9ff;
+        }
+        .je-release-date-chip sup,
+        .je-requests-status-chip sup,
+        .je-request-title sup {
+          font-size: 0.6em;
+          opacity: 0.85;
+          margin-bottom: 1em;
+          margin-right: 0.25em;
+          text-transform: lowercase;
+        }
     `;
 
   /**
@@ -463,7 +487,7 @@
   }
 
   /**
-   * Format relative date
+   * Format relative date (e.g., "2m ago", "5h ago", "3d ago")
    */
   function formatRelativeDate(dateStr) {
     if (!dateStr) return "";
@@ -490,8 +514,87 @@
     if (hours < 24) return `${hours}h ago`;
     if (days < 30) return `${days}d ago`;
 
-    // For older dates, show the actual date
-    return date.toLocaleDateString();
+    // For older dates, show the date in "DD MMM YYYY" format
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  /**
+   * Format future release date as relative time
+   * Examples: "today", "tomorrow", "in 7 days", "on 28<sup>th</sup> February"
+   */
+  function formatFutureReleaseDate(dateStr) {
+    if (!dateStr) return null;
+
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const releaseDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    const diffMs = releaseDay - today;
+    const diffDays = Math.ceil(diffMs / 86400000);
+
+    if (diffDays < 0) return null;
+
+    const labelTomorrow = JE.t?.("requests_tomorrow") || "tomorrow";
+    const labelInDays = JE.t?.("requests_in_days") || "in {days} days";
+    const labelOn = JE.t?.("requests_on_date") || "on {date}";
+
+    if (diffDays === 0) {
+      return JE.t?.("requests_today") || "today";
+    } else if (diffDays === 1) {
+      return labelTomorrow;
+    } else if (diffDays <= 14) {
+      return labelInDays.replace("{days}", diffDays);
+    } else {
+      const day = date.getDate();
+      const month = date.toLocaleString('default', { month: 'long' });
+      const suffix = getOrdinalSuffix(day);
+      return labelOn.replace("{date}", `${day}${suffix} ${month}`);
+    }
+  }
+
+  /**
+   * Get ordinal suffix for day number as superscript (1<sup>st</sup>, 2<sup>nd</sup>, etc.)
+   */
+  function getOrdinalSuffix(day) {
+    if (day > 3 && day < 21) return '<sup>th</sup>';
+    switch (day % 10) {
+      case 1: return '<sup>st</sup>';
+      case 2: return '<sup>nd</sup>';
+      case 3: return '<sup>rd</sup>';
+      default: return '<sup>th</sup>';
+    }
+  }
+
+  /**
+   * Check if an item has a future release date
+   */
+  function hasFutureReleaseDate(item) {
+    const releaseDate = item.type === 'tv'
+      ? item.nextAirDate
+      : (item.digitalReleaseDate || item.theatricalReleaseDate);
+    if (!releaseDate) return false;
+
+    const date = new Date(releaseDate);
+    if (isNaN(date.getTime())) return false;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const releaseDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    return releaseDay > today;
+  }
+
+  /**
+   * Get release date label for display
+   */
+  function getReleaseDateLabel(item) {
+    const dateStr = item.type === 'tv'
+      ? item.nextAirDate
+      : (item.digitalReleaseDate || item.theatricalReleaseDate);
+    return formatFutureReleaseDate(dateStr);
   }
 
   /**
@@ -507,7 +610,7 @@
   /**
    * Jellyseerr like chips
    */
-  function resolveRequestStatus(status) {
+  function resolveRequestStatus(status, item = null) {
     const normalized = (status || "").toLowerCase();
     const labelAvailable = JE.t?.("jellyseerr_btn_available") || "Available";
     const labelPartial = JE.t?.("jellyseerr_btn_partially_available") || "Partially Available";
@@ -515,6 +618,20 @@
     const labelPending = JE.t?.("jellyseerr_btn_pending") || "Pending Approval";
     const labelRequested = JE.t?.("jellyseerr_btn_requested") || "Requested";
     const labelRejected = JE.t?.("jellyseerr_btn_rejected") || "Rejected";
+    const labelComingSoon = JE.t?.("requests_coming_soon") || "Coming Soon";
+
+    // Check for "Coming Soon" status - items with future release dates
+    // For TV shows: can be approved, processing, or partially available with upcoming episodes
+    // For movies: only approved or processing
+    if (item && hasFutureReleaseDate(item)) {
+      const isTV = item.type === 'tv';
+      const allowedStatuses = isTV
+        ? ['approved', 'processing', 'partially available']
+        : ['approved', 'processing'];
+      if (allowedStatuses.includes(normalized)) {
+        return { label: labelComingSoon, className: "je-chip-coming-soon" };
+      }
+    }
 
     switch (normalized) {
       case "available":
@@ -582,7 +699,8 @@
    * Render a request card
    */
   function renderRequestCard(item) {
-    const status = resolveRequestStatus(item.mediaStatus);
+    const status = resolveRequestStatus(item.mediaStatus, item);
+    const releaseDateLabel = getReleaseDateLabel(item);
 
     let posterHtml = "";
     if (item.posterUrl) {
@@ -613,7 +731,7 @@
                           <div class="je-request-title">${item.title || "Unknown"}</div>
                           ${item.year ? `<span class="je-request-year">(${item.year})</span>` : ""}
                         </div>
-                        <span class="je-requests-status-chip ${status.className}">${status.label}</span>
+                        <span class="je-requests-status-chip ${status.className}">${status.label}</span>${releaseDateLabel ? `<span class="je-release-date-chip">${releaseDateLabel}</span>` : ""}
                       </div>
                     </div>
                     <div class="je-request-meta">
@@ -793,12 +911,14 @@
         const labelPending = (JE.t && JE.t('jellyseerr_btn_pending')) || 'Pending Approval';
         const labelProcessing = (JE.t && JE.t('jellyseerr_btn_processing')) || 'Processing';
         const labelAvailable = (JE.t && JE.t('jellyseerr_btn_available')) || 'Available';
+        const labelComingSoon = (JE.t && JE.t('requests_coming_soon')) || 'Coming Soon';
 
         html += `
             <div class="je-requests-tabs">
               <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "all" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('all')">${labelAll}</button>
               <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "pending" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('pending')">${labelPending}</button>
               <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "processing" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('processing')">${labelProcessing}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "comingsoon" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('comingsoon')">${labelComingSoon}</button>
               <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "available" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('available')">${labelAvailable}</button>
             </div>
           `;
@@ -812,21 +932,38 @@
                     </div>
                 `;
       } else {
-        html += `<div class="je-downloads-grid">`;
-        state.requests.forEach((item) => {
-          html += renderRequestCard(item);
-        });
-        html += `</div>`;
+        // Apply client-side filtering only for Processing tab (exclude Partially Available)
+        let filteredRequests = state.requests;
+        if (state.requestsFilter === "processing") {
+          // Exclude "Partially Available" items from Processing tab
+          filteredRequests = state.requests.filter(item => {
+            return item.mediaStatus !== "Partially Available";
+          });
+        }
 
-        // Pagination
-        if (state.requestsTotalPages > 1) {
+        if (filteredRequests.length === 0) {
           html += `
+                    <div class="je-empty-state">
+                        <div>No requests found</div>
+                    </div>
+                `;
+        } else {
+          html += `<div class="je-downloads-grid">`;
+          filteredRequests.forEach((item) => {
+            html += renderRequestCard(item);
+          });
+          html += `</div>`;
+
+          // Pagination
+          if (state.requestsTotalPages > 1) {
+            html += `
                         <div class="je-pagination">
                             <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}>Previous</button>
                             <span>Page ${state.requestsPage} of ${state.requestsTotalPages}</span>
                             <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}>Next</button>
                         </div>
                     `;
+          }
         }
       }
       html += `</div>`;

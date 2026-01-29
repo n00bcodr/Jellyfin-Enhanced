@@ -1954,12 +1954,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 );
 
                 // Build filter parameter
+                // "comingsoon" is a custom filter - fetch processing items and filter server-side
+                var isComingSoonFilter = string.Equals(filter, "comingsoon", StringComparison.OrdinalIgnoreCase);
                 var filterParam = filter?.ToLower() switch
                 {
                     "pending" => "&filter=pending",
                     "approved" => "&filter=approved",
                     "available" => "&filter=available",
                     "processing" => "&filter=processing",
+                    "comingsoon" => "&filter=processing", // Fetch processing, then filter for future dates
                     _ => ""
                 };
 
@@ -2000,6 +2003,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         string? title = null;
                         int? year = null;
                         string? posterUrl = null;
+                        string? digitalReleaseDate = null;
+                        string? theatricalReleaseDate = null;
+                        string? initialAirDate = null;
+                        string? nextAirDate = null;
 
                         if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
                         {
@@ -2007,6 +2014,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             title = enrichedData.Title;
                             year = enrichedData.Year;
                             posterUrl = enrichedData.PosterUrl;
+
+                            if (type == "tv")
+                            {
+                                initialAirDate = enrichedData.InitialAirDate;
+                                nextAirDate = enrichedData.NextAirDate;
+                            }
+                            else
+                            {
+                                digitalReleaseDate = enrichedData.DigitalReleaseDate;
+                                theatricalReleaseDate = enrichedData.TheatricalReleaseDate;
+                            }
                         }
 
                         // Fallback to media object if enrichment didn't work
@@ -2075,16 +2093,88 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             requestedBy = displayName ?? username ?? "Unknown",
                             requestedByAvatar = avatarUrl,
                             createdAt = createdAtStr,
-                            jellyfinMediaId = media?["jellyfinMediaId"]?.Value<string>()
+                            jellyfinMediaId = media?["jellyfinMediaId"]?.Value<string>(),
+                            digitalReleaseDate = digitalReleaseDate,
+                            theatricalReleaseDate = theatricalReleaseDate,
+                            initialAirDate = initialAirDate,
+                            nextAirDate = nextAirDate
                         };
                     }).ToList();
 
                     var enrichedRequests = await Task.WhenAll(enrichmentTasks);
+
+                    // Apply server-side filtering for "comingsoon"
+                    if (isComingSoonFilter)
+                    {
+                        var today = DateTime.UtcNow.Date;
+                        enrichedRequests = enrichedRequests
+                            .Where(r =>
+                            {
+                                var status = (r.mediaStatus ?? "").ToLower();
+                                var itemType = r.type;
+
+                                // For TV shows: include if has future nextAirDate
+                                // (can be processing, approved, or even partially available with upcoming episodes)
+                                if (itemType == "tv")
+                                {
+                                    var airDate = r.nextAirDate;
+                                    if (!string.IsNullOrEmpty(airDate) && DateTime.TryParse(airDate, out var ad) && ad.Date > today)
+                                    {
+                                        // Include processing, approved, or partially available TV shows with upcoming episodes
+                                        return status == "processing" || status == "approved" || status == "partially available";
+                                    }
+                                    return false;
+                                }
+
+                                // For movies: check digital or theatrical release dates
+                                // Only include processing or approved movies
+                                if (status != "processing" && status != "approved")
+                                    return false;
+
+                                var digitalDate = r.digitalReleaseDate;
+                                var theatricalDate = r.theatricalReleaseDate;
+
+                                // Check if has a future release date
+                                if (!string.IsNullOrEmpty(digitalDate) && DateTime.TryParse(digitalDate, out var dd) && dd.Date > today)
+                                    return true;
+                                if (!string.IsNullOrEmpty(theatricalDate) && DateTime.TryParse(theatricalDate, out var td) && td.Date > today)
+                                    return true;
+
+                                return false;
+                            })
+                            .OrderBy(r =>
+                            {
+                                // Sort by the earliest future date
+                                DateTime? bestDate = null;
+                                var today = DateTime.UtcNow.Date;
+
+                                // For TV shows, use nextAirDate
+                                if (r.type == "tv" && !string.IsNullOrEmpty(r.nextAirDate) && DateTime.TryParse(r.nextAirDate, out var airDate) && airDate.Date > today)
+                                {
+                                    bestDate = airDate;
+                                }
+                                else
+                                {
+                                    // For movies, use digital or theatrical date
+                                    if (!string.IsNullOrEmpty(r.digitalReleaseDate) && DateTime.TryParse(r.digitalReleaseDate, out var dd) && dd.Date > today)
+                                        bestDate = dd;
+                                    if (!string.IsNullOrEmpty(r.theatricalReleaseDate) && DateTime.TryParse(r.theatricalReleaseDate, out var td) && td.Date > today)
+                                    {
+                                        if (bestDate == null || td < bestDate)
+                                            bestDate = td;
+                                    }
+                                }
+
+                                return bestDate ?? DateTime.MaxValue;
+                            })
+                            .ToArray();
+                    }
+
                     requests.AddRange(enrichedRequests);
                 }
 
                 var pageInfo = data["pageInfo"] as JObject;
-                var totalResults = pageInfo?["results"]?.Value<int>() ?? 0;
+                var totalResults = isComingSoonFilter ? requests.Count : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
 
                 return Ok(new
@@ -2584,9 +2674,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Fetch title and poster from Jellyseerr's movie/tv endpoints using TMDB ID.
+        /// Fetch metadata from Jellyseerr's TMDB integration.
+        /// For movies: title, year, poster, digitalReleaseDate, theatricalReleaseDate
+        /// For TV shows: title, year, poster, initialAirDate (first air date), nextAirDate (next episode air date)
         /// </summary>
-        private async Task<(string? Title, int? Year, string? PosterUrl)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl)
+        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl)
         {
             try
             {
@@ -2601,20 +2693,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     string? title = null;
                     int? year = null;
                     string? posterUrl = null;
+                    string? digitalReleaseDate = null;
+                    string? theatricalReleaseDate = null;
+                    string? initialAirDate = null;
+                    string? nextAirDate = null;
 
                     if (type == "movie")
                     {
                         if (data.TryGetProperty("title", out var titleProp))
                             title = titleProp.GetString();
                         if (data.TryGetProperty("releaseDate", out var rd) && !string.IsNullOrEmpty(rd.GetString()) && rd.GetString()!.Length >= 4)
+                        {
                             year = int.TryParse(rd.GetString()!.Substring(0, 4), out var y) ? y : null;
+                            theatricalReleaseDate = rd.GetString();
+                        }
+
+                        // Try to get release dates from releaseDates object (which contains releases.results array)
+                        if (data.TryGetProperty("releases", out var releases) && releases.TryGetProperty("results", out var results))
+                        {
+                            foreach (var regionRelease in results.EnumerateArray())
+                            {
+                                if (regionRelease.TryGetProperty("release_dates", out var releaseDates))
+                                {
+                                    foreach (var release in releaseDates.EnumerateArray())
+                                    {
+                                        if (release.TryGetProperty("type", out var typeProp))
+                                        {
+                                            var releaseType = typeProp.GetInt32();
+                                            // Type 4 = Digital, Type 5 = Physical, Type 3 = Theatrical
+                                            if (releaseType == 4 && release.TryGetProperty("release_date", out var digitalDateProp))
+                                            {
+                                                var dateStr = digitalDateProp.GetString();
+                                                if (!string.IsNullOrEmpty(dateStr))
+                                                {
+                                                    // Keep the earliest digital release date we find
+                                                    if (digitalReleaseDate == null || string.Compare(dateStr, digitalReleaseDate, StringComparison.Ordinal) < 0)
+                                                    {
+                                                        digitalReleaseDate = dateStr.Length >= 10 ? dateStr.Substring(0, 10) : dateStr;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     else
                     {
                         if (data.TryGetProperty("name", out var nameProp))
                             title = nameProp.GetString();
-                        if (data.TryGetProperty("firstAirDate", out var fad) && !string.IsNullOrEmpty(fad.GetString()) && fad.GetString()!.Length >= 4)
-                            year = int.TryParse(fad.GetString()!.Substring(0, 4), out var y) ? y : null;
+
+                        if (data.TryGetProperty("firstAirDate", out var fad) && !string.IsNullOrEmpty(fad.GetString()))
+                        {
+                            initialAirDate = fad.GetString();
+                            if (initialAirDate != null && initialAirDate.Length >= 4)
+                                year = int.TryParse(initialAirDate.Substring(0, 4), out var y) ? y : null;
+                        }
+
+                        if (data.TryGetProperty("nextEpisodeToAir", out var nextEp) && nextEp.ValueKind != System.Text.Json.JsonValueKind.Null)
+                        {
+                            if (nextEp.TryGetProperty("airDate", out var airDateProp))
+                            {
+                                nextAirDate = airDateProp.GetString();
+                            }
+                        }
                     }
 
                     if (data.TryGetProperty("posterPath", out var poster) && poster.ValueKind != System.Text.Json.JsonValueKind.Null)
@@ -2622,7 +2765,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         posterUrl = $"https://image.tmdb.org/t/p/w300{poster.GetString()}";
                     }
 
-                    return (title, year, posterUrl);
+                    return (title, year, posterUrl, digitalReleaseDate, theatricalReleaseDate, initialAirDate, nextAirDate);
                 }
             }
             catch (Exception ex)
@@ -2630,7 +2773,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"Failed to enrich request with TMDB data: {ex.Message}");
             }
 
-            return (null, null, null);
+            return (null, null, null, null, null, null, null);
         }
 
         private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
