@@ -96,6 +96,8 @@
     "panel_settings_ui_quality_tags_desc": "Display 4K, HDR, etc., tags on posters.",
     "panel_settings_ui_rating_tags": "Show Rating Tags",
     "panel_settings_ui_rating_tags_desc": "Display TMDB and Rotten Tomatoes ratings on posters.",
+    "panel_settings_ui_people_tags": "Show People Tags",
+    "panel_settings_ui_people_tags_desc": "Display age, birthplace, and deceased status for cast members.",
     "panel_settings_ui_remove_continue_watching": "Add Remove from Continue Watching Button",
     "panel_settings_ui_remove_continue_watching_desc": "Add option to remove items from Continue Watching section",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} This is a destructive action, it removes the watch progress of the item for the user",

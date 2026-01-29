@@ -97,6 +97,8 @@
     "panel_settings_ui_remove_continue_watching": "Añadir botón Quitar de Seguir viendo",
     "panel_settings_ui_rating_tags": "Mostrar etiquetas de valoración",
     "panel_settings_ui_rating_tags_desc": "Mostrar valoraciones de TMDB y Rotten Tomatoes en los pósters.",
+    "panel_settings_ui_people_tags": "Mostrar etiquetas de personas",
+    "panel_settings_ui_people_tags_desc": "Mostrar edad, lugar de nacimiento y estado de fallecimiento para los miembros del elenco.",
     "panel_settings_ui_remove_continue_watching_desc": "Añadir opción para quitar elementos de la sección Seguir viendo",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} Acción destructiva: elimina el progreso de visualización del usuario",
     "panel_footer_close": "Pulsa <kbd>?</kbd> o <kbd>Esc</kbd> para cerrar",

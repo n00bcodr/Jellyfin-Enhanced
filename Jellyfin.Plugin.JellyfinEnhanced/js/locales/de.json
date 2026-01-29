@@ -95,6 +95,8 @@
     "panel_settings_ui_remove_continue_watching": "Schaltfläche 'Aus Weiterschauen entfernen' hinzufügen",
     "panel_settings_ui_rating_tags": "Bewertungs-Tags anzeigen",
     "panel_settings_ui_rating_tags_desc": "IMDB-Bewertungen auf Postern anzeigen.",
+    "panel_settings_ui_people_tags": "Personen-Tags anzeigen",
+    "panel_settings_ui_people_tags_desc": "Alter, Geburtsort und Verstorbenenstatus für Besetzungsmitglieder anzeigen.",
     "panel_settings_ui_remove_continue_watching_desc": "Option hinzufügen, um Elemente aus dem Weiterschauen-Bereich zu entfernen",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} Dies ist eine destruktive Aktion, sie entfernt den Wiedergabefortschritt des Elements für den Benutzer",
     "panel_footer_close": "Drücken Sie <kbd>?</kbd> oder <kbd>Esc</kbd> zum Schließen",

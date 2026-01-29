@@ -95,6 +95,8 @@
     "panel_settings_ui_language_tags_desc": "Posterlerde ses dili bayraklarını göster.",
     "panel_settings_ui_rating_tags": "Derecelendirme Etiketlerini Göster",
     "panel_settings_ui_rating_tags_desc": "Posterlerde TMDB ve Rotten Tomatoes derecelendirmelerini göster.",
+    "panel_settings_ui_people_tags": "İnsan Etiketlerini Göster",
+    "panel_settings_ui_people_tags_desc": "Oyuncu üyeleri için yaş, doğum yeri ve vefat durumu göster.",
     "panel_settings_ui_quality_tags_desc": "Posterlerde 4K, HDR vb. etiketleri göster.",
     "panel_settings_ui_remove_continue_watching": "‘İzlemeye Devam Et’ Kaldır Düğmesi Ekle",
     "panel_settings_ui_remove_continue_watching_desc": "‘İzlemeye Devam Et’ listesinden öğeleri kaldırma seçeneği ekler",

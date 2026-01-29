@@ -97,6 +97,8 @@
     "panel_settings_ui_remove_continue_watching": "Ajouter le bouton Supprimer de Continuer à regarder",
     "panel_settings_ui_rating_tags": "Afficher les tags de note",
     "panel_settings_ui_rating_tags_desc": "Afficher les notes TMDB et Rotten Tomatoes sur les affiches.",
+    "panel_settings_ui_people_tags": "Afficher les tags de personnes",
+    "panel_settings_ui_people_tags_desc": "Afficher l'âge, le lieu de naissance et le statut de décès des membres de la distribution.",
     "panel_settings_ui_remove_continue_watching_desc": "Ajouter l'option pour supprimer des éléments de la section Continuer à regarder",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} Ceci est une action destructive, elle supprime le progrès de visionnage de l'élément pour l'utilisateur",
     "panel_footer_close": "Appuyez sur <kbd>?</kbd> ou <kbd>Échap</kbd> pour fermer",

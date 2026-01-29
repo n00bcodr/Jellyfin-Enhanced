@@ -96,6 +96,8 @@
     "panel_settings_ui_quality_tags_desc": "Отображать теги 4K, HDR и т.д. на постерах.",
     "panel_settings_ui_rating_tags": "Показать теги рейтинга",
     "panel_settings_ui_rating_tags_desc": "Отображать рейтинги TMDB и Rotten Tomatoes на постерах.",
+    "panel_settings_ui_people_tags": "Показать теги людей",
+    "panel_settings_ui_people_tags_desc": "Отображать возраст, место рождения и статус умерших для членов актерского состава.",
     "panel_settings_ui_remove_continue_watching": "Добавить кнопку удаления из продолжения просмотра",
     "panel_settings_ui_remove_continue_watching_desc": "Добавить опцию для удаления элементов из раздела продолжения просмотра",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} Это деструктивное действие, оно удаляет прогресс просмотра элемента для пользователя",

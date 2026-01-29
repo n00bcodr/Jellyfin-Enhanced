@@ -96,6 +96,8 @@
     "panel_settings_ui_quality_tags_desc": "Wyświetl tagi 4K, HDR itp. na plakatach.",
     "panel_settings_ui_rating_tags": "Pokaż tagi ocen",
     "panel_settings_ui_rating_tags_desc": "Wyświetl oceny TMDB i Rotten Tomatoes na plakatach.",
+    "panel_settings_ui_people_tags": "Pokaż tagi osób",
+    "panel_settings_ui_people_tags_desc": "Wyświetl wiek, miejsce urodzenia i status zmarłych dla członków obsady.",
     "panel_settings_ui_remove_continue_watching": "Dodaj przycisk usuwania z 'Kontynuuj oglądanie'",
     "panel_settings_ui_remove_continue_watching_desc": "Dodaj opcję usuwania elementów z sekcji 'Kontynuuj oglądanie'",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} Ta operacja jest nieodwracalna - usuwa postęp oglądania dla użytkownika",

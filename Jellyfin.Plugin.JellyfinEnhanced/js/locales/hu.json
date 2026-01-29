@@ -96,6 +96,8 @@
     "panel_settings_ui_quality_tags_desc": "4K, HDR stb. címkék megjelenítése posztereken.",
     "panel_settings_ui_rating_tags": "Értékelés címkék megjelenítése",
     "panel_settings_ui_rating_tags_desc": "TMDB és Rotten Tomatoes értékelések megjelenítése a borítókon.",
+    "panel_settings_ui_people_tags": "Személy címkék megjelenítése",
+    "panel_settings_ui_people_tags_desc": "Kor, születési hely és elhunyt státusz megjelenítése a szereplők számára.",
     "panel_settings_ui_remove_continue_watching": "Hozzáadás Eltávolítás a megtekintés folytatásából gomb",
     "panel_settings_ui_remove_continue_watching_desc": "Lehetőség hozzáadása az elemek eltávolítására a megtekintés folytatása részből",
     "panel_settings_ui_remove_continue_watching_warning": "{{icon:warning}} Ez egy romboló hatású művelet, eltávolítja a felhasználó számára megtekintés folytatása pozíciót.",
