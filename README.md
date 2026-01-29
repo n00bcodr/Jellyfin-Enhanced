@@ -1312,6 +1312,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── network-discovery.js
     │   ├── person-discovery.js
     │   ├── request-manager.js
+    │   ├── seamless-scroll.js
     │   ├── tag-discovery.js
     │   └── ui.js
     ├── arr/
@@ -1369,6 +1370,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`network-discovery.js`**: Enables network-based discovery with TV/Movies/All filtering, allowing users to browse content from specific TV networks or streaming services available in Jellyseerr with separate pagination per content type.
     * **`person-discovery.js`**: Facilitates person-based discovery with TV/Movies/All filtering, letting users explore media featuring specific actors, directors, or crew members from Jellyseerr with independent pagination tracking.
     * **`request-manager.js`**: Provides centralized request management with concurrency control (max 6 concurrent requests), automatic retry logic (3 attempts with exponential backoff), response caching (5-minute TTL), request deduplication, and AbortController support for cancellation.
+    * **`seamless-scroll.js`**: Implements enhanced infinite scroll with prefetch (~2 viewport heights), deduplication, exponential backoff retry logic, and scroll event fallback. Provides reusable utilities for all discovery modules.
     * **`tag-discovery.js`**: Implements tag-based content discovery with TV/Movies/All filtering, enabling users to find and request media based on custom tags and categories in Jellyseerr with separate page tracking per content type.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
 

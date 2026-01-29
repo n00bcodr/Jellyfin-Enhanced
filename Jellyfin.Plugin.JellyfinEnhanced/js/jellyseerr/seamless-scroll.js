@@ -73,7 +73,13 @@
              * @returns {Array} Filtered items
              */
             filter(items, getKey = (i) => `${i.mediaType}-${i.id}`) {
-                return items.filter(item => this.add(item, getKey));
+                const initialCount = items.length;
+                const filtered = items.filter(item => this.add(item, getKey));
+                const duplicateCount = initialCount - filtered.length;
+                if (duplicateCount > 0) {
+                    console.debug(`${logPrefix} Filtered out ${duplicateCount} duplicate(s) from ${initialCount} items`);
+                }
+                return filtered;
             },
 
             /**
@@ -94,12 +100,11 @@
     }
 
     // ============================================================================
-    // SIMPLE INFINITE SCROLL (backward compatible)
+    // INFINITE SCROLL
     // ============================================================================
 
     /**
-     * Simplified infinite scroll setup that replaces the old implementation
-     * Uses the full controller internally but provides simpler API
+     * Enhanced infinite scroll with prefetch, retry, and deduplication
      * @param {object} state - State object with activeScrollObserver property
      * @param {string} sectionSelector - CSS selector for the section
      * @param {Function} loadMoreFn - Function to call when more items needed
@@ -108,6 +113,8 @@
      * @param {object} [options] - Additional options
      */
     function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options = {}) {
+        console.debug(`${logPrefix} Setting up infinite scroll for ${sectionSelector}`);
+
         // Clean up previous observer
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
@@ -186,6 +193,7 @@
             if (!hasMoreCheck() || isLoadingCheck()) return;
 
             removeRetryRow();
+            console.debug(`${logPrefix} Loading more items (in ${retryCount + 1} attempt)`);
 
             try {
                 await loadMoreFn();
@@ -194,11 +202,15 @@
                 if (error.name === 'AbortError') return;
 
                 retryCount++;
+                console.warn(`${logPrefix} Load failed (attempt ${retryCount}/${CONFIG.retry.maxAttempts}):`, error.message);
+
                 if (retryCount >= CONFIG.retry.maxAttempts) {
+                    console.warn(`${logPrefix} Max retry attempts reached, showing retry UI`);
                     showRetryRow();
                 } else {
                     // Auto-retry with backoff
                     const delay = calculateBackoff(retryCount);
+                    console.debug(`${logPrefix} Retrying in ${delay}ms...`);
                     await sleep(delay);
                     if (hasMoreCheck() && !isLoadingCheck()) {
                         await wrappedLoad();
@@ -254,6 +266,8 @@
      * @param {object} state - State object
      */
     function cleanupInfiniteScroll(state) {
+        console.debug(`${logPrefix} Cleaning up infinite scroll`);
+
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
             state.activeScrollObserver = null;
