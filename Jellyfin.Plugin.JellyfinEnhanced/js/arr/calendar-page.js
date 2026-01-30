@@ -905,31 +905,40 @@
 
   // Get start and end dates for current view
   function getRangeForView(anchorDate, viewMode) {
-    const start = new Date(anchorDate);
-    start.setHours(0, 0, 0, 0);
+    const start = new Date(Date.UTC(
+      anchorDate.getUTCFullYear(),
+      anchorDate.getUTCMonth(),
+      anchorDate.getUTCDate(),
+      0, 0, 0, 0
+    ));
 
     if (viewMode === "month") {
-      start.setDate(1);
-      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+      start.setUTCDate(1);
+      const end = new Date(Date.UTC(
+        start.getUTCFullYear(),
+        start.getUTCMonth() + 1,
+        0,
+        23, 59, 59, 999
+      ));
       return { start, end };
     }
 
     if (viewMode === "week") {
-      const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const daysOfWeek = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
       const firstDayIndex = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
-      const currentDayIndex = start.getDay();
+      const currentDayIndex = start.getUTCDay();
       const diff = (currentDayIndex - firstDayIndex + 7) % 7;
-      start.setDate(start.getDate() - diff);
+      start.setUTCDate(start.getUTCDate() - diff);
+
       const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
+      end.setUTCDate(start.getUTCDate() + 6);
+      end.setUTCHours(23, 59, 59, 999);
       return { start, end };
     }
 
-    // Agenda: 30-day rolling window
     const endAgenda = new Date(start);
-    endAgenda.setDate(start.getDate() + 29);
-    endAgenda.setHours(23, 59, 59, 999);
+    endAgenda.setUTCDate(start.getUTCDate() + 29);
+    endAgenda.setUTCHours(23, 59, 59, 999);
     return { start, end: endAgenda };
   }
 
