@@ -887,7 +887,7 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Requests page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
-                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="0" max="300" value="30"/>
+                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="0" max="300"/>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Set to 0 to disable automatic refresh.</div>
                         </div>
@@ -1801,7 +1801,7 @@
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
-                document.querySelector('#downloadsPollIntervalSeconds').value = config.DownloadsPollIntervalSeconds || 30;
+                document.querySelector('#downloadsPollIntervalSeconds').value = (config.DownloadsPollIntervalSeconds !== undefined && config.DownloadsPollIntervalSeconds !== null) ? config.DownloadsPollIntervalSeconds : 30;
 
                 // Calendar Page settings
                 document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
@@ -1966,7 +1966,9 @@
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
-            config.DownloadsPollIntervalSeconds = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10) || 0;
+            const pollIntervalValue = document.querySelector('#downloadsPollIntervalSeconds').value;
+            const parsedPollInterval = parseInt(pollIntervalValue, 10);
+            config.DownloadsPollIntervalSeconds = (!isNaN(parsedPollInterval) && parsedPollInterval > 0) ? parsedPollInterval : 30;
 
             // Calendar Page settings
             config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
