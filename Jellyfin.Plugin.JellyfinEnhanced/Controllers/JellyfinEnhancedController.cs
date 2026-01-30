@@ -175,6 +175,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
             }
 
+            int lastStatusCode = 500;
+            string lastErrorContent = "Could not connect to any configured Jellyseerr instance.";
+
             foreach (var url in urls)
             {
                 var trimmedUrl = url.Trim();
@@ -208,18 +211,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
 
                     _logger.Warning($"Request to Jellyseerr for user {jellyfinUserId} failed. URL: {trimmedUrl}, Status: {response.StatusCode}, Response: {responseContent}");
-                    // Try to parse the error as JSON, if it fails, create a new JSON error object.
+                    // Store the last error so we can return it if all URLs fail
+                    lastStatusCode = (int)response.StatusCode;
                     try
                     {
                         JsonDocument.Parse(responseContent);
-                        return StatusCode((int)response.StatusCode, responseContent);
+                        lastErrorContent = responseContent;
                     }
                     catch (JsonException)
                     {
-                        // The response was not valid JSON (e.g., HTML error page), so we create a standard error object.
-                        var errorResponse = new { message = $"Upstream error from Jellyseerr: {response.ReasonPhrase}" };
-                        return StatusCode((int)response.StatusCode, errorResponse);
+                        lastErrorContent = System.Text.Json.JsonSerializer.Serialize(new { message = $"Upstream error from Jellyseerr: {response.ReasonPhrase}" });
                     }
+                    // Continue to try next URL instead of returning immediately
                 }
                 catch (Exception ex)
                 {
@@ -227,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return StatusCode(500, "Could not connect to any configured Jellyseerr instance.");
+            return StatusCode(lastStatusCode, lastErrorContent);
         }
 
         [HttpGet("jellyseerr/status")]
