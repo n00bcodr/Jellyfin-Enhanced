@@ -330,6 +330,14 @@
           margin-right: 0.25em;
           text-transform: lowercase;
         }
+        .je-refresh-btn:hover {
+          opacity: 1 !important;
+          background: rgba(255,255,255,0.1) !important;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
     `;
 
   /**
@@ -469,9 +477,15 @@
     if (match) {
       const hours = parseInt(match[1]);
       const minutes = parseInt(match[2]);
+      const seconds = parseInt(match[3]);
 
-      if (hours > 0) return `${hours}h ${minutes}m`;
-      return `${minutes}m`;
+      if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+      } else if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      } else {
+        return `${seconds}s`;
+      }
     }
 
     // Handle day format like 1.02:30:45
@@ -479,8 +493,18 @@
     if (dayMatch) {
       const days = parseInt(dayMatch[1]);
       const hours = parseInt(dayMatch[2]);
-      if (days > 0) return `${days}d ${hours}h`;
-      return `${hours}h`;
+      const minutes = parseInt(dayMatch[3]);
+      const seconds = parseInt(dayMatch[4]);
+
+      if (days > 0) {
+        return `${days}d ${hours}h ${minutes}m`;
+      } else if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+      } else if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      } else {
+        return `${seconds}s`;
+      }
     }
 
     return timeStr;
@@ -873,7 +897,15 @@
     // Active Downloads Section
     html += `<div class="je-downloads-section" style="margin-top: 2em;">`;
     const labelActiveDownloads = (JE.t && JE.t('jellyseerr_active_downloads')) || 'Active Downloads';
-    html += `<h2 style="margin-top: 0.5em;">${labelActiveDownloads}</h2>`;
+
+    html += `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1em;">
+        <h2 style="margin: 0.5em 0 0 0;">${labelActiveDownloads}</h2>
+        <button class="je-refresh-btn emby-button" style="background: transparent; border: 1px solid rgba(255,255,255,0.3); color: inherit; padding: 0.5em; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 0.5em; opacity: 0.8; transition: all 0.2s;" title="Refresh Downloads">
+          <span class="material-icons" style="font-size: 18px;">refresh</span>
+        </button>
+      </div>
+    `;
 
     if (state.isLoading && state.downloads.length === 0) {
       html += `<div class="je-loading">Loading...</div>`;
@@ -970,6 +1002,25 @@
     }
 
     container.innerHTML = html;
+
+    // Add event listener for refresh button
+    const refreshBtn = container.querySelector('.je-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        // Add visual feedback
+        const icon = refreshBtn.querySelector('.material-icons');
+        if (icon) {
+          icon.style.animation = 'spin 1s linear';
+          setTimeout(() => {
+            icon.style.animation = '';
+          }, 1000);
+        }
+
+        loadAllData();
+      });
+    }
   }
 
   /**
@@ -1124,13 +1175,18 @@
   function startPolling() {
     stopPolling();
     const config = JE.pluginConfig || {};
-    const interval = (config.DownloadsPollIntervalSeconds || 30) * 1000;
+    const intervalSeconds = config.DownloadsPollIntervalSeconds || 30;
 
-    state.pollTimer = setInterval(() => {
-      if (state.pageVisible && !state.isLoading) {
-        loadAllData();
-      }
-    }, interval);
+    // Only start polling if interval is greater than 0
+    if (intervalSeconds > 0) {
+      const interval = intervalSeconds * 1000;
+
+      state.pollTimer = setInterval(() => {
+        if (state.pageVisible && !state.isLoading) {
+          loadAllData();
+        }
+      }, interval);
+    }
   }
 
   /**

@@ -62,19 +62,24 @@ function startPolling() {
   const JE = window.JellyfinEnhanced;
   if (!JE || !JE.downloadsPage || typeof JE.downloadsPage.refresh !== "function") return;
 
-  const POLL_INTERVAL = (JE.pluginConfig?.DownloadsPollIntervalSeconds || 30) * 1000;
+  const POLL_INTERVAL_SECONDS = JE.pluginConfig?.DownloadsPollIntervalSeconds || 30;
 
   if (JE.downloadsPage._pollTimer) {
     clearInterval(JE.downloadsPage._pollTimer);
   }
 
-  JE.downloadsPage._pollTimer = setInterval(() => {
-    const container = document.getElementById("je-downloads-container");
+  // Only start polling if interval is greater than 0
+  if (POLL_INTERVAL_SECONDS > 0) {
+    const POLL_INTERVAL = POLL_INTERVAL_SECONDS * 1000;
 
-    if (container && container.offsetHeight > 0 && container.offsetWidth > 0) {
-      JE.downloadsPage.refresh();
-    }
-  }, POLL_INTERVAL);
+    JE.downloadsPage._pollTimer = setInterval(() => {
+      const container = document.getElementById("je-downloads-container");
+
+      if (container && container.offsetHeight > 0 && container.offsetWidth > 0) {
+        JE.downloadsPage.refresh();
+      }
+    }, POLL_INTERVAL);
+  }
 }
 
 function handleClickOnPlay() {
