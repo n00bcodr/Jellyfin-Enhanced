@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             GenreTagsEnabled = false;
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
+            PeopleTagsEnabled = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             QualityTagsPosition = "top-left";
@@ -213,6 +214,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool PeopleTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool DisableAllShortcuts { get; set; }

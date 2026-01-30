@@ -50,6 +50,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Language Tags CSS](#language-tags-css)
     - [Rating Tags CSS](#rating-tags-css)
     - [Rating Tag OSD CSS](#rating-tag-osd-css)
+    - [People Tags CSS](#people-tags-css)
     - [ARR Tag Links CSS](#arr-tag-links-css)
     - [Enhanced Panel CSS](#panel-css)
   - [🫚 Project Structure](#-project-structure)
@@ -155,6 +156,7 @@ This gives the plugin the necessary permissions to inject JavaScript into the we
 - **🎭 Genre Tags:** Identify genres instantly with themed icons on posters.
 - **🌐 Language Tags:** Displays available audio languages as flags on posters.
 - **⭐ Rating Tags:** See TMDB and Rotten Tomatoes ratings at a glance directly on posters in your library. Also includes an optional on-screen display (OSD) rating during playback.
+- **👤 People Tags:** Display age information and birthplace for cast members on item detail pages. Shows current age, age at death, age at item release, and country flags.
 - **🔗 .arr Links Integration:** For administrators, quickly jump to the Sonarr, Radarr, or Bazarr page for any item.
 - **🌍 Multi-language Support:** The interface is available in multiple languages, with more on the way.
 - **🖼️ Custom Splash Screen:** A configurable splash screen that appears while Jellyfin is loading.
@@ -902,6 +904,208 @@ Rating tags display TMDB and Rotten Tomatoes ratings directly on poster cards. R
 
 </details>
 
+### <a id="people-tags-css"></a>
+<details>
+<summary style="font-size: 1.2em;">People Tags (Cast Members)</summary>
+<br>
+
+People tags display age information and birthplace for cast members on item detail pages. Age chips appear in the top-left corner, and birthplace banners appear at the bottom of each cast member card. The HTML structure is:
+
+```html
+<div class="personCard">
+    <div class="cardScalable">
+        <!-- Age chips (top-left) -->
+        <div class="je-people-age-container">
+            <!-- Current age (alive) or age at death (deceased) -->
+            <div class="je-people-age-chip je-people-age-deceased">
+                <span class="material-symbols-rounded je-people-age-icon">event_busy</span>
+                <span class="je-people-age-text">69y</span>
+            </div>
+            <!-- Age at item release -->
+            <div class="je-people-age-chip je-people-age-release">
+                <span class="material-symbols-rounded je-people-age-icon">movie</span>
+                <span class="je-people-age-text">49y</span>
+            </div>
+        </div>
+
+        <!-- Birthplace banner (bottom) -->
+        <div class="je-people-place-banner">
+            <img src="https://flagcdn.com/w20/gb.png" class="je-people-flag" alt="GB">
+            <span class="material-symbols-rounded je-people-place-icon">place</span>
+            <span class="je-people-place-text">London, England, UK</span>
+        </div>
+    </div>
+</div>
+```
+
+**Classes & Attributes**
+
+- **`.je-people-age-container`**: Container for all age chips, positioned top-left
+- **`.je-people-age-chip`**: Base class for individual age badges
+- **`.je-people-age-deceased`**: Age at death chip (red background)
+- **`.je-people-age-current`**: Current age chip for living people (green background)
+- **`.je-people-age-release`**: Age at item release chip (blue background)
+- **`.je-people-age-icon`**: Material Symbols Rounded icons within age chips (cake, event_busy, movie)
+- **`.je-people-age-text`**: Age text (e.g., "69y")
+- **`.je-people-place-banner`**: Birthplace banner at bottom with gradient background
+- **`.je-people-flag`**: Country flag image from flagcdn
+- **`.je-people-place-icon`**: Place icon in banner
+- **`.je-people-place-text`**: Full birthplace text
+- **`.je-deceased-poster`**: Applied to person card when deceased (grayscale + cross)
+
+<br>
+
+**Customization Examples**
+--------------------------
+
+| Element | CSS Selector | Example CSS |
+| --- | --- | --- |
+| **All Age Chips** | `.je-people-age-chip` | `.je-people-age-chip { padding: 5px 10px !important; font-size: 12px !important; }` |
+| **Deceased Age Chip** | `.je-people-age-deceased` | `.je-people-age-deceased { background: rgba(200, 0, 0, 0.9) !important; }` |
+| **Current Age Chip** | `.je-people-age-current` | `.je-people-age-current { background: rgba(0, 200, 0, 0.9) !important; }` |
+| **Age Container Position** | `.je-people-age-container` | `.je-people-age-container { top: 12px !important; left: 12px !important; }` |
+| **Age Icons** | `.je-people-age-icon` | `.je-people-age-icon { font-size: 16px !important; }` |
+| **Birthplace Banner** | `.je-people-place-banner` | `.je-people-place-banner { background: rgba(0, 0, 0, 0.95) !important; padding: 16px !important; }` |
+| **Country Flag** | `.je-people-flag` | `.je-people-flag { width: 20px !important; height: 15px !important; }` |
+| **Place Text** | `.je-people-place-text` | `.je-people-place-text { font-size: 12px !important; font-weight: bold !important; }` |
+| **Deceased Cross** | `.je-deceased-poster .cardScalable::after` | `.je-deceased-poster .cardScalable::after { font-size: 3em !important; top: 12px !important; }` |
+| **Hide Age Chips** | `.je-people-age-container` | `.je-people-age-container { display: none !important; }` |
+| **Hide Birthplace Banner** | `.je-people-place-banner` | `.je-people-place-banner { display: none !important; }` |
+
+<br>
+
+**CSS Examples**
+----------------
+
+- **Customize Age Chip Colors**
+  ```css
+  /* Deceased (red) */
+  .je-people-age-deceased {
+      background: rgba(220, 40, 40, 0.95) !important;
+      border: 2px solid rgba(255, 100, 100, 0.5) !important;
+  }
+
+  /* Living (green) */
+  .je-people-age-current {
+      background: rgba(40, 180, 80, 0.95) !important;
+      border: 2px solid rgba(100, 255, 150, 0.5) !important;
+  }
+
+  /* Age at release (blue) */
+  .je-people-age-release {
+      background: rgba(50, 120, 200, 0.95) !important;
+      border: 2px solid rgba(100, 180, 255, 0.5) !important;
+  }
+  ```
+
+- **Make Age Chips Larger**
+  ```css
+  .je-people-age-chip {
+      padding: 6px 12px !important;
+      font-size: 13px !important;
+      gap: 6px !important;
+  }
+
+  .je-people-age-icon {
+      font-size: 16px !important;
+  }
+  ```
+
+- **Position Age Chips in Top-Right Instead**
+  ```css
+  .je-people-age-container {
+      left: auto !important;
+      right: 8px !important;
+      align-items: flex-end !important;
+  }
+  ```
+
+- **Horizontal Age Chips Layout**
+  ```css
+  .je-people-age-container {
+      flex-direction: row !important;
+      flex-wrap: wrap !important;
+      gap: 6px !important;
+  }
+  ```
+
+- **Hide Specific Age Chips**
+  ```css
+  /* Hide age at release chip */
+  .je-people-age-release {
+      display: none !important;
+  }
+
+  /* Only show current age for living people */
+  .je-people-age-deceased {
+      display: none !important;
+  }
+  ```
+
+- **Customize Birthplace Banner**
+  ```css
+  .je-people-place-banner {
+      background: linear-gradient(to top, rgba(20, 20, 80, 0.95), transparent) !important;
+      padding: 16px 10px 10px 10px !important;
+      font-size: 12px !important;
+      gap: 8px !important;
+  }
+  ```
+
+- **Larger Country Flags**
+  ```css
+  .je-people-flag {
+      width: 24px !important;
+      height: 18px !important;
+      border: 1px solid rgba(255, 255, 255, 0.3) !important;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+  }
+  ```
+
+- **Adjust Deceased Styling**
+  ```css
+  /* More transparent grayscale */
+  .je-deceased-poster .cardImageContainer {
+      filter: grayscale(100%) opacity(0.5) !important;
+  }
+
+  /* Larger cross symbol */
+  .je-deceased-poster .cardScalable::after {
+      font-size: 3.5em !important;
+      color: #ff4444 !important;
+      text-shadow: 0 0 8px black, 0 0 12px rgba(0, 0, 0, 0.8) !important;
+  }
+  ```
+
+- **Hide Birthplace Banner, Keep Age Only**
+  ```css
+  .je-people-place-banner {
+      display: none !important;
+  }
+  ```
+
+- **Compact Age Display (Numbers Only)**
+  ```css
+  .je-people-age-chip {
+      padding: 2px 6px !important;
+      font-size: 10px !important;
+  }
+
+  .je-people-age-icon {
+      display: none !important;
+  }
+  ```
+
+> **Note:**
+> - Always use `!important` to override default styles
+> - Age chips show current age for living people, age at death for deceased
+> - The age at release chip only appears when viewing an item (movie/show)
+> - Birthplace uses flagcdn.com for country flags
+> - Deceased cast members get grayscale filter + cross overlay automatically
+> - Feature can be enabled/disabled via Enhanced Panel settings
+
+</details>
+
 ### <a id="rating-tag-osd-css"></a>
 <details>
 <summary style="font-size: 1.2em;">OSD Rating (Video Player)</summary>
@@ -1329,6 +1533,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     ├── qualitytags.js
     ├── ratingtags.js
     ├── reviews.js
+    ├── peopletags.js
     └── splashscreen.js
 ```
 
@@ -1395,6 +1600,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
 
 * **`ratingtags.js`**: Manages the display of TMDB and Rotten Tomatoes ratings as badges directly on the posters.
+
+* **`peopletags.js`**: Displays age and birthplace information for cast members with country flags, deceased indicators, and caching. Works with both regular cast and guest cast sections.
 
 * **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
 

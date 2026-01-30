@@ -455,7 +455,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("person/{personId}")]
         [Authorize]
-        public IActionResult GetPersonInfo(Guid personId)
+        public async Task<IActionResult> GetPersonInfo(Guid personId, [FromQuery] Guid? itemId = null)
         {
             try
             {
@@ -472,12 +472,103 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     tmdbId = id;
                 }
 
+                // Get person-specific data
+                // Note: PremiereDate on Person items stores birth date, EndDate stores death date
+                var birthDate = person.PremiereDate;
+                var endDate = person.EndDate;
+                var birthPlace = person.ProductionLocations?.FirstOrDefault() ?? null;
+
+                // Try to enrich with TMDB data if available
+                if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
+                {
+                    try
+                    {
+                        _logger.Info($"Fetching TMDB data for person {personId} (TMDB ID: {tmdbPersonId})");
+                        var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId);
+                        if (tmdbPersonData != null)
+                        {
+                            // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
+
+                            // Use TMDB death date if Jellyfin doesn't have it
+                            if (!endDate.HasValue && tmdbPersonData.DeathDate.HasValue)
+                            {
+                                endDate = tmdbPersonData.DeathDate;
+                            }
+
+                            // Use TMDB birth date if Jellyfin doesn't have it
+                            if (!birthDate.HasValue && tmdbPersonData.BirthDate.HasValue)
+                            {
+                                birthDate = tmdbPersonData.BirthDate;
+                            }
+
+                            // Always prefer TMDB birthplace
+                            if (!string.IsNullOrEmpty(tmdbPersonData.BirthPlace))
+                            {
+                                birthPlace = tmdbPersonData.BirthPlace;
+                                // _logger.Debug($"Using TMDB birthplace: {birthPlace}");
+                            }
+                        }
+                        else
+                        {
+                            _logger.Warning($"No TMDB data returned for person {personId} (TMDB ID: {tmdbPersonId})");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Failed to enrich person {personId} with TMDB data: {ex.Message}");
+                        // Continue with Jellyfin data only
+                    }
+                }
+                else
+                {
+                    // _logger.Debug($"No TMDB ID available for person {personId}");
+                }
+
+
+
+                int? currentAge = null;
+                int? ageAtItemRelease = null;
+                int? ageAtDeath = null;
+                bool isDeceased = endDate.HasValue && endDate.Value < DateTime.Now;
+
+                // Calculate current age or age at death
+                if (birthDate.HasValue)
+                {
+                    if (isDeceased && endDate.HasValue)
+                    {
+                        // If deceased, calculate age at death
+                        ageAtDeath = CalculateAge(birthDate.Value, endDate.Value);
+                    }
+                    else
+                    {
+                        // If alive, calculate current age
+                        currentAge = CalculateAge(birthDate.Value, DateTime.Now);
+                    }
+
+                    // Calculate age at item release if itemId provided
+                    if (itemId.HasValue)
+                    {
+                        var item = _libraryManager.GetItemById(itemId.Value);
+                        if (item?.PremiereDate.HasValue ?? false)
+                        {
+                            ageAtItemRelease = CalculateAge(birthDate.Value, item.PremiereDate.Value);
+                        }
+                    }
+                }
+
                 return Ok(new
                 {
                     id = person.Id,
                     name = person.Name,
                     tmdbId = tmdbId,
-                    type = person.GetType().Name
+                    type = person.GetType().Name,
+                    birthDate = birthDate?.ToString("yyyy-MM-dd"),
+                    deathDate = endDate?.ToString("yyyy-MM-dd"),
+                    birthPlace = birthPlace,
+                    isDeceased = isDeceased,
+                    currentAge = currentAge,
+                    ageAtDeath = ageAtDeath,
+                    ageAtItemRelease = ageAtItemRelease
                 });
             }
             catch (Exception ex)
@@ -485,6 +576,95 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Failed to get person info for {personId}: {ex.Message}");
                 return StatusCode(500, new { message = "Failed to get person info" });
             }
+        }
+
+        /// <summary>
+        /// Fetch person data directly from TMDB API
+        /// </summary>
+        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId)
+        {
+            try
+            {
+                // Get TMDB API key from configuration
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+                {
+                    _logger.Warning("TMDB API key not configured in plugin settings");
+                    return null;
+                }
+
+                var httpClient = _httpClientFactory.CreateClient();
+                var tmdbUrl = $"https://api.themoviedb.org/3/person/{tmdbPersonId}?api_key={config.TMDB_API_KEY}";
+
+                // _logger.Debug($"Fetching TMDB person data from: https://api.themoviedb.org/3/person/{tmdbPersonId}");
+                var response = await httpClient.GetAsync(tmdbUrl);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"TMDB API request failed with status {response.StatusCode}");
+                    return null;
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var jsonElement = JsonSerializer.Deserialize<JsonElement>(content);
+
+                DateTime? birthDate = null;
+                DateTime? deathDate = null;
+                string? birthPlace = null;
+
+                // Parse birth date
+                if (jsonElement.TryGetProperty("birthday", out var birthdayProp) &&
+                    birthdayProp.ValueKind != JsonValueKind.Null &&
+                    DateTime.TryParse(birthdayProp.GetString(), out var birth))
+                {
+                    birthDate = birth;
+                }
+
+                // Parse death date
+                if (jsonElement.TryGetProperty("deathday", out var deathdayProp) &&
+                    deathdayProp.ValueKind != JsonValueKind.Null &&
+                    deathdayProp.GetString() is string deathStr &&
+                    DateTime.TryParse(deathStr, out var death))
+                {
+                    deathDate = death;
+                }
+
+                // Parse birth place
+                if (jsonElement.TryGetProperty("place_of_birth", out var placeProp) &&
+                    placeProp.ValueKind != JsonValueKind.Null)
+                {
+                    birthPlace = placeProp.GetString();
+                    if (!string.IsNullOrEmpty(birthPlace))
+                    {
+                        _logger.Debug($"Parsed place_of_birth: {birthPlace}");
+                    }
+                }
+
+                return new TmdbPersonData
+                {
+                    BirthDate = birthDate,
+                    DeathDate = deathDate,
+                    BirthPlace = birthPlace
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to get TMDB person data for ID {tmdbPersonId}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Helper method to calculate age in years
+        /// </summary>
+        private int CalculateAge(DateTime birthDate, DateTime referenceDate)
+        {
+            int age = referenceDate.Year - birthDate.Year;
+            if (referenceDate < birthDate.AddYears(age))
+            {
+                age--;
+            }
+            return Math.Max(0, age);
         }
 
         [HttpGet("genre/{genreId}")]
@@ -2858,5 +3038,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             return File(stream, MimeTypes.GetMimeType(view.EmbeddedResourcePath));
         }
+    }
+    /// <summary>
+    /// Helper class for TMDB person data enrichment
+    /// </summary>
+    public class TmdbPersonData
+    {
+        public DateTime? BirthDate { get; set; }
+        public DateTime? DeathDate { get; set; }
+        public string? BirthPlace { get; set; }
     }
 }

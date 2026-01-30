@@ -121,6 +121,7 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="languageTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Language Tags</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags (Cast Info)</span></label></div>
 
                                     <fieldset style="margin-top: 1em;padding: 2em;border-radius: 20px;border-color: #ffffff25;">
                                     <div class="inputContainer">
@@ -1672,12 +1673,14 @@
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
                 document.querySelector('#genreTagsEnabled').checked = config.GenreTagsEnabled;
+                document.querySelector('#peopleTagsEnabled').checked = config.PeopleTagsEnabled;
                 const qPos = (config.QualityTagsPosition || 'top-left');
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
                 const rPos = (config.RatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
                 const ratingEnabled = !!config.RatingTagsEnabled;
+                const peopleEnabled = !!config.PeopleTagsEnabled;
                 const showRatingInPlayer = config.ShowRatingInPlayer !== false;
                 const qSel = document.querySelector('#qualityTagsPosition');
                 const gSel = document.querySelector('#genreTagsPosition');
@@ -1692,6 +1695,8 @@
                 if (rSel) rSel.value = rPos;
                 if (lChk) lChk.checked = langEnabled;
                 if (rChk) rChk.checked = ratingEnabled;
+                const pChk = document.querySelector('#peopleTagsEnabled');
+                if (pChk) pChk.checked = peopleEnabled;
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
@@ -1827,6 +1832,7 @@
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
+            config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
             config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;

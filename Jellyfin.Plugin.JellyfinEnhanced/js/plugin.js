@@ -610,7 +610,7 @@
                 'jellyseerr/tag-discovery.js',
                 'jellyseerr/jellyseerr.js',
                 'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'genretags.js', 'languagetags.js', 'ratingtags.js',
+                'qualitytags.js', 'genretags.js', 'languagetags.js', 'peopletags.js', 'ratingtags.js',
                 'letterboxd-links.js',
                 'extras/colored-ratings.js',
                 'extras/theme-selector.js',
@@ -662,6 +662,7 @@
             if (typeof JE.initializeLetterboxdLinksScript === 'function' && JE.pluginConfig?.LetterboxdEnabled) JE.initializeLetterboxdLinksScript();
             if (typeof JE.initializeReviewsScript === 'function' && JE.pluginConfig?.ShowReviews) JE.initializeReviewsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
+            if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {

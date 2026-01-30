@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool GenreTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool PeopleTagsEnabled { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
