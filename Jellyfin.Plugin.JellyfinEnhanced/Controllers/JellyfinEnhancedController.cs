@@ -55,12 +55,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }, StringComparer.OrdinalIgnoreCase);
 
         public JellyfinEnhancedController(
-            IHttpClientFactory httpClientFactory, 
-            Logger logger, 
-            IUserManager userManager, 
-            IUserDataManager userDataManager, 
-            ILibraryManager libraryManager, 
-            IDtoService dtoService, 
+            IHttpClientFactory httpClientFactory,
+            Logger logger,
+            IUserManager userManager,
+            IUserDataManager userDataManager,
+            ILibraryManager libraryManager,
+            IDtoService dtoService,
             UserConfigurationManager userConfigurationManager,
             IItemRepository itemRepository)
         {
@@ -1986,7 +1986,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         $"includeSeries=true&" +
                         $"sortKey=timeleft&" +
                         $"sortDirection=ascending&" +
-                        $"status=downloading&" +
                         $"pageSize=1000"
                     );
 
