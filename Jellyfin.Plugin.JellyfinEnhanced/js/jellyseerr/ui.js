@@ -337,7 +337,7 @@
             /* CARDS & BADGES */
             .jellyseerr-card { position: relative; }
             .jellyseerr-card .cardScalable { contain: paint; }
-            .jellyseerr-icon-on-card { width: 1.2em; height: 1.2em; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8)); flex-shrink: 0; }
+            .jellyseerr-icon-on-card { width: 1.2em !important; height: 1.2em !important; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8)); flex-shrink: 0; }
             .jellyseerr-status-badge { position: absolute; top: 8px; right: 8px; z-index: 100; width: 1.5em; height: 1.5em; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }
             .jellyseerr-status-badge svg { width: 1.4em; height: 1.4em; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
             .jellyseerr-status-badge.status-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
