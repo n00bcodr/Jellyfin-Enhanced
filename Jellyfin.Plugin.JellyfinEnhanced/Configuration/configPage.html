@@ -732,6 +732,30 @@
                                 When enabled, items from each user's Jellyseerr watchlist will be automatically synced to their Jellyfin watchlist. <br><br>
                                 Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Jellyseerr to Jellyfin".
                             </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="preventWatchlistReAddition" is="emby-checkbox" type="checkbox"/>
+                                    <span>Prevent re-adding removed watchlist items</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                When enabled, items will only be added to a user's watchlist once. If a user manually removes an item from their watchlist, it won't be automatically re-added during future sync runs.
+                            </div>
+                            <div class="inputContainer" style="margin-bottom: 0.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="watchlistMemoryRetentionDays">Memory retention period (days):</label>
+                                <input id="watchlistMemoryRetentionDays" is="emby-input" type="number" min="1" max="3650" step="1" style="width: 100px;"/>
+                                <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 1em;">
+                                    How long to remember that an item was processed before allowing it to be re-added.<br>After this period, manually removed items (if unwatched) will be automatically re-added to watchlist if they're still in Jellyseerr requests or Jellyseerr watchlist.
+                                    <br><br>
+                                    <strong>Examples:</strong>
+                                    <ul style="margin: 0.5em 0; padding-left: 1.5em;">
+                                        <li><strong>30 days</strong> - Short memory, items can be re-added after 1 month</li>
+                                        <li><strong>365 days</strong> - Remember for 1 year (recommended)</li>
+                                        <li><strong>3650 days</strong> - Remember for 10 years (nearly permanent)</li>
+                                    </ul>
+                                    <strong>Note:</strong> This setting only applies when "Prevent re-adding removed watchlist items" is enabled.
+                                </div>
+                            </div>
                         </div>
                     </fieldset>
                 </div>
@@ -1733,6 +1757,8 @@
                 document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
+                document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
+                document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
@@ -1787,6 +1813,21 @@
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
+
+                // Set up event handler for watchlist prevention checkbox
+                function toggleWatchlistRetentionVisibility() {
+                    const preventionEnabled = document.querySelector('#preventWatchlistReAddition').checked;
+                    const retentionContainer = document.querySelector('#watchlistMemoryRetentionDays').closest('.inputContainer');
+                    if (retentionContainer) {
+                        retentionContainer.style.display = preventionEnabled ? 'block' : 'none';
+                    }
+                }
+
+                // Set initial visibility
+                toggleWatchlistRetentionVisibility();
+
+                // Add event listener
+                document.querySelector('#preventWatchlistReAddition').addEventListener('change', toggleWatchlistRetentionVisibility);
 
                 Dashboard.hideLoadingMsg();
             });
@@ -1882,6 +1923,10 @@
             config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
+            config.PreventWatchlistReAddition = document.querySelector('#preventWatchlistReAddition').checked;
+
+            const retentionDays = parseInt(document.querySelector('#watchlistMemoryRetentionDays').value);
+            config.WatchlistMemoryRetentionDays = isNaN(retentionDays) || retentionDays < 1 ? 365 : Math.min(retentionDays, 3650);
             config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
             config.UseIcons = document.querySelector('#useIcons').checked;
             config.IconStyle = document.querySelector('#iconStyle').value;

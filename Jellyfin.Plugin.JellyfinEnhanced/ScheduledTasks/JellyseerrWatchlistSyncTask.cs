@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -99,6 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 try
                 {
                     _logger.Info($"[Jellyseerr Watchlist Sync] Processing user: {jellyfinUser.Username}");
+
+                    // Clean up old processed items if prevention is enabled
+                    if (config.PreventWatchlistReAddition)
+                    {
+                        _userConfigurationManager.CleanupOldProcessedWatchlistItems(jellyfinUser.Id, config.WatchlistMemoryRetentionDays);
+                    }
 
                     // Get Jellyseerr user ID for this Jellyfin user
                     var jellyseerrUserId = await GetJellyseerrUserId(httpClient, jellyseerrUrl, jellyfinUser.Id.ToString());
@@ -208,7 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                             if (user.TryGetProperty("jellyfinUserId", out var jfUserId))
                             {
                                 var jfUserIdStr = jfUserId.GetString();
-                                _logger.Info($"[Jellyseerr Watchlist Sync] Checking Jellyseerr user with jellyfinUserId: {jfUserIdStr}");
+                                // _logger.Info($"[Jellyseerr Watchlist Sync] Checking Jellyseerr user with jellyfinUserId: {jfUserIdStr}");
 
                                 // Normalize both IDs by removing hyphens before comparison
                                 var normalizedJellyseerrUserId = jfUserIdStr?.Replace("-", "") ?? "";
@@ -453,6 +460,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             try
             {
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config?.PreventWatchlistReAddition == true)
+                {
+                    // Check if this item was already processed for this user
+                    var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
+                    var itemKey = $"{watchlistItem.MediaType}:{watchlistItem.TmdbId}";
+
+                    if (processedItems.Items.Any(p => p.TmdbId == watchlistItem.TmdbId && p.MediaType == watchlistItem.MediaType))
+                    {
+                        _logger.Debug($"[Jellyseerr Watchlist Sync] Item already processed before: {watchlistItem.Title} (TMDB: {watchlistItem.TmdbId}) for user {user.Username}");
+                        return Task.FromResult(WatchlistItemResult.Skipped);
+                    }
+                }
+
                 // Determine Jellyfin item type based on Jellyseerr media type
                 var itemType = watchlistItem.MediaType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series;
 
@@ -492,12 +513,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 if (userData.Likes == true)
                 {
                     _logger.Debug($"[Jellyseerr Watchlist Sync] Item already in watchlist: {item.Name}");
+
+                    // Mark as processed if prevention is enabled and not already marked
+                    if (config?.PreventWatchlistReAddition == true)
+                    {
+                        var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
+                        if (!processedItems.Items.Any(p => p.TmdbId == watchlistItem.TmdbId && p.MediaType == watchlistItem.MediaType))
+                        {
+                            processedItems.Items.Add(new ProcessedWatchlistItem
+                            {
+                                TmdbId = watchlistItem.TmdbId,
+                                MediaType = watchlistItem.MediaType,
+                                ProcessedAt = System.DateTime.UtcNow,
+                                Source = "existing"
+                            });
+                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                        }
+                    }
+
                     return Task.FromResult(WatchlistItemResult.AlreadyInWatchlist);
                 }
 
                 // Add to watchlist
                 userData.Likes = true;
                 _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
+
+                // Mark as processed if prevention is enabled
+                if (config?.PreventWatchlistReAddition == true)
+                {
+                    var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
+                    processedItems.Items.Add(new ProcessedWatchlistItem
+                    {
+                        TmdbId = watchlistItem.TmdbId,
+                        MediaType = watchlistItem.MediaType,
+                        ProcessedAt = System.DateTime.UtcNow,
+                        Source = "sync"
+                    });
+                    _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                }
 
                 _logger.Info($"[Jellyseerr Watchlist Sync] ✓ Added to watchlist: {item.Name} for user {user.Username}");
                 return Task.FromResult(WatchlistItemResult.Added);

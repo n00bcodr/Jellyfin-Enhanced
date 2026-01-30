@@ -83,4 +83,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     {
         public List<PendingWatchlistItem> Items { get; set; } = new List<PendingWatchlistItem>();
     }
+
+    public class ProcessedWatchlistItem
+    {
+        public int TmdbId { get; set; }
+        public string MediaType { get; set; } = string.Empty; // "movie" or "tv"
+        public System.DateTime ProcessedAt { get; set; }
+        /// <summary>
+        /// Indicates how this item was processed:
+        /// - "sync": Item was added to watchlist during a scheduled sync task
+        /// - "monitor": Item was added automatically when media arrived in library
+        /// - "existing": Item was already in watchlist when plugin checked it
+        /// </summary>
+        public string Source { get; set; } = string.Empty;
+    }
+
+    public class ProcessedWatchlistItems
+    {
+        public List<ProcessedWatchlistItem> Items { get; set; } = new List<ProcessedWatchlistItem>();
+    }
 }

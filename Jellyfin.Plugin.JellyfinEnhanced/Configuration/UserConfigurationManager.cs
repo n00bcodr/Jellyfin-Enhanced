@@ -117,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 var userDirs = Directory.GetDirectories(_configBaseDir);
                 var userIds = new string[userDirs.Length];
-                
+
                 for (int i = 0; i < userDirs.Length; i++)
                 {
                     userIds[i] = Path.GetFileName(userDirs[i]);
@@ -129,6 +129,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 _logger.Error($"Failed to get all user IDs: {ex.Message}");
                 return Array.Empty<string>();
+            }
+        }
+
+        /// Gets processed watchlist items for a user.
+        public ProcessedWatchlistItems GetProcessedWatchlistItems(Guid userId)
+        {
+            return GetUserConfiguration<ProcessedWatchlistItems>(userId.ToString(), "processed-watchlist-items.json");
+        }
+
+        /// Saves processed watchlist items for a user.
+        public void SaveProcessedWatchlistItems(Guid userId, ProcessedWatchlistItems items)
+        {
+            SaveUserConfiguration(userId.ToString(), "processed-watchlist-items.json", items);
+        }
+
+        /// Cleans up old processed watchlist items (older than specified days).
+        public void CleanupOldProcessedWatchlistItems(Guid userId, int daysToKeep = 365)
+        {
+            try
+            {
+                var items = GetProcessedWatchlistItems(userId);
+                var cutoffDate = System.DateTime.UtcNow.AddDays(-daysToKeep);
+
+                var itemsToKeep = items.Items.Where(item => item.ProcessedAt > cutoffDate).ToList();
+
+                if (itemsToKeep.Count != items.Items.Count)
+                {
+                    items.Items = itemsToKeep;
+                    SaveProcessedWatchlistItems(userId, items);
+                    _logger.Info($"Cleaned up {items.Items.Count - itemsToKeep.Count} old processed watchlist items for user {userId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error cleaning up processed watchlist items for user {userId}: {ex.Message}");
             }
         }
     }

@@ -143,6 +143,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
+            PreventWatchlistReAddition = true;
+            WatchlistMemoryRetentionDays = 365;
 
             // Bookmarks Settings
             BookmarksEnabled = true;
@@ -287,6 +289,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }
         public bool SyncJellyseerrWatchlist { get; set; }
+        public bool PreventWatchlistReAddition { get; set; }
+        public int WatchlistMemoryRetentionDays { get; set; }
 
         // Bookmarks Settings
         public bool BookmarksEnabled { get; set; }

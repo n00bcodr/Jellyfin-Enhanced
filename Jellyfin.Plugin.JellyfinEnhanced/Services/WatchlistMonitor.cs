@@ -22,6 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly UserConfigurationManager _userConfigurationManager;
         private readonly Logger _logger;
 
         public WatchlistMonitor(
@@ -29,12 +30,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IUserManager userManager,
             IUserDataManager userDataManager,
             IHttpClientFactory httpClientFactory,
+            UserConfigurationManager userConfigurationManager,
             Logger logger)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
             _httpClientFactory = httpClientFactory;
+            _userConfigurationManager = userConfigurationManager;
             _logger = logger;
         }
 
@@ -151,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Find requests matching this TMDB ID and media type
                 var matchingRequests = allRequests.Where(r => r.TmdbId == tmdbId && r.MediaType == mediaType && !string.IsNullOrEmpty(r.RequestedByJellyfinUserId)).ToList();
-                
+
                 if (matchingRequests.Count == 0)
                 {
                     return;
@@ -160,15 +163,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Add to watchlist for each user who requested it (only log if actually added)
                 var addedCount = 0;
                 var addedUsers = new List<string>();
-                
+
                 foreach (var request in matchingRequests)
                 {
                     var jellyfinUserId = request.RequestedByJellyfinUserId!.Replace("-", "");
                     var user = _userManager.Users.FirstOrDefault(u => u.Id.ToString().Replace("-", "").Equals(jellyfinUserId, StringComparison.OrdinalIgnoreCase));
-                    
+
                     if (user == null)
                     {
                         continue;
+                    }
+
+                    // Check if prevention is enabled and item was already processed
+                    if (config.PreventWatchlistReAddition)
+                    {
+                        var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
+                        if (processedItems.Items.Any(p => p.TmdbId == tmdbId && p.MediaType == mediaType))
+                        {
+                            continue; // Skip this user, item was already processed
+                        }
                     }
 
                     var userData = _userDataManager.GetUserData(user, e.Item);
@@ -178,6 +191,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _userDataManager.SaveUserData(user, e.Item, userData, UserDataSaveReason.UpdateUserRating, default);
                         addedCount++;
                         addedUsers.Add(user.Username);
+
+                        // Mark as processed if prevention is enabled
+                        if (config.PreventWatchlistReAddition)
+                        {
+                            var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
+                            processedItems.Items.Add(new ProcessedWatchlistItem
+                            {
+                                TmdbId = tmdbId,
+                                MediaType = mediaType,
+                                ProcessedAt = System.DateTime.UtcNow,
+                                Source = "monitor"
+                            });
+                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                        }
+                    }
+                    else if (userData != null && userData.Likes == true && config.PreventWatchlistReAddition)
+                    {
+                        // Item is already in watchlist, mark as processed if not already marked
+                        var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
+                        if (!processedItems.Items.Any(p => p.TmdbId == tmdbId && p.MediaType == mediaType))
+                        {
+                            processedItems.Items.Add(new ProcessedWatchlistItem
+                            {
+                                TmdbId = tmdbId,
+                                MediaType = mediaType,
+                                ProcessedAt = System.DateTime.UtcNow,
+                                Source = "existing"
+                            });
+                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                        }
                     }
                 }
 
@@ -199,7 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/request?take=1000&skip=0&sort=added&filter=all";
-                
+
                 var response = await httpClient.GetAsync(requestUri);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -275,9 +318,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (tmdbId.HasValue && mediaType != null && !string.IsNullOrEmpty(requestedByJellyfinUserId))
                 {
-                    return new RequestItemWithUser 
-                    { 
-                        TmdbId = tmdbId.Value, 
+                    return new RequestItemWithUser
+                    {
+                        TmdbId = tmdbId.Value,
                         MediaType = mediaType,
                         RequestedByJellyfinUserId = requestedByJellyfinUserId
                     };
