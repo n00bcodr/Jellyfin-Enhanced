@@ -1730,6 +1730,44 @@
   }
 
   /**
+   * Search for an item by provider IDs using the server endpoint.
+   * @param {Object} event - Calendar event with provider IDs
+   * @returns {Promise<string|null>} Item ID or null if not found
+   */
+  async function searchFromProviders(event) {
+    const providers = {};
+    const hasEpisodeProviders = !!(event.episodeImdbId || event.episodeTvdbId);
+    if (hasEpisodeProviders) {
+      if (event.episodeImdbId) providers.Imdb = event.episodeImdbId;
+      if (event.episodeTvdbId) providers.Tvdb = String(event.episodeTvdbId);
+    } else {
+      if (event.imdbId) providers.Imdb = event.imdbId;
+      if (event.tvdbId) providers.Tvdb = String(event.tvdbId);
+      if (event.tmdbId) providers.Tmdb = String(event.tmdbId);
+    }
+
+    if (Object.keys(providers).length === 0) return null;
+
+    try {
+      const baseUrl = ApiClient.getUrl("/JellyfinEnhanced/items/by-providers");
+      const params = new URLSearchParams();
+      Object.entries(providers).forEach(([key, value]) => {
+        params.append(`providers[${key}]`, value);
+      });
+      const url = `${baseUrl}?${params.toString()}`;
+
+      const response = await fetch(url, { headers: getAuthHeaders() });
+      if (!response.ok) return null;
+
+      const itemId = await response.json();
+      return itemId || null;
+    } catch (error) {
+      console.error(`${logPrefix} Provider search failed:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Navigate to Jellyfin item by searching title and validating with provider IDs
    * Note: AnyProviderIdEquals parameter does NOT work in Jellyfin (only Emby)
    * See: https://github.com/jellyfin/jellyfin/issues/1990
@@ -1737,7 +1775,20 @@
   async function navigateToJellyfinItem(event) {
     if (!event.hasFile) return;
 
+    // No need to search if itemId is already provided
+    if (event.itemId) {
+      window.location.hash = `#/details?id=${event.itemId}`;
+      return;
+    }
+
     try {
+      // Try provider-based lookup first
+      const providerItemId = await searchFromProviders(event);
+      if (providerItemId) {
+        window.location.hash = `#/details?id=${providerItemId}`;
+        return;
+      }
+
       // For movies, search directly
       if (event.type !== "Series") {
         const item = await searchWithYearFallback("Movie", event.title, event);
