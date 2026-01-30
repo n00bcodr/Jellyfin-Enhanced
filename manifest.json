@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Fix http link\n - Switch to Material Symbols Rounded icons in calendar page\n - fix: Navigate to available items form Calendar ([#313](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/313))\n - feat: Highlight calendar entries for favorites and watched series ([#314](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/314))\n - Change Menu Icon to material_icon for consistency\n - Revamp calendar event indicators for watchlist/watched\n - Update Translations\n - Refactor nav items to use anchor elements\n - Add interactive filtering to calendar legend\n - Add dynamic theme color support to calendar and requests pages\n - Handle server ID mismatch during plugin initialization\n - Fix ColorRatings on Scyfin and Elegantfin\n - Remove icons.js from config page to fix initialization conflicts\n - Refactor agenda event indicators layout\n - Add view mode hash support and default mobile to agenda\n - Fix season pack size calculation in requests page\n - Access to Calendar/Requests pages with Plugin Pages\n - Fix for calendar item without file but with bookmark\n - Parameter to disable Plugin Pages integration\n - Add note in configPage and improve logging\n - Update configPage.html\n - Add custom icon classes and badge for source labels\n - Translations for Coming Soon\n - Add 'Coming Soon' filter and release date display to requests\n - Add seamless infinite scroll to discovery sections\n - Refactor infinite scroll to require seamlessScroll module\n - Create CONTRIBUTING.md\n - Translations for People Tags\n - Add People Tags feature for cast member info\n - Remove useless call to calendar & new endpoint item by providers\n - Rename sonarr to Sonarr\n - Fix Semicolon",
+        "targetAbi": "10.10.7.0",
+        "version": "10.9.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/10.9.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "7F2C4481396FA71EF2FBA41CDD5D60CF",
+        "timestamp": "2026-01-30T00:24:15"
+      },
+      {
         "changelog": "- Remove Jellyseerr Icon references\n - Set fixed heights for poster images in requests page\n - Update Jellyseerr connection status icons in README\n - Remove Jellyseerr Icons\n - Improve navigation handling for calendar and requests pages\n - Replace fixed calendar grid with minmax for flexible widths\n - Refactor requests localization keys and add missing translations\n - Change defaults for requests and calendar pages to false\n - Modify arr/requests endpoint to enforce Jellyseerr user permissions\n - Rename Seerr folders to Jellyseerr\n - Change Namespace from Seerr to Jellyseerr\n - Hopefully fix Play button not directly playing items in request page",
         "targetAbi": "10.10.7.0",
         "version": "10.8.0.0",
