@@ -22,6 +22,10 @@
     previousPage: null,
     locationSignature: null,
     locationTimer: null,
+    downloadsActiveTab: "all",
+    downloadsSearchQuery: "",
+    downloadsSearchVisible: false,
+    searchDebounceTimer: null,
   };
 
   // Status color mapping - using theme-aware colors
@@ -29,23 +33,23 @@
     const themeVars = JE.themer?.getThemeVariables() || {};
     const primaryAccent = themeVars.primaryAccent || '#00a4dc';
     return {
-      Downloading: primaryAccent,
-      Importing: "#4caf50",
-      Queued: "rgba(128,128,128,0.6)",
-      Paused: "#ff9800",
-      Delayed: "#ff9800",
-      Warning: "#ff9800", // Stalled
-      Failed: "#f44336",
-      Completed: "#4caf50",
-      Unknown: "rgba(128,128,128,0.5)",
-      Pending: "#ff9800",
-      Processing: primaryAccent,
-      Available: "#4caf50",
-      Approved: "#4caf50",
-      Declined: "#f44336",
-      DownloadClientUnavailable: "#f44336",
-      FallbackMode: "#ff9800",
-      Delay: "#ff9800"
+      downloading: primaryAccent,
+      importing: "#4caf50",
+      queued: "rgba(128,128,128,0.6)",
+      paused: "#ff9800",
+      delayed: "#ff9800",
+      warning: "#ff9800", // Stalled
+      failed: "#f44336",
+      completed: "#4caf50",
+      unknown: "rgba(128,128,128,0.5)",
+      pending: "#ff9800",
+      processing: primaryAccent,
+      available: "#4caf50",
+      approved: "#4caf50",
+      declined: "#f44336",
+      downloadclientunavailable: "#f44336",
+      fallbackmode: "#ff9800",
+      delay: "#ff9800"
     };
   };
 
@@ -338,6 +342,117 @@
           opacity: 1 !important;
           background: rgba(255,255,255,0.1) !important;
         }
+        .je-downloads-controls {
+          display: flex;
+          flex-direction: column;
+          gap: 1em;
+          margin-bottom: 1.5em;
+        }
+        .je-downloads-tabs {
+          display: flex;
+          gap: 0.5em;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .je-downloads-tab.emby-button {
+          background: transparent;
+          border: 1px solid rgba(255,255,255,0.3);
+          color: inherit;
+          padding: 0.5em 1em;
+          border-radius: 4px;
+          cursor: pointer;
+          opacity: 0.7;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5em;
+        }
+        .je-downloads-tab.emby-button:hover {
+          opacity: 1;
+          background: rgba(255,255,255,0.1);
+        }
+        .je-downloads-tab.emby-button.active {
+          opacity: 1;
+        }
+        .je-downloads-search-toggle {
+          background: transparent;
+          border: 1px solid rgba(255,255,255,0.3);
+          color: inherit;
+          padding: 0.5em;
+          border-radius: 4px;
+          cursor: pointer;
+          opacity: 0.7;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+        }
+        .je-downloads-search-toggle:hover {
+          opacity: 1;
+          background: rgba(255,255,255,0.1);
+        }
+        .je-downloads-search-toggle.active {
+          opacity: 1;
+          background: rgba(255,255,255,0.15);
+        }
+        .je-downloads-search-toggle .material-icons {
+          font-size: 20px;
+        }
+        .je-downloads-tab-count {
+          font-size: 0.8em;
+          opacity: 0.8;
+          padding: 0.2em 0.5em;
+          background: rgba(255,255,255,0.1);
+          border-radius: 999px;
+          min-width: 20px;
+          text-align: center;
+        }
+        .je-downloads-search-container {
+          display: flex;
+          align-items: center;
+          gap: 0.5em;
+          position: relative;
+          width: 100%;
+          animation: slideDown 0.2s ease-out;
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .je-downloads-search-icon {
+          position: absolute;
+          left: 0.7em;
+          font-size: 20px;
+          opacity: 0.5;
+          pointer-events: none;
+        }
+        .je-downloads-search-input {
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.2);
+          color: inherit;
+          padding: 0.6em 0.9em 0.6em 2.5em;
+          border-radius: 4px;
+          font-size: 0.9em;
+          flex: 1;
+          width: 100%;
+          transition: all 0.2s;
+        }
+        .je-downloads-search-input:focus {
+          outline: none;
+          border-color: rgba(255,255,255,0.4);
+          background: rgba(255,255,255,0.12);
+        }
+        .je-downloads-search-input:focus + .je-downloads-search-icon {
+          opacity: 0.7;
+        }
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
@@ -373,7 +488,8 @@
     const themeStyle = document.createElement("style");
     themeStyle.id = "je-downloads-theme-colors";
     themeStyle.textContent = `
-      .je-requests-tab.emby-button.active {
+      .je-requests-tab.emby-button.active,
+      .je-downloads-tab.emby-button.active {
         background: ${primaryAccent} !important;
         border-color: ${primaryAccent} !important;
       }
@@ -457,6 +573,92 @@
 
     state.isLoading = false;
     renderPage();
+  }
+
+  /**
+   * Translate download status to localized label
+   */
+  function translateStatus(status) {
+    const translations = {
+      "All": JE.t?.("jellyseerr_discover_all") || "All",
+      "Downloading": JE.t?.("downloads_status_downloading") || "Downloading",
+      "Queued": JE.t?.("downloads_status_queued") || "Queued",
+      "Paused": JE.t?.("downloads_status_paused") || "Paused",
+      "Importing": JE.t?.("downloads_status_importing") || "Importing",
+      "Completed": JE.t?.("downloads_status_completed") || "Completed",
+      "Warning": JE.t?.("downloads_status_warning") || "Warning",
+      "Failed": JE.t?.("downloads_status_failed") || "Failed",
+      "Unknown": JE.t?.("downloads_status_unknown") || "Unknown"
+    };
+    return translations[status] || status;
+  }
+
+  /**
+   * Get unique statuses from downloads
+   * Counts season packs as 1 download instead of counting each episode
+   */
+  function getDownloadStatuses() {
+    const statuses = new Map();
+    const statusOrder = ["Downloading", "Queued", "Paused", "Importing", "Completed", "Warning", "Failed", "Unknown"];
+
+    // Group downloads first so season packs are counted as 1
+    const groupedDownloads = groupDownloads(state.downloads);
+
+    for (const group of groupedDownloads) {
+      const item = group.type === "seasonPack" ? group.item : group.item;
+      const status = item.status || "Unknown";
+      if (!statuses.has(status)) {
+        statuses.set(status, 0);
+      }
+      statuses.set(status, statuses.get(status) + 1);
+    }
+
+    // Sort by defined order (case-insensitive comparison)
+    const sorted = Array.from(statuses.entries()).sort((a, b) => {
+      const indexA = statusOrder.findIndex(s => s.toLowerCase() === a[0].toLowerCase());
+      const indexB = statusOrder.findIndex(s => s.toLowerCase() === b[0].toLowerCase());
+      return (indexA === -1 ? statusOrder.length : indexA) - (indexB === -1 ? statusOrder.length : indexB);
+    });
+
+    return sorted;
+  }
+
+  /**
+   * Filter downloads based on active tab and search query
+   */
+  function getFilteredDownloads() {
+    let filtered = state.downloads;
+
+    // Filter by status tab
+    if (state.downloadsActiveTab !== "all") {
+      filtered = filtered.filter(d => d.status === state.downloadsActiveTab);
+    }
+
+    // Filter by search query
+    if (state.downloadsSearchQuery.trim()) {
+      const query = state.downloadsSearchQuery.toLowerCase();
+      filtered = filtered.filter(d =>
+        (d.title && d.title.toLowerCase().includes(query)) ||
+        (d.subtitle && d.subtitle.toLowerCase().includes(query))
+      );
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Calculate pagination info for downloads
+   */
+  function getDownloadsPaginationInfo() {
+    const filtered = getFilteredDownloads();
+    const itemsPerPage = 20;
+    const totalItems = filtered.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+    return {
+      totalItems,
+      totalPages,
+      itemsPerPage
+    };
   }
 
   /**
@@ -921,18 +1123,78 @@
         </div>
       `;
     } else {
-      // Group downloads (collapse season packs)
-      const groupedDownloads = groupDownloads(state.downloads);
+      // Get statuses and pagination info
+      const statuses = getDownloadStatuses();
+      const paginationInfo = getDownloadsPaginationInfo();
+      const showSearchBar = state.downloads.length > 0; // Show search when there are any downloads
 
-      html += `<div class="je-downloads-grid">`;
-      for (const group of groupedDownloads) {
-        if (group.type === "seasonPack") {
-          html += renderSeasonPackCard(group);
-        } else {
-          html += renderDownloadCard(group.item);
+      // Render tabs and search
+      if (statuses.length > 1 || showSearchBar) {
+        html += `<div class="je-downloads-controls">`;
+
+        // Render tabs if there are multiple statuses
+        if (statuses.length > 1) {
+          // Calculate total count from grouped downloads
+          const totalGroupedCount = statuses.reduce((sum, [_, count]) => sum + count, 0);
+
+          html += `<div class="je-downloads-tabs">`;
+          html += `<button is="emby-button" type="button" class="je-downloads-tab emby-button ${state.downloadsActiveTab === "all" ? "active" : ""}" data-tab="all">
+            <span>${translateStatus("All")}</span>
+            <span class="je-downloads-tab-count">${totalGroupedCount}</span>
+          </button>`;
+
+          for (const [status, count] of statuses) {
+            html += `<button is="emby-button" type="button" class="je-downloads-tab emby-button ${state.downloadsActiveTab === status ? "active" : ""}" data-tab="${status}">
+              <span>${translateStatus(status)}</span>
+              <span class="je-downloads-tab-count">${count}</span>
+            </button>`;
+          }
+
+          // Add search icon button after tabs
+          if (showSearchBar) {
+            html += `<button class="je-downloads-search-toggle ${state.downloadsSearchVisible ? 'active' : ''}" title="Search downloads">
+              <span class="material-icons">search</span>
+            </button>`;
+          }
+
+          html += `</div>`;
         }
+
+        // Render search input if visible
+        if (showSearchBar && state.downloadsSearchVisible) {
+          html += `<div class="je-downloads-search-container">
+            <span class="material-icons je-downloads-search-icon">search</span>
+            <input type="text" class="je-downloads-search-input" value="${state.downloadsSearchQuery}" autofocus>
+          </div>`;
+        }
+
+        html += `</div>`;
       }
-      html += `</div>`;
+
+      // Get filtered downloads
+      const filteredDownloads = getFilteredDownloads();
+
+      if (filteredDownloads.length === 0) {
+        const labelNoMatches = (JE.t && JE.t('requests_no_downloads_found')) || 'No downloads found';
+        html += `
+          <div class="je-empty-state">
+            <div>${labelNoMatches}</div>
+          </div>
+        `;
+      } else {
+        // Group downloads (collapse season packs)
+        const groupedDownloads = groupDownloads(filteredDownloads);
+
+        html += `<div class="je-downloads-grid">`;
+        for (const group of groupedDownloads) {
+          if (group.type === "seasonPack") {
+            html += renderSeasonPackCard(group);
+          } else {
+            html += renderDownloadCard(group.item);
+          }
+        }
+        html += `</div>`;
+      }
     }
 
     html += `</div>`;
@@ -1024,6 +1286,59 @@
         }
 
         loadAllData();
+      });
+    }
+
+    // Add event listeners for download tabs
+    const downloadTabs = container.querySelectorAll('.je-downloads-tab');
+    downloadTabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        const tabName = tab.getAttribute('data-tab');
+        state.downloadsActiveTab = tabName;
+        renderPage();
+      });
+    });
+
+    // Add event listener for search toggle button
+    const searchToggle = container.querySelector('.je-downloads-search-toggle');
+    if (searchToggle) {
+      searchToggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        state.downloadsSearchVisible = !state.downloadsSearchVisible;
+        if (!state.downloadsSearchVisible) {
+          state.downloadsSearchQuery = "";
+        }
+        renderPage();
+      });
+    }
+
+    // Add event listener for search input with debouncing
+    const searchInput = container.querySelector('.je-downloads-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value;
+        state.downloadsSearchQuery = query;
+
+        // Clear existing timer
+        if (state.searchDebounceTimer) {
+          clearTimeout(state.searchDebounceTimer);
+        }
+
+        // Debounce rendering to avoid losing focus
+        state.searchDebounceTimer = setTimeout(() => {
+          const currentInput = document.querySelector('.je-downloads-search-input');
+          const cursorPosition = currentInput ? currentInput.selectionStart : 0;
+
+          renderPage();
+
+          // Restore focus and cursor position
+          const newInput = document.querySelector('.je-downloads-search-input');
+          if (newInput) {
+            newInput.focus();
+            newInput.setSelectionRange(cursorPosition, cursorPosition);
+          }
+        }, 300);
       });
     }
   }
@@ -1204,6 +1519,23 @@
       clearInterval(state.pollTimer);
       state.pollTimer = null;
     }
+  }
+
+  /**
+   * Filter downloads by status
+   */
+  function filterDownloads(status) {
+    state.downloadsActiveTab = status;
+    state.downloadsSearchQuery = "";
+    renderPage();
+  }
+
+  /**
+   * Search downloads
+   */
+  function searchDownloads(query) {
+    state.downloadsSearchQuery = query;
+    renderPage();
   }
 
   /**
@@ -1448,6 +1780,8 @@
     showPage,
     hidePage,
     refresh: loadAllData,
+    filterDownloads,
+    searchDownloads,
     filterRequests,
     nextPage,
     prevPage,
