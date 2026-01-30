@@ -402,9 +402,8 @@
         }
         .je-downloads-tab-count {
           font-size: 0.8em;
-          opacity: 0.8;
           padding: 0.2em 0.5em;
-          background: rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.5);
           border-radius: 999px;
           min-width: 20px;
           text-align: center;
@@ -581,14 +580,14 @@
   function translateStatus(status) {
     const translations = {
       "All": JE.t?.("jellyseerr_discover_all") || "All",
-      "Downloading": JE.t?.("downloads_status_downloading") || "Downloading",
-      "Queued": JE.t?.("downloads_status_queued") || "Queued",
-      "Paused": JE.t?.("downloads_status_paused") || "Paused",
-      "Importing": JE.t?.("downloads_status_importing") || "Importing",
-      "Completed": JE.t?.("downloads_status_completed") || "Completed",
-      "Warning": JE.t?.("downloads_status_warning") || "Warning",
-      "Failed": JE.t?.("downloads_status_failed") || "Failed",
-      "Unknown": JE.t?.("downloads_status_unknown") || "Unknown"
+      "downloading": JE.t?.("downloads_status_downloading") || "Downloading",
+      "queued": JE.t?.("downloads_status_queued") || "Queued",
+      "paused": JE.t?.("downloads_status_paused") || "Paused",
+      "importing": JE.t?.("downloads_status_importing") || "Importing",
+      "completed": JE.t?.("downloads_status_completed") || "Completed",
+      "warning": JE.t?.("downloads_status_warning") || "Warning",
+      "failed": JE.t?.("downloads_status_failed") || "Failed",
+      "unknown": JE.t?.("downloads_status_unknown") || "Unknown"
     };
     return translations[status] || status;
   }
@@ -739,10 +738,10 @@
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 30) return `${days}d ago`;
+    if (minutes < 1) return JE.t?.("requests_just_now") || "just now";
+    if (minutes < 60) return JE.t?.("requests_minutes_ago")?.replace("{minutes}", minutes) || `${minutes}m ago`;
+    if (hours < 24) return JE.t?.("requests_hours_ago")?.replace("{hours}", hours) || `${hours}h ago`;
+    if (days < 30) return JE.t?.("requests_days_ago")?.replace("{days}", days) || `${days}d ago`;
 
     // For older dates, show the date in "DD MMM YYYY" format
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -912,7 +911,7 @@
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
-            <div class="je-download-title" title="${item.title || ""}">${item.title || "Unknown"}</div>
+            <div class="je-download-title" title="${item.title || ""}">${item.title || JE.t?.("requests_unknown") || "Unknown"}</div>
             ${item.subtitle ? `<div class="je-download-subtitle" title="${item.subtitle}">${item.subtitle}</div>` : ""}
             <div class="je-download-meta">
                 <span class="je-download-badge je-arr-badge" title="${sourceLabel}"><img src="${sourceIcon}" alt="${sourceLabel}" loading="lazy"></span>
@@ -1077,8 +1076,8 @@
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
-            <div class="je-download-title" title="${item.title || ""}">${item.title || "Unknown"}</div>
-            <div class="je-download-subtitle">Season ${item.seasonNumber} (${group.episodeCount} episodes)</div>
+            <div class="je-download-title" title="${item.title || ""}">${item.title || JE.t?.("requests_unknown") || "Unknown"}</div>
+            <div class="je-download-subtitle">${JE.t?.("requests_season") || "Season"} ${item.seasonNumber} (${group.episodeCount} ${JE.t?.("requests_episodes") || "episodes"})</div>
             <div class="je-download-meta">
               <span class="je-download-badge je-arr-badge" title="Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr" loading="lazy"></span>
               <span class="je-download-badge" style="background: ${statusColor}">${item.status}</span>
@@ -1102,19 +1101,19 @@
 
     // Active Downloads Section
     html += `<div class="je-downloads-section je-active-downloads-section" style="margin-top: 2em;">`;
-    const labelActiveDownloads = (JE.t && JE.t('jellyseerr_active_downloads')) || 'Active Downloads';
+    const labelActiveDownloads = (JE.t && JE.t('requests_downloads')) || 'Downloads';
 
     html += `
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1em;">
         <h2 style="margin: 0.5em 0 0 0;">${labelActiveDownloads}</h2>
-        <button class="je-refresh-btn emby-button" style="background: transparent; border: 1px solid rgba(255,255,255,0.3); color: inherit; padding: 0.5em; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 0.5em; opacity: 0.8; transition: all 0.2s;" title="Refresh Downloads">
+        <button class="je-refresh-btn emby-button" style="background: transparent; border: 1px solid rgba(255,255,255,0.3); color: inherit; padding: 0.5em; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 0.5em; opacity: 0.8; transition: all 0.2s;">
           <span class="material-icons" style="font-size: 18px;">refresh</span>
         </button>
       </div>
     `;
 
     if (state.isLoading && state.downloads.length === 0) {
-      html += `<div class="je-loading">Loading...</div>`;
+      html += `<div class="je-loading">...</div>`;
     } else if (state.downloads.length === 0) {
       const labelNoActiveDownloads = (JE.t && JE.t('requests_no_active_downloads')) || 'No active downloads';
       html += `
@@ -1152,7 +1151,7 @@
 
           // Add search icon button after tabs
           if (showSearchBar) {
-            html += `<button class="je-downloads-search-toggle ${state.downloadsSearchVisible ? 'active' : ''}" title="Search downloads">
+            html += `<button class="je-downloads-search-toggle ${state.downloadsSearchVisible ? 'active' : ''}">
               <span class="material-icons">search</span>
             </button>`;
           }
@@ -1223,11 +1222,11 @@
           `;
 
       if (state.isLoading && state.requests.length === 0) {
-        html += `<div class="je-loading">Loading...</div>`;
+        html += `<div class="je-loading">...</div>`;
       } else if (state.requests.length === 0) {
         html += `
                     <div class="je-empty-state">
-                        <div>No requests found</div>
+                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
                     </div>
                 `;
       } else {
@@ -1243,7 +1242,7 @@
         if (filteredRequests.length === 0) {
           html += `
                     <div class="je-empty-state">
-                        <div>No requests found</div>
+                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
                     </div>
                 `;
         } else {
@@ -1257,9 +1256,9 @@
           if (state.requestsTotalPages > 1) {
             html += `
                         <div class="je-pagination">
-                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}>Previous</button>
-                            <span>Page ${state.requestsPage} of ${state.requestsTotalPages}</span>
-                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}>Next</button>
+                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+                            <span>${state.requestsPage} / ${state.requestsTotalPages}</span>
+                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
                         </div>
                     `;
           }
@@ -1354,7 +1353,7 @@
       // Use Jellyfin's page classes for proper integration
       page.className = "page type-interior mainAnimatedPage hide";
       // Data attributes for header/back button integration
-      page.setAttribute("data-title", "Requests");
+      page.setAttribute("data-title", JE.t?.("requests_requests") || "Requests");
       page.setAttribute("data-backbutton", "true");
       page.setAttribute("data-url", "#/downloads");
       page.setAttribute("data-type", "custom");
