@@ -119,31 +119,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     // Get watchlist from Jellyseerr
                     var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
-                    if (watchlistItems.Count == 0)
-                    {
-                        _logger.Info($"[Jellyseerr Watchlist Sync] No watchlist items found for user: {jellyfinUser.Username}");
-                    }
-                    else
-                    {
-                        _logger.Info($"[Jellyseerr Watchlist Sync] Found {watchlistItems.Count} watchlist items for user: {jellyfinUser.Username}");
-                    }
 
                     var requestItems = new List<WatchlistItem>();
                     if (config.AddRequestedMediaToWatchlist)
                     {
                         requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
-                        if (requestItems.Count > 0)
-                        {
-                            _logger.Info($"[Jellyseerr Watchlist Sync] Found {requestItems.Count} requests for user: {jellyfinUser.Username}");
-                        }
-                        else
-                        {
-                            _logger.Debug($"[Jellyseerr Watchlist Sync] No requests found for user: {jellyfinUser.Username}");
-                        }
+                    }
+
+                    // Log consolidated summary
+                    var totalItems = watchlistItems.Count + requestItems.Count;
+                    if (totalItems > 0)
+                    {
+                        var parts = new List<string>();
+                        if (watchlistItems.Count > 0) parts.Add($"{watchlistItems.Count} watchlist items");
+                        if (requestItems.Count > 0) parts.Add($"{requestItems.Count} requests");
+                        _logger.Info($"[Jellyseerr Watchlist Sync] Found {string.Join(", ", parts)} for user: {jellyfinUser.Username}");
                     }
                     else
                     {
-                        _logger.Debug($"[Jellyseerr Watchlist Sync] AddRequestedMediaToWatchlist is disabled, skipping requests for user: {jellyfinUser.Username}");
+                        _logger.Info($"[Jellyseerr Watchlist Sync] No items found for user: {jellyfinUser.Username}");
                     }
 
                     var combinedItems = watchlistItems.Concat(requestItems).ToList();
@@ -151,6 +145,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     // Process each item
                     var itemsAdded = 0;
                     var itemsPending = 0;
+                    var alreadyProcessedItems = new List<string>();
+                    var alreadyInWatchlistItems = new List<string>();
+                    var notInLibraryItems = new List<string>();
                     var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var item in combinedItems)
                     {
@@ -163,18 +160,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         }
 
                         var result = await ProcessWatchlistItem(jellyfinUser, item);
-                        if (result == WatchlistItemResult.Added)
+                        var itemName = !string.IsNullOrEmpty(item.Title) ? item.Title : "Unknown";
+                        var itemInfo = $"{itemName} (TMDB: {item.TmdbId})";
+
+                        switch (result)
                         {
-                            itemsAdded++;
-                            totalItemsAdded++;
-                        }
-                        else if (result == WatchlistItemResult.AddedToPending)
-                        {
-                            itemsPending++;
+                            case WatchlistItemResult.Added:
+                                itemsAdded++;
+                                totalItemsAdded++;
+                                break;
+                            case WatchlistItemResult.AddedToPending:
+                                itemsPending++;
+                                break;
+                            case WatchlistItemResult.AlreadyProcessed:
+                                alreadyProcessedItems.Add(itemInfo);
+                                break;
+                            case WatchlistItemResult.AlreadyInWatchlist:
+                                alreadyInWatchlistItems.Add(itemInfo);
+                                break;
+                            case WatchlistItemResult.NotInLibrary:
+                                notInLibraryItems.Add(itemInfo);
+                                break;
                         }
                     }
 
-                    _logger.Info($"[Jellyseerr Watchlist Sync] User {jellyfinUser.Username}: Added {itemsAdded} items to watchlist, {itemsPending} items added to pending watchlist");
+                    // Log consolidated results
+                    if (alreadyProcessedItems.Count > 0)
+                    {
+                        _logger.Debug($"[Jellyseerr Watchlist Sync] Items already processed for user {jellyfinUser.Username}: {string.Join(", ", alreadyProcessedItems)}");
+                    }
+                    if (alreadyInWatchlistItems.Count > 0)
+                    {
+                        _logger.Debug($"[Jellyseerr Watchlist Sync] Items already in watchlist for user {jellyfinUser.Username}: {string.Join(", ", alreadyInWatchlistItems)}");
+                    }
+                    if (notInLibraryItems.Count > 0)
+                    {
+                        _logger.Debug($"[Jellyseerr Watchlist Sync] Items not in library for user {jellyfinUser.Username} (will be auto-added by WatchlistMonitor): {string.Join(", ", notInLibraryItems)}");
+                    }
+
+                    _logger.Info($"[Jellyseerr Watchlist Sync] User {jellyfinUser.Username}: Added {itemsAdded} items to watchlist, {itemsPending} items added to pending watchlist, {alreadyProcessedItems.Count} already processed, {alreadyInWatchlistItems.Count} already in watchlist, {notInLibraryItems.Count} not in library");
                 }
                 catch (Exception ex)
                 {
@@ -453,6 +477,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             Added,
             AddedToPending,
             AlreadyInWatchlist,
+            AlreadyProcessed,
+            NotInLibrary,
             Skipped
         }
 
@@ -469,8 +495,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     if (processedItems.Items.Any(p => p.TmdbId == watchlistItem.TmdbId && p.MediaType == watchlistItem.MediaType))
                     {
-                        _logger.Debug($"[Jellyseerr Watchlist Sync] Item already processed before: {watchlistItem.Title} (TMDB: {watchlistItem.TmdbId}) for user {user.Username}");
-                        return Task.FromResult(WatchlistItemResult.Skipped);
+                        return Task.FromResult(WatchlistItemResult.AlreadyProcessed);
                     }
                 }
 
@@ -497,8 +522,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 if (item == null)
                 {
                     // Item not in library yet - WatchlistMonitor will automatically add it when it arrives
-                    _logger.Debug($"[Jellyseerr Watchlist Sync] Item not found in library: {watchlistItem.Title} (TMDB: {watchlistItem.TmdbId}) - will be auto-added by WatchlistMonitor when available");
-                    return Task.FromResult(WatchlistItemResult.Skipped);
+                    return Task.FromResult(WatchlistItemResult.NotInLibrary);
                 }
 
                 // Get user data
@@ -512,8 +536,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 // Check if already in watchlist
                 if (userData.Likes == true)
                 {
-                    _logger.Debug($"[Jellyseerr Watchlist Sync] Item already in watchlist: {item.Name}");
-
                     // Mark as processed if prevention is enabled and not already marked
                     if (config?.PreventWatchlistReAddition == true)
                     {
