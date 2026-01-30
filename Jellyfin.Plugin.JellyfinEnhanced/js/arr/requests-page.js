@@ -658,7 +658,7 @@
     const STATUS_COLORS = getStatusColors();
     const statusColor = STATUS_COLORS[item.status] || STATUS_COLORS.Unknown;
     const sourceIcon = item.source === "Sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = item.source
+    const sourceLabel = item.source;
 
     const posterHtml = item.posterUrl
       ? `<img class="je-download-poster" src="${item.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
