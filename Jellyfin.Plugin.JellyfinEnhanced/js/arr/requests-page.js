@@ -34,14 +34,18 @@
       Queued: "rgba(128,128,128,0.6)",
       Paused: "#ff9800",
       Delayed: "#ff9800",
-      Warning: "#ff9800",
+      Warning: "#ff9800", // Stalled
       Failed: "#f44336",
+      Completed: "#4caf50",
       Unknown: "rgba(128,128,128,0.5)",
       Pending: "#ff9800",
       Processing: primaryAccent,
       Available: "#4caf50",
       Approved: "#4caf50",
       Declined: "#f44336",
+      DownloadClientUnavailable: "#f44336",
+      FallbackMode: "#ff9800",
+      Delay: "#ff9800"
     };
   };
 
@@ -895,7 +899,7 @@
     let html = "";
 
     // Active Downloads Section
-    html += `<div class="je-downloads-section" style="margin-top: 2em;">`;
+    html += `<div class="je-downloads-section je-active-downloads-section" style="margin-top: 2em;">`;
     const labelActiveDownloads = (JE.t && JE.t('jellyseerr_active_downloads')) || 'Active Downloads';
 
     html += `
@@ -930,11 +934,12 @@
       }
       html += `</div>`;
     }
+
     html += `</div>`;
 
     // Requests Section
     if (JE.pluginConfig?.JellyseerrEnabled) {
-      html += `<div class="je-downloads-section">`;
+      html += `<div class="je-downloads-section je-requests-section">`;
       const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
       html += `<h2>${labelRequests}</h2>`;
 
@@ -1175,7 +1180,9 @@
   function startPolling() {
     stopPolling();
     const config = JE.pluginConfig || {};
-    const intervalSeconds = config.DownloadsPollIntervalSeconds || 30;
+    const intervalSeconds = config.DownloadsPollIntervalSeconds !== undefined
+      ? config.DownloadsPollIntervalSeconds
+      : 30;
 
     // Only start polling if interval is greater than 0
     if (intervalSeconds > 0) {
