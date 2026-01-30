@@ -2427,6 +2427,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 (startDate, endDate) = (endDate, startDate);
             }
 
+            var startIso = startDate.ToUniversalTime().ToString("o");
+            var endIso = endDate.ToUniversalTime().ToString("o");
+
             DateTime? ParseDate(object? value)
             {
                 if (value == null)
@@ -2492,7 +2495,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(30);
 
-                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?includeSeries=true&start={startDate:yyyy-MM-dd}&end={endDate:yyyy-MM-dd}");
+                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?includeSeries=true&start={startIso}&end={endIso}");
                     if (response.IsSuccessStatusCode)
                     {
                         var json = await response.Content.ReadAsStringAsync();
@@ -2562,7 +2565,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(10);
 
-                    var response = await client.GetAsync($"{radarrUrl}/api/v3/calendar?start={startDate:yyyy-MM-dd}&end={endDate:yyyy-MM-dd}");
+                    var response = await client.GetAsync($"{radarrUrl}/api/v3/calendar?start={startIso}&end={endIso}");
                     if (response.IsSuccessStatusCode)
                     {
                         var json = await response.Content.ReadAsStringAsync();
