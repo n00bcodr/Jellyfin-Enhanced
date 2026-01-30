@@ -274,7 +274,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         if (season.TryGetProperty("episodeCount", out var episodeCountProp))
                                         {
                                             var episodeCount = episodeCountProp.GetInt32();
-                                            _logger.Debug($"[Auto-Season-Request] TMDB reports {episodeCount} episodes in season {seasonNumber}");
+                                            // _logger.Debug($"[Auto-Season-Request] TMDB reports {episodeCount} episodes in season {seasonNumber}");
                                             return episodeCount;
                                         }
                                     }

@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            _logger.Info("[Auto-Movie-Request] Initializing playback event monitoring");
+            // _logger.Info("[Auto-Movie-Request] Initializing playback event monitoring");
 
             // Subscribe to playback progress events (to detect when user starts watching)
             _sessionManager.PlaybackProgress += OnPlaybackProgress;

@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            _logger.Info("[Auto-Season-Request] Initializing playback event monitoring");
+            // _logger.Info("[Auto-Season-Request] Initializing playback event monitoring");
 
             // Subscribe to playback events
             _sessionManager.PlaybackStopped += OnPlaybackStopped;

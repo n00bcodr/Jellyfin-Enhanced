@@ -58,7 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            _logger.Info("[Watchlist] Initializing library event monitoring");
+            // _logger.Info("[Watchlist] Initializing library event monitoring");
             _libraryManager.ItemAdded += OnItemAdded;
             _libraryManager.ItemUpdated += OnItemUpdated;
             _logger.Info("[Watchlist] Successfully subscribed to library ItemAdded and ItemUpdated events");
