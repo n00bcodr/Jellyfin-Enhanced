@@ -571,7 +571,13 @@
       return viewMatch[1];
     }
 
-    // Default to agenda on mobile, month on desktop
+    JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+    const configuredDefault = (JE.currentSettings.calendarDefaultViewMode || "auto").toLowerCase();
+    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda") {
+      return configuredDefault;
+    }
+
+    // Auto: default to agenda on mobile, month on desktop
     const isMobile = window.innerWidth <= 768;
     return isMobile ? "agenda" : "month";
   }
@@ -1016,6 +1022,13 @@
   function setViewMode(mode) {
     if (state.viewMode === mode) return;
     state.viewMode = mode;
+
+    JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+    JE.currentSettings.calendarDefaultViewMode = mode;
+    if (typeof JE.saveUserSettings === 'function') {
+      JE.saveUserSettings('settings.json', JE.currentSettings);
+    }
+
     const config = JE.pluginConfig || {};
     // Update URL hash to reflect view mode
     const newHash = `#/calendar/${mode}`;
