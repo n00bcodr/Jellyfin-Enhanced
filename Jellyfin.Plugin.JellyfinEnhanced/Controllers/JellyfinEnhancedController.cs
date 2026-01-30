@@ -870,13 +870,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+                        // Load previously synced items to avoid re-adding items users have removed
+                        var syncedData = _userConfigurationManager.GetUserConfiguration<Configuration.SyncedWatchlistItems>(
+                            user.Id.ToString(), Configuration.SyncedWatchlistItems.FileName);
+                        var syncedDirty = false;
+
                         // Process each watchlist item
                         foreach (var item in watchlistItems)
                         {
                             itemsProcessed++;
 
-                            var key = $"{item.MediaType}:{item.TmdbId}";
+                            var key = Configuration.SyncedWatchlistItems.MakeKey(item.MediaType, item.TmdbId);
                             if (!processedKeys.Add(key))
+                            {
+                                continue;
+                            }
+
+                            // Skip items that were already synced once (user may have intentionally removed them)
+                            if (syncedData.HasBeenSynced(item.MediaType, item.TmdbId))
                             {
                                 continue;
                             }
@@ -897,12 +908,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     itemsAdded++;
                                     _logger.Info($"[Manual Watchlist Sync] Added '{libraryItem.Name}' to watchlist for {user.Username}");
                                 }
+
+                                // Record as synced (whether newly added or already liked)
+                                syncedData.MarkSynced(item.MediaType, item.TmdbId);
+                                syncedDirty = true;
                             }
                             else
                             {
                                 // Item not in library yet - WatchlistMonitor will automatically add it when it arrives
                                 _logger.Debug($"[Manual Watchlist Sync] Item TMDB {item.TmdbId} ({item.MediaType}) not in library yet for {user.Username} - will be auto-added by WatchlistMonitor when available");
                             }
+                        }
+
+                        // Persist synced keys if changed
+                        if (syncedDirty)
+                        {
+                            _userConfigurationManager.SaveUserConfiguration(
+                                user.Id.ToString(), Configuration.SyncedWatchlistItems.FileName, syncedData);
                         }
                     }
                     catch (Exception ex)

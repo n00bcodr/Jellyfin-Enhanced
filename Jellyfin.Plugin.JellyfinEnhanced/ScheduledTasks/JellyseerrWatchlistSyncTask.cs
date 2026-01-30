@@ -141,25 +141,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     var combinedItems = watchlistItems.Concat(requestItems).ToList();
 
+                    // Load previously synced items to avoid re-adding items users have removed
+                    var syncedData = _userConfigurationManager.GetUserConfiguration<Configuration.SyncedWatchlistItems>(
+                        jellyfinUser.Id.ToString(), Configuration.SyncedWatchlistItems.FileName);
+                    var syncedDirty = false;
+
                     // Process each item
                     var itemsAdded = 0;
                     var itemsPending = 0;
+                    var itemsSkippedPrevSynced = 0;
                     var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var item in combinedItems)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        var key = $"{item.MediaType}:{item.TmdbId}";
+                        var key = Configuration.SyncedWatchlistItems.MakeKey(item.MediaType, item.TmdbId);
                         if (!processedKeys.Add(key))
                         {
                             continue;
                         }
 
-                        var result = await ProcessWatchlistItem(jellyfinUser, item);
-                        if (result == WatchlistItemResult.Added)
+                        // Skip items that were already synced once (user may have intentionally removed them)
+                        if (syncedData.HasBeenSynced(item.MediaType, item.TmdbId))
                         {
-                            itemsAdded++;
-                            totalItemsAdded++;
+                            itemsSkippedPrevSynced++;
+                            continue;
+                        }
+
+                        var result = await ProcessWatchlistItem(jellyfinUser, item);
+                        if (result == WatchlistItemResult.Added || result == WatchlistItemResult.AlreadyInWatchlist)
+                        {
+                            // Record as synced so we never re-add if the user removes it later
+                            syncedData.MarkSynced(item.MediaType, item.TmdbId);
+                            syncedDirty = true;
+
+                            if (result == WatchlistItemResult.Added)
+                            {
+                                itemsAdded++;
+                                totalItemsAdded++;
+                            }
                         }
                         else if (result == WatchlistItemResult.AddedToPending)
                         {
@@ -167,6 +187,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         }
                     }
 
+                    // Persist synced keys if changed
+                    if (syncedDirty)
+                    {
+                        _userConfigurationManager.SaveUserConfiguration(
+                            jellyfinUser.Id.ToString(), Configuration.SyncedWatchlistItems.FileName, syncedData);
+                    }
+
+                    if (itemsSkippedPrevSynced > 0)
+                    {
+                        _logger.Info($"[Jellyseerr Watchlist Sync] User {jellyfinUser.Username}: Skipped {itemsSkippedPrevSynced} previously-synced items (user may have removed them)");
+                    }
                     _logger.Info($"[Jellyseerr Watchlist Sync] User {jellyfinUser.Username}: Added {itemsAdded} items to watchlist, {itemsPending} items added to pending watchlist");
                 }
                 catch (Exception ex)

@@ -82,4 +82,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     {
         public List<PendingWatchlistItem> Items { get; set; } = new List<PendingWatchlistItem>();
     }
+
+    // Tracks items that have already been synced to a user's Jellyfin watchlist.
+    // Once an item key (e.g. "movie:12345") is in this set, it will never be
+    // re-added by the sync task, even if the user later removes it from their watchlist.
+    // Keys are always stored lowercase to avoid case-sensitivity issues after JSON deserialization.
+    public class SyncedWatchlistItems
+    {
+        public const string FileName = "watchlist-synced.json";
+
+        public HashSet<string> SyncedKeys { get; set; } = new HashSet<string>();
+
+        // Build a normalized key for consistent lookup (lowercase to survive JSON round-trip).
+        public static string MakeKey(string mediaType, int tmdbId)
+            => $"{mediaType.ToLowerInvariant()}:{tmdbId}";
+
+        public bool HasBeenSynced(string mediaType, int tmdbId)
+            => SyncedKeys.Contains(MakeKey(mediaType, tmdbId));
+
+        public void MarkSynced(string mediaType, int tmdbId)
+            => SyncedKeys.Add(MakeKey(mediaType, tmdbId));
+    }
 }

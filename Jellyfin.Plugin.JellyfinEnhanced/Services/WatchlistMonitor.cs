@@ -22,6 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly Configuration.UserConfigurationManager _userConfigurationManager;
         private readonly Logger _logger;
 
         public WatchlistMonitor(
@@ -29,12 +30,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IUserManager userManager,
             IUserDataManager userDataManager,
             IHttpClientFactory httpClientFactory,
+            Configuration.UserConfigurationManager userConfigurationManager,
             Logger logger)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
             _httpClientFactory = httpClientFactory;
+            _userConfigurationManager = userConfigurationManager;
             _logger = logger;
         }
 
@@ -160,13 +163,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Add to watchlist for each user who requested it (only log if actually added)
                 var addedCount = 0;
                 var addedUsers = new List<string>();
-                
+
+                // Batch synced-data updates per user to avoid redundant disk reads/writes
+                var userSyncCache = new Dictionary<string, Configuration.SyncedWatchlistItems>();
+
                 foreach (var request in matchingRequests)
                 {
                     var jellyfinUserId = request.RequestedByJellyfinUserId!.Replace("-", "");
                     var user = _userManager.Users.FirstOrDefault(u => u.Id.ToString().Replace("-", "").Equals(jellyfinUserId, StringComparison.OrdinalIgnoreCase));
-                    
+
                     if (user == null)
+                    {
+                        continue;
+                    }
+
+                    var userIdStr = user.Id.ToString();
+                    if (!userSyncCache.TryGetValue(userIdStr, out var syncedData))
+                    {
+                        syncedData = _userConfigurationManager.GetUserConfiguration<Configuration.SyncedWatchlistItems>(
+                            userIdStr, Configuration.SyncedWatchlistItems.FileName);
+                        userSyncCache[userIdStr] = syncedData;
+                    }
+
+                    // Check if this item was already synced for this user (respect user removal)
+                    if (syncedData.HasBeenSynced(mediaType, tmdbId))
                     {
                         continue;
                     }
@@ -179,6 +199,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         addedCount++;
                         addedUsers.Add(user.Username);
                     }
+
+                    // Record as synced regardless of whether we just added it or it was already liked
+                    syncedData.MarkSynced(mediaType, tmdbId);
+                }
+
+                // Persist all modified synced-data files once after the loop
+                foreach (var (userIdStr, syncedData) in userSyncCache)
+                {
+                    _userConfigurationManager.SaveUserConfiguration(
+                        userIdStr, Configuration.SyncedWatchlistItems.FileName, syncedData);
                 }
 
                 // Only log if we actually added the item to at least one watchlist
