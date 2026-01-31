@@ -965,15 +965,15 @@
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Hidden Content Page</h3></legend>
+                        <legend class="sectionTitle"><h3>Hidden Content</h3></legend>
                         <div class="configSection">
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
-                                    <input id="hiddenContentPageEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Hidden Content Page</span>
+                                    <input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Hidden Content</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Hidden Content" link to the navigation sidebar for managing all hidden items in a dedicated page view.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                             <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -1831,8 +1831,8 @@
                 document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
                 document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
 
-                // Hidden Content Page settings
-                document.querySelector('#hiddenContentPageEnabled').checked = config.HiddenContentPageEnabled || false;
+                // Hidden Content settings
+                document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -2001,8 +2001,8 @@
             config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;
             config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
 
-            // Hidden Content Page settings
-            config.HiddenContentPageEnabled = document.querySelector('#hiddenContentPageEnabled').checked;
+            // Hidden Content settings
+            config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';

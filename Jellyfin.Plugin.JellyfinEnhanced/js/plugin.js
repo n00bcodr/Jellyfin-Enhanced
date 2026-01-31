@@ -670,7 +670,7 @@
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
             if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
-            if (typeof JE.initializeHiddenContent === 'function') JE.initializeHiddenContent();
+            if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
                 JE.initializeColoredRatings();
@@ -690,7 +690,7 @@
             if (JE.pluginConfig?.CalendarPageEnabled && typeof JE.initializeCalendarPage === 'function') {
                 JE.initializeCalendarPage();
             }
-            if (JE.pluginConfig?.HiddenContentPageEnabled && typeof JE.initializeHiddenContentPage === 'function') {
+            if (JE.pluginConfig?.HiddenContentEnabled && typeof JE.initializeHiddenContentPage === 'function') {
                 JE.initializeHiddenContentPage();
             }
 

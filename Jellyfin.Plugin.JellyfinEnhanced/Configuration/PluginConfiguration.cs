@@ -174,8 +174,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarHighlightFavorites = false;
             CalendarHighlightWatchedSeries = false;
 
-            // Hidden Content Page Settings
-            HiddenContentPageEnabled = false;
+            // Hidden Content Settings
+            HiddenContentEnabled = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -323,7 +323,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarHighlightFavorites { get; set; }
         public bool CalendarHighlightWatchedSeries { get; set; }
 
-        // Hidden Content Page Settings
-        public bool HiddenContentPageEnabled { get; set; }
+        // Hidden Content Settings
+        public bool HiddenContentEnabled { get; set; }
     }
 }

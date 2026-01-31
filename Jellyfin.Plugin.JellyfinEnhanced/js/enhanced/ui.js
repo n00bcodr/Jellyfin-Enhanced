@@ -881,7 +881,7 @@
                             </div>
                         </div>
                     </details>
-                    <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
+                    ${JE.hiddenContent ? `<details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.EYE)} ${JE.t('hidden_content_settings_title')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
@@ -947,7 +947,7 @@
                                 <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:8px;">${JE.t('hidden_content_manage_desc')}</div>
                             </div>
                         </div>
-                    </details>
+                    </details>` : ''}
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.LANGUAGE)} ${JE.t('panel_settings_language')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
@@ -1307,7 +1307,7 @@
             const manageBtn = document.getElementById('manageHiddenContentBtn');
             if (manageBtn) {
                 manageBtn.addEventListener('click', () => {
-                    if (JE.pluginConfig?.HiddenContentPageEnabled && JE.hiddenContentPage) {
+                    if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
                         JE.hiddenContentPage.showPage();
                     } else {
                         JE.hiddenContent.showManagementPanel();

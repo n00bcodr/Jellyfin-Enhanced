@@ -143,8 +143,8 @@
     console.log(`${logPrefix} Initializing hidden content page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.HiddenContentPageEnabled) {
-      console.log(`${logPrefix} Hidden content page is disabled`);
+    if (!config.HiddenContentEnabled) {
+      console.log(`${logPrefix} Hidden content is disabled`);
       return;
     }
 
@@ -495,7 +495,7 @@
    */
   function injectNavigation() {
     const config = JE.pluginConfig || {};
-    if (!config.HiddenContentPageEnabled) return;
+    if (!config.HiddenContentEnabled) return;
 
     // Check if already exists
     if (document.querySelector(".je-nav-hidden-content-item")) {
