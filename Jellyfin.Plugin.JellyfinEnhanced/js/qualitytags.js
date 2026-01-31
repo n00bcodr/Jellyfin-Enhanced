@@ -51,8 +51,9 @@
         // The types of Jellyfin items that are eligible for quality tags.
         const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
 
-        // Sort tags for consistent display order (Resolution > Features)
+        // Sort tags for consistent display order (Resolution > Codec > Features)
         const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '480p', 'LOW-RES', 'SD'];
+        const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
         const videoOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', '3D'];
         const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
         const featureOrder = [...videoOrder, ...audioOrder];
@@ -88,7 +89,20 @@
             'TRUEHD': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
             '7.1': { bg: 'rgba(156, 39, 176, 0.9)', text: '#ffffff' },
             '5.1': { bg: 'rgba(103, 58, 183, 0.9)', text: '#ffffff' },
-            '3D': { bg: 'rgba(0, 150, 255, 0.9)', text: '#ffffff' }
+            '3D': { bg: 'rgba(0, 150, 255, 0.9)', text: '#ffffff' },
+            'AV1': { bg: 'rgba(255, 87, 34, 0.95)', text: '#ffffff' },
+            'HEVC': { bg: 'rgba(33, 150, 243, 0.9)', text: '#ffffff' },
+            'H265': { bg: 'rgba(63, 81, 181, 0.9)', text: '#ffffff' },
+            'VP9': { bg: 'rgba(156, 39, 176, 0.9)', text: '#ffffff' },
+            'H264': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
+            'VP8': { bg: 'rgba(121, 85, 72, 0.9)', text: '#ffffff' },
+            'XVID': { bg: 'rgba(255, 152, 0, 0.9)', text: '#ffffff' },
+            'DIVX': { bg: 'rgba(255, 193, 7, 0.9)', text: '#000000' },
+            'WMV': { bg: 'rgba(0, 188, 212, 0.9)', text: '#ffffff' },
+            'MPEG2': { bg: 'rgba(96, 125, 139, 0.9)', text: '#ffffff' },
+            'MPEG4': { bg: 'rgba(158, 158, 158, 0.9)', text: '#ffffff' },
+            'MJPEG': { bg: 'rgba(233, 30, 99, 0.9)', text: '#ffffff' },
+            'THEORA': { bg: 'rgba(139, 195, 74, 0.9)', text: '#ffffff' }
         };
 
         // --- CONFIGURATION ---
@@ -195,6 +209,8 @@
 
             if (resolutionOrder.includes(label)) {
                 badge.classList.add('resolution');
+            } else if (codecOrder.includes(label)) {
+                badge.classList.add('video-format');
             } else if (videoOrder.includes(label)) {
                 badge.classList.add('video-codec');
             } else if (audioOrder.includes(label)) {
@@ -279,6 +295,79 @@
                     if (resolutionTag) {
                         qualities.add(resolutionTag);
                     }
+                }
+            }
+
+            // --- VIDEO CODEC LOGIC ---
+            // Map codec to standard names and add to qualities
+            if (primaryVideoStream) {
+                const codec = (primaryVideoStream.Codec || '').toLowerCase();
+                const codecTag = (primaryVideoStream.CodecTag || '').toLowerCase();
+                let detectedCodec = null;
+
+                // Priority 1: Check actual codec field
+                if (codec.includes('hevc')) {
+                    detectedCodec = 'HEVC';
+                } else if (codec.includes('h265')) {
+                    detectedCodec = 'H265';
+                } else if (codec.includes('h264') || codec.includes('avc') || codecTag.includes('avc')) {
+                    detectedCodec = 'H264';
+                } else if (codec.includes('av1')) {
+                    detectedCodec = 'AV1';
+                } else if (codec.includes('vp9')) {
+                    detectedCodec = 'VP9';
+                } else if (codec.includes('vp8')) {
+                    detectedCodec = 'VP8';
+                } else if (codec.includes('xvid')) {
+                    detectedCodec = 'XVID';
+                } else if (codec.includes('divx')) {
+                    detectedCodec = 'DIVX';
+                } else if (codec.includes('wmv') || codec.includes('vc1')) {
+                    detectedCodec = 'WMV';
+                } else if (codec.includes('mpeg2')) {
+                    detectedCodec = 'MPEG2';
+                } else if (codec.includes('mpeg4')) {
+                    detectedCodec = 'MPEG4';
+                } else if (codec.includes('mjpeg')) {
+                    detectedCodec = 'MJPEG';
+                } else if (codec.includes('theora')) {
+                    detectedCodec = 'THEORA';
+                }
+
+                // Priority 2: Fallback to display title if codec field didn't match
+                if (!detectedCodec) {
+                    const displayTitle = (primaryVideoStream.DisplayTitle || '').toLowerCase();
+                    if (displayTitle.includes('hevc')) {
+                        detectedCodec = 'HEVC';
+                    } else if (displayTitle.includes('h265')) {
+                        detectedCodec = 'H265';
+                    } else if (displayTitle.includes('h264') || displayTitle.includes('avc')) {
+                        detectedCodec = 'H264';
+                    } else if (displayTitle.includes('av1')) {
+                        detectedCodec = 'AV1';
+                    } else if (displayTitle.includes('vp9')) {
+                        detectedCodec = 'VP9';
+                    } else if (displayTitle.includes('vp8')) {
+                        detectedCodec = 'VP8';
+                    } else if (displayTitle.includes('xvid')) {
+                        detectedCodec = 'XVID';
+                    } else if (displayTitle.includes('divx')) {
+                        detectedCodec = 'DIVX';
+                    } else if (displayTitle.includes('wmv') || displayTitle.includes('vc1')) {
+                        detectedCodec = 'WMV';
+                    } else if (displayTitle.includes('mpeg2')) {
+                        detectedCodec = 'MPEG2';
+                    } else if (displayTitle.includes('mpeg4')) {
+                        detectedCodec = 'MPEG4';
+                    } else if (displayTitle.includes('mjpeg')) {
+                        detectedCodec = 'MJPEG';
+                    } else if (displayTitle.includes('theora')) {
+                        detectedCodec = 'THEORA';
+                    }
+                }
+
+                if (detectedCodec) {
+                    qualities.add(detectedCodec);
                 }
             }
 
@@ -440,8 +529,7 @@
                 }
             }
 
-            const finalTags = Array.from(qualities);
-            return finalTags;
+            return Array.from(qualities);
         }
 
         /**
@@ -587,9 +675,22 @@
             const sortedQualities = qualities.sort((a, b) => {
                 const aIsRes = resolutionOrder.includes(a);
                 const bIsRes = resolutionOrder.includes(b);
+                const aIsCodec = codecOrder.includes(a);
+                const bIsCodec = codecOrder.includes(b);
+                const aIsFeat = featureOrder.includes(a);
+                const bIsFeat = featureOrder.includes(b);
+
+                // Resolution first
                 if (aIsRes && !bIsRes) return -1;
                 if (!aIsRes && bIsRes) return 1;
                 if (aIsRes && bIsRes) return resolutionOrder.indexOf(a) - resolutionOrder.indexOf(b);
+
+                // Codec second
+                if (aIsCodec && !bIsCodec) return -1;
+                if (!aIsCodec && bIsCodec) return 1;
+                if (aIsCodec && bIsCodec) return codecOrder.indexOf(a) - codecOrder.indexOf(b);
+
+                // Features last
                 return featureOrder.indexOf(a) - featureOrder.indexOf(b);
             });
 
@@ -945,4 +1046,3 @@
     };
 
 })(window.JellyfinEnhanced);
-
