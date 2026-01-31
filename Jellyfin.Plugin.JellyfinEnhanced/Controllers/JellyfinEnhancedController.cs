@@ -1524,6 +1524,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
                         CalendarDefaultViewMode = "auto",
+                        CalendarDisplayMode = "list",
                         LastOpenedTab = "shortcuts"
                     };
 
@@ -1677,6 +1678,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
                 CalendarDefaultViewMode = "auto",
+                CalendarDisplayMode = "list",
                 LastOpenedTab = "shortcuts"
             };
 
@@ -2517,10 +2519,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 var seriesTitle = "Unknown Series";
                                 int? seriesTvdbId = null;
                                 string? seriesImdbId = null;
+                                string? seriesPosterUrl = null;
+                                string? seriesBackdropUrl = null;
 
                                 seriesTitle = episode.series.title;
                                 seriesTvdbId = episode.series.tvdbId;
                                 seriesImdbId = episode.series.imdbId;
+
+                                if (episode.series.images != null)
+                                {
+                                    foreach (var img in episode.series.images)
+                                    {
+                                        var coverType = (string?)img.coverType;
+                                        var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                        if (string.IsNullOrWhiteSpace(imageUrl))
+                                        {
+                                            continue;
+                                        }
+
+                                        if (seriesBackdropUrl == null && (coverType == "fanart" || coverType == "banner"))
+                                        {
+                                            seriesBackdropUrl = imageUrl;
+                                        }
+                                        else if (seriesPosterUrl == null && coverType == "poster")
+                                        {
+                                            seriesPosterUrl = imageUrl;
+                                        }
+                                    }
+                                }
 
                                 var seasonNumber = (int?)episode.seasonNumber ?? 0;
                                 var episodeNumber = (int?)episode.episodeNumber ?? 0;
@@ -2544,6 +2570,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Overview = (string?)episode.overview,
                                     TvdbId = seriesTvdbId,
                                     ImdbId = seriesImdbId,
+                                    PosterUrl = seriesPosterUrl,
+                                    BackdropUrl = seriesBackdropUrl,
                                     EpisodeTvdbId = (int?)episode.tvdbId,
                                     EpisodeImdbId = (string?)episode.imdbId
                                 });
@@ -2580,14 +2608,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 var releaseDates = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
                                 string? posterUrl = null;
+                                string? backdropUrl = null;
                                 if (movie.images != null)
                                 {
                                     foreach (var img in movie.images)
                                     {
-                                        if ((string?)img.coverType == "poster")
+                                        var coverType = (string?)img.coverType;
+                                        var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                        if (string.IsNullOrWhiteSpace(imageUrl))
                                         {
-                                            posterUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                            break;
+                                            continue;
+                                        }
+
+                                        if (posterUrl == null && coverType == "poster")
+                                        {
+                                            posterUrl = imageUrl;
+                                            continue;
+                                        }
+
+                                        if (backdropUrl == null && (coverType == "fanart" || coverType == "backdrop"))
+                                        {
+                                            backdropUrl = imageUrl;
                                         }
                                     }
                                 }
@@ -2653,6 +2694,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         HasFile = (bool?)movie.hasFile ?? false,
                                         Monitored = (bool?)movie.monitored ?? false,
                                         PosterUrl = posterUrl,
+                                        BackdropUrl = backdropUrl,
                                         TmdbId = (int?)movie.tmdbId,
                                         ImdbId = (string?)movie.imdbId
                                     });
