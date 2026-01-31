@@ -81,6 +81,7 @@
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
             calendarDefaultViewMode: 'auto',
+            calendarDisplayMode: 'list',
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 

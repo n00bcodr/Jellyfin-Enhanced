@@ -65,6 +65,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         public string? PosterUrl { get; set; }
 
         /// <summary>
+        /// Optional backdrop/fanart URL
+        /// </summary>
+        [JsonPropertyName("backdropUrl")]
+        public string? BackdropUrl { get; set; }
+
+        /// <summary>
         /// IMDb ID
         /// </summary>
         [JsonPropertyName("imdbId")]
