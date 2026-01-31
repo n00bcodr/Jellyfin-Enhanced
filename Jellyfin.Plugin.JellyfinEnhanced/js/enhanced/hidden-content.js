@@ -563,76 +563,86 @@
 
     // --- Native card filtering ---
 
+    var PROCESSED_ATTR = 'jeHiddenChecked';
+
     function getCardItemId(el) {
-        // Check data-id (native Jellyfin cards)
         if (el.dataset && el.dataset.id) return el.dataset.id;
-        // Check data-itemid (some contexts)
         if (el.dataset && el.dataset.itemid) return el.dataset.itemid;
-        // Check href for id= parameter
-        if (el.href) {
-            const match = el.href.match(/id=([a-f0-9]{32})/i);
-            if (match) return match[1];
-        }
-        // Check background-image for /Items/{id}/
-        if (el.style && el.style.backgroundImage) {
-            const match = el.style.backgroundImage.match(/\/Items\/([a-f0-9]{32})\//i);
-            if (match) return match[1];
-        }
         return null;
     }
 
     function filterNativeCards() {
         if (!shouldFilterSurface('library')) return;
-        const settings = getSettings();
+        var settings = getSettings();
         if (!settings.enabled) return;
+        if (hiddenIdSet.size === 0) return;
 
-        const cards = document.querySelectorAll('.card[data-id], .card[data-itemid]');
-        for (const card of cards) {
-            const itemId = getCardItemId(card);
+        var cards = document.querySelectorAll('.card[data-id]:not([data-je-hidden-checked]), .card[data-itemid]:not([data-je-hidden-checked])');
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            var itemId = getCardItemId(card);
+            card.setAttribute('data-je-hidden-checked', '1');
             if (!itemId) continue;
 
             if (hiddenIdSet.has(itemId)) {
-                const cardBox = card.closest('.cardBox') || card;
-                if (cardBox.style.display !== 'none') {
-                    cardBox.style.display = 'none';
-                }
-            } else {
-                // Async check for series parent
-                isParentSeriesHidden(itemId).then(hidden => {
-                    if (hidden) {
-                        const cardBox = card.closest('.cardBox') || card;
-                        if (cardBox.style.display !== 'none') {
-                            cardBox.style.display = 'none';
-                        }
-                    }
-                });
+                card.style.display = 'none';
             }
         }
     }
 
-    const debouncedFilterNative = JE.helpers?.debounce
-        ? JE.helpers.debounce(() => requestAnimationFrame(filterNativeCards), 150)
+    function filterAllNativeCards() {
+        if (!shouldFilterSurface('library')) return;
+        var settings = getSettings();
+        if (!settings.enabled) return;
+
+        var cards = document.querySelectorAll('.card[data-id], .card[data-itemid]');
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            var itemId = getCardItemId(card);
+            card.setAttribute('data-je-hidden-checked', '1');
+            if (!itemId) continue;
+
+            if (hiddenIdSet.has(itemId)) {
+                card.style.display = 'none';
+            } else if (card.style.display === 'none') {
+                card.style.display = '';
+            }
+        }
+    }
+
+    var debouncedFilterNative = JE.helpers?.debounce
+        ? JE.helpers.debounce(function() { requestAnimationFrame(filterNativeCards); }, 300)
         : filterNativeCards;
 
     function setupNativeObserver() {
-        if (!JE.helpers?.createObserver) return;
-
-        JE.helpers.createObserver(
-            'je-hidden-content',
-            () => {
-                if (!getSettings().enabled) return;
-                debouncedFilterNative();
-            },
-            document.body,
-            { childList: true, subtree: true }
-        );
-
-        // Also re-filter on page navigation
+        // Use onViewPage for page navigation — much cheaper than a body MutationObserver
         if (JE.helpers?.onViewPage) {
-            JE.helpers.onViewPage(() => {
+            JE.helpers.onViewPage(function() {
                 if (!getSettings().enabled) return;
-                setTimeout(filterNativeCards, 200);
+                if (hiddenIdSet.size === 0) return;
+                setTimeout(filterAllNativeCards, 300);
             });
+        }
+
+        // Lightweight observer only for card containers, not the entire body
+        if (typeof MutationObserver !== 'undefined') {
+            var observer = new MutationObserver(function(mutations) {
+                if (!getSettings().enabled || hiddenIdSet.size === 0) return;
+                var hasNewCards = false;
+                for (var i = 0; i < mutations.length; i++) {
+                    var added = mutations[i].addedNodes;
+                    for (var j = 0; j < added.length; j++) {
+                        var node = added[j];
+                        if (node.nodeType === 1 && (node.classList?.contains('card') || node.querySelector?.('.card[data-id]'))) {
+                            hasNewCards = true;
+                            break;
+                        }
+                    }
+                    if (hasNewCards) break;
+                }
+                if (hasNewCards) debouncedFilterNative();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
         }
     }
 
@@ -694,14 +704,12 @@
         debouncedSave();
         emitChange();
 
-        // Re-show any hidden native cards
-        document.querySelectorAll('.card[data-id], .card[data-itemid]').forEach(card => {
-            const cardId = getCardItemId(card);
-            if (cardId === itemId) {
-                const cardBox = card.closest('.cardBox') || card;
-                if (cardBox.style.display === 'none') {
-                    cardBox.style.display = '';
-                }
+        // Re-show unhidden native cards and reset processed flags
+        document.querySelectorAll('.card[data-id], .card[data-itemid]').forEach(function(card) {
+            card.removeAttribute('data-je-hidden-checked');
+            var cardId = getCardItemId(card);
+            if (cardId === itemId && card.style.display === 'none') {
+                card.style.display = '';
             }
         });
     }
@@ -764,6 +772,11 @@
         rebuildSets();
         injectCSS();
         setupNativeObserver();
+
+        // Initial filter of any cards already on the page
+        if (hiddenIdSet.size > 0) {
+            setTimeout(filterAllNativeCards, 500);
+        }
 
         // Expose public API
         JE.hiddenContent = {
