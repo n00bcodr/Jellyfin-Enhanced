@@ -337,7 +337,7 @@
           unhideBtn.addEventListener('click', () => {
             card.classList.add('je-hidden-item-removing');
             setTimeout(() => {
-              JE.hiddenContent.unhideItem(item.itemId);
+              JE.hiddenContent.unhideItem(item._key || item.itemId);
               // Re-render will happen via je-hidden-content-changed event
             }, 300);
           });

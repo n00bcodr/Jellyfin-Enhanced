@@ -423,6 +423,5 @@
     "hidden_content_confirm_suppress_15m": "Don't ask again for 15 minutes",
     "hidden_content_confirm_suppress_forever": "Don't ask again",
     "hidden_content_confirm_toggle_label": "Show Confirmation Dialog",
-    "hidden_content_confirm_toggle_desc": "Show a confirmation dialog before hiding items",
-    "hidden_content_nav_label": "Hidden Content"
+    "hidden_content_confirm_toggle_desc": "Show a confirmation dialog before hiding items"
 }

@@ -796,9 +796,6 @@
                     const userId = ApiClient.getCurrentUserId();
                     const item = await ApiClient.getItem(userId, itemId);
                     tmdbId = item?.ProviderIds?.Tmdb || '';
-                    if (item?.ImageTags?.Primary) {
-                        posterPath = '';
-                    }
                 } catch (err) { /* ignore */ }
 
                 JE.hiddenContent.confirmAndHide({

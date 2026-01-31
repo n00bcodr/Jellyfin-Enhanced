@@ -39,7 +39,7 @@
             filterDiscovery: true,
             filterUpcoming: true,
             filterCalendar: true,
-            filterSearch: true,
+            filterSearch: false,
             filterRecommendations: true,
             filterRequests: true,
             showHideConfirmation: true,
@@ -733,7 +733,7 @@
         document.querySelector('.je-hidden-management-overlay')?.remove();
 
         const data = getHiddenData();
-        const items = Object.values(data.items || {});
+        const items = Object.entries(data.items || {}).map(([key, item]) => ({ ...item, _key: key }));
 
         const overlay = document.createElement('div');
         overlay.className = 'je-hidden-management-overlay';
@@ -796,7 +796,7 @@
                 card.querySelector('.je-hidden-item-unhide').addEventListener('click', () => {
                     card.classList.add('je-hidden-item-removing');
                     setTimeout(() => {
-                        unhideItem(item.itemId);
+                        unhideItem(item._key || item.itemId);
                         card.remove();
                         // Update header count
                         const remaining = gridContainer.querySelectorAll('.je-hidden-item-card').length;
@@ -995,7 +995,15 @@
     function unhideItem(itemId) {
         const data = getHiddenData();
         const newItems = { ...data.items };
-        delete newItems[itemId];
+
+        // Try direct key match first (covers storage keys like "tmdb-12345")
+        if (newItems[itemId]) {
+            delete newItems[itemId];
+        } else {
+            // Fallback: itemId might be a Jellyfin ID — find the matching storage key
+            const matchingKey = Object.keys(newItems).find(k => newItems[k].itemId === itemId);
+            if (matchingKey) delete newItems[matchingKey];
+        }
 
         hiddenData = { ...data, items: newItems };
         JE.userConfig.hiddenContent = hiddenData;
@@ -1026,7 +1034,8 @@
 
     function getAllHiddenItems() {
         const data = getHiddenData();
-        return Object.values(data.items || {});
+        const items = data.items || {};
+        return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
     }
 
     function getHiddenCount() {
