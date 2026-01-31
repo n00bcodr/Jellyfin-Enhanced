@@ -5,7 +5,7 @@
     // Create the global namespace immediately with placeholders
     window.JellyfinEnhanced = {
         pluginConfig: {},
-        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {} },
+        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
         translations: {},
         pluginVersion: 'unknown',
         // Stub functions that will be overwritten by modules
@@ -234,7 +234,7 @@
             }
 
             // Try fetching from bundled (local) first, then GitHub
-            /* console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${lang}...`);
+            console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${lang}...`);
             try {
                 const bundledResponse = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
                 if (bundledResponse.ok) {
@@ -249,7 +249,7 @@
                 }
             } catch (bundledError) {
                 console.warn(`🪼 Jellyfin Enhanced: Bundled translations failed, falling back to GitHub:`, bundledError.message);
-            } */
+            }
 
             // Fallback to GitHub if bundled fails
             try {
@@ -545,18 +545,21 @@
                          .catch(e => ({ name: 'bookmark', status: 'rejected', reason: e })),
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'elsewhere', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e }))
+                         .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e })),
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`), dataType: 'json' })
+                         .then(data => ({ name: 'hiddenContent', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e }))
             ];
             // Use allSettled to get results even if some fetches fail
             const results = await Promise.allSettled(fetchPromises);
 
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {} };
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
             results.forEach(result => {
                 if (result.status === 'fulfilled' && result.value) {
                     const data = result.value;
                     if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
                         // *** CONVERT PASCALCASE TO CAMELCASE ***
-                        if (data.name === 'settings' || data.name === 'bookmark') {
+                        if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent') {
                             JE.userConfig[data.name] = toCamelCase(data.value);
                         } else {
                             JE.userConfig[data.name] = data.value;
@@ -565,11 +568,13 @@
                         if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
                         else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                         else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
+                        else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
                         else JE.userConfig[data.name] = {};
                     } else {
                         if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
                         else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                         else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
+                        else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
                         else JE.userConfig[data.name] = {};
                     }
                 } else {
@@ -577,6 +582,7 @@
                     if (name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
                     else if (name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                     else if (name === 'elsewhere') JE.userConfig.elsewhere = {};
+                    else if (name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
                     else if (name) JE.userConfig[name] = {};
                 }
             });
@@ -593,7 +599,7 @@
                 'enhanced/helpers.js',
                 'enhanced/icons.js',
                 'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
-                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
+                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/hidden-content.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
                 'elsewhere.js',
                 'jellyseerr/request-manager.js',
                 'jellyseerr/seamless-scroll.js',
@@ -664,6 +670,7 @@
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
             if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
+            if (typeof JE.initializeHiddenContent === 'function') JE.initializeHiddenContent();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
                 JE.initializeColoredRatings();

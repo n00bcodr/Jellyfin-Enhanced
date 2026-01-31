@@ -1633,6 +1633,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpGet("user-settings/{userId}/hidden-content.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetUserHiddenContent(string userId)
+        {
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json");
+            return Ok(userConfig);
+        }
+
+        [HttpPost("user-settings/{userId}/hidden-content.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult SaveUserHiddenContent(string userId, [FromBody] UserHiddenContent userConfiguration)
+        {
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "hidden-content.json", userConfiguration);
+                _logger.Info($"Saved hidden content for user {userId} to hidden-content.json");
+                return Ok(new { success = true, file = "hidden-content.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save hidden content for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
         [HttpPost("reset-all-users-settings")]
         [Authorize]
         public IActionResult ResetAllUsersSettings()

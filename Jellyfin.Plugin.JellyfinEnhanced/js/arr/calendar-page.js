@@ -1144,7 +1144,8 @@
 
     const daysInMonth = getDaysInMonth(anchor);
     const firstDay = getFirstDayOfMonth(anchor);
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
 
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -1190,7 +1191,8 @@
   function renderWeekView() {
     const { start } = getRangeForView(state.currentDate, "week");
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
 
     let html = '<div class="je-calendar-grid">';
@@ -1224,7 +1226,8 @@
 
   // Render agenda list view
   function renderAgendaView() {
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     const dates = Object.keys(groupedEvents).sort();
 

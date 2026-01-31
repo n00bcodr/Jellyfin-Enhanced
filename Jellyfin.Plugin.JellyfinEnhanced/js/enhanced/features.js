@@ -717,6 +717,85 @@
     // Types that support audio languages (excludes BoxSet and Playlist)
     const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie'];
 
+    // Types that support hiding (Movies and Series only)
+    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series'];
+
+    /**
+     * Adds a "Hide" button to the item detail page action buttons area.
+     * @param {string} itemId The item's Jellyfin ID.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    function addHideContentButton(itemId, visiblePage) {
+        if (!JE.hiddenContent) return;
+        if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
+
+        // Don't add duplicate
+        if (visiblePage.querySelector('.je-detail-hide-btn')) return;
+
+        const selectors = [
+            '.detailButtons',
+            '.itemActionsBottom',
+            '.mainDetailButtons',
+            '.detailButtonsContainer'
+        ];
+        let buttonContainer = null;
+        for (const sel of selectors) {
+            const found = visiblePage.querySelector(sel);
+            if (found) {
+                buttonContainer = found;
+                break;
+            }
+        }
+        if (!buttonContainer) return;
+
+        const button = document.createElement('button');
+        button.setAttribute('is', 'emby-button');
+        button.className = 'button-flat detailButton emby-button je-detail-hide-btn';
+        button.type = 'button';
+        button.setAttribute('aria-label', JE.t('hidden_content_hide_button'));
+        button.title = JE.t('hidden_content_hide_button');
+
+        const content = document.createElement('div');
+        content.className = 'detailButton-content';
+        const icon = document.createElement('span');
+        icon.className = 'material-icons detailButton-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'visibility_off';
+        content.appendChild(icon);
+        button.appendChild(content);
+
+        button.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Get item name from the page title
+            const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
+            const itemName = nameEl?.textContent?.trim() || 'Unknown';
+
+            // Try to get TMDb ID and poster from the page
+            let tmdbId = '';
+            let posterPath = '';
+            try {
+                const userId = ApiClient.getCurrentUserId();
+                const item = await ApiClient.getItem(userId, itemId);
+                tmdbId = item?.ProviderIds?.Tmdb || '';
+                if (item?.ImageTags?.Primary) {
+                    posterPath = '';
+                }
+            } catch (err) { /* ignore */ }
+
+            JE.hiddenContent.hideItem({
+                itemId,
+                name: itemName,
+                type: lastDetailsItemType,
+                tmdbId,
+                posterPath
+            });
+        });
+
+        buttonContainer.appendChild(button);
+    }
+
     const handleItemDetails = JE.helpers.debounce(() => {
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
         if (!visiblePage) return;
@@ -763,6 +842,11 @@
             }
             if (JE.currentSettings.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 displayAudioLanguages(itemId, container);
+            }
+
+            // Add hide content button on detail pages
+            if (JE.hiddenContent) {
+                addHideContentButton(itemId, visiblePage);
             }
         } catch (e) { /* ignore */ }
     }, 100);
