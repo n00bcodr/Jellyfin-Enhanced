@@ -1240,14 +1240,15 @@
                     hideBtn.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        JE.hiddenContent.hideItem({
+                        JE.hiddenContent.confirmAndHide({
                             itemId: jellyfinMediaId || '',
                             name: titleText,
                             type: item.mediaType === 'tv' ? 'Series' : 'Movie',
                             tmdbId: item.id,
                             posterPath: item.posterPath || ''
+                        }, () => {
+                            card.style.display = 'none';
                         });
-                        card.style.display = 'none';
                     });
                 }
                 cardBox.style.position = 'relative';

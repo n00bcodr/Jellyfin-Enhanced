@@ -801,19 +801,19 @@
                     }
                 } catch (err) { /* ignore */ }
 
-                JE.hiddenContent.hideItem({
+                JE.hiddenContent.confirmAndHide({
                     itemId,
                     name: itemName,
                     type: lastDetailsItemType,
                     tmdbId,
                     posterPath
+                }, () => {
+                    // Update button to show "Hidden" state
+                    button.classList.add('je-already-hidden');
+                    button.title = (JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden');
+                    button.style.pointerEvents = 'none';
+                    button.style.opacity = '0.5';
                 });
-
-                // Update button to show "Hidden" state
-                button.classList.add('je-already-hidden');
-                button.title = (JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden');
-                button.style.pointerEvents = 'none';
-                button.style.opacity = '0.5';
             });
         }
 

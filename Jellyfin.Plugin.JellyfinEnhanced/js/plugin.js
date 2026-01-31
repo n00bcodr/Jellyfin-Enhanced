@@ -599,7 +599,7 @@
                 'enhanced/helpers.js',
                 'enhanced/icons.js',
                 'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
-                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/hidden-content.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
+                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/hidden-content.js', 'enhanced/hidden-content-page.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
                 'elsewhere.js',
                 'jellyseerr/request-manager.js',
                 'jellyseerr/seamless-scroll.js',
@@ -689,6 +689,9 @@
             }
             if (JE.pluginConfig?.CalendarPageEnabled && typeof JE.initializeCalendarPage === 'function') {
                 JE.initializeCalendarPage();
+            }
+            if (JE.pluginConfig?.HiddenContentPageEnabled && typeof JE.initializeHiddenContentPage === 'function') {
+                JE.initializeHiddenContentPage();
             }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');

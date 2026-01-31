@@ -1420,6 +1420,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarHighlightFavorites,
                 config.CalendarHighlightWatchedSeries,
 
+                // Hidden Content Page Settings
+                config.HiddenContentPageEnabled,
+
             });
         }
 

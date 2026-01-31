@@ -42,6 +42,7 @@
             filterSearch: true,
             filterRecommendations: true,
             filterRequests: true,
+            showHideConfirmation: true,
             ...data.settings
         };
     }
@@ -378,6 +379,90 @@
             @keyframes je-hidden-fadeout {
                 to { opacity: 0; transform: scale(0.9); }
             }
+
+            .je-hide-confirm-overlay {
+                position: fixed;
+                inset: 0;
+                z-index: 100001;
+                background: rgba(0,0,0,0.75);
+                backdrop-filter: blur(6px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .je-hide-confirm-dialog {
+                background: linear-gradient(135deg, rgba(30,30,35,0.98), rgba(20,20,25,0.98));
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 12px;
+                padding: 24px;
+                max-width: 420px;
+                width: 90%;
+                color: #fff;
+            }
+            .je-hide-confirm-dialog h3 {
+                margin: 0 0 12px 0;
+                font-size: 18px;
+                font-weight: 600;
+            }
+            .je-hide-confirm-dialog p {
+                margin: 0 0 16px 0;
+                font-size: 14px;
+                color: rgba(255,255,255,0.7);
+                line-height: 1.5;
+            }
+            .je-hide-confirm-options {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 20px;
+            }
+            .je-hide-confirm-options label {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 13px;
+                color: rgba(255,255,255,0.6);
+                cursor: pointer;
+            }
+            .je-hide-confirm-options input[type="checkbox"] {
+                width: 16px;
+                height: 16px;
+                accent-color: #e0e0e0;
+                cursor: pointer;
+            }
+            .je-hide-confirm-buttons {
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+            }
+            .je-hide-confirm-cancel {
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.15);
+                color: #fff;
+                padding: 8px 20px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+                transition: background 0.2s ease;
+            }
+            .je-hide-confirm-cancel:hover {
+                background: rgba(255,255,255,0.2);
+            }
+            .je-hide-confirm-hide {
+                background: rgba(220,50,50,0.6);
+                border: 1px solid rgba(220,50,50,0.7);
+                color: #fff;
+                padding: 8px 20px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 600;
+                transition: background 0.2s ease;
+            }
+            .je-hide-confirm-hide:hover {
+                background: rgba(220,50,50,0.8);
+            }
         `);
     }
 
@@ -416,6 +501,127 @@
         }, UNDO_TOAST_DURATION);
     }
 
+    // --- Hide confirmation dialog ---
+
+    const SUPPRESS_STORAGE_KEY = 'je_hide_confirm_suppressed_until';
+
+    function isConfirmationSuppressed() {
+        const settings = getSettings();
+        if (settings.showHideConfirmation === false) return true;
+        const until = localStorage.getItem(SUPPRESS_STORAGE_KEY);
+        if (until && new Date(until) > new Date()) return true;
+        return false;
+    }
+
+    function showHideConfirmation(itemName, onConfirm) {
+        // Remove any existing dialog
+        document.querySelector('.je-hide-confirm-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'je-hide-confirm-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'je-hide-confirm-dialog';
+
+        const title = document.createElement('h3');
+        title.textContent = JE.t('hidden_content_confirm_title', { name: itemName });
+        dialog.appendChild(title);
+
+        const body = document.createElement('p');
+        body.textContent = JE.t('hidden_content_confirm_body');
+        dialog.appendChild(body);
+
+        const options = document.createElement('div');
+        options.className = 'je-hide-confirm-options';
+
+        const suppress15Label = document.createElement('label');
+        const suppress15Check = document.createElement('input');
+        suppress15Check.type = 'checkbox';
+        suppress15Label.appendChild(suppress15Check);
+        suppress15Label.appendChild(document.createTextNode(JE.t('hidden_content_confirm_suppress_15m')));
+        options.appendChild(suppress15Label);
+
+        const suppressForeverLabel = document.createElement('label');
+        const suppressForeverCheck = document.createElement('input');
+        suppressForeverCheck.type = 'checkbox';
+        suppressForeverLabel.appendChild(suppressForeverCheck);
+        suppressForeverLabel.appendChild(document.createTextNode(JE.t('hidden_content_confirm_suppress_forever')));
+        options.appendChild(suppressForeverLabel);
+
+        // Make checkboxes mutually exclusive
+        suppress15Check.addEventListener('change', () => {
+            if (suppress15Check.checked) suppressForeverCheck.checked = false;
+        });
+        suppressForeverCheck.addEventListener('change', () => {
+            if (suppressForeverCheck.checked) suppress15Check.checked = false;
+        });
+
+        dialog.appendChild(options);
+
+        const buttons = document.createElement('div');
+        buttons.className = 'je-hide-confirm-buttons';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'je-hide-confirm-cancel';
+        cancelBtn.textContent = JE.t('hidden_content_confirm_cancel');
+        cancelBtn.addEventListener('click', () => {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        });
+        buttons.appendChild(cancelBtn);
+
+        const hideBtn = document.createElement('button');
+        hideBtn.className = 'je-hide-confirm-hide';
+        hideBtn.textContent = JE.t('hidden_content_confirm_hide');
+        hideBtn.addEventListener('click', () => {
+            if (suppress15Check.checked) {
+                const until = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                localStorage.setItem(SUPPRESS_STORAGE_KEY, until);
+            }
+            if (suppressForeverCheck.checked) {
+                updateSettings({ showHideConfirmation: false });
+            }
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+            onConfirm();
+        });
+        buttons.appendChild(hideBtn);
+
+        dialog.appendChild(buttons);
+        overlay.appendChild(dialog);
+
+        // Close on overlay background click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                document.removeEventListener('keydown', escHandler);
+            }
+        });
+
+        // Close on Escape
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                overlay.remove();
+                document.removeEventListener('keydown', escHandler);
+            }
+        };
+        document.addEventListener('keydown', escHandler);
+
+        document.body.appendChild(overlay);
+    }
+
+    function confirmAndHide(itemData, onHidden) {
+        if (isConfirmationSuppressed()) {
+            hideItem(itemData);
+            if (onHidden) onHidden();
+            return;
+        }
+        showHideConfirmation(itemData.name || 'Item', () => {
+            hideItem(itemData);
+            if (onHidden) onHidden();
+        });
+    }
+
     // --- Management panel ---
 
     function createManagementHeader(count) {
@@ -431,16 +637,24 @@
         return header;
     }
 
-    function createItemCard(item) {
+    function createItemCard(item, onNavigate) {
         const card = document.createElement('div');
         card.className = 'je-hidden-item-card';
         card.dataset.itemId = item.itemId;
 
+        const hasJellyfinId = !!item.itemId;
+        const hasTmdbId = !!item.tmdbId;
+        const mediaType = item.type === 'Series' ? 'tv' : 'movie';
+
         // Clickable poster area that navigates to item detail
         const posterLink = document.createElement('a');
         posterLink.className = 'je-hidden-item-poster-link';
-        if (item.itemId) {
+        if (hasJellyfinId) {
             posterLink.href = `#/details?id=${item.itemId}`;
+        } else if (hasTmdbId) {
+            posterLink.href = '#';
+            posterLink.dataset.tmdbId = item.tmdbId;
+            posterLink.dataset.mediaType = mediaType;
         }
 
         if (item.posterPath) {
@@ -450,7 +664,7 @@
             img.alt = '';
             img.loading = 'lazy';
             posterLink.appendChild(img);
-        } else if (item.itemId) {
+        } else if (hasJellyfinId) {
             // Use Jellyfin primary image as fallback
             const img = document.createElement('img');
             img.className = 'je-hidden-item-poster';
@@ -473,10 +687,31 @@
         nameLink.className = 'je-hidden-item-name';
         nameLink.title = item.name || '';
         nameLink.textContent = item.name || 'Unknown';
-        if (item.itemId) {
+        if (hasJellyfinId) {
             nameLink.href = `#/details?id=${item.itemId}`;
+        } else if (hasTmdbId) {
+            nameLink.href = '#';
+            nameLink.dataset.tmdbId = item.tmdbId;
+            nameLink.dataset.mediaType = mediaType;
         }
         info.appendChild(nameLink);
+
+        // Attach navigation click handlers
+        const navigableLinks = [posterLink, nameLink];
+        for (const link of navigableLinks) {
+            link.addEventListener('click', (e) => {
+                if (hasJellyfinId) {
+                    // Let browser navigate via href, just close overlay
+                    if (onNavigate) onNavigate();
+                } else if (hasTmdbId && JE.jellyseerrMoreInfo) {
+                    e.preventDefault();
+                    JE.jellyseerrMoreInfo.open(parseInt(item.tmdbId, 10), mediaType);
+                    if (onNavigate) onNavigate();
+                } else if (!hasJellyfinId) {
+                    e.preventDefault();
+                }
+            });
+        }
 
         const metaDiv = document.createElement('div');
         metaDiv.className = 'je-hidden-item-meta';
@@ -556,14 +791,7 @@
             grid.className = 'je-hidden-management-grid';
 
             for (const item of filtered) {
-                const card = createItemCard(item);
-
-                // Clicking poster or name navigates to item detail and closes panel
-                card.querySelectorAll('.je-hidden-item-poster-link, a.je-hidden-item-name').forEach(link => {
-                    link.addEventListener('click', () => {
-                        overlay.remove();
-                    });
-                });
+                const card = createItemCard(item, () => overlay.remove());
 
                 card.querySelector('.je-hidden-item-unhide').addEventListener('click', () => {
                     card.classList.add('je-hidden-item-removing');
@@ -836,6 +1064,15 @@
         });
     }
 
+    function unhideAll() {
+        const data = getHiddenData();
+        hiddenData = { ...data, items: {} };
+        JE.userConfig.hiddenContent = hiddenData;
+        rebuildSets();
+        debouncedSave();
+        emitChange();
+    }
+
     // --- Initialization ---
 
     JE.initializeHiddenContent = function () {
@@ -855,6 +1092,7 @@
             isHiddenByTmdbId,
             hideItem,
             unhideItem,
+            confirmAndHide,
             getSettings,
             updateSettings,
             getAllHiddenItems,
@@ -864,7 +1102,9 @@
             filterRequestItems,
             filterNativeCards,
             showUndoToast,
-            showManagementPanel
+            showManagementPanel,
+            createItemCard,
+            unhideAll
         };
 
         console.log(`🪼 Jellyfin Enhanced: Hidden Content initialized (${getHiddenCount()} items hidden)`);

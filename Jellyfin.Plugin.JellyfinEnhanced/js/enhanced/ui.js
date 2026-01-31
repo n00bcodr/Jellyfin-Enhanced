@@ -890,6 +890,12 @@
                                     <div><div style="font-weight:500;">${JE.t('hidden_content_toggle_label')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('hidden_content_toggle_desc')}</div></div>
                                 </label>
                             </div>
+                            <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="hiddenShowConfirmation" ${JE.hiddenContent?.getSettings()?.showHideConfirmation !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_confirm_toggle_label')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_confirm_toggle_desc')}</div></div>
+                                </label>
+                            </div>
                             <div id="hiddenContentSurfaceToggles" style="margin-bottom: 12px;">
                                 <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
                                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -1290,10 +1296,22 @@
                     });
                 }
             }
+            const confirmToggle = document.getElementById('hiddenShowConfirmation');
+            if (confirmToggle) {
+                confirmToggle.addEventListener('change', (e) => {
+                    JE.hiddenContent.updateSettings({ showHideConfirmation: e.target.checked });
+                    localStorage.removeItem('je_hide_confirm_suppressed_until');
+                    resetAutoCloseTimer();
+                });
+            }
             const manageBtn = document.getElementById('manageHiddenContentBtn');
             if (manageBtn) {
                 manageBtn.addEventListener('click', () => {
-                    JE.hiddenContent.showManagementPanel();
+                    if (JE.pluginConfig?.HiddenContentPageEnabled && JE.hiddenContentPage) {
+                        JE.hiddenContentPage.showPage();
+                    } else {
+                        JE.hiddenContent.showManagementPanel();
+                    }
                 });
             }
         }

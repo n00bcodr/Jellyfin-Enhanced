@@ -415,5 +415,14 @@
     "hidden_content_filter_recommendations": "Filter Recommendations",
     "hidden_content_filter_recommendations_desc": "Hide items from similar/recommended sections",
     "hidden_content_filter_requests": "Filter Requests",
-    "hidden_content_filter_requests_desc": "Hide items from the requests/downloads page"
+    "hidden_content_filter_requests_desc": "Hide items from the requests/downloads page",
+    "hidden_content_confirm_title": "Hide \"{name}\"?",
+    "hidden_content_confirm_body": "This will hide this item from all browsing surfaces (library, search, discovery, etc). You can unhide it later from Settings → Hidden Content.",
+    "hidden_content_confirm_cancel": "Cancel",
+    "hidden_content_confirm_hide": "Hide",
+    "hidden_content_confirm_suppress_15m": "Don't ask again for 15 minutes",
+    "hidden_content_confirm_suppress_forever": "Don't ask again",
+    "hidden_content_confirm_toggle_label": "Show Confirmation Dialog",
+    "hidden_content_confirm_toggle_desc": "Show a confirmation dialog before hiding items",
+    "hidden_content_nav_label": "Hidden Content"
 }
