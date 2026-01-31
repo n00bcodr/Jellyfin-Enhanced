@@ -758,7 +758,7 @@
         button.type = 'button';
 
         const label = alreadyHidden
-            ? (JE.t('hidden_content_already_hidden') || 'Hidden')
+            ? ((JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden'))
             : JE.t('hidden_content_hide_button');
         button.setAttribute('aria-label', label);
         button.title = label;
@@ -774,7 +774,7 @@
         if (alreadyHidden) {
             const textSpan = document.createElement('span');
             textSpan.className = 'detailButton-icon-text';
-            textSpan.textContent = JE.t('hidden_content_already_hidden') || 'Hidden';
+            textSpan.textContent = (JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden');
             content.appendChild(textSpan);
         }
 
@@ -811,7 +811,7 @@
 
                 // Update button to show "Hidden" state
                 button.classList.add('je-already-hidden');
-                button.title = JE.t('hidden_content_already_hidden') || 'Hidden';
+                button.title = (JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden');
                 button.style.pointerEvents = 'none';
                 button.style.opacity = '0.5';
             });

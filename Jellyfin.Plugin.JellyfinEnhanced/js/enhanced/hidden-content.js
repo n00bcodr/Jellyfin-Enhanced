@@ -317,12 +317,21 @@
             .je-hidden-item-card:hover {
                 border-color: rgba(255,255,255,0.2);
             }
+            .je-hidden-item-poster-link {
+                display: block;
+                cursor: pointer;
+                text-decoration: none;
+            }
             .je-hidden-item-poster {
                 width: 100%;
                 aspect-ratio: 2/3;
                 object-fit: cover;
                 background: rgba(255,255,255,0.05);
                 display: block;
+                transition: opacity 0.2s ease;
+            }
+            .je-hidden-item-poster-link:hover .je-hidden-item-poster {
+                opacity: 0.8;
             }
             .je-hidden-item-info {
                 padding: 10px;
@@ -335,6 +344,12 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
                 margin-bottom: 4px;
+                text-decoration: none;
+                display: block;
+            }
+            .je-hidden-item-name:hover {
+                text-decoration: underline;
+                color: #fff;
             }
             .je-hidden-item-meta {
                 font-size: 11px;
@@ -421,27 +436,47 @@
         card.className = 'je-hidden-item-card';
         card.dataset.itemId = item.itemId;
 
+        // Clickable poster area that navigates to item detail
+        const posterLink = document.createElement('a');
+        posterLink.className = 'je-hidden-item-poster-link';
+        if (item.itemId) {
+            posterLink.href = `#/details?id=${item.itemId}`;
+        }
+
         if (item.posterPath) {
             const img = document.createElement('img');
             img.className = 'je-hidden-item-poster';
             img.src = `https://image.tmdb.org/t/p/w300${item.posterPath}`;
             img.alt = '';
             img.loading = 'lazy';
-            card.appendChild(img);
+            posterLink.appendChild(img);
+        } else if (item.itemId) {
+            // Use Jellyfin primary image as fallback
+            const img = document.createElement('img');
+            img.className = 'je-hidden-item-poster';
+            img.src = `${ApiClient.getUrl('/Items/' + item.itemId + '/Images/Primary', { maxWidth: 300 })}`;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.onerror = function() { this.style.display = 'none'; };
+            posterLink.appendChild(img);
         } else {
             const placeholder = document.createElement('div');
             placeholder.className = 'je-hidden-item-poster';
-            card.appendChild(placeholder);
+            posterLink.appendChild(placeholder);
         }
+        card.appendChild(posterLink);
 
         const info = document.createElement('div');
         info.className = 'je-hidden-item-info';
 
-        const nameDiv = document.createElement('div');
-        nameDiv.className = 'je-hidden-item-name';
-        nameDiv.title = item.name || '';
-        nameDiv.textContent = item.name || 'Unknown';
-        info.appendChild(nameDiv);
+        const nameLink = document.createElement('a');
+        nameLink.className = 'je-hidden-item-name';
+        nameLink.title = item.name || '';
+        nameLink.textContent = item.name || 'Unknown';
+        if (item.itemId) {
+            nameLink.href = `#/details?id=${item.itemId}`;
+        }
+        info.appendChild(nameLink);
 
         const metaDiv = document.createElement('div');
         metaDiv.className = 'je-hidden-item-meta';
@@ -522,6 +557,13 @@
 
             for (const item of filtered) {
                 const card = createItemCard(item);
+
+                // Clicking poster or name navigates to item detail and closes panel
+                card.querySelectorAll('.je-hidden-item-poster-link, a.je-hidden-item-name').forEach(link => {
+                    link.addEventListener('click', () => {
+                        overlay.remove();
+                    });
+                });
 
                 card.querySelector('.je-hidden-item-unhide').addEventListener('click', () => {
                     card.classList.add('je-hidden-item-removing');

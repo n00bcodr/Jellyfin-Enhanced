@@ -1227,9 +1227,10 @@
                 const alreadyHidden = JE.hiddenContent.isHiddenByTmdbId(item.id);
                 const hideBtn = document.createElement('button');
                 hideBtn.className = alreadyHidden ? 'je-hide-btn je-already-hidden' : 'je-hide-btn';
-                hideBtn.title = alreadyHidden ? JE.t('hidden_content_already_hidden') : JE.t('hidden_content_hide_button');
+                const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
+                hideBtn.title = alreadyHidden ? hiddenLabel : JE.t('hidden_content_hide_button');
                 if (alreadyHidden) {
-                    hideBtn.textContent = JE.t('hidden_content_already_hidden') || 'Hidden';
+                    hideBtn.textContent = hiddenLabel;
                 } else {
                     const icon = document.createElement('span');
                     icon.className = 'material-icons';
