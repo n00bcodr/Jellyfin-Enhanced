@@ -445,7 +445,6 @@
     JE.helpers = {
         onViewPage,
         getCurrentView,
-        notifyHandlers,
         createObserver,
         disconnectObserver,
         disconnectAllObservers,

@@ -881,6 +881,7 @@
                             </div>
                         </div>
                     </details>
+                    ${/* Hidden Content settings — only rendered when the module is initialized (controlled by HiddenContentEnabled config) */ ''}
                     ${JE.hiddenContent ? `<details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.EYE)} ${JE.t('hidden_content_settings_title')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
