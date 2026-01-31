@@ -292,8 +292,13 @@
         const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
         const seen = new Set();
 
-        for (let i = 0; i < results.length; i++) {
-            const item = results[i];
+        // Filter hidden content before rendering
+        const filteredResults = JE.hiddenContent
+            ? JE.hiddenContent.filterJellyseerrResults(results, 'discovery')
+            : results;
+
+        for (let i = 0; i < filteredResults.length; i++) {
+            const item = filteredResults[i];
 
             // Deduplicate by TMDB ID
             const key = `${item.mediaType}-${item.id}`;

@@ -1219,6 +1219,43 @@
         if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
             fetchProviderIcons(card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
         }
+
+        // Add hide button for hidden content feature
+        if (JE.hiddenContent) {
+            const cardBox = card.querySelector('.cardBox');
+            if (cardBox) {
+                const alreadyHidden = JE.hiddenContent.isHiddenByTmdbId(item.id);
+                const hideBtn = document.createElement('button');
+                hideBtn.className = alreadyHidden ? 'je-hide-btn je-already-hidden' : 'je-hide-btn';
+                const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
+                hideBtn.title = alreadyHidden ? hiddenLabel : JE.t('hidden_content_hide_button');
+                if (alreadyHidden) {
+                    hideBtn.textContent = hiddenLabel;
+                } else {
+                    const icon = document.createElement('span');
+                    icon.className = 'material-icons';
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.textContent = 'visibility_off';
+                    hideBtn.appendChild(icon);
+                    hideBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        JE.hiddenContent.confirmAndHide({
+                            itemId: jellyfinMediaId || '',
+                            name: titleText,
+                            type: item.mediaType === 'tv' ? 'Series' : 'Movie',
+                            tmdbId: item.id,
+                            posterPath: item.posterPath || ''
+                        }, () => {
+                            card.style.display = 'none';
+                        });
+                    });
+                }
+                cardBox.style.position = 'relative';
+                cardBox.appendChild(hideBtn);
+            }
+        }
+
         return card;
     }
 

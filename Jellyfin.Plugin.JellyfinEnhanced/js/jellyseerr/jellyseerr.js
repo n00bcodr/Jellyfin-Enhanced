@@ -98,7 +98,8 @@
          */
         async function fetchAndRenderResults(query) {
             const data = await search(query);
-            const results = await prepareResultsWithCollections(data.results || []);
+            let results = await prepareResultsWithCollections(data.results || []);
+            if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
             if (results.length > 0) {
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
             }
@@ -175,7 +176,8 @@
             console.log(`${logPrefix} Refreshing data for query: "${query}"`);
             try {
                 const data = await search(query);
-                const results = await prepareResultsWithCollections(data.results || []);
+                let results = await prepareResultsWithCollections(data.results || []);
+                if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
 
                 itemsContainer.innerHTML = '';
                 results.forEach(item => {
