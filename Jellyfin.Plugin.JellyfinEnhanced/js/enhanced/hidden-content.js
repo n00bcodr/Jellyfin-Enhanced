@@ -140,6 +140,29 @@
                 background: rgba(220, 50, 50, 0.85);
                 border-color: rgba(255,255,255,0.4);
             }
+            .je-hide-btn.je-already-hidden {
+                opacity: 0;
+                background: rgba(80,80,80,0.85);
+                border-color: rgba(255,255,255,0.15);
+                cursor: default;
+                pointer-events: none;
+                font-size: 10px;
+                width: auto;
+                border-radius: 4px;
+                padding: 2px 8px;
+                height: auto;
+            }
+            .cardBox:hover .je-hide-btn.je-already-hidden {
+                opacity: 0.85;
+            }
+            .je-hide-btn.je-already-hidden:hover {
+                background: rgba(80,80,80,0.85);
+                border-color: rgba(255,255,255,0.15);
+            }
+            .je-detail-hide-btn.je-already-hidden {
+                opacity: 0.5;
+                pointer-events: none;
+            }
 
             .je-undo-toast {
                 position: fixed;
@@ -571,8 +594,14 @@
         return null;
     }
 
+    function getCurrentNativeSurface() {
+        var hash = window.location.hash || '';
+        if (hash.indexOf('/search') !== -1) return 'search';
+        return 'library';
+    }
+
     function filterNativeCards() {
-        if (!shouldFilterSurface('library')) return;
+        if (!shouldFilterSurface(getCurrentNativeSurface())) return;
         var settings = getSettings();
         if (!settings.enabled) return;
         if (hiddenIdSet.size === 0) return;
@@ -591,7 +620,7 @@
     }
 
     function filterAllNativeCards() {
-        if (!shouldFilterSurface('library')) return;
+        if (!shouldFilterSurface(getCurrentNativeSurface())) return;
         var settings = getSettings();
         if (!settings.enabled) return;
 

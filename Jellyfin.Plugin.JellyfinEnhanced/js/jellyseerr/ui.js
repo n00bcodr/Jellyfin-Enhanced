@@ -1224,26 +1224,31 @@
         if (JE.hiddenContent) {
             const cardBox = card.querySelector('.cardBox');
             if (cardBox) {
+                const alreadyHidden = JE.hiddenContent.isHiddenByTmdbId(item.id);
                 const hideBtn = document.createElement('button');
-                hideBtn.className = 'je-hide-btn';
-                hideBtn.title = JE.t('hidden_content_hide_button');
-                const icon = document.createElement('span');
-                icon.className = 'material-icons';
-                icon.setAttribute('aria-hidden', 'true');
-                icon.textContent = 'visibility_off';
-                hideBtn.appendChild(icon);
-                hideBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    JE.hiddenContent.hideItem({
-                        itemId: jellyfinMediaId || '',
-                        name: titleText,
-                        type: item.mediaType === 'tv' ? 'Series' : 'Movie',
-                        tmdbId: item.id,
-                        posterPath: item.posterPath || ''
+                hideBtn.className = alreadyHidden ? 'je-hide-btn je-already-hidden' : 'je-hide-btn';
+                hideBtn.title = alreadyHidden ? JE.t('hidden_content_already_hidden') : JE.t('hidden_content_hide_button');
+                if (alreadyHidden) {
+                    hideBtn.textContent = JE.t('hidden_content_already_hidden') || 'Hidden';
+                } else {
+                    const icon = document.createElement('span');
+                    icon.className = 'material-icons';
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.textContent = 'visibility_off';
+                    hideBtn.appendChild(icon);
+                    hideBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        JE.hiddenContent.hideItem({
+                            itemId: jellyfinMediaId || '',
+                            name: titleText,
+                            type: item.mediaType === 'tv' ? 'Series' : 'Movie',
+                            tmdbId: item.id,
+                            posterPath: item.posterPath || ''
+                        });
+                        card.style.display = 'none';
                     });
-                    card.style.display = 'none';
-                });
+                }
                 cardBox.style.position = 'relative';
                 cardBox.appendChild(hideBtn);
             }
