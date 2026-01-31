@@ -1055,9 +1055,27 @@
     function filterCalendarEvents(events) {
         if (!shouldFilterSurface('calendar')) return events;
         if (!Array.isArray(events)) return events;
+
+        // Build a set of normalised hidden-item names so we can match Sonarr
+        // events that only carry tvdbId (no tmdbId / itemId on the event).
+        const hiddenNames = new Set();
+        const items = (getHiddenData().items) || {};
+        for (const key of Object.keys(items)) {
+            const name = items[key].name;
+            if (name) {
+                const lower = name.toLowerCase();
+                hiddenNames.add(lower);
+                // Also store the name without any trailing parenthetical qualifier
+                // so "Hell's Kitchen (US)" matches "Hell's Kitchen" and vice-versa.
+                const stripped = lower.replace(/\s*\([^)]*\)\s*$/, '');
+                if (stripped !== lower) hiddenNames.add(stripped);
+            }
+        }
+
         return events.filter(event => {
             if (event.tmdbId && hiddenTmdbIdSet.has(String(event.tmdbId))) return false;
             if (event.itemId && hiddenIdSet.has(event.itemId)) return false;
+            if (event.title && hiddenNames.has(event.title.toLowerCase())) return false;
             return true;
         });
     }
