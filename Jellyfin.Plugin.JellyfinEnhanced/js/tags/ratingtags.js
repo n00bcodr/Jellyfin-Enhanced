@@ -1,4 +1,4 @@
-// /js/ratingtags.js
+// /js/tags/ratingtags.js
 // Jellyfin Rating Tags - Display TMDB and Rotten Tomato ratings on posters
 (function(JE) {
     'use strict';

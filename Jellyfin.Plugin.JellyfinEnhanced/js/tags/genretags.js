@@ -1,4 +1,4 @@
-// /js/genretags.js
+// /js/tags/genretags.js
 (function(JE) {
     'use strict';
 

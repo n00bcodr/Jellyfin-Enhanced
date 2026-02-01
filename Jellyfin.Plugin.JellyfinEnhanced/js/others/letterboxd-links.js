@@ -1,4 +1,4 @@
-// /js/letterboxd-links.js
+// /js/others/letterboxd-links.js
 (function (JE) {
     'use strict';
 
@@ -147,7 +147,7 @@
                 console.log(`${logPrefix} Stopped - feature disabled`);
                 return;
             }
-            
+
             if (!processingLetterboxd) {
                 processingLetterboxd = true;
                 if (typeof requestIdleCallback !== 'undefined') {
@@ -163,13 +163,13 @@
                 }
             }
         });
-        
+
         letterboxdObserver.observe(document.body, {
             childList: true,
             subtree: true,
             attributeFilter: ['class']
         });
-        
+
         // Initial check
         if (typeof requestIdleCallback !== 'undefined') {
             requestIdleCallback(() => addLetterboxdLinks(), { timeout: 1000 });

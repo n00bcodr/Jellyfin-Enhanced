@@ -1,4 +1,4 @@
-// /js/reviews.js
+// /js/elsewhere/reviews.js
 (function (JE) {
     'use strict';
 
@@ -274,7 +274,7 @@
                 setTimeout(processPages, 500);
             }
         };
-        
+
         window.addEventListener('hashchange', hashChangeHandler);
     };
 })(window.JellyfinEnhanced);

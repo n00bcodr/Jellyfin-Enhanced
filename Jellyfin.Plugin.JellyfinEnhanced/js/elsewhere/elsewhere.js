@@ -1,3 +1,4 @@
+// /js/elsewhere/elsewhere.js
 /**
  * @file Manages the "Jellyfin Elsewhere" feature to find streaming providers.
  */

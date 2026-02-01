@@ -1,4 +1,4 @@
-// /js/languagetags.js
+// /js/tags/languagetags.js
 // Jellyfin Language Flags Overlay
 (function(JE) {
     'use strict';

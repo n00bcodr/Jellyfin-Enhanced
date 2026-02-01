@@ -1,4 +1,4 @@
-// /js/qualitytags.js
+// /js/tags/qualitytags.js
 // Jellyfin Quality Tags
 // This is a modified version of the Jellyfin Quality Tags script by by BobHasNoSoul. - https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/
 
