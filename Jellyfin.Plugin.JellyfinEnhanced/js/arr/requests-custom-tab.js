@@ -39,13 +39,10 @@
     container.classList.remove('hide');
     container.style.display = '';
 
-    // Setup and render
-    JE.downloadsPage.injectStyles?.();
-
     container.innerHTML = '<div id="je-downloads-container"></div>';
 
-    JE.downloadsPage.renderPage?.();
-    JE.downloadsPage.refresh?.();
+    // Use dedicated custom tab rendering method
+    JE.downloadsPage.renderForCustomTab?.();
   }
 
   // Watch for container to appear

@@ -39,14 +39,10 @@
     container.classList.remove('hide');
     container.style.display = '';
 
-    // Setup and render
-    JE.calendarPage.injectStyles?.();
-    JE.calendarPage.loadSettings?.();
-
     container.innerHTML = '<div id="je-calendar-container"></div>';
 
-    JE.calendarPage.renderPage?.();
-    JE.calendarPage.refresh?.();
+    // Use dedicated custom tab rendering method
+    JE.calendarPage.renderForCustomTab?.();
 
     // Handle event clicks
     if (typeof JE.calendarPage.handleEventClick === 'function') {

@@ -1621,9 +1621,15 @@
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+    if (config.DownloadsUseCustomTabs) return; // Don't watch if using custom tabs
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
+      // Re-check config each time to avoid injecting when settings change
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.DownloadsUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.DownloadsUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-downloads-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -1774,6 +1780,16 @@
     }
   }
 
+  /**
+   * Render content for custom tabs (without page state management)
+   */
+  function renderForCustomTab() {
+    injectStyles();
+    renderPage();
+    loadAllData();
+    startPolling();
+  }
+
   // Export to JE namespace
   JE.downloadsPage = {
     initialize,
@@ -1786,6 +1802,7 @@
     nextPage,
     prevPage,
     renderPage,
+    renderForCustomTab,
     injectStyles
   };
 

@@ -100,7 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         private void CheckPluginPages(IApplicationPaths applicationPaths, IServerConfigurationManager serverConfigurationManager, int pluginPageConfigVersion)
         {
             string pluginPagesConfig = Path.Combine(applicationPaths.PluginConfigurationsPath, "Jellyfin.Plugin.PluginPages", "config.json");
-        
+
             JObject config = new JObject();
             if (!File.Exists(pluginPagesConfig))
             {
@@ -129,25 +129,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     config.Value<JArray>("pages")!.Remove(hssPageConfig);
                 }
             }
-            
+
             Assembly? pluginPagesAssembly = AssemblyLoadContext.All.SelectMany(x => x.Assemblies).FirstOrDefault(x => x.FullName?.Contains("Jellyfin.Plugin.PluginPages") ?? false);
-            
+
             Version earliestVersionWithSubUrls = new Version("2.4.1.0");
             bool supportsSubUrls = pluginPagesAssembly != null && pluginPagesAssembly.GetName().Version >= earliestVersionWithSubUrls;
-            
+
             string rootUrl = serverConfigurationManager.GetNetworkConfiguration().BaseUrl.TrimStart('/').Trim();
             if (!string.IsNullOrEmpty(rootUrl))
             {
                 rootUrl = $"/{rootUrl}";
             }
 
+            var pluginConfig = Configuration;
+
             bool calendarExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.CalendarPage");
 
             bool downloadsExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.DownloadsPage");
-            
-            if (!calendarExists)
+
+            // Only add calendar page if it's enabled and using plugin pages
+            if (!calendarExists && pluginConfig.CalendarPageEnabled && pluginConfig.CalendarUsePluginPages)
             {
                 config.Value<JArray>("pages")!.Add(new JObject
                 {
@@ -158,8 +161,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     { "Version", pluginPageConfigVersion }
                 });
             }
+            // Remove calendar page if it exists but is now disabled or not using plugin pages
+            else if (calendarExists && (!pluginConfig.CalendarPageEnabled || !pluginConfig.CalendarUsePluginPages))
+            {
+                var calendarPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.CalendarPage");
+                if (calendarPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(calendarPage);
+                }
+            }
 
-            if (!downloadsExists)
+            // Only add downloads page if it's enabled and using plugin pages
+            if (!downloadsExists && pluginConfig.DownloadsPageEnabled && pluginConfig.DownloadsUsePluginPages)
             {
                 config.Value<JArray>("pages")!.Add(new JObject
                 {
@@ -169,6 +183,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     { "Icon", "download" },
                     { "Version", pluginPageConfigVersion }
                 });
+            }
+            // Remove downloads page if it exists but is now disabled or not using plugin pages
+            else if (downloadsExists && (!pluginConfig.DownloadsPageEnabled || !pluginConfig.DownloadsUsePluginPages))
+            {
+                var downloadsPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.DownloadsPage");
+                if (downloadsPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(downloadsPage);
+                }
             }
 
             File.WriteAllText(pluginPagesConfig, config.ToString(Formatting.Indented));

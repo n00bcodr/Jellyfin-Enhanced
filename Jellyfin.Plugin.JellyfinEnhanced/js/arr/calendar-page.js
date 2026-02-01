@@ -1590,9 +1590,15 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
+    if (config.CalendarUseCustomTabs) return; // Don't watch if using custom tabs
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
+      // Re-check config each time to avoid injecting when settings change
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.CalendarUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.CalendarUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-calendar-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -1845,6 +1851,16 @@
     navigateToJellyfinItem(event);
   }
 
+  /**
+   * Render content for custom tabs (without page state management)
+   */
+  function renderForCustomTab() {
+    injectStyles();
+    loadSettings();
+    renderPage();
+    loadAllData();
+  }
+
   // Export to JE namespace
   JE.calendarPage = {
     initialize,
@@ -1856,6 +1872,7 @@
     goToday,
     toggleFilter,
     renderPage,
+    renderForCustomTab,
     injectStyles,
     loadSettings,
     handleEventClick
