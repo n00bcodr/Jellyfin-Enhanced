@@ -659,10 +659,6 @@
       font-size: 22px;
     }
 
-    .je-calendar-event {
-      position: relative;
-    }
-
     .je-calendar-event-status-top {
       position: absolute;
       top: 0.35em;
@@ -767,7 +763,6 @@
 
     .je-calendar-mode-toggle {
       justify-content: center;
-      align-items: center;
     }
 
     .je-calendar-legend-item {
@@ -887,18 +882,11 @@
     }
 
     .je-calendar-agenda-title-text {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
       font-weight: 600;
     }
 
     .je-calendar-agenda-subtitle {
       opacity: 0.8;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     .je-calendar-agenda-event-meta {
