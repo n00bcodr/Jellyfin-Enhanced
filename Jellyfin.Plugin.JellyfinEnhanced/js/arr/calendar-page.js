@@ -85,7 +85,6 @@
       flex-direction: column;
       gap: 1em;
       height: max-content;
-      max-height: calc(100vh - 8em);
       overflow-y: auto;
       z-index: 2;
     }
@@ -877,7 +876,7 @@
 
     .je-calendar-agenda-event-marker {
       width: 4px;
-      height: 24px;
+      height: 36px;
       border-radius: 2px;
       flex-shrink: 0;
     }
@@ -902,11 +901,6 @@
       white-space: nowrap;
     }
 
-    .je-calendar-agenda-subtitle::before {
-      content: "•";
-      margin-right: 0.35em;
-      opacity: 0.8;
-    }
     .je-calendar-agenda-event-meta {
       display: flex;
       align-items: center;
@@ -941,12 +935,6 @@
       line-height: 1.2;
       max-height: 1.2em;
       min-width: 0;
-    }
-
-    .je-calendar-agenda-subtitle::before {
-      content: "";
-      margin-right: 0;
-      opacity: 0;
     }
 
     @media (max-width: 1450px) {
@@ -1095,11 +1083,6 @@
 
       .je-calendar-hour-label {
         text-align: left;
-      }
-
-      .je-calendar-agenda-subtitle::before {
-        content: "";
-        margin-right: 0;
       }
 
       .je-calendar-agenda-row {
