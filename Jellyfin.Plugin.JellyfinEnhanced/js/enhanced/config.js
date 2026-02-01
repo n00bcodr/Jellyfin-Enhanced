@@ -80,7 +80,7 @@
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
-            calendarDefaultViewMode: 'auto',
+            calendarDefaultViewMode: 'agenda',
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 

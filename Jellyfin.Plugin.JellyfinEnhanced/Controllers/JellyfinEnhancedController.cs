@@ -1523,7 +1523,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
-                        CalendarDefaultViewMode = "auto",
+                        CalendarDefaultViewMode = "agenda",
                         LastOpenedTab = "shortcuts"
                     };
 
@@ -1676,7 +1676,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
-                CalendarDefaultViewMode = "auto",
+                CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"
             };
 
