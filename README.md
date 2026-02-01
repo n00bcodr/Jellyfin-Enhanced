@@ -1523,7 +1523,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── arr-links.js
     │   ├── arr-tag-links.js
     │   ├── calendar-page.js
+    │   ├── calendar-custom-tab.js
     │   └── requests-page.js
+    │   └── requests-custom-tab.js
     ├── elsewhere.js
     ├── genretags.js
     ├── languagetags.js
@@ -1583,7 +1585,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
   * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
   * **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
   * **`calendar-page.js`**: Adds a calendar button in the sidebar which opens a view that shows the calendar of upcoming items from Radarr and Sonarr
+  * **`calendar-custom-tab.js`**: Creates `<div class="jellyfinenhanced calendar"></div>` for CustomTabs plugin
   * **`requests-page.js`**: Adds a Requests button in the sidebar which opens a view that shows requests and download status from the arrs and Jellyseerr
+  * **`requests-custom-tab.js`**: Creates `<div class="jellyfinenhanced requests"></div>` for CustomTabs plugin
 
 * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
 

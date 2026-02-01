@@ -619,7 +619,9 @@
                 'arr/arr-links.js',
                 'arr/arr-tag-links.js',
                 'arr/requests-page.js',
-                'arr/calendar-page.js'
+                'arr/calendar-page.js',
+                'arr/requests-custom-tab.js',
+                'arr/calendar-custom-tab.js'
             ];
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');

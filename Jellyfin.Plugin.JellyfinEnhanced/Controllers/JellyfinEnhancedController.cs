@@ -1410,10 +1410,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Requests Page Settings
                 config.DownloadsPageEnabled,
                 config.DownloadsUsePluginPages,
+                config.DownloadsUseCustomTabs,
                 config.DownloadsPollIntervalSeconds,
 
                 // Calendar Page Settings
                 config.CalendarPageEnabled,
+                config.CalendarUseCustomTabs,
                 config.CalendarUsePluginPages,
                 config.CalendarFirstDayOfWeek,
                 config.CalendarTimeFormat,

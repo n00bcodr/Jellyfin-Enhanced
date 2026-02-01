@@ -1543,6 +1543,7 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
+    if (config.CalendarUseCustomTabs) return; // Skip if using custom tabs
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(

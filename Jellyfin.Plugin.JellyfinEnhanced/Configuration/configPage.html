@@ -276,14 +276,14 @@
                                         <p class="fieldDescription" style="margin: 0;">You need to create a custom view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
                                         <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
                                             <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
-                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > General > Custom Tabs and add a new tab.</li>
+                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
                                             <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "My Bookmarks").</li>
                                             <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
                                         </ol>
                                         <div style="position: relative;">
-                                            <button type="button" id="copyBookmarksHtmlBtn" is="emby-button" class="raised raised-mini emby-button" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                            <button type="button" class="je-copy-html-btn raised raised-mini emby-button" data-copy-text="&lt;div class=&quot;sections bookmarks&quot;&gt;&lt;/div&gt;" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
                                                 <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
-                                                <span id="copyBookmarksBtnText" style="vertical-align: middle;">Copy</span>
+                                                <span class="copy-btn-text" style="vertical-align: middle;">Copy</span>
                                             </button>
                                             <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="sections bookmarks"&gt;&lt;/div&gt;
 </code></pre>
@@ -885,6 +885,40 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Requests page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Custom Tabs for Requests (instead of sidebar)</span>
+                                </label>
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">Embed Requests in Custom Tabs:</h4>
+                                        <p class="fieldDescription" style="margin: 0 0 0.5em 0;">Display the Requests page in a Custom Tabs tab instead of the sidebar link.</p>
+                                        <p class="fieldDescription" style="margin: 0.5em 0;">You need the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
+                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "Requests")</li>
+                                            <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                        </ol>
+                                        <div style="position: relative;">
+                                            <button type="button" class="je-copy-html-btn raised raised-mini emby-button" data-copy-text="&lt;div class=&quot;jellyfinenhanced requests&quot;&gt;&lt;/div&gt;" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
+                                                <span class="copy-btn-text" style="vertical-align: middle;">Copy</span>
+                                            </button>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="jellyfinenhanced requests"&gt;&lt;/div&gt;
+</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            Already have Custom Tabs installed?
+                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
                                 <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="0" max="300"/>
@@ -919,6 +953,40 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Calendar page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarUseCustomTabs" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Custom Tabs for Calendar (instead of sidebar)</span>
+                                </label>
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">Embed Calendar in Custom Tabs:</h4>
+                                        <p class="fieldDescription" style="margin: 0 0 0.5em 0;">Display the Calendar page in a Custom Tabs tab instead of the sidebar link.</p>
+                                        <p class="fieldDescription" style="margin: 0.5em 0;">You need the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
+                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "Calendar").</li>
+                                            <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                        </ol>
+                                        <div style="position: relative;">
+                                            <button type="button" class="je-copy-html-btn raised raised-mini emby-button" data-copy-text="&lt;div class=&quot;jellyfinenhanced calendar&quot;&gt;&lt;/div&gt;" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
+                                                <span class="copy-btn-text" style="vertical-align: middle;">Copy</span>
+                                            </button>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="jellyfinenhanced calendar"&gt;&lt;/div&gt;
+</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            Already have Custom Tabs installed?
+                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="calendarFirstDayOfWeek">First Day of Week</label>
                                 <select id="calendarFirstDayOfWeek" is="emby-select">
@@ -1801,10 +1869,12 @@
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
+                document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
                 document.querySelector('#downloadsPollIntervalSeconds').value = (config.DownloadsPollIntervalSeconds !== undefined && config.DownloadsPollIntervalSeconds !== null) ? config.DownloadsPollIntervalSeconds : 30;
 
                 // Calendar Page settings
                 document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
+                document.querySelector('#calendarUseCustomTabs').checked = config.CalendarUseCustomTabs === true;
                 document.querySelector('#calendarUsePluginPages').checked = config.CalendarUsePluginPages !== false;
                 document.querySelector('#calendarFirstDayOfWeek').value = config.CalendarFirstDayOfWeek || 'Monday';
                 document.querySelector('#calendarTimeFormat').value = config.CalendarTimeFormat || '5pm/5:30pm';
@@ -1969,9 +2039,11 @@
             const pollIntervalValue = document.querySelector('#downloadsPollIntervalSeconds').value;
             const parsedPollInterval = parseInt(pollIntervalValue, 10);
             config.DownloadsPollIntervalSeconds = (!isNaN(parsedPollInterval) && parsedPollInterval > 0) ? parsedPollInterval : 30;
+            config.DownloadsUseCustomTabs = document.querySelector('#downloadsUseCustomTabs').checked;
 
             // Calendar Page settings
             config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
+            config.CalendarUseCustomTabs = document.querySelector('#calendarUseCustomTabs').checked;
             config.CalendarUsePluginPages = document.querySelector('#calendarUsePluginPages').checked;
             config.CalendarFirstDayOfWeek = document.querySelector('#calendarFirstDayOfWeek').value || 'Monday';
             config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
@@ -2344,29 +2416,56 @@
             btn.addEventListener('click', testTmdbConnection);
         });
 
-        // Copy bookmarks HTML button
-        const copyBookmarksHtmlBtn = document.getElementById('copyBookmarksHtmlBtn');
-        if (copyBookmarksHtmlBtn) {
-            copyBookmarksHtmlBtn.addEventListener('click', function() {
-                const htmlCode = `<div class="sections bookmarks"></div>
-<style>
-  .sections.bookmarks {
-    padding-top: 20px; /* Adjust/remove this value as needed for your theme */
-  }
-</style>`;
-                navigator.clipboard.writeText(htmlCode).then(function() {
-                    const btnText = document.getElementById('copyBookmarksBtnText');
-                    btnText.textContent = 'Copied!';
-                    copyBookmarksHtmlBtn.style.color = '#4CAF50';
-                    setTimeout(function() {
-                        btnText.textContent = 'Copy';
-                        copyBookmarksHtmlBtn.style.color = '';
-                    }, 2000);
-                }).catch(function(err) {
-                    console.error('Failed to copy text: ', err);
-                    alert('Failed to copy to clipboard');
-                });
+        // Copy button handler for HTML code snippets
+        document.querySelectorAll('.je-copy-html-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const htmlCode = this.getAttribute('data-copy-text');
+                const btnText = this.querySelector('.copy-btn-text');
+
+                // Try clipboard API first
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(htmlCode).then(function() {
+                        btnText.textContent = 'Copied!';
+                        btn.style.color = '#4CAF50';
+                        setTimeout(function() {
+                            btnText.textContent = 'Copy';
+                            btn.style.color = '';
+                        }, 2000);
+                    }).catch(function(err) {
+                        console.error('Clipboard API failed: ', err);
+                        fallbackCopy(htmlCode, btn, btnText);
+                    });
+                } else {
+                    // Fallback for older browsers
+                    fallbackCopy(htmlCode, btn, btnText);
+                }
             });
+        });
+
+        // Fallback copy method
+        function fallbackCopy(text, btn, btnText) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                btnText.textContent = 'Copied!';
+                btn.style.color = '#4CAF50';
+                setTimeout(function() {
+                    btnText.textContent = 'Copy';
+                    btn.style.color = '';
+                }, 2000);
+            } catch (err) {
+                console.error('Fallback copy failed: ', err);
+                alert('Failed to copy to clipboard');
+            }
+            document.body.removeChild(textarea);
         }
     })();
 </script>

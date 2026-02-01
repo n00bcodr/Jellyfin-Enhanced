@@ -1573,6 +1573,7 @@
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+    if (config.DownloadsUseCustomTabs) return; // Skip sidebar injection if using custom tabs
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
