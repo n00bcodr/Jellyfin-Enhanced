@@ -56,6 +56,12 @@
       z-index: 1;
     }
 
+    #je-calendar-page > [data-role="content"],
+    #je-calendar-page .content-primary.je-calendar-page,
+    .content-primary.je-calendar-page {
+      overflow: visible !important;
+    }
+
     .je-calendar-layout {
       display: flex;
       gap: 1.5em;
@@ -79,16 +85,11 @@
       flex-direction: column;
       gap: 1em;
       height: max-content;
+      max-height: calc(100vh - 8em);
+      overflow-y: auto;
       z-index: 2;
     }
 
-    .je-calendar-sidebar .je-calendar-legend {
-      order: 1;
-    }
-
-    .je-calendar-sidebar .je-calendar-nav {
-      order: 2;
-    }
 
     .je-calendar-header {
       display: flex;
@@ -203,6 +204,13 @@
       text-align: center;
       gap: 0.35em;
       overflow: hidden;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+
+    .je-calendar-card:hover {
+      transform: translateY(-2px);
+      background: rgba(128,128,128,0.18);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
     }
 
     .je-calendar-card-meta {
@@ -879,23 +887,11 @@
       min-width: 0;
     }
 
-    .je-calendar-agenda-event-title {
-      font-weight: 600;
-      font-size: 1em;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 12em);
-      align-items: center;
-      column-gap: 0.35em;
-      min-width: 0;
-      width: 100%;
-    }
-
     .je-calendar-agenda-title-text {
-      min-width: 0;
-      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      font-weight: 600;
     }
 
     .je-calendar-agenda-subtitle {
@@ -925,6 +921,32 @@
       width: 14px;
       height: 14px;
       object-fit: contain;
+    }
+
+    .je-calendar-agenda-event-title {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15em;
+      min-width: 0;
+    }
+
+    .je-calendar-agenda-title-text,
+    .je-calendar-agenda-subtitle {
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal;
+      line-height: 1.2;
+      max-height: 1.2em;
+      min-width: 0;
+    }
+
+    .je-calendar-agenda-subtitle::before {
+      content: "";
+      margin-right: 0;
+      opacity: 0;
     }
 
     @media (max-width: 1450px) {
@@ -971,17 +993,23 @@
       }
 
       .je-calendar-sidebar {
-        position: sticky;
+        position: unset;
         top: 1em;
         width: 100%;
         flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: center;
+        flex-wrap: nowrap;
+        justify-content: space-between;
+        align-items: center;
         order: -1;
       }
 
       .je-calendar-main {
         width: 100%;
+      }
+
+      .je-calendar-sidebar .je-calendar-legend {
+        flex: 1 1 auto;
+        margin-top: 0;
       }
 
       .je-calendar-legend.je-calendar-legend-vertical {
@@ -1025,6 +1053,9 @@
       .je-calendar-page {
         padding: 0.25em;
         max-width: 100vw;
+      }
+
+      .je-calendar-main {
         overflow-x: hidden;
       }
 
@@ -1064,11 +1095,6 @@
 
       .je-calendar-hour-label {
         text-align: left;
-      }
-
-      .je-calendar-agenda-event-title {
-        grid-template-columns: 1fr;
-        row-gap: 0.15em;
       }
 
       .je-calendar-agenda-subtitle::before {
@@ -1700,7 +1726,7 @@
   }
 
   function shouldShowPlayButton(event) {
-    const isMovie = event.type === "movie";
+    const isMovie = event.type === "Movie";
     const isEpisode = event.releaseType === "Episode";
     return event.hasFile && (isMovie || isEpisode);
   }
@@ -2258,18 +2284,6 @@
             <button class="je-calendar-view-btn ${state.viewMode === 'week' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('week'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_week")}</button>
             <button class="je-calendar-view-btn ${state.viewMode === 'month' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('month'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_month")}</button>
             <button class="je-calendar-view-btn ${state.viewMode === 'agenda' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('agenda'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_agenda")}</button>
-          </div>
-        </div>
-      </div>
-
-      ${state.isLoading ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_loading")}</div>` : ""}
-
-      <div class="je-calendar-layout">
-        <div class="je-calendar-main">
-          ${!state.isLoading ? renderCalendar() : ""}
-        </div>
-        <aside class="je-calendar-sidebar">
-          <div class="je-calendar-nav">
             <div class="je-calendar-mode-toggle ${state.viewMode === 'agenda' ? 'is-disabled' : ''}" role="group" aria-label="Display mode">
               <button type="button" class="je-calendar-mode-btn ${state.settings.displayMode === 'list' ? 'active' : ''}" title="List" aria-label="List" data-mode="list" ${state.viewMode === 'agenda' ? 'disabled aria-disabled="true"' : ''}>
                 <span class="material-icons">view_list</span>
@@ -2282,10 +2296,19 @@
               </button>
             </div>
           </div>
-          
-          ${renderLegend().replace('je-calendar-legend"', 'je-calendar-legend je-calendar-legend-vertical"')}
-        </aside>
+        </div>
       </div>
+
+      ${state.isLoading ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_loading")}</div>` : ""}
+
+        <div class="je-calendar-layout">
+          <div class="je-calendar-main">
+            ${!state.isLoading ? renderCalendar() : ""}
+          </div>
+          <aside class="je-calendar-sidebar">
+            ${renderLegend().replace('je-calendar-legend"', 'je-calendar-legend je-calendar-legend-vertical"')}
+          </aside>
+        </div>
 
       ${
         ""
