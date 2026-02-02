@@ -135,8 +135,6 @@
       display: inline-flex;
       align-items: center;
       gap: 1em;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 999px;
     }
 
     .je-calendar-mode-toggle,
@@ -1106,7 +1104,7 @@
   function getDefaultViewMode() {
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
     const configuredDefault = (JE.currentSettings.calendarDefaultViewMode || "agenda").toLowerCase();
-    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda") {
+    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda" || configuredDefault === "day"){
       return configuredDefault;
     }
 
