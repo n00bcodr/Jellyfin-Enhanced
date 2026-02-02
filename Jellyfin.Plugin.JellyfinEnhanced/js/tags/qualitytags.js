@@ -998,21 +998,29 @@
             setupNavigationHandlers();
             setTimeout(renderVisibleTags, 1000); // Initial run after page load
 
-            // Set up the MutationObserver to watch for dynamically added content
-            const mutationObserver = new MutationObserver(() => {
-                // Check if feature is still enabled before processing mutations
-                if (!JE.currentSettings?.qualityTagsEnabled) {
-                    return;
-                }
-                debouncedRender();
-            });
-            mutationObserver.observe(document.body, { childList: true, subtree: true });
+            // Use centralized observer management from helpers
+            if (JE.helpers?.createObserver) {
+                JE.helpers.createObserver('quality-tags-mutations', () => {
+                    if (!JE.currentSettings?.qualityTagsEnabled) return;
+                    debouncedRender();
+                }, document.body, { childList: true, subtree: true });
+            } else {
+                // Fallback for older versions
+                const mutationObserver = new MutationObserver(() => {
+                    if (!JE.currentSettings?.qualityTagsEnabled) return;
+                    debouncedRender();
+                });
+                mutationObserver.observe(document.body, { childList: true, subtree: true });
+                window.addEventListener('beforeunload', () => mutationObserver.disconnect());
+            }
 
             // Set up cleanup and cache saving
             window.addEventListener('beforeunload', () => {
                 saveCache();
-                mutationObserver.disconnect();
                 visibilityObserver.disconnect();
+                if (JE.helpers?.disconnectObserver) {
+                    JE.helpers.disconnectObserver('quality-tags-mutations');
+                }
             });
             // Register with unified cache manager instead of setInterval
             if (JE._cacheManager) {

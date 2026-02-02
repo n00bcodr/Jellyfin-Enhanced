@@ -592,8 +592,8 @@
             const allComponentScripts = [
                 // enhanced
                 'enhanced/config.js',
-                'enhanced/events.js',
                 'enhanced/features.js',
+                'enhanced/events.js',
                 'enhanced/helpers.js',
                 'enhanced/icons.js',
                 'enhanced/playback.js',

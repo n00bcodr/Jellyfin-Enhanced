@@ -315,18 +315,20 @@
         }
 
         function observeDOM() {
-            const observer = new MutationObserver(() => {
-                // Check if feature is still enabled before processing
-                if (!JE.currentSettings?.ratingTagsEnabled) {
-                    return;
-                }
-                debouncedScan();
-            });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+            // Use centralized observer management from helpers
+            if (JE.helpers?.createObserver) {
+                JE.helpers.createObserver('rating-tags-mutations', () => {
+                    if (!JE.currentSettings?.ratingTagsEnabled) return;
+                    debouncedScan();
+                }, document.body, { childList: true, subtree: true });
+            } else {
+                // Fallback for older versions
+                const observer = new MutationObserver(() => {
+                    if (!JE.currentSettings?.ratingTagsEnabled) return;
+                    debouncedScan();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
 
             // Periodic cache persistence
             // Register with unified cache manager instead of setInterval

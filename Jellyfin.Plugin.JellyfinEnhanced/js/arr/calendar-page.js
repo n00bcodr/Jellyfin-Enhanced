@@ -616,14 +616,25 @@
   // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
   function startLocationWatcher() {
     if (state.locationTimer) return;
+
     state.locationSignature = `${window.location.pathname}${window.location.hash}`;
-    state.locationTimer = setInterval(() => {
+
+    // Use throttle helper if available for better performance
+    const throttledCheck = JE.helpers?.throttle?.(() => {
       const signature = `${window.location.pathname}${window.location.hash}`;
       if (signature !== state.locationSignature) {
         state.locationSignature = signature;
         handleNavigation();
       }
-    }, 150);
+    }, 150) || (() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    });
+
+    state.locationTimer = setInterval(throttledCheck, 150);
   }
 
   /**

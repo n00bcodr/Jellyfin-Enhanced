@@ -91,6 +91,18 @@
             container.style.cssText = 'position: relative; margin-bottom: 6px;';
 
             let debounceTimer;
+            // Use helpers.debounce if available for consistent behavior
+            const debouncedFilter = JE.helpers?.debounce ? JE.helpers.debounce((filterText) => {
+                const value = filterText.toLowerCase();
+                if (value.length === 0) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+                const filtered = options.filter(option =>
+                    option.toLowerCase().includes(value) && !selectedValues.includes(option)
+                );
+                showDropdown(filtered);
+            }, 300) : null;
 
             const input = document.createElement('input');
             input.type = 'text';
@@ -227,18 +239,23 @@
             }
 
             input.oninput = () => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                    const value = input.value.toLowerCase();
-                    if (value.length === 0) {
-                        dropdown.style.display = 'none';
-                        return;
-                    }
-                    const filtered = options.filter(option =>
-                        option.toLowerCase().includes(value) && !selectedValues.includes(option)
-                    );
-                    showDropdown(filtered);
-                }, 300);
+                if (debouncedFilter) {
+                    debouncedFilter(input.value);
+                } else {
+                    // Fallback to manual debounce if helpers not available
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => {
+                        const value = input.value.toLowerCase();
+                        if (value.length === 0) {
+                            dropdown.style.display = 'none';
+                            return;
+                        }
+                        const filtered = options.filter(option =>
+                            option.toLowerCase().includes(value) && !selectedValues.includes(option)
+                        );
+                        showDropdown(filtered);
+                    }, 300);
+                }
             };
 
             input.onkeydown = (e) => {
