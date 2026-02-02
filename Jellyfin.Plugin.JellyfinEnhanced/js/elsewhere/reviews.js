@@ -333,68 +333,40 @@
             }
         }
 
-        let lastProcessedItemId = null;
-
-        function processPages() {
-            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (!visiblePage) {
-                lastProcessedItemId = null;
-                return;
-            }
-
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (itemId && itemId !== lastProcessedItemId) {
-                    lastProcessedItemId = itemId;
-                    processPage(visiblePage);
-                }
-            } catch (e) {
-                // Ignore URL parsing errors
-            }
-        }
-
         injectCss();
 
-        // Initial load
-        setTimeout(processPages, 1000);
-
-        // Watch for navigation changes using MutationObserver
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                    const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                    if (visiblePage) {
-                        processPages();
-                        break; // Only process once per mutation
-                    }
-                }
-            }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
-        });
-
-        // Detect hash changes for navigation using native event
-        let currentHash = window.location.hash;
-        const hashChangeHandler = () => {
+        // Use Emby.Page.onViewShow hook for reliable page navigation detection
+        const unregister = JE.helpers.onViewPage(async (view, element, hash, itemPromise) => {
+            // Check if feature is still enabled
             if (!JE?.pluginConfig?.ShowReviews || !JE?.pluginConfig?.TmdbEnabled) {
-                window.removeEventListener('hashchange', hashChangeHandler);
-                observer.disconnect();
-                console.log(`${logPrefix} Stopped - feature disabled`);
+                unregister();
                 return;
             }
-            if (window.location.hash !== currentHash) {
-                currentHash = window.location.hash;
-                lastProcessedItemId = null; // Reset on navigation
-                setTimeout(processPages, 500);
-            }
-        };
 
-        window.addEventListener('hashchange', hashChangeHandler);
+            // Check if this might be an item detail page by looking at current URL or element
+            const currentHash = window.location.hash;
+            const hasItemId = currentHash.includes('id=') || (hash && hash.includes('id='));
+            const isItemDetailElement = element && (
+                element.id === 'itemDetailPage' ||
+                element.classList?.contains('itemDetailPage')
+            );
+
+            if (!hasItemId && !isItemDetailElement) {
+                return;
+            }
+
+            // Wait for the page to be visible
+            await new Promise(resolve => setTimeout(resolve, 150));
+
+            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+            if (visiblePage) {
+                processPage(visiblePage);
+            }
+        }, {
+            pages: null, // Trigger on all pages, we'll filter by hash
+            fetchItem: false,
+            immediate: true // Process current page immediately on load
+        });
     };
 })(window.JellyfinEnhanced);
 
