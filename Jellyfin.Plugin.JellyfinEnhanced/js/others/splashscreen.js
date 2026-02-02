@@ -1,4 +1,4 @@
-// /js/splashscreen.js
+// /js/others/splashscreen.js
 (function() {
     'use strict';
 

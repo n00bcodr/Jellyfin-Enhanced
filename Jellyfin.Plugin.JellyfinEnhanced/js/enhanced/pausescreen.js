@@ -1,4 +1,4 @@
-// /js/pausescreen.js
+// /js/enhanced/pausescreen.js
 // Jellyfin Pause Screen (enhanced)
 // This script is a modified version of the original Jellyfin Pause Screen script by BobHasNoSoul.
 // Original source: https://github.com/BobHasNoSoul/Jellyfin-PauseScreen

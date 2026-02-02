@@ -111,6 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RadarrUrl = "";
             BazarrUrl = "";
             ShowArrLinksAsText = false;
+            SonarrUrlMappings = "";
+            RadarrUrlMappings = "";
+            BazarrUrlMappings = "";
 
             // Arr Tags Sync Settings
             ArrTagsSyncEnabled = false;
@@ -257,6 +260,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RadarrUrl { get; set; }
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
+        public string SonarrUrlMappings { get; set; }
+        public string RadarrUrlMappings { get; set; }
+        public string BazarrUrlMappings { get; set; }
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }
@@ -310,10 +316,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
         public bool DownloadsPageEnabled { get; set; }
         public bool DownloadsUsePluginPages { get; set; }
+        public bool DownloadsUseCustomTabs { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
 
         // Calendar Page Settings (Sonarr/Radarr Releases)
         public bool CalendarPageEnabled { get; set; }
+        public bool CalendarUseCustomTabs { get; set; }
         public bool CalendarUsePluginPages { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
         public string CalendarTimeFormat { get; set; }

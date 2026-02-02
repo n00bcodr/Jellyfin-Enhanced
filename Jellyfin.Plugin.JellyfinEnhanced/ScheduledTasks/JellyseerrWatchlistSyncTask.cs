@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -99,6 +100,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                 try
                 {
+                    _logger.Info($"=================================================================================================================================");
+                    _logger.Info($"=================================================================================================================================");
+
                     _logger.Info($"[Jellyseerr Watchlist Sync] Processing user: {jellyfinUser.Username}");
 
                     // Clean up old processed items if prevention is enabled
@@ -160,8 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         }
 
                         var result = await ProcessWatchlistItem(jellyfinUser, item);
-                        var itemName = !string.IsNullOrEmpty(item.Title) ? item.Title : "Unknown";
-                        var itemInfo = $"{itemName} (TMDB: {item.TmdbId})";
+                        var itemInfo = $"TMDB: {item.TmdbId}";
 
                         switch (result)
                         {
@@ -210,6 +213,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 progress?.Report(currentProgress);
             }
 
+            _logger.Info($"=================================================================================================================================");
+            _logger.Info($"=================================================================================================================================");
             _logger.Info($"[Jellyseerr Watchlist Sync] Completed. Added {totalItemsAdded} total items across {processedUsers} users");
             progress?.Report(100);
         }

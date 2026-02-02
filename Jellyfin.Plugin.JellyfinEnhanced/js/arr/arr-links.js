@@ -52,10 +52,70 @@
         let debounceTimer = null;
         let observer = null;
 
+        // Parse URL mappings from config
+        function parseUrlMappings(mappingsString) {
+            const mappings = [];
+            if (!mappingsString) return mappings;
+
+            mappingsString.split('\n').forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+
+                const parts = trimmed.split('|').map(p => p.trim());
+                if (parts.length === 2 && parts[0] && parts[1]) {
+                    mappings.push({
+                        jellyfinUrl: parts[0],
+                        arrUrl: parts[1]
+                    });
+                }
+            });
+
+            return mappings;
+        }
+
+        // Get the appropriate *arr URL based on how Jellyfin is being accessed
+        function getMappedUrl(urlMappings, defaultUrl) {
+            if (!defaultUrl) {
+                return null;
+            }
+
+            if (!urlMappings || urlMappings.length === 0) {
+                return defaultUrl;
+            }
+
+            const serverAddress = (typeof ApiClient !== 'undefined' && ApiClient.serverAddress)
+                ? ApiClient.serverAddress()
+                : window.location.origin;
+
+            const currentUrl = serverAddress.replace(/\/+$/, '').toLowerCase();
+
+            // Check if current Jellyfin URL matches any mapping
+            for (const mapping of urlMappings) {
+                const normalizedJellyfinUrl = mapping.jellyfinUrl.replace(/\/+$/, '').toLowerCase();
+
+                if (currentUrl === normalizedJellyfinUrl) {
+                    return mapping.arrUrl.replace(/\/$/, '');
+                }
+            }
+
+            // No mapping matched, return default URL
+            return defaultUrl;
+        }
+
         try {
             const SONARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg';
             const RADARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg';
             const BAZARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg';
+
+            // Parse the URL mappings from config for each service
+            const sonarrMappings = parseUrlMappings(JE.pluginConfig.SonarrUrlMappings || '');
+            const radarrMappings = parseUrlMappings(JE.pluginConfig.RadarrUrlMappings || '');
+            const bazarrMappings = parseUrlMappings(JE.pluginConfig.BazarrUrlMappings || '');
+
+            // Get the URL for each service based on current Jellyfin URL
+            const sonarrUrl = getMappedUrl(sonarrMappings, JE.pluginConfig.SonarrUrl);
+            const radarrUrl = getMappedUrl(radarrMappings, JE.pluginConfig.RadarrUrl);
+            const bazarrUrl = getMappedUrl(bazarrMappings, JE.pluginConfig.BazarrUrl);
 
             const styleId = 'arr-links-styles';
             if (!document.getElementById(styleId)) {
@@ -149,22 +209,25 @@
                         return;
                     }
 
-                    if (item.Type === 'Series' && item.Name && JE.pluginConfig.SonarrUrl) {
+                    if (item.Type === 'Series' && item.Name && sonarrUrl) {
                         const seriesSlug = slugify(item.Name);
-                        const url = `${JE.pluginConfig.SonarrUrl}/series/${seriesSlug}`;
+                        const url = `${sonarrUrl}/series/${seriesSlug}`;
                         anchorElement.appendChild(document.createTextNode(' '));
                         anchorElement.appendChild(createLinkButton("Sonarr", url, "arr-link-sonarr"));
                     }
 
-                    if (item.Type === 'Movie' && ids.tmdb && JE.pluginConfig.RadarrUrl) {
-                        const url = `${JE.pluginConfig.RadarrUrl}/movie/${ids.tmdb}`;
+                    if (item.Type === 'Movie' && ids.tmdb && radarrUrl) {
+                        const url = `${radarrUrl}/movie/${ids.tmdb}`;
                         anchorElement.appendChild(document.createTextNode(' '));
                         anchorElement.appendChild(createLinkButton("Radarr", url, "arr-link-radarr"));
                     }
 
-                    if ((item.Type === 'Series' || item.Type === 'Movie') && JE.pluginConfig.BazarrUrl) {
-                        const path = item.Type === 'Series' ? 'series' : 'movies';
-                        const url = `${JE.pluginConfig.BazarrUrl}/${path}/`;
+                    if (item.Type === 'Series' && bazarrUrl) {
+                        const url = `${bazarrUrl}/series/`;
+                        anchorElement.appendChild(document.createTextNode(' '));
+                        anchorElement.appendChild(createLinkButton("Bazarr", url, "arr-link-bazarr"));
+                    } else if (item.Type === 'Movie' && bazarrUrl) {
+                        const url = `${bazarrUrl}/movies/`;
                         anchorElement.appendChild(document.createTextNode(' '));
                         anchorElement.appendChild(createLinkButton("Bazarr", url, "arr-link-bazarr"));
                     }

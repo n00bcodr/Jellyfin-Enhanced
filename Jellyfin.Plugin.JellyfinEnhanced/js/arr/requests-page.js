@@ -22,6 +22,10 @@
     previousPage: null,
     locationSignature: null,
     locationTimer: null,
+    downloadsActiveTab: "all",
+    downloadsSearchQuery: "",
+    downloadsSearchVisible: false,
+    searchDebounceTimer: null,
   };
 
   // Status color mapping - using theme-aware colors
@@ -29,19 +33,23 @@
     const themeVars = JE.themer?.getThemeVariables() || {};
     const primaryAccent = themeVars.primaryAccent || '#00a4dc';
     return {
-      Downloading: primaryAccent,
-      Importing: "#4caf50",
-      Queued: "rgba(128,128,128,0.6)",
-      Paused: "#ff9800",
-      Delayed: "#ff9800",
-      Warning: "#ff9800",
-      Failed: "#f44336",
-      Unknown: "rgba(128,128,128,0.5)",
-      Pending: "#ff9800",
-      Processing: primaryAccent,
-      Available: "#4caf50",
-      Approved: "#4caf50",
-      Declined: "#f44336",
+      downloading: primaryAccent,
+      importing: "#4caf50",
+      queued: "rgba(128,128,128,0.6)",
+      paused: "#ff9800",
+      delayed: "#ff9800",
+      warning: "#ff9800", // Stalled
+      failed: "#f44336",
+      completed: "#4caf50",
+      unknown: "rgba(128,128,128,0.5)",
+      pending: "#ff9800",
+      processing: primaryAccent,
+      available: "#4caf50",
+      approved: "#4caf50",
+      declined: "#f44336",
+      downloadclientunavailable: "#f44336",
+      fallbackmode: "#ff9800",
+      delay: "#ff9800"
     };
   };
 
@@ -330,6 +338,124 @@
           margin-right: 0.25em;
           text-transform: lowercase;
         }
+        .je-refresh-btn:hover {
+          opacity: 1 !important;
+          background: rgba(255,255,255,0.1) !important;
+        }
+        .je-downloads-controls {
+          display: flex;
+          flex-direction: column;
+          gap: 1em;
+          margin-bottom: 1.5em;
+        }
+        .je-downloads-tabs {
+          display: flex;
+          gap: 0.5em;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .je-downloads-tab.emby-button {
+          background: transparent;
+          border: 1px solid rgba(255,255,255,0.3);
+          color: inherit;
+          padding: 0.5em 1em;
+          border-radius: 4px;
+          cursor: pointer;
+          opacity: 0.7;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5em;
+        }
+        .je-downloads-tab.emby-button:hover {
+          opacity: 1;
+          background: rgba(255,255,255,0.1);
+        }
+        .je-downloads-tab.emby-button.active {
+          opacity: 1;
+        }
+        .je-downloads-search-toggle {
+          background: transparent;
+          border: 1px solid rgba(255,255,255,0.3);
+          color: inherit;
+          padding: 0.5em;
+          border-radius: 4px;
+          cursor: pointer;
+          opacity: 0.7;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+        }
+        .je-downloads-search-toggle:hover {
+          opacity: 1;
+          background: rgba(255,255,255,0.1);
+        }
+        .je-downloads-search-toggle.active {
+          opacity: 1;
+          background: rgba(255,255,255,0.15);
+        }
+        .je-downloads-search-toggle .material-icons {
+          font-size: 20px;
+        }
+        .je-downloads-tab-count {
+          font-size: 0.8em;
+          padding: 0.2em 0.5em;
+          background: rgba(255,255,255,0.5);
+          border-radius: 999px;
+          min-width: 20px;
+          text-align: center;
+        }
+        .je-downloads-search-container {
+          display: flex;
+          align-items: center;
+          gap: 0.5em;
+          position: relative;
+          width: 100%;
+          animation: slideDown 0.2s ease-out;
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .je-downloads-search-icon {
+          position: absolute;
+          left: 0.7em;
+          font-size: 20px;
+          opacity: 0.5;
+          pointer-events: none;
+        }
+        .je-downloads-search-input {
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.2);
+          color: inherit;
+          padding: 0.6em 0.9em 0.6em 2.5em;
+          border-radius: 4px;
+          font-size: 0.9em;
+          flex: 1;
+          width: 100%;
+          transition: all 0.2s;
+        }
+        .je-downloads-search-input:focus {
+          outline: none;
+          border-color: rgba(255,255,255,0.4);
+          background: rgba(255,255,255,0.12);
+        }
+        .je-downloads-search-input:focus + .je-downloads-search-icon {
+          opacity: 0.7;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
     `;
 
   /**
@@ -361,7 +487,8 @@
     const themeStyle = document.createElement("style");
     themeStyle.id = "je-downloads-theme-colors";
     themeStyle.textContent = `
-      .je-requests-tab.emby-button.active {
+      .je-requests-tab.emby-button.active,
+      .je-downloads-tab.emby-button.active {
         background: ${primaryAccent} !important;
         border-color: ${primaryAccent} !important;
       }
@@ -448,6 +575,92 @@
   }
 
   /**
+   * Translate download status to localized label
+   */
+  function translateStatus(status) {
+    const translations = {
+      "All": JE.t?.("jellyseerr_discover_all") || "All",
+      "downloading": JE.t?.("downloads_status_downloading") || "Downloading",
+      "queued": JE.t?.("downloads_status_queued") || "Queued",
+      "paused": JE.t?.("downloads_status_paused") || "Paused",
+      "importing": JE.t?.("downloads_status_importing") || "Importing",
+      "completed": JE.t?.("downloads_status_completed") || "Completed",
+      "warning": JE.t?.("downloads_status_warning") || "Warning",
+      "failed": JE.t?.("downloads_status_failed") || "Failed",
+      "unknown": JE.t?.("downloads_status_unknown") || "Unknown"
+    };
+    return translations[status] || status;
+  }
+
+  /**
+   * Get unique statuses from downloads
+   * Counts season packs as 1 download instead of counting each episode
+   */
+  function getDownloadStatuses() {
+    const statuses = new Map();
+    const statusOrder = ["Downloading", "Queued", "Paused", "Importing", "Completed", "Warning", "Failed", "Unknown"];
+
+    // Group downloads first so season packs are counted as 1
+    const groupedDownloads = groupDownloads(state.downloads);
+
+    for (const group of groupedDownloads) {
+      const item = group.type === "seasonPack" ? group.item : group.item;
+      const status = item.status || "Unknown";
+      if (!statuses.has(status)) {
+        statuses.set(status, 0);
+      }
+      statuses.set(status, statuses.get(status) + 1);
+    }
+
+    // Sort by defined order (case-insensitive comparison)
+    const sorted = Array.from(statuses.entries()).sort((a, b) => {
+      const indexA = statusOrder.findIndex(s => s.toLowerCase() === a[0].toLowerCase());
+      const indexB = statusOrder.findIndex(s => s.toLowerCase() === b[0].toLowerCase());
+      return (indexA === -1 ? statusOrder.length : indexA) - (indexB === -1 ? statusOrder.length : indexB);
+    });
+
+    return sorted;
+  }
+
+  /**
+   * Filter downloads based on active tab and search query
+   */
+  function getFilteredDownloads() {
+    let filtered = state.downloads;
+
+    // Filter by status tab
+    if (state.downloadsActiveTab !== "all") {
+      filtered = filtered.filter(d => d.status === state.downloadsActiveTab);
+    }
+
+    // Filter by search query
+    if (state.downloadsSearchQuery.trim()) {
+      const query = state.downloadsSearchQuery.toLowerCase();
+      filtered = filtered.filter(d =>
+        (d.title && d.title.toLowerCase().includes(query)) ||
+        (d.subtitle && d.subtitle.toLowerCase().includes(query))
+      );
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Calculate pagination info for downloads
+   */
+  function getDownloadsPaginationInfo() {
+    const filtered = getFilteredDownloads();
+    const itemsPerPage = 20;
+    const totalItems = filtered.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+    return {
+      totalItems,
+      totalPages,
+      itemsPerPage
+    };
+  }
+
+  /**
    * Format bytes to human readable
    */
   function formatBytes(bytes) {
@@ -469,9 +682,15 @@
     if (match) {
       const hours = parseInt(match[1]);
       const minutes = parseInt(match[2]);
+      const seconds = parseInt(match[3]);
 
-      if (hours > 0) return `${hours}h ${minutes}m`;
-      return `${minutes}m`;
+      if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+      } else if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      } else {
+        return `${seconds}s`;
+      }
     }
 
     // Handle day format like 1.02:30:45
@@ -479,8 +698,18 @@
     if (dayMatch) {
       const days = parseInt(dayMatch[1]);
       const hours = parseInt(dayMatch[2]);
-      if (days > 0) return `${days}d ${hours}h`;
-      return `${hours}h`;
+      const minutes = parseInt(dayMatch[3]);
+      const seconds = parseInt(dayMatch[4]);
+
+      if (days > 0) {
+        return `${days}d ${hours}h ${minutes}m`;
+      } else if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+      } else if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      } else {
+        return `${seconds}s`;
+      }
     }
 
     return timeStr;
@@ -509,10 +738,10 @@
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 30) return `${days}d ago`;
+    if (minutes < 1) return JE.t?.("requests_just_now") || "just now";
+    if (minutes < 60) return JE.t?.("requests_minutes_ago")?.replace("{minutes}", minutes) || `${minutes}m ago`;
+    if (hours < 24) return JE.t?.("requests_hours_ago")?.replace("{hours}", hours) || `${hours}h ago`;
+    if (days < 30) return JE.t?.("requests_days_ago")?.replace("{days}", days) || `${days}d ago`;
 
     // For older dates, show the date in "DD MMM YYYY" format
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -682,7 +911,7 @@
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
-            <div class="je-download-title" title="${item.title || ""}">${item.title || "Unknown"}</div>
+            <div class="je-download-title" title="${item.title || ""}">${item.title || JE.t?.("requests_unknown") || "Unknown"}</div>
             ${item.subtitle ? `<div class="je-download-subtitle" title="${item.subtitle}">${item.subtitle}</div>` : ""}
             <div class="je-download-meta">
                 <span class="je-download-badge je-arr-badge" title="${sourceLabel}"><img src="${sourceIcon}" alt="${sourceLabel}" loading="lazy"></span>
@@ -847,8 +1076,8 @@
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
-            <div class="je-download-title" title="${item.title || ""}">${item.title || "Unknown"}</div>
-            <div class="je-download-subtitle">Season ${item.seasonNumber} (${group.episodeCount} episodes)</div>
+            <div class="je-download-title" title="${item.title || ""}">${item.title || JE.t?.("requests_unknown") || "Unknown"}</div>
+            <div class="je-download-subtitle">${JE.t?.("requests_season") || "Season"} ${item.seasonNumber} (${group.episodeCount} ${JE.t?.("requests_episodes") || "episodes"})</div>
             <div class="je-download-meta">
               <span class="je-download-badge je-arr-badge" title="Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr" loading="lazy"></span>
               <span class="je-download-badge" style="background: ${statusColor}">${item.status}</span>
@@ -871,12 +1100,20 @@
     let html = "";
 
     // Active Downloads Section
-    html += `<div class="je-downloads-section" style="margin-top: 2em;">`;
-    const labelActiveDownloads = (JE.t && JE.t('jellyseerr_active_downloads')) || 'Active Downloads';
-    html += `<h2 style="margin-top: 0.5em;">${labelActiveDownloads}</h2>`;
+    html += `<div class="je-downloads-section je-active-downloads-section" style="margin-top: 2em;">`;
+    const labelActiveDownloads = (JE.t && JE.t('requests_downloads')) || 'Downloads';
+
+    html += `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1em;">
+        <h2 style="margin: 0.5em 0 0 0;">${labelActiveDownloads}</h2>
+        <button class="je-refresh-btn emby-button" style="background: transparent; border: 1px solid rgba(255,255,255,0.3); color: inherit; padding: 0.5em; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 0.5em; opacity: 0.8; transition: all 0.2s;">
+          <span class="material-icons" style="font-size: 18px;">refresh</span>
+        </button>
+      </div>
+    `;
 
     if (state.isLoading && state.downloads.length === 0) {
-      html += `<div class="je-loading">Loading...</div>`;
+      html += `<div class="je-loading">...</div>`;
     } else if (state.downloads.length === 0) {
       const labelNoActiveDownloads = (JE.t && JE.t('requests_no_active_downloads')) || 'No active downloads';
       html += `
@@ -885,24 +1122,85 @@
         </div>
       `;
     } else {
-      // Group downloads (collapse season packs)
-      const groupedDownloads = groupDownloads(state.downloads);
+      // Get statuses and pagination info
+      const statuses = getDownloadStatuses();
+      const paginationInfo = getDownloadsPaginationInfo();
+      const showSearchBar = state.downloads.length > 0; // Show search when there are any downloads
 
-      html += `<div class="je-downloads-grid">`;
-      for (const group of groupedDownloads) {
-        if (group.type === "seasonPack") {
-          html += renderSeasonPackCard(group);
-        } else {
-          html += renderDownloadCard(group.item);
+      // Render tabs and search
+      if (statuses.length > 1 || showSearchBar) {
+        html += `<div class="je-downloads-controls">`;
+
+        // Render tabs if there are multiple statuses
+        if (statuses.length > 1) {
+          // Calculate total count from grouped downloads
+          const totalGroupedCount = statuses.reduce((sum, [_, count]) => sum + count, 0);
+
+          html += `<div class="je-downloads-tabs">`;
+          html += `<button is="emby-button" type="button" class="je-downloads-tab emby-button ${state.downloadsActiveTab === "all" ? "active" : ""}" data-tab="all">
+            <span>${translateStatus("All")}</span>
+            <span class="je-downloads-tab-count">${totalGroupedCount}</span>
+          </button>`;
+
+          for (const [status, count] of statuses) {
+            html += `<button is="emby-button" type="button" class="je-downloads-tab emby-button ${state.downloadsActiveTab === status ? "active" : ""}" data-tab="${status}">
+              <span>${translateStatus(status)}</span>
+              <span class="je-downloads-tab-count">${count}</span>
+            </button>`;
+          }
+
+          // Add search icon button after tabs
+          if (showSearchBar) {
+            html += `<button class="je-downloads-search-toggle ${state.downloadsSearchVisible ? 'active' : ''}">
+              <span class="material-icons">search</span>
+            </button>`;
+          }
+
+          html += `</div>`;
         }
+
+        // Render search input if visible
+        if (showSearchBar && state.downloadsSearchVisible) {
+          html += `<div class="je-downloads-search-container">
+            <span class="material-icons je-downloads-search-icon">search</span>
+            <input type="text" class="je-downloads-search-input" value="${state.downloadsSearchQuery}" autofocus>
+          </div>`;
+        }
+
+        html += `</div>`;
       }
-      html += `</div>`;
+
+      // Get filtered downloads
+      const filteredDownloads = getFilteredDownloads();
+
+      if (filteredDownloads.length === 0) {
+        const labelNoMatches = (JE.t && JE.t('requests_no_downloads_found')) || 'No downloads found';
+        html += `
+          <div class="je-empty-state">
+            <div>${labelNoMatches}</div>
+          </div>
+        `;
+      } else {
+        // Group downloads (collapse season packs)
+        const groupedDownloads = groupDownloads(filteredDownloads);
+
+        html += `<div class="je-downloads-grid">`;
+        for (const group of groupedDownloads) {
+          if (group.type === "seasonPack") {
+            html += renderSeasonPackCard(group);
+          } else {
+            html += renderDownloadCard(group.item);
+          }
+        }
+        html += `</div>`;
+      }
     }
+
     html += `</div>`;
 
     // Requests Section
     if (JE.pluginConfig?.JellyseerrEnabled) {
-      html += `<div class="je-downloads-section">`;
+      html += `<div class="je-downloads-section je-requests-section">`;
       const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
       html += `<h2>${labelRequests}</h2>`;
 
@@ -924,11 +1222,11 @@
           `;
 
       if (state.isLoading && state.requests.length === 0) {
-        html += `<div class="je-loading">Loading...</div>`;
+        html += `<div class="je-loading">...</div>`;
       } else if (state.requests.length === 0) {
         html += `
                     <div class="je-empty-state">
-                        <div>No requests found</div>
+                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
                     </div>
                 `;
       } else {
@@ -944,7 +1242,7 @@
         if (filteredRequests.length === 0) {
           html += `
                     <div class="je-empty-state">
-                        <div>No requests found</div>
+                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
                     </div>
                 `;
         } else {
@@ -958,9 +1256,9 @@
           if (state.requestsTotalPages > 1) {
             html += `
                         <div class="je-pagination">
-                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}>Previous</button>
-                            <span>Page ${state.requestsPage} of ${state.requestsTotalPages}</span>
-                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}>Next</button>
+                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+                            <span>${state.requestsPage} / ${state.requestsTotalPages}</span>
+                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
                         </div>
                     `;
           }
@@ -970,6 +1268,78 @@
     }
 
     container.innerHTML = html;
+
+    // Add event listener for refresh button
+    const refreshBtn = container.querySelector('.je-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        // Add visual feedback
+        const icon = refreshBtn.querySelector('.material-icons');
+        if (icon) {
+          icon.style.animation = 'spin 1s linear';
+          setTimeout(() => {
+            icon.style.animation = '';
+          }, 1000);
+        }
+
+        loadAllData();
+      });
+    }
+
+    // Add event listeners for download tabs
+    const downloadTabs = container.querySelectorAll('.je-downloads-tab');
+    downloadTabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        const tabName = tab.getAttribute('data-tab');
+        state.downloadsActiveTab = tabName;
+        renderPage();
+      });
+    });
+
+    // Add event listener for search toggle button
+    const searchToggle = container.querySelector('.je-downloads-search-toggle');
+    if (searchToggle) {
+      searchToggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        state.downloadsSearchVisible = !state.downloadsSearchVisible;
+        if (!state.downloadsSearchVisible) {
+          state.downloadsSearchQuery = "";
+        }
+        renderPage();
+      });
+    }
+
+    // Add event listener for search input with debouncing
+    const searchInput = container.querySelector('.je-downloads-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value;
+        state.downloadsSearchQuery = query;
+
+        // Clear existing timer
+        if (state.searchDebounceTimer) {
+          clearTimeout(state.searchDebounceTimer);
+        }
+
+        // Debounce rendering to avoid losing focus
+        state.searchDebounceTimer = setTimeout(() => {
+          const currentInput = document.querySelector('.je-downloads-search-input');
+          const cursorPosition = currentInput ? currentInput.selectionStart : 0;
+
+          renderPage();
+
+          // Restore focus and cursor position
+          const newInput = document.querySelector('.je-downloads-search-input');
+          if (newInput) {
+            newInput.focus();
+            newInput.setSelectionRange(cursorPosition, cursorPosition);
+          }
+        }, 300);
+      });
+    }
   }
 
   /**
@@ -983,7 +1353,7 @@
       // Use Jellyfin's page classes for proper integration
       page.className = "page type-interior mainAnimatedPage hide";
       // Data attributes for header/back button integration
-      page.setAttribute("data-title", "Requests");
+      page.setAttribute("data-title", JE.t?.("requests_requests") || "Requests");
       page.setAttribute("data-backbutton", "true");
       page.setAttribute("data-url", "#/downloads");
       page.setAttribute("data-type", "custom");
@@ -1124,13 +1494,20 @@
   function startPolling() {
     stopPolling();
     const config = JE.pluginConfig || {};
-    const interval = (config.DownloadsPollIntervalSeconds || 30) * 1000;
+    const intervalSeconds = config.DownloadsPollIntervalSeconds !== undefined
+      ? config.DownloadsPollIntervalSeconds
+      : 30;
 
-    state.pollTimer = setInterval(() => {
-      if (state.pageVisible && !state.isLoading) {
-        loadAllData();
-      }
-    }, interval);
+    // Only start polling if interval is greater than 0
+    if (intervalSeconds > 0) {
+      const interval = intervalSeconds * 1000;
+
+      state.pollTimer = setInterval(() => {
+        if (state.pageVisible && !state.isLoading) {
+          loadAllData();
+        }
+      }, interval);
+    }
   }
 
   /**
@@ -1141,6 +1518,23 @@
       clearInterval(state.pollTimer);
       state.pollTimer = null;
     }
+  }
+
+  /**
+   * Filter downloads by status
+   */
+  function filterDownloads(status) {
+    state.downloadsActiveTab = status;
+    state.downloadsSearchQuery = "";
+    renderPage();
+  }
+
+  /**
+   * Search downloads
+   */
+  function searchDownloads(query) {
+    state.downloadsSearchQuery = query;
+    renderPage();
   }
 
   /**
@@ -1179,6 +1573,7 @@
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+    if (config.DownloadsUseCustomTabs) return; // Skip sidebar injection if using custom tabs
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
@@ -1226,9 +1621,15 @@
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+    if (config.DownloadsUseCustomTabs) return; // Don't watch if using custom tabs
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
+      // Re-check config each time to avoid injecting when settings change
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.DownloadsUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.DownloadsUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-downloads-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -1362,14 +1763,25 @@
   // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
   function startLocationWatcher() {
     if (state.locationTimer) return;
+
     state.locationSignature = `${window.location.pathname}${window.location.hash}`;
-    state.locationTimer = setInterval(() => {
+
+    // Use throttle helper if available for better performance
+    const throttledCheck = JE.helpers?.throttle?.(() => {
       const signature = `${window.location.pathname}${window.location.hash}`;
       if (signature !== state.locationSignature) {
         state.locationSignature = signature;
         handleNavigation();
       }
-    }, 150);
+    }, 150) || (() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    });
+
+    state.locationTimer = setInterval(throttledCheck, 150);
   }
 
   function stopLocationWatcher() {
@@ -1379,16 +1791,29 @@
     }
   }
 
+  /**
+   * Render content for custom tabs (without page state management)
+   */
+  function renderForCustomTab() {
+    injectStyles();
+    renderPage();
+    loadAllData();
+    startPolling();
+  }
+
   // Export to JE namespace
   JE.downloadsPage = {
     initialize,
     showPage,
     hidePage,
     refresh: loadAllData,
+    filterDownloads,
+    searchDownloads,
     filterRequests,
     nextPage,
     prevPage,
     renderPage,
+    renderForCustomTab,
     injectStyles
   };
 

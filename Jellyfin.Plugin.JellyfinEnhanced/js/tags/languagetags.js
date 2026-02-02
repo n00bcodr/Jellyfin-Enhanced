@@ -1,4 +1,4 @@
-// /js/languagetags.js
+// /js/tags/languagetags.js
 // Jellyfin Language Flags Overlay
 (function(JE) {
     'use strict';
@@ -468,18 +468,27 @@
             cleanupOldCaches();
             injectCss();
             setTimeout(scanAndProcess, 500);
-            const mo = new MutationObserver(() => {
-                // Check if feature is still enabled before processing
-                if (!JE.currentSettings?.languageTagsEnabled) {
-                    return;
-                }
-                debouncedScan();
-            });
-            mo.observe(document.body, { childList: true, subtree: true });
+            // Use centralized observer management from helpers
+            if (JE.helpers?.createObserver) {
+                JE.helpers.createObserver('language-tags-mutations', () => {
+                    if (!JE.currentSettings?.languageTagsEnabled) return;
+                    debouncedScan();
+                }, document.body, { childList: true, subtree: true });
+            } else {
+                // Fallback for older versions
+                const mo = new MutationObserver(() => {
+                    if (!JE.currentSettings?.languageTagsEnabled) return;
+                    debouncedScan();
+                });
+                mo.observe(document.body, { childList: true, subtree: true });
+                window.addEventListener('beforeunload', () => mo.disconnect());
+            }
             window.addEventListener('beforeunload', () => {
                 saveCache();
-                mo.disconnect();
                 visibilityObserver.disconnect();
+                if (JE.helpers?.disconnectObserver) {
+                    JE.helpers.disconnectObserver('language-tags-mutations');
+                }
             });
             // Register with unified cache manager instead of setInterval
             if (JE._cacheManager) {

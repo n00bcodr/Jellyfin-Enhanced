@@ -55,12 +55,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }, StringComparer.OrdinalIgnoreCase);
 
         public JellyfinEnhancedController(
-            IHttpClientFactory httpClientFactory, 
-            Logger logger, 
-            IUserManager userManager, 
-            IUserDataManager userDataManager, 
-            ILibraryManager libraryManager, 
-            IDtoService dtoService, 
+            IHttpClientFactory httpClientFactory,
+            Logger logger,
+            IUserManager userManager,
+            IUserDataManager userDataManager,
+            ILibraryManager libraryManager,
+            IDtoService dtoService,
             UserConfigurationManager userConfigurationManager,
             IItemRepository itemRepository)
         {
@@ -1288,6 +1288,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SonarrUrl,
                 config.RadarrUrl,
                 config.BazarrUrl,
+                config.SonarrUrlMappings,
+                config.RadarrUrlMappings,
+                config.BazarrUrlMappings,
                 JellyseerrBaseUrl = jellyseerrBaseUrl,
                 config.JellyseerrUrlMappings
             });
@@ -1341,6 +1344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.GenreTagsEnabled,
                 config.LanguageTagsEnabled,
                 config.RatingTagsEnabled,
+                config.PeopleTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
                 config.DefaultSubtitleSize,
@@ -1409,10 +1413,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Requests Page Settings
                 config.DownloadsPageEnabled,
                 config.DownloadsUsePluginPages,
+                config.DownloadsUseCustomTabs,
                 config.DownloadsPollIntervalSeconds,
 
                 // Calendar Page Settings
                 config.CalendarPageEnabled,
+                config.CalendarUseCustomTabs,
                 config.CalendarUsePluginPages,
                 config.CalendarFirstDayOfWeek,
                 config.CalendarTimeFormat,
@@ -1514,6 +1520,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
                         LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                         RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
+                        PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
@@ -1521,8 +1528,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
-                        CalendarDefaultViewMode = "auto",
                         CalendarDisplayMode = "list",
+                        CalendarDefaultViewMode = "agenda",
                         LastOpenedTab = "shortcuts"
                     };
 
@@ -1667,6 +1674,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
                 LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                 RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
+                PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
                 GenreTagsPosition = defaultConfig.GenreTagsPosition,
                 LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
@@ -1674,8 +1682,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
-                CalendarDefaultViewMode = "auto",
                 CalendarDisplayMode = "list",
+                CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"
             };
 
@@ -1988,7 +1996,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         $"includeSeries=true&" +
                         $"sortKey=timeleft&" +
                         $"sortDirection=ascending&" +
-                        $"status=downloading&" +
                         $"pageSize=1000"
                     );
 

@@ -1101,25 +1101,17 @@
   const logPrefix = '🪼 Jellyfin Enhanced: Calendar Page:';
 
   /**
-   * Get default view mode based on URL hash or mobile detection
+   * Get default view mode from settings, defaults to agenda
    */
   function getDefaultViewMode() {
-    // Check URL hash first (e.g., #/calendar/agenda)
-    const hash = window.location.hash;
-    const viewMatch = hash.match(/#\/calendar\/(month|week|agenda|day)/);
-    if (viewMatch) {
-      return viewMatch[1];
-    }
-
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
-    const configuredDefault = (JE.currentSettings.calendarDefaultViewMode || "auto").toLowerCase();
-    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda" || configuredDefault === "day") {
+    const configuredDefault = (JE.currentSettings.calendarDefaultViewMode || "agenda").toLowerCase();
+    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda") {
       return configuredDefault;
     }
 
-    // Auto: default to agenda on mobile, month on desktop
-    const isMobile = window.innerWidth <= 768;
-    return isMobile ? "agenda" : "month";
+    // Default to agenda if no valid setting
+    return "agenda";
   }
 
   /**
@@ -1151,15 +1143,38 @@
     document.addEventListener("viewshow", handleViewShow);
     document.addEventListener("click", handleNavClick);
     document.addEventListener("click", handleEventClick);
-    window.addEventListener("hashchange", handleNavigation);
-    window.addEventListener("popstate", handleNavigation);
 
     startLocationWatcher();
 
-    // Check URL on init
+    // Check location on init
     handleNavigation();
 
     console.log(`${logPrefix} Calendar page module initialized`);
+  }
+
+
+  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
+  function startLocationWatcher() {
+    if (state.locationTimer) return;
+
+    state.locationSignature = `${window.location.pathname}${window.location.hash}`;
+
+    // Use throttle helper if available for better performance
+    const throttledCheck = JE.helpers?.throttle?.(() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    }, 150) || (() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    });
+
+    state.locationTimer = setInterval(throttledCheck, 150);
   }
 
   /**
@@ -1173,31 +1188,8 @@
     if (matches) {
       if (e?.stopImmediatePropagation) e.stopImmediatePropagation();
       if (e?.preventDefault) e.preventDefault();
-
-      // Check if view mode changed in URL
-      const viewMatch = hash.match(/#\/calendar\/(month|week|agenda|day)/);
-      if (viewMatch && viewMatch[1] !== state.viewMode) {
-        state.viewMode = viewMatch[1];
-        if (state.pageVisible) {
-          loadAllData();
-        }
-      }
-
       showPage();
     }
-  }
-
-  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
-  function startLocationWatcher() {
-    if (state.locationTimer) return;
-    state.locationSignature = `${window.location.pathname}${window.location.hash}`;
-    state.locationTimer = setInterval(() => {
-      const signature = `${window.location.pathname}${window.location.hash}`;
-      if (signature !== state.locationSignature) {
-        state.locationSignature = signature;
-        handleNavigation();
-      }
-    }, 150);
   }
 
   function stopLocationWatcher() {
@@ -1593,13 +1585,6 @@
     JE.currentSettings.calendarDefaultViewMode = mode;
     if (typeof JE.saveUserSettings === 'function') {
       JE.saveUserSettings('settings.json', JE.currentSettings);
-    }
-
-    const config = JE.pluginConfig || {};
-    // Update URL hash to reflect view mode
-    const newHash = `#/calendar/${mode}`;
-    if (window.location.hash !== newHash && !(pluginPagesExists && config.CalendarUsePluginPages)) {
-      history.replaceState({ page: "calendar", view: mode }, "Calendar", newHash);
     }
 
     loadAllData();
@@ -2318,9 +2303,8 @@
     injectStyles();
     const page = createPageContainer();
 
-    const expectedHash = `#/calendar/${state.viewMode}`;
-    if (window.location.hash !== expectedHash && !window.location.hash.startsWith("#/calendar/")) {
-      history.pushState({ page: "calendar", view: state.viewMode }, "Calendar", expectedHash);
+    if (window.location.hash !== "#/calendar") {
+      history.pushState({ page: "calendar" }, "Calendar", "#/calendar");
     }
 
     const activePage = document.querySelector(".mainAnimatedPage:not(.hide):not(#je-calendar-page)");
@@ -2400,16 +2384,7 @@
   function handleNavigation() {
     const hash = window.location.hash;
     const path = window.location.pathname;
-    if (hash.startsWith("#/calendar") || path === "/calendar") {
-      // Check if view mode changed in URL
-      const viewMatch = hash.match(/#\/calendar\/(month|week|agenda|day)/);
-      if (viewMatch && viewMatch[1] !== state.viewMode) {
-        state.viewMode = viewMatch[1];
-        syncPageModeClasses();
-        if (state.pageVisible) {
-          loadAllData();
-        }
-      }
+    if (hash === "#/calendar" || path === "/calendar") {
       showPage();
     } else if (state.pageVisible) {
       hidePage();
@@ -2445,6 +2420,7 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
+    if (config.CalendarUseCustomTabs) return; // Skip if using custom tabs
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
@@ -2491,9 +2467,15 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
+    if (config.CalendarUseCustomTabs) return; // Don't watch if using custom tabs
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
+      // Re-check config each time to avoid injecting when settings change
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.CalendarUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.CalendarUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-calendar-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -2680,6 +2662,16 @@
     navigateToJellyfinItem(event, { preferSeries: true });
   }
 
+  /**
+   * Render content for custom tabs (without page state management)
+   */
+  function renderForCustomTab() {
+    injectStyles();
+    loadSettings();
+    renderPage();
+    loadAllData();
+  }
+
   // Export to JE namespace
   JE.calendarPage = {
     initialize,
@@ -2691,6 +2683,7 @@
     goToday,
     toggleFilter,
     renderPage,
+    renderForCustomTab,
     injectStyles,
     loadSettings,
     handleEventClick,
