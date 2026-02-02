@@ -373,28 +373,6 @@
       gap: 0.35em;
     }
 
-    .je-calendar-card-time-play {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.25em;
-      height: 1.6em;
-    }
-
-    .je-calendar-card-time-play .je-calendar-play-btn {
-      width: 14px;
-      height: 14px;
-      border: none;
-      box-shadow: none;
-      background: transparent;
-      margin: 0;
-      padding: 0;
-    }
-
-    .je-calendar-card-time-play .je-calendar-play-btn .material-icons {
-      font-size: 14px;
-    }
-
     .je-calendar-card-status-top {
       position: absolute;
       top: 0.45em;
@@ -610,29 +588,6 @@
       box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
     }
 
-    .je-calendar-play-btn {
-      background: rgba(0,0,0,0.35);
-      border: 2px solid rgba(76, 175, 80, 0.9);
-      color: inherit;
-      padding: 0.25em;
-      border-radius: 50%;
-      cursor: pointer;
-      width: 22px;
-      height: 22px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
-    }
-
-    .je-calendar-play-btn .material-icons {
-      font-size: 14px;
-    }
-
-    .je-calendar-agenda-indicators .je-calendar-play-btn {
-      position: static;
-    }
-
     .je-calendar-status-icons {
       display: inline-flex;
       align-items: center;
@@ -655,6 +610,30 @@
 
     .je-calendar-agenda-indicators .je-calendar-status-icon {
       font-size: 22px;
+    }
+
+    .je-calendar-play-btn {
+      background: #4caf50;
+      border: none;
+      color: white;
+      padding: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 0.35em;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+    }
+
+    .je-calendar-play-btn-card {
+      width: 24px;
+      height: 24px;
+    }
+
+    .je-calendar-play-btn .material-icons {
+      font-size: 14px;
     }
 
     .je-calendar-event-status-top {
@@ -1679,21 +1658,7 @@
     return tooltip;
   }
 
-  function shouldShowPlayButton(event) {
-    const isMovie = event.type === "Movie";
-    const isEpisode = event.releaseType === "Episode";
-    return event.hasFile && (isMovie || isEpisode);
-  }
 
-  function renderPlayButton(event) {
-    if (!shouldShowPlayButton(event)) return "";
-    const label = window.JellyfinEnhanced.t?.("jellyseerr_btn_available");
-    return `
-      <button class="je-calendar-play-btn" title="${label}" aria-label="${label}" data-event-id="${escapeHtml(event.id)}">
-        <span class="material-icons">play_arrow</span>
-      </button>
-    `;
-  }
 
   function renderStatusIcons(event) {
     const userData = state.userDataMap?.get(event.id);
@@ -1714,8 +1679,7 @@
 
   function buildTimePill(event) {
     const timeLabel = formatEventTime(event.releaseDate);
-    const playButton = renderPlayButton(event);
-    if (!timeLabel && !playButton) return "";
+    if (!timeLabel) return "";
 
     const releaseDate = event.releaseDate ? new Date(event.releaseDate) : null;
     const releaseTime = releaseDate && !Number.isNaN(releaseDate.getTime()) ? releaseDate.getTime() : null;
@@ -1727,12 +1691,12 @@
       : (isLate ? "je-calendar-card-time is-late is-unavailable" : (isPast ? "je-calendar-card-time is-past is-unavailable" : "je-calendar-card-time is-unavailable"));
 
     const labelHtml = timeLabel ? `<span class="je-calendar-card-time-label">${escapeHtml(timeLabel)}</span>` : "";
-    if (event.hasFile && playButton) {
-      return `<div class="${timePillClass} je-calendar-card-time-play" data-event-id="${escapeHtml(event.id)}">${labelHtml}${playButton}</div>`;
-    }
-
-    if (!timeLabel) return "";
     return `<div class="${timePillClass}">${labelHtml}</div>`;
+  }
+
+  function formatTimeText(event) {
+    const timeLabel = formatEventTime(event.releaseDate);
+    return timeLabel ? `<span style="opacity: 0.85; font-size: 1em;">${escapeHtml(timeLabel)}</span>` : "";
   }
 
   function normalizeImageUrl(url) {
@@ -1768,7 +1732,8 @@
     const hasBackdropClass = (state.settings.displayMode === "backdrop" && (event.backdropUrl || event.posterUrl)) ? " je-has-backdrop" : "";
     const statusIcons = renderStatusIcons(event);
     const statusTop = statusIcons ? `<div class="je-calendar-event-status-top">${statusIcons}</div>` : "";
-    const timeRow = buildTimePill(event);
+    const timeText = formatTimeText(event);
+    const playButton = event.hasFile ? `<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
     const backgroundStyle = getEventBackgroundStyle(event, color);
 
     return `
@@ -1779,7 +1744,7 @@
         <div class="je-calendar-event-type">
           <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
           <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span></span>
-          ${timeRow}
+          ${timeText ? ` • ${timeText}` : ""}${playButton}
         </div>
       </div>
     `;
@@ -2007,16 +1972,12 @@
 
     // Build indicators array (only add if they exist)
     const indicators = [];
-    const showPlayButton = shouldShowPlayButton(event);
-    if (event.hasFile && !showPlayButton) {
-      indicators.push(`<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}">check_circle</span>`);
+    if (event.hasFile) {
+      indicators.push(`<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>`);
     }
     const statusIcons = renderStatusIcons(event);
     if (statusIcons) {
       indicators.push(statusIcons);
-    }
-    if (showPlayButton) {
-      indicators.push(renderPlayButton(event));
     }
 
     // Get material icon based on release type
@@ -2065,7 +2026,8 @@
       const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
       const statusIcons = renderStatusIcons(event);
       const timePill = buildTimePill(event);
-      const timeRow = timePill ? `<div class="je-calendar-card-time-row">${timePill}</div>` : "";
+      const playButton = event.hasFile ? `<button class="je-calendar-play-btn je-calendar-play-btn-card" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
+      const timeRow = timePill || playButton ? `<div class="je-calendar-card-time-row">${timePill}${playButton}</div>` : "";
       const statusTop = statusIcons ? `<div class="je-calendar-card-status-top">${statusIcons}</div>` : "";
       const color = getEventColor(event);
       if (poster) {
@@ -2607,18 +2569,6 @@
       e.stopPropagation();
       e.stopImmediatePropagation();
       toggleFilterInvert();
-      return;
-    }
-
-    const timePlay = e.target.closest(".je-calendar-card-time-play");
-    if (timePlay) {
-      const timeEventId = timePlay.dataset.eventId;
-      const timeEvent = state.events.find((ev) => ev.id === timeEventId);
-      if (!timeEvent) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      navigateToJellyfinItem(timeEvent, { preferSeries: false });
       return;
     }
 
