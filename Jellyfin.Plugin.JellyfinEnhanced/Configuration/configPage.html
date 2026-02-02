@@ -798,7 +798,22 @@
                                     <span>Enable *arr Links</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. Only for admins.<br> If no URL is added above, the links are not shown.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. Only for admins.<br> If no URL is added for a service below, links for that service are not shown.</div>
+                            <div>
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="sonarrUrlMappings">Sonarr URL Mappings</label>
+                                <textarea style="display:block; height: 6vh !important;" class="emby-textarea emby-input" id="sonarrUrlMappings" name="sonarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:8989&#10;https://jellyfin.example.com|https://sonarr.example.com"></textarea>
+                                <div class="fieldDescription">Map Jellyfin access URLs to Sonarr URLs. Format: <code>jellyfin_url|sonarr_url</code> (one per line).</div>
+                            </div>
+                            <div style="margin-top: 1em;">
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="radarrUrlMappings">Radarr URL Mappings</label>
+                                <textarea style="display:block; height: 6vh !important;" class="emby-textarea emby-input" id="radarrUrlMappings" name="radarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:7878&#10;https://jellyfin.example.com|https://radarr.example.com"></textarea>
+                                <div class="fieldDescription">Map Jellyfin access URLs to Radarr URLs. Format: <code>jellyfin_url|radarr_url</code> (one per line).</div>
+                            </div>
+                            <div style="margin-top: 1em;">
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="bazarrUrlMappings">Bazarr URL Mappings</label>
+                                <textarea style="display:block; height: 6vh !important;" class="emby-textarea emby-input" id="bazarrUrlMappings" name="bazarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:6767&#10;https://jellyfin.example.com|https://bazarr.example.com"></textarea>
+                                <div class="fieldDescription">Map Jellyfin access URLs to Bazarr URLs. Format: <code>jellyfin_url|bazarr_url</code> (one per line).<br>These mappings are useful when accessing Jellyfin via different URLs (e.g., internal network vs. public domain) and you need *arr links to use the appropriate corresponding URL.</div>
+                            </div>
                             <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label>
                                     <input id="showArrLinksAsText" is="emby-checkbox" type="checkbox"/>
@@ -1831,6 +1846,9 @@
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
+                document.querySelector('#sonarrUrlMappings').value = config.SonarrUrlMappings || '';
+                document.querySelector('#radarrUrlMappings').value = config.RadarrUrlMappings || '';
+                document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#sonarrUrl').value = config.SonarrUrl;
                 document.querySelector('#radarrUrl').value = config.RadarrUrl;
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -2002,6 +2020,9 @@
             config.IconStyle = document.querySelector('#iconStyle').value;
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
+            config.SonarrUrlMappings = document.querySelector('#sonarrUrlMappings').value || '';
+            config.RadarrUrlMappings = document.querySelector('#radarrUrlMappings').value || '';
+            config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.SonarrUrl = document.querySelector('#sonarrUrl').value;
             config.RadarrUrl = document.querySelector('#radarrUrl').value;
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;

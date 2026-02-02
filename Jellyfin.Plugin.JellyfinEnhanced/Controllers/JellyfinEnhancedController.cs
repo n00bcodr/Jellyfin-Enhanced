@@ -1288,6 +1288,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SonarrUrl,
                 config.RadarrUrl,
                 config.BazarrUrl,
+                config.SonarrUrlMappings,
+                config.RadarrUrlMappings,
+                config.BazarrUrlMappings,
                 JellyseerrBaseUrl = jellyseerrBaseUrl,
                 config.JellyseerrUrlMappings
             });

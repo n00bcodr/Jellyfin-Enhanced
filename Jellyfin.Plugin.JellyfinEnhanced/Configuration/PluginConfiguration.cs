@@ -111,6 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RadarrUrl = "";
             BazarrUrl = "";
             ShowArrLinksAsText = false;
+            SonarrUrlMappings = "";
+            RadarrUrlMappings = "";
+            BazarrUrlMappings = "";
 
             // Arr Tags Sync Settings
             ArrTagsSyncEnabled = false;
@@ -257,6 +260,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RadarrUrl { get; set; }
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
+        public string SonarrUrlMappings { get; set; }
+        public string RadarrUrlMappings { get; set; }
+        public string BazarrUrlMappings { get; set; }
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }
