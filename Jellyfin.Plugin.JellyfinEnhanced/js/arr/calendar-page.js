@@ -338,7 +338,6 @@
       align-items: center;
       justify-content: center;
       align-self: center;
-      margin-top: 0.35em;
       padding: 0 0.6em;
       border-radius: 999px;
       background: rgba(0,0,0,0.55);
@@ -356,6 +355,7 @@
 
     .je-calendar-card-time.is-available {
       background: rgba(76, 175, 80, 0.85);
+      cursor: pointer;
     }
 
     .je-calendar-card-time.is-past {
@@ -370,7 +370,6 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 0.35em;
     }
 
     .je-calendar-card-status-top {
@@ -833,7 +832,7 @@
       align-items: center;
       gap: 0.25em;
       min-width: 70px;
-      justify-content: flex-end;
+      flex-direction: row-reverse;
       flex-shrink: 0;
     }
 
@@ -2521,9 +2520,7 @@
   }
 
   /**
-   * Navigate to Jellyfin item by searching title and validating with provider IDs
-   * Note: AnyProviderIdEquals parameter does NOT work in Jellyfin (only Emby)
-   * See: https://github.com/jellyfin/jellyfin/issues/1990
+   * Navigate to Jellyfin item by provider IDs
    */
   async function navigateToJellyfinItem(event, options = {}) {
     const preferSeries = !!options.preferSeries;
@@ -2537,8 +2534,12 @@
       return;
     }
 
+    if (event.itemEpisodeId && !preferSeries) {
+      window.location.hash = `#/details?id=${event.itemEpisodeId}`;
+      return;
+    }
+
     try {
-      // Try provider-based lookup
       const providerItemId = await searchFromProviders(event, { preferSeries });
       if (providerItemId) {
         window.location.hash = `#/details?id=${providerItemId}`;
@@ -2548,7 +2549,6 @@
       console.error(`${logPrefix} Navigation failed:`, error);
     }
   }
-
 
   /**
    * Handle click on calendar event
@@ -2597,6 +2597,20 @@
       e.stopImmediatePropagation();
       navigateToJellyfinItem(playEvent, { preferSeries: false });
       return;
+    }
+
+    const timePill = e.target.closest(".je-calendar-card-time");
+    if (timePill) {
+      const cardEl = timePill.closest(".je-calendar-card");
+      const timeEventId = cardEl?.dataset.eventId;
+      const timeEvent = timeEventId ? state.events.find((ev) => ev.id === timeEventId) : null;
+      if (timeEvent?.hasFile) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        navigateToJellyfinItem(timeEvent, { preferSeries: false });
+        return;
+      }
     }
 
     const eventEl = e.target.closest(".je-calendar-event, .je-calendar-agenda-event, .je-calendar-card");
