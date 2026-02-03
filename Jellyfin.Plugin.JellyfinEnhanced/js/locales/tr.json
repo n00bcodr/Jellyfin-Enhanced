@@ -389,5 +389,6 @@
     "calendar_loading": "Takvim yükleniyor...",
     "calendar_no_releases": "Yaklaşan yayın yok",
     "calendar_watchlist": "İzleme listesi",
-    "calendar_watched": "İzlendi"
+    "calendar_watched": "İzlendi",
+    "calendar_all_day": "Bütün gün"
 }

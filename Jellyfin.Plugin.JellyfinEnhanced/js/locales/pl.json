@@ -389,5 +389,6 @@
     "calendar_loading": "Ładowanie kalendarza...",
     "calendar_no_releases": "Brak nadchodzących premier",
     "calendar_watchlist": "Lista obserwowanych",
-    "calendar_watched": "Obejrzane"
+    "calendar_watched": "Obejrzane",
+    "calendar_all_day": "Cały dzień"
 }

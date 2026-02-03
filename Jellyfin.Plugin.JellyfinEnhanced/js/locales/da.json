@@ -389,5 +389,6 @@
     "calendar_loading": "Indlæser kalender...",
     "calendar_no_releases": "Ingen kommende udgivelser",
     "calendar_watchlist": "Overvågningsliste",
-    "calendar_watched": "Set"
+    "calendar_watched": "Set",
+    "calendar_all_day": "Hele dagen"
 }

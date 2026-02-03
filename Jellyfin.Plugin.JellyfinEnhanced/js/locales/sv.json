@@ -389,5 +389,6 @@
     "calendar_loading": "Laddar kalender...",
     "calendar_no_releases": "Inga kommande utgåvor",
     "calendar_watchlist": "Bevakningslista",
-    "calendar_watched": "Sedd"
+    "calendar_watched": "Sedd",
+    "calendar_all_day": "Hela dagen"
 }

@@ -387,5 +387,6 @@
     "calendar_loading": "Kalender wird geladen...",
     "calendar_no_releases": "Keine bevorstehenden Veröffentlichungen",
     "calendar_watchlist": "Merkliste",
-    "calendar_watched": "Gesehen"
+    "calendar_watched": "Gesehen",
+    "calendar_all_day": "Ganztägig"
 }

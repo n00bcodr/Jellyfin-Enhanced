@@ -389,5 +389,6 @@
     "calendar_loading": "Cargando calendario...",
     "calendar_no_releases": "No hay próximos estrenos",
     "calendar_watchlist": "Lista de seguimiento",
-    "calendar_watched": "Visto"
+    "calendar_watched": "Visto",
+    "calendar_all_day": "Todo el día"
 }

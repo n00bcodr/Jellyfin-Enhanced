@@ -389,5 +389,6 @@
     "calendar_loading": "Naptár betöltése...",
     "calendar_no_releases": "Nincs közelgő megjelenés",
     "calendar_watchlist": "Figyelőlista",
-    "calendar_watched": "Megtekintve"
+    "calendar_watched": "Megtekintve",
+    "calendar_all_day": "Egész nap"
 }

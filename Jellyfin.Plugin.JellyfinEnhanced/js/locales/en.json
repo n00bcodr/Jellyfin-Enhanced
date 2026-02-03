@@ -389,5 +389,6 @@
     "calendar_loading": "Loading calendar...",
     "calendar_no_releases": "No upcoming releases",
     "calendar_watchlist": "Watchlist",
-    "calendar_watched": "Watched"
+    "calendar_watched": "Watched",
+    "calendar_all_day": "All day"
 }
