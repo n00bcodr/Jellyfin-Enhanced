@@ -1098,18 +1098,21 @@
     console.log(`${logPrefix} Initializing calendar page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.CalendarPageEnabled || (pluginPagesExists && config.CalendarUsePluginPages)) {
-      if (pluginPagesExists && config.CalendarUsePluginPages) {
-        console.log(`${logPrefix} Calendar page is injected via Plugin Pages`);
-      } else {
-        console.log(`${logPrefix} Calendar page is disabled`);
-      }
+    if (!config.CalendarPageEnabled) {
+      console.log(`${logPrefix} Calendar page is disabled`);
       return;
     }
 
     injectStyles();
     loadSettings();
 
+    const usingPluginPages = pluginPagesExists && config.CalendarUsePluginPages;
+    if (usingPluginPages) {
+      console.log(`${logPrefix} Calendar page is injected via Plugin Pages`);
+      return;
+    }
+
+    // Page-specific setup for custom tabs or dedicated page mode
     // Inject navigation and set up one-time re-injection on sidebar rebuild
     injectNavigation();
     setupNavigationWatcher();

@@ -10,6 +10,11 @@
     return;
   }
 
+  // Only initialize if custom tabs are enabled
+  if (!window.JellyfinEnhanced?.pluginConfig?.CalendarUseCustomTabs) {
+    return;
+  }
+
   // Inject custom styles
   const style = document.createElement('style');
   style.textContent = `

@@ -1693,16 +1693,20 @@
     console.log(`${logPrefix} Initializing downloads page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.DownloadsPageEnabled || (pluginPagesExists && config.DownloadsUsePluginPages)) {
-      if (pluginPagesExists && config.DownloadsUsePluginPages) {
-        console.log(`${logPrefix} Downloads page is injected via Plugin Pages`);
-      } else {
-        console.log(`${logPrefix} Downloads page is disabled`);
-      }
+    if (!config.DownloadsPageEnabled) {
+      console.log(`${logPrefix} Downloads page is disabled`);
       return;
     }
 
     injectStyles();
+
+    const usingPluginPages = pluginPagesExists && config.DownloadsUsePluginPages;
+    if (usingPluginPages) {
+      console.log(`${logPrefix} Downloads page is injected via Plugin Pages`);
+      return;
+    }
+
+    // Page-specific setup for custom tabs or dedicated page mode
     createPageContainer();
 
     // Inject navigation and set up one-time re-injection on sidebar rebuild

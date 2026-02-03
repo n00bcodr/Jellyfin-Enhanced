@@ -167,11 +167,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
             DownloadsPageEnabled = false;
             DownloadsUsePluginPages = false;
+            DownloadsUseCustomTabs = false;
             DownloadsPollIntervalSeconds = 30;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
             CalendarPageEnabled = false;
             CalendarUsePluginPages = false;
+            CalendarUseCustomTabs = false;
             CalendarFirstDayOfWeek = "Monday";
             CalendarTimeFormat = "5pm/5:30pm";
             CalendarHighlightFavorites = false;
