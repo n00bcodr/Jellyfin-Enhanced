@@ -83,6 +83,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         public Guid? ItemId { get; set; }
 
         /// <summary>
+        /// Jellyfin Episode ItemId after mapping
+        /// </summary>
+        [JsonPropertyName("itemEpisodeId")]
+        public Guid? ItemEpisodeId { get; set; }
+
+        /// <summary>
         /// Optional series or movie overview
         /// </summary>
         [JsonPropertyName("overview")]
