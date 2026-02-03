@@ -907,7 +907,7 @@
     `;
 
     return `
-      <div class="je-download-card">
+      <div class="je-download-card" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
@@ -951,7 +951,7 @@
     }
 
     return `
-            <div class="je-request-card">
+            <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
                 ${posterHtml}
                 <div class="je-request-info">
                     <div class="je-request-header">
@@ -1072,7 +1072,7 @@
     `;
 
     return `
-      <div class="je-download-card je-season-pack">
+      <div class="je-download-card je-season-pack" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
@@ -1340,6 +1340,30 @@
         }, 300);
       });
     }
+
+    // Add click handlers for cards and watch buttons
+    container.addEventListener('click', (e) => {
+      // Handle play/watch button clicks
+      const playBtn = e.target.closest('.je-request-watch-btn');
+      if (playBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const mediaId = playBtn.getAttribute('data-media-id');
+        if (mediaId && window.Emby?.Page?.showItem) {
+          window.Emby.Page.showItem(mediaId);
+        }
+        return;
+      }
+
+      // Handle card clicks to navigate to item
+      const card = e.target.closest('.je-download-card, .je-request-card');
+      if (card) {
+        const mediaId = card.getAttribute('data-media-id');
+        if (mediaId && window.Emby?.Page?.showItem) {
+          window.Emby.Page.showItem(mediaId);
+        }
+      }
+    });
   }
 
   /**
