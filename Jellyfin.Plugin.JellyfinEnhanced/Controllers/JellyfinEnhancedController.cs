@@ -499,7 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     try
                     {
-                        _logger.Info($"Fetching TMDB data for person {personId} (TMDB ID: {tmdbPersonId})");
+                        // _logger.Info($"Fetching TMDB data for person {personId} (TMDB ID: {tmdbPersonId})");
                         var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId);
                         if (tmdbPersonData != null)
                         {
@@ -652,7 +652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     birthPlace = placeProp.GetString();
                     if (!string.IsNullOrEmpty(birthPlace))
                     {
-                        _logger.Debug($"Parsed place_of_birth: {birthPlace}");
+                        // _logger.Debug($"Parsed place_of_birth: {birthPlace}");
                     }
                 }
 
