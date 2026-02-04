@@ -1290,6 +1290,8 @@
         id: evt.id,
         type: evt.type,
         title: evt.title,
+        itemId: evt.itemId,
+        itemEpisodeId: evt.itemEpisodeId,
         tvdbId: evt.tvdbId,
         imdbId: evt.imdbId,
         tmdbId: evt.tmdbId,
@@ -2528,9 +2530,13 @@
 
     if (!event.hasFile && (!preferSeries || isMovie)) return;
 
+    const itemId = (preferSeries || isMovie)
+      ? event.itemId
+      : event.itemEpisodeId;
+
     // No need to search if itemId is already provided
-    if (event.itemId && (!preferSeries || isMovie)) {
-      window.location.hash = `#/details?id=${event.itemId}`;
+    if (itemId) {
+      window.location.hash = `#/details?id=${itemId}`;
       return;
     }
 
