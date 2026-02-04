@@ -21,9 +21,8 @@
     .jellyfinenhanced.calendar {
       padding: 12px 3vw;
     }
-    #indexPage:has(.tabContent.is-active .jellyfinenhanced.calendar) {
-      backdrop-filter: blur(12px);
-      background: rgba(0, 0, 0, 0.4);
+    .backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.calendar) {
+      background: rgba(0, 0, 0, 0.5) !important;
     }
   `;
   document.head.appendChild(style);
