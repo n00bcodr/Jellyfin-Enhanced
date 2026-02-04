@@ -30,6 +30,8 @@ using MediaBrowser.Model;
 using MediaBrowser.Controller.Persistence;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
+using Jellyfin.Database.Implementations;
+using Microsoft.EntityFrameworkCore;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -45,6 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IDtoService _dtoService;
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
+        private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
         private static readonly HashSet<string> BrandingFileNames = new(new[]
         {
             "icon-transparent.png",
@@ -62,7 +65,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ILibraryManager libraryManager,
             IDtoService dtoService,
             UserConfigurationManager userConfigurationManager,
-            IItemRepository itemRepository)
+            IItemRepository itemRepository,
+            IDbContextFactory<JellyfinDbContext> dbContextFactory)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -72,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _dtoService = dtoService;
             _userConfigurationManager = userConfigurationManager;
             _itemRepository = itemRepository;
+            _dbContextFactory = dbContextFactory;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
@@ -2881,7 +2886,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return Ok(new { events = events });
+            var providerKeys = events
+                .SelectMany(ProviderHelper.GetAllProviders)
+                .Distinct()
+                .ToList();
+
+            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys);
+
+            foreach (var evt in events)
+            {
+                evt.ItemId = ProviderHelper.GetBestItemId(ProviderHelper.GetProviders(evt), itemMap);
+                evt.ItemEpisodeId = ProviderHelper.GetBestItemId(ProviderHelper.GetEpisodeProviders(evt), itemMap);
+            }
+
+            return Ok(new { events });
         }
 
         /// <summary>
@@ -2904,134 +2922,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 if (request?.Events == null || request.Events.Count == 0)
-                    return Ok(new { results = results });
+                    return Ok(new { results });
 
-                // Build lookup by searching for each unique title (much faster than getting all items)
-                var seriesLookup = new Dictionary<string, MediaBrowser.Controller.Entities.TV.Series>();
-                var movieLookup = new Dictionary<string, MediaBrowser.Controller.Entities.BaseItem>();
+                var ids = request.Events
+                    .SelectMany(e => new Guid?[] { e.ItemId, e.ItemEpisodeId })
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value)
+                    .Distinct()
+                    .ToList();
 
-                // Get unique series titles and their provider IDs
-                var seriesEvents = request.Events.Where(e => e.Type == "Series" && !string.IsNullOrEmpty(e.Title)).ToList();
-                var uniqueSeriesTitles = seriesEvents.Select(e => e.Title!).Distinct().ToList();
-
-                foreach (var title in uniqueSeriesTitles)
+                var itemsById = new Dictionary<Guid, BaseItem>();
+                if (ids.Count > 0)
                 {
-                    var searchResults = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
+                    var items = _libraryManager.GetItemList(new InternalItemsQuery
                     {
                         User = user,
-                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Series },
-                        SearchTerm = title,
-                        Recursive = true,
-                        Limit = 5
-                    });
-
-                    foreach (var item in searchResults)
-                    {
-                        if (item is MediaBrowser.Controller.Entities.TV.Series series)
-                        {
-                            var providerIds = series.ProviderIds ?? new Dictionary<string, string>();
-                            providerIds.TryGetValue("Tvdb", out var tvdbId);
-                            providerIds.TryGetValue("Imdb", out var imdbId);
-
-                            if (tvdbId != null) seriesLookup[$"tvdb:{tvdbId}"] = series;
-                            if (imdbId != null) seriesLookup[$"imdb:{imdbId}"] = series;
-                        }
-                    }
-                }
-
-                // Get unique movie titles
-                var movieEvents = request.Events.Where(e => e.Type == "Movie" && !string.IsNullOrEmpty(e.Title)).ToList();
-                var uniqueMovieTitles = movieEvents.Select(e => e.Title!).Distinct().ToList();
-
-                foreach (var title in uniqueMovieTitles)
-                {
-                    var searchResults = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
-                    {
-                        User = user,
-                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
-                        SearchTerm = title,
-                        Recursive = true,
-                        Limit = 5
-                    });
-
-                    foreach (var item in searchResults)
-                    {
-                        var providerIds = item.ProviderIds ?? new Dictionary<string, string>();
-                        providerIds.TryGetValue("Tmdb", out var tmdbId);
-                        providerIds.TryGetValue("Imdb", out var imdbId);
-
-                        if (tmdbId != null) movieLookup[$"tmdb:{tmdbId}"] = item;
-                        if (imdbId != null) movieLookup[$"imdb:{imdbId}"] = item;
-                    }
-                }
-
-                // Pre-fetch episodes for all series at once (one query per series, cached)
-                var seriesEpisodesCache = new Dictionary<Guid, List<MediaBrowser.Controller.Entities.BaseItem>>();
-                foreach (var series in seriesLookup.Values.Distinct())
-                {
-                    var episodes = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
-                    {
-                        User = user,
-                        AncestorIds = new[] { series.Id },
-                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Episode },
+                        ItemIds = ids.ToArray(),
                         Recursive = true
                     });
-                    seriesEpisodesCache[series.Id] = episodes.ToList();
+
+                    foreach (var item in items)
+                    {
+                        if (!itemsById.ContainsKey(item.Id))
+                            itemsById[item.Id] = item;
+                    }
                 }
 
-                // Process each event using cached data
+                // Process each event using pre-fetched items
                 foreach (var evt in request.Events)
                 {
                     bool isFavorite = false;
                     bool isWatched = false;
 
-                    if (evt.Type == "Series")
+                    BaseItem? item = null;
+                    BaseItem? episodeItem = null;
+
+                    if (evt.ItemId.HasValue)
+                        itemsById.TryGetValue(evt.ItemId.Value, out item);
+                    if (evt.ItemEpisodeId.HasValue)
+                        itemsById.TryGetValue(evt.ItemEpisodeId.Value, out episodeItem);
+
+                    if (item != null)
                     {
-                        // Find matching series
-                        MediaBrowser.Controller.Entities.TV.Series? series = null;
-                        if (evt.TvdbId.HasValue && seriesLookup.TryGetValue($"tvdb:{evt.TvdbId}", out var s1)) series = s1;
-                        else if (!string.IsNullOrEmpty(evt.ImdbId) && seriesLookup.TryGetValue($"imdb:{evt.ImdbId}", out var s2)) series = s2;
+                        var itemData = _userDataManager.GetUserData(user, item);
+                        isFavorite = itemData?.Likes == true;
 
-                        if (series != null)
+                        if (evt.Type == "Movie")
                         {
-                            var seriesData = _userDataManager.GetUserData(user, series);
-                            isFavorite = seriesData?.Likes == true;
-
-                            // Find specific episode from cache
-                            if (evt.SeasonNumber.HasValue && evt.EpisodeNumber.HasValue && seriesEpisodesCache.TryGetValue(series.Id, out var episodes))
-                            {
-                                var episode = episodes.FirstOrDefault(ep =>
-                                    ep is MediaBrowser.Controller.Entities.TV.Episode e &&
-                                    e.ParentIndexNumber == evt.SeasonNumber.Value &&
-                                    e.IndexNumber == evt.EpisodeNumber.Value);
-
-                                if (episode != null)
-                                {
-                                    var epData = _userDataManager.GetUserData(user, episode);
-                                    isWatched = epData?.Played == true || (epData?.PlaybackPositionTicks ?? 0) > 0;
-                                }
-                            }
+                            isWatched = itemData?.Played == true || (itemData?.PlaybackPositionTicks ?? 0) > 0;
                         }
                     }
-                    else if (evt.Type == "Movie")
-                    {
-                        MediaBrowser.Controller.Entities.BaseItem? movie = null;
-                        if (evt.TmdbId.HasValue && movieLookup.TryGetValue($"tmdb:{evt.TmdbId}", out var m1)) movie = m1;
-                        else if (!string.IsNullOrEmpty(evt.ImdbId) && movieLookup.TryGetValue($"imdb:{evt.ImdbId}", out var m2)) movie = m2;
 
-                        if (movie != null)
-                        {
-                            var movieData = _userDataManager.GetUserData(user, movie);
-                            isFavorite = movieData?.Likes == true;
-                            isWatched = movieData?.Played == true || (movieData?.PlaybackPositionTicks ?? 0) > 0;
-                        }
+                    if (evt.Type == "Series" && episodeItem != null)
+                    {
+                        var epData = _userDataManager.GetUserData(user, episodeItem);
+                        isWatched = epData?.Played == true || (epData?.PlaybackPositionTicks ?? 0) > 0;
                     }
 
                     results.Add(new
                     {
                         id = evt.Id,
-                        isFavorite = isFavorite,
-                        isWatched = isWatched
+                        isFavorite,
+                        isWatched
                     });
                 }
             }
@@ -3040,7 +2992,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"Failed to get calendar user data: {ex.Message}");
             }
 
-            return Ok(new { results = results });
+            return Ok(new { results });
         }
 
         public class CalendarUserDataRequest
@@ -3053,6 +3005,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public string? Id { get; set; }
             public string? Type { get; set; }
             public string? Title { get; set; }
+            public Guid? ItemId { get; set; }
+            public Guid? ItemEpisodeId { get; set; }
             public int? TvdbId { get; set; }
             public string? ImdbId { get; set; }
             public int? TmdbId { get; set; }
