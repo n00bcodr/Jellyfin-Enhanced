@@ -124,9 +124,9 @@
                 const item = result?.Items?.[0];
                 if (!item) return { tmdb: null, critic: null };
 
-                // For Series/Season/Episode, get the rating from the series itself when available
+                // For Series/Season/Episode, prefer the item's own rating, fall back to series rating if not available
                 let sourceItem = item;
-                if ((itemType === 'Season' || itemType === 'Episode') && item.SeriesId) {
+                if ((itemType === 'Season' || itemType === 'Episode') && item.SeriesId && !item.CommunityRating && !item.CriticRating) {
                     try {
                         const seriesResult = await ApiClient.ajax({
                             type: 'GET',
