@@ -149,6 +149,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             bool downloadsExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.DownloadsPage");
 
+            bool bookmarksExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.BookmarksPage");
+
             // Only add calendar page if it's enabled and using plugin pages
             if (!calendarExists && pluginConfig.CalendarPageEnabled && pluginConfig.CalendarUsePluginPages)
             {
@@ -192,6 +195,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (downloadsPage != null)
                 {
                     config.Value<JArray>("pages")!.Remove(downloadsPage);
+                }
+            }
+
+            // Only add bookmarks page if it's enabled and using plugin pages
+            if (!bookmarksExists && pluginConfig.BookmarksEnabled && pluginConfig.BookmarksUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.BookmarksPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/bookmarksPage" },
+                    { "DisplayText", "Bookmarks" },
+                    { "Icon", "bookmark" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            // Remove bookmarks page if it exists but is now disabled or not using plugin pages
+            else if (bookmarksExists && (!pluginConfig.BookmarksEnabled || !pluginConfig.BookmarksUsePluginPages))
+            {
+                var bookmarksPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.BookmarksPage");
+                if (bookmarksPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(bookmarksPage);
                 }
             }
 
@@ -269,6 +295,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "downloadsPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.DownloadsPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "bookmarksPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.BookmarksPage.html"
                 }
             };
         }
