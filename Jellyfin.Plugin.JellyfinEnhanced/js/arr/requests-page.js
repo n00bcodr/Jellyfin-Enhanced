@@ -1518,20 +1518,32 @@
   function startPolling() {
     stopPolling();
     const config = JE.pluginConfig || {};
+
+    // Check if polling is enabled
+    if (!config.DownloadsPagePollingEnabled) {
+      return;
+    }
+
     const intervalSeconds = config.DownloadsPollIntervalSeconds !== undefined
       ? config.DownloadsPollIntervalSeconds
       : 30;
 
-    // Only start polling if interval is greater than 0
-    if (intervalSeconds > 0) {
-      const interval = intervalSeconds * 1000;
 
-      state.pollTimer = setInterval(() => {
-        if (state.pageVisible && !state.isLoading) {
-          loadAllData();
-        }
-      }, interval);
+    // Check visibility across all view modes: normal page, plugin pages, or custom tabs
+    const isVisible = state.pageVisible || state._pluginPageVisible || state._customTabMode;
+    if (!isVisible) {
+      return;
     }
+
+    const interval = intervalSeconds * 1000;
+    state.pollTimer = setInterval(() => {
+      // Re-check visibility on each interval
+      const currentlyVisible = state.pageVisible || state._pluginPageVisible || state._customTabMode;
+      if (currentlyVisible && !state.isLoading) {
+        loadAllData();
+      }
+    }, interval);
+
   }
 
   /**
@@ -1823,6 +1835,7 @@
    * Render content for custom tabs (without page state management)
    */
   function renderForCustomTab() {
+    state._customTabMode = true;
     injectStyles();
     renderPage();
     loadAllData();
@@ -1835,6 +1848,8 @@
     showPage,
     hidePage,
     refresh: loadAllData,
+    startPolling,
+    stopPolling,
     filterDownloads,
     searchDownloads,
     filterRequests,

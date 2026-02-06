@@ -1415,6 +1415,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DownloadsPageEnabled,
                 config.DownloadsUsePluginPages,
                 config.DownloadsUseCustomTabs,
+                config.DownloadsPagePollingEnabled,
                 config.DownloadsPollIntervalSeconds,
 
                 // Calendar Page Settings

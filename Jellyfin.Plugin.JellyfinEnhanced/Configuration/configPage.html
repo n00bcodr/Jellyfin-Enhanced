@@ -953,11 +953,17 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="checkboxContainer" style="margin-bottom: 1em;">
+                                <label>
+                                    <input id="downloadsPagePollingEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Auto-Refresh for Downloads</span>
+                                </label>
+                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
-                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="0" max="300"/>
+                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="30" max="300"/>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Set to 0 to disable automatic refresh.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Minimum is 30 seconds and applies only when auto-refresh is enabled.</div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -1909,6 +1915,7 @@
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
+                document.querySelector('#downloadsPagePollingEnabled').checked = config.DownloadsPagePollingEnabled !== false;
                 document.querySelector('#downloadsPollIntervalSeconds').value = (config.DownloadsPollIntervalSeconds !== undefined && config.DownloadsPollIntervalSeconds !== null) ? config.DownloadsPollIntervalSeconds : 30;
 
                 // Calendar Page settings
@@ -2080,9 +2087,9 @@
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
-            const pollIntervalValue = document.querySelector('#downloadsPollIntervalSeconds').value;
-            const parsedPollInterval = parseInt(pollIntervalValue, 10);
-            config.DownloadsPollIntervalSeconds = (!isNaN(parsedPollInterval) && parsedPollInterval > 0) ? parsedPollInterval : 30;
+            config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
+            const pollInterval = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10);
+            config.DownloadsPollIntervalSeconds = pollInterval >= 30 ? pollInterval : 30;
             config.DownloadsUseCustomTabs = document.querySelector('#downloadsUseCustomTabs').checked;
 
             // Calendar Page settings
