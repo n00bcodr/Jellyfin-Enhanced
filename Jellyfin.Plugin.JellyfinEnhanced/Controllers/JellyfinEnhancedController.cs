@@ -1381,6 +1381,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
+                config.BookmarksUsePluginPages,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,
@@ -1414,6 +1415,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DownloadsPageEnabled,
                 config.DownloadsUsePluginPages,
                 config.DownloadsUseCustomTabs,
+                config.DownloadsPagePollingEnabled,
                 config.DownloadsPollIntervalSeconds,
 
                 // Calendar Page Settings
