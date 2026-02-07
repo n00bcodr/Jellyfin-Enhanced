@@ -19,6 +19,7 @@
     viewMode: getDefaultViewMode(),
     rangeStart: null,
     rangeEnd: null,
+    sidebarCollapsed: null,
     settings: {
       firstDayOfWeek: "Monday",
       timeFormat: "5pm/5:30pm",
@@ -47,6 +48,12 @@
   // CSS Styles
   const CSS_STYLES = `
     @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+    .je-calendar-page,
+    .jellyfinenhanced.calendar {
+      --je-gray: rgba(128,128,128,0.05);
+      --je-gray-hover: rgba(128,128,128,0.12);
+    }
 
     .je-calendar-page {
       padding: 2em;
@@ -87,6 +94,40 @@
       height: max-content;
       overflow-y: auto;
       z-index: 2;
+    }
+
+    .je-calendar-sidebar-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35em;
+      width: 100%;
+      padding: 0.45em;
+      border-radius: 999px;
+      background: var(--je-gray);
+      border: 1px solid var(--je-gray);
+      color: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .je-calendar-sidebar-toggle:hover {
+      background: var(--je-gray-hover);
+    }
+
+    .je-calendar-sidebar-toggle-icon {
+      font-size: 18px;
+      transition: transform 0.2s ease;
+    }
+
+    .je-calendar-sidebar:not(.is-collapsed) .je-calendar-sidebar-toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    .je-calendar-sidebar-content {
+      width: 100%;
+      display: flex;
     }
 
 
@@ -144,8 +185,8 @@
       gap: 0.15em;
       padding: 0.2em;
       border-radius: 999px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--je-gray);
+      border: 1px solid var(--je-gray);
     }
 
     .je-calendar-mode-toggle.is-disabled,
@@ -175,13 +216,13 @@
     .je-calendar-mode-btn:hover,
     .je-calendar-filter-btn:hover {
       opacity: 1;
-      background: rgba(255,255,255,0.14);
+      background: var(--je-gray-hover);
     }
 
     .je-calendar-mode-btn.active,
     .je-calendar-filter-btn.active {
       opacity: 1;
-      background: rgba(255,255,255,0.14);
+      background: var(--je-gray-hover);
     }
 
 
@@ -190,7 +231,7 @@
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: rgba(128,128,128,0.1);
+      background: var(--je-gray);
       border-radius: 8px;
       box-sizing: border-box;
       border-bottom: 3px solid transparent;
@@ -206,7 +247,7 @@
 
     .je-calendar-card:hover {
       transform: translateY(-2px);
-      background: rgba(128,128,128,0.18);
+      background: var(--je-gray-hover);
       box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
     }
 
@@ -398,8 +439,8 @@
 
     .je-calendar-nav-btn,
     .je-calendar-view-btn {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--je-gray);
+      border: 1px solid var(--je-gray);
       color: inherit;
       padding: 0.45em 0.9em;
       border-radius: 6px;
@@ -428,21 +469,16 @@
 
     .je-calendar-nav-btn:hover,
     .je-calendar-view-btn:hover {
-      background: rgba(255,255,255,0.14);
+      background: var(--je-gray-hover);
     }
 
-    .je-calendar-grid {
+    .je-calendar-month-grid,
+    .je-calendar-grid,
+    .je-calendar-weekdays,
+    .je-calendar-dayline {
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(150px, 1fr));
       gap: 1em;
-      margin-bottom: 2em;
-    }
-
-    .je-calendar-weekdays {
-      display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 1em;
-      margin-bottom: 0.5em;
     }
 
     .je-calendar-weekday {
@@ -450,21 +486,6 @@
       font-weight: 600;
       padding: 0.5em;
       opacity: 0.8;
-    }
-
-    .je-calendar-month-grid {
-      display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 1em;
-      margin-bottom: 2em;
-    }
-
-    .je-calendar-dayline {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 1em;
-      overflow: visible;
-      padding-bottom: 0.5em;
     }
 
     .je-calendar-dayline .je-calendar-event {
@@ -500,30 +521,16 @@
       min-width: 0;
     }
 
-    .je-calendar-hour-events.je-calendar-day-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 0.75em;
-    }
-
-    .je-calendar-page.je-view-day.je-display-cards .je-calendar-hour-row {
-      grid-template-columns: 1fr;
-    }
-
-    .je-calendar-page.je-view-day.je-display-cards .je-calendar-hour-label {
-      display: none;
-    }
-
     .je-calendar-day {
-      background: rgba(128,128,128,0.05);
+      background: var(--je-gray);
       border-radius: 0.5em;
       min-height: 150px;
-      border: 1px solid rgba(128,128,128,0.2);
+      border: 1px solid var(--je-gray);
       min-width: 0;
     }
 
     .je-calendar-day.je-calendar-today {
-      border-color: rgba(128,128,128,0.2);
+      border-color: var(--je-gray);
       box-shadow: none;
     }
 
@@ -536,7 +543,7 @@
       font-weight: 600;
       text-align: center;
       padding: 0.5em;
-      border-bottom: 1px solid rgba(128,128,128,0.2);
+      border-bottom: 1px solid var(--je-gray);
     }
 
     .je-calendar-day-number {
@@ -694,7 +701,7 @@
       gap: 1.5em;
       margin-top: 2em;
       padding: 1em;
-      background: rgba(128,128,128,0.1);
+      background: var(--je-gray);
       border-radius: 0.5em;
     }
 
@@ -715,8 +722,8 @@
     }
 
     .je-calendar-filter-invert {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--je-gray);
+      border: 1px solid var(--je-gray);
       color: inherit;
       padding: 0.3em 0.7em;
       border-radius: 999px;
@@ -734,7 +741,7 @@
 
     .je-calendar-filter-invert.active {
       opacity: 1;
-      background: rgba(255,255,255,0.14);
+      background: var(--je-gray-hover);
     }
 
     .je-calendar-mode-toggle {
@@ -755,11 +762,7 @@
     }
 
     .je-calendar-legend-item:hover {
-      background: rgba(255, 255, 255, 0.08);
-    }
-
-    .je-calendar-legend-item.active {
-      background: rgba(255, 255, 255, 0.12);
+      background: var(--je-gray-hover);
     }
 
     .je-calendar-legend-item.inactive {
@@ -782,7 +785,7 @@
 
     .je-calendar-agenda-row {
       display: flex;
-      border-bottom: 1px solid rgba(128,128,128,0.15);
+      border-bottom: 1px solid var(--je-gray);
       padding: 0.75em 0;
       align-items: flex-start;
       gap: 0.5em;
@@ -790,7 +793,7 @@
     }
 
     .je-calendar-agenda-row:hover {
-      background: rgba(128,128,128,0.05);
+      background: var(--je-gray-hover);
     }
 
     .je-calendar-agenda-date {
@@ -834,15 +837,6 @@
       min-width: 70px;
       flex-direction: row-reverse;
       flex-shrink: 0;
-    }
-
-    .je-calendar-agenda-event.je-has-file .je-available-indicator {
-      color: #4caf50;
-      font-size: 20px;
-    }
-
-    .je-available-indicator {
-      font-size: 20px;
     }
 
     .je-calendar-agenda-event-marker {
@@ -901,6 +895,15 @@
       min-width: 0;
     }
 
+    @media (max-width: 1340px) {
+      .je-calendar-month-grid,
+      .je-calendar-grid,
+      .je-calendar-weekdays,
+      .je-calendar-dayline {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+    }
+
     @media (max-width: 1450px) {
       .je-calendar-page {
         padding: 1em;
@@ -926,7 +929,10 @@
         flex-wrap: wrap;
       }
 
-      .je-calendar-grid {
+      .je-calendar-month-grid,
+      .je-calendar-grid,
+      .je-calendar-weekdays,
+      .je-calendar-dayline {
         gap: 0.5em;
       }
 
@@ -980,16 +986,8 @@
         display: block;
       }
 
-      .je-calendar-page.je-view-month .je-calendar-month-grid {
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      }
-
       .je-calendar-page.je-view-month .je-calendar-day-placeholder {
         display: none;
-      }
-
-      .je-calendar-page.je-view-week .je-calendar-grid {
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       }
     }
 
@@ -1027,14 +1025,6 @@
         padding: 0 0.8em;
       }
 
-      .je-calendar-grid {
-        grid-template-columns: repeat(7, 1fr);
-        gap: 0.15em;
-        width: 100%;
-        max-width: 100%;
-        overflow-x: auto;
-      }
-
       .je-calendar-day {
         min-height: 80px;
         min-width: 0;
@@ -1070,6 +1060,36 @@
 
       .je-calendar-legend-item {
         flex: 1 1 45%;
+      }
+
+      .je-calendar-sidebar {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5em;
+      }
+
+      .je-calendar-sidebar-toggle {
+        display: inline-flex;
+        align-self: stretch;
+      }
+
+      .je-calendar-sidebar-content {
+        max-height: 1000px;
+        opacity: 1;
+        overflow: hidden;
+        transition: max-height 0.25s ease, opacity 0.2s ease;
+      }
+
+      .je-calendar-sidebar.is-collapsed .je-calendar-sidebar-content {
+        max-height: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .je-calendar-sidebar.is-collapsed .je-calendar-legend {
+        padding: 0;
+        border-width: 0;
       }
     }
   `;
@@ -1224,7 +1244,7 @@
         border-color: ${primaryAccent} !important;
       }
       .je-calendar-day.je-calendar-today {
-        border-color: rgba(128,128,128,0.2) !important;
+        border-color: var(--je-gray) !important;
         box-shadow: none;
       }
       .je-calendar-day.je-calendar-today .je-calendar-day-number,
@@ -1233,6 +1253,35 @@
       }
     `;
     document.head.appendChild(themeStyle);
+  }
+
+  function getDefaultSidebarCollapsed() {
+    if (window.matchMedia) {
+      return window.matchMedia("(max-width: 768px)").matches;
+    }
+
+    return false;
+  }
+
+  function applySidebarCollapsedState() {
+    const sidebar = document.querySelector(".je-calendar-sidebar");
+    const toggle = document.querySelector(".je-calendar-sidebar-toggle");
+    if (!sidebar || !toggle) return;
+
+    sidebar.classList.toggle("is-collapsed", !!state.sidebarCollapsed);
+    toggle.setAttribute("aria-expanded", state.sidebarCollapsed ? "false" : "true");
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    state.sidebarCollapsed = !!collapsed;
+    applySidebarCollapsedState();
+  }
+
+  function toggleSidebarCollapsed() {
+    if (typeof state.sidebarCollapsed !== "boolean") {
+      state.sidebarCollapsed = getDefaultSidebarCollapsed();
+    }
+    setSidebarCollapsed(!state.sidebarCollapsed);
   }
 
   /**
@@ -2184,6 +2233,10 @@
     const container = document.getElementById("je-calendar-container");
     if (!page || !container) return;
 
+    if (typeof state.sidebarCollapsed !== "boolean") {
+      state.sidebarCollapsed = getDefaultSidebarCollapsed();
+    }
+
     container.innerHTML = `
       <div class="je-calendar-header">
         <h1 class="je-calendar-title">${formatRangeLabel()}</h1>
@@ -2223,8 +2276,13 @@
           <div class="je-calendar-main">
             ${!state.isLoading ? renderCalendar() : ""}
           </div>
-          <aside class="je-calendar-sidebar">
-            ${renderLegend().replace('je-calendar-legend"', 'je-calendar-legend je-calendar-legend-vertical"')}
+          <aside class="je-calendar-sidebar${state.sidebarCollapsed ? " is-collapsed" : ""}">
+            <button type="button" class="je-calendar-sidebar-toggle" aria-expanded="${state.sidebarCollapsed ? "false" : "true"}" aria-controls="je-calendar-sidebar-content">
+              <span class="material-icons je-calendar-sidebar-toggle-icon">expand_more</span>
+            </button>
+            <div class="je-calendar-sidebar-content" id="je-calendar-sidebar-content">
+              ${renderLegend().replace('je-calendar-legend"', 'je-calendar-legend je-calendar-legend-vertical"')}
+            </div>
           </aside>
         </div>
 
@@ -2233,6 +2291,7 @@
       }
     `;
 
+    applySidebarCollapsedState();
   }
 
   function syncPageModeClasses() {
@@ -2554,6 +2613,15 @@
    * Handle click on calendar event
    */
   function handleEventClick(e) {
+    const sidebarToggle = e.target.closest(".je-calendar-sidebar-toggle");
+    if (sidebarToggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      toggleSidebarCollapsed();
+      return;
+    }
+
     const filterModeBtn = e.target.closest(".je-calendar-filter-btn");
     if (filterModeBtn) {
       const mode = filterModeBtn.dataset.filterMode;
