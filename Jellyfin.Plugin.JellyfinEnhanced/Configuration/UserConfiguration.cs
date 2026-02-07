@@ -121,9 +121,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool FilterDiscovery { get; set; } = true;
         public bool FilterUpcoming { get; set; } = true;
         public bool FilterCalendar { get; set; } = true;
-        public bool FilterSearch { get; set; } = true;
+        public bool FilterSearch { get; set; } = false;
         public bool FilterRecommendations { get; set; } = true;
         public bool FilterRequests { get; set; } = true;
+        public bool ShowHideConfirmation { get; set; } = true;
     }
 
     public class UserHiddenContent

@@ -10,6 +10,7 @@
     const hiddenIdSet = new Set();
     const hiddenTmdbIdSet = new Set();
     const parentSeriesCache = new Map();
+    const parentSeriesRequestMap = new Map();
     let hiddenData = null;
     let saveTimeout = null;
 
@@ -72,6 +73,7 @@
         const settings = getSettings();
         if (!settings.enabled) return false;
         switch (surface) {
+            case 'details': return false;
             case 'library': return settings.filterLibrary;
             case 'discovery': return settings.filterDiscovery;
             case 'search': return settings.filterSearch;
@@ -83,12 +85,15 @@
         }
     }
 
-    async function isParentSeriesHidden(itemId) {
+    async function getParentSeriesId(itemId) {
         if (parentSeriesCache.has(itemId)) {
-            const seriesId = parentSeriesCache.get(itemId);
-            return seriesId ? hiddenIdSet.has(seriesId) : false;
+            return parentSeriesCache.get(itemId);
         }
-        try {
+        if (parentSeriesRequestMap.has(itemId)) {
+            return parentSeriesRequestMap.get(itemId);
+        }
+        const request = (async () => {
+            try {
             const userId = ApiClient.getCurrentUserId();
             const item = await ApiClient.ajax({
                 type: 'GET',
@@ -97,11 +102,16 @@
             });
             const seriesId = item?.SeriesId || null;
             parentSeriesCache.set(itemId, seriesId);
-            return seriesId ? hiddenIdSet.has(seriesId) : false;
-        } catch (e) {
+                return seriesId;
+            } catch (e) {
             parentSeriesCache.set(itemId, null);
-            return false;
-        }
+                return null;
+            } finally {
+                parentSeriesRequestMap.delete(itemId);
+            }
+        })();
+        parentSeriesRequestMap.set(itemId, request);
+        return request;
     }
 
     // --- CSS injection ---
@@ -110,6 +120,7 @@
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-hidden-content', `
             .je-hide-btn {
+                --je-danger-rgb: 220, 50, 50;
                 position: absolute;
                 top: 6px;
                 right: 6px;
@@ -138,31 +149,37 @@
                 opacity: 1;
             }
             .je-hide-btn:hover {
-                background: rgba(220, 50, 50, 0.85);
+                background: rgba(var(--je-danger-rgb, 220, 50, 50), 0.85);
                 border-color: rgba(255,255,255,0.4);
             }
             .je-hide-btn.je-already-hidden {
                 opacity: 0;
-                background: rgba(80,80,80,0.85);
-                border-color: rgba(255,255,255,0.15);
-                cursor: default;
-                pointer-events: none;
-                font-size: 10px;
-                width: auto;
-                border-radius: 4px;
-                padding: 2px 8px;
-                height: auto;
+                background: rgba(0,0,0,0.7);
+                border-color: rgba(255,255,255,0.2);
+                cursor: pointer;
+                pointer-events: auto;
+                font-size: 16px;
+                width: 28px;
+                border-radius: 50%;
+                padding: 0;
+                height: 28px;
+                line-height: 1;
             }
             .cardBox:hover .je-hide-btn.je-already-hidden {
                 opacity: 0.85;
             }
             .je-hide-btn.je-already-hidden:hover {
-                background: rgba(80,80,80,0.85);
-                border-color: rgba(255,255,255,0.15);
+                background: rgba(0,0,0,0.82);
+                border-color: rgba(255,255,255,0.28);
             }
             .je-detail-hide-btn.je-already-hidden {
-                opacity: 0.5;
-                pointer-events: none;
+                opacity: 0.85;
+                pointer-events: auto;
+                transition: background 0.2s ease, opacity 0.2s ease;
+            }
+            .je-detail-hide-btn.je-already-hidden:hover {
+                opacity: 1;
+                background: rgba(255,255,255,0.08);
             }
 
             .je-undo-toast {
@@ -541,21 +558,6 @@
         suppress15Label.appendChild(document.createTextNode(JE.t('hidden_content_confirm_suppress_15m')));
         options.appendChild(suppress15Label);
 
-        const suppressForeverLabel = document.createElement('label');
-        const suppressForeverCheck = document.createElement('input');
-        suppressForeverCheck.type = 'checkbox';
-        suppressForeverLabel.appendChild(suppressForeverCheck);
-        suppressForeverLabel.appendChild(document.createTextNode(JE.t('hidden_content_confirm_suppress_forever')));
-        options.appendChild(suppressForeverLabel);
-
-        // Make checkboxes mutually exclusive
-        suppress15Check.addEventListener('change', () => {
-            if (suppress15Check.checked) suppressForeverCheck.checked = false;
-        });
-        suppressForeverCheck.addEventListener('change', () => {
-            if (suppressForeverCheck.checked) suppress15Check.checked = false;
-        });
-
         dialog.appendChild(options);
 
         const buttons = document.createElement('div');
@@ -577,9 +579,6 @@
             if (suppress15Check.checked) {
                 const until = new Date(Date.now() + 15 * 60 * 1000).toISOString();
                 localStorage.setItem(SUPPRESS_STORAGE_KEY, until);
-            }
-            if (suppressForeverCheck.checked) {
-                updateSettings({ showHideConfirmation: false });
             }
             overlay.remove();
             document.removeEventListener('keydown', escHandler);
@@ -743,7 +742,11 @@
 
         // Header
         const header = createManagementHeader(items.length);
-        header.querySelector('.je-hidden-management-close').addEventListener('click', () => overlay.remove());
+        const closeOverlay = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        };
+        header.querySelector('.je-hidden-management-close').addEventListener('click', closeOverlay);
         panel.appendChild(header);
 
         // Toolbar
@@ -822,12 +825,7 @@
 
         unhideAllBtn.addEventListener('click', () => {
             if (!confirm(JE.t('hidden_content_clear_confirm'))) return;
-            const data = getHiddenData();
-            hiddenData = { ...data, items: {} };
-            JE.userConfig.hiddenContent = hiddenData;
-            rebuildSets();
-            debouncedSave();
-            emitChange();
+            unhideAll();
             const emptyDiv = document.createElement('div');
             emptyDiv.className = 'je-hidden-management-empty';
             emptyDiv.textContent = JE.t('hidden_content_manage_empty');
@@ -839,14 +837,13 @@
 
         // Close on overlay background click
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
+            if (e.target === overlay) closeOverlay();
         });
 
         // Close on Escape
         const escHandler = (e) => {
             if (e.key === 'Escape') {
-                overlay.remove();
-                document.removeEventListener('keydown', escHandler);
+                closeOverlay();
             }
         };
         document.addEventListener('keydown', escHandler);
@@ -857,6 +854,8 @@
     // --- Native card filtering ---
 
     var PROCESSED_ATTR = 'jeHiddenChecked';
+    var HIDDEN_PARENT_ATTR = 'data-je-hidden-parent-series-id';
+    var HIDDEN_DIRECT_ATTR = 'data-je-hidden-direct';
 
     function getCardItemId(el) {
         if (el.dataset && el.dataset.id) return el.dataset.id;
@@ -865,9 +864,57 @@
     }
 
     function getCurrentNativeSurface() {
-        var hash = window.location.hash || '';
+        var hash = (window.location.hash || '').toLowerCase();
+        if (hash.indexOf('/details') !== -1) return 'details';
         if (hash.indexOf('/search') !== -1) return 'search';
+        if (hash.indexOf('/upcoming') !== -1) return 'upcoming';
         return 'library';
+    }
+
+    function checkAndHideByParentSeries(card, itemId) {
+        if (!card || !itemId) return;
+        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
+        if (hiddenIdSet.size === 0) return;
+
+        getParentSeriesId(itemId).then(function(seriesId) {
+            if (!seriesId) return;
+            if (!card.isConnected) return;
+            if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
+
+            if (hiddenIdSet.has(seriesId)) {
+                card.style.display = 'none';
+                card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+            } else if (card.getAttribute(HIDDEN_PARENT_ATTR) === seriesId && card.style.display === 'none') {
+                card.style.display = '';
+                card.removeAttribute(HIDDEN_PARENT_ATTR);
+            }
+        }).catch(function() { /* ignore */ });
+    }
+
+    function restoreNativeCardsForIds(idsToRestore) {
+        if (!idsToRestore || idsToRestore.size === 0) return;
+        document.querySelectorAll('.card[data-id], .card[data-itemid]').forEach(function(card) {
+            card.removeAttribute('data-je-hidden-checked');
+            var cardId = getCardItemId(card);
+            var hiddenBySeriesId = card.getAttribute(HIDDEN_PARENT_ATTR);
+            if (hiddenBySeriesId && idsToRestore.has(hiddenBySeriesId) && card.style.display === 'none') {
+                card.style.display = '';
+                card.removeAttribute(HIDDEN_PARENT_ATTR);
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+            } else if ((cardId && idsToRestore.has(cardId)) || card.getAttribute(HIDDEN_DIRECT_ATTR) === '1') {
+                card.style.display = '';
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+            }
+        });
+    }
+
+    function refreshNativeCardVisibility() {
+        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) {
+            restoreNativeCardsForIds(hiddenIdSet);
+            return;
+        }
+        requestAnimationFrame(filterAllNativeCards);
     }
 
     function filterNativeCards() {
@@ -881,10 +928,18 @@
             var card = cards[i];
             var itemId = getCardItemId(card);
             card.setAttribute('data-je-hidden-checked', '1');
+            card.removeAttribute(HIDDEN_PARENT_ATTR);
             if (!itemId) continue;
 
             if (hiddenIdSet.has(itemId)) {
                 card.style.display = 'none';
+                card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
+            } else {
+                if (card.getAttribute(HIDDEN_DIRECT_ATTR) === '1' && card.style.display === 'none') {
+                    card.style.display = '';
+                    card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                }
+                checkAndHideByParentSeries(card, itemId);
             }
         }
     }
@@ -899,12 +954,19 @@
             var card = cards[i];
             var itemId = getCardItemId(card);
             card.setAttribute('data-je-hidden-checked', '1');
+            card.removeAttribute(HIDDEN_PARENT_ATTR);
             if (!itemId) continue;
 
             if (hiddenIdSet.has(itemId)) {
                 card.style.display = 'none';
+                card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
             } else if (card.style.display === 'none') {
                 card.style.display = '';
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+            }
+
+            if (!hiddenIdSet.has(itemId)) {
+                checkAndHideByParentSeries(card, itemId);
             }
         }
     }
@@ -917,9 +979,7 @@
         // Use onViewPage for page navigation — much cheaper than a body MutationObserver
         if (JE.helpers?.onViewPage) {
             JE.helpers.onViewPage(function() {
-                if (!getSettings().enabled) return;
-                if (hiddenIdSet.size === 0) return;
-                setTimeout(filterAllNativeCards, 300);
+                setTimeout(refreshNativeCardVisibility, 300);
             });
         }
 
@@ -990,19 +1050,25 @@
         debouncedSave();
         emitChange();
         showUndoToast(name || 'Item', key);
+        refreshNativeCardVisibility();
     }
 
     function unhideItem(itemId) {
         const data = getHiddenData();
         const newItems = { ...data.items };
+        let restoredJellyfinId = '';
 
         // Try direct key match first (covers storage keys like "tmdb-12345")
         if (newItems[itemId]) {
+            restoredJellyfinId = newItems[itemId].itemId || '';
             delete newItems[itemId];
         } else {
             // Fallback: itemId might be a Jellyfin ID — find the matching storage key
             const matchingKey = Object.keys(newItems).find(k => newItems[k].itemId === itemId);
-            if (matchingKey) delete newItems[matchingKey];
+            if (matchingKey) {
+                restoredJellyfinId = newItems[matchingKey].itemId || itemId || '';
+                delete newItems[matchingKey];
+            }
         }
 
         hiddenData = { ...data, items: newItems };
@@ -1011,14 +1077,11 @@
         debouncedSave();
         emitChange();
 
-        // Re-show unhidden native cards and reset processed flags
-        document.querySelectorAll('.card[data-id], .card[data-itemid]').forEach(function(card) {
-            card.removeAttribute('data-je-hidden-checked');
-            var cardId = getCardItemId(card);
-            if (cardId === itemId && card.style.display === 'none') {
-                card.style.display = '';
-            }
-        });
+        const idsToRestore = new Set();
+        if (restoredJellyfinId) idsToRestore.add(restoredJellyfinId);
+        else if (itemId && !String(itemId).startsWith('tmdb-')) idsToRestore.add(itemId);
+        restoreNativeCardsForIds(idsToRestore);
+        refreshNativeCardVisibility();
     }
 
     function updateSettings(partial) {
@@ -1030,6 +1093,7 @@
         JE.userConfig.hiddenContent = hiddenData;
         debouncedSave();
         emitChange();
+        refreshNativeCardVisibility();
     }
 
     function getAllHiddenItems() {
@@ -1092,12 +1156,15 @@
     }
 
     function unhideAll() {
+        const oldHiddenIds = new Set(hiddenIdSet);
         const data = getHiddenData();
         hiddenData = { ...data, items: {} };
         JE.userConfig.hiddenContent = hiddenData;
         rebuildSets();
         debouncedSave();
         emitChange();
+        restoreNativeCardsForIds(oldHiddenIds);
+        refreshNativeCardVisibility();
     }
 
     // --- Initialization ---

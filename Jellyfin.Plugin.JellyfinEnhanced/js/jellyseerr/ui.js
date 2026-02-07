@@ -1224,20 +1224,46 @@
         if (JE.hiddenContent) {
             const cardBox = card.querySelector('.cardBox');
             if (cardBox) {
-                const alreadyHidden = JE.hiddenContent.isHiddenByTmdbId(item.id);
                 const hideBtn = document.createElement('button');
-                hideBtn.className = alreadyHidden ? 'je-hide-btn je-already-hidden' : 'je-hide-btn';
                 const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
-                hideBtn.title = alreadyHidden ? hiddenLabel : JE.t('hidden_content_hide_button');
-                if (alreadyHidden) {
-                    hideBtn.textContent = hiddenLabel;
-                } else {
+                const unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide' ? JE.t('hidden_content_unhide') : 'Unhide';
+                const hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button' ? JE.t('hidden_content_hide_button') : 'Hide';
+                const unhideKey = jellyfinMediaId || `tmdb-${item.id}`;
+
+                function renderHideIcon(iconName) {
+                    hideBtn.replaceChildren();
                     const icon = document.createElement('span');
                     icon.className = 'material-icons';
                     icon.setAttribute('aria-hidden', 'true');
-                    icon.textContent = 'visibility_off';
+                    icon.textContent = iconName || 'visibility';
                     hideBtn.appendChild(icon);
-                    hideBtn.addEventListener('click', (e) => {
+                }
+
+                function setHiddenState() {
+                    hideBtn.className = 'je-hide-btn je-already-hidden';
+                    hideBtn.title = hiddenLabel;
+                    renderHideIcon('visibility_off');
+                    hideBtn.onmouseenter = () => {
+                        hideBtn.title = unhideLabel;
+                    };
+                    hideBtn.onmouseleave = () => {
+                        hideBtn.title = hiddenLabel;
+                    };
+                    hideBtn.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        JE.hiddenContent.unhideItem(unhideKey);
+                        setHideState();
+                    };
+                }
+
+                function setHideState() {
+                    hideBtn.className = 'je-hide-btn';
+                    hideBtn.title = hideLabel;
+                    renderHideIcon('visibility');
+                    hideBtn.onmouseenter = null;
+                    hideBtn.onmouseleave = null;
+                    hideBtn.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         JE.hiddenContent.confirmAndHide({
@@ -1249,7 +1275,13 @@
                         }, () => {
                             card.style.display = 'none';
                         });
-                    });
+                    };
+                }
+
+                if (JE.hiddenContent.isHiddenByTmdbId(item.id)) {
+                    setHiddenState();
+                } else {
+                    setHideState();
                 }
                 cardBox.style.position = 'relative';
                 cardBox.appendChild(hideBtn);

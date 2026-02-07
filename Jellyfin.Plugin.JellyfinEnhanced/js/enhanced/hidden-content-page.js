@@ -167,8 +167,6 @@
     window.addEventListener("hashchange", handleNavigation);
     window.addEventListener("popstate", handleNavigation);
 
-    startLocationWatcher();
-
     // Listen for hidden content changes to re-render
     window.addEventListener('je-hidden-content-changed', () => {
       if (state.pageVisible) {
@@ -330,7 +328,9 @@
       grid.className = "je-hidden-content-page-grid";
 
       for (const item of filtered) {
-        const card = JE.hiddenContent.createItemCard(item, () => hidePage());
+        // Do not force-close the page when opening TMDB-only items in the modal.
+        // For normal Jellyfin detail links, route navigation will hide this page naturally.
+        const card = JE.hiddenContent.createItemCard(item);
 
         const unhideBtn = card.querySelector('.je-hidden-item-unhide');
         if (unhideBtn) {
