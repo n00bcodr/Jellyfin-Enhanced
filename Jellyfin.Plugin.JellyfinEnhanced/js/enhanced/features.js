@@ -717,6 +717,142 @@
     // Types that support audio languages (excludes BoxSet and Playlist)
     const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie'];
 
+    // Types that support hiding (Movies and Series only)
+    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series'];
+
+    /**
+     * Adds a "Hide" button to the item detail page action buttons area.
+     * @param {string} itemId The item's Jellyfin ID.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    function addHideContentButton(itemId, visiblePage) {
+        if (!JE.hiddenContent) return;
+        if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
+
+        // Don't add duplicate
+        if (visiblePage.querySelector('.je-detail-hide-btn')) return;
+
+        const selectors = [
+            '.detailButtons',
+            '.itemActionsBottom',
+            '.mainDetailButtons',
+            '.detailButtonsContainer'
+        ];
+        let buttonContainer = null;
+        for (const sel of selectors) {
+            const found = visiblePage.querySelector(sel);
+            if (found) {
+                buttonContainer = found;
+                break;
+            }
+        }
+        if (!buttonContainer) return;
+
+        const button = document.createElement('button');
+        button.setAttribute('is', 'emby-button');
+        button.className = 'button-flat detailButton emby-button je-detail-hide-btn';
+        button.type = 'button';
+
+        const hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button'
+            ? JE.t('hidden_content_hide_button')
+            : 'Hide';
+        const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden'
+            ? JE.t('hidden_content_already_hidden')
+            : 'Hidden';
+        const unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide'
+            ? JE.t('hidden_content_unhide')
+            : 'Unhide';
+
+        const content = document.createElement('div');
+        content.className = 'detailButton-content';
+        button.appendChild(content);
+
+        function renderContent(text, iconName) {
+            content.replaceChildren();
+            const icon = document.createElement('span');
+            icon.className = 'material-icons detailButton-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = iconName || 'visibility';
+            content.appendChild(icon);
+            if (text) {
+                const textSpan = document.createElement('span');
+                textSpan.className = 'detailButton-icon-text';
+                textSpan.textContent = text;
+                content.appendChild(textSpan);
+            }
+        }
+
+        function setHiddenState() {
+            button.classList.add('je-already-hidden');
+            button.setAttribute('aria-label', hiddenLabel);
+            button.title = hiddenLabel;
+            renderContent('', 'visibility_off');
+
+            button.onmouseenter = () => {
+                button.title = unhideLabel;
+            };
+            button.onmouseleave = () => {
+                button.title = hiddenLabel;
+            };
+            button.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                JE.hiddenContent.unhideItem(itemId);
+                setHideState();
+            };
+        }
+
+        function setHideState() {
+            button.classList.remove('je-already-hidden');
+            button.setAttribute('aria-label', hideLabel);
+            button.title = hideLabel;
+            renderContent('', 'visibility');
+            button.onmouseenter = null;
+            button.onmouseleave = null;
+            button.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Get item name from the page title
+                const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
+                const itemName = nameEl?.textContent?.trim() || 'Unknown';
+
+                // Try to get TMDb ID and poster from the page
+                let tmdbId = '';
+                let posterPath = '';
+                try {
+                    const userId = ApiClient.getCurrentUserId();
+                    const item = await ApiClient.getItem(userId, itemId);
+                    tmdbId = item?.ProviderIds?.Tmdb || '';
+                } catch (err) { /* ignore */ }
+
+                JE.hiddenContent.confirmAndHide({
+                    itemId,
+                    name: itemName,
+                    type: lastDetailsItemType,
+                    tmdbId,
+                    posterPath
+                }, () => {
+                    setHiddenState();
+                });
+            };
+        }
+
+        if (JE.hiddenContent.isHidden(itemId)) {
+            setHiddenState();
+        } else {
+            setHideState();
+        }
+
+        // Keep Jellyfin's overflow menu (three-dots) as the last action button.
+        const moreButton = buttonContainer.querySelector('.btnMoreCommands');
+        if (moreButton) {
+            buttonContainer.insertBefore(button, moreButton);
+        } else {
+            buttonContainer.appendChild(button);
+        }
+    }
+
     const handleItemDetails = JE.helpers.debounce(() => {
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
         if (!visiblePage) return;
@@ -763,6 +899,11 @@
             }
             if (JE.currentSettings.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 displayAudioLanguages(itemId, container);
+            }
+
+            // Add hide content button on detail pages
+            if (JE.hiddenContent) {
+                addHideContentButton(itemId, visiblePage);
             }
         } catch (e) { /* ignore */ }
     }, 100);
