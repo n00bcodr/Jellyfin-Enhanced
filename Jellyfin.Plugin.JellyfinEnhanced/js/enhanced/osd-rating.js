@@ -46,7 +46,7 @@
       if (!item) return { tmdb: null, critic: null };
 
       let sourceItem = item;
-      if ((item.Type === 'Season' || item.Type === 'Episode') && item.SeriesId) {
+      if ((item.Type === 'Season' || item.Type === 'Episode') && item.SeriesId && !item.CommunityRating && !item.CriticRating) {
         try {
           const seriesResult = await ApiClient.ajax({
             type: 'GET',

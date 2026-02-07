@@ -38,7 +38,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string LastOpenedTab { get; set; } = string.Empty;
         public bool ReviewsExpandedByDefault { get; set; }
         public string DisplayLanguage { get; set; } = string.Empty;
-        public string CalendarDefaultViewMode { get; set; } = "auto";
+        public string CalendarDisplayMode { get; set; } = "list";
+        public string CalendarDefaultViewMode { get; set; } = "agenda";
     }
 
     public class UserShortcuts

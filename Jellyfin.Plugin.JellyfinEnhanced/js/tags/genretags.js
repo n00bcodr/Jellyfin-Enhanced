@@ -1,4 +1,4 @@
-// /js/genretags.js
+// /js/tags/genretags.js
 (function(JE) {
     'use strict';
 
@@ -580,19 +580,32 @@
             // Initial scan
             setTimeout(scanAndProcess, 500);
             // Observe DOM mutations to discover new cards without polling
-            const mo = new MutationObserver(() => {
-                // Check if feature is still enabled before processing
-                if (!JE.currentSettings?.genreTagsEnabled) {
-                    return;
-                }
-                debouncedScan();
-            });
-            mo.observe(document.body, { childList: true, subtree: true });
+            // Use centralized observer management from helpers
+            if (JE.helpers?.createObserver) {
+                JE.helpers.createObserver('genre-tags-mutations', () => {
+                    // Check if feature is still enabled before processing
+                    if (!JE.currentSettings?.genreTagsEnabled) {
+                        return;
+                    }
+                    debouncedScan();
+                }, document.body, { childList: true, subtree: true });
+            } else {
+                // Fallback for older versions
+                const mo = new MutationObserver(() => {
+                    if (!JE.currentSettings?.genreTagsEnabled) return;
+                    debouncedScan();
+                });
+                mo.observe(document.body, { childList: true, subtree: true });
+                window.addEventListener('beforeunload', () => mo.disconnect());
+            }
             // Periodic persistence and cleanup hooks
             window.addEventListener('beforeunload', () => {
                 saveCache();
-                mo.disconnect();
                 visibilityObserver.disconnect();
+                // Cleanup managed observers if available
+                if (JE.helpers?.disconnectObserver) {
+                    JE.helpers.disconnectObserver('genre-tags-mutations');
+                }
             });
             // Register with unified cache manager instead of setInterval
             if (JE._cacheManager) {

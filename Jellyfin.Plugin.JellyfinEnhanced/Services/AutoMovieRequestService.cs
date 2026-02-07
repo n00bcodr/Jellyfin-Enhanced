@@ -87,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var nextMovieInfo = await GetNextMovieInCollectionAsync(collectionInfo.Id, tmdbId);
             if (nextMovieInfo == null)
             {
-                _logger.Debug($"[Auto-Movie-Request] No next movie found or next movie is already available/requested");
+                // _logger.Debug($"[Auto-Movie-Request] No next movie found or next movie is already available/requested");
                 return;
             }
 

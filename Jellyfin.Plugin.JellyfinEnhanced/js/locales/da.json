@@ -375,9 +375,12 @@
     "requests_on_date": "den {date}",
     "calendar_title": "Kalender",
     "calendar_today": "I dag",
+    "calendar_yesterday": "I går",
+    "calendar_tomorrow": "I morgen",
     "calendar_month": "Måned",
     "calendar_week": "Uge",
     "calendar_agenda": "Dagsorden",
+    "calendar_day": "Dag",
     "calendar_cinema_release": "Biografpremière",
     "calendar_digital_release": "Digital udgivelse",
     "calendar_physical_release": "Fysisk udgivelse",
@@ -386,5 +389,6 @@
     "calendar_loading": "Indlæser kalender...",
     "calendar_no_releases": "Ingen kommende udgivelser",
     "calendar_watchlist": "Overvågningsliste",
-    "calendar_watched": "Set"
+    "calendar_watched": "Set",
+    "calendar_all_day": "Hele dagen"
 }

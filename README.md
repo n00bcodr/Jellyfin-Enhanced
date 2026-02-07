@@ -469,6 +469,7 @@ Quality tags are injected into each card/poster with this structure:
 <div class="cardImageContainer" style="position: relative;">
     <div class="quality-overlay-container">
         <div class="quality-overlay-label resolution" data-quality="4K">4K</div>
+        <div class="quality-overlay-label video-format" data-quality="HEVC">HEVC</div>
         <div class="quality-overlay-label video-codec" data-quality="HDR">HDR</div>
         <div class="quality-overlay-label audio-codec" data-quality="ATMOS">ATMOS</div>
     </div>
@@ -481,8 +482,9 @@ Quality tags are injected into each card/poster with this structure:
 * **`.quality-overlay-label`** → Base class for each tag.
 * **Category classes**:
   * `.resolution` – resolution tags (`8K`, `4K`, `1080p`, `LOW-RES`, etc.)
-  * `.video-codec` – video features (`HDR`, `Dolby Vision`, etc.)
-  * `.audio-codec` – audio formats/channels (`ATMOS`, `DTS`, `5.1`, etc.)
+  * `.video-format` – video format/codec tags (`AV1`, `HEVC`, `H265`, `VP9`, `H264`, etc.)
+  * `.video-codec` – video feature tags (`HDR`, `Dolby Vision`, `HDR10+`, `3D`, etc.)
+  * `.audio-codec` – audio formats/channels (`ATMOS`, `DTS-X`, `TRUEHD`, `DTS`, `Dolby Digital+`, `7.1`, `5.1`, etc.)
 * **`data-quality="..."`** → Exact tag text (e.g. `data-quality="HDR10+"`).
 
 <br>
@@ -496,7 +498,10 @@ Quality tags are injected into each card/poster with this structure:
 | **All Tags**                | `.quality-overlay-label`                         | `.quality-overlay-label { font-size: 0.8rem !important; padding: 3px 10px !important; }`                         |
 | **Tag Container Position**  | `.quality-overlay-container`                     | `.quality-overlay-container { left: auto !important; right: 6px !important; align-items: flex-end !important; }` |
 | **Specific Tag (e.g., 4K)** | `.quality-overlay-label[data-quality="4K"]`      | `.quality-overlay-label[data-quality="4K"] { background-color: purple !important; }`                             |
-| **HDR Tag**                 | `.quality-overlay-label[data-quality="HDR"]`     | `.quality-overlay-label[data-quality="HDR"] { border: 2px solid gold !important; }`                              |
+| **HDR Tag**                 | `.quality-overlay-label.video-codec[data-quality="HDR"]`     | `.quality-overlay-label.video-codec[data-quality="HDR"] { border: 2px solid gold !important; }`                              |
+| **Video Format (HEVC)**  | `.quality-overlay-label.video-format[data-quality="HEVC"]`    | `.quality-overlay-label.video-format[data-quality="HEVC"] { background-color: #2196F3 !important; }`                          |
+| **Video Format (AV1)**   | `.quality-overlay-label.video-format[data-quality="AV1"]`     | `.quality-overlay-label.video-format[data-quality="AV1"] { background-color: #FF5722 !important; }`                           |
+| **Video Feature (Dolby Vision)**   | `.quality-overlay-label.video-codec[data-quality="Dolby Vision"]`     | `.quality-overlay-label.video-codec[data-quality="Dolby Vision"] { background: linear-gradient(90deg,#0f0c29,#302b63) !important; }`                           |
 | **Low Resolution Tag**      | `.quality-overlay-label[data-quality="LOW-RES"]` | `.quality-overlay-label[data-quality="LOW-RES"] { opacity: 0.7 !important; }`                                    |
 | **Stack Tags Horizontally** | `.quality-overlay-container`                     | `.quality-overlay-container { flex-direction: row !important; flex-wrap: wrap !important; }`                     |
 
@@ -518,14 +523,32 @@ Quality tags are injected into each card/poster with this structure:
 
   ```css
   .quality-overlay-label.resolution { background: blue !important; }
+  .quality-overlay-label.video-format { background: purple !important; }
+  .quality-overlay-label.video-codec { background: gold !important; }
   .quality-overlay-label.audio-codec { background: green !important; }
   ```
 
 * **Target a specific tag**
 
   ```css
-  .quality-overlay-label[data-quality="HDR"] {
+    .quality-overlay-label.video-codec[data-quality="HDR"] {
       border: 2px solid gold !important;
+  }
+
+    .quality-overlay-label.video-format[data-quality="HEVC"] {
+      background-color: #2196F3 !important;
+      color: white !important;
+  }
+
+    /* Video format examples */
+    .quality-overlay-label.video-format[data-quality="AV1"] {
+      background-color: #FF5722 !important;
+      color: white !important;
+  }
+
+  .quality-overlay-label.video-codec[data-quality="Dolby Vision"] {
+      background: linear-gradient(90deg, #0f0c29, #302b63) !important;
+      color: #00d4ff !important;
   }
   ```
 
@@ -544,7 +567,20 @@ Quality tags are injected into each card/poster with this structure:
   /* Hide all low-res */
   .quality-overlay-label[data-quality="LOW-RES"] { display: none !important; }
 
-    /* Only show resolution tags */
+  /* Hide specific codec */
+  .quality-overlay-label[data-quality="H264"] { display: none !important; }
+
+  /* Hide all video formats but keep features like HDR */
+  .quality-overlay-label.video-format[data-quality="AV1"],
+  .quality-overlay-label.video-format[data-quality="HEVC"],
+  .quality-overlay-label.video-format[data-quality="H265"],
+  .quality-overlay-label.video-format[data-quality="VP9"],
+  .quality-overlay-label.video-format[data-quality="H264"] {
+      display: none !important;
+  }
+
+  /* Only show resolution tags */
+  .quality-overlay-label.video-format,
   .quality-overlay-label.video-codec,
   .quality-overlay-label.audio-codec{ display: none !important; }
   ```
@@ -1523,18 +1559,42 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── arr-links.js
     │   ├── arr-tag-links.js
     │   ├── calendar-page.js
-    │   └── requests-page.js
-    ├── elsewhere.js
-    ├── genretags.js
-    ├── languagetags.js
-    ├── letterboxd-links.js
-    ├── pausescreen.js
-    ├── plugin.js
-    ├── qualitytags.js
-    ├── ratingtags.js
-    ├── reviews.js
-    ├── peopletags.js
-    └── splashscreen.js
+    │   ├── calendar-custom-tab.js
+    │   ├── requests-page.js
+    │   └── requests-custom-tab.js
+    ├── elsewhere/
+    │   ├── elsewhere.js
+    │   └── reviews.js
+    ├── enhanced/
+    │   ├── bookmarks.js
+    │   ├── bookmarks-library.js
+    │   ├── config.js
+    │   ├── events.js
+    │   ├── features.js
+    │   ├── helpers.js
+    │   ├── icons.js
+    │   ├── osd-rating.js
+    │   ├── pausescreen.js
+    │   ├── playback.js
+    │   ├── subtitles.js
+    │   ├── themer.js
+    │   └── ui.js
+    ├── extras/
+    │   ├── colored-activity-icons.js
+    │   ├── colored-ratings.js
+    │   ├── login-image.js
+    │   ├── plugin-icons.js
+    │   └── theme-selector.js
+    ├── others/
+    │   ├── letterboxd-links.js
+    │   └── splashscreen.js
+    ├── tags/
+    │   ├── genretags.js
+    │   ├── languagetags.js
+    │   ├── peopletags.js
+    │   ├── qualitytags.js
+    │   └── ratingtags.js
+    └── plugin.js
 ```
 
 
@@ -1551,10 +1611,15 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`helpers.js`**: Provides utility functions and helper methods used across the enhanced components for common tasks like DOM manipulation and data processing.
     * **`icons.js`**: Manages icon selection and rendering logic, allowing users to choose between emoji and Lucide icons throughout the interface.
     * **`osd-rating.js`**: Displays TMDB and Rotten Tomatoes ratings in the video player OSD controls next to the time display.
+    * **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
     * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
     * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
     * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
     * **`ui.js`**: Responsible for creating, injecting, and managing all visual elements like the main settings panel, toast notifications, and various buttons.
+
+* **`/elsewhere/`**: Contains scripts for discovering media on other streaming services and reviews.
+    * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
+    * **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
 
 * **`/extras/`**: Contains optional personal scripts that extend functionality with additional features.
     * **`colored-activity-icons.js`**: Replaces default activity icons with Material Design icons and applies custom colors for better visual distinction.
@@ -1579,33 +1644,24 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`tag-discovery.js`**: Implements tag-based content discovery with TV/Movies/All filtering, enabling users to find and request media based on custom tags and categories in Jellyseerr with separate page tracking per content type.
     * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
 
-* **`/jellyseerr/`**: This directory contains all components related to the Jellyseerr integration.
-  * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
-  * **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
-  * **`calendar-page.js`**: Adds a calendar button in the sidebar which opens a view that shows the calendar of upcoming items from Radarr and Sonarr
-  * **`requests-page.js`**: Adds a Requests button in the sidebar which opens a view that shows requests and download status from the arrs and Jellyseerr
+* **`/arr/`**: Contains components for Sonarr and Radarr integration.
+    * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
+    * **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
+    * **`calendar-page.js`**: Adds a calendar button in the sidebar which opens a view that shows the calendar of upcoming items from Radarr and Sonarr
+    * **`calendar-custom-tab.js`**: Creates `<div class="jellyfinenhanced calendar"></div>` for CustomTabs plugin
+    * **`requests-page.js`**: Adds a Requests button in the sidebar which opens a view that shows requests and download status from the arrs and Jellyseerr
+    * **`requests-custom-tab.js`**: Creates `<div class="jellyfinenhanced requests"></div>` for CustomTabs plugin
 
-* **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
+* **`/tags/`**: Contains components for displaying various tag information directly on media posters.
+    * **`genretags.js`**: Manages the display of media genre information as tags directly on the posters.
+    * **`languagetags.js`**: Manages the display of audio language information as flag icons directly on the posters.
+    * **`peopletags.js`**: Displays age and birthplace information for cast members with country flags, deceased indicators, and caching. Works with both regular cast and guest cast sections.
+    * **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
+    * **`ratingtags.js`**: Manages the display of TMDB and Rotten Tomatoes ratings as badges directly on the posters.
 
-* **`genretags.js`**: Manages the display of media genre information as tags directly on the posters.
-
-* **`languagetags.js`**: Manages the display of audio language information as flag icons directly on the posters.
-
-* **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
-
-* **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
-
-* **`plugin.js`**: The main entry point. It loads the plugin configuration and translations, then dynamically injects all other component scripts.
-
-* **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
-
-* **`ratingtags.js`**: Manages the display of TMDB and Rotten Tomatoes ratings as badges directly on the posters.
-
-* **`peopletags.js`**: Displays age and birthplace information for cast members with country flags, deceased indicators, and caching. Works with both regular cast and guest cast sections.
-
-* **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
-
-* **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
+* **`/others/`**: Contains miscellaneous utility scripts.
+    * **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
+    * **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
 
 
 <br>

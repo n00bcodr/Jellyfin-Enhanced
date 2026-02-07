@@ -1,4 +1,4 @@
-// /js/peopletags.js
+// /js/tags/peopletags.js
 // Jellyfin Enhanced People Tags - Show cast member information (birthplace, age, deceased status)
 (function(JE) {
     'use strict';

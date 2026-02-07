@@ -111,6 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RadarrUrl = "";
             BazarrUrl = "";
             ShowArrLinksAsText = false;
+            SonarrUrlMappings = "";
+            RadarrUrlMappings = "";
+            BazarrUrlMappings = "";
 
             // Arr Tags Sync Settings
             ArrTagsSyncEnabled = false;
@@ -121,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsShowAsLinks = true;
             ArrTagsLinksFilter = "";
             ArrTagsLinksHideFilter = "";
+            ArrTagsSyncFilter = "";
 
             // Letterboxd Settings
             LetterboxdEnabled = false;
@@ -148,6 +152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Bookmarks Settings
             BookmarksEnabled = true;
+            BookmarksUsePluginPages = false;
 
             // Icon Settings
             UseIcons = true;
@@ -164,11 +169,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
             DownloadsPageEnabled = false;
             DownloadsUsePluginPages = false;
+            DownloadsUseCustomTabs = false;
+            DownloadsPagePollingEnabled = true;
             DownloadsPollIntervalSeconds = 30;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
             CalendarPageEnabled = false;
             CalendarUsePluginPages = false;
+            CalendarUseCustomTabs = false;
             CalendarFirstDayOfWeek = "Monday";
             CalendarTimeFormat = "5pm/5:30pm";
             CalendarHighlightFavorites = false;
@@ -260,6 +268,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RadarrUrl { get; set; }
         public string BazarrUrl { get; set; }
         public bool ShowArrLinksAsText { get; set; }
+        public string SonarrUrlMappings { get; set; }
+        public string RadarrUrlMappings { get; set; }
+        public string BazarrUrlMappings { get; set; }
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }
@@ -270,6 +281,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ArrTagsShowAsLinks { get; set; }
         public string ArrTagsLinksFilter { get; set; }
         public string ArrTagsLinksHideFilter { get; set; }
+        public string ArrTagsSyncFilter { get; set; }
 
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }
@@ -297,6 +309,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Bookmarks Settings
         public bool BookmarksEnabled { get; set; }
+        public bool BookmarksUsePluginPages { get; set; }
 
         // Icon Settings
         public bool UseIcons { get; set; }
@@ -313,10 +326,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
         public bool DownloadsPageEnabled { get; set; }
         public bool DownloadsUsePluginPages { get; set; }
+        public bool DownloadsUseCustomTabs { get; set; }
+        public bool DownloadsPagePollingEnabled { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
 
         // Calendar Page Settings (Sonarr/Radarr Releases)
         public bool CalendarPageEnabled { get; set; }
+        public bool CalendarUseCustomTabs { get; set; }
         public bool CalendarUsePluginPages { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
         public string CalendarTimeFormat { get; set; }

@@ -375,9 +375,12 @@
     "requests_on_date": "em {date}",
     "calendar_title": "Calendário",
     "calendar_today": "Hoje",
+    "calendar_yesterday": "Ontem",
+    "calendar_tomorrow": "Amanhã",
     "calendar_month": "Mês",
     "calendar_week": "Semana",
     "calendar_agenda": "Agenda",
+    "calendar_day": "Dia",
     "calendar_cinema_release": "Lançamento nos cinemas",
     "calendar_digital_release": "Lançamento digital",
     "calendar_physical_release": "Lançamento físico",
@@ -386,5 +389,6 @@
     "calendar_loading": "Carregando calendário...",
     "calendar_no_releases": "Nenhum lançamento próximo",
     "calendar_watchlist": "Lista de observação",
-    "calendar_watched": "Assistido"
+    "calendar_watched": "Assistido",
+    "calendar_all_day": "O dia todo"
 }

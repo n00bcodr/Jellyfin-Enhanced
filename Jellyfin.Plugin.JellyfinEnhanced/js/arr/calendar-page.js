@@ -27,6 +27,8 @@
     },
     userDataMap: new Map(),
     activeFilters: new Set(), // Track active filters
+    filterMatchMode: "any",
+    filterInvert: false,
     locationSignature: null,
     locationTimer: null,
   };
@@ -54,6 +56,40 @@
       z-index: 1;
     }
 
+    #je-calendar-page > [data-role="content"],
+    #je-calendar-page .content-primary.je-calendar-page,
+    .content-primary.je-calendar-page {
+      overflow: visible !important;
+    }
+
+    .je-calendar-layout {
+      display: flex;
+      gap: 1.5em;
+      align-items: flex-start;
+      position: relative;
+      overflow: visible;
+    }
+
+    .je-calendar-main {
+      flex: 1;
+      min-width: 0;
+      font-size: 1em;
+    }
+
+    .je-calendar-sidebar {
+      align-items: center;
+      position: sticky;
+      top: 6em;
+      align-self: flex-start;
+      display: flex;
+      flex-direction: column;
+      gap: 1em;
+      height: max-content;
+      overflow-y: auto;
+      z-index: 2;
+    }
+
+
     .je-calendar-header {
       display: flex;
       justify-content: space-between;
@@ -62,6 +98,7 @@
       padding-top: 2em;
       flex-wrap: wrap;
       gap: 1em;
+      position: relative;
     }
 
     .je-calendar-title {
@@ -77,10 +114,286 @@
       flex-wrap: wrap;
     }
 
+    .je-calendar-actions-center {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .je-calendar-actions-right {
+      margin-left: auto;
+    }
+
     .je-calendar-nav {
       display: inline-flex;
       gap: 0.5em;
       align-items: center;
+      margin-bottom: 0.1em;
+    }
+
+    .je-calendar-nav-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 1em;
+    }
+
+    .je-calendar-mode-toggle,
+    .je-calendar-filter-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.15em;
+      padding: 0.2em;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .je-calendar-mode-toggle.is-disabled,
+    .je-calendar-filter-toggle.is-disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .je-calendar-mode-btn,
+    .je-calendar-filter-btn {
+      background: transparent;
+      border: none;
+      color: inherit;
+      padding: 0.35em 0.6em;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.75;
+      transition: all 0.15s ease;
+      font-weight: 600;
+      font-size: 0.85em;
+      letter-spacing: 0.02em;
+    }
+
+    .je-calendar-mode-btn:hover,
+    .je-calendar-filter-btn:hover {
+      opacity: 1;
+      background: rgba(255,255,255,0.14);
+    }
+
+    .je-calendar-mode-btn.active,
+    .je-calendar-filter-btn.active {
+      opacity: 1;
+      background: rgba(255,255,255,0.14);
+    }
+
+
+    .je-calendar-card {
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: rgba(128,128,128,0.1);
+      border-radius: 8px;
+      box-sizing: border-box;
+      border-bottom: 3px solid transparent;
+      min-width: 0;
+      max-width: 100%;
+      position: relative;
+      align-items: center;
+      text-align: center;
+      gap: 0.35em;
+      overflow: hidden;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+
+    .je-calendar-card:hover {
+      transform: translateY(-2px);
+      background: rgba(128,128,128,0.18);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+    }
+
+    .je-calendar-card-meta {
+      font-size: 0.8em;
+      opacity: 0.85;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35em;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      margin-top: auto;
+    }
+
+    .je-calendar-card-meta .je-arr-badge {
+      font-size: 0.9em;
+    }
+
+    .je-calendar-card-meta img {
+      width: 12px;
+      height: 12px;
+      object-fit: contain;
+    }
+
+    .je-calendar-day-cards {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.5em;
+      grid-auto-rows: 1fr;
+      align-items: stretch;
+      min-width: 0;
+    }
+
+    .je-calendar-page.je-view-week .je-calendar-day-cards,
+    .je-calendar-page.je-view-month .je-calendar-day-cards {
+      justify-items: center;
+    }
+
+    .je-calendar-page.je-view-week .je-calendar-day-cards > .je-calendar-card,
+    .je-calendar-page.je-view-month .je-calendar-day-cards > .je-calendar-card {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .je-calendar-card-image {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 2 / 3;
+      max-height: 18em;
+      object-fit: cover;
+      border-radius: 0;
+      display: block;
+      flex-shrink: 0;
+      max-width: 100%;
+    }
+
+    .je-calendar-card-image-wrap {
+      position: relative;
+      width: 100%;
+    }
+
+    .je-calendar-card-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 0.6em;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.2em;
+      text-align: center;
+      color: #fff;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.25))
+    }
+
+    .je-calendar-card-overlay .je-calendar-card-title,
+    .je-calendar-card-overlay .je-calendar-card-subtitle,
+    .je-calendar-card-overlay .je-calendar-card-meta {
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    }
+
+    .je-calendar-card-overlay .je-calendar-card-meta {
+      font-size: 0.75em;
+    }
+
+    .je-calendar-card-title {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.15;
+      height: 3em;
+      padding: 0 0.2em;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .je-calendar-card-title-text {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.15;
+      max-height: 3em;
+      width: 100%;
+      font-size: clamp(1.05em, 0.6vw + 0.9em, 1.3em);
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      hyphens: auto;
+    }
+
+    .je-calendar-card-subtitle {
+      font-size: 0.95em;
+      opacity: 0.75;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.2;
+      height: 1.4em;
+      max-width: 100%;
+    }
+
+    .je-calendar-card-time {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      padding: 0 0.6em;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.55);
+      font-size: 0.9em;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1;
+      height: 1.6em;
+      box-sizing: border-box;
+    }
+
+    .je-calendar-card-time.is-unavailable {
+      padding: 0 0.85em;
+    }
+
+    .je-calendar-card-time.is-available {
+      background: rgba(76, 175, 80, 0.85);
+      cursor: pointer;
+    }
+
+    .je-calendar-card-time.is-past {
+      background: rgba(255, 152, 0, 0.85);
+    }
+
+    .je-calendar-card-time.is-late {
+      background: rgba(244, 67, 54, 0.85);
+    }
+
+    .je-calendar-card-time-row {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .je-calendar-card-status-top {
+      position: absolute;
+      top: 0.45em;
+      right: 0.45em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25em;
+      z-index: 2;
+      padding: 0.2em 0.35em;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.6);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+      backdrop-filter: blur(4px);
+    }
+
+    .je-calendar-event-type .je-calendar-card-time,
+    .je-calendar-event-type .je-calendar-card-time-row {
+      margin-top: 0;
+    }
+
+    .je-calendar-day-cards > .je-calendar-card {
+      height: 100%;
     }
 
     .je-calendar-nav-btn,
@@ -95,6 +408,24 @@
       font-weight: 600;
     }
 
+    .je-calendar-nav-btn {
+      height: 2.2em;
+      min-width: 2.2em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border-radius: 999px;
+      font-size: 1em;
+    }
+
+    .je-calendar-nav-btn.je-calendar-nav-today {
+      padding: 0 1em;
+      min-width: auto;
+      font-size: 0.95em;
+      border-radius: 999px;
+    }
+
     .je-calendar-nav-btn:hover,
     .je-calendar-view-btn:hover {
       background: rgba(255,255,255,0.14);
@@ -107,19 +438,104 @@
       margin-bottom: 2em;
     }
 
+    .je-calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 1em;
+      margin-bottom: 0.5em;
+    }
+
+    .je-calendar-weekday {
+      text-align: center;
+      font-weight: 600;
+      padding: 0.5em;
+      opacity: 0.8;
+    }
+
+    .je-calendar-month-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 1em;
+      margin-bottom: 2em;
+    }
+
+    .je-calendar-dayline {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1em;
+      overflow: visible;
+      padding-bottom: 0.5em;
+    }
+
+    .je-calendar-dayline .je-calendar-event {
+      width: 100%;
+    }
+
+    .je-calendar-day-hours {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5em;
+    }
+
+    .je-calendar-hour-row {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 0.75em;
+      align-items: flex-start;
+    }
+
+    .je-calendar-hour-label {
+      font-weight: 600;
+      opacity: 0.75;
+      text-align: right;
+      padding-top: 0.2em;
+      font-size: 0.9em;
+      white-space: nowrap;
+    }
+
+    .je-calendar-hour-events {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5em;
+      min-width: 0;
+    }
+
+    .je-calendar-hour-events.je-calendar-day-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.75em;
+    }
+
+    .je-calendar-page.je-view-day.je-display-cards .je-calendar-hour-row {
+      grid-template-columns: 1fr;
+    }
+
+    .je-calendar-page.je-view-day.je-display-cards .je-calendar-hour-label {
+      display: none;
+    }
+
     .je-calendar-day {
       background: rgba(128,128,128,0.05);
       border-radius: 0.5em;
-      padding: 1em;
       min-height: 150px;
       border: 1px solid rgba(128,128,128,0.2);
+      min-width: 0;
+    }
+
+    .je-calendar-day.je-calendar-today {
+      border-color: rgba(128,128,128,0.2);
+      box-shadow: none;
+    }
+
+    .je-calendar-day.je-calendar-today .je-calendar-day-number,
+    .je-calendar-day.je-calendar-today .je-calendar-day-name {
+      color: inherit;
     }
 
     .je-calendar-day-header {
       font-weight: 600;
       text-align: center;
-      margin-bottom: 0.5em;
-      padding-bottom: 0.5em;
+      padding: 0.5em;
       border-bottom: 1px solid rgba(128,128,128,0.2);
     }
 
@@ -134,6 +550,13 @@
       font-size: 0.85em;
       opacity: 0.7;
       margin-top: 0.25em;
+    }
+
+    .je-calendar-month-day-name {
+      display: none;
+      font-size: 0.75em;
+      opacity: 0.7;
+      margin-top: 0.2em;
     }
 
     .je-calendar-events-list {
@@ -151,6 +574,8 @@
       border-left: 3px solid;
       padding-left: 0.7em;
       position: relative;
+      color: #f5f5f5;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.85);
     }
 
     .je-calendar-event:hover {
@@ -158,66 +583,74 @@
       opacity: 0.9;
     }
 
-    .je-calendar-event.je-has-file::after {
-      content: "✓";
-      position: absolute;
-      top: 0.3em;
-      right: 0.4em;
-      font-size: 0.7em;
-      font-weight: bold;
-      color: #4caf50;
-      opacity: 0.9;
-    }
-
     .je-calendar-event.je-has-file:hover {
       box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
     }
 
-    /* Watchlist indicator - bookmark icon */
-    .je-calendar-event.je-watchlist::before {
-      content: "bookmark";
-      font-family: 'Material Symbols Rounded';
-      position: absolute;
-      top: 0.15em;
-      right: 1.1em;
-      font-size: 0.9em;
-      font-weight: normal;
+    .je-calendar-status-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25em;
+    }
+
+    .je-calendar-status-icon {
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .je-calendar-status-icon.je-status-watchlist {
       color: #ffd700;
-      opacity: 0.9;
+      font-variation-settings: 'FILL' 1;
     }
 
-    /* Watched indicator - visibility icon (shifts left if watchlist is present) */
-    .je-calendar-event.je-watched::before {
-      content: "visibility";
-      font-family: 'Material Symbols Rounded';
-      position: absolute;
-      top: 0.15em ;
-      right: 1.1em;
-      font-size: 0.9em;
-      font-weight: normal;
+    .je-calendar-status-icon.je-status-watched {
       color: #64b5f6;
-      opacity: 0.9;
     }
 
-    /* When both watchlist and watched, show both icons side by side */
-    .je-calendar-event.je-watchlist.je-watched::before {
-      content: "bookmark visibility";
-      letter-spacing: 0.5em;
-      right: 1.1em;
-      background: linear-gradient(to right, #ffd700 0%, #ffd700 45%, #64b5f6 55%, #64b5f6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+    .je-calendar-agenda-indicators .je-calendar-status-icon {
+      font-size: 22px;
     }
 
-    /* Adjust checkmark position when indicators are present */
-    .je-calendar-event.je-has-file.je-watchlist::after,
-    .je-calendar-event.je-has-file.je-watched::after {
-      right: 0.4em;
+    .je-calendar-play-btn {
+      background: #4caf50;
+      border: none;
+      color: white;
+      padding: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 0.35em;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
     }
 
-    .je-calendar-event.je-has-file.je-watchlist.je-watched::after {
-      right: 0.4em;
+    .je-calendar-play-btn-card {
+      width: 24px;
+      height: 24px;
+    }
+
+    .je-calendar-play-btn .material-icons {
+      font-size: 14px;
+    }
+
+    .je-calendar-event-status-top {
+      position: absolute;
+      top: 0.35em;
+      right: 0.35em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2em;
+      z-index: 2;
+      padding: 0.12em 0.3em;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px);
+    }
+
+    .je-calendar-event-status-top .je-calendar-status-icon {
+      font-size: 12px;
     }
 
     .je-calendar-event-title {
@@ -246,17 +679,13 @@
       align-items: center;
       gap: 0.5em;
       flex-wrap: wrap;
+      width: fit-content;
     }
 
     .je-calendar-event-type img {
       width: 12px;
       height: 12px;
       object-fit: contain;
-    }
-
-    .je-calendar-event-time {
-      font-weight: 600;
-      opacity: 0.95;
     }
 
     .je-calendar-legend {
@@ -267,6 +696,49 @@
       padding: 1em;
       background: rgba(128,128,128,0.1);
       border-radius: 0.5em;
+    }
+
+    .je-calendar-legend.je-calendar-legend-vertical {
+      flex-direction: column;
+      gap: 0.6em;
+      margin-top: 0;
+      padding: 0.75em;
+    }
+
+    .je-calendar-filter-controls {
+      display: flex;
+      gap: 0.5em;
+      align-items: center;
+      flex-wrap: wrap;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .je-calendar-filter-invert {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: inherit;
+      padding: 0.3em 0.7em;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.85em;
+      opacity: 0.8;
+      transition: all 0.15s ease;
+    }
+
+    .je-calendar-filter-invert.is-disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .je-calendar-filter-invert.active {
+      opacity: 1;
+      background: rgba(255,255,255,0.14);
+    }
+
+    .je-calendar-mode-toggle {
+      justify-content: center;
     }
 
     .je-calendar-legend-item {
@@ -305,6 +777,7 @@
       flex-direction: column;
       gap: 0;
       padding-left: 1em;
+      overflow-x: hidden;
     }
 
     .je-calendar-agenda-row {
@@ -313,6 +786,7 @@
       padding: 0.75em 0;
       align-items: flex-start;
       gap: 0.5em;
+      max-width: 100%;
     }
 
     .je-calendar-agenda-row:hover {
@@ -340,6 +814,9 @@
       align-items: center;
       gap: 0.75em;
       cursor: default;
+      padding: 0.5em;
+      border-radius: 4px;
+      box-sizing: border-box;
     }
 
     .je-calendar-agenda-event.je-has-file {
@@ -348,9 +825,6 @@
 
     .je-calendar-agenda-event.je-has-file:hover {
       background: rgba(76, 175, 80, 0.1);
-      border-radius: 4px;
-      padding: 0.5em;
-      margin: -0.5em;
     }
 
     .je-calendar-agenda-indicators {
@@ -358,6 +832,7 @@
       align-items: center;
       gap: 0.25em;
       min-width: 70px;
+      flex-direction: row-reverse;
       flex-shrink: 0;
     }
 
@@ -370,19 +845,9 @@
       font-size: 20px;
     }
 
-    .je-watchlist-indicator-agenda {
-      color: #ffd700;
-      font-size: 20px;
-    }
-
-    .je-watched-indicator-agenda {
-      color: #64b5f6;
-      font-size: 20px;
-    }
-
     .je-calendar-agenda-event-marker {
       width: 4px;
-      height: 24px;
+      height: 36px;
       border-radius: 2px;
       flex-shrink: 0;
     }
@@ -392,15 +857,12 @@
       min-width: 0;
     }
 
-    .je-calendar-agenda-event-title {
+    .je-calendar-agenda-title-text {
       font-weight: 600;
-      font-size: 1em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      display: flex;
-      align-items: center;
-      gap: 0.5em;
+    }
+
+    .je-calendar-agenda-subtitle {
+      opacity: 0.8;
     }
 
     .je-calendar-agenda-event-meta {
@@ -410,6 +872,7 @@
       margin-top: 0.25em;
       font-size: 0.85em;
       opacity: 0.8;
+      flex-wrap: wrap;
     }
 
     .je-calendar-agenda-event-meta img {
@@ -418,7 +881,27 @@
       object-fit: contain;
     }
 
-    @media (max-width: 1024px) {
+    .je-calendar-agenda-event-title {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15em;
+      min-width: 0;
+    }
+
+    .je-calendar-agenda-title-text,
+    .je-calendar-agenda-subtitle {
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal;
+      line-height: 1.2;
+      max-height: 1.2em;
+      min-width: 0;
+    }
+
+    @media (max-width: 1450px) {
       .je-calendar-page {
         padding: 1em;
       }
@@ -426,6 +909,7 @@
       .je-calendar-header {
         flex-direction: column;
         align-items: flex-start;
+        margin-bottom: 0.5em;
       }
 
       .je-calendar-title {
@@ -438,8 +922,8 @@
       }
 
       .je-calendar-nav {
-        width: 100%;
         justify-content: center;
+        flex-wrap: wrap;
       }
 
       .je-calendar-grid {
@@ -454,23 +938,93 @@
       .je-calendar-legend {
         gap: 1em;
       }
+
+      .je-calendar-layout {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      .je-calendar-sidebar {
+        position: unset;
+        top: 1em;
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        justify-content: space-between;
+        align-items: center;
+        order: -1;
+      }
+
+      .je-calendar-main {
+        width: 100%;
+      }
+
+      .je-calendar-sidebar .je-calendar-legend {
+        flex: 1 1 auto;
+        margin-top: 0;
+      }
+
+      .je-calendar-legend.je-calendar-legend-vertical {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 1em;
+        width: 100%;
+        justify-content: space-around;
+      }
+
+      .je-calendar-page.je-view-month .je-calendar-weekdays {
+        display: none;
+      }
+
+      .je-calendar-page.je-view-month .je-calendar-month-day-name {
+        display: block;
+      }
+
+      .je-calendar-page.je-view-month .je-calendar-month-grid {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+
+      .je-calendar-page.je-view-month .je-calendar-day-placeholder {
+        display: none;
+      }
+
+      .je-calendar-page.je-view-week .je-calendar-grid {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
     }
 
     @media (max-width: 768px) {
+      .je-calendar-actions-center {
+        position: static;
+        transform: none;
+      }
+
+      .je-calendar-actions-right {
+        margin-left: 0;
+      }
       .je-calendar-page {
         padding: 0.25em;
         max-width: 100vw;
-        overflow-x: hidden;
       }
 
-      .je-calendar-title {
-        font-size: 1.1em;
+      .je-calendar-main {
+        overflow-x: hidden;
       }
 
       .je-calendar-nav-btn,
       .je-calendar-view-btn {
         padding: 0.35em 0.6em;
         font-size: 0.85em;
+      }
+
+      .je-calendar-nav-btn {
+        height: 1.9em;
+        min-width: 1.9em;
+        padding: 0;
+      }
+
+      .je-calendar-nav-btn.je-calendar-nav-today {
+        padding: 0 0.8em;
       }
 
       .je-calendar-grid {
@@ -485,52 +1039,14 @@
         min-height: 80px;
         min-width: 0;
         padding: 0.15em;
-        font-size: 0.8em;
       }
 
-      .je-calendar-day-header {
-        font-size: 0.7em;
-        padding-bottom: 0.2em;
-        margin-bottom: 0.2em;
+      .je-calendar-hour-row {
+        grid-template-columns: 70px 1fr;
       }
 
-      .je-calendar-day-number {
-        font-size: 0.9em;
-      }
-
-      .je-calendar-day-name {
-        display: none;
-      }
-
-      .je-calendar-events-list {
-        gap: 0.2em;
-      }
-
-      .je-calendar-event {
-        font-size: 0.65em;
-        padding: 0.2em;
-        padding-left: 0.4em;
-        border-left-width: 2px;
-      }
-
-      .je-calendar-event-title {
-        font-size: 0.85em;
-        line-height: 1.2;
-      }
-
-      .je-calendar-event-subtitle {
-        font-size: 0.75em;
-        margin-top: 0.15em;
-      }
-
-      .je-calendar-event-type {
-        font-size: 0.7em;
-        margin-top: 0.25em;
-      }
-
-      .je-calendar-event-type img {
-        width: 10px;
-        height: 10px;
+      .je-calendar-hour-label {
+        text-align: left;
       }
 
       .je-calendar-agenda-row {
@@ -561,25 +1077,17 @@
   const logPrefix = '🪼 Jellyfin Enhanced: Calendar Page:';
 
   /**
-   * Get default view mode based on URL hash or mobile detection
+   * Get default view mode from settings, defaults to agenda
    */
   function getDefaultViewMode() {
-    // Check URL hash first (e.g., #/calendar/agenda)
-    const hash = window.location.hash;
-    const viewMatch = hash.match(/#\/calendar\/(month|week|agenda)/);
-    if (viewMatch) {
-      return viewMatch[1];
-    }
-
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
-    const configuredDefault = (JE.currentSettings.calendarDefaultViewMode || "auto").toLowerCase();
-    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda") {
+    const configuredDefault = (JE.currentSettings.calendarDefaultViewMode || "agenda").toLowerCase();
+    if (configuredDefault === "month" || configuredDefault === "week" || configuredDefault === "agenda" || configuredDefault === "day"){
       return configuredDefault;
     }
 
-    // Auto: default to agenda on mobile, month on desktop
-    const isMobile = window.innerWidth <= 768;
-    return isMobile ? "agenda" : "month";
+    // Default to agenda if no valid setting
+    return "agenda";
   }
 
   /**
@@ -589,18 +1097,21 @@
     console.log(`${logPrefix} Initializing calendar page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.CalendarPageEnabled || (pluginPagesExists && config.CalendarUsePluginPages)) {
-      if (pluginPagesExists && config.CalendarUsePluginPages) {
-        console.log(`${logPrefix} Calendar page is injected via Plugin Pages`);
-      } else {
-        console.log(`${logPrefix} Calendar page is disabled`);
-      }
+    if (!config.CalendarPageEnabled) {
+      console.log(`${logPrefix} Calendar page is disabled`);
       return;
     }
 
     injectStyles();
     loadSettings();
 
+    const usingPluginPages = pluginPagesExists && config.CalendarUsePluginPages;
+    if (usingPluginPages) {
+      console.log(`${logPrefix} Calendar page is injected via Plugin Pages`);
+      return;
+    }
+
+    // Page-specific setup for custom tabs or dedicated page mode
     // Inject navigation and set up one-time re-injection on sidebar rebuild
     injectNavigation();
     setupNavigationWatcher();
@@ -611,15 +1122,38 @@
     document.addEventListener("viewshow", handleViewShow);
     document.addEventListener("click", handleNavClick);
     document.addEventListener("click", handleEventClick);
-    window.addEventListener("hashchange", handleNavigation);
-    window.addEventListener("popstate", handleNavigation);
 
     startLocationWatcher();
 
-    // Check URL on init
+    // Check location on init
     handleNavigation();
 
     console.log(`${logPrefix} Calendar page module initialized`);
+  }
+
+
+  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
+  function startLocationWatcher() {
+    if (state.locationTimer) return;
+
+    state.locationSignature = `${window.location.pathname}${window.location.hash}`;
+
+    // Use throttle helper if available for better performance
+    const throttledCheck = JE.helpers?.throttle?.(() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    }, 150) || (() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    });
+
+    state.locationTimer = setInterval(throttledCheck, 150);
   }
 
   /**
@@ -633,31 +1167,8 @@
     if (matches) {
       if (e?.stopImmediatePropagation) e.stopImmediatePropagation();
       if (e?.preventDefault) e.preventDefault();
-
-      // Check if view mode changed in URL
-      const viewMatch = hash.match(/#\/calendar\/(month|week|agenda)/);
-      if (viewMatch && viewMatch[1] !== state.viewMode) {
-        state.viewMode = viewMatch[1];
-        if (state.pageVisible) {
-          loadAllData();
-        }
-      }
-
       showPage();
     }
-  }
-
-  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
-  function startLocationWatcher() {
-    if (state.locationTimer) return;
-    state.locationSignature = `${window.location.pathname}${window.location.hash}`;
-    state.locationTimer = setInterval(() => {
-      const signature = `${window.location.pathname}${window.location.hash}`;
-      if (signature !== state.locationSignature) {
-        state.locationSignature = signature;
-        handleNavigation();
-      }
-    }, 150);
   }
 
   function stopLocationWatcher() {
@@ -670,11 +1181,13 @@
   // Load calendar settings from plugin config
   function loadSettings() {
     const config = JE.pluginConfig || {};
+    JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
     state.settings = {
       firstDayOfWeek: config.CalendarFirstDayOfWeek || "Monday",
       timeFormat: config.CalendarTimeFormat || "5pm/5:30pm",
       highlightFavorites: config.CalendarHighlightFavorites || false,
       highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
+      displayMode: JE.currentSettings.calendarDisplayMode || "list",
     };
   }
 
@@ -709,6 +1222,14 @@
       }
       .je-calendar-legend-item.active {
         border-color: ${primaryAccent} !important;
+      }
+      .je-calendar-day.je-calendar-today {
+        border-color: rgba(128,128,128,0.2) !important;
+        box-shadow: none;
+      }
+      .je-calendar-day.je-calendar-today .je-calendar-day-number,
+      .je-calendar-day.je-calendar-today .je-calendar-day-name {
+        color: ${primaryAccent} !important;
       }
     `;
     document.head.appendChild(themeStyle);
@@ -805,21 +1326,6 @@
   }
 
   /**
-   * Get highlight CSS classes for an event
-   */
-  function getHighlightClasses(event) {
-    let classes = "";
-    const userData = state.userDataMap?.get(event.id);
-    if (state.settings.highlightFavorites && userData?.isFavorite) {
-      classes += " je-favorite";
-    }
-    if (state.settings.highlightWatchedSeries && userData?.isWatched) {
-      classes += " je-watched";
-    }
-    return classes;
-  }
-
-  /**
    * Load all data
    */
   async function loadAllData() {
@@ -844,41 +1350,24 @@
    * Filter events based on active filters
    */
   function filterEvents(events) {
-    if (state.activeFilters.size === 0) return events;
+    if (state.activeFilters.size == 0) return events;
 
-    return events.filter((event) => {
-      // Check release type filters
-      const releaseTypeMatch =
-        state.activeFilters.has('CinemaRelease') && event.releaseType === 'CinemaRelease' ||
-        state.activeFilters.has('DigitalRelease') && event.releaseType === 'DigitalRelease' ||
-        state.activeFilters.has('PhysicalRelease') && event.releaseType === 'PhysicalRelease' ||
-        state.activeFilters.has('Episode') && event.releaseType === 'Episode';
+    const filters = Array.from(state.activeFilters);
 
-      // Check user data filters
-      const userData = state.userDataMap?.get(event.id);
-      const watchlistMatch = state.activeFilters.has('Watchlist') && userData?.isFavorite;
-      const watchedMatch = state.activeFilters.has('Watched') && userData?.isWatched;
+      return events.filter((event) => {
+        const userData = state.userDataMap?.get(event.id);
+        const matchesFilter = (filterType) => {
+          if (filterType === 'Watchlist') return !!userData?.isFavorite;
+          if (filterType === 'Watched') return !!userData?.isWatched;
+          if (filterType === 'Available') return !!event.hasFile;
+          return event.releaseType === filterType;
+        };
 
-      // Count how many filter types are active
-      const hasReleaseTypeFilters = ['CinemaRelease', 'DigitalRelease', 'PhysicalRelease', 'Episode'].some(f => state.activeFilters.has(f));
-      const hasUserDataFilters = state.activeFilters.has('Watchlist') || state.activeFilters.has('Watched');
+      const matched = state.filterMatchMode === 'all'
+        ? filters.every(matchesFilter)
+        : filters.some(matchesFilter);
 
-      // If only release type filters are active, match those
-      if (hasReleaseTypeFilters && !hasUserDataFilters) {
-        return releaseTypeMatch;
-      }
-
-      // If only user data filters are active, match those
-      if (!hasReleaseTypeFilters && hasUserDataFilters) {
-        return watchlistMatch || watchedMatch;
-      }
-
-      // If both types of filters are active, must match at least one from each category
-      if (hasReleaseTypeFilters && hasUserDataFilters) {
-        return releaseTypeMatch && (watchlistMatch || watchedMatch);
-      }
-
-      return false;
+      return state.filterInvert ? !matched : matched;
     });
   }
 
@@ -911,40 +1400,46 @@
 
   // Get start and end dates for current view
   function getRangeForView(anchorDate, viewMode) {
-    const start = new Date(Date.UTC(
-      anchorDate.getUTCFullYear(),
-      anchorDate.getUTCMonth(),
-      anchorDate.getUTCDate(),
+    const start = new Date(
+      anchorDate.getFullYear(),
+      anchorDate.getMonth(),
+      anchorDate.getDate(),
       0, 0, 0, 0
-    ));
+    );
 
     if (viewMode === "month") {
-      start.setUTCDate(1);
-      const end = new Date(Date.UTC(
-        start.getUTCFullYear(),
-        start.getUTCMonth() + 1,
+      start.setDate(1);
+      const end = new Date(
+        start.getFullYear(),
+        start.getMonth() + 1,
         0,
         23, 59, 59, 999
-      ));
+      );
       return { start, end };
     }
 
     if (viewMode === "week") {
       const daysOfWeek = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
       const firstDayIndex = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
-      const currentDayIndex = start.getUTCDay();
+      const currentDayIndex = start.getDay();
       const diff = (currentDayIndex - firstDayIndex + 7) % 7;
-      start.setUTCDate(start.getUTCDate() - diff);
+      start.setDate(start.getDate() - diff);
 
       const end = new Date(start);
-      end.setUTCDate(start.getUTCDate() + 6);
-      end.setUTCHours(23, 59, 59, 999);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
       return { start, end };
     }
 
+    if (viewMode === "day") {
+      const endDay = new Date(start);
+      endDay.setHours(23, 59, 59, 999);
+      return { start, end: endDay };
+    }
+
     const endAgenda = new Date(start);
-    endAgenda.setUTCDate(start.getUTCDate() + 29);
-    endAgenda.setUTCHours(23, 59, 59, 999);
+    endAgenda.setDate(start.getDate() + 29);
+    endAgenda.setHours(23, 59, 59, 999);
     return { start, end: endAgenda };
   }
 
@@ -967,6 +1462,13 @@
     const firstDayOfWeek = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
 
     return (dayOfWeek - firstDayOfWeek + 7) % 7;
+  }
+
+  function isTodayDate(date) {
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear()
+      && date.getMonth() === now.getMonth()
+      && date.getDate() === now.getDate();
   }
 
   /**
@@ -1021,16 +1523,42 @@
     const endLabel = state.rangeEnd.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
     if (state.viewMode === "week") {
-      return `${startLabel} – ${endLabel}`;
+      return `${startLabel} - ${endLabel}`;
+    }
+
+    if (state.viewMode === "day") {
+      const dayLabel = window.JellyfinEnhanced.t?.("calendar_day") || "Day";
+      const relativeLabel = getRelativeDayLabel(state.rangeStart);
+      return `${dayLabel} • ${relativeLabel}`;
     }
 
     return `${window.JellyfinEnhanced.t("calendar_agenda")} • ${startLabel} → ${endLabel}`;
+  }
+
+  function getRelativeDayLabel(date) {
+    const d = new Date(date);
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const targetStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((targetStart - todayStart) / 86400000);
+
+    if (diffDays === 0) return window.JellyfinEnhanced.t?.("calendar_today");
+    if (diffDays === -1) return window.JellyfinEnhanced.t?.("calendar_yesterday");
+    if (diffDays === 1) return window.JellyfinEnhanced.t?.("calendar_tomorrow");
+    return targetStart.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function formatHourLabel(hour) {
+    const hour12 = state.settings.timeFormat === "5pm/5:30pm";
+    const base = new Date(2000, 0, 1, hour, 0, 0, 0);
+    return base.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12 });
   }
 
   // Switch between month/week/agenda views
   function setViewMode(mode) {
     if (state.viewMode === mode) return;
     state.viewMode = mode;
+    syncPageModeClasses();
 
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
     JE.currentSettings.calendarDefaultViewMode = mode;
@@ -1038,14 +1566,34 @@
       JE.saveUserSettings('settings.json', JE.currentSettings);
     }
 
-    const config = JE.pluginConfig || {};
-    // Update URL hash to reflect view mode
-    const newHash = `#/calendar/${mode}`;
-    if (window.location.hash !== newHash && !(pluginPagesExists && config.CalendarUsePluginPages)) {
-      history.replaceState({ page: "calendar", view: mode }, "Calendar", newHash);
+    loadAllData();
+  }
+
+
+  function setDisplayMode(mode) {
+    if (!mode || state.settings.displayMode === mode) return;
+    state.settings.displayMode = mode;
+    syncPageModeClasses();
+    JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+    JE.currentSettings.calendarDisplayMode = mode;
+    if (typeof JE.saveUserSettings === 'function') {
+      JE.saveUserSettings('settings.json', JE.currentSettings);
     }
 
-    loadAllData();
+    if (state.viewMode === "agenda") {
+      updateDisplayModeButtons();
+      return;
+    }
+
+    renderPage();
+  }
+
+  function updateDisplayModeButtons() {
+    const buttons = document.querySelectorAll(".je-calendar-mode-btn");
+    buttons.forEach((btn) => {
+      const mode = btn.dataset.mode;
+      btn.classList.toggle("active", mode === state.settings.displayMode);
+    });
   }
 
   // Navigate forward or backward
@@ -1054,9 +1602,12 @@
     const current = new Date(state.currentDate);
 
     if (state.viewMode === "month") {
+      current.setDate(1);
       current.setMonth(current.getMonth() + delta);
     } else if (state.viewMode === "week") {
       current.setDate(current.getDate() + delta * 7);
+    } else if (state.viewMode === "day") {
+      current.setDate(current.getDate() + delta);
     } else {
       current.setDate(current.getDate() + delta * 30);
     }
@@ -1081,6 +1632,20 @@
     renderPage();
   }
 
+  function setFilterMatchMode(mode) {
+    if (!mode || (mode !== 'any' && mode !== 'all')) return;
+    if (state.activeFilters.size < 2) return;
+    if (state.filterMatchMode === mode) return;
+    state.filterMatchMode = mode;
+    renderPage();
+  }
+
+  function toggleFilterInvert() {
+    if (state.activeFilters.size === 0) return;
+    state.filterInvert = !state.filterInvert;
+    renderPage();
+  }
+
   /**
    * Build tooltip text for calendar event
    */
@@ -1092,12 +1657,66 @@
       tooltip += ` ${event.subtitle}`;
     }
 
-    // Add availability indicator
-    if (event.hasFile) {
-      tooltip += ` ✓`;
+    return tooltip;
+  }
+
+
+
+  function renderStatusIcons(event) {
+    const userData = state.userDataMap?.get(event.id);
+    const watchlistLabel = window.JellyfinEnhanced.t?.("calendar_watchlist") || "Watchlist";
+    const watchedLabel = window.JellyfinEnhanced.t?.("calendar_watched") || "Watched";
+    const icons = [];
+
+    if (state.settings.highlightFavorites && userData?.isFavorite) {
+      icons.push(`<span class="je-calendar-status-icon je-status-watchlist material-symbols-rounded" title="${watchlistLabel}" aria-label="${watchlistLabel}">bookmark</span>`);
+    }
+    if (state.settings.highlightWatchedSeries && userData?.isWatched) {
+      icons.push(`<span class="je-calendar-status-icon je-status-watched material-symbols-rounded" title="${watchedLabel}" aria-label="${watchedLabel}">visibility</span>`);
     }
 
-    return tooltip;
+    if (!icons.length) return "";
+    return `<span class="je-calendar-status-icons">${icons.join("")}</span>`;
+  }
+
+  function buildTimePill(event) {
+    const timeLabel = formatEventTime(event.releaseDate);
+    if (!timeLabel) return "";
+
+    const releaseDate = event.releaseDate ? new Date(event.releaseDate) : null;
+    const releaseTime = releaseDate && !Number.isNaN(releaseDate.getTime()) ? releaseDate.getTime() : null;
+    const nowTime = Date.now();
+    const isPast = releaseTime !== null && releaseTime <= nowTime;
+    const isLate = releaseTime !== null && (nowTime - releaseTime) >= 24 * 60 * 60 * 1000;
+    const timePillClass = event.hasFile
+      ? "je-calendar-card-time is-available"
+      : (isLate ? "je-calendar-card-time is-late is-unavailable" : (isPast ? "je-calendar-card-time is-past is-unavailable" : "je-calendar-card-time is-unavailable"));
+
+    const labelHtml = timeLabel ? `<span class="je-calendar-card-time-label">${escapeHtml(timeLabel)}</span>` : "";
+    return `<div class="${timePillClass}">${labelHtml}</div>`;
+  }
+
+  function formatTimeText(event) {
+    const timeLabel = formatEventTime(event.releaseDate);
+    return timeLabel ? `<span style="opacity: 0.85; font-size: 1em;">${escapeHtml(timeLabel)}</span>` : "";
+  }
+
+  function normalizeImageUrl(url) {
+    return encodeURI(url).replace(/'/g, "%27");
+  }
+
+  function getEventBackgroundStyle(event, color) {
+    if (state.settings.displayMode !== "backdrop") {
+      return `background: ${color}20;`;
+    }
+    const imageUrl = event.backdropUrl || event.posterUrl;
+    if (!imageUrl) {
+      return `background: ${color}20;`;
+    }
+
+    const overlay = "rgba(0, 0, 0, 0.6)";
+    const safeUrl = normalizeImageUrl(imageUrl);
+    return `background-image: linear-gradient(${overlay}, ${overlay}), url('${safeUrl}'); background-size: cover; background-position: center; background-repeat: no-repeat;`;
   }
 
   /**
@@ -1110,27 +1729,24 @@
     const sourceLabel = event.source;
     const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
-    const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
     const tooltip = buildEventTooltip(event);
-
-    // Get user data indicators
-    const userData = state.userDataMap?.get(event.id);
-    const isWatchlist = state.settings.highlightFavorites && userData?.isFavorite;
-    const isWatched = state.settings.highlightWatchedSeries && userData?.isWatched;
-
-    // Build CSS classes for indicators (will show via ::before/::after pseudo-elements)
-    const watchlistClass = isWatchlist ? " je-watchlist" : "";
-    const watchedClass = isWatched ? " je-watched" : "";
+    const hasBackdropClass = (state.settings.displayMode === "backdrop" && (event.backdropUrl || event.posterUrl)) ? " je-has-backdrop" : "";
+    const statusIcons = renderStatusIcons(event);
+    const statusTop = statusIcons ? `<div class="je-calendar-event-status-top">${statusIcons}</div>` : "";
+    const timeText = formatTimeText(event);
+    const playButton = event.hasFile ? `<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
+    const backgroundStyle = getEventBackgroundStyle(event, color);
 
     return `
-      <div class="je-calendar-event${hasFileClass}${watchlistClass}${watchedClass}" style="border-left-color: ${color}; background: ${color}20" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-event${hasFileClass}${hasBackdropClass}" style="border-left-color: ${color}; ${backgroundStyle}" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}">
+        ${statusTop}
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
           <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
           <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span></span>
-          ${timeLabel ? `<span class="je-calendar-event-time">${escapeHtml(timeLabel)}</span>` : ""}
+          ${timeText ? ` • ${timeText}` : ""}${playButton}
         </div>
       </div>
     `;
@@ -1147,19 +1763,24 @@
     let filteredEvents = filterEvents(state.events);
     if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
+    if (filteredEvents.length === 0) {
+      return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
+    }
 
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const firstDayOfWeekIndex = daysOfWeek.indexOf(state.settings.firstDayOfWeek);
     const orderedDaysOfWeek = [...daysOfWeek.slice(firstDayOfWeekIndex), ...daysOfWeek.slice(0, firstDayOfWeekIndex)];
 
-    let html = '<div class="je-calendar-grid">';
-
+    let html = '<div class="je-calendar-month">';
+    html += '<div class="je-calendar-weekdays">';
     orderedDaysOfWeek.forEach((day) => {
-      html += `<div class="je-calendar-day je-calendar-day-header" style="text-align: center; background: transparent; border: none; min-height: auto; padding: 0.5em;">${day.substring(0, 3)}</div>`;
+      html += `<div class="je-calendar-weekday">${day.substring(0, 3)}</div>`;
     });
+    html += '</div>';
+    html += '<div class="je-calendar-month-grid">';
 
     for (let i = 0; i < firstDay; i++) {
-      html += '<div class="je-calendar-day" style="opacity: 0.3;"></div>';
+      html += '<div class="je-calendar-day je-calendar-day-placeholder" style="opacity: 0.3;"></div>';
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -1171,19 +1792,23 @@
       const dayEvents = groupedEvents[dateStr] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
+      const dayDate = new Date(year, anchor.getMonth(), day);
+      const todayClass = isTodayDate(dayDate) ? " je-calendar-today" : "";
+      const weekdayLabel = daysOfWeek[dayDate.getDay()].substring(0, 3);
       html += `
-        <div class="je-calendar-day">
+        <div class="je-calendar-day${todayClass}">
           <div class="je-calendar-day-header">
             <span class="je-calendar-day-number">${day}</span>
+            <span class="je-calendar-month-day-name">${weekdayLabel}</span>
           </div>
-          <div class="je-calendar-events-list">
-            ${dayEvents.map((event) => renderEvent(event)).join("")}
+          <div class="${state.settings.displayMode === 'cards' ? 'je-calendar-day-cards' : 'je-calendar-events-list'}">
+            ${state.settings.displayMode === 'cards' ? renderCardItems(dayEvents) : dayEvents.map((event) => renderEvent(event)).join("")}
           </div>
         </div>
       `;
     }
 
-    html += "</div>";
+    html += "</div></div>";
     return html;
   }
 
@@ -1194,6 +1819,9 @@
     let filteredEvents = filterEvents(state.events);
     if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
+    if (filteredEvents.length === 0) {
+      return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
+    }
 
     let html = '<div class="je-calendar-grid">';
 
@@ -1207,14 +1835,15 @@
       const dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
 
+      const todayClass = isTodayDate(day) ? " je-calendar-today" : "";
       html += `
-        <div class="je-calendar-day">
+        <div class="je-calendar-day${todayClass}">
           <div class="je-calendar-day-header">
             <span class="je-calendar-day-number">${day.getDate()}</span>
             <span class="je-calendar-day-name">${daysOfWeek[day.getDay()].substring(0, 3)}</span>
           </div>
-          <div class="je-calendar-events-list">
-            ${dayEvents.map((event) => renderEvent(event)).join("")}
+          <div class="${state.settings.displayMode === 'cards' ? 'je-calendar-day-cards' : 'je-calendar-events-list'}">
+            ${state.settings.displayMode === 'cards' ? renderCardItems(dayEvents) : dayEvents.map((event) => renderEvent(event)).join("")}
           </div>
         </div>
       `;
@@ -1261,6 +1890,80 @@
     return html;
   }
 
+  function renderDayView() {
+    const filteredEvents = filterEvents(state.events);
+    const groupedEvents = groupEventsByDate(filteredEvents);
+    const current = new Date(state.currentDate);
+    const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+    const dayEvents = groupedEvents[dateKey] || [];
+    dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+
+    if (dayEvents.length === 0) {
+      return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
+    }
+
+    if (state.settings.displayMode === "cards") {
+      return `
+        <div class="je-calendar-dayline je-calendar-day-cards">
+          ${renderCardItems(dayEvents)}
+        </div>
+      `;
+    }
+
+    const groups = { allDay: [], hours: new Map() };
+    dayEvents.forEach((event) => {
+      const date = new Date(event.releaseDate);
+      if (Number.isNaN(date.getTime())) {
+        groups.allDay.push(event);
+        return;
+      }
+      const hasTime = !(date.getHours() === 0 && date.getMinutes() === 0);
+      if (!hasTime) {
+        groups.allDay.push(event);
+        return;
+      }
+      const hour = date.getHours();
+      if (!groups.hours.has(hour)) groups.hours.set(hour, []);
+      groups.hours.get(hour).push(event);
+    });
+
+    let html = '<div class="je-calendar-day-hours">';
+    const allDayLabel = window.JellyfinEnhanced.t?.("calendar_all_day") || "All day";
+    if (groups.allDay.length) {
+      const allDayEvents = groups.allDay;
+      const allDayClass = state.settings.displayMode === 'cards'
+        ? 'je-calendar-hour-events je-calendar-day-cards'
+        : 'je-calendar-hour-events';
+      html += `
+        <div class="je-calendar-hour-row">
+          <div class="je-calendar-hour-label">${allDayLabel}</div>
+          <div class="${allDayClass}">
+            ${state.settings.displayMode === 'cards' ? renderCardItems(allDayEvents) : allDayEvents.map((event) => renderEvent(event)).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    for (let hour = 0; hour < 24; hour += 1) {
+      const hourEvents = groups.hours.get(hour);
+      if (!hourEvents || hourEvents.length === 0) continue;
+      const hourClass = state.settings.displayMode === 'cards'
+        ? 'je-calendar-hour-events je-calendar-day-cards'
+        : 'je-calendar-hour-events';
+      html += `
+        <div class="je-calendar-hour-row">
+          <div class="je-calendar-hour-label">${formatHourLabel(hour)}</div>
+          <div class="${hourClass}">
+            ${state.settings.displayMode === 'cards' ? renderCardItems(hourEvents) : hourEvents.map((event) => renderEvent(event)).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    html += "</div>";
+    return html;
+  }
+
   // Render single event in agenda view
   function renderAgendaEvent(event) {
     const color = getEventColor(event);
@@ -1272,21 +1975,14 @@
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
 
-    // Get user data indicators
-    const userData = state.userDataMap?.get(event.id);
-    const isWatchlist = state.settings.highlightFavorites && userData?.isFavorite;
-    const isWatched = state.settings.highlightWatchedSeries && userData?.isWatched;
-
     // Build indicators array (only add if they exist)
     const indicators = [];
     if (event.hasFile) {
-      indicators.push(`<span class="je-available-indicator material-symbols-rounded" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available") || "Available"}">check_circle</span>`);
+      indicators.push(`<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>`);
     }
-    if (isWatchlist) {
-      indicators.push(`<span class="je-watchlist-indicator-agenda material-symbols-rounded" title="Watchlist">bookmark</span>`);
-    }
-    if (isWatched) {
-      indicators.push(`<span class="je-watched-indicator-agenda material-symbols-rounded" title="Watched">visibility</span>`);
+    const statusIcons = renderStatusIcons(event);
+    if (statusIcons) {
+      indicators.push(statusIcons);
     }
 
     // Get material icon based on release type
@@ -1296,6 +1992,10 @@
     else if (event.releaseType === "PhysicalRelease") materialIcon = "album";
     else if (event.releaseType === "Episode") materialIcon = "tv_guide";
 
+    const subtitleHtml = subtitle
+      ? `<span class="je-calendar-agenda-subtitle">${escapeHtml(subtitle)}</span>`
+      : "";
+
     return `
       <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
         <div class="je-calendar-agenda-indicators">
@@ -1304,7 +2004,10 @@
         <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
-          <div class="je-calendar-agenda-event-title">${escapeHtml(event.title)}${subtitle ? ` • ${escapeHtml(subtitle)}` : ""}</div>
+          <div class="je-calendar-agenda-event-title">
+            <span class="je-calendar-agenda-title-text">${escapeHtml(event.title)}</span>
+            ${subtitleHtml}
+          </div>
           <div class="je-calendar-agenda-event-meta">
             <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
             <span>${releaseTypeLabel}</span>
@@ -1317,10 +2020,69 @@
     `;
   }
 
+  function renderCardItems(events) {
+    if (!events.length) return "";
+
+    return events.map((event) => {
+      const poster = event.posterUrl || event.backdropUrl;
+      const releaseTypeLabel = formatReleaseLabel(event);
+      const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
+      const sourceLabel = event.source;
+      const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
+      const statusIcons = renderStatusIcons(event);
+      const timePill = buildTimePill(event);
+      const playButton = event.hasFile ? `<button class="je-calendar-play-btn je-calendar-play-btn-card" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
+      const timeRow = timePill || playButton ? `<div class="je-calendar-card-time-row">${timePill}${playButton}</div>` : "";
+      const statusTop = statusIcons ? `<div class="je-calendar-card-status-top">${statusIcons}</div>` : "";
+      const color = getEventColor(event);
+      if (poster) {
+        return `
+          <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" style="border-bottom-color: ${color};">
+            <div class="je-calendar-card-image-wrap">
+              <img src="${normalizeImageUrl(poster)}" alt="" class="je-calendar-card-image">
+              ${statusTop}
+              <div class="je-calendar-card-overlay">
+                ${timeRow}
+                <div class="je-calendar-card-title">
+                  <span class="je-calendar-card-title-text">${escapeHtml(event.title)}</span>
+                </div>
+                ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
+                <div class="je-calendar-card-meta">
+                  <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+                  <span>${releaseTypeLabel}</span>
+                  <span>•</span>
+                  <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" style="border-bottom-color: ${color};">
+          ${statusTop}
+          ${timeRow}
+          <div class="je-calendar-card-title">
+            <span class="je-calendar-card-title-text">${escapeHtml(event.title)}</span>
+          </div>
+          ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
+          <div class="je-calendar-card-meta">
+            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+            <span>${releaseTypeLabel}</span>
+            <span>•</span>
+            <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
   // Render calendar based on current view mode
   function renderCalendar() {
     if (state.viewMode === "week") return renderWeekView();
     if (state.viewMode === "agenda") return renderAgendaView();
+    if (state.viewMode === "day") return renderDayView();
     return renderMonthView();
   }
 
@@ -1335,7 +2097,7 @@
 
     const watchlistLegend = state.settings.highlightFavorites
       ? `<div class="je-calendar-legend-item ${getItemClass('Watchlist')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Watchlist'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: #ffd700; font-size: 18px;">bookmark</span>
+          <span class="material-symbols-rounded" style="color: #ffd700; font-size: 18px; font-variation-settings: 'FILL' 1;">bookmark</span>
           <span>${JE.t("calendar_watchlist")}</span>
         </div>`
       : "";
@@ -1347,8 +2109,19 @@
         </div>`
       : "";
 
+    const hasTwoFilters = state.activeFilters.size >= 2;
+    const filterControls = `
+      <div class="je-calendar-filter-controls">
+        <div class="je-calendar-filter-toggle ${hasTwoFilters ? '' : 'is-disabled'}" role="group" aria-label="Filter mode">
+          <button type="button" class="je-calendar-filter-btn ${state.filterMatchMode === 'any' ? 'active' : ''}" data-filter-mode="any" ${hasTwoFilters ? '' : 'disabled aria-disabled="true"'}>OR</button>
+          <button type="button" class="je-calendar-filter-btn ${state.filterMatchMode === 'all' ? 'active' : ''}" data-filter-mode="all" ${hasTwoFilters ? '' : 'disabled aria-disabled="true"'}>AND</button>
+        </div>
+        <button type="button" class="je-calendar-filter-invert ${state.filterInvert ? 'active' : ''} ${hasActiveFilters ? '' : 'is-disabled'}" data-filter-invert="true" ${hasActiveFilters ? '' : 'disabled aria-disabled="true"'}>NOT</button>
+      </div>`;
+
     return `
       <div class="je-calendar-legend">
+        ${filterControls}
         <div class="je-calendar-legend-item ${getItemClass('CinemaRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('CinemaRelease'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
           <span>${JE.t("calendar_cinema_release")}</span>
@@ -1364,6 +2137,10 @@
         <div class="je-calendar-legend-item ${getItemClass('Episode')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Episode'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${JE.t("calendar_episode")}</span>
+        </div>
+        <div class="je-calendar-legend-item ${getItemClass('Available')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Available'); event.stopPropagation();">
+          <span class="material-symbols-rounded" style="color: #4caf50; font-size: 18px;">check_circle</span>
+          <span>${JE.t?.("jellyseerr_btn_available") || "Available"}</span>
         </div>
         ${watchlistLegend}
         ${watchedLegend}
@@ -1405,6 +2182,7 @@
    * Render the full page
    */
   function renderPage() {
+    syncPageModeClasses();
     const page = createPageContainer();
     const container = document.getElementById("je-calendar-container");
     if (!page || !container) return;
@@ -1412,32 +2190,67 @@
     container.innerHTML = `
       <div class="je-calendar-header">
         <h1 class="je-calendar-title">${formatRangeLabel()}</h1>
-        <div class="je-calendar-actions">
+        <div class="je-calendar-actions je-calendar-actions-center">
           <div class="je-calendar-nav">
-            <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.shiftPeriod('prev'); event.stopPropagation();">‹</button>
-            <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.goToday(); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_today")}</button>
-            <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.shiftPeriod('next'); event.stopPropagation();">›</button>
+            <div class="je-calendar-nav-group">
+              <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.shiftPeriod('prev'); event.stopPropagation();" aria-label="${window.JellyfinEnhanced.t?.("prev") || "Previous"}">‹</button>
+              <button class="je-calendar-nav-btn je-calendar-nav-today" onclick="window.JellyfinEnhanced.calendarPage.goToday(); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_today")}</button>
+              <button class="je-calendar-nav-btn" onclick="window.JellyfinEnhanced.calendarPage.shiftPeriod('next'); event.stopPropagation();" aria-label="${window.JellyfinEnhanced.t?.("next") || "Next"}">›</button>
+            </div>
           </div>
+        </div>
+        <div class="je-calendar-actions je-calendar-actions-right">
           <div class="je-calendar-nav">
-            <button class="je-calendar-view-btn ${state.viewMode === 'month' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('month'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_month")}</button>
+            <button class="je-calendar-view-btn ${state.viewMode === 'day' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('day'); event.stopPropagation();">${window.JellyfinEnhanced.t?.("calendar_day") || "Day"}</button>
             <button class="je-calendar-view-btn ${state.viewMode === 'week' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('week'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_week")}</button>
+            <button class="je-calendar-view-btn ${state.viewMode === 'month' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('month'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_month")}</button>
             <button class="je-calendar-view-btn ${state.viewMode === 'agenda' ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.setViewMode('agenda'); event.stopPropagation();">${window.JellyfinEnhanced.t("calendar_agenda")}</button>
+            <div class="je-calendar-mode-toggle ${state.viewMode === 'agenda' ? 'is-disabled' : ''}" role="group" aria-label="Display mode">
+              <button type="button" class="je-calendar-mode-btn ${state.settings.displayMode === 'list' ? 'active' : ''}" title="List" aria-label="List" data-mode="list" ${state.viewMode === 'agenda' ? 'disabled aria-disabled="true"' : ''}>
+                <span class="material-icons">view_list</span>
+              </button>
+              <button type="button" class="je-calendar-mode-btn ${state.settings.displayMode === 'backdrop' ? 'active' : ''}" title="Backdrop" aria-label="Backdrop" data-mode="backdrop" ${state.viewMode === 'agenda' ? 'disabled aria-disabled="true"' : ''}>
+                <span class="material-icons">image</span>
+              </button>
+              <button type="button" class="je-calendar-mode-btn ${state.settings.displayMode === 'cards' ? 'active' : ''}" title="Cards" aria-label="Cards" data-mode="cards" ${state.viewMode === 'agenda' ? 'disabled aria-disabled="true"' : ''}>
+                <span class="material-icons">view_module</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       ${state.isLoading ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_loading")}</div>` : ""}
 
-      ${!state.isLoading ? renderCalendar() : ""}
+        <div class="je-calendar-layout">
+          <div class="je-calendar-main">
+            ${!state.isLoading ? renderCalendar() : ""}
+          </div>
+          <aside class="je-calendar-sidebar">
+            ${renderLegend().replace('je-calendar-legend"', 'je-calendar-legend je-calendar-legend-vertical"')}
+          </aside>
+        </div>
 
       ${
-        !state.isLoading && state.events.length === 0
-          ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`
-          : ""
+        ""
       }
-
-      ${renderLegend()}
     `;
+
+  }
+
+  function syncPageModeClasses() {
+    const nodes = document.querySelectorAll(".je-calendar-page, .content-primary.je-calendar-page");
+    if (!nodes.length) return;
+    nodes.forEach((node) => {
+      node.classList.remove("je-view-day", "je-view-week", "je-view-month", "je-view-agenda");
+      node.classList.remove("je-display-list", "je-display-backdrop", "je-display-cards");
+      if (state.viewMode) {
+        node.classList.add(`je-view-${state.viewMode}`);
+      }
+      if (state.settings.displayMode) {
+        node.classList.add(`je-display-${state.settings.displayMode}`);
+      }
+    });
   }
 
   /**
@@ -1455,9 +2268,8 @@
     injectStyles();
     const page = createPageContainer();
 
-    const expectedHash = `#/calendar/${state.viewMode}`;
-    if (window.location.hash !== expectedHash && !window.location.hash.startsWith("#/calendar/")) {
-      history.pushState({ page: "calendar", view: state.viewMode }, "Calendar", expectedHash);
+    if (window.location.hash !== "#/calendar") {
+      history.pushState({ page: "calendar" }, "Calendar", "#/calendar");
     }
 
     const activePage = document.querySelector(".mainAnimatedPage:not(.hide):not(#je-calendar-page)");
@@ -1537,15 +2349,7 @@
   function handleNavigation() {
     const hash = window.location.hash;
     const path = window.location.pathname;
-    if (hash.startsWith("#/calendar") || path === "/calendar") {
-      // Check if view mode changed in URL
-      const viewMatch = hash.match(/#\/calendar\/(month|week|agenda)/);
-      if (viewMatch && viewMatch[1] !== state.viewMode) {
-        state.viewMode = viewMatch[1];
-        if (state.pageVisible) {
-          loadAllData();
-        }
-      }
+    if (hash === "#/calendar" || path === "/calendar") {
       showPage();
     } else if (state.pageVisible) {
       hidePage();
@@ -1581,6 +2385,7 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
+    if (config.CalendarUseCustomTabs) return; // Skip if using custom tabs
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
@@ -1627,9 +2432,15 @@
     const config = JE.pluginConfig || {};
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
+    if (config.CalendarUseCustomTabs) return; // Don't watch if using custom tabs
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
+      // Re-check config each time to avoid injecting when settings change
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.CalendarUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.CalendarUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-calendar-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -1661,109 +2472,50 @@
     return String(text).replace(/[&<>"']/g, (m) => map[m]);
   }
 
-
-  /**
-   * Helper to search Jellyfin items using fetch API
-   */
-  async function searchJellyfinItems(params) {
-    const userId = ApiClient.getCurrentUserId();
-    const token = ApiClient.accessToken();
-    const queryString = Object.entries(params)
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join("&");
-    const url = `${ApiClient.serverAddress()}/Users/${userId}/Items?${queryString}`;
-
-    const response = await fetch(url, {
-      headers: {
-        "X-MediaBrowser-Token": token,
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Strip year suffix from title (e.g., "Invincible (2021)" -> "Invincible")
-   * @param {string} title - Title that may contain year suffix
-   * @returns {string} Title without year suffix
-   */
-  function stripYearFromTitle(title) {
-    return title.replace(/\s*\(\d{4}\)\s*$/, "").trim();
-  }
-
-  /**
-   * Search for an item, with fallback to title without year suffix
-   * @param {string} itemType - Jellyfin item type ("Movie" or "Series")
-   * @param {string} title - Title to search for
-   * @param {Object} event - Calendar event with provider IDs for validation
-   * @returns {Promise<Object|null>} Matched item or null
-   */
-  async function searchWithYearFallback(itemType, title, event) {
-    // First try with full title
-    let response = await searchJellyfinItems({
-      Recursive: true,
-      IncludeItemTypes: itemType,
-      SearchTerm: title,
-      Limit: 10,
-      Fields: "ProviderIds",
-    });
-
-    let item = findMatchingItem(response?.Items, event);
-    if (item) return item;
-
-    // If not found and title has year suffix, try without it
-    const titleWithoutYear = stripYearFromTitle(title);
-    if (titleWithoutYear !== title) {
-      response = await searchJellyfinItems({
-        Recursive: true,
-        IncludeItemTypes: itemType,
-        SearchTerm: titleWithoutYear,
-        Limit: 10,
-        Fields: "ProviderIds",
-      });
-      item = findMatchingItem(response?.Items, event);
-    }
-
-    return item;
-  }
-
   /**
    * Search for an item by provider IDs using the server endpoint.
    * @param {Object} event - Calendar event with provider IDs
    * @returns {Promise<string|null>} Item ID or null if not found
    */
-  async function searchFromProviders(event) {
-    const providers = {};
-    const hasEpisodeProviders = !!(event.episodeImdbId || event.episodeTvdbId);
-    if (hasEpisodeProviders) {
-      if (event.episodeImdbId) providers.Imdb = event.episodeImdbId;
-      if (event.episodeTvdbId) providers.Tvdb = String(event.episodeTvdbId);
-    } else {
-      if (event.imdbId) providers.Imdb = event.imdbId;
-      if (event.tvdbId) providers.Tvdb = String(event.tvdbId);
-      if (event.tmdbId) providers.Tmdb = String(event.tmdbId);
-    }
+  async function searchFromProviders(event, options = {}) {
+    const preferSeries = !!options.preferSeries;
+    const episodeProviders = {};
+    const seriesProviders = {};
+    if (event.episodeImdbId) episodeProviders.Imdb = event.episodeImdbId;
+    if (event.episodeTvdbId) episodeProviders.Tvdb = String(event.episodeTvdbId);
+    if (event.imdbId) seriesProviders.Imdb = event.imdbId;
+    if (event.tvdbId) seriesProviders.Tvdb = String(event.tvdbId);
+    if (event.tmdbId) seriesProviders.Tmdb = String(event.tmdbId);
 
-    if (Object.keys(providers).length === 0) return null;
+    const hasEpisodeProviders = Object.keys(episodeProviders).length > 0;
+    const hasSeriesProviders = Object.keys(seriesProviders).length > 0;
+    if (!hasEpisodeProviders && !hasSeriesProviders) return null;
 
     try {
-      const baseUrl = ApiClient.getUrl("/JellyfinEnhanced/items/by-providers");
-      const params = new URLSearchParams();
-      Object.entries(providers).forEach(([key, value]) => {
-        params.append(`providers[${key}]`, value);
-      });
-      const url = `${baseUrl}?${params.toString()}`;
+      const lookup = async (providers) => {
+        const baseUrl = ApiClient.getUrl("/JellyfinEnhanced/items/by-providers");
+        const params = new URLSearchParams();
+        Object.entries(providers).forEach(([key, value]) => {
+          params.append(`providers[${key}]`, value);
+        });
+        const url = `${baseUrl}?${params.toString()}`;
 
-      const response = await fetch(url, { headers: getAuthHeaders() });
-      if (!response.ok) return null;
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (!response.ok) return null;
+        const itemId = await response.json();
+        return itemId || null;
+      };
 
-      const itemId = await response.json();
-      return itemId || null;
+      if (hasEpisodeProviders && !preferSeries) {
+        const episodeItemId = await lookup(episodeProviders);
+        if (episodeItemId) return episodeItemId;
+      }
+
+      if (hasSeriesProviders) {
+        return await lookup(seriesProviders);
+      }
+
+      return null;
     } catch (error) {
       console.error(`${logPrefix} Provider search failed:`, error);
       return null;
@@ -1771,66 +2523,30 @@
   }
 
   /**
-   * Navigate to Jellyfin item by searching title and validating with provider IDs
-   * Note: AnyProviderIdEquals parameter does NOT work in Jellyfin (only Emby)
-   * See: https://github.com/jellyfin/jellyfin/issues/1990
+   * Navigate to Jellyfin item by provider IDs
    */
-  async function navigateToJellyfinItem(event) {
-    if (!event.hasFile) return;
+  async function navigateToJellyfinItem(event, options = {}) {
+    const preferSeries = !!options.preferSeries;
+    const isMovie = event.type === "Movie";
+
+    if (!event.hasFile && (!preferSeries || isMovie)) return;
 
     // No need to search if itemId is already provided
-    if (event.itemId) {
+    if (event.itemId && (!preferSeries || isMovie)) {
       window.location.hash = `#/details?id=${event.itemId}`;
       return;
     }
 
+    if (event.itemEpisodeId && !preferSeries) {
+      window.location.hash = `#/details?id=${event.itemEpisodeId}`;
+      return;
+    }
+
     try {
-      // Try provider-based lookup first
-      const providerItemId = await searchFromProviders(event);
+      const providerItemId = await searchFromProviders(event, { preferSeries });
       if (providerItemId) {
         window.location.hash = `#/details?id=${providerItemId}`;
         return;
-      }
-
-      // For movies, search directly
-      if (event.type !== "Series") {
-        const item = await searchWithYearFallback("Movie", event.title, event);
-        if (item) {
-          window.location.hash = `#/details?id=${item.Id}`;
-        }
-        return;
-      }
-
-      // For series/episodes: first find the series
-      const series = await searchWithYearFallback("Series", event.title, event);
-      if (!series) return;
-
-      // If no season/episode info, navigate to series
-      if (!event.seasonNumber || !event.episodeNumber) {
-        window.location.hash = `#/details?id=${series.Id}`;
-        return;
-      }
-
-      // Find the specific episode within the series
-      const episodeResponse = await searchJellyfinItems({
-        ParentId: series.Id,
-        IncludeItemTypes: "Episode",
-        Recursive: true,
-        Fields: "ParentIndexNumber,IndexNumber",
-      });
-
-      // Match by season and episode number
-      const episode = episodeResponse?.Items?.find(
-        (ep) =>
-          ep.ParentIndexNumber === event.seasonNumber &&
-          ep.IndexNumber === event.episodeNumber
-      );
-
-      if (episode) {
-        window.location.hash = `#/details?id=${episode.Id}`;
-      } else {
-        // Fallback to series if episode not found
-        window.location.hash = `#/details?id=${series.Id}`;
       }
     } catch (error) {
       console.error(`${logPrefix} Navigation failed:`, error);
@@ -1838,48 +2554,90 @@
   }
 
   /**
-   * Find matching item by provider IDs or exact title match
-   * @param {Array} items - Jellyfin search results
-   * @param {Object} event - Calendar event with provider IDs and title
-   * @returns {Object|null} Matched item or null if no confident match
-   */
-  function findMatchingItem(items, event) {
-    if (!items?.length) return null;
-
-    // First try to match by provider IDs (most reliable)
-    for (const item of items) {
-      const ids = item.ProviderIds || {};
-      if (
-        (event.tvdbId && ids.Tvdb === String(event.tvdbId)) ||
-        (event.imdbId && ids.Imdb === event.imdbId) ||
-        (event.tmdbId && ids.Tmdb === String(event.tmdbId))
-      ) {
-        return item;
-      }
-    }
-
-    // Fallback to exact title match only (don't guess with items[0])
-    return items.find(
-      (item) => item.Name?.toLowerCase() === event.title.toLowerCase()
-    ) || null;
-  }
-
-  /**
    * Handle click on calendar event
    */
   function handleEventClick(e) {
-    const eventEl = e.target.closest(".je-calendar-event, .je-calendar-agenda-event");
+    const filterModeBtn = e.target.closest(".je-calendar-filter-btn");
+    if (filterModeBtn) {
+      const mode = filterModeBtn.dataset.filterMode;
+      if (mode) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        setFilterMatchMode(mode);
+      }
+      return;
+    }
+
+    const filterInvertBtn = e.target.closest(".je-calendar-filter-invert");
+    if (filterInvertBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      toggleFilterInvert();
+      return;
+    }
+
+    const modeBtn = e.target.closest(".je-calendar-mode-btn");
+    if (modeBtn) {
+      const mode = modeBtn.dataset.mode;
+      if (mode) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        setDisplayMode(mode);
+      }
+      return;
+    }
+
+    const playBtn = e.target.closest(".je-calendar-play-btn");
+    if (playBtn) {
+      const playEventId = playBtn.dataset.eventId;
+      const playEvent = state.events.find((ev) => ev.id === playEventId);
+      if (!playEvent) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      navigateToJellyfinItem(playEvent, { preferSeries: false });
+      return;
+    }
+
+    const timePill = e.target.closest(".je-calendar-card-time");
+    if (timePill) {
+      const cardEl = timePill.closest(".je-calendar-card");
+      const timeEventId = cardEl?.dataset.eventId;
+      const timeEvent = timeEventId ? state.events.find((ev) => ev.id === timeEventId) : null;
+      if (timeEvent?.hasFile) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        navigateToJellyfinItem(timeEvent, { preferSeries: false });
+        return;
+      }
+    }
+
+    const eventEl = e.target.closest(".je-calendar-event, .je-calendar-agenda-event, .je-calendar-card");
     if (!eventEl) return;
 
     const eventId = eventEl.dataset.eventId;
     if (!eventId) return;
 
     const event = state.events.find((ev) => ev.id === eventId);
-    if (!event || !event.hasFile) return;
+    if (!event) return;
 
     e.preventDefault();
     e.stopPropagation();
-    navigateToJellyfinItem(event);
+    navigateToJellyfinItem(event, { preferSeries: true });
+  }
+
+  /**
+   * Render content for custom tabs (without page state management)
+   */
+  function renderForCustomTab() {
+    injectStyles();
+    loadSettings();
+    renderPage();
+    loadAllData();
   }
 
   // Export to JE namespace
@@ -1893,9 +2651,11 @@
     goToday,
     toggleFilter,
     renderPage,
+    renderForCustomTab,
     injectStyles,
     loadSettings,
-    handleEventClick
+    handleEventClick,
+    setDisplayMode
   };
 
   JE.initializeCalendarPage = initialize;

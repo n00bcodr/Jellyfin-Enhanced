@@ -375,9 +375,12 @@
     "requests_on_date": "{date}-én",
     "calendar_title": "Naptár",
     "calendar_today": "Ma",
+    "calendar_yesterday": "Tegnap",
+    "calendar_tomorrow": "Holnap",
     "calendar_month": "Hónap",
     "calendar_week": "Hét",
     "calendar_agenda": "Napló",
+    "calendar_day": "Nap",
     "calendar_cinema_release": "Mozi premiér",
     "calendar_digital_release": "Digitális megjelenés",
     "calendar_physical_release": "Fizikai megjelenés",
@@ -386,5 +389,6 @@
     "calendar_loading": "Naptár betöltése...",
     "calendar_no_releases": "Nincs közelgő megjelenés",
     "calendar_watchlist": "Figyelőlista",
-    "calendar_watched": "Megtekintve"
+    "calendar_watched": "Megtekintve",
+    "calendar_all_day": "Egész nap"
 }

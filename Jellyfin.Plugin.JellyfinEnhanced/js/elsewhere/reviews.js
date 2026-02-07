@@ -1,4 +1,4 @@
-// /js/reviews.js
+// /js/elsewhere/reviews.js
 (function (JE) {
     'use strict';
 
@@ -32,6 +32,110 @@
             return div.innerHTML;
         }
 
+        function parseMarkdown(text) {
+            if (!text) return '';
+
+            // Escape HTML first
+            let html = escapeHtml(text);
+
+            // Parse markdown elements
+            // Bold (**text** or __text__)
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+            // Italic (*text* or _text_)
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+            // Strikethrough (~~text~~)
+            html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+            // Inline code (`code`)
+            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+
+            // Links [text](url)
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+            // Auto-link plain URLs (http:// or https://)
+            // Match URLs that aren't already inside href attributes
+            html = html.replace(/(^|[^"'>])(https?:\/\/[^\s<]+[^\s<.,;!?)])/gi, function(match, prefix, url) {
+                // Don't linkify if already part of an anchor tag
+                return prefix + '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+            });
+
+            // Process line by line for block elements
+            const lines = html.split(/\r?\n/);
+            const processed = [];
+            let inBlockquote = false;
+            let blockquoteLines = [];
+            let inList = false;
+            let listItems = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmedLine = line.trim();
+
+                // Blockquotes (> text)
+                if (trimmedLine.startsWith('&gt; ')) {
+                    if (!inBlockquote) {
+                        inBlockquote = true;
+                        blockquoteLines = [];
+                    }
+                    blockquoteLines.push(trimmedLine.substring(5));
+                    continue;
+                } else if (inBlockquote) {
+                    processed.push('<blockquote>' + blockquoteLines.join('<br>') + '</blockquote>');
+                    inBlockquote = false;
+                    blockquoteLines = [];
+                }
+
+                // Unordered lists (- item or * item)
+                if (trimmedLine.match(/^[-*]\s+/)) {
+                    if (!inList) {
+                        inList = true;
+                        listItems = [];
+                    }
+                    listItems.push('<li>' + trimmedLine.substring(2) + '</li>');
+                    continue;
+                } else if (inList) {
+                    processed.push('<ul>' + listItems.join('') + '</ul>');
+                    inList = false;
+                    listItems = [];
+                }
+
+                // Headings (### text)
+                if (trimmedLine.match(/^#{1,6}\s/)) {
+                    const level = trimmedLine.match(/^#+/)[0].length;
+                    const text = trimmedLine.substring(level + 1);
+                    processed.push(`<h${level}>${text}</h${level}>`);
+                    continue;
+                }
+
+                // Horizontal rule (--- or ***)
+                if (trimmedLine.match(/^([-*]){3,}$/)) {
+                    processed.push('<hr>');
+                    continue;
+                }
+
+                // Regular line
+                if (trimmedLine) {
+                    processed.push(line);
+                } else {
+                    processed.push('<br>');
+                }
+            }
+
+            // Close any open blocks
+            if (inBlockquote) {
+                processed.push('<blockquote>' + blockquoteLines.join('<br>') + '</blockquote>');
+            }
+            if (inList) {
+                processed.push('<ul>' + listItems.join('') + '</ul>');
+            }
+
+            return processed.join('');
+        }
+
         function createReviewElement(review) {
             const REVIEW_PREVIEW_LENGTH = 350;
             const reviewCard = document.createElement('div');
@@ -62,8 +166,8 @@
             `;
 
             const textElement = reviewCard.querySelector('.tmdb-review-text');
-            textElement.innerHTML = escapeHtml(previewContent).replace(/\n/g, '<br>') +
-                (isLongReview ? `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
+            textElement.innerHTML = parseMarkdown(previewContent) +
+                (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
 
             return reviewCard;
         }
@@ -104,10 +208,10 @@
                         const review = reviews.find(r => escapeHtml(r.author) === card.querySelector('.tmdb-review-author').textContent);
 
                         if (textElement.classList.toggle('expanded')) {
-                            textElement.innerHTML = escapeHtml(review.content).replace(/\n/g, '<br>') + ` <span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
+                            textElement.innerHTML = parseMarkdown(review.content) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
                         } else {
                             const previewContent = review.content.substring(0, 350);
-                            textElement.innerHTML = escapeHtml(previewContent).replace(/\n/g, '<br>') + `... <span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
+                            textElement.innerHTML = parseMarkdown(previewContent) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
                         }
                     }
                 });
@@ -185,7 +289,22 @@
                 .tmdb-review-rating { color: #ffd700; background: rgba(255, 215, 0, 0.1); padding: 0.2em 0.5em; border-radius: 4px; }
                 .tmdb-review-content-wrapper { flex-grow: 1; line-height: 1.7; overflow-y: auto; color: #ddd; font-size: 0.95em; }
                 .tmdb-review-text { word-wrap: break-word; }
-                .tmdb-review-toggle { color: rgb(1, 180, 228); font-weight: bold; cursor: pointer; text-decoration: underline; }
+                .tmdb-review-text strong { color: #fff; font-weight: 600; }
+                .tmdb-review-text em { font-style: italic; color: #e0e0e0; }
+                .tmdb-review-text del { text-decoration: line-through; opacity: 0.7; }
+                .tmdb-review-text code { background: rgba(255, 255, 255, 0.1); padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 0.9em; color: #ffa500; }
+                .tmdb-review-text blockquote { border-left: 3px solid rgb(1, 180, 228); padding-left: 1em; margin: 0.8em 0; color: #aaa; font-style: italic; }
+                .tmdb-review-text h1, .tmdb-review-text h2, .tmdb-review-text h3, .tmdb-review-text h4, .tmdb-review-text h5, .tmdb-review-text h6 { color: #fff; margin: 0.8em 0 0.4em 0; font-weight: 600; }
+                .tmdb-review-text h1 { font-size: 1.5em; }
+                .tmdb-review-text h2 { font-size: 1.3em; }
+                .tmdb-review-text h3 { font-size: 1.15em; }
+                .tmdb-review-text h4, .tmdb-review-text h5, .tmdb-review-text h6 { font-size: 1.05em; }
+                .tmdb-review-text ul, .tmdb-review-text ol { margin: 0.5em 0; padding-left: 1.5em; }
+                .tmdb-review-text li { margin: 0.3em 0; }
+                .tmdb-review-text hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.2); margin: 1em 0; }
+                .tmdb-review-text a { color: rgb(1, 180, 228); text-decoration: underline; }
+                .tmdb-review-text a:hover { color: rgb(50, 200, 250); }
+                .tmdb-review-toggle { color: rgb(1, 180, 228); font-weight: bold; cursor: pointer; text-decoration: underline; margin-left: 0.3em; }
             `;
             document.head.appendChild(style);
         }
@@ -214,68 +333,40 @@
             }
         }
 
-        let lastProcessedItemId = null;
-
-        function processPages() {
-            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (!visiblePage) {
-                lastProcessedItemId = null;
-                return;
-            }
-
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (itemId && itemId !== lastProcessedItemId) {
-                    lastProcessedItemId = itemId;
-                    processPage(visiblePage);
-                }
-            } catch (e) {
-                // Ignore URL parsing errors
-            }
-        }
-
         injectCss();
 
-        // Initial load
-        setTimeout(processPages, 1000);
-
-        // Watch for navigation changes using MutationObserver
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                    const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                    if (visiblePage) {
-                        processPages();
-                        break; // Only process once per mutation
-                    }
-                }
-            }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
-        });
-
-        // Detect hash changes for navigation using native event
-        let currentHash = window.location.hash;
-        const hashChangeHandler = () => {
+        // Use Emby.Page.onViewShow hook for reliable page navigation detection
+        const unregister = JE.helpers.onViewPage(async (view, element, hash, itemPromise) => {
+            // Check if feature is still enabled
             if (!JE?.pluginConfig?.ShowReviews || !JE?.pluginConfig?.TmdbEnabled) {
-                window.removeEventListener('hashchange', hashChangeHandler);
-                observer.disconnect();
-                console.log(`${logPrefix} Stopped - feature disabled`);
+                unregister();
                 return;
             }
-            if (window.location.hash !== currentHash) {
-                currentHash = window.location.hash;
-                lastProcessedItemId = null; // Reset on navigation
-                setTimeout(processPages, 500);
+
+            // Check if this might be an item detail page by looking at current URL or element
+            const currentHash = window.location.hash;
+            const hasItemId = currentHash.includes('id=') || (hash && hash.includes('id='));
+            const isItemDetailElement = element && (
+                element.id === 'itemDetailPage' ||
+                element.classList?.contains('itemDetailPage')
+            );
+
+            if (!hasItemId && !isItemDetailElement) {
+                return;
             }
-        };
-        
-        window.addEventListener('hashchange', hashChangeHandler);
+
+            // Wait for the page to be visible
+            await new Promise(resolve => setTimeout(resolve, 150));
+
+            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+            if (visiblePage) {
+                processPage(visiblePage);
+            }
+        }, {
+            pages: null, // Trigger on all pages, we'll filter by hash
+            fetchItem: false,
+            immediate: true // Process current page immediately on load
+        });
     };
 })(window.JellyfinEnhanced);
 

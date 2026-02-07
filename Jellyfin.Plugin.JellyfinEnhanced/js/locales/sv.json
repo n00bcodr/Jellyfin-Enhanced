@@ -375,9 +375,12 @@
     "requests_on_date": "den {date}",
     "calendar_title": "Kalender",
     "calendar_today": "Idag",
+    "calendar_yesterday": "Igår",
+    "calendar_tomorrow": "Imorgon",
     "calendar_month": "Månad",
     "calendar_week": "Vecka",
     "calendar_agenda": "Agenda",
+    "calendar_day": "Dag",
     "calendar_cinema_release": "Biopremiär",
     "calendar_digital_release": "Digital utgivning",
     "calendar_physical_release": "Fysisk utgivning",
@@ -386,5 +389,6 @@
     "calendar_loading": "Laddar kalender...",
     "calendar_no_releases": "Inga kommande utgåvor",
     "calendar_watchlist": "Bevakningslista",
-    "calendar_watched": "Sedd"
+    "calendar_watched": "Sedd",
+    "calendar_all_day": "Hela dagen"
 }

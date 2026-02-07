@@ -1,7 +1,7 @@
-<div id="je-loading">Loading…</div>
+<div id="je-loading">Loading...</div>
 <div data-role="content">
-  <div class="content-primary je-calendar-page" style="padding: 0 !important;">
-    <div id="je-calendar-container"></div>
+  <div class="content-primary je-bookmarks-page">
+    <div class="sections bookmarks"></div>
   </div>
 </div>
 <div id="je-error" style="display:none">
@@ -18,49 +18,35 @@
   const preferencesPages = Array.from(document.querySelectorAll("#userPluginPreferencesPage"));
   const preferencesPage = preferencesPages.find(p => p.offsetWidth > 0 && p.offsetHeight > 0);
 
-  document.querySelectorAll("#je-calendar-container").forEach(el => {
+  document.querySelectorAll(".sections.bookmarks").forEach(el => {
     if (!preferencesPage || !preferencesPage.contains(el)) {
       el.remove();
     }
   });
 
-  if (preferencesPage && !preferencesPage.querySelector("#je-calendar-container")) {
+  if (preferencesPage && !preferencesPage.querySelector(".sections.bookmarks")) {
     const newContainer = document.createElement("div");
-    newContainer.id = "je-calendar-container";
-    const target = document.querySelector(".je-calendar-page") || document.body;
+    newContainer.className = "sections bookmarks";
+    const target = document.querySelector(".je-bookmarks-page") || document.body;
     target.appendChild(newContainer);
   }
 
-  const JE = window.JellyfinEnhanced;
-
   const timer = setInterval(() => {
+    const JE = window.JellyfinEnhanced;
 
-    if (JE && JE.calendarPage) {
+    if (JE && JE.userConfig && JE.bookmarks) {
       clearInterval(timer);
-
       loadingEl.remove();
-      JE.calendarPage.injectStyles();
-      JE.calendarPage.loadSettings();
-      JE.calendarPage.renderPage();
-      JE.calendarPage.refresh()
-      document.addEventListener("click", JE.calendarPage.handleEventClick);
-      console.log('🪼 Jellyfin Enhanced: Calendar Page Loaded.');
+      console.log("🪼 Jellyfin Enhanced: Bookmarks Page Loaded.");
       return;
     }
 
     waited += INTERVAL;
     if (waited >= MAX_WAIT) {
       clearInterval(timer);
-
       loadingEl.style.display = "none";
       errorEl.style.display = "block";
     }
   }, INTERVAL);
 })();
 </script>
-
-<style>
-  .je-calendar-header {
-    padding-top: 0px;
-  }
-</style>

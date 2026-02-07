@@ -419,7 +419,7 @@
             return;
         }
         const splashScript = document.createElement('script');
-        splashScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/splashscreen.js?v=' + Date.now());
+        splashScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/others/splashscreen.js?v=' + Date.now());
         splashScript.onload = () => {
             if (typeof JE.initializeSplashScreen === 'function') {
                 JE.initializeSplashScreen(); // Initialize if available
@@ -596,36 +596,66 @@
             // Stage 3: Load ALL component scripts
             const basePath = '/JellyfinEnhanced/js';
             const allComponentScripts = [
+                // enhanced
+                'enhanced/config.js',
                 'enhanced/helpers.js',
                 'enhanced/icons.js',
-                'enhanced/config.js', 'enhanced/themer.js', 'enhanced/subtitles.js', 'enhanced/ui.js',
-                'enhanced/playback.js', 'enhanced/features.js', 'enhanced/hidden-content.js', 'enhanced/hidden-content-page.js', 'enhanced/bookmarks.js', 'enhanced/bookmarks-library.js', 'enhanced/events.js', 'enhanced/osd-rating.js',
-                'elsewhere.js',
-                'jellyseerr/request-manager.js',
-                'jellyseerr/seamless-scroll.js',
+                'enhanced/features.js',
+                'enhanced/events.js',
+                'enhanced/playback.js',
+                'enhanced/hidden-content.js',
+                'enhanced/hidden-content-page.js',
+                'enhanced/subtitles.js',
+                'enhanced/themer.js',
+                'enhanced/ui.js',
+                'enhanced/bookmarks.js',
+                'enhanced/bookmarks-library.js',
+                'enhanced/osd-rating.js',
+                'enhanced/pausescreen.js',
+
+                // elsewhere
+                'elsewhere/elsewhere.js',
+                'elsewhere/reviews.js',
+
+                // jellyseerr
                 'jellyseerr/api.js',
+                'jellyseerr/jellyseerr.js',
+                'jellyseerr/request-manager.js',
+                'jellyseerr/ui.js',
                 'jellyseerr/modal.js',
                 'jellyseerr/more-info-modal.js',
-                'jellyseerr/ui.js',
-                'jellyseerr/issue-reporter.js',
                 'jellyseerr/item-details.js',
+                'jellyseerr/issue-reporter.js',
+                'jellyseerr/seamless-scroll.js',
                 'jellyseerr/discovery-filter-utils.js',
                 'jellyseerr/network-discovery.js',
                 'jellyseerr/person-discovery.js',
                 'jellyseerr/genre-discovery.js',
                 'jellyseerr/tag-discovery.js',
-                'jellyseerr/jellyseerr.js',
-                'pausescreen.js', 'reviews.js',
-                'qualitytags.js', 'genretags.js', 'languagetags.js', 'peopletags.js', 'ratingtags.js',
-                'letterboxd-links.js',
-                'extras/colored-ratings.js',
-                'extras/theme-selector.js',
-                'extras/colored-activity-icons.js',
-                'extras/plugin-icons.js',
+
+                // tags
+                'tags/genretags.js',
+                'tags/languagetags.js',
+                'tags/peopletags.js',
+                'tags/qualitytags.js',
+                'tags/ratingtags.js',
+
+                // arr
                 'arr/arr-links.js',
                 'arr/arr-tag-links.js',
                 'arr/requests-page.js',
-                'arr/calendar-page.js'
+                'arr/calendar-page.js',
+                'arr/requests-custom-tab.js',
+                'arr/calendar-custom-tab.js',
+
+                // extras
+                'extras/colored-activity-icons.js',
+                'extras/colored-ratings.js',
+                'extras/plugin-icons.js',
+                'extras/theme-selector.js',
+
+                // others
+                'others/letterboxd-links.js',
             ];
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');

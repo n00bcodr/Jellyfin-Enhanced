@@ -375,9 +375,12 @@
     "requests_on_date": "в {date}",
     "calendar_title": "Календарь",
     "calendar_today": "Сегодня",
+    "calendar_yesterday": "Вчера",
+    "calendar_tomorrow": "Завтра",
     "calendar_month": "Месяц",
     "calendar_week": "Неделя",
     "calendar_agenda": "Повестка",
+    "calendar_day": "День",
     "calendar_cinema_release": "Выход в кинотеатрах",
     "calendar_digital_release": "Цифровой релиз",
     "calendar_physical_release": "Физический релиз",
@@ -386,5 +389,6 @@
     "calendar_loading": "Загрузка календаря...",
     "calendar_no_releases": "Нет предстоящих релизов",
     "calendar_watchlist": "Список отслеживания",
-    "calendar_watched": "Просмотрено"
+    "calendar_watched": "Просмотрено",
+    "calendar_all_day": "Весь день"
 }

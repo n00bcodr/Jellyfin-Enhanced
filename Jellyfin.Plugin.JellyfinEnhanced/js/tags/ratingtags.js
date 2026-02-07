@@ -1,4 +1,4 @@
-// /js/ratingtags.js
+// /js/tags/ratingtags.js
 // Jellyfin Rating Tags - Display TMDB and Rotten Tomato ratings on posters
 (function(JE) {
     'use strict';
@@ -124,9 +124,9 @@
                 const item = result?.Items?.[0];
                 if (!item) return { tmdb: null, critic: null };
 
-                // For Series/Season/Episode, get the rating from the series itself when available
+                // For Series/Season/Episode, prefer the item's own rating, fall back to series rating if not available
                 let sourceItem = item;
-                if ((itemType === 'Season' || itemType === 'Episode') && item.SeriesId) {
+                if ((itemType === 'Season' || itemType === 'Episode') && item.SeriesId && !item.CommunityRating && !item.CriticRating) {
                     try {
                         const seriesResult = await ApiClient.ajax({
                             type: 'GET',
@@ -315,18 +315,20 @@
         }
 
         function observeDOM() {
-            const observer = new MutationObserver(() => {
-                // Check if feature is still enabled before processing
-                if (!JE.currentSettings?.ratingTagsEnabled) {
-                    return;
-                }
-                debouncedScan();
-            });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+            // Use centralized observer management from helpers
+            if (JE.helpers?.createObserver) {
+                JE.helpers.createObserver('rating-tags-mutations', () => {
+                    if (!JE.currentSettings?.ratingTagsEnabled) return;
+                    debouncedScan();
+                }, document.body, { childList: true, subtree: true });
+            } else {
+                // Fallback for older versions
+                const observer = new MutationObserver(() => {
+                    if (!JE.currentSettings?.ratingTagsEnabled) return;
+                    debouncedScan();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
 
             // Periodic cache persistence
             // Register with unified cache manager instead of setInterval

@@ -375,9 +375,12 @@
     "requests_on_date": "{date} tarihinde",
     "calendar_title": "Takvim",
     "calendar_today": "Bugün",
+    "calendar_yesterday": "Dün",
+    "calendar_tomorrow": "Yarın",
     "calendar_month": "Ay",
     "calendar_week": "Hafta",
     "calendar_agenda": "Ajanda",
+    "calendar_day": "Gün",
     "calendar_cinema_release": "Sinema yayını",
     "calendar_digital_release": "Dijital yayın",
     "calendar_physical_release": "Fiziksel yayın",
@@ -386,5 +389,6 @@
     "calendar_loading": "Takvim yükleniyor...",
     "calendar_no_releases": "Yaklaşan yayın yok",
     "calendar_watchlist": "İzleme listesi",
-    "calendar_watched": "İzlendi"
+    "calendar_watched": "İzlendi",
+    "calendar_all_day": "Bütün gün"
 }

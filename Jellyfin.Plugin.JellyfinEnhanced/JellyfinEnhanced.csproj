@@ -7,8 +7,8 @@
         <TargetFramework Condition="'$(JellyfinVersion)' == '10.10.7'">net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AssemblyVersion>10.9.0.0</AssemblyVersion>
-        <FileVersion>10.9.0.0</FileVersion>
+        <AssemblyVersion>10.11.0.0</AssemblyVersion>
+        <FileVersion>10.11.0.0</FileVersion>
         <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
     </PropertyGroup>
@@ -34,6 +34,8 @@
     <EmbeddedResource Include="PluginPages\CalendarPage.html"/>
     <None Remove="PluginPages\DownloadsPage.html"/>
     <EmbeddedResource Include="PluginPages\DownloadsPage.html"/>
+    <None Remove="PluginPages\BookmarksPage.html"/>
+    <EmbeddedResource Include="PluginPages\BookmarksPage.html"/>
     <None Remove="Configuration\configPage.html"/>
     <EmbeddedResource Include="Configuration\configPage.html"/>
     <None Remove="plugin.js"/>

@@ -65,6 +65,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         public string? PosterUrl { get; set; }
 
         /// <summary>
+        /// Optional backdrop/fanart URL
+        /// </summary>
+        [JsonPropertyName("backdropUrl")]
+        public string? BackdropUrl { get; set; }
+
+        /// <summary>
         /// IMDb ID
         /// </summary>
         [JsonPropertyName("imdbId")]
@@ -75,6 +81,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         /// </summary>
         [JsonPropertyName("itemId")]
         public Guid? ItemId { get; set; }
+
+        /// <summary>
+        /// Jellyfin Episode ItemId after mapping
+        /// </summary>
+        [JsonPropertyName("itemEpisodeId")]
+        public Guid? ItemEpisodeId { get; set; }
 
         /// <summary>
         /// Optional series or movie overview

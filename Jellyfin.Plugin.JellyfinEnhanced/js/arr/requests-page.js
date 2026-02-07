@@ -910,7 +910,7 @@
     `;
 
     return `
-      <div class="je-download-card">
+      <div class="je-download-card" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
@@ -954,7 +954,7 @@
     }
 
     return `
-            <div class="je-request-card">
+            <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
                 ${posterHtml}
                 <div class="je-request-info">
                     <div class="je-request-header">
@@ -1075,7 +1075,7 @@
     `;
 
     return `
-      <div class="je-download-card je-season-pack">
+      <div class="je-download-card je-season-pack" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
         <div class="je-download-card-content">
           ${posterHtml}
           <div class="je-download-info">
@@ -1344,6 +1344,30 @@
         }, 300);
       });
     }
+
+    // Add click handlers for cards and watch buttons
+    container.addEventListener('click', (e) => {
+      // Handle play/watch button clicks
+      const playBtn = e.target.closest('.je-request-watch-btn');
+      if (playBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const mediaId = playBtn.getAttribute('data-media-id');
+        if (mediaId && window.Emby?.Page?.showItem) {
+          window.Emby.Page.showItem(mediaId);
+        }
+        return;
+      }
+
+      // Handle card clicks to navigate to item
+      const card = e.target.closest('.je-download-card, .je-request-card');
+      if (card) {
+        const mediaId = card.getAttribute('data-media-id');
+        if (mediaId && window.Emby?.Page?.showItem) {
+          window.Emby.Page.showItem(mediaId);
+        }
+      }
+    });
   }
 
   /**
@@ -1498,20 +1522,32 @@
   function startPolling() {
     stopPolling();
     const config = JE.pluginConfig || {};
+
+    // Check if polling is enabled
+    if (!config.DownloadsPagePollingEnabled) {
+      return;
+    }
+
     const intervalSeconds = config.DownloadsPollIntervalSeconds !== undefined
       ? config.DownloadsPollIntervalSeconds
       : 30;
 
-    // Only start polling if interval is greater than 0
-    if (intervalSeconds > 0) {
-      const interval = intervalSeconds * 1000;
 
-      state.pollTimer = setInterval(() => {
-        if (state.pageVisible && !state.isLoading) {
-          loadAllData();
-        }
-      }, interval);
+    // Check visibility across all view modes: normal page, plugin pages, or custom tabs
+    const isVisible = state.pageVisible || state._pluginPageVisible || state._customTabMode;
+    if (!isVisible) {
+      return;
     }
+
+    const interval = intervalSeconds * 1000;
+    state.pollTimer = setInterval(() => {
+      // Re-check visibility on each interval
+      const currentlyVisible = state.pageVisible || state._pluginPageVisible || state._customTabMode;
+      if (currentlyVisible && !state.isLoading) {
+        loadAllData();
+      }
+    }, interval);
+
   }
 
   /**
@@ -1577,6 +1613,7 @@
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+    if (config.DownloadsUseCustomTabs) return; // Skip sidebar injection if using custom tabs
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
@@ -1624,9 +1661,15 @@
     const config = JE.pluginConfig || {};
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
+    if (config.DownloadsUseCustomTabs) return; // Don't watch if using custom tabs
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
+      // Re-check config each time to avoid injecting when settings change
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.DownloadsUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.DownloadsUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-downloads-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -1666,16 +1709,20 @@
     console.log(`${logPrefix} Initializing downloads page module`);
 
     const config = JE.pluginConfig || {};
-    if (!config.DownloadsPageEnabled || (pluginPagesExists && config.DownloadsUsePluginPages)) {
-      if (pluginPagesExists && config.DownloadsUsePluginPages) {
-        console.log(`${logPrefix} Downloads page is injected via Plugin Pages`);
-      } else {
-        console.log(`${logPrefix} Downloads page is disabled`);
-      }
+    if (!config.DownloadsPageEnabled) {
+      console.log(`${logPrefix} Downloads page is disabled`);
       return;
     }
 
     injectStyles();
+
+    const usingPluginPages = pluginPagesExists && config.DownloadsUsePluginPages;
+    if (usingPluginPages) {
+      console.log(`${logPrefix} Downloads page is injected via Plugin Pages`);
+      return;
+    }
+
+    // Page-specific setup for custom tabs or dedicated page mode
     createPageContainer();
 
     // Inject navigation and set up one-time re-injection on sidebar rebuild
@@ -1760,14 +1807,25 @@
   // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
   function startLocationWatcher() {
     if (state.locationTimer) return;
+
     state.locationSignature = `${window.location.pathname}${window.location.hash}`;
-    state.locationTimer = setInterval(() => {
+
+    // Use throttle helper if available for better performance
+    const throttledCheck = JE.helpers?.throttle?.(() => {
       const signature = `${window.location.pathname}${window.location.hash}`;
       if (signature !== state.locationSignature) {
         state.locationSignature = signature;
         handleNavigation();
       }
-    }, 150);
+    }, 150) || (() => {
+      const signature = `${window.location.pathname}${window.location.hash}`;
+      if (signature !== state.locationSignature) {
+        state.locationSignature = signature;
+        handleNavigation();
+      }
+    });
+
+    state.locationTimer = setInterval(throttledCheck, 150);
   }
 
   function stopLocationWatcher() {
@@ -1777,18 +1835,32 @@
     }
   }
 
+  /**
+   * Render content for custom tabs (without page state management)
+   */
+  function renderForCustomTab() {
+    state._customTabMode = true;
+    injectStyles();
+    renderPage();
+    loadAllData();
+    startPolling();
+  }
+
   // Export to JE namespace
   JE.downloadsPage = {
     initialize,
     showPage,
     hidePage,
     refresh: loadAllData,
+    startPolling,
+    stopPolling,
     filterDownloads,
     searchDownloads,
     filterRequests,
     nextPage,
     prevPage,
     renderPage,
+    renderForCustomTab,
     injectStyles
   };
 
