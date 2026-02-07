@@ -42,9 +42,20 @@
       JE.downloadsPage.injectStyles();
       JE.downloadsPage.renderPage();
       JE.downloadsPage.refresh();
-      startPolling();
       handleClickOnPlay();
       console.log('🪼 Jellyfin Enhanced: Downloads Page Loaded.');
+
+      // Use the main module's startPolling which properly respects config and visibility
+      // Mark the page as visible for the polling logic
+      JE.downloadsPage._pluginPageVisible = true;
+
+      // Start polling - will use the interval from pluginConfig or default to 30 seconds
+      if (typeof JE.downloadsPage.startPolling === 'function') {
+        JE.downloadsPage.startPolling();
+      } else {
+        // Fallback: implement auto-refresh for this page
+        startPollingFallback();
+      }
       return;
     }
 
@@ -58,29 +69,41 @@
   }, INTERVAL);
 })();
 
-function startPolling() {
+function startPollingFallback() {
   const JE = window.JellyfinEnhanced;
   if (!JE || !JE.downloadsPage || typeof JE.downloadsPage.refresh !== "function") return;
 
-  const POLL_INTERVAL_SECONDS = JE.pluginConfig?.DownloadsPollIntervalSeconds || 30;
-
-  if (JE.downloadsPage._pollTimer) {
-    clearInterval(JE.downloadsPage._pollTimer);
+  // Check if polling is enabled
+  if (!JE.pluginConfig?.DownloadsPagePollingEnabled) {
+    return;
   }
 
-  // Only start polling if interval is greater than 0
-  if (POLL_INTERVAL_SECONDS > 0) {
-    const POLL_INTERVAL = POLL_INTERVAL_SECONDS * 1000;
+  const pollIntervalSeconds = JE.pluginConfig?.DownloadsPollIntervalSeconds !== undefined
+    ? JE.pluginConfig.DownloadsPollIntervalSeconds
+    : 30;
 
-    JE.downloadsPage._pollTimer = setInterval(() => {
-      const container = document.getElementById("je-downloads-container");
-
-      if (container && container.offsetHeight > 0 && container.offsetWidth > 0) {
-        JE.downloadsPage.refresh();
-      }
-    }, POLL_INTERVAL);
+  if (JE.downloadsPage._pluginPagePollTimer) {
+    clearInterval(JE.downloadsPage._pluginPagePollTimer);
   }
+
+  const POLL_INTERVAL = pollIntervalSeconds * 1000;
+  JE.downloadsPage._pluginPagePollTimer = setInterval(() => {
+    const container = document.getElementById("je-downloads-container");
+    // Check visibility: container visible and plugin page is active
+    if (container && container.offsetHeight > 0 && container.offsetWidth > 0 && JE.downloadsPage._pluginPageVisible) {
+      JE.downloadsPage.refresh();
+    }
+  }, POLL_INTERVAL);
 }
+
+// Clean up polling when page is hidden or document is unloaded
+window.addEventListener('beforeunload', () => {
+  const JE = window.JellyfinEnhanced;
+  if (JE?.downloadsPage?._pluginPagePollTimer) {
+    clearInterval(JE.downloadsPage._pluginPagePollTimer);
+  }
+  JE.downloadsPage._pluginPageVisible = false;
+});
 
 function handleClickOnPlay() {
   if (handleClickOnPlay._initialized) return;

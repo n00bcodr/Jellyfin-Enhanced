@@ -262,6 +262,13 @@
                             <div class="fieldDescription" style="margin-bottom: 1.5em;">
                                 Save custom bookmarks/timestamps while watching videos to quickly jump back to your favorite scenes or moments.
                             </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="bookmarksUsePluginPages" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Plugin Pages for Bookmarks Library</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1.5em;">Adds a "Bookmarks" link to the sidebar via <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a>.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
                             <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
                                     <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
@@ -273,7 +280,7 @@
                                             <li style="margin-bottom: 0.5em;"><strong>Multi-Version Support:</strong> Bookmarks track by TMDB/TVDB IDs, so they work across different file versions of the same content.</li>
                                         </ul>
                                         <h4 style="margin: 1em 0 0.5em 0;">To View & Manage All Your Bookmarks:</h4>
-                                        <p class="fieldDescription" style="margin: 0;">You need to create a custom view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <p class="fieldDescription" style="margin: 0;">You can either enable <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> above to add a sidebar link, or create a custom view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
                                         <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
                                             <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
                                             <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
@@ -946,11 +953,17 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="checkboxContainer" style="margin-bottom: 1em;">
+                                <label>
+                                    <input id="downloadsPagePollingEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Auto-Refresh for Downloads</span>
+                                </label>
+                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
-                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="0" max="300"/>
+                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="30" max="300"/>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Set to 0 to disable automatic refresh.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Minimum is 30 seconds and applies only when auto-refresh is enabled.</div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -1855,6 +1868,7 @@
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
+                document.querySelector('#bookmarksUsePluginPages').checked = config.BookmarksUsePluginPages === true;
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
@@ -1901,6 +1915,7 @@
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
+                document.querySelector('#downloadsPagePollingEnabled').checked = config.DownloadsPagePollingEnabled !== false;
                 document.querySelector('#downloadsPollIntervalSeconds').value = (config.DownloadsPollIntervalSeconds !== undefined && config.DownloadsPollIntervalSeconds !== null) ? config.DownloadsPollIntervalSeconds : 30;
 
                 // Calendar Page settings
@@ -2029,6 +2044,7 @@
             const retentionDays = parseInt(document.querySelector('#watchlistMemoryRetentionDays').value);
             config.WatchlistMemoryRetentionDays = isNaN(retentionDays) || retentionDays < 1 ? 365 : Math.min(retentionDays, 3650);
             config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
+            config.BookmarksUsePluginPages = document.querySelector('#bookmarksUsePluginPages').checked;
             config.UseIcons = document.querySelector('#useIcons').checked;
             config.IconStyle = document.querySelector('#iconStyle').value;
 
@@ -2071,9 +2087,9 @@
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
-            const pollIntervalValue = document.querySelector('#downloadsPollIntervalSeconds').value;
-            const parsedPollInterval = parseInt(pollIntervalValue, 10);
-            config.DownloadsPollIntervalSeconds = (!isNaN(parsedPollInterval) && parsedPollInterval > 0) ? parsedPollInterval : 30;
+            config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
+            const pollInterval = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10);
+            config.DownloadsPollIntervalSeconds = pollInterval >= 30 ? pollInterval : 30;
             config.DownloadsUseCustomTabs = document.querySelector('#downloadsUseCustomTabs').checked;
 
             // Calendar Page settings

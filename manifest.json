@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
     "versions": [
       {
+        "changelog": "- Respect Plugin Pages Settings\n - Add *arr URL mapping support\n - Add markdown support to reviews\n - Refactor reviews page detection to use onViewPage hook\n - Leverage helpers for throttling, debouncing, and observers\n - Update quality tag documentation for codecs and features\n - Fix load order for dependencies\n - Rework Calendar UI ([#338](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/338))\n - Update funding.yml\n - Update funding.yml\n - Missed \"All Day\" Translation\n - Fix clicking on items not navigating to item in request custom tab\n - Remove debug logging for person tags\n - fix: Add custom tab flags and conditional init\n - Small css tweaks\n - Remove in-memory season request cache\n - Add ArrTags sync filter and UI\n - Update pr.json\n - Fix backdrop issue in custom tabs\n - Update README.md\n - Add plugin-pages support for Bookmarks\n - Fallback to series rating only if missing\n - Add configurable auto-refresh for Downloads page",
+        "targetAbi": "10.10.7.0",
+        "version": "10.11.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/10.11.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "D3EC821405BA99F1BEC7EF6DBA551524",
+        "timestamp": "2026-02-06T22:06:51"
+      },
+      {
         "changelog": "- Enforce icon size on card with !important\n - Keep last calendar view in user settings\n - fix: Jellyseerr proxy URL fallback on HTTP errors\n - Fix calendar range handling (UTC) and pass RFC3339 start/end to Sonarr/Radarr\n - Add watchlist re-addition prevention feature\n - Improve logging and result tracking in watchlist sync\n - Reduce unnecessary info logs\n - Use new item by provider id endpoint to navigate in calendar\n - Add manual refresh and improve polling for downloads\n - Remove status filter from download queue request\n - Add PeopleTagsEnabled to config handling\n - Improve handling of downloads poll interval config\n - Enhance request status colors and section classes\n - Add detailed logging to Jellyseerr watchlist sync\n - Add downloads tab filtering and search UI\n - Add i18n support for requests page and update translations\n - Update ratings.css\n - Add video format detection and badges to quality tags\n - Set calendar default view mode to 'agenda'\n - Add Custom Tabs support for Calendar and Requests pages\n - Refactor JS file structure and update imports\n - Update CONTRIBUTING.md",
         "targetAbi": "10.10.7.0",
         "version": "10.10.0.0",

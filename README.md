@@ -469,6 +469,7 @@ Quality tags are injected into each card/poster with this structure:
 <div class="cardImageContainer" style="position: relative;">
     <div class="quality-overlay-container">
         <div class="quality-overlay-label resolution" data-quality="4K">4K</div>
+        <div class="quality-overlay-label video-format" data-quality="HEVC">HEVC</div>
         <div class="quality-overlay-label video-codec" data-quality="HDR">HDR</div>
         <div class="quality-overlay-label audio-codec" data-quality="ATMOS">ATMOS</div>
     </div>
@@ -481,7 +482,8 @@ Quality tags are injected into each card/poster with this structure:
 * **`.quality-overlay-label`** → Base class for each tag.
 * **Category classes**:
   * `.resolution` – resolution tags (`8K`, `4K`, `1080p`, `LOW-RES`, etc.)
-  * `.video-codec` – video codecs (`AV1`, `HEVC`, `H265`, `VP9`, `H264`, etc.) and video features (`HDR`, `Dolby Vision`, `HDR10+`, `3D`, etc.)
+  * `.video-format` – video format/codec tags (`AV1`, `HEVC`, `H265`, `VP9`, `H264`, etc.)
+  * `.video-codec` – video feature tags (`HDR`, `Dolby Vision`, `HDR10+`, `3D`, etc.)
   * `.audio-codec` – audio formats/channels (`ATMOS`, `DTS-X`, `TRUEHD`, `DTS`, `Dolby Digital+`, `7.1`, `5.1`, etc.)
 * **`data-quality="..."`** → Exact tag text (e.g. `data-quality="HDR10+"`).
 
@@ -496,9 +498,10 @@ Quality tags are injected into each card/poster with this structure:
 | **All Tags**                | `.quality-overlay-label`                         | `.quality-overlay-label { font-size: 0.8rem !important; padding: 3px 10px !important; }`                         |
 | **Tag Container Position**  | `.quality-overlay-container`                     | `.quality-overlay-container { left: auto !important; right: 6px !important; align-items: flex-end !important; }` |
 | **Specific Tag (e.g., 4K)** | `.quality-overlay-label[data-quality="4K"]`      | `.quality-overlay-label[data-quality="4K"] { background-color: purple !important; }`                             |
-| **HDR Tag**                 | `.quality-overlay-label[data-quality="HDR"]`     | `.quality-overlay-label[data-quality="HDR"] { border: 2px solid gold !important; }`                              |
-| **Video Codec Tag (HEVC)**  | `.quality-overlay-label[data-quality="HEVC"]`    | `.quality-overlay-label[data-quality="HEVC"] { background-color: #2196F3 !important; }`                          |
-| **Video Codec Tag (AV1)**   | `.quality-overlay-label[data-quality="AV1"]`     | `.quality-overlay-label[data-quality="AV1"] { background-color: #FF5722 !important; }`                           |
+| **HDR Tag**                 | `.quality-overlay-label.video-codec[data-quality="HDR"]`     | `.quality-overlay-label.video-codec[data-quality="HDR"] { border: 2px solid gold !important; }`                              |
+| **Video Format (HEVC)**  | `.quality-overlay-label.video-format[data-quality="HEVC"]`    | `.quality-overlay-label.video-format[data-quality="HEVC"] { background-color: #2196F3 !important; }`                          |
+| **Video Format (AV1)**   | `.quality-overlay-label.video-format[data-quality="AV1"]`     | `.quality-overlay-label.video-format[data-quality="AV1"] { background-color: #FF5722 !important; }`                           |
+| **Video Feature (Dolby Vision)**   | `.quality-overlay-label.video-codec[data-quality="Dolby Vision"]`     | `.quality-overlay-label.video-codec[data-quality="Dolby Vision"] { background: linear-gradient(90deg,#0f0c29,#302b63) !important; }`                           |
 | **Low Resolution Tag**      | `.quality-overlay-label[data-quality="LOW-RES"]` | `.quality-overlay-label[data-quality="LOW-RES"] { opacity: 0.7 !important; }`                                    |
 | **Stack Tags Horizontally** | `.quality-overlay-container`                     | `.quality-overlay-container { flex-direction: row !important; flex-wrap: wrap !important; }`                     |
 
@@ -520,20 +523,32 @@ Quality tags are injected into each card/poster with this structure:
 
   ```css
   .quality-overlay-label.resolution { background: blue !important; }
-  .quality-overlay-label.video-codec { background: purple !important; }
+  .quality-overlay-label.video-format { background: purple !important; }
+  .quality-overlay-label.video-codec { background: gold !important; }
   .quality-overlay-label.audio-codec { background: green !important; }
   ```
 
 * **Target a specific tag**
 
   ```css
-  .quality-overlay-label[data-quality="HDR"] {
+    .quality-overlay-label.video-codec[data-quality="HDR"] {
       border: 2px solid gold !important;
   }
 
-  .quality-overlay-label[data-quality="HEVC"] {
+    .quality-overlay-label.video-format[data-quality="HEVC"] {
       background-color: #2196F3 !important;
       color: white !important;
+  }
+
+    /* Video format examples */
+    .quality-overlay-label.video-format[data-quality="AV1"] {
+      background-color: #FF5722 !important;
+      color: white !important;
+  }
+
+  .quality-overlay-label.video-codec[data-quality="Dolby Vision"] {
+      background: linear-gradient(90deg, #0f0c29, #302b63) !important;
+      color: #00d4ff !important;
   }
   ```
 
@@ -555,16 +570,17 @@ Quality tags are injected into each card/poster with this structure:
   /* Hide specific codec */
   .quality-overlay-label[data-quality="H264"] { display: none !important; }
 
-  /* Hide all video codecs but keep features like HDR */
-  .quality-overlay-label.video-codec[data-quality="AV1"],
-  .quality-overlay-label.video-codec[data-quality="HEVC"],
-  .quality-overlay-label.video-codec[data-quality="H265"],
-  .quality-overlay-label.video-codec[data-quality="VP9"],
-  .quality-overlay-label.video-codec[data-quality="H264"] {
+  /* Hide all video formats but keep features like HDR */
+  .quality-overlay-label.video-format[data-quality="AV1"],
+  .quality-overlay-label.video-format[data-quality="HEVC"],
+  .quality-overlay-label.video-format[data-quality="H265"],
+  .quality-overlay-label.video-format[data-quality="VP9"],
+  .quality-overlay-label.video-format[data-quality="H264"] {
       display: none !important;
   }
 
   /* Only show resolution tags */
+  .quality-overlay-label.video-format,
   .quality-overlay-label.video-codec,
   .quality-overlay-label.audio-codec{ display: none !important; }
   ```
