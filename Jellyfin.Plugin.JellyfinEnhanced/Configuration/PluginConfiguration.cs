@@ -124,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsShowAsLinks = true;
             ArrTagsLinksFilter = "";
             ArrTagsLinksHideFilter = "";
+            ArrTagsSyncFilter = "";
 
             // Letterboxd Settings
             LetterboxdEnabled = false;
@@ -275,6 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ArrTagsShowAsLinks { get; set; }
         public string ArrTagsLinksFilter { get; set; }
         public string ArrTagsLinksHideFilter { get; set; }
+        public string ArrTagsSyncFilter { get; set; }
 
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }

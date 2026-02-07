@@ -21,9 +21,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
 
-        // Track which seasons have already been requested to avoid duplicates (with timestamps for expiry)
-        private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedSeasons = new();
-
         public AutoSeasonRequestService(
             IHttpClientFactory httpClientFactory,
             Logger logger,
@@ -167,49 +164,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Threshold met - prepare to request next season
             var nextSeasonNumber = currentSeasonNumber + 1;
 
-            // Check if we've already requested this season (in-memory cache with 1-hour expiry)
-            var requestKey = $"{user.Id}_{series.Id}_{nextSeasonNumber}";
-            if (!_requestedSeasons.ContainsKey(user.Id.ToString()))
-            {
-                _requestedSeasons[user.Id.ToString()] = new Dictionary<string, DateTime>();
-            }
-
-            // Check if cached and not expired (1 hour)
-            if (_requestedSeasons[user.Id.ToString()].TryGetValue(requestKey, out var cachedTime))
-            {
-                if ((DateTime.Now - cachedTime).TotalHours < 1)
-                {
-                    _logger.Debug($"[Auto-Season-Request] Already requested '{series.Name}' S{nextSeasonNumber} (cached)");
-                    return;
-                }
-                else
-                {
-                    // Expired, remove from cache
-                    _requestedSeasons[user.Id.ToString()].Remove(requestKey);
-                }
-            }
-
-            // Check Jellyseerr for season availability/status
+            // Check Jellyseerr for season availability/status - always query to get latest status
             var jellyseerrStatus = await GetSeasonStatusFromJellyseerr(tmdbId, nextSeasonNumber);
 
             if (jellyseerrStatus == null)
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} does not exist for '{series.Name}' (not available on TMDB)");
-                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now; // Mark as checked to avoid repeated attempts
                 return;
             }
 
             if (jellyseerrStatus.IsAvailable)
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} already available on Jellyfin for '{series.Name}'");
-                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now;
                 return;
             }
 
             if (jellyseerrStatus.IsRequested)
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} already requested in Jellyseerr for '{series.Name}'");
-                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now;
                 return;
             }
 
@@ -218,7 +190,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (success)
             {
-                _requestedSeasons[user.Id.ToString()][requestKey] = DateTime.Now;
                 _logger.Info($"[Auto-Season-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
             }
             else
@@ -355,7 +326,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 }
                             }
 
-                            // Look for the season in the response
+                            // First, check if there are any requests for this season
+                            bool hasRequest = false;
+                            if (root.TryGetProperty("requests", out var requestsArray))
+                            {
+                                foreach (var request in requestsArray.EnumerateArray())
+                                {
+                                    // Check if this request contains the season we're looking for
+                                    if (request.TryGetProperty("seasons", out var requestSeasons))
+                                    {
+                                        foreach (var requestSeason in requestSeasons.EnumerateArray())
+                                        {
+                                            if (requestSeason.TryGetProperty("seasonNumber", out var requestSeasonNum) &&
+                                                requestSeasonNum.GetInt32() == seasonNumber)
+                                            {
+                                                hasRequest = true;
+                                                _logger.Debug($"[Auto-Season-Request] Found existing request for season {seasonNumber}");
+                                                break;
+                                            }
+                                        }
+                                        if (hasRequest) break;
+                                    }
+                                }
+                            }
+
+                            // Look for the season in the response to check availability
                             if (root.TryGetProperty("seasons", out var seasonsArray))
                             {
                                 foreach (var season in seasonsArray.EnumerateArray())
@@ -370,8 +365,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         {
                                             var statusValue = statusProp.GetInt32();
                                             status.IsAvailable = statusValue == 5;
-                                            status.IsRequested = statusValue == 2 || statusValue == 3; // 2=pending, 3=processing
                                         }
+
+                                        // Set IsRequested based on whether we found a request for this season
+                                        status.IsRequested = hasRequest;
 
                                         _logger.Debug($"[Auto-Season-Request] Season {seasonNumber} status from Jellyseerr: Available={status.IsAvailable}, Requested={status.IsRequested}");
                                         return status;
@@ -552,13 +549,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return null;
-        }
-
-        // Clears the request cache (useful for testing or resetting)
-        public void ClearRequestCache()
-        {
-            _requestedSeasons.Clear();
-            _logger.Info("[Auto-Season-Request] Cleared auto season request cache");
         }
     }
 }

@@ -115,6 +115,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             string tagPrefix = config.ArrTagsPrefix ?? "Requested by: ";
             bool clearOldTags = config.ArrTagsClearOldTags;
 
+            // Parse sync filter - if empty, sync all tags
+            var syncFilterTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(config.ArrTagsSyncFilter))
+            {
+                var filterParts = config.ArrTagsSyncFilter.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in filterParts)
+                {
+                    syncFilterTags.Add(part.Trim());
+                }
+                _logger.Info($"Filtering tags to sync: {string.Join(", ", syncFilterTags)}");
+            }
+
             foreach (var item in allItems)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -171,6 +183,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 {
                     foreach (var tag in tagsToAdd)
                     {
+                        // Apply sync filter - skip tags not in filter (if filter is set)
+                        if (syncFilterTags.Count > 0 && !syncFilterTags.Contains(tag))
+                        {
+                            continue;
+                        }
+
                         var formattedTag = $"{tagPrefix}{tag}";
 
                         // Only add if not already present

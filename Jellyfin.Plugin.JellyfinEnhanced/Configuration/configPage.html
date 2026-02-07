@@ -801,17 +801,17 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. Only for admins.<br> If no URL is added for a service below, links for that service are not shown.</div>
                             <div>
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="sonarrUrlMappings">Sonarr URL Mappings</label>
-                                <textarea style="display:block; height: 6vh !important;" class="emby-textarea emby-input" id="sonarrUrlMappings" name="sonarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:8989&#10;https://jellyfin.example.com|https://sonarr.example.com"></textarea>
+                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="sonarrUrlMappings" name="sonarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:8989&#10;https://jellyfin.example.com|https://sonarr.example.com"></textarea>
                                 <div class="fieldDescription">Map Jellyfin access URLs to Sonarr URLs. Format: <code>jellyfin_url|sonarr_url</code> (one per line).</div>
                             </div>
                             <div style="margin-top: 1em;">
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="radarrUrlMappings">Radarr URL Mappings</label>
-                                <textarea style="display:block; height: 6vh !important;" class="emby-textarea emby-input" id="radarrUrlMappings" name="radarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:7878&#10;https://jellyfin.example.com|https://radarr.example.com"></textarea>
+                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="radarrUrlMappings" name="radarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:7878&#10;https://jellyfin.example.com|https://radarr.example.com"></textarea>
                                 <div class="fieldDescription">Map Jellyfin access URLs to Radarr URLs. Format: <code>jellyfin_url|radarr_url</code> (one per line).</div>
                             </div>
                             <div style="margin-top: 1em;">
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="bazarrUrlMappings">Bazarr URL Mappings</label>
-                                <textarea style="display:block; height: 6vh !important;" class="emby-textarea emby-input" id="bazarrUrlMappings" name="bazarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:6767&#10;https://jellyfin.example.com|https://bazarr.example.com"></textarea>
+                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="bazarrUrlMappings" name="bazarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:6767&#10;https://jellyfin.example.com|https://bazarr.example.com"></textarea>
                                 <div class="fieldDescription">Map Jellyfin access URLs to Bazarr URLs. Format: <code>jellyfin_url|bazarr_url</code> (one per line).<br>These mappings are useful when accessing Jellyfin via different URLs (e.g., internal network vs. public domain) and you need *arr links to use the appropriate corresponding URL.</div>
                             </div>
                             <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 2em;">
@@ -857,6 +857,18 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Displays tags with the configured prefix as clickable links on item detail pages. Helpful if your theme hides tags.</div>
+                            <div class="inputContainer">
+                                <label style="margin-bottom: 2em;" for="arrTagsSyncFilter">Filter Tags to Sync to Jellyfin (Optional)</label>
+                                <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="arrTagsSyncFilter" name="arrTagsSyncFilter" rows="3" placeholder="1 - Jellyfish&#10;trakt&#10;imdb_250"></textarea>
+                                <br>
+                                <div class="fieldDescription">
+                                    Only sync specific tags from *arr to Jellyfin. Enter one tag name per line (without the prefix).
+                                    <br>Leave empty to sync all tags.
+                                    <br><strong>Example:</strong> If you only want to sync "1 - Jellyfish" and "trakt" tags, enter:
+                                    <br><code>1 - Jellyfish</code>
+                                    <br><code>trakt</code>
+                                </div>
+                            </div>
                             <div class="inputContainer">
                                 <label style="margin-bottom: 2em;" for="arrTagsLinksFilter">Filter Tags to Show as Links (Optional)</label>
                                 <textarea style="display:block; height: 10vh !important;" class="emby-textarea emby-input" id="arrTagsLinksFilter" name="arrTagsLinksFilter" rows="3" placeholder="1 - Jellyfish&#10;trakt&#10;imdb_250"></textarea>
@@ -1859,6 +1871,7 @@
                 document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'Requested by: ';
                 document.querySelector('#arrTagsClearOldTags').checked = config.ArrTagsClearOldTags !== false;
                 document.querySelector('#arrTagsShowAsLinks').checked = config.ArrTagsShowAsLinks !== false;
+                document.querySelector('#arrTagsSyncFilter').value = config.ArrTagsSyncFilter || '';
                 document.querySelector('#arrTagsLinksFilter').value = config.ArrTagsLinksFilter || '';
                 document.querySelector('#arrTagsLinksHideFilter').value = config.ArrTagsLinksHideFilter || '';
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
@@ -2033,6 +2046,7 @@
             config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'Requested by: ';
             config.ArrTagsClearOldTags = document.querySelector('#arrTagsClearOldTags').checked;
             config.ArrTagsShowAsLinks = document.querySelector('#arrTagsShowAsLinks').checked;
+            config.ArrTagsSyncFilter = document.querySelector('#arrTagsSyncFilter').value || '';
             config.ArrTagsLinksFilter = document.querySelector('#arrTagsLinksFilter').value || '';
             config.ArrTagsLinksHideFilter = document.querySelector('#arrTagsLinksHideFilter').value || '';
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
