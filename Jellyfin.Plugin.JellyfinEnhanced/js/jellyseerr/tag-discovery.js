@@ -460,6 +460,8 @@
             // Determine if we have both types
             const hasBoth = JE.discoveryFilter?.hasBothTypes(cachedTvResults, cachedMovieResults) || false;
 
+            // Always start each section on "All" (mixed) instead of persisting previous choice.
+            JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
             // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
@@ -555,6 +557,7 @@
             itemDeduplicator.clear();
         }
         itemDeduplicator = null;
+        JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
     }
 
     /**
