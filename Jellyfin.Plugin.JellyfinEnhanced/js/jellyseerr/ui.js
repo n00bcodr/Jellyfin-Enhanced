@@ -1221,7 +1221,7 @@
         }
 
         // Add hide button for hidden content feature
-        if (JE.hiddenContent) {
+        if (JE.hiddenContent && JE.hiddenContent.getSettings().showButtonJellyseerr !== false) {
             const cardBox = card.querySelector('.cardBox');
             if (cardBox) {
                 const hideBtn = document.createElement('button');

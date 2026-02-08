@@ -727,6 +727,7 @@
      */
     function addHideContentButton(itemId, visiblePage) {
         if (!JE.hiddenContent) return;
+        if (JE.hiddenContent.getSettings().showButtonDetails === false) return;
         if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
 
         // Don't add duplicate

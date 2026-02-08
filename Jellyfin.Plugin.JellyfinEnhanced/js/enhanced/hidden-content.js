@@ -44,6 +44,9 @@
             filterRecommendations: true,
             filterRequests: true,
             showHideConfirmation: true,
+            showButtonJellyseerr: true,
+            showButtonLibrary: false,
+            showButtonDetails: true,
             ...data.settings
         };
     }
@@ -986,6 +989,106 @@
         }
     }
 
+    // --- Library hide buttons ---
+
+    /**
+     * Adds hide/unhide toggle buttons to native Jellyfin library cards.
+     * Only runs when the `showButtonLibrary` setting is enabled.
+     * Skips cards that already have a `.je-hide-btn` to avoid duplicates.
+     * Each button reflects the current hidden state and toggles on click,
+     * reusing the same `.je-hide-btn` CSS class pattern as Jellyseerr cards.
+     */
+    function addLibraryHideButtons() {
+        if (!getSettings().showButtonLibrary) return;
+
+        var cards = document.querySelectorAll('.card[data-id] .cardBox, .card[data-itemid] .cardBox');
+        for (var i = 0; i < cards.length; i++) {
+            var cardBox = cards[i];
+            // Skip cards that already have a hide button
+            if (cardBox.querySelector('.je-hide-btn')) continue;
+
+            var card = cardBox.closest('.card');
+            if (!card) continue;
+            var itemId = getCardItemId(card);
+            if (!itemId) continue;
+
+            // Position relative so the absolute-positioned button sits in the card corner
+            cardBox.style.position = 'relative';
+            var hideBtn = document.createElement('button');
+
+            // Resolve labels with fallback when translations aren't loaded yet
+            var hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button' ? JE.t('hidden_content_hide_button') : 'Hide';
+            var hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
+            var unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide' ? JE.t('hidden_content_unhide') : 'Unhide';
+
+            // IIFE to capture per-card references in the closure (btn, card element, item ID)
+            (function(btn, crd, iId) {
+                /** Renders a material icon inside the button */
+                function renderIcon(iconName) {
+                    btn.replaceChildren();
+                    var icon = document.createElement('span');
+                    icon.className = 'material-icons';
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.textContent = iconName || 'visibility';
+                    btn.appendChild(icon);
+                }
+
+                /** Configures the button for "already hidden" state — click to unhide */
+                function setHiddenState() {
+                    btn.className = 'je-hide-btn je-already-hidden';
+                    btn.title = hiddenLabel;
+                    renderIcon('visibility_off');
+                    btn.onmouseenter = function() { btn.title = unhideLabel; };
+                    btn.onmouseleave = function() { btn.title = hiddenLabel; };
+                    btn.onclick = function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        unhideItem(iId);
+                        setHideState();
+                    };
+                }
+
+                /** Configures the button for "visible" state — click to hide */
+                function setHideState() {
+                    btn.className = 'je-hide-btn';
+                    btn.title = hideLabel;
+                    renderIcon('visibility');
+                    btn.onmouseenter = null;
+                    btn.onmouseleave = null;
+                    btn.onclick = function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        confirmAndHide({
+                            itemId: iId,
+                            name: crd.querySelector('.cardText')?.textContent || ''
+                        }, function() {
+                            crd.style.display = 'none';
+                        });
+                    };
+                }
+
+                // Set initial state based on whether the item is currently hidden
+                if (hiddenIdSet.has(iId)) {
+                    setHiddenState();
+                } else {
+                    setHideState();
+                }
+                cardBox.appendChild(btn);
+            })(hideBtn, card, itemId);
+        }
+    }
+
+    /**
+     * Removes all hide buttons from native Jellyfin library cards.
+     * Called when the `showButtonLibrary` setting is toggled off.
+     */
+    function removeLibraryHideButtons() {
+        var btns = document.querySelectorAll('.card[data-id] .je-hide-btn, .card[data-itemid] .je-hide-btn');
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].remove();
+        }
+    }
+
     var debouncedFilterNative = JE.helpers?.debounce
         ? JE.helpers.debounce(function() { requestAnimationFrame(filterNativeCards); }, 300)
         : filterNativeCards;
@@ -994,7 +1097,10 @@
         // Use onViewPage for page navigation — much cheaper than a body MutationObserver
         if (JE.helpers?.onViewPage) {
             JE.helpers.onViewPage(function() {
-                setTimeout(refreshNativeCardVisibility, 300);
+                setTimeout(function() {
+                    refreshNativeCardVisibility();
+                    if (getSettings().showButtonLibrary) addLibraryHideButtons();
+                }, 300);
             });
         }
 
@@ -1014,7 +1120,10 @@
                     }
                     if (hasNewCards) break;
                 }
-                if (hasNewCards) debouncedFilterNative();
+                if (hasNewCards) {
+                    debouncedFilterNative();
+                    if (getSettings().showButtonLibrary) addLibraryHideButtons();
+                }
             });
             observer.observe(document.body, { childList: true, subtree: true });
         }
@@ -1213,7 +1322,9 @@
             showUndoToast,
             showManagementPanel,
             createItemCard,
-            unhideAll
+            unhideAll,
+            addLibraryHideButtons,
+            removeLibraryHideButtons
         };
 
         console.log(`🪼 Jellyfin Enhanced: Hidden Content initialized (${getHiddenCount()} items hidden)`);

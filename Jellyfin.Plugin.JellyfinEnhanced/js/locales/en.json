@@ -427,5 +427,12 @@
     "hidden_content_confirm_suppress_15m": "Don't ask again for 15 minutes",
     "hidden_content_confirm_suppress_forever": "Don't ask again",
     "hidden_content_confirm_toggle_label": "Show Confirmation Dialog",
-    "hidden_content_confirm_toggle_desc": "Show a confirmation dialog before hiding items"
+    "hidden_content_confirm_toggle_desc": "Show a confirmation dialog before hiding items",
+    "hidden_content_button_section_title": "Hide Button Visibility",
+    "hidden_content_show_button_jellyseerr": "Show on Jellyseerr Items",
+    "hidden_content_show_button_jellyseerr_desc": "Show the hide button on Jellyseerr discovery and search cards",
+    "hidden_content_show_button_library": "Show in Library Views",
+    "hidden_content_show_button_library_desc": "Show the hide button on native Jellyfin library cards",
+    "hidden_content_show_button_details": "Show on Detail Pages",
+    "hidden_content_show_button_details_desc": "Show the hide button on movie and series detail pages"
 }

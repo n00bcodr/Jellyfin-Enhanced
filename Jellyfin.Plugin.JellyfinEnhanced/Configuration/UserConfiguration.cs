@@ -125,6 +125,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool FilterRecommendations { get; set; } = true;
         public bool FilterRequests { get; set; } = true;
         public bool ShowHideConfirmation { get; set; } = true;
+        public bool ShowButtonJellyseerr { get; set; } = true;
+        public bool ShowButtonLibrary { get; set; } = false;
+        public bool ShowButtonDetails { get; set; } = true;
     }
 
     public class UserHiddenContent

@@ -897,6 +897,27 @@
                                     <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_confirm_toggle_label')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_confirm_toggle_desc')}</div></div>
                                 </label>
                             </div>
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-weight:500; font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:8px; padding-left:4px;">${JE.t('hidden_content_button_section_title')}</div>
+                                <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenShowButtonJellyseerr" ${JE.hiddenContent?.getSettings()?.showButtonJellyseerr !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_show_button_jellyseerr')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_show_button_jellyseerr_desc')}</div></div>
+                                    </label>
+                                </div>
+                                <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenShowButtonLibrary" ${JE.hiddenContent?.getSettings()?.showButtonLibrary ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_show_button_library')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_show_button_library_desc')}</div></div>
+                                    </label>
+                                </div>
+                                <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenShowButtonDetails" ${JE.hiddenContent?.getSettings()?.showButtonDetails !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_show_button_details')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_show_button_details_desc')}</div></div>
+                                    </label>
+                                </div>
+                            </div>
                             <div id="hiddenContentSurfaceToggles" style="margin-bottom: 12px;">
                                 <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
                                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -1272,6 +1293,27 @@
 
         // Hidden Content settings listeners
         if (JE.hiddenContent) {
+            const hiddenButtonToggles = [
+                ['hiddenShowButtonJellyseerr', 'showButtonJellyseerr'],
+                ['hiddenShowButtonLibrary', 'showButtonLibrary'],
+                ['hiddenShowButtonDetails', 'showButtonDetails']
+            ];
+            for (const [id, key] of hiddenButtonToggles) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('change', (e) => {
+                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
+                        if (key === 'showButtonLibrary') {
+                            if (e.target.checked) {
+                                JE.hiddenContent.addLibraryHideButtons();
+                            } else {
+                                JE.hiddenContent.removeLibraryHideButtons();
+                            }
+                        }
+                        resetAutoCloseTimer();
+                    });
+                }
+            }
             const hiddenSurfaceToggles = [
                 ['hiddenFilterLibrary', 'filterLibrary'],
                 ['hiddenFilterDiscovery', 'filterDiscovery'],
