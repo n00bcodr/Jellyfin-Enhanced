@@ -375,7 +375,7 @@
             .jellyseerr-elsewhere-icons img { width: 1.8em; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
             .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; }
             .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
-            .cardText-first > a[is="emby-linkbutton"] { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
+            .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
             /* REQUEST BUTTONS */
             .jellyseerr-request-button { display: flex; justify-content: center; align-items: center; gap: 0.5em; white-space: normal; text-align: center; padding: 0.6em 1.2em; line-height: 1.2; font-size: 0.9em; transition: background .2s, border-color .2s, color .2s, transform .2s; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; position: relative; z-index: 10; }
             .jellyseerr-request-button svg { width: 1.2em; height: 1.2em; flex-shrink: 0; vertical-align: middle; }
@@ -1001,6 +1001,15 @@
         const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.jellyfinMediaId4k || null;
         const jellyfinHref = jellyfinMediaId ? `#!/details?id=${jellyfinMediaId}` : null;
         const isAvailable = Boolean(jellyfinMediaId);
+        const usesExternalTitleLink = !jellyfinHref && !useMoreInfoModal && !!jellyseerrUrl;
+        const titleLinkIsAttribute = usesExternalTitleLink ? '' : 'is="emby-linkbutton"';
+        const titleHrefAttribute = jellyfinHref
+            ? `href="${jellyfinHref}"`
+            : (useMoreInfoModal
+                ? 'href="#"'
+                : (jellyseerrUrl
+                    ? `href="${jellyseerrUrl}" target="_blank" rel="noopener noreferrer"`
+                    : 'href="#"'));
 
         const card = document.createElement('div');
         card.className = `card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card${isAvailable ? ' jellyseerr-card-in-library' : ''}`;
@@ -1016,8 +1025,8 @@
                     <div class="cardOverlayContainer" data-action="link"></div>
                 </div>
                 <div class="cardText cardTextCentered cardText-first">
-                    <a is="emby-linkbutton"
-                       ${jellyfinHref ? `href="${jellyfinHref}"` : (useMoreInfoModal ? 'href="#"' : (jellyseerrUrl ? `href="${jellyseerrUrl}"` : 'href="#"'))}
+                    <a ${titleLinkIsAttribute}
+                       ${titleHrefAttribute}
                        class="jellyseerr-more-info-link"
                        data-tmdb-id="${item.id}"
                        data-media-type="${item.mediaType}"
@@ -1189,6 +1198,7 @@
                 // Check if this is a library item (href already set to jellyfin item)
                 const href = moreInfoLink.getAttribute('href');
                 const isLibraryLink = href && href.startsWith('#!/details?id=');
+                const isExternalJellyseerrLink = href && /^https?:\/\//i.test(href);
 
                 if (isLibraryLink) {
                     // Allow default behavior for library links
@@ -1212,8 +1222,20 @@
                     if (tmdbId && mediaType) {
                         JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                     }
+                    return;
                 }
-            });
+
+                // For plain external links, bypass Jellyfin's hash router and open in a new tab.
+                const isPlainLeftClick = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+                if (isExternalJellyseerrLink && isPlainLeftClick) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.stopImmediatePropagation) {
+                        e.stopImmediatePropagation();
+                    }
+                    window.open(href, '_blank', 'noopener,noreferrer');
+                }
+            }, true);
         }
 
         if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
