@@ -18,6 +18,16 @@
             </div>
             <hr>
 
+            <div id="fileTransformationWarning" style="display: none; margin-bottom: 1em; padding: 1em 1.2em; background-color: rgba(255, 165, 0, 0.15); border: 1px solid rgba(255, 165, 0, 0.5); border-radius: 8px; color: #ffcc00; font-size: 0.95em; line-height: 1.5; position: relative;">
+                <strong style="font-size: 1.05em;">⚠️ Highly Recommended</strong><br>
+                It is highly recommended to have the <a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank" style="color: #ffa500; text-decoration: underline;">File Transformation</a> plugin installed. It helps avoid permission issues while modifying <code style="background: rgba(255,255,255,0.1); padding: 2px 5px; border-radius: 3px;">index.html</code> on any kind of installation.
+                <a href="https://github.com/n00bcodr/Jellyfin-Enhanced?tab=readme-ov-file#-installation" target="_blank" style="color: #ffa500; text-decoration: underline;">Learn more</a>
+                <div style="margin-top: 0.8em; display: flex; gap: 0.6em;">
+                    <button id="dismissFtWarningSession" type="button" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,165,0,0.4); color: #ffcc00; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Dismiss</button>
+                    <button id="dismissFtWarningForever" type="button" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,165,0,0.4); color: #ffcc00; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Don't show again</button>
+                </div>
+            </div>
+
             <div style="margin-bottom: 1em;">
                 <button class="jellyfin-tab-button active" data-tab="enhanced" style="background: none; border: none; color: var(--primary-accent-color, #fff); cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid var(--primary-accent-color, #fff);"><h3>Enhanced Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
@@ -1749,8 +1759,47 @@
         }
 
 
+        var ftWarningDismissedSession = false;
+
+        function checkFileTransformationPlugin() {
+            if (ftWarningDismissedSession || localStorage.getItem('je_ft_warning_dismissed') === 'true') {
+                return;
+            }
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Plugins'),
+                dataType: 'json'
+            }).then(function(plugins) {
+                var hasFileTransformation = plugins.some(function(p) {
+                    return p.Name === 'File Transformation';
+                });
+                var warning = document.getElementById('fileTransformationWarning');
+                if (warning) {
+                    warning.style.display = hasFileTransformation ? 'none' : 'block';
+                }
+            }).catch(function() {
+                // If we can't check, don't show the warning
+            });
+
+            var dismissSession = document.getElementById('dismissFtWarningSession');
+            var dismissForever = document.getElementById('dismissFtWarningForever');
+            if (dismissSession) {
+                dismissSession.onclick = function() {
+                    ftWarningDismissedSession = true;
+                    document.getElementById('fileTransformationWarning').style.display = 'none';
+                };
+            }
+            if (dismissForever) {
+                dismissForever.onclick = function() {
+                    localStorage.setItem('je_ft_warning_dismissed', 'true');
+                    document.getElementById('fileTransformationWarning').style.display = 'none';
+                };
+            }
+        }
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
+            checkFileTransformationPlugin();
             ApiClient.getPluginConfiguration(pluginId).then((config) => {
                 const savedShortcuts = (config.Shortcuts && config.Shortcuts.length > 0) ? config.Shortcuts : defaultShortcuts;
                 shortcutOverrides = savedShortcuts.filter(saved => {
