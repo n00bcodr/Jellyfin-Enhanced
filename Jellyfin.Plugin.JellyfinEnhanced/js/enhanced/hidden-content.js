@@ -186,16 +186,14 @@
                 position: fixed;
                 bottom: 20px;
                 right: 20px;
-                background: linear-gradient(135deg, rgba(0,0,0,0.92), rgba(40,40,40,0.92));
                 color: #fff;
                 padding: 12px 16px;
                 border-radius: 8px;
                 z-index: 99999;
-                font-size: 14px;
+                font-size: clamp(13px, 2vw, 16px);
                 font-weight: 500;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-                backdrop-filter: blur(20px);
-                border: 1px solid rgba(255,255,255,0.1);
+                text-shadow: -1px -1px 10px black;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
                 display: flex;
                 align-items: center;
                 gap: 12px;
@@ -219,10 +217,10 @@
                 font-size: 13px;
                 font-weight: 600;
                 white-space: nowrap;
-                transition: background 0.2s ease;
+                transition: background 0.2s ease, border-color 0.2s ease;
             }
             .je-undo-btn:hover {
-                background: rgba(255,255,255,0.25);
+                filter: brightness(1.3);
             }
 
             .je-hidden-management-overlay {
@@ -489,16 +487,33 @@
         // Remove any existing undo toast
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
+        // Use the theme system to match existing enhanced settings toast style
+        const themeVars = JE.themer?.getThemeVariables() || {};
+        const toastBg = themeVars.secondaryBg || 'linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))';
+        const toastBorder = `1px solid ${themeVars.primaryAccent || 'rgba(255,255,255,0.1)'}`;
+        const blurValue = themeVars.blur || '30px';
+
         const toast = document.createElement('div');
         toast.className = 'je-undo-toast';
+        Object.assign(toast.style, {
+            background: toastBg,
+            border: toastBorder,
+            backdropFilter: `blur(${blurValue})`
+        });
 
         const textSpan = document.createElement('span');
         textSpan.className = 'je-undo-toast-text';
         textSpan.textContent = JE.t('hidden_content_item_hidden', { name: itemName });
         toast.appendChild(textSpan);
 
+        const accentColor = themeVars.primaryAccent || 'rgba(255,255,255,0.15)';
+
         const undoBtn = document.createElement('button');
         undoBtn.className = 'je-undo-btn';
+        Object.assign(undoBtn.style, {
+            background: `color-mix(in srgb, ${accentColor} 25%, transparent)`,
+            borderColor: accentColor
+        });
         undoBtn.textContent = JE.t('hidden_content_undo');
         undoBtn.addEventListener('click', () => {
             unhideItem(itemId);
