@@ -978,15 +978,15 @@
         justify-content: space-around;
       }
 
-      .je-calendar-page.je-view-month .je-calendar-weekdays {
+      .je-calendar-month .je-calendar-weekdays {
         display: none;
       }
 
-      .je-calendar-page.je-view-month .je-calendar-month-day-name {
+      .je-calendar-month .je-calendar-month-day-name {
         display: block;
       }
 
-      .je-calendar-page.je-view-month .je-calendar-day-placeholder {
+      .je-calendar-month .je-calendar-day-placeholder {
         display: none;
       }
     }
@@ -1037,6 +1037,10 @@
 
       .je-calendar-hour-label {
         text-align: left;
+      }
+
+      .je-calendar-month .je-calendar-weekdays {
+        display: none;
       }
 
       .je-calendar-agenda-row {
