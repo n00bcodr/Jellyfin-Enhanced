@@ -1759,12 +1759,22 @@
         }
 
 
+        /** @type {boolean} Tracks whether the File Transformation warning has been dismissed this session */
         var ftWarningDismissedSession = false;
 
+        /**
+         * Checks if the File Transformation plugin is installed and shows a warning banner if not.
+         * The warning can be dismissed per-session (resets on page reload) or permanently via localStorage.
+         * Called during loadConfig() on page load.
+         * @see https://github.com/IAmParadox27/jellyfin-plugin-file-transformation
+         */
         function checkFileTransformationPlugin() {
+            // Skip check if user has already dismissed the warning
             if (ftWarningDismissedSession || localStorage.getItem('je_ft_warning_dismissed') === 'true') {
                 return;
             }
+
+            // Query the Plugins API to check if File Transformation is installed
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/Plugins'),
@@ -1781,6 +1791,7 @@
                 // If we can't check, don't show the warning
             });
 
+            // Set up dismiss button handlers
             var dismissSession = document.getElementById('dismissFtWarningSession');
             var dismissForever = document.getElementById('dismissFtWarningForever');
             if (dismissSession) {
