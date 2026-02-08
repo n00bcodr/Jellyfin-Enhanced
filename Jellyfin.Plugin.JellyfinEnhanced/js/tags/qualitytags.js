@@ -54,7 +54,7 @@
         // Sort tags for consistent display order (Resolution > Codec > Features)
         const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '480p', 'LOW-RES', 'SD'];
         const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
-        const videoOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', '3D'];
+        const videoOrder = ['IMAX', 'Dolby Vision', 'HDR10+', 'HDR10', 'HDR', '3D'];
         const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
         const featureOrder = [...videoOrder, ...audioOrder];
 
@@ -82,6 +82,7 @@
             'HDR10': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
             'HDR10+': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
             'Dolby Vision': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
+            'IMAX': { bg: '#0072CE', text: '#ffffff' },
             'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
             'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
             'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
@@ -227,9 +228,10 @@
          * Analyzes media stream and source information to determine quality tags.
          * @param {Array} mediaStreams - The MediaStreams array from the Jellyfin item.
          * @param {Array} mediaSources - The MediaSources array from the Jellyfin item.
+         * @param {Object} [itemData] - Optional item metadata for filename/title signals.
          * @returns {Array<string>} A list of detected quality tags.
          */
-        function getEnhancedQuality(mediaStreams, mediaSources) {
+        function getEnhancedQuality(mediaStreams, mediaSources, itemData = null) {
             if (!mediaStreams && !mediaSources) return [];
 
             const qualities = new Set();
@@ -251,6 +253,39 @@
 
             // Get primary video stream for analysis
             const primaryVideoStream = videoStreams[0];
+
+            // --- IMAX TAG LOGIC ---
+            // Pattern sources:
+            // - TRaSH Guides IMAX CF regex (NON-IMAX exclusion + IMAX token)
+            // - Dictionarry-Hub IMAX / IMAX Enhanced patterns
+            // We gather multiple title/name/path signals since IMAX often appears in file names.
+            const imaxSignals = [];
+            if (itemData) {
+                imaxSignals.push(
+                    itemData.Name || '',
+                    itemData.OriginalTitle || '',
+                    itemData.SortName || '',
+                    itemData.EditionTitle || '',
+                    itemData.ForcedSortName || ''
+                );
+            }
+            if (Array.isArray(mediaSources)) {
+                mediaSources.forEach((source) => {
+                    imaxSignals.push(source?.Path || '', source?.Name || '');
+                });
+            }
+            if (Array.isArray(mediaStreams)) {
+                mediaStreams.forEach((stream) => {
+                    imaxSignals.push(stream?.DisplayTitle || '', stream?.Title || '');
+                });
+            }
+
+            const imaxContext = imaxSignals.filter(Boolean).join(' | ');
+            const nonImaxRegex = /\bNON[ ._-]?IMAX\b/i;
+            const imaxRegex = /\bIMAX(?:[ ._-]?ENHANCED)?\b/i;
+            if (imaxContext && imaxRegex.test(imaxContext) && !nonImaxRegex.test(imaxContext)) {
+                qualities.add('IMAX');
+            }
 
             // --- VIDEO RESOLUTION LOGIC ---
             let resolutionTag = null;
@@ -557,10 +592,10 @@
                     // For a series or season, find the first episode to represent the quality.
                     const episode = await fetchFirstEpisode(userId, item.Id);
                     if (episode) {
-                        qualities = getEnhancedQuality(episode.MediaStreams, episode.MediaSources);
+                        qualities = getEnhancedQuality(episode.MediaStreams, episode.MediaSources, episode);
                     }
                 } else {
-                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources);
+                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item);
                 }
 
                 if (qualities.length > 0) {
