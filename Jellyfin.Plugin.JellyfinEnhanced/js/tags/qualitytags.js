@@ -82,7 +82,7 @@
             'HDR10': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
             'HDR10+': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
             'Dolby Vision': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
-            'IMAX': { bg: '#0072CE', text: '#ffffff' },
+            'IMAX': { bg: 'rgba(0, 114, 206, 0.9)', text: '#ffffff' },
             'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
             'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
             'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
