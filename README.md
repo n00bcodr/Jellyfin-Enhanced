@@ -1873,10 +1873,6 @@ Here is a list of common errors you might see in your Jellyfin server logs or yo
   </picture>
 </a>
 
-## 📄 License
-
-MIT License
-
 <br>
 <p align="center">
 --------------------------------------------------
