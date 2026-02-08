@@ -152,13 +152,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var items = GetProcessedWatchlistItems(userId);
                 var cutoffDate = System.DateTime.UtcNow.AddDays(-daysToKeep);
 
+                var originalCount = items.Items.Count;
                 var itemsToKeep = items.Items.Where(item => item.ProcessedAt > cutoffDate).ToList();
 
-                if (itemsToKeep.Count != items.Items.Count)
+                if (itemsToKeep.Count != originalCount)
                 {
                     items.Items = itemsToKeep;
                     SaveProcessedWatchlistItems(userId, items);
-                    _logger.Info($"Cleaned up {items.Items.Count - itemsToKeep.Count} old processed watchlist items for user {userId}");
+                    _logger.Info($"Cleaned up {originalCount - itemsToKeep.Count} old processed watchlist items for user {userId}");
                 }
             }
             catch (Exception ex)

@@ -1486,12 +1486,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
+        private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
+        {
+            authorizedUserId = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(requestedUserId))
+            {
+                return BadRequest(new { message = "userId is required." });
+            }
+
+            if (!Guid.TryParse(requestedUserId, out var parsedUserId) && !Guid.TryParseExact(requestedUserId, "N", out parsedUserId))
+            {
+                return BadRequest(new { message = "Invalid userId format." });
+            }
+
+            var effectiveUserId = UserHelper.GetUserId(User, parsedUserId);
+            if (!effectiveUserId.HasValue)
+            {
+                return Forbid();
+            }
+
+            // UserConfigurationManager expects folder names in N format (without dashes).
+            authorizedUserId = effectiveUserId.Value.ToString("N");
+            return null;
+        }
+
+        private IActionResult? AuthorizeUserAccess(Guid requestedUserId, out JUser user)
+        {
+            user = null!;
+            var effectiveUserId = UserHelper.GetUserId(User, requestedUserId);
+            if (!effectiveUserId.HasValue)
+            {
+                return Forbid();
+            }
+
+            var resolvedUser = _userManager.GetUserById(effectiveUserId.Value);
+            if (resolvedUser is null)
+            {
+                return NotFound();
+            }
+
+            user = resolvedUser;
+            return null;
+        }
+
+        private bool IsAdminUser() => User.IsInRole("Administrator");
+
+        private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
+        {
+            normalizedFileName = Path.GetFileName(requestedFileName ?? string.Empty);
+            filePath = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedFileName) || !BrandingFileNames.Contains(normalizedFileName))
+            {
+                return false;
+            }
+
+            var brandingDir = JellyfinEnhanced.BrandingDirectory;
+            if (string.IsNullOrWhiteSpace(brandingDir))
+            {
+                return false;
+            }
+
+            var fullBrandingDir = Path.GetFullPath(brandingDir);
+            var candidateFilePath = Path.GetFullPath(Path.Combine(fullBrandingDir, normalizedFileName));
+            var candidateDirectory = Path.GetDirectoryName(candidateFilePath);
+
+            if (!string.Equals(candidateDirectory, fullBrandingDir, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            filePath = candidateFilePath;
+            return true;
+        }
+
         [HttpGet("user-settings/{userId}/settings.json")]
         [Authorize]
         public IActionResult GetUserSettingsSettings(string userId)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             // Populate defaults from plugin configuration if missing
-            if (!_userConfigurationManager.UserConfigurationExists(userId, "settings.json"))
+            if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
             {
                 var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
                 if (defaultConfig != null)
@@ -1535,12 +1616,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LastOpenedTab = "shortcuts"
                     };
 
-                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
-                    _logger.Info($"Saved default settings.json for new user {userId} from plugin configuration.");
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
+                    _logger.Info($"Saved default settings.json for new user {authorizedUserId} from plugin configuration.");
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json");
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
             return Ok(userConfig);
         }
 
@@ -1548,7 +1629,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult GetUserSettingsShortcuts(string userId)
         {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(userId, "shortcuts.json");
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
             return Ok(userConfig);
         }
 
@@ -1556,7 +1643,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult GetUserSettingsElsewhere(string userId)
         {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(userId, "elsewhere.json");
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json");
             return Ok(userConfig);
         }
 
@@ -1565,15 +1658,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
-                _logger.Info($"Saved user settings for user {userId} to settings.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
+                _logger.Info($"Saved user settings for user {authorizedUserId} to settings.json");
                 return Ok(new { success = true, file = "settings.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user settings for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save user settings for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
             }
         }
@@ -1583,15 +1682,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserSettingsShortcuts(string userId, [FromBody] UserShortcuts userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
-                _logger.Info($"Saved user shortcuts for user {userId} to shortcuts.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                _logger.Info($"Saved user shortcuts for user {authorizedUserId} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user shortcuts for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save user shortcuts for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user shortcuts." });
             }
         }
@@ -1601,7 +1706,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetUserBookmark(string userId)
         {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(userId, "bookmark.json");
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json");
             return Ok(userConfig);
         }
 
@@ -1610,15 +1721,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserBookmark(string userId, [FromBody] UserBookmark userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "bookmark.json", userConfiguration);
-                _logger.Info($"Saved enhanced bookmarks for user {userId} to bookmark.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "bookmark.json", userConfiguration);
+                _logger.Info($"Saved enhanced bookmarks for user {authorizedUserId} to bookmark.json");
                 return Ok(new { success = true, file = "bookmark.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save enhanced bookmarks for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save enhanced bookmarks for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save enhanced bookmarks." });
             }
         }
@@ -1628,15 +1745,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserSettingsElsewhere(string userId, [FromBody] ElsewhereSettings userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
-                _logger.Info($"Saved user elsewhere settings for user {userId} to elsewhere.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "elsewhere.json", userConfiguration);
+                _logger.Info($"Saved user elsewhere settings for user {authorizedUserId} to elsewhere.json");
                 return Ok(new { success = true, file = "elsewhere.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user elsewhere settings for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save user elsewhere settings for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user elsewhere settings." });
             }
         }
@@ -1645,6 +1768,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult ResetAllUsersSettings()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
 
             if (defaultConfig == null)
@@ -1707,10 +1835,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetFileSizeByItemId(Guid userId, Guid itemId)
         {
-            var user = _userManager.GetUserById(userId);
-            if (user is null)
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
             {
-                return NotFound();
+                return authorizationResult;
             }
 
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
@@ -1732,10 +1860,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetWatchProgressByItemId(Guid userId, Guid itemId)
         {
-            var user = _userManager.GetUserById(userId);
-            if (user is null)
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
             {
-                return NotFound();
+                return authorizationResult;
             }
 
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
@@ -1812,11 +1940,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             [FromQuery] string? filter = "all",
             [FromQuery] string? sort = "added")
         {
+            take = Math.Clamp(take, 1, 200);
+            skip = Math.Max(0, skip);
+
             var queryParts = new List<string>
             {
                 $"take={take}",
                 $"skip={skip}"
             };
+
+            if (mediaId.HasValue && mediaId.Value > 0)
+            {
+                queryParts.Add($"mediaId={mediaId.Value}");
+            }
 
             if (!string.IsNullOrWhiteSpace(filter))
             {
@@ -1852,6 +1988,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> UploadBrandingImage()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             try
             {
                 if (Request.Form.Files.Count == 0)
@@ -1864,6 +2005,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (string.IsNullOrWhiteSpace(fileName))
                 {
                     return BadRequest("fileName parameter is required in form data");
+                }
+
+                if (!TryResolveBrandingFilePath(fileName, out var normalizedFileName, out var filePath))
+                {
+                    return BadRequest($"fileName must be one of: {string.Join(", ", BrandingFileNames)}");
                 }
 
                 // Validate file type - accept only image files
@@ -1880,7 +2026,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return StatusCode(500, "Could not determine branding directory");
 
                 Directory.CreateDirectory(brandingDir);
-                var filePath = Path.Combine(brandingDir, fileName);
 
                 // Save file
                 using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
@@ -1888,7 +2033,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     await uploadedFile.CopyToAsync(stream);
                 }
 
-                _logger.Info($"Successfully uploaded branding image: {fileName} ({uploadedFile.Length} bytes) to {brandingDir}");
+                _logger.Info($"Successfully uploaded branding image: {normalizedFileName} ({uploadedFile.Length} bytes) to {brandingDir}");
                 return Ok("File uploaded successfully");
             }
             catch (UnauthorizedAccessException ex)
@@ -1912,12 +2057,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest("fileName query parameter is required");
             }
 
+            if (!TryResolveBrandingFilePath(fileName, out _, out var filePath))
+            {
+                return BadRequest($"fileName must be one of: {string.Join(", ", BrandingFileNames)}");
+            }
 
-            var brandingDir = JellyfinEnhanced.BrandingDirectory;
-            if (string.IsNullOrWhiteSpace(brandingDir))
-                return StatusCode(500, "Could not determine branding directory");
-
-            var filePath = Path.Combine(brandingDir, fileName);
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
 
@@ -1934,6 +2078,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult DeleteBrandingImage()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             try
             {
                 string? fileName = Request.Form["fileName"].FirstOrDefault();
@@ -1942,17 +2091,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest("fileName parameter is required in form data");
                 }
 
+                if (!TryResolveBrandingFilePath(fileName, out var normalizedFileName, out var filePath))
+                {
+                    return BadRequest($"fileName must be one of: {string.Join(", ", BrandingFileNames)}");
+                }
 
                 var brandingDir = JellyfinEnhanced.BrandingDirectory;
                 if (string.IsNullOrWhiteSpace(brandingDir))
                     return StatusCode(500, "Could not determine branding directory");
 
-                var filePath = Path.Combine(brandingDir, fileName);
                 if (!System.IO.File.Exists(filePath))
                     return NotFound("File not found");
 
                 System.IO.File.Delete(filePath);
-                _logger.Info($"Deleted branding image: {fileName} from {brandingDir}");
+                _logger.Info($"Deleted branding image: {normalizedFileName} from {brandingDir}");
                 return Ok("File deleted successfully");
             }
             catch (UnauthorizedAccessException ex)
@@ -2123,6 +2275,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetRequests([FromQuery] int take = 20, [FromQuery] int skip = 0, [FromQuery] string? filter = null)
         {
+            take = Math.Clamp(take, 1, 200);
+            skip = Math.Max(0, skip);
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
