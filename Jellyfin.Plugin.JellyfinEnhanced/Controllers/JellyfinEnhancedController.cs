@@ -272,6 +272,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ValidateJellyseerr([FromQuery] string url, [FromQuery] string apiKey)
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = "Missing url or apiKey" });
 
@@ -826,6 +831,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> SyncJellyseerrWatchlist()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             try
             {
                 var config = JellyfinEnhanced.Instance?.Configuration;
