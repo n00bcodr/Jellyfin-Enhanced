@@ -64,7 +64,8 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Common Errors](#common-errors)
   - [📸 Screenshots](#-screenshots)
   - [⭐ Star History](#-star-history)
-  - [📄 License](#-license)
+  - [📄 License](https://github.com/n00bcodr/Jellyfin-Enhanced?tab=GPL-3.0-1-ov-file)
+
 - [Enjoying Jellyfin Enhanced?](#enjoying-jellyfin-enhanced)
 
 
@@ -1735,7 +1736,7 @@ Content-Type: application/json
 
 - Official Jellyfin Web UI
 - Official Jellyfin Android and iOS Apps
-- Official Jellyfin Desktop Apps like JMP (Not tested, but ideally should work)
+- Official Jellyfin Desktop Apps like JMP - Known to have issues with JMP v1.12.0. Try Jellyfin Desktop v2.0.0 - More Info https://github.com/n00bcodr/Jellyfin-Enhanced/discussions/370
 
 
 > [!IMPORTANT]
