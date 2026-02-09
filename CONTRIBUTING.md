@@ -95,7 +95,6 @@ Key directories:
    and tested all changes and understand the implementation.
 
    ## Testing
-   - [ ] Tested on Jellyfin 10.10
    - [ ] Tested on Jellyfin 10.11
    - [ ] Verified no basic errors
    ```
@@ -144,7 +143,7 @@ Before submitting a PR, ensure you've tested:
 
 - [ ] Feature works as expected
 - [ ] No console errors
-- [ ] Compatible with Jellyfin 10.10 and 10.11
+- [ ] Compatible with Jellyfin 10.11.x
 - [ ] Works on different browsers (Chrome, Firefox, Edge)
 - [ ] Doesn't break existing functionality
 - [ ] Mobile compatibility (if applicable)

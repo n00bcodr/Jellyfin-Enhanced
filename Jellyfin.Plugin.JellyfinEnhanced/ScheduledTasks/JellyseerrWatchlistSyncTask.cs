@@ -50,7 +50,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
-        // GetDefaultTriggers is implemented in version-specific partial files.
+        public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
+        {
+            return new[]
+            {
+                new TaskTriggerInfo
+                {
+                    Type = TaskTriggerInfoType.DailyTrigger,
+                    TimeOfDayTicks = TimeSpan.FromHours(3).Ticks
+                }
+            };
+        }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
