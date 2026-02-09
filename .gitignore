@@ -160,7 +160,6 @@ dllssigned/
 # Node modules
 node_modules/
 package-lock.json
-scripts/
 package.json
 TRANSLATION_GUIDE.md
 
