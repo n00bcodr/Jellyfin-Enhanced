@@ -20,6 +20,7 @@
     const hiddenPersonIdSet = new Set();
     const parentSeriesCache = new Map();
     const parentSeriesRequestMap = new Map();
+    const sectionSurfaceCache = new WeakMap();
     let hiddenData = null;
     let saveTimeout = null;
 
@@ -31,16 +32,14 @@
     const SUPPRESS_DURATION_MS = 15 * 60 * 1000;
     /** Max poster width when loading images from TMDB / Jellyfin. */
     const POSTER_MAX_WIDTH = 300;
-    /** Delay before the first card scan after page navigation. */
-    const INITIAL_SCAN_DELAY_MS = 300;
     /** Delay for first detail-page rescan (async episode loading). */
-    const DETAIL_RESCAN_DELAY_MS = 800;
+    const DETAIL_RESCAN_DELAY_MS = 500;
     /** Delay for final detail-page rescan. */
-    const DETAIL_FINAL_RESCAN_DELAY_MS = 1500;
+    const DETAIL_FINAL_RESCAN_DELAY_MS = 1200;
     /** Debounce interval for the MutationObserver card filter. */
-    const NATIVE_FILTER_DEBOUNCE_MS = 300;
+    const NATIVE_FILTER_DEBOUNCE_MS = 50;
     /** Initial filter delay after module initialization. */
-    const INIT_FILTER_DELAY_MS = 500;
+    const INIT_FILTER_DELAY_MS = 150;
 
     /** Data attribute marking a card as already scanned. */
     const PROCESSED_ATTR = 'data-je-hidden-checked';
@@ -219,6 +218,7 @@
     function injectCSS() {
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-hidden-content', `
+            .je-hidden { display: none !important; }
             .je-hide-btn {
                 --je-danger-rgb: 220, 50, 50;
                 position: absolute;
@@ -1179,11 +1179,14 @@
     function getCardSurface(card) {
         const section = card.closest('.section, .verticalSection, .homeSection');
         if (!section) return null;
+        if (sectionSurfaceCache.has(section)) return sectionSurfaceCache.get(section);
         const titleEl = section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle');
         const title = (titleEl?.textContent || '').toLowerCase();
-        if (title.includes('next up')) return 'nextup';
-        if (title.includes('continue watching')) return 'continuewatching';
-        return null;
+        let surface = null;
+        if (title.includes('next up')) surface = 'nextup';
+        else if (title.includes('continue watching')) surface = 'continuewatching';
+        sectionSurfaceCache.set(section, surface);
+        return surface;
     }
 
     /**
@@ -1287,16 +1290,108 @@
             if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
 
             if (hiddenIdSet.has(seriesId)) {
-                card.style.display = 'none';
+                card.classList.add('je-hidden');
                 card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
                 card.removeAttribute(HIDDEN_DIRECT_ATTR);
-            } else if (card.getAttribute(HIDDEN_PARENT_ATTR) === seriesId && card.style.display === 'none') {
-                card.style.display = '';
+            } else if (card.getAttribute(HIDDEN_PARENT_ATTR) === seriesId && card.classList.contains('je-hidden')) {
+                card.classList.remove('je-hidden');
                 card.removeAttribute(HIDDEN_PARENT_ATTR);
             }
         }).catch((e) => {
             console.warn('🪼 Jellyfin Enhanced: Parent series check failed for', itemId, e);
         });
+    }
+
+    /**
+     * Batch-checks parent series IDs for multiple cards in a single API call.
+     * Cards whose parent series is in `hiddenIdSet` are hidden; others are left alone.
+     * @param {Array<{card: HTMLElement, itemId: string}>} cardEntries Cards needing lookup.
+     */
+    async function batchCheckParentSeries(cardEntries) {
+        if (!cardEntries || cardEntries.length === 0) return;
+        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
+        if (hiddenIdSet.size === 0) return;
+
+        // Separate cached from uncached
+        const cached = [];
+        const uncached = [];
+        for (let i = 0; i < cardEntries.length; i++) {
+            const entry = cardEntries[i];
+            if (parentSeriesCache.has(entry.itemId)) {
+                cached.push({ ...entry, seriesId: parentSeriesCache.get(entry.itemId) });
+            } else {
+                uncached.push(entry);
+            }
+        }
+
+        // Process cached entries immediately
+        if (cached.length > 0) {
+            requestAnimationFrame(() => {
+                for (let i = 0; i < cached.length; i++) {
+                    const { card, seriesId } = cached[i];
+                    if (!card.isConnected || !seriesId) continue;
+                    if (hiddenIdSet.has(seriesId)) {
+                        card.classList.add('je-hidden');
+                        card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
+                        card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                    }
+                }
+            });
+        }
+
+        // Fetch uncached entries in batches of 50
+        if (uncached.length === 0) return;
+
+        const BATCH_SIZE = 50;
+        const userId = ApiClient.getCurrentUserId();
+
+        for (let start = 0; start < uncached.length; start += BATCH_SIZE) {
+            const chunk = uncached.slice(start, start + BATCH_SIZE);
+            const ids = chunk.map(e => e.itemId).join(',');
+
+            try {
+                const result = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: ids, Fields: 'SeriesId' }),
+                    dataType: 'json'
+                });
+
+                const itemsById = new Map();
+                const responseItems = result?.Items || [];
+                for (let i = 0; i < responseItems.length; i++) {
+                    const item = responseItems[i];
+                    itemsById.set(item.Id, item.SeriesId || null);
+                    parentSeriesCache.set(item.Id, item.SeriesId || null);
+                }
+
+                // Also cache items that weren't in the response (deleted, etc.)
+                for (let i = 0; i < chunk.length; i++) {
+                    if (!itemsById.has(chunk[i].itemId)) {
+                        parentSeriesCache.set(chunk[i].itemId, null);
+                    }
+                }
+
+                // Batch apply hiding
+                requestAnimationFrame(() => {
+                    for (let i = 0; i < chunk.length; i++) {
+                        const { card, itemId } = chunk[i];
+                        if (!card.isConnected) continue;
+                        const seriesId = parentSeriesCache.get(itemId);
+                        if (seriesId && hiddenIdSet.has(seriesId)) {
+                            card.classList.add('je-hidden');
+                            card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
+                            card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                        }
+                    }
+                });
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Batch parent series check failed', e);
+                // Fall back to individual lookups for this chunk
+                for (let i = 0; i < chunk.length; i++) {
+                    checkAndHideByParentSeries(chunk[i].card, chunk[i].itemId);
+                }
+            }
+        }
     }
 
     /**
@@ -1310,12 +1405,12 @@
             card.removeAttribute(PROCESSED_ATTR);
             const cardId = getCardItemId(card);
             const hiddenBySeriesId = card.getAttribute(HIDDEN_PARENT_ATTR);
-            if (hiddenBySeriesId && idsToRestore.has(hiddenBySeriesId) && card.style.display === 'none') {
-                card.style.display = '';
+            if (hiddenBySeriesId && idsToRestore.has(hiddenBySeriesId) && card.classList.contains('je-hidden')) {
+                card.classList.remove('je-hidden');
                 card.removeAttribute(HIDDEN_PARENT_ATTR);
                 card.removeAttribute(HIDDEN_DIRECT_ATTR);
             } else if ((cardId && idsToRestore.has(cardId)) || card.getAttribute(HIDDEN_DIRECT_ATTR) === '1') {
-                card.style.display = '';
+                card.classList.remove('je-hidden');
                 card.removeAttribute(HIDDEN_DIRECT_ATTR);
             }
         });
@@ -1345,6 +1440,9 @@
         if (hiddenIdSet.size === 0) return;
         const isDetailPage = nativeSurface === 'details';
 
+        const toHide = [];
+        const toShow = [];
+        const pendingParentChecks = [];
         const cards = document.querySelectorAll(CARD_SEL_NEW);
         for (let i = 0; i < cards.length; i++) {
             const card = cards[i];
@@ -1357,24 +1455,40 @@
             const cardSurface = getCardSurface(card);
             if (cardSurface) {
                 if (shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
-                    card.style.display = 'none';
+                    toHide.push(card);
                     card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
                     continue;
                 }
             }
 
             if (hiddenIdSet.has(itemId)) {
-                card.style.display = 'none';
+                toHide.push(card);
                 card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
             } else {
-                if (card.getAttribute(HIDDEN_DIRECT_ATTR) === '1' && card.style.display === 'none') {
-                    card.style.display = '';
+                if (card.getAttribute(HIDDEN_DIRECT_ATTR) === '1' && card.classList.contains('je-hidden')) {
+                    toShow.push(card);
                     card.removeAttribute(HIDDEN_DIRECT_ATTR);
                 }
                 if (!isDetailPage) {
-                    checkAndHideByParentSeries(card, itemId);
+                    const cardType = card.dataset.type || '';
+                    if (cardType === 'Episode' || cardType === 'Season') {
+                        pendingParentChecks.push({ card, itemId });
+                    }
                 }
             }
+        }
+
+        // Batch apply visibility changes
+        if (toHide.length > 0 || toShow.length > 0) {
+            requestAnimationFrame(() => {
+                for (let i = 0; i < toHide.length; i++) toHide[i].classList.add('je-hidden');
+                for (let i = 0; i < toShow.length; i++) toShow[i].classList.remove('je-hidden');
+            });
+        }
+
+        // Batch parent series checks
+        if (pendingParentChecks.length > 0) {
+            batchCheckParentSeries(pendingParentChecks);
         }
     }
 
@@ -1389,6 +1503,9 @@
         if (!settings.enabled) return;
         const isDetailPage = nativeSurface === 'details';
 
+        const toHide = [];
+        const toShow = [];
+        const pendingParentChecks = [];
         const cards = document.querySelectorAll(CARD_SEL);
         for (let i = 0; i < cards.length; i++) {
             const card = cards[i];
@@ -1400,24 +1517,41 @@
             const cardSurface = getCardSurface(card);
             let hiddenByScope = false;
             if (cardSurface && shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
-                card.style.display = 'none';
+                toHide.push(card);
                 card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
                 hiddenByScope = true;
             }
 
             if (!hiddenByScope) {
                 if (hiddenIdSet.has(itemId)) {
-                    card.style.display = 'none';
+                    toHide.push(card);
                     card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-                } else if (card.style.display === 'none') {
-                    card.style.display = '';
-                    card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                }
-
-                if (!hiddenIdSet.has(itemId) && !isDetailPage) {
-                    checkAndHideByParentSeries(card, itemId);
+                } else {
+                    if (card.classList.contains('je-hidden')) {
+                        toShow.push(card);
+                        card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                    }
+                    if (!isDetailPage) {
+                        const cardType = card.dataset.type || '';
+                        if (cardType === 'Episode' || cardType === 'Season') {
+                            pendingParentChecks.push({ card, itemId });
+                        }
+                    }
                 }
             }
+        }
+
+        // Batch apply visibility changes
+        if (toHide.length > 0 || toShow.length > 0) {
+            requestAnimationFrame(() => {
+                for (let i = 0; i < toHide.length; i++) toHide[i].classList.add('je-hidden');
+                for (let i = 0; i < toShow.length; i++) toShow[i].classList.remove('je-hidden');
+            });
+        }
+
+        // Batch parent series checks
+        if (pendingParentChecks.length > 0) {
+            batchCheckParentSeries(pendingParentChecks);
         }
     }
 
@@ -1486,7 +1620,7 @@
                     await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);
                 } else {
                     confirmAndHide({ itemId, name: cardName }, () => {
-                        card.style.display = 'none';
+                        card.classList.add('je-hidden');
                     });
                 }
             };
@@ -1532,7 +1666,7 @@
                 dialogOpts.showEpisodeChoice = true;
                 dialogOpts.onChooseScoped = () => {
                     hideItem({ ...itemData, hideScope: 'homesections' });
-                    card.style.display = 'none';
+                    card.classList.add('je-hidden');
                 };
                 dialogOpts.onChooseShow = async () => {
                     let seriesTmdbId = '';
@@ -1548,24 +1682,24 @@
                         type: 'Series',
                         tmdbId: seriesTmdbId
                     });
-                    card.style.display = 'none';
+                    card.classList.add('je-hidden');
                 };
             } else {
                 dialogOpts.onChooseScoped = () => {
                     hideItem({ ...itemData, hideScope: 'homesections' });
-                    card.style.display = 'none';
+                    card.classList.add('je-hidden');
                 };
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fetch item data for scoped hide', err);
             dialogOpts.onChooseScoped = () => {
                 hideItem({ itemId, name: cardName, hideScope: 'homesections' });
-                card.style.display = 'none';
+                card.classList.add('je-hidden');
             };
         }
 
         confirmAndHide(itemData, () => {
-            card.style.display = 'none';
+            card.classList.add('je-hidden');
         }, dialogOpts);
     }
 
@@ -1631,13 +1765,12 @@
         // Use onViewPage for page navigation — much cheaper than a body MutationObserver
         if (JE.helpers?.onViewPage) {
             JE.helpers.onViewPage(() => {
-                const rescan = () => {
-                    refreshNativeCardVisibility();
-                    if (getSettings().showButtonLibrary) addLibraryHideButtons();
-                };
-                setTimeout(rescan, INITIAL_SCAN_DELAY_MS);
                 // Detail pages load episodes asynchronously — staggered re-scans catch late-rendered cards
                 if (getCurrentNativeSurface() === 'details') {
+                    const rescan = () => {
+                        refreshNativeCardVisibility();
+                        if (getSettings().showButtonLibrary) addLibraryHideButtons();
+                    };
                     setTimeout(rescan, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(rescan, DETAIL_FINAL_RESCAN_DELAY_MS);
                 }
