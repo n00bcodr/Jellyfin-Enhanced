@@ -488,6 +488,7 @@
                 'jellyseerr/ui.js',
                 'jellyseerr/modal.js',
                 'jellyseerr/more-info-modal.js',
+                'jellyseerr/hss-discovery-handler.js',
                 'jellyseerr/item-details.js',
                 'jellyseerr/issue-reporter.js',
                 'jellyseerr/seamless-scroll.js',
