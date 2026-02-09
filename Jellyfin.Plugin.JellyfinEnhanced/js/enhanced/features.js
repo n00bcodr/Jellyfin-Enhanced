@@ -717,18 +717,23 @@
     // Types that support audio languages (excludes BoxSet and Playlist)
     const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie'];
 
-    // Types that support hiding (Movies and Series only)
-    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series'];
+    // Types that support hiding
+    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series', 'Episode', 'Season', 'Person'];
 
     /**
      * Adds a "Hide" button to the item detail page action buttons area.
+     * Supports Movies, Series, Episodes, and Seasons.
+     * For Episodes: shows a choice dialog between hiding the episode or the entire show.
      * @param {string} itemId The item's Jellyfin ID.
      * @param {HTMLElement} visiblePage The visible detail page element.
      */
     function addHideContentButton(itemId, visiblePage) {
         if (!JE.hiddenContent) return;
-        if (JE.hiddenContent.getSettings().showButtonDetails === false) return;
+        const settings = JE.hiddenContent.getSettings();
+        if (!settings.enabled || !settings.showHideButtons || settings.showButtonDetails === false) return;
         if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
+        // Person type is handled separately in cast section, not as a detail button
+        if (lastDetailsItemType === 'Person') return;
 
         // Don't add duplicate
         if (visiblePage.querySelector('.je-detail-hide-btn')) return;
@@ -818,24 +823,78 @@
                 const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
                 const itemName = nameEl?.textContent?.trim() || 'Unknown';
 
-                // Try to get TMDb ID and poster from the page
+                // Fetch full item data for TMDb ID and episode/series metadata
                 let tmdbId = '';
                 let posterPath = '';
+                let seriesId = '';
+                let seriesName = '';
+                let seasonNumber = null;
+                let episodeNumber = null;
                 try {
                     const userId = ApiClient.getCurrentUserId();
                     const item = await ApiClient.getItem(userId, itemId);
                     tmdbId = item?.ProviderIds?.Tmdb || '';
-                } catch (err) { /* ignore */ }
+                    seriesId = item?.SeriesId || '';
+                    seriesName = item?.SeriesName || '';
+                    seasonNumber = item?.ParentIndexNumber != null ? item.ParentIndexNumber : null;
+                    episodeNumber = item?.IndexNumber != null ? item.IndexNumber : null;
+                } catch (err) {
+                    console.warn('🪼 Jellyfin Enhanced: Could not fetch item metadata for hide button', err);
+                }
 
-                JE.hiddenContent.confirmAndHide({
+                const isEpisode = lastDetailsItemType === 'Episode';
+                const isSeason = lastDetailsItemType === 'Season';
+
+                // Build base item data
+                const baseItemData = {
                     itemId,
                     name: itemName,
                     type: lastDetailsItemType,
                     tmdbId,
-                    posterPath
-                }, () => {
-                    setHiddenState();
-                });
+                    posterPath,
+                    seriesId,
+                    seriesName,
+                    seasonNumber,
+                    episodeNumber
+                };
+
+                if (isEpisode && seriesId) {
+                    // Episode on a detail page: show choice dialog
+                    JE.hiddenContent.confirmAndHide(baseItemData, () => {
+                        setHiddenState();
+                    }, {
+                        showEpisodeChoice: true,
+                        onChooseShow: async () => {
+                            // User chose to hide the entire show
+                            let seriesTmdbId = '';
+                            try {
+                                const userId = ApiClient.getCurrentUserId();
+                                const series = await ApiClient.getItem(userId, seriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb || '';
+                            } catch (err) {
+                                console.warn('🪼 Jellyfin Enhanced: Could not fetch series metadata for hide-show action', err);
+                            }
+                            JE.hiddenContent.hideItem({
+                                itemId: seriesId,
+                                name: seriesName || itemName,
+                                type: 'Series',
+                                tmdbId: seriesTmdbId,
+                                posterPath: ''
+                            });
+                            setHiddenState();
+                        }
+                    });
+                } else if (isSeason && seriesId) {
+                    // Season: hide with series metadata
+                    JE.hiddenContent.confirmAndHide(baseItemData, () => {
+                        setHiddenState();
+                    });
+                } else {
+                    // Movie or Series: standard hide
+                    JE.hiddenContent.confirmAndHide(baseItemData, () => {
+                        setHiddenState();
+                    });
+                }
             };
         }
 
@@ -851,6 +910,66 @@
             buttonContainer.insertBefore(button, moreButton);
         } else {
             buttonContainer.appendChild(button);
+        }
+    }
+
+    /**
+     * Adds hide buttons to actor cards in the cast/crew section of detail pages.
+     * Filters already-hidden actors from the display.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    function addActorHideButtons(visiblePage) {
+        // Actor hiding disabled for now — future feature
+        return;
+        if (!JE.hiddenContent) return;
+        const settings = JE.hiddenContent.getSettings();
+        if (!settings.enabled || !settings.showHideButtons) return;
+
+        // Find cast/crew section - Jellyfin uses .castScrollSlider or .detailSection with People
+        const castContainers = visiblePage.querySelectorAll('.castScrollSlider .card, .detailSection .card.personCard');
+        if (castContainers.length === 0) return;
+
+        for (const card of castContainers) {
+            // Skip already-processed cards
+            if (card.querySelector('.je-actor-hide-btn')) continue;
+
+            const personId = card.dataset?.id || card.dataset?.itemid;
+            if (!personId) continue;
+
+            const cardBox = card.querySelector('.cardBox') || card;
+
+            // If person is hidden and filterCastCrew is on, hide the card
+            if (settings.filterCastCrew && JE.hiddenContent.isPersonHidden(personId)) {
+                card.style.display = 'none';
+                continue;
+            }
+
+            // Add a small hide button
+            cardBox.style.position = 'relative';
+            const hideBtn = document.createElement('button');
+            hideBtn.className = 'je-hide-btn je-actor-hide-btn';
+            hideBtn.title = JE.t('hidden_content_hide_actor');
+
+            const icon = document.createElement('span');
+            icon.className = 'material-icons';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = 'person_off';
+            icon.style.fontSize = '14px';
+            hideBtn.appendChild(icon);
+
+            hideBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const actorName = card.querySelector('.cardText')?.textContent?.trim() || 'Unknown';
+                JE.hiddenContent.hideItem({
+                    itemId: personId,
+                    name: actorName,
+                    type: 'Person'
+                });
+                card.style.display = 'none';
+            });
+
+            cardBox.appendChild(hideBtn);
         }
     }
 
@@ -905,8 +1024,11 @@
             // Add hide content button on detail pages
             if (JE.hiddenContent) {
                 addHideContentButton(itemId, visiblePage);
+                addActorHideButtons(visiblePage);
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+        console.warn('🪼 Jellyfin Enhanced: Error in item details handler', e);
+    }
     }, 100);
 
     // Create managed observer for item details

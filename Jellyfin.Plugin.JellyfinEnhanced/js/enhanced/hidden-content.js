@@ -1,30 +1,81 @@
 /**
- * @file Per-user hidden content feature for Jellyfin Enhanced.
- * Allows users to hide specific movies/series from all rendering surfaces.
- * Hidden state is stored server-side per-user via hidden-content.json.
+ * @file Hidden Content — per-user content hiding for Jellyfin Enhanced.
+ *
+ * Allows users to hide specific movies, series, episodes, and seasons from all
+ * rendering surfaces (library, discovery, search, calendar, etc.).  Hidden state
+ * is stored server-side per-user via `hidden-content.json`.
+ *
+ * Supports scoped hides (Next Up / Continue Watching only), parent-series
+ * cascading, TMDB-based cross-surface filtering, and an inline undo toast.
  */
 (function (JE) {
     'use strict';
 
-    // --- State ---
+    // ============================================================
+    // State
+    // ============================================================
+
     const hiddenIdSet = new Set();
     const hiddenTmdbIdSet = new Set();
+    const hiddenPersonIdSet = new Set();
     const parentSeriesCache = new Map();
     const parentSeriesRequestMap = new Map();
     let hiddenData = null;
     let saveTimeout = null;
 
+    /** Debounce interval for persisting hidden-content data. */
     const SAVE_DEBOUNCE_MS = 500;
+    /** How long the undo toast stays visible. */
     const UNDO_TOAST_DURATION = 8000;
+    /** How long the "don't ask again" suppression lasts (15 minutes). */
+    const SUPPRESS_DURATION_MS = 15 * 60 * 1000;
+    /** Max poster width when loading images from TMDB / Jellyfin. */
+    const POSTER_MAX_WIDTH = 300;
+    /** Delay before the first card scan after page navigation. */
+    const INITIAL_SCAN_DELAY_MS = 300;
+    /** Delay for first detail-page rescan (async episode loading). */
+    const DETAIL_RESCAN_DELAY_MS = 800;
+    /** Delay for final detail-page rescan. */
+    const DETAIL_FINAL_RESCAN_DELAY_MS = 1500;
+    /** Debounce interval for the MutationObserver card filter. */
+    const NATIVE_FILTER_DEBOUNCE_MS = 300;
+    /** Initial filter delay after module initialization. */
+    const INIT_FILTER_DELAY_MS = 500;
 
-    // --- Internal helpers ---
+    /** Data attribute marking a card as already scanned. */
+    const PROCESSED_ATTR = 'data-je-hidden-checked';
+    /** Data attribute storing the parent series ID that caused hiding. */
+    const HIDDEN_PARENT_ATTR = 'data-je-hidden-parent-series-id';
+    /** Data attribute marking a directly-hidden card. */
+    const HIDDEN_DIRECT_ATTR = 'data-je-hidden-direct';
+    /** Selector for any hideable card/list-item. */
+    const CARD_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
+    /** Selector for not-yet-scanned cards only. */
+    const CARD_SEL_NEW = '.card[data-id]:not([data-je-hidden-checked]), .card[data-itemid]:not([data-je-hidden-checked]), .listItem[data-id]:not([data-je-hidden-checked])';
 
+    /** LocalStorage key for "don't ask again" suppression timestamp. */
+    const SUPPRESS_STORAGE_KEY = 'je_hide_confirm_suppressed_until';
+
+    // ============================================================
+    // Internal helpers
+    // ============================================================
+
+    /**
+     * Escapes a string for safe HTML text-node insertion.
+     * @param {string} str Raw string.
+     * @returns {string} HTML-escaped string.
+     */
     function escapeHtml(str) {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
     }
 
+    /**
+     * Returns the in-memory hidden-content data object, lazily initialised
+     * from `JE.userConfig.hiddenContent`.
+     * @returns {{ items: Object, settings: Object }}
+     */
     function getHiddenData() {
         if (!hiddenData) {
             hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
@@ -32,6 +83,10 @@
         return hiddenData;
     }
 
+    /**
+     * Returns the merged settings object (defaults + user overrides).
+     * @returns {Object} Merged settings with boolean flags for every filter surface.
+     */
     function getSettings() {
         const data = getHiddenData();
         return {
@@ -43,26 +98,44 @@
             filterSearch: false,
             filterRecommendations: true,
             filterRequests: true,
+            filterNextUp: true,
+            filterContinueWatching: true,
+            filterCastCrew: true,
             showHideConfirmation: true,
+            showHideButtons: true,
             showButtonJellyseerr: true,
             showButtonLibrary: false,
             showButtonDetails: true,
+            experimentalHideCollections: false,
             ...data.settings
         };
     }
 
+    /**
+     * Rebuilds the in-memory ID Sets from the current hidden-data items map.
+     * Must be called after any mutation to `hiddenData.items`.
+     */
     function rebuildSets() {
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
+        hiddenPersonIdSet.clear();
         const data = getHiddenData();
         const items = data.items || {};
         for (const key of Object.keys(items)) {
             const item = items[key];
-            if (item.itemId) hiddenIdSet.add(item.itemId);
+            if (item.type === 'Person') {
+                if (item.itemId) hiddenPersonIdSet.add(item.itemId);
+            } else {
+                if (item.itemId) hiddenIdSet.add(item.itemId);
+            }
             if (item.tmdbId) hiddenTmdbIdSet.add(String(item.tmdbId));
         }
     }
 
+    /**
+     * Persists the hidden-content data to the server after a debounce.
+     * Coalesces rapid writes (e.g. bulk-unhide) into a single save.
+     */
     function debouncedSave() {
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(() => {
@@ -72,11 +145,18 @@
         }, SAVE_DEBOUNCE_MS);
     }
 
+    /**
+     * Checks whether filtering is enabled for a given surface.
+     * @param {string} surface One of 'library', 'details', 'discovery', 'search',
+     *   'upcoming', 'calendar', 'recommendations', 'requests', 'nextup',
+     *   'continuewatching', 'castcrew'.
+     * @returns {boolean} `true` if hidden items should be filtered on this surface.
+     */
     function shouldFilterSurface(surface) {
         const settings = getSettings();
         if (!settings.enabled) return false;
         switch (surface) {
-            case 'details': return false;
+            case 'details': return settings.filterLibrary;
             case 'library': return settings.filterLibrary;
             case 'discovery': return settings.filterDiscovery;
             case 'search': return settings.filterSearch;
@@ -84,10 +164,20 @@
             case 'calendar': return settings.filterCalendar;
             case 'recommendations': return settings.filterRecommendations;
             case 'requests': return settings.filterRequests;
+            case 'nextup': return settings.filterNextUp;
+            case 'continuewatching': return settings.filterContinueWatching;
+            case 'castcrew': return settings.filterCastCrew;
             default: return true;
         }
     }
 
+    /**
+     * Fetches the parent series ID for an episode/season item from the API.
+     * Results are cached in `parentSeriesCache`; in-flight requests are
+     * de-duplicated via `parentSeriesRequestMap`.
+     * @param {string} itemId Jellyfin item ID (episode or season).
+     * @returns {Promise<string|null>} The series ID, or `null` if unavailable.
+     */
     async function getParentSeriesId(itemId) {
         if (parentSeriesCache.has(itemId)) {
             return parentSeriesCache.get(itemId);
@@ -97,17 +187,18 @@
         }
         const request = (async () => {
             try {
-            const userId = ApiClient.getCurrentUserId();
-            const item = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: 'SeriesId' }),
-                dataType: 'json'
-            });
-            const seriesId = item?.SeriesId || null;
-            parentSeriesCache.set(itemId, seriesId);
+                const userId = ApiClient.getCurrentUserId();
+                const item = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: 'SeriesId' }),
+                    dataType: 'json'
+                });
+                const seriesId = item?.SeriesId || null;
+                parentSeriesCache.set(itemId, seriesId);
                 return seriesId;
             } catch (e) {
-            parentSeriesCache.set(itemId, null);
+                console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for', itemId, e);
+                parentSeriesCache.set(itemId, null);
                 return null;
             } finally {
                 parentSeriesRequestMap.delete(itemId);
@@ -117,8 +208,14 @@
         return request;
     }
 
-    // --- CSS injection ---
+    // ============================================================
+    // CSS injection
+    // ============================================================
 
+    /**
+     * Injects the CSS rules used by hide buttons, undo toast, management panel,
+     * and confirmation dialog.  No-ops if the stylesheet is already present.
+     */
     function injectCSS() {
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-hidden-content', `
@@ -484,13 +581,19 @@
         `);
     }
 
-    // --- Undo toast ---
+    // ============================================================
+    // Undo toast
+    // ============================================================
 
+    /**
+     * Shows a slide-in toast with an "Undo" button after hiding an item.
+     * Automatically dismisses after {@link UNDO_TOAST_DURATION}.
+     * @param {string} itemName Display name of the hidden item.
+     * @param {string} itemId Storage key used to unhide if the user clicks Undo.
+     */
     function showUndoToast(itemName, itemId) {
-        // Remove any existing undo toast
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
-        // Use the theme system to match existing enhanced settings toast style
         const themeVars = JE.themer?.getThemeVariables() || {};
         const toastBg = themeVars.secondaryBg || 'linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))';
         const toastBorder = `1px solid ${themeVars.primaryAccent || 'rgba(255,255,255,0.1)'}`;
@@ -536,10 +639,15 @@
         }, UNDO_TOAST_DURATION);
     }
 
-    // --- Hide confirmation dialog ---
+    // ============================================================
+    // Hide confirmation dialog
+    // ============================================================
 
-    const SUPPRESS_STORAGE_KEY = 'je_hide_confirm_suppressed_until';
-
+    /**
+     * Checks whether the hide confirmation dialog is currently suppressed
+     * (either permanently via settings or temporarily via the 15-minute timer).
+     * @returns {boolean} `true` if the confirmation should be skipped.
+     */
     function isConfirmationSuppressed() {
         const settings = getSettings();
         if (settings.showHideConfirmation === false) return true;
@@ -548,23 +656,145 @@
         return false;
     }
 
-    function showHideConfirmation(itemName, onConfirm) {
-        // Remove any existing dialog
-        document.querySelector('.je-hide-confirm-overlay')?.remove();
+    /**
+     * Creates a column-layout button container with full-width buttons for
+     * surface-specific (Next Up / Continue Watching) confirmation dialogs.
+     * @param {Function} closeDialog Closes the overlay.
+     * @param {Function} onConfirm Default confirm callback (hide everywhere).
+     * @param {Object} dialogOptions Dialog customisation options.
+     * @returns {HTMLElement} The buttons container element.
+     */
+    function createSurfaceDialogButtons(closeDialog, onConfirm, dialogOptions) {
+        const choiceButtons = document.createElement('div');
+        choiceButtons.className = 'je-hide-confirm-buttons';
+        choiceButtons.style.flexDirection = 'column';
+        choiceButtons.style.gap = '8px';
 
-        const overlay = document.createElement('div');
-        overlay.className = 'je-hide-confirm-overlay';
+        const hasEpisodeChoice = !!dialogOptions.showEpisodeChoice;
 
-        const dialog = document.createElement('div');
-        dialog.className = 'je-hide-confirm-dialog';
+        // Option 1: Hide from this surface only (scoped)
+        const scopedBtn = document.createElement('button');
+        scopedBtn.className = 'je-hide-confirm-hide';
+        scopedBtn.style.width = '100%';
+        scopedBtn.textContent = JE.t('hidden_content_confirm_hide_scoped');
+        scopedBtn.addEventListener('click', () => {
+            closeDialog();
+            if (dialogOptions.onChooseScoped) dialogOptions.onChooseScoped();
+        });
+        choiceButtons.appendChild(scopedBtn);
 
-        const title = document.createElement('h3');
-        title.textContent = JE.t('hidden_content_confirm_title', { name: itemName });
-        dialog.appendChild(title);
+        // Option 2: Hide this episode everywhere (only if episode choice available)
+        if (hasEpisodeChoice) {
+            const episodeBtn = document.createElement('button');
+            episodeBtn.className = 'je-hide-confirm-hide';
+            episodeBtn.style.width = '100%';
+            episodeBtn.style.background = 'rgba(160, 80, 60, 0.6)';
+            episodeBtn.style.borderColor = 'rgba(160, 80, 60, 0.7)';
+            episodeBtn.textContent = JE.t('hidden_content_confirm_hide_episode');
+            episodeBtn.addEventListener('click', () => {
+                closeDialog();
+                onConfirm();
+            });
+            choiceButtons.appendChild(episodeBtn);
+        }
 
-        const body = document.createElement('p');
-        body.textContent = JE.t('hidden_content_confirm_body');
-        dialog.appendChild(body);
+        // Option 3: Hide entire show (only if episode choice available)
+        if (hasEpisodeChoice && dialogOptions.onChooseShow) {
+            const showBtn = document.createElement('button');
+            showBtn.className = 'je-hide-confirm-hide';
+            showBtn.style.width = '100%';
+            showBtn.style.background = 'rgba(180, 50, 50, 0.6)';
+            showBtn.style.borderColor = 'rgba(180, 50, 50, 0.7)';
+            showBtn.textContent = JE.t('hidden_content_confirm_hide_show');
+            showBtn.addEventListener('click', () => {
+                closeDialog();
+                dialogOptions.onChooseShow();
+            });
+            choiceButtons.appendChild(showBtn);
+        }
+
+        // If no episode choice, add a "Hide everywhere" option as alternative to scoped
+        if (!hasEpisodeChoice) {
+            const everywhereBtn = document.createElement('button');
+            everywhereBtn.className = 'je-hide-confirm-hide';
+            everywhereBtn.style.width = '100%';
+            everywhereBtn.style.background = 'rgba(180, 50, 50, 0.6)';
+            everywhereBtn.style.borderColor = 'rgba(180, 50, 50, 0.7)';
+            everywhereBtn.textContent = JE.t('hidden_content_confirm_hide');
+            everywhereBtn.addEventListener('click', () => {
+                closeDialog();
+                onConfirm();
+            });
+            choiceButtons.appendChild(everywhereBtn);
+        }
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'je-hide-confirm-cancel';
+        cancelBtn.style.width = '100%';
+        cancelBtn.textContent = JE.t('hidden_content_confirm_cancel');
+        cancelBtn.addEventListener('click', closeDialog);
+        choiceButtons.appendChild(cancelBtn);
+
+        return choiceButtons;
+    }
+
+    /**
+     * Creates a column-layout button container for the episode/show choice
+     * dialog (not triggered from a scoped surface).
+     * @param {Function} closeDialog Closes the overlay.
+     * @param {Function} onConfirm Default confirm callback (hide episode everywhere).
+     * @param {Object} dialogOptions Dialog customisation options.
+     * @returns {HTMLElement} The buttons container element.
+     */
+    function createEpisodeChoiceButtons(closeDialog, onConfirm, dialogOptions) {
+        const choiceButtons = document.createElement('div');
+        choiceButtons.className = 'je-hide-confirm-buttons';
+        choiceButtons.style.flexDirection = 'column';
+        choiceButtons.style.gap = '8px';
+
+        const episodeBtn = document.createElement('button');
+        episodeBtn.className = 'je-hide-confirm-hide';
+        episodeBtn.style.width = '100%';
+        episodeBtn.textContent = JE.t('hidden_content_confirm_hide_episode');
+        episodeBtn.addEventListener('click', () => {
+            closeDialog();
+            onConfirm();
+        });
+        choiceButtons.appendChild(episodeBtn);
+
+        if (dialogOptions.onChooseShow) {
+            const showBtn = document.createElement('button');
+            showBtn.className = 'je-hide-confirm-hide';
+            showBtn.style.width = '100%';
+            showBtn.style.background = 'rgba(180, 80, 50, 0.6)';
+            showBtn.style.borderColor = 'rgba(180, 80, 50, 0.7)';
+            showBtn.textContent = JE.t('hidden_content_confirm_hide_show');
+            showBtn.addEventListener('click', () => {
+                closeDialog();
+                dialogOptions.onChooseShow();
+            });
+            choiceButtons.appendChild(showBtn);
+        }
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'je-hide-confirm-cancel';
+        cancelBtn.style.width = '100%';
+        cancelBtn.textContent = JE.t('hidden_content_confirm_cancel');
+        cancelBtn.addEventListener('click', closeDialog);
+        choiceButtons.appendChild(cancelBtn);
+
+        return choiceButtons;
+    }
+
+    /**
+     * Creates the standard confirm/cancel button pair with an optional
+     * "don't ask again for 15 minutes" checkbox.
+     * @param {Function} closeDialog Closes the overlay.
+     * @param {Function} onConfirm Called when the user confirms hiding.
+     * @returns {HTMLElement} A document fragment containing the options and buttons.
+     */
+    function createStandardConfirmButtons(closeDialog, onConfirm) {
+        const fragment = document.createDocumentFragment();
 
         const options = document.createElement('div');
         options.className = 'je-hide-confirm-options';
@@ -575,8 +805,7 @@
         suppress15Label.appendChild(suppress15Check);
         suppress15Label.appendChild(document.createTextNode(JE.t('hidden_content_confirm_suppress_15m')));
         options.appendChild(suppress15Label);
-
-        dialog.appendChild(options);
+        fragment.appendChild(options);
 
         const buttons = document.createElement('div');
         buttons.className = 'je-hide-confirm-buttons';
@@ -584,10 +813,7 @@
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'je-hide-confirm-cancel';
         cancelBtn.textContent = JE.t('hidden_content_confirm_cancel');
-        cancelBtn.addEventListener('click', () => {
-            overlay.remove();
-            document.removeEventListener('keydown', escHandler);
-        });
+        cancelBtn.addEventListener('click', closeDialog);
         buttons.appendChild(cancelBtn);
 
         const hideBtn = document.createElement('button');
@@ -595,40 +821,93 @@
         hideBtn.textContent = JE.t('hidden_content_confirm_hide');
         hideBtn.addEventListener('click', () => {
             if (suppress15Check.checked) {
-                const until = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                const until = new Date(Date.now() + SUPPRESS_DURATION_MS).toISOString();
                 localStorage.setItem(SUPPRESS_STORAGE_KEY, until);
             }
-            overlay.remove();
-            document.removeEventListener('keydown', escHandler);
+            closeDialog();
             onConfirm();
         });
         buttons.appendChild(hideBtn);
+        fragment.appendChild(buttons);
 
-        dialog.appendChild(buttons);
+        return fragment;
+    }
+
+    /**
+     * Shows the hide confirmation dialog.  The dialog variant depends on the
+     * options: surface-scoped, episode-choice, or standard.
+     * @param {string} itemName Display name of the item.
+     * @param {Function} onConfirm Called when user confirms hiding (episode-level or default).
+     * @param {Object} [dialogOptions] Options to customize the dialog.
+     * @param {string} [dialogOptions.surface] 'nextup', 'continuewatching', or 'homesections' for scoped wording.
+     * @param {boolean} [dialogOptions.showEpisodeChoice] If true, shows "Hide episode" vs "Hide show" choice.
+     * @param {Function} [dialogOptions.onChooseShow] Called if user picks "Hide entire show".
+     * @param {Function} [dialogOptions.onChooseScoped] Called if user picks "Hide from [surface] only".
+     */
+    function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
+        document.querySelector('.je-hide-confirm-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'je-hide-confirm-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'je-hide-confirm-dialog';
+
+        const title = document.createElement('h3');
+        const body = document.createElement('p');
+
+        const hasSurface = dialogOptions.surface === 'nextup' || dialogOptions.surface === 'continuewatching' || dialogOptions.surface === 'homesections';
+        const hasEpisodeChoice = !!dialogOptions.showEpisodeChoice;
+
+        if (hasSurface) {
+            title.textContent = JE.t('hidden_content_confirm_surface_title');
+            body.textContent = JE.t('hidden_content_confirm_surface_body');
+        } else if (hasEpisodeChoice) {
+            title.textContent = JE.t('hidden_content_episode_choice_title');
+            body.textContent = JE.t('hidden_content_episode_choice_body');
+        } else {
+            title.textContent = JE.t('hidden_content_confirm_title', { name: itemName });
+            body.textContent = JE.t('hidden_content_confirm_body');
+        }
+        dialog.appendChild(title);
+        dialog.appendChild(body);
+
+        const closeDialog = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        };
+
+        if (hasSurface) {
+            dialog.appendChild(createSurfaceDialogButtons(closeDialog, onConfirm, dialogOptions));
+        } else if (hasEpisodeChoice) {
+            dialog.appendChild(createEpisodeChoiceButtons(closeDialog, onConfirm, dialogOptions));
+        } else {
+            dialog.appendChild(createStandardConfirmButtons(closeDialog, onConfirm));
+        }
+
         overlay.appendChild(dialog);
 
-        // Close on overlay background click
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.remove();
-                document.removeEventListener('keydown', escHandler);
-            }
+            if (e.target === overlay) closeDialog();
         });
 
-        // Close on Escape
         const escHandler = (e) => {
-            if (e.key === 'Escape') {
-                overlay.remove();
-                document.removeEventListener('keydown', escHandler);
-            }
+            if (e.key === 'Escape') closeDialog();
         };
         document.addEventListener('keydown', escHandler);
 
         document.body.appendChild(overlay);
     }
 
-    function confirmAndHide(itemData, onHidden) {
-        if (isConfirmationSuppressed()) {
+    /**
+     * Shows confirmation dialog (or skips if suppressed) then hides the item.
+     * Episode-choice and surface-scoped dialogs always show (never suppressed).
+     * @param {Object} itemData Data for the item to hide.
+     * @param {Function} onHidden Callback after hiding.
+     * @param {Object} [dialogOptions] Options passed to showHideConfirmation.
+     */
+    function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
+        if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
             hideItem(itemData);
             if (onHidden) onHidden();
             return;
@@ -636,11 +915,18 @@
         showHideConfirmation(itemData.name || 'Item', () => {
             hideItem(itemData);
             if (onHidden) onHidden();
-        });
+        }, dialogOptions);
     }
 
-    // --- Management panel ---
+    // ============================================================
+    // Management panel (overlay)
+    // ============================================================
 
+    /**
+     * Creates the header bar for the management panel overlay.
+     * @param {number} count Current number of hidden items.
+     * @returns {HTMLElement} The header element with title and close button.
+     */
     function createManagementHeader(count) {
         const header = document.createElement('div');
         header.className = 'je-hidden-management-header';
@@ -654,6 +940,13 @@
         return header;
     }
 
+    /**
+     * Creates a card element for a single hidden item in the management panel.
+     * Includes poster, name link, type/date metadata, and an Unhide button.
+     * @param {Object} item Hidden item data object.
+     * @param {Function} [onNavigate] Callback when the user clicks to navigate (closes the panel).
+     * @returns {HTMLElement} The card element.
+     */
     function createItemCard(item, onNavigate) {
         const card = document.createElement('div');
         card.className = 'je-hidden-item-card';
@@ -677,15 +970,14 @@
         if (item.posterPath) {
             const img = document.createElement('img');
             img.className = 'je-hidden-item-poster';
-            img.src = `https://image.tmdb.org/t/p/w300${item.posterPath}`;
+            img.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${item.posterPath}`;
             img.alt = '';
             img.loading = 'lazy';
             posterLink.appendChild(img);
         } else if (hasJellyfinId) {
-            // Use Jellyfin primary image as fallback
             const img = document.createElement('img');
             img.className = 'je-hidden-item-poster';
-            img.src = `${ApiClient.getUrl('/Items/' + item.itemId + '/Images/Primary', { maxWidth: 300 })}`;
+            img.src = `${ApiClient.getUrl('/Items/' + item.itemId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH })}`;
             img.alt = '';
             img.loading = 'lazy';
             img.onerror = function() { this.style.display = 'none'; };
@@ -718,7 +1010,6 @@
         for (const link of navigableLinks) {
             link.addEventListener('click', (e) => {
                 if (hasJellyfinId) {
-                    // Let browser navigate via href, just close overlay
                     if (onNavigate) onNavigate();
                 } else if (hasTmdbId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
@@ -745,8 +1036,11 @@
         return card;
     }
 
+    /**
+     * Creates and displays the management panel overlay.
+     * Shows all hidden items in a searchable grid with unhide actions.
+     */
     function showManagementPanel() {
-        // Remove existing panel
         document.querySelector('.je-hidden-management-overlay')?.remove();
 
         const data = getHiddenData();
@@ -758,7 +1052,6 @@
         const panel = document.createElement('div');
         panel.className = 'je-hidden-management-panel';
 
-        // Header
         const header = createManagementHeader(items.length);
         const closeOverlay = () => {
             overlay.remove();
@@ -767,33 +1060,21 @@
         header.querySelector('.je-hidden-management-close').addEventListener('click', closeOverlay);
         panel.appendChild(header);
 
-        // Toolbar
-        const toolbar = document.createElement('div');
-        toolbar.className = 'je-hidden-management-toolbar';
+        const toolbar = createManagementToolbar(items);
+        panel.appendChild(toolbar.element);
 
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'je-hidden-management-search';
-        searchInput.placeholder = JE.t('hidden_content_manage_search') || 'Search hidden items...';
-        toolbar.appendChild(searchInput);
-
-        const unhideAllBtn = document.createElement('button');
-        unhideAllBtn.className = 'je-hidden-management-unhide-all';
-        unhideAllBtn.textContent = JE.t('hidden_content_clear_all');
-        toolbar.appendChild(unhideAllBtn);
-
-        panel.appendChild(toolbar);
-
-        // Grid container
         const gridContainer = document.createElement('div');
         panel.appendChild(gridContainer);
 
+        /**
+         * Renders the item grid, optionally filtered by search text.
+         * @param {string} [filter] Search text to filter by name.
+         */
         function renderGrid(filter) {
             const filtered = filter
                 ? items.filter(i => i.name?.toLowerCase().includes(filter.toLowerCase()))
                 : items;
 
-            // Sort by hiddenAt descending (most recent first)
             filtered.sort((a, b) => {
                 const da = a.hiddenAt ? new Date(a.hiddenAt).getTime() : 0;
                 const db = b.hiddenAt ? new Date(b.hiddenAt).getTime() : 0;
@@ -819,7 +1100,6 @@
                     setTimeout(() => {
                         unhideItem(item._key || item.itemId);
                         card.remove();
-                        // Update header count
                         const remaining = gridContainer.querySelectorAll('.je-hidden-item-card').length;
                         header.querySelector('h2').textContent = `${JE.t('hidden_content_manage_title')} (${remaining})`;
                         if (remaining === 0) {
@@ -839,9 +1119,9 @@
 
         renderGrid();
 
-        searchInput.addEventListener('input', () => renderGrid(searchInput.value));
+        toolbar.searchInput.addEventListener('input', () => renderGrid(toolbar.searchInput.value));
 
-        unhideAllBtn.addEventListener('click', () => {
+        toolbar.unhideAllBtn.addEventListener('click', () => {
             if (!confirm(JE.t('hidden_content_clear_confirm'))) return;
             unhideAll();
             const emptyDiv = document.createElement('div');
@@ -853,48 +1133,155 @@
 
         overlay.appendChild(panel);
 
-        // Close on overlay background click
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) closeOverlay();
         });
 
-        // Close on Escape
         const escHandler = (e) => {
-            if (e.key === 'Escape') {
-                closeOverlay();
-            }
+            if (e.key === 'Escape') closeOverlay();
         };
         document.addEventListener('keydown', escHandler);
 
         document.body.appendChild(overlay);
     }
 
-    // --- Native card filtering ---
+    /**
+     * Creates the toolbar (search + unhide-all button) for the management panel.
+     * @returns {{ element: HTMLElement, searchInput: HTMLInputElement, unhideAllBtn: HTMLButtonElement }}
+     */
+    function createManagementToolbar() {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'je-hidden-management-toolbar';
 
-    var PROCESSED_ATTR = 'jeHiddenChecked';
-    var HIDDEN_PARENT_ATTR = 'data-je-hidden-parent-series-id';
-    var HIDDEN_DIRECT_ATTR = 'data-je-hidden-direct';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'je-hidden-management-search';
+        searchInput.placeholder = JE.t('hidden_content_manage_search') || 'Search hidden items...';
+        toolbar.appendChild(searchInput);
 
+        const unhideAllBtn = document.createElement('button');
+        unhideAllBtn.className = 'je-hidden-management-unhide-all';
+        unhideAllBtn.textContent = JE.t('hidden_content_clear_all');
+        toolbar.appendChild(unhideAllBtn);
+
+        return { element: toolbar, searchInput, unhideAllBtn };
+    }
+
+    // ============================================================
+    // Scope-aware filtering
+    // ============================================================
+
+    /**
+     * Detects the surface context of a card by checking parent section headers.
+     * @param {HTMLElement} card The card element to check.
+     * @returns {'nextup'|'continuewatching'|null} The detected surface or null.
+     */
+    function getCardSurface(card) {
+        const section = card.closest('.section, .verticalSection, .homeSection');
+        if (!section) return null;
+        const titleEl = section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle');
+        const title = (titleEl?.textContent || '').toLowerCase();
+        if (title.includes('next up')) return 'nextup';
+        if (title.includes('continue watching')) return 'continuewatching';
+        return null;
+    }
+
+    /**
+     * Checks if an item should be hidden on a specific surface, respecting hide scope.
+     * Items with scope 'global' are hidden everywhere.
+     * Items with scope 'nextup' or 'continuewatching' are only hidden on their respective surfaces.
+     * The 'homesections' scope matches both 'nextup' and 'continuewatching'.
+     * @param {string} itemId The Jellyfin item ID.
+     * @param {string} surface The surface to check ('nextup', 'continuewatching', or 'library').
+     * @returns {boolean} `true` if the item is hidden on this surface.
+     */
+    function isHiddenOnSurface(itemId, surface) {
+        if (!itemId) return false;
+        const settings = getSettings();
+        if (!settings.enabled) return false;
+
+        const data = getHiddenData();
+        const items = data.items || {};
+
+        for (const key of Object.keys(items)) {
+            const item = items[key];
+            if (item.itemId !== itemId) continue;
+            const scope = item.hideScope || 'global';
+            if (scope === 'global') return true;
+            if (scope === surface) return true;
+            if (scope === 'homesections' && (surface === 'nextup' || surface === 'continuewatching')) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Checks if a person (actor) is hidden.
+     * @param {string} personId The person's Jellyfin ID.
+     * @returns {boolean} `true` if the person is hidden.
+     */
+    function isPersonHidden(personId) {
+        if (!personId) return false;
+        const settings = getSettings();
+        if (!settings.enabled) return false;
+        return hiddenPersonIdSet.has(personId);
+    }
+
+    /**
+     * Filters an array of people (cast/crew), removing hidden persons.
+     * Returns the original array unchanged if filtering is disabled or
+     * there are no hidden persons.
+     * @param {Array} people Array of person objects with Id property.
+     * @returns {Array} Filtered array with hidden persons removed.
+     */
+    function filterActors(people) {
+        if (!shouldFilterSurface('castcrew')) return people;
+        if (!Array.isArray(people)) return people;
+        if (hiddenPersonIdSet.size === 0) return people;
+        return people.filter((person) => {
+            const personId = person.Id || person.id;
+            return !hiddenPersonIdSet.has(personId);
+        });
+    }
+
+    // ============================================================
+    // Native card filtering
+    // ============================================================
+
+    /**
+     * Extracts the Jellyfin item ID from a card or list-item element.
+     * @param {HTMLElement} el The card element.
+     * @returns {string|null} The item ID, or null if not found.
+     */
     function getCardItemId(el) {
         if (el.dataset && el.dataset.id) return el.dataset.id;
         if (el.dataset && el.dataset.itemid) return el.dataset.itemid;
         return null;
     }
 
+    /**
+     * Determines the current native Jellyfin surface from the URL hash.
+     * @returns {'details'|'search'|'upcoming'|'library'} The current surface name.
+     */
     function getCurrentNativeSurface() {
-        var hash = (window.location.hash || '').toLowerCase();
+        const hash = (window.location.hash || '').toLowerCase();
         if (hash.indexOf('/details') !== -1) return 'details';
         if (hash.indexOf('/search') !== -1) return 'search';
         if (hash.indexOf('/upcoming') !== -1) return 'upcoming';
         return 'library';
     }
 
+    /**
+     * Asynchronously checks whether a card's parent series is hidden and,
+     * if so, hides the card.  Used for episode/season cards in library views.
+     * @param {HTMLElement} card The card element.
+     * @param {string} itemId The episode/season's Jellyfin item ID.
+     */
     function checkAndHideByParentSeries(card, itemId) {
         if (!card || !itemId) return;
         if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
         if (hiddenIdSet.size === 0) return;
 
-        getParentSeriesId(itemId).then(function(seriesId) {
+        getParentSeriesId(itemId).then((seriesId) => {
             if (!seriesId) return;
             if (!card.isConnected) return;
             if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
@@ -907,15 +1294,22 @@
                 card.style.display = '';
                 card.removeAttribute(HIDDEN_PARENT_ATTR);
             }
-        }).catch(function() { /* ignore */ });
+        }).catch((e) => {
+            console.warn('🪼 Jellyfin Enhanced: Parent series check failed for', itemId, e);
+        });
     }
 
+    /**
+     * Restores visibility for cards matching a set of item IDs.
+     * Used when un-hiding items to immediately show them again.
+     * @param {Set<string>} idsToRestore Set of item IDs to restore.
+     */
     function restoreNativeCardsForIds(idsToRestore) {
         if (!idsToRestore || idsToRestore.size === 0) return;
-        document.querySelectorAll('.card[data-id], .card[data-itemid]').forEach(function(card) {
-            card.removeAttribute('data-je-hidden-checked');
-            var cardId = getCardItemId(card);
-            var hiddenBySeriesId = card.getAttribute(HIDDEN_PARENT_ATTR);
+        document.querySelectorAll(CARD_SEL).forEach((card) => {
+            card.removeAttribute(PROCESSED_ATTR);
+            const cardId = getCardItemId(card);
+            const hiddenBySeriesId = card.getAttribute(HIDDEN_PARENT_ATTR);
             if (hiddenBySeriesId && idsToRestore.has(hiddenBySeriesId) && card.style.display === 'none') {
                 card.style.display = '';
                 card.removeAttribute(HIDDEN_PARENT_ATTR);
@@ -927,6 +1321,10 @@
         });
     }
 
+    /**
+     * Triggers a full re-filter of all native cards.  If filtering is disabled,
+     * restores any previously-hidden cards instead.
+     */
     function refreshNativeCardVisibility() {
         if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) {
             restoreNativeCardsForIds(hiddenIdSet);
@@ -935,19 +1333,35 @@
         requestAnimationFrame(filterAllNativeCards);
     }
 
+    /**
+     * Filters only newly-added (not yet scanned) native cards.
+     * Called by the debounced MutationObserver callback.
+     */
     function filterNativeCards() {
-        if (!shouldFilterSurface(getCurrentNativeSurface())) return;
-        var settings = getSettings();
+        const nativeSurface = getCurrentNativeSurface();
+        if (!shouldFilterSurface(nativeSurface)) return;
+        const settings = getSettings();
         if (!settings.enabled) return;
         if (hiddenIdSet.size === 0) return;
+        const isDetailPage = nativeSurface === 'details';
 
-        var cards = document.querySelectorAll('.card[data-id]:not([data-je-hidden-checked]), .card[data-itemid]:not([data-je-hidden-checked])');
-        for (var i = 0; i < cards.length; i++) {
-            var card = cards[i];
-            var itemId = getCardItemId(card);
-            card.setAttribute('data-je-hidden-checked', '1');
+        const cards = document.querySelectorAll(CARD_SEL_NEW);
+        for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            const itemId = getCardItemId(card);
+            card.setAttribute(PROCESSED_ATTR, '1');
             card.removeAttribute(HIDDEN_PARENT_ATTR);
             if (!itemId) continue;
+
+            // Check scope-aware hiding for cards in Next Up / Continue Watching sections
+            const cardSurface = getCardSurface(card);
+            if (cardSurface) {
+                if (shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
+                    card.style.display = 'none';
+                    card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
+                    continue;
+                }
+            }
 
             if (hiddenIdSet.has(itemId)) {
                 card.style.display = 'none';
@@ -957,124 +1371,236 @@
                     card.style.display = '';
                     card.removeAttribute(HIDDEN_DIRECT_ATTR);
                 }
-                checkAndHideByParentSeries(card, itemId);
+                if (!isDetailPage) {
+                    checkAndHideByParentSeries(card, itemId);
+                }
             }
         }
     }
 
+    /**
+     * Filters ALL native cards on the page (including previously scanned ones).
+     * Used after settings changes or when the hidden-items set has been modified.
+     */
     function filterAllNativeCards() {
-        if (!shouldFilterSurface(getCurrentNativeSurface())) return;
-        var settings = getSettings();
+        const nativeSurface = getCurrentNativeSurface();
+        if (!shouldFilterSurface(nativeSurface)) return;
+        const settings = getSettings();
         if (!settings.enabled) return;
+        const isDetailPage = nativeSurface === 'details';
 
-        var cards = document.querySelectorAll('.card[data-id], .card[data-itemid]');
-        for (var i = 0; i < cards.length; i++) {
-            var card = cards[i];
-            var itemId = getCardItemId(card);
-            card.setAttribute('data-je-hidden-checked', '1');
+        const cards = document.querySelectorAll(CARD_SEL);
+        for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            const itemId = getCardItemId(card);
+            card.setAttribute(PROCESSED_ATTR, '1');
             card.removeAttribute(HIDDEN_PARENT_ATTR);
             if (!itemId) continue;
 
-            if (hiddenIdSet.has(itemId)) {
+            const cardSurface = getCardSurface(card);
+            let hiddenByScope = false;
+            if (cardSurface && shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
                 card.style.display = 'none';
                 card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-            } else if (card.style.display === 'none') {
-                card.style.display = '';
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                hiddenByScope = true;
             }
 
-            if (!hiddenIdSet.has(itemId)) {
-                checkAndHideByParentSeries(card, itemId);
+            if (!hiddenByScope) {
+                if (hiddenIdSet.has(itemId)) {
+                    card.style.display = 'none';
+                    card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
+                } else if (card.style.display === 'none') {
+                    card.style.display = '';
+                    card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                }
+
+                if (!hiddenIdSet.has(itemId) && !isDetailPage) {
+                    checkAndHideByParentSeries(card, itemId);
+                }
             }
         }
     }
 
-    // --- Library hide buttons ---
+    // ============================================================
+    // Library hide buttons
+    // ============================================================
+
+    /**
+     * Creates and attaches a hide/unhide toggle button to a single library card.
+     * Captures per-card references in a closure for state management.
+     * @param {HTMLElement} cardBox The `.cardBox` element to attach the button to.
+     * @param {HTMLElement} card The parent `.card` element.
+     * @param {string} itemId The Jellyfin item ID.
+     */
+    function createLibraryHideButton(cardBox, card, itemId) {
+        cardBox.style.position = 'relative';
+        const btn = document.createElement('button');
+
+        const hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button' ? JE.t('hidden_content_hide_button') : 'Hide';
+        const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
+        const unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide' ? JE.t('hidden_content_unhide') : 'Unhide';
+
+        /**
+         * Renders a material icon inside the button.
+         * @param {string} iconName Material icon name.
+         */
+        function renderIcon(iconName) {
+            btn.replaceChildren();
+            const icon = document.createElement('span');
+            icon.className = 'material-icons';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = iconName || 'visibility';
+            btn.appendChild(icon);
+        }
+
+        /** Configures the button for "already hidden" state — click to unhide. */
+        function setHiddenState() {
+            btn.className = 'je-hide-btn je-already-hidden';
+            btn.title = hiddenLabel;
+            renderIcon('visibility_off');
+            btn.onmouseenter = () => { btn.title = unhideLabel; };
+            btn.onmouseleave = () => { btn.title = hiddenLabel; };
+            btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                unhideItem(itemId);
+                setHideState();
+            };
+        }
+
+        /** Configures the button for "visible" state — click to hide. */
+        function setHideState() {
+            btn.className = 'je-hide-btn';
+            btn.title = hideLabel;
+            renderIcon('visibility');
+            btn.onmouseenter = null;
+            btn.onmouseleave = null;
+            btn.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const cardName = card.querySelector('.cardText')?.textContent || '';
+                const surface = getCardSurface(card);
+
+                if (surface === 'nextup' || surface === 'continuewatching') {
+                    await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);
+                } else {
+                    confirmAndHide({ itemId, name: cardName }, () => {
+                        card.style.display = 'none';
+                    });
+                }
+            };
+        }
+
+        if (hiddenIdSet.has(itemId)) {
+            setHiddenState();
+        } else {
+            setHideState();
+        }
+        cardBox.appendChild(btn);
+    }
+
+    /**
+     * Handles the hide flow for a card in a scoped surface (Next Up / Continue Watching).
+     * Fetches item metadata to determine if episode-choice should be offered.
+     * @param {HTMLElement} card The card element to hide.
+     * @param {string} itemId The Jellyfin item ID.
+     * @param {string} cardName Display name from the card text.
+     * @param {string} surface The detected surface ('nextup' or 'continuewatching').
+     * @param {Function} setHiddenState Callback to switch the button to "hidden" state.
+     */
+    async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState) {
+        const itemData = { itemId, name: cardName };
+        const dialogOpts = { surface: 'homesections' };
+
+        try {
+            const userId = ApiClient.getCurrentUserId();
+            const item = await ApiClient.getItem(userId, itemId);
+            const itemType = item?.Type || '';
+            const seriesId = item?.SeriesId || '';
+            const seriesName = item?.SeriesName || '';
+
+            itemData.type = itemType;
+            itemData.name = item?.Name || cardName;
+            itemData.seriesId = seriesId;
+            itemData.seriesName = seriesName;
+            itemData.seasonNumber = item?.ParentIndexNumber != null ? item.ParentIndexNumber : null;
+            itemData.episodeNumber = item?.IndexNumber != null ? item.IndexNumber : null;
+            itemData.tmdbId = item?.ProviderIds?.Tmdb || '';
+
+            if ((itemType === 'Episode' || itemType === 'Season') && seriesId) {
+                dialogOpts.showEpisodeChoice = true;
+                dialogOpts.onChooseScoped = () => {
+                    hideItem({ ...itemData, hideScope: 'homesections' });
+                    card.style.display = 'none';
+                };
+                dialogOpts.onChooseShow = async () => {
+                    let seriesTmdbId = '';
+                    try {
+                        const series = await ApiClient.getItem(userId, seriesId);
+                        seriesTmdbId = series?.ProviderIds?.Tmdb || '';
+                    } catch (err) {
+                        console.warn('🪼 Jellyfin Enhanced: Failed to fetch series TMDB ID', err);
+                    }
+                    hideItem({
+                        itemId: seriesId,
+                        name: seriesName || cardName,
+                        type: 'Series',
+                        tmdbId: seriesTmdbId
+                    });
+                    card.style.display = 'none';
+                };
+            } else {
+                dialogOpts.onChooseScoped = () => {
+                    hideItem({ ...itemData, hideScope: 'homesections' });
+                    card.style.display = 'none';
+                };
+            }
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to fetch item data for scoped hide', err);
+            dialogOpts.onChooseScoped = () => {
+                hideItem({ itemId, name: cardName, hideScope: 'homesections' });
+                card.style.display = 'none';
+            };
+        }
+
+        confirmAndHide(itemData, () => {
+            card.style.display = 'none';
+        }, dialogOpts);
+    }
 
     /**
      * Adds hide/unhide toggle buttons to native Jellyfin library cards.
      * Only runs when the `showButtonLibrary` setting is enabled.
      * Skips cards that already have a `.je-hide-btn` to avoid duplicates.
-     * Each button reflects the current hidden state and toggles on click,
-     * reusing the same `.je-hide-btn` CSS class pattern as Jellyseerr cards.
      */
     function addLibraryHideButtons() {
-        if (!getSettings().showButtonLibrary) return;
+        const s = getSettings();
+        if (!s.enabled || !s.showHideButtons || !s.showButtonLibrary) return;
 
-        var cards = document.querySelectorAll('.card[data-id] .cardBox, .card[data-itemid] .cardBox');
-        for (var i = 0; i < cards.length; i++) {
-            var cardBox = cards[i];
-            // Skip cards that already have a hide button
+        const skipCollections = !s.experimentalHideCollections;
+
+        const cards = document.querySelectorAll('.card[data-id] .cardBox, .card[data-itemid] .cardBox');
+        for (let i = 0; i < cards.length; i++) {
+            const cardBox = cards[i];
             if (cardBox.querySelector('.je-hide-btn')) continue;
 
-            var card = cardBox.closest('.card');
+            const card = cardBox.closest('.card');
             if (!card) continue;
-            var itemId = getCardItemId(card);
+            const itemId = getCardItemId(card);
             if (!itemId) continue;
 
-            // Position relative so the absolute-positioned button sits in the card corner
-            cardBox.style.position = 'relative';
-            var hideBtn = document.createElement('button');
-
-            // Resolve labels with fallback when translations aren't loaded yet
-            var hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button' ? JE.t('hidden_content_hide_button') : 'Hide';
-            var hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
-            var unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide' ? JE.t('hidden_content_unhide') : 'Unhide';
-
-            // IIFE to capture per-card references in the closure (btn, card element, item ID)
-            (function(btn, crd, iId) {
-                /** Renders a material icon inside the button */
-                function renderIcon(iconName) {
-                    btn.replaceChildren();
-                    var icon = document.createElement('span');
-                    icon.className = 'material-icons';
-                    icon.setAttribute('aria-hidden', 'true');
-                    icon.textContent = iconName || 'visibility';
-                    btn.appendChild(icon);
+            if (skipCollections) {
+                const cardType = (card.dataset.type || '').toLowerCase();
+                if (cardType === 'collectionfolder' || cardType === 'userview' || cardType === 'boxset' || cardType === 'playlist' || cardType === 'channel') continue;
+                const section = card.closest('.section, .verticalSection, .homeSection');
+                if (section) {
+                    const sTitle = (section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle')?.textContent || '').toLowerCase();
+                    if (sTitle.includes('my media') || sTitle.includes('collections')) continue;
                 }
+            }
 
-                /** Configures the button for "already hidden" state — click to unhide */
-                function setHiddenState() {
-                    btn.className = 'je-hide-btn je-already-hidden';
-                    btn.title = hiddenLabel;
-                    renderIcon('visibility_off');
-                    btn.onmouseenter = function() { btn.title = unhideLabel; };
-                    btn.onmouseleave = function() { btn.title = hiddenLabel; };
-                    btn.onclick = function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        unhideItem(iId);
-                        setHideState();
-                    };
-                }
-
-                /** Configures the button for "visible" state — click to hide */
-                function setHideState() {
-                    btn.className = 'je-hide-btn';
-                    btn.title = hideLabel;
-                    renderIcon('visibility');
-                    btn.onmouseenter = null;
-                    btn.onmouseleave = null;
-                    btn.onclick = function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        confirmAndHide({
-                            itemId: iId,
-                            name: crd.querySelector('.cardText')?.textContent || ''
-                        }, function() {
-                            crd.style.display = 'none';
-                        });
-                    };
-                }
-
-                // Set initial state based on whether the item is currently hidden
-                if (hiddenIdSet.has(iId)) {
-                    setHiddenState();
-                } else {
-                    setHideState();
-                }
-                cardBox.appendChild(btn);
-            })(hideBtn, card, itemId);
+            createLibraryHideButton(cardBox, card, itemId);
         }
     }
 
@@ -1083,44 +1609,62 @@
      * Called when the `showButtonLibrary` setting is toggled off.
      */
     function removeLibraryHideButtons() {
-        var btns = document.querySelectorAll('.card[data-id] .je-hide-btn, .card[data-itemid] .je-hide-btn');
-        for (var i = 0; i < btns.length; i++) {
+        const btns = document.querySelectorAll('.card[data-id] .je-hide-btn, .card[data-itemid] .je-hide-btn');
+        for (let i = 0; i < btns.length; i++) {
             btns[i].remove();
         }
     }
 
-    var debouncedFilterNative = JE.helpers?.debounce
-        ? JE.helpers.debounce(function() { requestAnimationFrame(filterNativeCards); }, 300)
+    // ============================================================
+    // Native observer setup
+    // ============================================================
+
+    const debouncedFilterNative = JE.helpers?.debounce
+        ? JE.helpers.debounce(() => { requestAnimationFrame(filterNativeCards); }, NATIVE_FILTER_DEBOUNCE_MS)
         : filterNativeCards;
 
+    /**
+     * Sets up page-navigation and MutationObserver hooks to trigger card
+     * filtering and button injection when new cards appear in the DOM.
+     */
     function setupNativeObserver() {
         // Use onViewPage for page navigation — much cheaper than a body MutationObserver
         if (JE.helpers?.onViewPage) {
-            JE.helpers.onViewPage(function() {
-                setTimeout(function() {
+            JE.helpers.onViewPage(() => {
+                const rescan = () => {
                     refreshNativeCardVisibility();
                     if (getSettings().showButtonLibrary) addLibraryHideButtons();
-                }, 300);
+                };
+                setTimeout(rescan, INITIAL_SCAN_DELAY_MS);
+                // Detail pages load episodes asynchronously — staggered re-scans catch late-rendered cards
+                if (getCurrentNativeSurface() === 'details') {
+                    setTimeout(rescan, DETAIL_RESCAN_DELAY_MS);
+                    setTimeout(rescan, DETAIL_FINAL_RESCAN_DELAY_MS);
+                }
             });
         }
 
-        // Lightweight observer only for card containers, not the entire body
+        // Lightweight observer for card/list containers
         if (typeof MutationObserver !== 'undefined') {
-            var observer = new MutationObserver(function(mutations) {
+            const observer = new MutationObserver((mutations) => {
                 if (!getSettings().enabled || hiddenIdSet.size === 0) return;
-                var hasNewCards = false;
-                for (var i = 0; i < mutations.length; i++) {
-                    var added = mutations[i].addedNodes;
-                    for (var j = 0; j < added.length; j++) {
-                        var node = added[j];
-                        if (node.nodeType === 1 && (node.classList?.contains('card') || node.querySelector?.('.card[data-id]'))) {
-                            hasNewCards = true;
+                let hasNewItems = false;
+                for (let i = 0; i < mutations.length; i++) {
+                    const added = mutations[i].addedNodes;
+                    for (let j = 0; j < added.length; j++) {
+                        const node = added[j];
+                        if (node.nodeType === 1 && (
+                            node.classList?.contains('card') ||
+                            node.classList?.contains('listItem') ||
+                            node.querySelector?.('.card[data-id], .listItem[data-id]')
+                        )) {
+                            hasNewItems = true;
                             break;
                         }
                     }
-                    if (hasNewCards) break;
+                    if (hasNewItems) break;
                 }
-                if (hasNewCards) {
+                if (hasNewItems) {
                     debouncedFilterNative();
                     if (getSettings().showButtonLibrary) addLibraryHideButtons();
                 }
@@ -1129,16 +1673,31 @@
         }
     }
 
-    // --- Event emission ---
+    // ============================================================
+    // Event emission
+    // ============================================================
 
+    /**
+     * Dispatches a `je-hidden-content-changed` CustomEvent on `window`.
+     * Other modules (e.g. the management page) listen for this to re-render.
+     */
     function emitChange() {
         try {
             window.dispatchEvent(new CustomEvent('je-hidden-content-changed'));
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to emit hidden-content-changed event', e);
+        }
     }
 
-    // --- Public API ---
+    // ============================================================
+    // Public API
+    // ============================================================
 
+    /**
+     * Checks if an item is hidden by its Jellyfin ID.
+     * @param {string} jellyfinItemId The Jellyfin item ID.
+     * @returns {boolean} `true` if the item is hidden.
+     */
     function isHidden(jellyfinItemId) {
         if (!jellyfinItemId) return false;
         const settings = getSettings();
@@ -1146,6 +1705,11 @@
         return hiddenIdSet.has(jellyfinItemId);
     }
 
+    /**
+     * Checks if an item is hidden by its TMDB ID.
+     * @param {string|number} tmdbId The TMDB ID.
+     * @returns {boolean} `true` if the item is hidden.
+     */
     function isHiddenByTmdbId(tmdbId) {
         if (!tmdbId) return false;
         const settings = getSettings();
@@ -1153,7 +1717,23 @@
         return hiddenTmdbIdSet.has(String(tmdbId));
     }
 
-    function hideItem({ itemId, name, type, tmdbId, posterPath }) {
+    /**
+     * Hides an item by adding it to the hidden-content data store.
+     * Rebuilds lookup sets, schedules a save, emits a change event,
+     * shows an undo toast, and refreshes native card visibility.
+     * @param {Object} params Item data to hide.
+     * @param {string} [params.itemId] Jellyfin item ID.
+     * @param {string} [params.name] Display name.
+     * @param {string} [params.type] Item type (Movie, Series, Episode, etc.).
+     * @param {string|number} [params.tmdbId] TMDB ID.
+     * @param {string} [params.posterPath] TMDB poster path.
+     * @param {string} [params.seriesId] Parent series Jellyfin ID.
+     * @param {string} [params.seriesName] Parent series name.
+     * @param {number|null} [params.seasonNumber] Season number.
+     * @param {number|null} [params.episodeNumber] Episode number.
+     * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
+     */
+    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
         const data = getHiddenData();
         const key = itemId || `tmdb-${tmdbId}`;
         const newItem = {
@@ -1162,7 +1742,12 @@
             type: type || '',
             tmdbId: tmdbId ? String(tmdbId) : '',
             hiddenAt: new Date().toISOString(),
-            posterPath: posterPath || ''
+            posterPath: posterPath || '',
+            seriesId: seriesId || '',
+            seriesName: seriesName || '',
+            seasonNumber: seasonNumber != null ? seasonNumber : null,
+            episodeNumber: episodeNumber != null ? episodeNumber : null,
+            hideScope: hideScope || 'global'
         };
 
         hiddenData = {
@@ -1177,6 +1762,11 @@
         refreshNativeCardVisibility();
     }
 
+    /**
+     * Unhides an item by removing it from the hidden-content data store.
+     * Restores visibility for the item's native cards.
+     * @param {string} itemId The storage key or Jellyfin item ID to unhide.
+     */
     function unhideItem(itemId) {
         const data = getHiddenData();
         const newItems = { ...data.items };
@@ -1208,6 +1798,11 @@
         refreshNativeCardVisibility();
     }
 
+    /**
+     * Merges partial settings into the hidden-content settings.
+     * Triggers a save, change event, and native card re-filter.
+     * @param {Object} partial Key-value pairs to merge into settings.
+     */
     function updateSettings(partial) {
         const data = getHiddenData();
         hiddenData = {
@@ -1220,32 +1815,51 @@
         refreshNativeCardVisibility();
     }
 
+    /**
+     * Returns all hidden items as an array with `_key` attached.
+     * @returns {Array<Object>} Array of hidden item objects.
+     */
     function getAllHiddenItems() {
         const data = getHiddenData();
         const items = data.items || {};
         return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
     }
 
+    /**
+     * Returns the number of hidden items.
+     * @returns {number} Count of hidden items.
+     */
     function getHiddenCount() {
         const data = getHiddenData();
         return Object.keys(data.items || {}).length;
     }
 
+    /**
+     * Filters Jellyseerr discovery/search results, removing hidden items by TMDB ID.
+     * @param {Array} results Array of Jellyseerr result objects.
+     * @param {string} surface The surface name (e.g. 'discovery', 'search').
+     * @returns {Array} Filtered array.
+     */
     function filterJellyseerrResults(results, surface) {
         if (!shouldFilterSurface(surface)) return results;
         if (!Array.isArray(results)) return results;
-        return results.filter(item => {
+        return results.filter((item) => {
             const tmdbId = item.id || item.tmdbId;
             return !hiddenTmdbIdSet.has(String(tmdbId));
         });
     }
 
+    /**
+     * Filters calendar events, removing hidden items by TMDB ID, Jellyfin ID,
+     * or normalised name match (for Sonarr events without TMDB IDs).
+     * @param {Array} events Array of calendar event objects.
+     * @returns {Array} Filtered array.
+     */
     function filterCalendarEvents(events) {
         if (!shouldFilterSurface('calendar')) return events;
         if (!Array.isArray(events)) return events;
 
-        // Build a set of normalised hidden-item names so we can match Sonarr
-        // events that only carry tvdbId (no tmdbId / itemId on the event).
+        // Build a set of normalised hidden-item names for fuzzy matching
         const hiddenNames = new Set();
         const items = (getHiddenData().items) || {};
         for (const key of Object.keys(items)) {
@@ -1253,14 +1867,14 @@
             if (name) {
                 const lower = name.toLowerCase();
                 hiddenNames.add(lower);
-                // Also store the name without any trailing parenthetical qualifier
+                // Also store without trailing parenthetical qualifier
                 // so "Hell's Kitchen (US)" matches "Hell's Kitchen" and vice-versa.
                 const stripped = lower.replace(/\s*\([^)]*\)\s*$/, '');
                 if (stripped !== lower) hiddenNames.add(stripped);
             }
         }
 
-        return events.filter(event => {
+        return events.filter((event) => {
             if (event.tmdbId && hiddenTmdbIdSet.has(String(event.tmdbId))) return false;
             if (event.itemId && hiddenIdSet.has(event.itemId)) return false;
             if (event.title && hiddenNames.has(event.title.toLowerCase())) return false;
@@ -1268,10 +1882,15 @@
         });
     }
 
+    /**
+     * Filters request items, removing hidden items by TMDB ID or Jellyfin media ID.
+     * @param {Array} items Array of request item objects.
+     * @returns {Array} Filtered array.
+     */
     function filterRequestItems(items) {
         if (!shouldFilterSurface('requests')) return items;
         if (!Array.isArray(items)) return items;
-        return items.filter(item => {
+        return items.filter((item) => {
             const tmdbId = item.tmdbId || item.id;
             if (tmdbId && hiddenTmdbIdSet.has(String(tmdbId))) return false;
             if (item.jellyfinMediaId && hiddenIdSet.has(item.jellyfinMediaId)) return false;
@@ -1279,6 +1898,9 @@
         });
     }
 
+    /**
+     * Unhides all items, restoring full visibility.  Clears the entire items map.
+     */
     function unhideAll() {
         const oldHiddenIds = new Set(hiddenIdSet);
         const data = getHiddenData();
@@ -1291,23 +1913,30 @@
         refreshNativeCardVisibility();
     }
 
-    // --- Initialization ---
+    // ============================================================
+    // Initialization
+    // ============================================================
 
+    /**
+     * Initializes the hidden content module: loads data, rebuilds lookup sets,
+     * injects CSS, sets up the MutationObserver, and exposes the public API.
+     */
     JE.initializeHiddenContent = function () {
         hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
         rebuildSets();
         injectCSS();
         setupNativeObserver();
 
-        // Initial filter of any cards already on the page
         if (hiddenIdSet.size > 0) {
-            setTimeout(filterAllNativeCards, 500);
+            setTimeout(filterAllNativeCards, INIT_FILTER_DELAY_MS);
         }
 
         // Expose public API
         JE.hiddenContent = {
             isHidden,
             isHiddenByTmdbId,
+            isPersonHidden,
+            isHiddenOnSurface,
             hideItem,
             unhideItem,
             confirmAndHide,
@@ -1318,6 +1947,7 @@
             filterJellyseerrResults,
             filterCalendarEvents,
             filterRequestItems,
+            filterActors,
             filterNativeCards,
             showUndoToast,
             showManagementPanel,

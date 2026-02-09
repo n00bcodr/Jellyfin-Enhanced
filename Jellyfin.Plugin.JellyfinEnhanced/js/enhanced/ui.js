@@ -891,6 +891,12 @@
                                     <div><div style="font-weight:500;">${JE.t('hidden_content_toggle_label')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('hidden_content_toggle_desc')}</div></div>
                                 </label>
                             </div>
+                            <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="hiddenShowHideButtons" ${JE.hiddenContent?.getSettings()?.showHideButtons !== false ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('hidden_content_show_buttons_label')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('hidden_content_show_buttons_desc')}</div></div>
+                                </label>
+                            </div>
                             <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="hiddenShowConfirmation" ${JE.hiddenContent?.getSettings()?.showHideConfirmation !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -959,6 +965,27 @@
                                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                         <input type="checkbox" id="hiddenFilterRequests" ${JE.hiddenContent?.getSettings()?.filterRequests !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                         <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_filter_requests')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_filter_requests_desc')}</div></div>
+                                    </label>
+                                </div>
+                                <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenFilterNextUp" ${JE.hiddenContent?.getSettings()?.filterNextUp !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_filter_nextup')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_filter_nextup_desc')}</div></div>
+                                    </label>
+                                </div>
+                                <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenFilterContinueWatching" ${JE.hiddenContent?.getSettings()?.filterContinueWatching !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_filter_continue')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_filter_continue_desc')}</div></div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255, 180, 50, 0.6);">
+                                <div style="font-weight:500; font-size:13px; color:rgba(255, 180, 50, 0.9); margin-bottom:8px; padding-left:4px;">${JE.t('hidden_content_experimental_label')}</div>
+                                <div style="padding: 12px; background: rgba(255, 180, 50, 0.05); border-radius: 6px; border-left: 3px solid rgba(255, 180, 50, 0.3);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenExperimentalCollections" ${JE.hiddenContent?.getSettings()?.experimentalHideCollections ? 'checked' : ''} style="width:16px; height:16px; accent-color:rgba(255, 180, 50, 0.8); cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_experimental_collections')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_experimental_collections_desc')}</div></div>
                                     </label>
                                 </div>
                             </div>
@@ -1291,7 +1318,13 @@
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
-        // Hidden Content settings listeners
+        // ============================================================
+        // Hidden Content — settings panel event listeners
+        // Binds change handlers for all hidden-content toggles:
+        // master enable, button visibility, surface filters,
+        // confirmation dialog, experimental collections, and
+        // the "Manage Hidden Content" button.
+        // ============================================================
         if (JE.hiddenContent) {
             const hiddenButtonToggles = [
                 ['hiddenShowButtonJellyseerr', 'showButtonJellyseerr'],
@@ -1321,12 +1354,29 @@
                 ['hiddenFilterCalendar', 'filterCalendar'],
                 ['hiddenFilterUpcoming', 'filterUpcoming'],
                 ['hiddenFilterRecommendations', 'filterRecommendations'],
-                ['hiddenFilterRequests', 'filterRequests']
+                ['hiddenFilterRequests', 'filterRequests'],
+                ['hiddenFilterNextUp', 'filterNextUp'],
+                ['hiddenFilterContinueWatching', 'filterContinueWatching'],
+                ['hiddenFilterCastCrew', 'filterCastCrew']
             ];
             const masterToggle = document.getElementById('hiddenContentEnabledToggle');
             if (masterToggle) {
                 masterToggle.addEventListener('change', (e) => {
                     JE.hiddenContent.updateSettings({ enabled: e.target.checked });
+                    resetAutoCloseTimer();
+                });
+            }
+            const buttonsToggle = document.getElementById('hiddenShowHideButtons');
+            if (buttonsToggle) {
+                buttonsToggle.addEventListener('change', (e) => {
+                    JE.hiddenContent.updateSettings({ showHideButtons: e.target.checked });
+                    if (e.target.checked) {
+                        if (JE.hiddenContent.getSettings().showButtonLibrary) {
+                            JE.hiddenContent.addLibraryHideButtons();
+                        }
+                    } else {
+                        JE.hiddenContent.removeLibraryHideButtons();
+                    }
                     resetAutoCloseTimer();
                 });
             }
@@ -1344,6 +1394,17 @@
                 confirmToggle.addEventListener('change', (e) => {
                     JE.hiddenContent.updateSettings({ showHideConfirmation: e.target.checked });
                     localStorage.removeItem('je_hide_confirm_suppressed_until');
+                    resetAutoCloseTimer();
+                });
+            }
+            const experimentalCollections = document.getElementById('hiddenExperimentalCollections');
+            if (experimentalCollections) {
+                experimentalCollections.addEventListener('change', (e) => {
+                    JE.hiddenContent.updateSettings({ experimentalHideCollections: e.target.checked });
+                    if (!e.target.checked) {
+                        JE.hiddenContent.removeLibraryHideButtons();
+                        JE.hiddenContent.addLibraryHideButtons();
+                    }
                     resetAutoCloseTimer();
                 });
             }

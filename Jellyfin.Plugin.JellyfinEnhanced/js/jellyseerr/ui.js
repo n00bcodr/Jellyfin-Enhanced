@@ -1243,7 +1243,7 @@
         }
 
         // Add hide button for hidden content feature
-        if (JE.hiddenContent && JE.hiddenContent.getSettings().showButtonJellyseerr !== false) {
+        if (JE.hiddenContent && JE.hiddenContent.getSettings().enabled && JE.hiddenContent.getSettings().showHideButtons !== false && JE.hiddenContent.getSettings().showButtonJellyseerr !== false) {
             const cardBox = card.querySelector('.cardBox');
             if (cardBox) {
                 const hideBtn = document.createElement('button');
@@ -1252,6 +1252,10 @@
                 const hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button' ? JE.t('hidden_content_hide_button') : 'Hide';
                 const unhideKey = jellyfinMediaId || `tmdb-${item.id}`;
 
+                /**
+                 * Replaces the hide button's content with a material icon.
+                 * @param {string} iconName - Material icon name (e.g. 'visibility', 'visibility_off').
+                 */
                 function renderHideIcon(iconName) {
                     hideBtn.replaceChildren();
                     const icon = document.createElement('span');
@@ -1261,6 +1265,9 @@
                     hideBtn.appendChild(icon);
                 }
 
+                /**
+                 * Switches the hide button to "already hidden" state with unhide-on-click behaviour.
+                 */
                 function setHiddenState() {
                     hideBtn.className = 'je-hide-btn je-already-hidden';
                     hideBtn.title = hiddenLabel;
@@ -1279,6 +1286,9 @@
                     };
                 }
 
+                /**
+                 * Switches the hide button to the default "hide" state with confirm-and-hide-on-click behaviour.
+                 */
                 function setHideState() {
                     hideBtn.className = 'je-hide-btn';
                     hideBtn.title = hideLabel;
