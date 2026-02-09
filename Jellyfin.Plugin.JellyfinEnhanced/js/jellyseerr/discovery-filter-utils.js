@@ -3,43 +3,43 @@
 (function(JE) {
     'use strict';
 
-    const STORAGE_PREFIX = 'JE:discoveryFilter:';
     const FILTER_MODES = {
         MIXED: 'mixed',
         MOVIES: 'movies',
         TV: 'tv'
     };
+    const runtimeFilterModes = new Map();
 
     /**
-     * Gets the current filter mode for a module from localStorage
+     * Gets the current filter mode for a module from runtime state.
      * @param {string} moduleName - e.g., 'genre', 'tag', 'person', 'network'
      * @returns {string} - 'mixed', 'movies', or 'tv'
      */
     function getFilterMode(moduleName) {
-        try {
-            const stored = localStorage.getItem(STORAGE_PREFIX + moduleName);
-            if (stored && Object.values(FILTER_MODES).includes(stored)) {
-                return stored;
-            }
-        } catch (e) {
-            // localStorage not available
+        const stored = runtimeFilterModes.get(moduleName);
+        if (stored && Object.values(FILTER_MODES).includes(stored)) {
+            return stored;
         }
         return FILTER_MODES.MIXED;
     }
 
     /**
-     * Sets the filter mode for a module in localStorage
+     * Sets the filter mode for a module in runtime state.
      * @param {string} moduleName
      * @param {string} mode - 'mixed', 'movies', or 'tv'
      */
     function setFilterMode(moduleName, mode) {
-        try {
-            if (Object.values(FILTER_MODES).includes(mode)) {
-                localStorage.setItem(STORAGE_PREFIX + moduleName, mode);
-            }
-        } catch (e) {
-            // localStorage not available
+        if (Object.values(FILTER_MODES).includes(mode)) {
+            runtimeFilterModes.set(moduleName, mode);
         }
+    }
+
+    /**
+     * Resets module filter mode back to default.
+     * @param {string} moduleName
+     */
+    function resetFilterMode(moduleName) {
+        runtimeFilterModes.delete(moduleName);
     }
 
     /**
@@ -491,6 +491,7 @@
         resultHasBothTypes,
         createFilterControl,
         createSectionHeader,
+        resetFilterMode,
         // Shared utilities
         fetchWithManagedRequest,
         createCardsFragment,

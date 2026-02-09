@@ -30,6 +30,8 @@ using MediaBrowser.Model;
 using MediaBrowser.Controller.Persistence;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
+using Jellyfin.Database.Implementations;
+using Microsoft.EntityFrameworkCore;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -45,6 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IDtoService _dtoService;
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
+        private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
         private static readonly HashSet<string> BrandingFileNames = new(new[]
         {
             "icon-transparent.png",
@@ -62,7 +65,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ILibraryManager libraryManager,
             IDtoService dtoService,
             UserConfigurationManager userConfigurationManager,
-            IItemRepository itemRepository)
+            IItemRepository itemRepository,
+            IDbContextFactory<JellyfinDbContext> dbContextFactory)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -72,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _dtoService = dtoService;
             _userConfigurationManager = userConfigurationManager;
             _itemRepository = itemRepository;
+            _dbContextFactory = dbContextFactory;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
@@ -272,6 +277,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ValidateJellyseerr([FromQuery] string url, [FromQuery] string apiKey)
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = "Missing url or apiKey" });
 
@@ -826,6 +836,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> SyncJellyseerrWatchlist()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             try
             {
                 var config = JellyfinEnhanced.Instance?.Configuration;
@@ -1489,12 +1504,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
+        private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
+        {
+            authorizedUserId = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(requestedUserId))
+            {
+                return BadRequest(new { message = "userId is required." });
+            }
+
+            if (!Guid.TryParse(requestedUserId, out var parsedUserId) && !Guid.TryParseExact(requestedUserId, "N", out parsedUserId))
+            {
+                return BadRequest(new { message = "Invalid userId format." });
+            }
+
+            var effectiveUserId = UserHelper.GetUserId(User, parsedUserId);
+            if (!effectiveUserId.HasValue)
+            {
+                return Forbid();
+            }
+
+            // UserConfigurationManager expects folder names in N format (without dashes).
+            authorizedUserId = effectiveUserId.Value.ToString("N");
+            return null;
+        }
+
+        private IActionResult? AuthorizeUserAccess(Guid requestedUserId, out JUser user)
+        {
+            user = null!;
+            var effectiveUserId = UserHelper.GetUserId(User, requestedUserId);
+            if (!effectiveUserId.HasValue)
+            {
+                return Forbid();
+            }
+
+            var resolvedUser = _userManager.GetUserById(effectiveUserId.Value);
+            if (resolvedUser is null)
+            {
+                return NotFound();
+            }
+
+            user = resolvedUser;
+            return null;
+        }
+
+        private bool IsAdminUser() => User.IsInRole("Administrator");
+
+        private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
+        {
+            normalizedFileName = Path.GetFileName(requestedFileName ?? string.Empty);
+            filePath = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedFileName) || !BrandingFileNames.Contains(normalizedFileName))
+            {
+                return false;
+            }
+
+            var brandingDir = JellyfinEnhanced.BrandingDirectory;
+            if (string.IsNullOrWhiteSpace(brandingDir))
+            {
+                return false;
+            }
+
+            var fullBrandingDir = Path.GetFullPath(brandingDir);
+            var candidateFilePath = Path.GetFullPath(Path.Combine(fullBrandingDir, normalizedFileName));
+            var candidateDirectory = Path.GetDirectoryName(candidateFilePath);
+
+            if (!string.Equals(candidateDirectory, fullBrandingDir, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            filePath = candidateFilePath;
+            return true;
+        }
+
         [HttpGet("user-settings/{userId}/settings.json")]
         [Authorize]
         public IActionResult GetUserSettingsSettings(string userId)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             // Populate defaults from plugin configuration if missing
-            if (!_userConfigurationManager.UserConfigurationExists(userId, "settings.json"))
+            if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
             {
                 var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
                 if (defaultConfig != null)
@@ -1538,12 +1634,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LastOpenedTab = "shortcuts"
                     };
 
-                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
-                    _logger.Info($"Saved default settings.json for new user {userId} from plugin configuration.");
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
+                    _logger.Info($"Saved default settings.json for new user {authorizedUserId} from plugin configuration.");
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json");
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
             return Ok(userConfig);
         }
 
@@ -1551,7 +1647,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult GetUserSettingsShortcuts(string userId)
         {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(userId, "shortcuts.json");
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
             return Ok(userConfig);
         }
 
@@ -1559,7 +1661,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult GetUserSettingsElsewhere(string userId)
         {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(userId, "elsewhere.json");
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json");
             return Ok(userConfig);
         }
 
@@ -1568,15 +1676,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", userConfiguration);
-                _logger.Info($"Saved user settings for user {userId} to settings.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
+                _logger.Info($"Saved user settings for user {authorizedUserId} to settings.json");
                 return Ok(new { success = true, file = "settings.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user settings for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save user settings for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
             }
         }
@@ -1586,15 +1700,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserSettingsShortcuts(string userId, [FromBody] UserShortcuts userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "shortcuts.json", userConfiguration);
-                _logger.Info($"Saved user shortcuts for user {userId} to shortcuts.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                _logger.Info($"Saved user shortcuts for user {authorizedUserId} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user shortcuts for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save user shortcuts for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user shortcuts." });
             }
         }
@@ -1604,7 +1724,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetUserBookmark(string userId)
         {
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(userId, "bookmark.json");
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json");
             return Ok(userConfig);
         }
 
@@ -1613,15 +1739,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserBookmark(string userId, [FromBody] UserBookmark userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "bookmark.json", userConfiguration);
-                _logger.Info($"Saved enhanced bookmarks for user {userId} to bookmark.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "bookmark.json", userConfiguration);
+                _logger.Info($"Saved enhanced bookmarks for user {authorizedUserId} to bookmark.json");
                 return Ok(new { success = true, file = "bookmark.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save enhanced bookmarks for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save enhanced bookmarks for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save enhanced bookmarks." });
             }
         }
@@ -1631,15 +1763,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserSettingsElsewhere(string userId, [FromBody] ElsewhereSettings userConfiguration)
         {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "elsewhere.json", userConfiguration);
-                _logger.Info($"Saved user elsewhere settings for user {userId} to elsewhere.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "elsewhere.json", userConfiguration);
+                _logger.Info($"Saved user elsewhere settings for user {authorizedUserId} to elsewhere.json");
                 return Ok(new { success = true, file = "elsewhere.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user elsewhere settings for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save user elsewhere settings for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user elsewhere settings." });
             }
         }
@@ -1718,6 +1856,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult ResetAllUsersSettings()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
 
             if (defaultConfig == null)
@@ -1780,10 +1923,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetFileSizeByItemId(Guid userId, Guid itemId)
         {
-            var user = _userManager.GetUserById(userId);
-            if (user is null)
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
             {
-                return NotFound();
+                return authorizationResult;
             }
 
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
@@ -1805,10 +1948,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetWatchProgressByItemId(Guid userId, Guid itemId)
         {
-            var user = _userManager.GetUserById(userId);
-            if (user is null)
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
             {
-                return NotFound();
+                return authorizationResult;
             }
 
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
@@ -1885,11 +2028,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             [FromQuery] string? filter = "all",
             [FromQuery] string? sort = "added")
         {
+            take = Math.Clamp(take, 1, 200);
+            skip = Math.Max(0, skip);
+
             var queryParts = new List<string>
             {
                 $"take={take}",
                 $"skip={skip}"
             };
+
+            if (mediaId.HasValue && mediaId.Value > 0)
+            {
+                queryParts.Add($"mediaId={mediaId.Value}");
+            }
 
             if (!string.IsNullOrWhiteSpace(filter))
             {
@@ -1925,6 +2076,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> UploadBrandingImage()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             try
             {
                 if (Request.Form.Files.Count == 0)
@@ -1937,6 +2093,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (string.IsNullOrWhiteSpace(fileName))
                 {
                     return BadRequest("fileName parameter is required in form data");
+                }
+
+                if (!TryResolveBrandingFilePath(fileName, out var normalizedFileName, out var filePath))
+                {
+                    return BadRequest($"fileName must be one of: {string.Join(", ", BrandingFileNames)}");
                 }
 
                 // Validate file type - accept only image files
@@ -1953,7 +2114,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return StatusCode(500, "Could not determine branding directory");
 
                 Directory.CreateDirectory(brandingDir);
-                var filePath = Path.Combine(brandingDir, fileName);
 
                 // Save file
                 using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
@@ -1961,7 +2121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     await uploadedFile.CopyToAsync(stream);
                 }
 
-                _logger.Info($"Successfully uploaded branding image: {fileName} ({uploadedFile.Length} bytes) to {brandingDir}");
+                _logger.Info($"Successfully uploaded branding image: {normalizedFileName} ({uploadedFile.Length} bytes) to {brandingDir}");
                 return Ok("File uploaded successfully");
             }
             catch (UnauthorizedAccessException ex)
@@ -1985,12 +2145,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest("fileName query parameter is required");
             }
 
+            if (!TryResolveBrandingFilePath(fileName, out _, out var filePath))
+            {
+                return BadRequest($"fileName must be one of: {string.Join(", ", BrandingFileNames)}");
+            }
 
-            var brandingDir = JellyfinEnhanced.BrandingDirectory;
-            if (string.IsNullOrWhiteSpace(brandingDir))
-                return StatusCode(500, "Could not determine branding directory");
-
-            var filePath = Path.Combine(brandingDir, fileName);
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
 
@@ -2007,6 +2166,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public IActionResult DeleteBrandingImage()
         {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             try
             {
                 string? fileName = Request.Form["fileName"].FirstOrDefault();
@@ -2015,17 +2179,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest("fileName parameter is required in form data");
                 }
 
+                if (!TryResolveBrandingFilePath(fileName, out var normalizedFileName, out var filePath))
+                {
+                    return BadRequest($"fileName must be one of: {string.Join(", ", BrandingFileNames)}");
+                }
 
                 var brandingDir = JellyfinEnhanced.BrandingDirectory;
                 if (string.IsNullOrWhiteSpace(brandingDir))
                     return StatusCode(500, "Could not determine branding directory");
 
-                var filePath = Path.Combine(brandingDir, fileName);
                 if (!System.IO.File.Exists(filePath))
                     return NotFound("File not found");
 
                 System.IO.File.Delete(filePath);
-                _logger.Info($"Deleted branding image: {fileName} from {brandingDir}");
+                _logger.Info($"Deleted branding image: {normalizedFileName} from {brandingDir}");
                 return Ok("File deleted successfully");
             }
             catch (UnauthorizedAccessException ex)
@@ -2196,6 +2363,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetRequests([FromQuery] int take = 20, [FromQuery] int skip = 0, [FromQuery] string? filter = null)
         {
+            take = Math.Clamp(take, 1, 200);
+            skip = Math.Max(0, skip);
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
@@ -2789,7 +2959,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return Ok(new { events = events });
+            var providerKeys = events
+                .SelectMany(ProviderHelper.GetAllProviders)
+                .Distinct()
+                .ToList();
+
+            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys);
+
+            foreach (var evt in events)
+            {
+                evt.ItemId = ProviderHelper.GetBestItemId(ProviderHelper.GetProviders(evt), itemMap);
+                evt.ItemEpisodeId = ProviderHelper.GetBestItemId(ProviderHelper.GetEpisodeProviders(evt), itemMap);
+            }
+
+            return Ok(new { events });
         }
 
         /// <summary>
@@ -2812,134 +2995,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 if (request?.Events == null || request.Events.Count == 0)
-                    return Ok(new { results = results });
+                    return Ok(new { results });
 
-                // Build lookup by searching for each unique title (much faster than getting all items)
-                var seriesLookup = new Dictionary<string, MediaBrowser.Controller.Entities.TV.Series>();
-                var movieLookup = new Dictionary<string, MediaBrowser.Controller.Entities.BaseItem>();
+                var ids = request.Events
+                    .SelectMany(e => new Guid?[] { e.ItemId, e.ItemEpisodeId })
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value)
+                    .Distinct()
+                    .ToList();
 
-                // Get unique series titles and their provider IDs
-                var seriesEvents = request.Events.Where(e => e.Type == "Series" && !string.IsNullOrEmpty(e.Title)).ToList();
-                var uniqueSeriesTitles = seriesEvents.Select(e => e.Title!).Distinct().ToList();
-
-                foreach (var title in uniqueSeriesTitles)
+                var itemsById = new Dictionary<Guid, BaseItem>();
+                if (ids.Count > 0)
                 {
-                    var searchResults = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
+                    var items = _libraryManager.GetItemList(new InternalItemsQuery
                     {
                         User = user,
-                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Series },
-                        SearchTerm = title,
-                        Recursive = true,
-                        Limit = 5
-                    });
-
-                    foreach (var item in searchResults)
-                    {
-                        if (item is MediaBrowser.Controller.Entities.TV.Series series)
-                        {
-                            var providerIds = series.ProviderIds ?? new Dictionary<string, string>();
-                            providerIds.TryGetValue("Tvdb", out var tvdbId);
-                            providerIds.TryGetValue("Imdb", out var imdbId);
-
-                            if (tvdbId != null) seriesLookup[$"tvdb:{tvdbId}"] = series;
-                            if (imdbId != null) seriesLookup[$"imdb:{imdbId}"] = series;
-                        }
-                    }
-                }
-
-                // Get unique movie titles
-                var movieEvents = request.Events.Where(e => e.Type == "Movie" && !string.IsNullOrEmpty(e.Title)).ToList();
-                var uniqueMovieTitles = movieEvents.Select(e => e.Title!).Distinct().ToList();
-
-                foreach (var title in uniqueMovieTitles)
-                {
-                    var searchResults = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
-                    {
-                        User = user,
-                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
-                        SearchTerm = title,
-                        Recursive = true,
-                        Limit = 5
-                    });
-
-                    foreach (var item in searchResults)
-                    {
-                        var providerIds = item.ProviderIds ?? new Dictionary<string, string>();
-                        providerIds.TryGetValue("Tmdb", out var tmdbId);
-                        providerIds.TryGetValue("Imdb", out var imdbId);
-
-                        if (tmdbId != null) movieLookup[$"tmdb:{tmdbId}"] = item;
-                        if (imdbId != null) movieLookup[$"imdb:{imdbId}"] = item;
-                    }
-                }
-
-                // Pre-fetch episodes for all series at once (one query per series, cached)
-                var seriesEpisodesCache = new Dictionary<Guid, List<MediaBrowser.Controller.Entities.BaseItem>>();
-                foreach (var series in seriesLookup.Values.Distinct())
-                {
-                    var episodes = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
-                    {
-                        User = user,
-                        AncestorIds = new[] { series.Id },
-                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Episode },
+                        ItemIds = ids.ToArray(),
                         Recursive = true
                     });
-                    seriesEpisodesCache[series.Id] = episodes.ToList();
+
+                    foreach (var item in items)
+                    {
+                        if (!itemsById.ContainsKey(item.Id))
+                            itemsById[item.Id] = item;
+                    }
                 }
 
-                // Process each event using cached data
+                // Process each event using pre-fetched items
                 foreach (var evt in request.Events)
                 {
                     bool isFavorite = false;
                     bool isWatched = false;
 
-                    if (evt.Type == "Series")
+                    BaseItem? item = null;
+                    BaseItem? episodeItem = null;
+
+                    if (evt.ItemId.HasValue)
+                        itemsById.TryGetValue(evt.ItemId.Value, out item);
+                    if (evt.ItemEpisodeId.HasValue)
+                        itemsById.TryGetValue(evt.ItemEpisodeId.Value, out episodeItem);
+
+                    if (item != null)
                     {
-                        // Find matching series
-                        MediaBrowser.Controller.Entities.TV.Series? series = null;
-                        if (evt.TvdbId.HasValue && seriesLookup.TryGetValue($"tvdb:{evt.TvdbId}", out var s1)) series = s1;
-                        else if (!string.IsNullOrEmpty(evt.ImdbId) && seriesLookup.TryGetValue($"imdb:{evt.ImdbId}", out var s2)) series = s2;
+                        var itemData = _userDataManager.GetUserData(user, item);
+                        isFavorite = itemData?.Likes == true;
 
-                        if (series != null)
+                        if (evt.Type == "Movie")
                         {
-                            var seriesData = _userDataManager.GetUserData(user, series);
-                            isFavorite = seriesData?.Likes == true;
-
-                            // Find specific episode from cache
-                            if (evt.SeasonNumber.HasValue && evt.EpisodeNumber.HasValue && seriesEpisodesCache.TryGetValue(series.Id, out var episodes))
-                            {
-                                var episode = episodes.FirstOrDefault(ep =>
-                                    ep is MediaBrowser.Controller.Entities.TV.Episode e &&
-                                    e.ParentIndexNumber == evt.SeasonNumber.Value &&
-                                    e.IndexNumber == evt.EpisodeNumber.Value);
-
-                                if (episode != null)
-                                {
-                                    var epData = _userDataManager.GetUserData(user, episode);
-                                    isWatched = epData?.Played == true || (epData?.PlaybackPositionTicks ?? 0) > 0;
-                                }
-                            }
+                            isWatched = itemData?.Played == true || (itemData?.PlaybackPositionTicks ?? 0) > 0;
                         }
                     }
-                    else if (evt.Type == "Movie")
-                    {
-                        MediaBrowser.Controller.Entities.BaseItem? movie = null;
-                        if (evt.TmdbId.HasValue && movieLookup.TryGetValue($"tmdb:{evt.TmdbId}", out var m1)) movie = m1;
-                        else if (!string.IsNullOrEmpty(evt.ImdbId) && movieLookup.TryGetValue($"imdb:{evt.ImdbId}", out var m2)) movie = m2;
 
-                        if (movie != null)
-                        {
-                            var movieData = _userDataManager.GetUserData(user, movie);
-                            isFavorite = movieData?.Likes == true;
-                            isWatched = movieData?.Played == true || (movieData?.PlaybackPositionTicks ?? 0) > 0;
-                        }
+                    if (evt.Type == "Series" && episodeItem != null)
+                    {
+                        var epData = _userDataManager.GetUserData(user, episodeItem);
+                        isWatched = epData?.Played == true || (epData?.PlaybackPositionTicks ?? 0) > 0;
                     }
 
                     results.Add(new
                     {
                         id = evt.Id,
-                        isFavorite = isFavorite,
-                        isWatched = isWatched
+                        isFavorite,
+                        isWatched
                     });
                 }
             }
@@ -2948,7 +3065,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"Failed to get calendar user data: {ex.Message}");
             }
 
-            return Ok(new { results = results });
+            return Ok(new { results });
         }
 
         public class CalendarUserDataRequest
@@ -2961,6 +3078,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public string? Id { get; set; }
             public string? Type { get; set; }
             public string? Title { get; set; }
+            public Guid? ItemId { get; set; }
+            public Guid? ItemEpisodeId { get; set; }
             public int? TvdbId { get; set; }
             public string? ImdbId { get; set; }
             public int? TmdbId { get; set; }

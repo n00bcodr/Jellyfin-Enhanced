@@ -15,12 +15,12 @@
     let isLoading = false;
     let hasMorePages = true;
     let currentPersonId = null;
+    let currentPagedResults = [];
+    let renderedCount = 0;
+    const PAGE_SIZE = 40;
 
     // Cached results for filter switching (avoid refetch)
     let cachedAllResults = [];
-
-    // Deduplicator for infinite scroll (prevents duplicate cards)
-    let itemDeduplicator = null;
 
     // Abort controller for cancellation
     let currentAbortController = null;
@@ -268,8 +268,45 @@
         const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
         if (!itemsContainer) return;
 
-        // Use fast CSS-based visibility (no DOM rebuild)
-        JE.discoveryFilter.applyFilterVisibility(itemsContainer, newMode);
+        // Person credits are a non-paginated endpoint, so we page client-side.
+        // Rebuild the visible list for the selected mode and reset paging.
+        renderChunk(itemsContainer, newMode, true);
+        cleanupScrollObserver();
+        if (hasMorePages) {
+            setupInfiniteScroll();
+        }
+    }
+
+    function getPagedResultsForMode(mode) {
+        let results = getFilteredResults(mode);
+        if (results.length === 0 && cachedAllResults.length > 0) {
+            results = cachedAllResults;
+        }
+        return results;
+    }
+
+    function renderChunk(itemsContainer, mode, reset = false) {
+        if (!itemsContainer) return;
+
+        if (reset) {
+            itemsContainer.innerHTML = '';
+            renderedCount = 0;
+        }
+
+        currentPagedResults = getPagedResultsForMode(mode);
+        const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + PAGE_SIZE);
+        if (nextChunk.length === 0) {
+            hasMorePages = false;
+            return;
+        }
+
+        const fragment = createCardsFragment(nextChunk);
+        if (fragment.childNodes.length > 0) {
+            itemsContainer.appendChild(fragment);
+        }
+
+        renderedCount += nextChunk.length;
+        hasMorePages = renderedCount < currentPagedResults.length;
     }
 
     /**
@@ -281,63 +318,16 @@
         isLoading = true;
 
         try {
-            const signal = currentAbortController?.signal;
-            const credits = await fetchPersonCredits(currentPersonId, signal);
-
-            if (signal?.aborted) { isLoading = false; return; }
-
-            const allResults = [...(credits.cast || []), ...(credits.crew || [])];
-
-            hasMorePages = allResults.length >= 20;
-
-            if (allResults.length === 0) {
-                hasMorePages = false;
-                isLoading = false;
-                return;
-            }
-
-            // Update cached results
-            cachedAllResults = [...cachedAllResults, ...allResults];
-
-            // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
-
-            // Filter/interleave the new results based on mode
-            let filteredNew;
-            if (filterMode === 'mixed' && JE.discoveryFilter) {
-                // Interleave for balanced display
-                const tvNew = allResults.filter(item => item.mediaType === 'tv');
-                const movieNew = allResults.filter(item => item.mediaType === 'movie');
-                filteredNew = JE.discoveryFilter.interleaveArrays(tvNew, movieNew);
-            } else if (JE.discoveryFilter) {
-                filteredNew = JE.discoveryFilter.filterByMediaType(allResults, filterMode);
-            } else {
-                filteredNew = allResults;
-            }
-
-            // Deduplicate items using deduplicator (if available)
-            if (itemDeduplicator) {
-                filteredNew = itemDeduplicator.filter(filteredNew);
-                if (filteredNew.length === 0) {
-                    isLoading = false;
-                    return;
-                }
-            }
-
             const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
-            if (itemsContainer) {
-                const fragment = createCardsFragment(filteredNew);
-                if (fragment.childNodes.length > 0) {
-                    itemsContainer.appendChild(fragment);
-                }
-            }
+            renderChunk(itemsContainer, filterMode, false);
         } catch (error) {
             if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
             throw error; // Re-throw for seamlessScroll retry handling
+        } finally {
+            isLoading = false;
         }
-
-        isLoading = false;
     }
 
     /**
@@ -431,20 +421,27 @@
             if (signal.aborted) return;
 
             const allResults = [...(credits.cast || []), ...(credits.crew || [])];
+            const dedupedResults = [];
+            const seenItems = new Set();
+            for (const item of allResults) {
+                const key = `${item?.mediaType}-${item?.id}`;
+                if (!item?.id || !item?.mediaType || seenItems.has(key)) continue;
+                seenItems.add(key);
+                dedupedResults.push(item);
+            }
 
-            console.debug(`${logPrefix} Fetched ${allResults.length} credits for ${personInfo.name}`);
+            console.debug(`${logPrefix} Fetched ${dedupedResults.length} credits for ${personInfo.name}`);
 
-            if (allResults.length === 0) return;
+            if (dedupedResults.length === 0) return;
 
             // Store all results for filter switching
-            cachedAllResults = allResults;
-
-            // Initialize deduplicator for infinite scroll
-            itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+            cachedAllResults = dedupedResults;
 
             // Check if we have both media types
             const hasBoth = hasBothMediaTypes();
 
+            // Always start each section on "All" (mixed) instead of persisting previous choice.
+            JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
             // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
@@ -474,8 +471,8 @@
             const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
             const itemsContainer = section.querySelector('.itemsContainer');
 
-            // Show up to 40 items (no pagination for person credits API)
-            const initialItems = displayResults.slice(0, 40);
+            // Seed first page and let seamless scroll load the rest.
+            const initialItems = displayResults.slice(0, PAGE_SIZE);
             const fragment = createCardsFragment(initialItems);
             if (fragment.childNodes.length === 0) {
                 console.debug(`${logPrefix} No cards created from results`);
@@ -483,14 +480,16 @@
             }
 
             itemsContainer.appendChild(fragment);
-
-            // Seed deduplicator with initial items to prevent duplicates on scroll
-            if (itemDeduplicator) {
-                initialItems.forEach(item => itemDeduplicator.add(item));
-            }
+            currentPagedResults = displayResults;
+            renderedCount = initialItems.length;
+            hasMorePages = renderedCount < currentPagedResults.length;
 
             detailSection.appendChild(section);
             console.debug(`${logPrefix} Section added with ${fragment.childNodes.length} cards`);
+
+            if (hasMorePages) {
+                setupInfiniteScroll();
+            }
 
             // Mark as successfully processed AFTER successful render
             processedPages.add(pageKey);
@@ -528,17 +527,14 @@
         isLoading = false;
         hasMorePages = true;
         currentPersonId = null;
+        currentPagedResults = [];
+        renderedCount = 0;
 
         currentRenderingPageKey = null;
 
         // Clear cached results
         cachedAllResults = [];
-
-        // Clear deduplicator
-        if (itemDeduplicator) {
-            itemDeduplicator.clear();
-        }
-        itemDeduplicator = null;
+        JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
     }
 
     /**
