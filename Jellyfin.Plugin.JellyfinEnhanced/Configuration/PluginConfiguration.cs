@@ -29,6 +29,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ElsewhereCustomBrandingImageUrl = "";
 
             ClearLocalStorageTimestamp = 0;
+            ClearTranslationCacheTimestamp = 0;
 
             // Default User Settings
             AutoPauseEnabled = true;
@@ -199,6 +200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string ElsewhereCustomBrandingText { get; set; }
         public string ElsewhereCustomBrandingImageUrl { get; set; }
         public long ClearLocalStorageTimestamp { get; set; }
+        public long ClearTranslationCacheTimestamp { get; set; }
 
         // Default User Settings
         public bool AutoPauseEnabled { get; set; }
