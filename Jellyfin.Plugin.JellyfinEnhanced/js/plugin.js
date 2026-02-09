@@ -523,6 +523,23 @@
             JE.t = window.JellyfinEnhanced.t; // Ensure the real function is assigned
             await loadPrivateConfig();
 
+            // Check if server has triggered a translation cache clear
+            const serverTranslationClearTs = JE.pluginConfig.ClearTranslationCacheTimestamp || 0;
+            const localTranslationClearTs = parseInt(localStorage.getItem('JE_translation_clear_ts') || '0', 10);
+            if (serverTranslationClearTs > localTranslationClearTs) {
+                console.log(`🪼 Jellyfin Enhanced: Server-triggered translation cache clear (${new Date(serverTranslationClearTs).toISOString()})`);
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('JE_translation_') || key.startsWith('JE_translation_ts_'))) {
+                        localStorage.removeItem(key);
+                    }
+                }
+                localStorage.setItem('JE_translation_clear_ts', serverTranslationClearTs.toString());
+                // Reload translations with fresh data
+                JE.translations = await loadTranslations() || {};
+                JE.t = window.JellyfinEnhanced.t;
+            }
+
             // Inject metadata icons CSS if enabled
             try {
                 injectMetadataIcons(!!JE.pluginConfig?.MetadataIconsEnabled);

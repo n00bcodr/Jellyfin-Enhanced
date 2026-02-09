@@ -1,3 +1,7 @@
+// Global aliases
+global using JUser = Jellyfin.Database.Implementations.Entities.User;
+global using JSortOrder = Jellyfin.Database.Implementations.Enums.SortOrder;
+
 using System.Globalization;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Common.Configuration;

@@ -1335,6 +1335,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
                 config.ClearLocalStorageTimestamp,
+                config.ClearTranslationCacheTimestamp,
 
                 // Default User Settings
                 config.AutoPauseEnabled,

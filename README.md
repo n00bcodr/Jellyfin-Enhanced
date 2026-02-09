@@ -3,9 +3,8 @@
 <p align="center">
   <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Last%20Updated&labelColor=black&color=AA5CC3&cacheSeconds=3600" alt="Last Updated">
   <img src="https://img.shields.io/github/commit-activity/w/n00bcodr/Jellyfin-Enhanced?logo=git&label=Commit%20Activity&labelColor=black&color=00A4DC&cacheSeconds=600" alt="Commit Activity">
-  <img src="https://img.shields.io/badge/Jellyfin%20Version-10.10, 10.11-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin Version">
+  <img src="https://img.shields.io/badge/Jellyfin%20Version-10.11-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin Version">
   <br>  <br>
-  <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip?displayAssetName=false&label=10.10%20Downloads%40Latest&labelColor=black&color=00A4DC&cacheSeconds=60">
   <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20Downloads%40Latest&labelColor=black&color=AA5CC3&cacheSeconds=60">
   <br>  <br>
   <a href="https://discord.com/channels/1381737066366242896/1442128048873930762"><img alt="Discord" src="https://img.shields.io/badge/Jellyfin%20Enhanced%20-%20Jellyfin%20Community?&logo=discord&logoColor=white&style=for-the-badge&label=Jellyfin%20Community&labelColor=5865F2&color=black"></a>
@@ -64,7 +63,8 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
     - [Common Errors](#common-errors)
   - [📸 Screenshots](#-screenshots)
   - [⭐ Star History](#-star-history)
-  - [📄 License](#-license)
+  - [📄 License](https://github.com/n00bcodr/Jellyfin-Enhanced?tab=GPL-3.0-1-ov-file)
+
 - [Enjoying Jellyfin Enhanced?](#enjoying-jellyfin-enhanced)
 
 
@@ -78,10 +78,6 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 > **If you are on Jellyfin version 10.11 use the 10.11 manifest**
 > ```
 > https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json
-> ```
-> If you are on 10.10.7, use the below manifest
-> ```
-> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.10/manifest.json
 > ```
 
 4.  Click **Save**.
@@ -1735,7 +1731,7 @@ Content-Type: application/json
 
 - Official Jellyfin Web UI
 - Official Jellyfin Android and iOS Apps
-- Official Jellyfin Desktop Apps like JMP (Not tested, but ideally should work)
+- Official Jellyfin Desktop Apps like JMP - Known to have issues with JMP v1.12.0. Try Jellyfin Desktop v2.0.0 - More Info https://github.com/n00bcodr/Jellyfin-Enhanced/discussions/370
 
 
 > [!IMPORTANT]
@@ -1824,7 +1820,7 @@ Here is a list of common errors you might see in your Jellyfin server logs or yo
 | --- | --- |
 | `Access to the path '/jellyfin/jellyfin-web/index.html ' is denied.` | **Meaning:** The plugin was unable to edit the `index.html` file to inject its script. <br> **Solution:** This is common in Docker installs. Follow the **Docker Installation Notes** in the README to correctly map the `index.html` file or use file-transformation plugin. |
 | ` Access to the path 'C:\Program Files\Jellyfin\Server\jellyfin-web\index.html' is denied.` | **Meaning:** The plugin was unable to edit the `index.html` file to inject its script on windows installation <br> **Solution:** Grant `Read` and `Write` permissions for the Jellyfin folder for "NETWORK SERVICE". Refer [#79](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/79)|
-| Plugin is installed fine, but the scrips do not load | If it is not the above two, and if you are on Jellyfin Version **10.11** <br> There seems to be an issue with how startup tasks are migrated from 10.10.7 to 10.11, Please check for `Jellyfin Enhanced Startup` task in your Scheduled Tasks in your Admin Dashboard and see if it is run. If not run it. <br><br> Also check if you have "Task Trigger" to run **On application startup** if you do not, please add a new trigger with that trigger type.|
+| Plugin is installed fine, but the scrips do not load | Check for `Jellyfin Enhanced Startup` task in your Scheduled Tasks in your Admin Dashboard and see if it is run. If not run it. <br><br> Also check if you have "Task Trigger" to run **On application startup** if you do not, please add a new trigger with that trigger type.|
 |Reviews, Elsewhere, Elsewhere Icons on Jellyseerr are not working | TMDB API might not be accessible in your region. <br>Checkout the official Jellyseerr Troubleshooting guide [here](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx). |
 <br>
 <p align="center">

@@ -22,6 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<WatchlistMonitor>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
+            serviceCollection.AddTransient<ClearTranslationCacheTask>();
         }
     }
 }
