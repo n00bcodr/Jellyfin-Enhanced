@@ -108,6 +108,8 @@
         const items = data.items || {};
         for (const key of Object.keys(items)) {
             const item = items[key];
+            const scope = item.hideScope || 'global';
+            if (scope !== 'global') continue;
             if (item.itemId) hiddenIdSet.add(item.itemId);
             if (item.tmdbId) hiddenTmdbIdSet.add(String(item.tmdbId));
         }
