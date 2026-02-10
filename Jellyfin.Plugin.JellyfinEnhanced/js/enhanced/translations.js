@@ -21,12 +21,6 @@
             langCodes.push(normalizedLang);
         }
 
-        if (normalizedLang && !normalizedLang.includes('-')) {
-            if (normalizedLang === 'zh' && !langCodes.includes('zh-HK')) {
-                langCodes.unshift('zh-HK');
-            }
-        }
-
         if (normalizedLang && normalizedLang.includes('-')) {
             const baseLang = normalizedLang.split('-')[0];
             if (!langCodes.includes(baseLang)) {

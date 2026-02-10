@@ -536,6 +536,26 @@
                  return;
             }
 
+            if (userId) {
+                const languageKey = `${userId}-language`;
+                const storedLanguage = localStorage.getItem(languageKey) || '';
+                const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
+                const normalizeLangCode = (code) => {
+                    if (!code) return '';
+                    const parts = code.split('-');
+                    if (parts.length === 1) return parts[0].toLowerCase();
+                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+                    return code;
+                };
+                const desiredStorageLanguage = desiredLanguage
+                    ? normalizeLangCode(desiredLanguage === 'en' ? 'en-GB' : desiredLanguage)
+                    : '';
+
+                if (storedLanguage !== desiredStorageLanguage) {
+                    localStorage.setItem(languageKey, desiredStorageLanguage);
+                }
+            }
+
             // Stage 5: Initialize theme system first
             if (typeof JE.themer?.init === 'function') {
                 JE.themer.init();

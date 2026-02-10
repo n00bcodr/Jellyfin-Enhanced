@@ -80,6 +80,7 @@
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
+            displayLanguage: '',
             calendarDisplayMode: 'list',
             calendarDefaultViewMode: 'agenda',
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
@@ -103,6 +104,7 @@
             }
         }
 
+        mergedSettings.displayLanguage = userSettings.displayLanguage || pluginDefaults.DefaultLanguage || '';
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
         return mergedSettings;
     };

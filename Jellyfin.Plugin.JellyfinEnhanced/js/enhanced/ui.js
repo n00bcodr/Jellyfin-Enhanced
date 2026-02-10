@@ -1531,7 +1531,7 @@
                         dataType: 'json'
                     });
 
-                    console.log('🪼 Jellyfin Enhanced: Loaded', cultures.length, 'cultures from Jellyfin API');
+                    console.log('🪼 Jellyfin Enhanced: Translations Loaded', cultures.length, 'cultures from Jellyfin API');
 
                     // Check which languages have translation files available on GitHub
                     const checkPromises = cultures.map(async (culture) => {
@@ -1568,7 +1568,7 @@
                         }
                     }
 
-                    console.log('🪼 Jellyfin Enhanced: Found', supportedJELanguages.length, 'supported cultures with translations');
+                    console.log('🪼 Jellyfin Enhanced: Translations Found', supportedJELanguages.length, 'supported cultures with translations');
 
                     // Cache the results
                     try {

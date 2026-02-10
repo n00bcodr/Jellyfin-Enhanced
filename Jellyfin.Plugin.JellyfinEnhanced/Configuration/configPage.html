@@ -93,12 +93,6 @@
                                             <option value="4">Roboto</option>
                                         </select>
                                     </div>
-                                    <div class="inputContainer">
-                                        <label class="inputLabel inputLabelUnfocused" for="DefaultLanguage">Default UI Language</label>
-                                        <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
-                                            <option value="">System Default</option>
-                                        </select>
-                                    </div>
                                 </div>
                             </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -199,6 +193,18 @@
                                 <div class="checkboxContainer" style="margin-top: 2em;margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
                             </div>
                         </details>
+                            <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                <summary style="cursor: pointer; font-weight: bold;" data-icon="language" data-text="Language Settings">🌐 Language Settings</summary>
+                                <div style="padding-top: 1em;">
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultLanguage">Default UI Language</label>
+                                        <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
+                                            <option value="">System Default</option>
+                                        </select>
+                                        <div class="fieldDescription">Sets the default language for all users. Users can still override this in their own settings.</div>
+                                    </div>
+                                </div>
+                            </details>
                             <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="disableAllShortcuts" is="emby-checkbox" type="checkbox"/><span data-icon="keyboard" data-text="Disable Keyboard Shortcuts">⌨️ Disable Keyboard Shortcuts</span></label></div>
                                     <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in enhanced panel</div>
@@ -2467,13 +2473,36 @@
             if (!defaultLanguageSelect) return;
 
             const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
+            const AVAILABLE_LANGUAGES_CACHE_KEY = 'JE_available_languages_config';
+            const AVAILABLE_LANGUAGES_CACHE_TS_KEY = 'JE_available_languages_config_ts';
+            const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
             const CUSTOM_LANGUAGES = {
-                'pr': { Name: 'Pirate', TwoLetterISOLanguageName: 'pr' }
+                'pr': { Name: 'Pirate', DisplayName: 'Pirate', TwoLetterISOLanguageName: 'pr', LocaleCode: 'pr' }
             };
 
             let supportedLanguages = [];
 
             try {
+                // Check cache first
+                const cachedLanguages = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_KEY);
+                const cachedTimestamp = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY);
+
+                if (cachedLanguages && cachedTimestamp) {
+                    const age = Date.now() - parseInt(cachedTimestamp, 10);
+                    if (age < CACHE_DURATION) {
+                        supportedLanguages = JSON.parse(cachedLanguages);
+                        supportedLanguages.sort((a, b) => a.Name.localeCompare(b.Name));
+                        supportedLanguages.forEach(culture => {
+                            const option = document.createElement('option');
+                            option.value = culture.LocaleCode || culture.TwoLetterISOLanguageName;
+                            option.textContent = culture.DisplayName || culture.Name;
+                            defaultLanguageSelect.appendChild(option);
+                        });
+                        return;
+                    }
+                }
+
                 // Fetch cultures from Jellyfin API
                 const cultures = await ApiClient.ajax({
                     type: 'GET',
@@ -2481,13 +2510,24 @@
                     dataType: 'json'
                 });
 
-                // Check which languages have translation files available
+                // Check which cultures have translation files on GitHub
                 const checkPromises = cultures.map(async (culture) => {
                     const langCode = culture.TwoLetterISOLanguageName;
+                    let normalizedLangCode;
+                    if (langCode.includes('-')) {
+                        const parts = langCode.split('-');
+                        normalizedLangCode = parts[0].toLowerCase() + '-' + parts[1].toUpperCase();
+                    } else {
+                        normalizedLangCode = langCode.toLowerCase();
+                    }
+
                     try {
-                        const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                        const response = await fetch(GITHUB_RAW_BASE + '/' + normalizedLangCode + '.json', { method: 'HEAD' });
                         if (response.ok) {
-                            supportedLanguages.push(culture);
+                            supportedLanguages.push({
+                                ...culture,
+                                LocaleCode: normalizedLangCode
+                            });
                         }
                     } catch (err) {
                         // Translation file doesn't exist
@@ -2496,10 +2536,17 @@
 
                 await Promise.all(checkPromises);
 
-                // Add custom languages that have translation files
+                // Check custom languages
                 for (const langCode in CUSTOM_LANGUAGES) {
+                    let normalizedLangCode;
+                    if (langCode.includes('-')) {
+                        const parts = langCode.split('-');
+                        normalizedLangCode = parts[0].toLowerCase() + '-' + parts[1].toUpperCase();
+                    } else {
+                        normalizedLangCode = langCode.toLowerCase();
+                    }
                     try {
-                        const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                        const response = await fetch(GITHUB_RAW_BASE + '/' + normalizedLangCode + '.json', { method: 'HEAD' });
                         if (response.ok) {
                             supportedLanguages.push(CUSTOM_LANGUAGES[langCode]);
                         }
@@ -2507,18 +2554,26 @@
                         // Translation file doesn't exist
                     }
                 }
+
+                // Cache the results
+                if (supportedLanguages.length > 0) {
+                    try {
+                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_KEY, JSON.stringify(supportedLanguages));
+                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY, Date.now().toString());
+                    } catch (err) {
+                        // Ignore cache errors
+                    }
+                }
             } catch (err) {
-                console.error('Failed to fetch available languages:', err);
+                // Failed to fetch languages
             }
 
-            // Sort by name
+            // Sort and populate dropdown
             supportedLanguages.sort((a, b) => a.Name.localeCompare(b.Name));
-
-            // Add language options
             supportedLanguages.forEach(culture => {
                 const option = document.createElement('option');
-                option.value = culture.TwoLetterISOLanguageName;
-                option.textContent = culture.Name;
+                option.value = culture.LocaleCode || culture.TwoLetterISOLanguageName;
+                option.textContent = culture.DisplayName || culture.Name;
                 defaultLanguageSelect.appendChild(option);
             });
         })();
