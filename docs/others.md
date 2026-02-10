@@ -7,6 +7,7 @@ Additional features including custom branding, extras, icons, and more.
 - [Custom Branding](#custom-branding)
 - [Icon Settings](#icon-settings)
 - [Extras](#extras)
+- [Timeout Settings](#timeout-settings)
 - [Letterboxd Integration](#letterboxd-integration)
 - [Hidden Content](#hidden-content)
 - [Splash Screen](#splash-screen)
@@ -104,7 +105,7 @@ Personal scripts from the developer's collection.
 
 Replace default activity icons with Material Design icons with custom colors.
 
-![Colored Activity Icons](../images/colored-activity-icons.png)
+![Colored Activity Icons](images/colored-activity-icons.png)
 
 **Features:**
 - Custom colors for each activity type
@@ -121,7 +122,7 @@ Replace default activity icons with Material Design icons with custom colors.
 
 Color-coded backgrounds for ratings on detail pages.
 
-![Colored Ratings](../images/ratings.png)
+![Colored Ratings](images/ratings.png)
 
 **Features:**
 - Different colors per rating type
@@ -137,7 +138,7 @@ Color-coded backgrounds for ratings on detail pages.
 
 Show user profile images on manual login page.
 
-![Login Image](../images/login-image.png)
+![Login Image](images/login-image.png)
 
 **Features:**
 - Display user avatars
@@ -153,7 +154,7 @@ Show user profile images on manual login page.
 
 Replace default plugin icons with Material Design icons.
 
-![Plugin Icons](../images/plugin-icons.png)
+![Plugin Icons](images/plugin-icons.png)
 
 **Features:**
 - Custom icons for popular plugins
@@ -183,7 +184,7 @@ Custom Plugin|https://example.com/config
 
 Choose from multiple Jellyfin theme color variants.
 
-![Theme Selector](../images/theme-selector.png)
+![Theme Selector](images/theme-selector.png)
 
 **Features:**
 - Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
@@ -209,6 +210,48 @@ Choose from multiple Jellyfin theme color variants.
 - Sunset
 - Forest
 - And more...
+
+---
+
+## Timeout Settings
+
+Configure durations for Enhanced panel UI elements.
+
+### Help Panel Auto-Close
+
+Control how long the help panel stays open before automatically closing.
+
+**Configure:**
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to **Other Settings** tab
+3. Find **Timeout Settings** section
+4. Set **Help Panel Autoclose Delay** (milliseconds)
+5. Click **Save**
+
+**Default:** 8000ms (8 seconds)
+**Range:** 0-30000ms (0 = no auto-close)
+
+**Use Cases:**
+- Longer delay for first-time users
+- Shorter delay for experienced users
+- Disable auto-close (0) for accessibility
+
+### Toast Notification Duration
+
+Control how long toast notifications are displayed.
+
+**Configure:**
+1. In **Timeout Settings** section
+2. Set **Toast Duration** (milliseconds)
+3. Click **Save**
+
+**Default:** 3000ms (3 seconds)
+**Range:** 1000-10000ms
+
+**Affects:**
+- Bookmark saved notifications
+- Success/error messages
+- State change confirmations
 
 ---
 
@@ -248,14 +291,19 @@ Hide specific items from your Jellyfin library without deleting them.
 - Hidden items don't appear in library
 - Easily unhide items later
 - Per-user hidden content
-- Manage via Enhanced panel
+- Manage via Enhanced panel or dedicated page
 
 ### Setup
 
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to **Other Settings** tab
-3. Check **"Enable Hidden Content"**
-4. Click **Save**
+2. Navigate to **Enhanced Settings** tab
+3. Find **Hidden Content** section
+4. Check **"Enable Hidden Content"**
+5. Optional: Check **"Use Plugin Pages for Hidden Content Library"**
+   - Adds a sidebar link to dedicated Hidden Content page
+   - Requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin
+   - Restart Jellyfin after enabling for first time
+6. Click **Save**
 
 ### Usage
 
@@ -265,9 +313,17 @@ Hide specific items from your Jellyfin library without deleting them.
 3. Item removed from library view
 
 **Manage Hidden Items:**
-1. Open Enhanced panel
+
+**Via Enhanced Panel:**
+1. Open Enhanced panel (press `?`)
 2. Go to Hidden Content section
 3. View all hidden items
+4. Click to unhide
+
+**Via Dedicated Page** (if enabled):
+1. Click "Hidden Content" in sidebar
+2. View all hidden items with thumbnails
+3. Search and filter hidden items
 4. Click to unhide
 
 **Note:** Hidden items are per-user and don't affect other users.

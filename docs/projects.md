@@ -201,25 +201,6 @@ Contributions welcome on all projects!
 4. Follow code style
 5. Submit detailed PR
 
----
-
-## Roadmap
-
-### Planned Features
-
-**Jellyfin Enhanced:**
-- Additional integrations
-- More visual enhancements
-- Performance improvements
-- New discovery features
-
-**Jellyfish Theme:**
-- More color variants
-- Additional animations
-- Mobile optimizations
-- Accessibility improvements
-
-**Check individual repositories for detailed roadmaps.**
 
 ---
 

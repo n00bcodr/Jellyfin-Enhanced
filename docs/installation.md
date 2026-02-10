@@ -208,7 +208,7 @@ If you use Jellyseerr:
 6. Enable optional features like watchlist sync
 7. Click **Save**
 
-![Jellyseerr Settings](../images/jellyseerr.png)
+![Jellyseerr Settings](images/jellyseerr.png)
 
 ### Customize Appearance
 
@@ -235,7 +235,7 @@ After installation, verify these work:
 - [ ] No errors in browser console (F12)
 - [ ] No errors in server logs
 
-## Next Steps
+## Explore More
 
 - [Explore Features](features.md) - Learn about all available features
 - [Read FAQ](faq.md) - Common questions and answers

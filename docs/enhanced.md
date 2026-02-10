@@ -2,7 +2,7 @@
 
 Core Jellyfin Enhanced features including playback controls, UI enhancements, visual tags, and bookmarks.
 
-![Enhanced Panel](../images/panel_jellyfish.gif)
+![Enhanced Panel](images/panel_jellyfish.gif)
 
 ## Table of Contents
 
@@ -15,6 +15,7 @@ Core Jellyfin Enhanced features including playback controls, UI enhancements, vi
 - [Visual Tags](#visual-tags)
 - [Bookmarks](#bookmarks)
 - [Custom Styling](#custom-styling)
+- [Admin Configuration](#admin-configuration)
 
 ---
 
@@ -22,7 +23,7 @@ Core Jellyfin Enhanced features including playback controls, UI enhancements, vi
 
 Comprehensive keyboard shortcuts for navigation, playback control, and more.
 
-![Shortcuts](../images/shortcuts.png)
+![Shortcuts](images/shortcuts.png)
 
 ### Default Shortcuts
 
@@ -59,6 +60,25 @@ Comprehensive keyboard shortcuts for navigation, playback control, and more.
 - `Ctrl+S` - Control + S key
 - `Alt+P` - Alt + P key
 
+### Admin: Server-Wide Shortcut Overrides
+
+Administrators can set server-wide default shortcut mappings.
+
+**Configure:**
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to **Enhanced Settings** tab
+3. Find **Shortcut Overrides** section
+4. Select a shortcut from dropdown
+5. Enter new key combination
+6. Click **Add Override**
+7. Click **Save**
+
+**Features:**
+- Override default shortcut keys server-wide
+- Users can still customize individually
+- Prevents conflicts by validating keys
+- Remove overrides anytime
+
 ### Disabling Shortcuts
 
 To disable all keyboard shortcuts:
@@ -66,7 +86,6 @@ To disable all keyboard shortcuts:
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Check "Disable Keyboard Shortcuts"
 3. Click **Save**
-4. Restart server
 
 ---
 
@@ -118,7 +137,9 @@ Hold down to play at 2x speed, release to return to normal.
 
 Beautiful overlay with media info when you pause.
 
-![Pause Screen](../images/pausescreen.png)
+![Pause Screen](images/pausescreen.png)
+
+**Note:** This is a modified version of [BobHasNoSoul's Pause Screen](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen).
 
 **Features:**
 - Media title and logo
@@ -255,6 +276,20 @@ Display watch progress on media cards.
 - **h:m** - Hours and minutes (e.g., "2h 30m")
 - **y:mo:d:h:m** - Full format with years, months, days
 
+**Admin: Server-Wide Defaults**
+
+Administrators can configure default watch progress settings for all users.
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to **Enhanced Settings** tab
+3. Find **UI Settings** section
+4. Configure:
+   - **Watch Progress Default Mode** (Percentage or Time)
+   - **Watch Progress Time Format** (h:m or y:mo:d:h:m)
+5. Click **Save**
+
+Users can override these defaults in their Enhanced panel.
+
 ### File Sizes
 
 Display total file size on item detail pages.
@@ -291,7 +326,7 @@ Display quality, genre, language, rating, and people information directly on pos
 
 Display media quality information (4K, HDR, Atmos) on posters.
 
-![Quality Tags Example](../images/panel.gif)
+![Quality Tags Example](images/panel.gif)
 
 **Supported Tags:**
 - **Resolution:** 8K, 4K, 1080p, 720p, 480p, LOW-RES
@@ -338,7 +373,7 @@ Display available audio languages as country flags on posters.
 
 Show TMDB and Rotten Tomatoes ratings on posters.
 
-![Ratings](../images/ratings.png)
+![Ratings](images/ratings.png)
 
 **Features:**
 - TMDB star ratings
@@ -411,7 +446,7 @@ Save custom timestamps while watching videos to quickly jump back to favorite sc
 
 ### Bookmark Management
 
-Access via Plugin Pages or Custom Tabs (requires respective plugins).
+Access via [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) or [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) (requires respective plugins).
 
 **Features:**
 - View all bookmarks across library
@@ -578,7 +613,37 @@ Customize quality tag appearance.
 
 ---
 
-## Next Steps
+## Admin Configuration
+
+### applying Default Settings to All Users
+
+Administrators can apply default settings to all users at once.
+
+**How to Use:**
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Configure all desired default settings (playback, UI, tags, etc.)
+3. Click **"Apply Above Settings to All Users"** button
+4. Confirm the action
+
+**What This Does:**
+- Overrides all user settings with configured defaults
+- Applies to playback settings, UI preferences, tags, bookmarks enabled/disabled
+- Users can still change settings individually afterward
+- Useful for resetting all users to a known configuration
+
+**What's NOT Affected:**
+- Individual user bookmarks
+- User shortcut customizations (unless cleared separately)
+- Hidden content items
+
+**Use Cases:**
+- Initial server setup with desired defaults
+- Fixing issues by resetting all users
+- Standardizing experience across accounts
+
+---
+
+## Explore More
 
 - [Elsewhere Integration](elsewhere.md) - Streaming provider lookup
 - [Jellyseerr Integration](jellyseerr.md) - Search and request media

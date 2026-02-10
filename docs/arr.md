@@ -164,8 +164,8 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 2. Navigate to ***arr Settings** tab
 3. Check **"Enable Calendar Page"**
 4. Choose integration method:
-   - **Use Plugin Pages** - Adds sidebar link (requires Plugin Pages plugin)
-   - **Use Custom Tabs** - Adds custom tab (requires Custom Tabs plugin)
+   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
+   - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
 5. Configure calendar settings (see below)
 6. Click **Save**
 7. Restart Jellyfin if using Plugin Pages
@@ -212,8 +212,8 @@ Monitor download queue and status from Sonarr and Radarr.
 2. Navigate to ***arr Settings** tab
 3. Check **"Enable Requests Page"**
 4. Choose integration method:
-   - **Use Plugin Pages** - Adds sidebar link
-   - **Use Custom Tabs** - Adds custom tab
+   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
+   - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
 5. Configure polling settings (see below)
 6. Click **Save**
 7. Restart Jellyfin if using Plugin Pages

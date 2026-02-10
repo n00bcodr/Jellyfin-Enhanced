@@ -2,9 +2,14 @@ site_name: Jellyfin Enhanced
 site_url: https://n00bcodr.github.io/Jellyfin-Enhanced/
 repo_name: n00bcodr/Jellyfin-Enhanced
 repo_url: https://github.com/n00bcodr/Jellyfin-Enhanced
+site_description: The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
+site_author: n00bcodr
+copyright: Copyright &copy; 2024-2026 n00bcodr
 
 theme:
   name: material
+  logo: images/favicon.ico
+  favicon: images/favicon.ico
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -27,12 +32,30 @@ theme:
     - navigation.sections
     - navigation.expand
     - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - toc.integrate
     - search.suggest
     - search.highlight
+    - search.share
     - content.code.copy
+    - content.code.annotate
+    - announce.dismiss
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/n00bcodr/Jellyfin-Enhanced
+      name: GitHub Repository
+    - icon: fontawesome/brands/discord
+      link: https://discord.com/channels/1381737066366242896/1442128048873930762
+      name: Jellyfin Community Discord - Jellyfin Enhanced Channel
 
 plugins:
-  - search
+  - search:
+      lang: en
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
 
 markdown_extensions:
   - admonition
@@ -50,11 +73,14 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Installation: installation.md
-  - Enhanced: enhanced.md
-  - Elsewhere: elsewhere.md
-  - Jellyseerr: jellyseerr.md
-  - ARR: arr.md
-  - Others: others.md
-  - FAQ: faq.md
+  - Getting Started:
+    - Installation: installation.md
+    - Features Guide: features.md
+    - FAQ: faq.md
+  - Features:
+    - Enhanced: enhanced.md
+    - Elsewhere: elsewhere.md
+    - Jellyseerr: jellyseerr.md
+    - ARR Integration: arr.md
+    - Others: others.md
   - Projects: projects.md

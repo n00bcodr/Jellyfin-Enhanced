@@ -179,11 +179,11 @@ These are some scripts I have used for a while with JS injector, finally decided
         <th style="text-align:center">Theme Selector</th>
     </tr>
     <tr>
-        <td><img src="images/colored-activity-icons.png" width="300" /></td>
-        <td><img src="images/ratings.png" width="300" /></td>
-        <td><img src="images/login-image.png" width="300" /></td>
-        <td><img src="images/plugin-icons.png" width="130" /></td>
-        <td><img src="images/theme-selector.png" width="300" /></td>
+        <td><img src="docs/images/colored-activity-icons.png" width="300" /></td>
+        <td><img src="docs/images/ratings.png" width="300" /></td>
+        <td><img src="docs/images/login-image.png" width="300" /></td>
+        <td><img src="docs/images/plugin-icons.png" width="130" /></td>
+        <td><img src="docs/images/theme-selector.png" width="300" /></td>
     </tr>
 </table>
 
@@ -216,17 +216,17 @@ To enable the Jellyseerr integration, you must first configure it in the plugin 
 9. Click **Save**.
 
 <p align="center">
-  <img src="images/jellyseerr.png" width="600" style="border-radius:25px;" />
+  <img src="docs/images/jellyseerr.png" width="600" style="border-radius:25px;" />
 </p>
 
 > [!IMPORTANT]
 > For the integration to work, you must also enable **"Enable Jellyfin Sign-In"** in your Jellyseerr User Settings (`/settings/users`).
 > \
-> <img src="images/jellyfin-signin.png" width="500" style="border-radius:25px;" /> \
+> <img src="docs/images/jellyfin-signin.png" width="500" style="border-radius:25px;" /> \
 > \
 > All users who need access to request content must be imported into Jellyseerr as Jellyfin users.
 > <table align="center">
-> <tr><th style="text-align:center">Users that have access</th><th style="text-align:center">Users that don't have access (import them)</th>  </tr>  <tr>    <td><img src="images/users-with-access.png" width="300"/></td>    <td><img src="images/users-no-access.png" width="300"/></td>  </tr>  </table>
+> <tr><th style="text-align:center">Users that have access</th><th style="text-align:center">Users that don't have access (import them)</th>  </tr>  <tr>    <td><img src="docs/images/users-with-access.png" width="300"/></td>    <td><img src="docs/images/users-no-access.png" width="300"/></td>  </tr>  </table>
 
 #### Icon States
 
@@ -1837,16 +1837,16 @@ Here is a list of common errors you might see in your Jellyfin server logs or yo
     <th style="text-align:center">Settings</th>
   </tr>
   <tr>
-    <td><img src="images/shortcuts.png" width="1000"/></td>
-    <td><img src="images/settings.png" width="1000"/></td>
+    <td><img src="docs/images/shortcuts.png" width="1000"/></td>
+    <td><img src="docs/images/settings.png" width="1000"/></td>
   </tr>
   <tr>
     <th style="text-align:center">Pausescreen</th>
     <th style="text-align:center">Elsewhere</th>
   </tr>
   <tr>
-    <td><img src="images/pausescreen.png" width="1000"/></td>
-    <td><img src="images/elsewhere.png" width="1000"/></td>
+    <td><img src="docs/images/pausescreen.png" width="1000"/></td>
+    <td><img src="docs/images/elsewhere.png" width="1000"/></td>
   </tr>
   </table>
 

@@ -138,7 +138,7 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 ### Jellyseerr integration not connecting?
 
-![Jellyseerr Settings](../images/jellyseerr.png)
+![Jellyseerr Settings](images/jellyseerr.png)
 
 **Check Configuration:**
 1. Verify Jellyseerr URL is correct and accessible
@@ -154,7 +154,7 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 2. Enable "Enable Jellyfin Sign-In"
 3. Import your Jellyfin users
 
-![Jellyfin Sign-In](../images/jellyfin-signin.png)
+![Jellyfin Sign-In](images/jellyfin-signin.png)
 
 **Import Users:**
 1. In Jellyseerr, go to Users page
@@ -163,8 +163,8 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 4. Save changes
 
 **User Access:**
-- Users WITH access: ![Users with access](../images/users-with-access.png)
-- Users WITHOUT access: ![Users without access](../images/users-no-access.png)
+- Users WITH access: ![Users with access](images/users-with-access.png)
+- Users WITHOUT access: ![Users without access](images/users-no-access.png)
 
 **Check Logs:**
 1. Browser console (F12) for client errors
@@ -536,21 +536,10 @@ Use Custom CSS for precise control:
 - Include screenshots if helpful
 - Be patient and respectful
 
-### Is there a roadmap?
-
-Check the [GitHub Projects](https://github.com/n00bcodr/Jellyfin-Enhanced/projects) page for planned features and development status.
-
-**Stay Updated:**
-- Watch the repository on GitHub
-- Join Discord community
-- Check release notes
-- Follow discussions
-
----
 
 ## Related Projects
 
-### Other projects by the developer
+### Other projects by the me
 
 - [Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) - Streaming provider lookup (standalone)
 - [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) - Additional tweaks plugin

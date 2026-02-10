@@ -8,7 +8,7 @@
 
 The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 
-![Enhanced Panel](../images/panel.gif)
+![Enhanced Panel](images/panel.gif)
 
 ## Quick Links
 
@@ -60,15 +60,15 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 
 | Shortcuts | Settings |
 |-----------|----------|
-| ![Shortcuts](../images/shortcuts.png) | ![Settings](../images/settings.png) |
+| ![Shortcuts](images/shortcuts.png) | ![Settings](images/settings.png) |
 
 | Pause Screen | Elsewhere |
 |--------------|-----------|
-| ![Pause Screen](../images/pausescreen.png) | ![Elsewhere](../images/elsewhere.png) |
+| ![Pause Screen](images/pausescreen.png) | ![Elsewhere](images/elsewhere.png) |
 
 | Jellyseerr | Update |
 |------------|--------|
-| ![Jellyseerr](../images/jellyseerr.png) | ![Update](../images/update.png) |
+| ![Jellyseerr](images/jellyseerr.png) | ![Update](images/update.png) |
 
 ## Quick Start
 

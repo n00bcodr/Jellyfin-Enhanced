@@ -2,7 +2,7 @@
 
 Search, request, and discover media directly from Jellyfin using your Jellyseerr instance.
 
-![Jellyseerr](../images/jellyseerr.png)
+![Jellyseerr](images/jellyseerr.png)
 
 ## Overview
 
@@ -36,7 +36,7 @@ The Jellyseerr integration allows users to search for and request media directly
 2. Enable **"Enable Jellyfin Sign-In"**
 3. Save settings
 
-![Jellyfin Sign-In](../images/jellyfin-signin.png)
+![Jellyfin Sign-In](images/jellyfin-signin.png)
 
 ### Step 2: Import Jellyfin Users
 
@@ -46,8 +46,8 @@ The Jellyseerr integration allows users to search for and request media directly
 4. Save changes
 
 **User Access:**
-- Users WITH access: ![Users with access](../images/users-with-access.png)
-- Users WITHOUT access: ![Users without access](../images/users-no-access.png)
+- Users WITH access: ![Users with access](images/users-with-access.png)
+- Users WITHOUT access: ![Users without access](images/users-no-access.png)
 
 ### Step 3: Configure Plugin
 
@@ -67,7 +67,7 @@ The Jellyseerr integration allows users to search for and request media directly
 
 **Add Requested Media to Watchlist:**
 - Automatically add items to Jellyfin watchlist when they become available
-- Requires [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) plugin
+- Requires [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks) plugin
 
 **Sync Jellyseerr Watchlist to Jellyfin:**
 - Sync your Jellyseerr watchlist items to Jellyfin watchlist

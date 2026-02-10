@@ -2,18 +2,18 @@
 
 Discover where your media is available to stream across multiple regions and platforms.
 
-![Elsewhere](../images/elsewhere.png)
+![Elsewhere](images/elsewhere.png)
 
 ## Overview
 
-Jellyfin Elsewhere helps you find where movies and TV shows are available to stream, rent, or buy across different streaming services and regions. Powered by TMDB data, it provides comprehensive availability information directly on item detail pages.
+Jellyfin Elsewhere helps you find where movies and TV shows are available across different streaming services and regions. Powered by TMDB data, it provides comprehensive availability information directly on item detail pages.
 
 ## Features
 
 - **Multi-region Support** - Check availability across different countries
-- **Buy, Rent, Stream** - See all options in one place
-- **Provider Logos** - Visual icons for each streaming service
-- **Direct Links** - Click to open provider pages
+- **Provider Icons** - Visual logos for each streaming service
+- **Customizable Filters** - Show or hide specific providers
+- **Regex Support** - Advanced filtering with pattern matching
 - **TMDB Integration** - Powered by The Movie Database
 
 ## Setup
@@ -45,44 +45,65 @@ Jellyfin Elsewhere helps you find where movies and TV shows are available to str
 
 ### Default Region
 
-Select the primary region for streaming availability checks.
+Select the primary region for streaming availability checks. Empty defaults to US.
 
-**Supported Regions:**
-- US - United States
-- GB - United Kingdom
-- DE - Germany
-- FR - France
-- ES - Spain
-- IT - Italy
-- And many more...
+**View full list:** [Available Regions](https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt)
+
+**Examples:**
+- `US` - United States
+- `GB` - United Kingdom
+- `DE` - Germany
+- `FR` - France
+- `ES` - Spain
+- `IT` - Italy
 
 ### Default Providers
 
-Comma-separated list of provider IDs to show by default.
+Comma-separated list of streaming provider names to show by default. Leave blank to show all.
+
+**View full list:** [Available Providers](https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt)
 
 **Example:**
 ```
-8,9,337,384
+Netflix,Hulu,Disney Plus
 ```
 
-**Common Provider IDs:**
-- 8 - Netflix
-- 9 - Amazon Prime Video
-- 337 - Disney+
-- 384 - HBO Max
-- 15 - Hulu
-- 283 - Crunchyroll
+**Common Provider Names:**
+- Netflix
+- Amazon Prime Video
+- Disney Plus
+- HBO Max
+- Hulu
+- Crunchyroll
 
 ### Ignore Providers
 
-Comma-separated list of provider IDs to hide from results.
+Comma-separated list of provider names to hide from results. **Supports regex patterns** for advanced filtering.
 
-**Example:**
+**View full list:** [Available Providers](https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt)
+
+**Examples:**
+
+Basic (exact names):
 ```
-10,11,12
+Apple TV,Google Play Movies
 ```
 
-**Use Case:** Hide providers you don't have access to or aren't interested in.
+With regex (hide all "with Ads" providers):
+```
+.*with Ads
+```
+
+Multiple patterns:
+```
+.*with Ads,.*Free,Vudu
+```
+
+**Use Cases:**
+- Hide providers you don't have access to / or have access to
+- Filter out ad-supported tiers
+- Remove free streaming options
+- Exclude rental/purchase-only services
 
 ### Custom Branding
 
@@ -102,19 +123,12 @@ Comma-separated list of provider IDs to hide from results.
 1. Open any movie or TV show detail page
 2. Scroll to the "Jellyfin Elsewhere" section
 3. View available streaming options
-4. Click provider logos to open their pages
 
 ### Information Displayed
 
-**For Each Provider:**
-- Provider logo and name
-- Availability type (Stream, Rent, Buy)
-- Direct link to provider page
-
-**Availability Types:**
-- **Stream** - Available with subscription
-- **Rent** - Available to rent
-- **Buy** - Available to purchase
+- **Provider icons** - Visual logos of streaming services where content is available
+- **Provider names** - Name of each streaming service
+- **Multi-region support** - Shows availability across your selected regions
 
 ## Troubleshooting
 
@@ -144,13 +158,6 @@ Comma-separated list of provider IDs to hide from results.
 - Check ignore providers list
 - Verify item has TMDB ID
 - Wait and try again later
-
-### Provider Links Not Working
-
-**Check:**
-- Provider still operates in your region
-- Link format hasn't changed
-- Provider requires account/subscription
 
 ## Integration with Jellyseerr
 
@@ -185,11 +192,11 @@ Elsewhere can be displayed on Jellyseerr discovery pages.
 - Accuracy depends on TMDB data quality
 
 ## Limitations
+## Limitations
 
 - Availability data depends on TMDB accuracy
 - Some regions have limited provider data
 - Provider availability changes frequently
-- Links may become outdated
 - Requires internet connection
 
 ## Related Features
@@ -208,5 +215,3 @@ If you encounter issues:
 4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 
 ---
-
-**Note:** Jellyfin Elsewhere is also available as a [standalone JavaScript](https://github.com/n00bcodr/Jellyfin-Elsewhere) for use without the full plugin.

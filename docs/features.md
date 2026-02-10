@@ -2,7 +2,7 @@
 
 Jellyfin Enhanced bundles dozens of features into one convenient plugin. This guide covers all available features and how to use them.
 
-![Enhanced Panel](../images/panel_jellyfish.gif)
+![Enhanced Panel](images/panel_jellyfish.gif)
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 
 Comprehensive hotkeys for navigation, playback control, and more.
 
-![Shortcuts](../images/shortcuts.png)
+![Shortcuts](images/shortcuts.png)
 
 **Default Shortcuts:**
 - `Space` - Play/Pause
@@ -67,7 +67,7 @@ Save timestamps and jump to specific moments with visual timeline markers.
 
 Beautiful overlay with media info when you pause a video.
 
-![Pause Screen](../images/pausescreen.png)
+![Pause Screen](images/pausescreen.png)
 
 **Displays:**
 - Media title and logo
@@ -119,7 +119,7 @@ Fine-tune subtitle appearance with presets for style, size, and font.
 
 Search, request, and discover media directly from Jellyfin's search interface.
 
-![Jellyseerr](../images/jellyseerr.png)
+![Jellyseerr](images/jellyseerr.png)
 
 **Features:**
 - Search Jellyseerr from Jellyfin search bar
@@ -144,7 +144,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 - "Enable Jellyfin Sign-In" enabled in Jellyseerr
 - Jellyfin users imported into Jellyseerr
 
-![Jellyfin Sign-In](../images/jellyfin-signin.png)
+![Jellyfin Sign-In](images/jellyfin-signin.png)
 
 **Icon States:**
 
@@ -204,7 +204,7 @@ See [ARR Tag Links CSS](#arr-tag-links-css) for styling options.
 
 See where else your media is available to stream.
 
-![Elsewhere](../images/elsewhere.png)
+![Elsewhere](images/elsewhere.png)
 
 **Features:**
 - Multi-region support
@@ -336,7 +336,7 @@ Enable in Enhanced panel → Settings → Language Tags
 
 Show TMDB and Rotten Tomatoes ratings on posters and in player.
 
-![Ratings](../images/ratings.png)
+![Ratings](images/ratings.png)
 
 **Features:**
 - TMDB star ratings
@@ -417,7 +417,7 @@ These are optional scripts from the developer's personal collection.
 
 Replace default activity icons with Material Design icons.
 
-![Colored Activity Icons](../images/colored-activity-icons.png)
+![Colored Activity Icons](images/colored-activity-icons.png)
 
 **Features:**
 - Custom colors for each activity type
@@ -431,7 +431,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Color-coded backgrounds for ratings on detail pages.
 
-![Colored Ratings](../images/ratings.png)
+![Colored Ratings](images/ratings.png)
 
 **Features:**
 - Different colors per rating type
@@ -445,7 +445,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Show user profile images on manual login page.
 
-![Login Image](../images/login-image.png)
+![Login Image](images/login-image.png)
 
 **Features:**
 - Display user avatars
@@ -459,7 +459,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Replace default plugin icons with Material Design icons.
 
-![Plugin Icons](../images/plugin-icons.png)
+![Plugin Icons](images/plugin-icons.png)
 
 **Features:**
 - Custom icons for popular plugins
@@ -473,7 +473,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Choose from multiple Jellyfin theme color variants.
 
-![Theme Selector](../images/theme-selector.png)
+![Theme Selector](images/theme-selector.png)
 
 **Features:**
 - Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
@@ -728,7 +728,7 @@ curl -X POST \
 
 ---
 
-## Next Steps
+## Explore More
 
 - [Installation Guide](installation.md) - Setup instructions
 - [FAQ](faq.md) - Common questions
