@@ -628,6 +628,9 @@
   function getFilteredDownloads() {
     let filtered = state.downloads;
 
+    // Filter hidden content
+    if (JE.hiddenContent) filtered = JE.hiddenContent.filterRequestItems(filtered);
+
     // Filter by status tab
     if (state.downloadsActiveTab !== "all") {
       filtered = filtered.filter(d => d.status === state.downloadsActiveTab);
@@ -1232,9 +1235,10 @@
       } else {
         // Apply client-side filtering only for Processing tab (exclude Partially Available)
         let filteredRequests = state.requests;
+        if (JE.hiddenContent) filteredRequests = JE.hiddenContent.filterRequestItems(filteredRequests);
         if (state.requestsFilter === "processing") {
           // Exclude "Partially Available" items from Processing tab
-          filteredRequests = state.requests.filter(item => {
+          filteredRequests = filteredRequests.filter(item => {
             return item.mediaStatus !== "Partially Available";
           });
         }

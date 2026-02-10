@@ -1082,6 +1082,26 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Hidden Content</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Hidden Content</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
+                        </div>
+                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                            <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">visibility_off</i>
+                                <div>
+                                    <strong>Hidden Content Page</strong> adds a sidebar link that opens a dedicated page for viewing and managing all hidden items. When disabled, hidden content can still be managed via the settings panel overlay.
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
                  <div id="extras" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
@@ -1973,6 +1993,9 @@
                 document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
                 document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
 
+                // Hidden Content settings
+                document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
+
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
@@ -2146,6 +2169,9 @@
             config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
             config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;
             config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
+
+            // Hidden Content settings
+            config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';

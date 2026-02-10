@@ -152,6 +152,9 @@
         if (excludeLibraryItems) {
             filteredResults = results.filter(item => !item.mediaInfo?.jellyfinMediaId);
         }
+        if (JE.hiddenContent) {
+            filteredResults = JE.hiddenContent.filterJellyseerrResults(filteredResults, 'recommendations');
+        }
 
         if (filteredResults.length === 0) {
             return null;

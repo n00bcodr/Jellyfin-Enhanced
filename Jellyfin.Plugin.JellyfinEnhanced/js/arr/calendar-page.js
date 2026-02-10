@@ -1815,7 +1815,8 @@
 
     const daysInMonth = getDaysInMonth(anchor);
     const firstDay = getFirstDayOfMonth(anchor);
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     if (filteredEvents.length === 0) {
       return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
@@ -1870,7 +1871,8 @@
   function renderWeekView() {
     const { start } = getRangeForView(state.currentDate, "week");
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     if (filteredEvents.length === 0) {
       return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
@@ -1908,7 +1910,8 @@
 
   // Render agenda list view
   function renderAgendaView() {
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     const dates = Object.keys(groupedEvents).sort();
 

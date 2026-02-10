@@ -1443,6 +1443,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarHighlightFavorites,
                 config.CalendarHighlightWatchedSeries,
 
+                // Hidden Content Settings
+                config.HiddenContentEnabled,
+
             });
         }
 
@@ -1778,6 +1781,76 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Failed to save user elsewhere settings for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user elsewhere settings." });
             }
+        }
+
+        [HttpGet("user-settings/{userId}/hidden-content.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetUserHiddenContent(string userId)
+        {
+            if (!IsCurrentUserRequest(userId))
+            {
+                return Forbid();
+            }
+
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json");
+            return Ok(userConfig);
+        }
+
+        [HttpPost("user-settings/{userId}/hidden-content.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult SaveUserHiddenContent(string userId, [FromBody] UserHiddenContent userConfiguration)
+        {
+            if (!IsCurrentUserRequest(userId))
+            {
+                return Forbid();
+            }
+
+            if (userConfiguration == null)
+            {
+                return BadRequest(new { success = false, message = "Invalid hidden content payload." });
+            }
+
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(userId, "hidden-content.json", userConfiguration);
+                _logger.Info($"Saved hidden content for user {userId} to hidden-content.json");
+                return Ok(new { success = true, file = "hidden-content.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save hidden content for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        private bool IsCurrentUserRequest(string requestedUserId)
+        {
+            var currentUserId = UserHelper.GetCurrentUserId(User);
+            if (string.IsNullOrWhiteSpace(requestedUserId))
+            {
+                return false;
+            }
+
+            // Some API-key based contexts may not include user claims; keep compatibility.
+            if (currentUserId == null)
+            {
+                return true;
+            }
+
+            // Support both hyphenated and compact user-id formats.
+            var normalizedRequested = requestedUserId.Replace("-", string.Empty, StringComparison.Ordinal)
+                .Trim()
+                .ToLowerInvariant();
+            var normalizedCurrent = currentUserId.Value.ToString("N").ToLowerInvariant();
+            if (string.Equals(normalizedRequested, normalizedCurrent, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // Allow administrators to access other users' hidden-content config when needed.
+            return User.IsInRole("Administrator");
         }
 
         [HttpPost("reset-all-users-settings")]

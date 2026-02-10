@@ -103,4 +103,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     {
         public List<ProcessedWatchlistItem> Items { get; set; } = new List<ProcessedWatchlistItem>();
     }
+
+    public class HiddenContentItem
+    {
+        public string ItemId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public string TmdbId { get; set; } = string.Empty;
+        public string HiddenAt { get; set; } = string.Empty;
+        public string PosterPath { get; set; } = string.Empty;
+        public string SeriesId { get; set; } = string.Empty;
+        public string SeriesName { get; set; } = string.Empty;
+        public int? SeasonNumber { get; set; }
+        public int? EpisodeNumber { get; set; }
+        public string HideScope { get; set; } = "global";
+    }
+
+    public class HiddenContentSettings
+    {
+        public bool Enabled { get; set; } = true;
+        public bool FilterLibrary { get; set; } = true;
+        public bool FilterDiscovery { get; set; } = true;
+        public bool FilterUpcoming { get; set; } = true;
+        public bool FilterCalendar { get; set; } = true;
+        public bool FilterSearch { get; set; } = false;
+        public bool FilterRecommendations { get; set; } = true;
+        public bool FilterRequests { get; set; } = true;
+        public bool FilterNextUp { get; set; } = true;
+        public bool FilterContinueWatching { get; set; } = true;
+        public bool ShowHideConfirmation { get; set; } = true;
+        public bool ShowButtonJellyseerr { get; set; } = true;
+        public bool ShowButtonLibrary { get; set; } = false;
+        public bool ShowButtonDetails { get; set; } = true;
+    }
+
+    public class UserHiddenContent
+    {
+        public Dictionary<string, HiddenContentItem> Items { get; set; } = new Dictionary<string, HiddenContentItem>();
+        public HiddenContentSettings Settings { get; set; } = new HiddenContentSettings();
+    }
 }

@@ -1241,6 +1241,85 @@
         if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
             fetchProviderIcons(card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
         }
+
+        // Add hide button for hidden content feature
+        if (JE.hiddenContent && JE.hiddenContent.getSettings().enabled && JE.hiddenContent.getSettings().showHideButtons !== false && JE.hiddenContent.getSettings().showButtonJellyseerr !== false) {
+            const cardBox = card.querySelector('.cardBox');
+            if (cardBox) {
+                const hideBtn = document.createElement('button');
+                const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden' ? JE.t('hidden_content_already_hidden') : 'Hidden';
+                const unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide' ? JE.t('hidden_content_unhide') : 'Unhide';
+                const hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button' ? JE.t('hidden_content_hide_button') : 'Hide';
+                const unhideKey = jellyfinMediaId || `tmdb-${item.id}`;
+
+                /**
+                 * Replaces the hide button's content with a material icon.
+                 * @param {string} iconName - Material icon name (e.g. 'visibility', 'visibility_off').
+                 */
+                function renderHideIcon(iconName) {
+                    hideBtn.replaceChildren();
+                    const icon = document.createElement('span');
+                    icon.className = 'material-icons';
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.textContent = iconName || 'visibility';
+                    hideBtn.appendChild(icon);
+                }
+
+                /**
+                 * Switches the hide button to "already hidden" state with unhide-on-click behaviour.
+                 */
+                function setHiddenState() {
+                    hideBtn.className = 'je-hide-btn je-already-hidden';
+                    hideBtn.title = hiddenLabel;
+                    renderHideIcon('visibility_off');
+                    hideBtn.onmouseenter = () => {
+                        hideBtn.title = unhideLabel;
+                    };
+                    hideBtn.onmouseleave = () => {
+                        hideBtn.title = hiddenLabel;
+                    };
+                    hideBtn.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        JE.hiddenContent.unhideItem(unhideKey);
+                        setHideState();
+                    };
+                }
+
+                /**
+                 * Switches the hide button to the default "hide" state with confirm-and-hide-on-click behaviour.
+                 */
+                function setHideState() {
+                    hideBtn.className = 'je-hide-btn';
+                    hideBtn.title = hideLabel;
+                    renderHideIcon('visibility');
+                    hideBtn.onmouseenter = null;
+                    hideBtn.onmouseleave = null;
+                    hideBtn.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        JE.hiddenContent.confirmAndHide({
+                            itemId: jellyfinMediaId || '',
+                            name: titleText,
+                            type: item.mediaType === 'tv' ? 'Series' : 'Movie',
+                            tmdbId: item.id,
+                            posterPath: item.posterPath || ''
+                        }, () => {
+                            card.style.display = 'none';
+                        });
+                    };
+                }
+
+                if (JE.hiddenContent.isHiddenByTmdbId(item.id)) {
+                    setHiddenState();
+                } else {
+                    setHideState();
+                }
+                cardBox.style.position = 'relative';
+                cardBox.appendChild(hideBtn);
+            }
+        }
+
         return card;
     }
 
