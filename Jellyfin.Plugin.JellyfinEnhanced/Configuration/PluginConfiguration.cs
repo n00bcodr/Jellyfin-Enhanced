@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DefaultSubtitleSize = 2;
             DefaultSubtitleFont = 0;
             DisableCustomSubtitleStyles = false;
+            DefaultLanguage = string.Empty;
             Shortcuts = new List<Shortcut>
             {
                 new Shortcut { Name = "OpenSearch", Key = "/", Label = "Open Search", Category = "Global" },
@@ -243,6 +244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
+        public string DefaultLanguage { get; set; }
 
         // Jellyseerr Search Settings
         public bool JellyseerrEnabled { get; set; }

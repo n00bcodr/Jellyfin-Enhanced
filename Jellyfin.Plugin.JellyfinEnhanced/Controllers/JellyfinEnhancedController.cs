@@ -1366,6 +1366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DefaultSubtitleSize,
                 config.DefaultSubtitleFont,
                 config.DisableCustomSubtitleStyles,
+                config.DefaultLanguage,
                 // Overlay positions
                 config.QualityTagsPosition,
                 config.GenreTagsPosition,
@@ -1630,6 +1631,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
+                        DisplayLanguage = defaultConfig.DefaultLanguage,
                         CalendarDisplayMode = "list",
                         CalendarDefaultViewMode = "agenda",
                         LastOpenedTab = "shortcuts"
@@ -1901,6 +1903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
+                DisplayLanguage = defaultConfig.DefaultLanguage,
                 CalendarDisplayMode = "list",
                 CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"

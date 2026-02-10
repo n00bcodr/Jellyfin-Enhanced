@@ -93,6 +93,12 @@
                                             <option value="4">Roboto</option>
                                         </select>
                                     </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="DefaultLanguage">Default UI Language</label>
+                                        <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
+                                            <option value="">System Default</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -1958,6 +1964,7 @@
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
+                document.querySelector('#DefaultLanguage').value = config.DefaultLanguage || '';
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
                 document.querySelector('#showLetterboxdLinkAsText').checked = config.ShowLetterboxdLinkAsText;
                 const metadataIconsChk = document.querySelector('#metadataIconsEnabled');
@@ -2138,6 +2145,7 @@
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
+            config.DefaultLanguage = document.querySelector('#DefaultLanguage').value || '';
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
             config.ShowLetterboxdLinkAsText = document.querySelector('#showLetterboxdLinkAsText').checked;
             config.MetadataIconsEnabled = document.querySelector('#metadataIconsEnabled').checked;
@@ -2448,6 +2456,68 @@
         }
 
         setupBrandingUploads();
+
+        // Populate language options dynamically
+        (async () => {
+            const defaultLanguageSelect = document.getElementById('DefaultLanguage');
+            if (!defaultLanguageSelect) return;
+
+            const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
+            const CUSTOM_LANGUAGES = {
+                'pr': { Name: 'Pirate', TwoLetterISOLanguageName: 'pr' }
+            };
+
+            let supportedLanguages = [];
+
+            try {
+                // Fetch cultures from Jellyfin API
+                const cultures = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Localization/Cultures'),
+                    dataType: 'json'
+                });
+
+                // Check which languages have translation files available
+                const checkPromises = cultures.map(async (culture) => {
+                    const langCode = culture.TwoLetterISOLanguageName;
+                    try {
+                        const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                        if (response.ok) {
+                            supportedLanguages.push(culture);
+                        }
+                    } catch (err) {
+                        // Translation file doesn't exist
+                    }
+                });
+
+                await Promise.all(checkPromises);
+
+                // Add custom languages that have translation files
+                for (const langCode in CUSTOM_LANGUAGES) {
+                    try {
+                        const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                        if (response.ok) {
+                            supportedLanguages.push(CUSTOM_LANGUAGES[langCode]);
+                        }
+                    } catch (err) {
+                        // Translation file doesn't exist
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch available languages:', err);
+            }
+
+            // Sort by name
+            supportedLanguages.sort((a, b) => a.Name.localeCompare(b.Name));
+
+            // Add language options
+            supportedLanguages.forEach(culture => {
+                const option = document.createElement('option');
+                option.value = culture.TwoLetterISOLanguageName;
+                option.textContent = culture.Name;
+                defaultLanguageSelect.appendChild(option);
+            });
+        })();
 
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);
