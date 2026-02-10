@@ -314,8 +314,8 @@ function findUnusedKeys() {
  * Create a new translation file template
  */
 function createTranslationTemplate(lang) {
-    if (!lang || lang.length !== 2 || !/^[a-z]{2}$/.test(lang)) {
-        logError('Language code must be a 2-letter ISO 639-1 code (e.g., es, fr, de)');
+    if (!lang || !/^[a-z]{2}(-[A-Z]{2})?$/.test(lang)) {
+        logError('Language code must be ISO 639-1 (e.g., es, fr, de) or with region (e.g., zh-HK, pt-BR)');
         return;
     }
 
@@ -429,8 +429,10 @@ ${colors.cyan}Commands:${colors.reset}
 
   ${colors.green}create <lang>${colors.reset}
       Create a new translation file template for the specified language
+      Language can be 2-letter code (pl, es) or region-specific (zh-HK, pt-BR)
       Example:
         node scripts/validate-translations.js create pl
+        node scripts/validate-translations.js create zh-HK
 
   ${colors.green}stats${colors.reset}
       Show translation completion statistics for all languages
@@ -452,6 +454,9 @@ ${colors.cyan}Examples:${colors.reset}
 
   # Create new Polish translation
   node scripts/validate-translations.js create pl
+
+  # Create new Traditional Chinese (Hong Kong) translation
+  node scripts/validate-translations.js create zh-HK
 
   # Show statistics
   node scripts/validate-translations.js stats

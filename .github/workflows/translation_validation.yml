@@ -54,9 +54,9 @@ jobs:
             filename=$(basename "$file")
             echo "Checking filename: $filename"
 
-            # Check if filename is a two-letter code followed by .json
-            if ! [[ "$filename" =~ ^[a-z]{2}\.json$ ]]; then
-              echo "::error file=$file::Invalid filename. Filename must be a two-letter ISO 639-1 language code (e.g., es.json, pl.json)."
+            # Check if filename is a two-letter code or region-specific code (e.g., en.json, zh-HK.json)
+            if ! [[ "$filename" =~ ^[a-z]{2}(-[A-Z]{2})?\.json$ ]]; then
+              echo "::error file=$file::Invalid filename. Filename must be ISO 639-1 language code, optionally with ISO 3166-1 region (e.g., es.json, zh-HK.json, pt-BR.json)."
               exit 1
             fi
           done
