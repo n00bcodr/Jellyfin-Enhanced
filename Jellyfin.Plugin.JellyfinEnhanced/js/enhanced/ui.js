@@ -1536,8 +1536,11 @@
                     // Check which languages have translation files available on GitHub
                     const checkPromises = cultures.map(async (culture) => {
                         const langCode = culture.TwoLetterISOLanguageName;
+                        const normalizedLangCode = langCode.includes('-')
+                            ? `${langCode.split('-')[0]}-${langCode.split('-')[1].toUpperCase()}`
+                            : langCode;
                         try {
-                            const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                            const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLangCode}.json`, { method: 'HEAD' });
                             if (response.ok) {
                                 supportedJELanguages.push(culture);
                                 console.log('🪼 Jellyfin Enhanced: Found translation for:', culture.Name, '('+langCode+')');
@@ -1551,8 +1554,11 @@
 
                     // Add custom languages that have translation files
                     for (const langCode in CUSTOM_LANGUAGES) {
+                        const normalizedLangCode = langCode.includes('-')
+                            ? `${langCode.split('-')[0]}-${langCode.split('-')[1].toUpperCase()}`
+                            : langCode;
                         try {
-                            const response = await fetch(`${GITHUB_RAW_BASE}/${langCode}.json`, { method: 'HEAD' });
+                            const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLangCode}.json`, { method: 'HEAD' });
                             if (response.ok) {
                                 supportedJELanguages.push(CUSTOM_LANGUAGES[langCode]);
                                 console.log('🪼 Jellyfin Enhanced: Found translation for:', CUSTOM_LANGUAGES[langCode].Name, '('+langCode+')');
@@ -1582,16 +1588,19 @@
                     const langCode = culture.TwoLetterISOLanguageName;
                     const option = document.createElement('option');
                     option.value = langCode;
-                    option.textContent = culture.Name;
+                    option.textContent = culture.DisplayName || culture.Name;
                     option.style.background = 'rgba(30,30,30,1)';
                     option.style.color = '#fff';
                     displayLanguageSelect.appendChild(option);
                 });
 
-                // Normalize saved language code (e.g., en-GB -> en)
+                // Normalize saved language code with region support (e.g., zh-hk) when available
                 let normalizedLanguage = '';
                 if (savedLanguage) {
-                    normalizedLanguage = savedLanguage.split('-')[0].toLowerCase();
+                    const savedLower = savedLanguage.toLowerCase();
+                    const hasExactOption = Array.from(displayLanguageSelect.options)
+                        .some(option => option.value === savedLower);
+                    normalizedLanguage = hasExactOption ? savedLower : savedLower.split('-')[0];
                 }
 
                 // Set the saved language after options are added
@@ -1605,18 +1614,30 @@
             displayLanguageSelect.addEventListener('change', async (e) => {
                 const newLang = e.target.value;
 
+                const normalizeLangCode = (code) => {
+                    if (!code) return code;
+                    const parts = code.split('-');
+                    if (parts.length === 1) return parts[0].toLowerCase();
+                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+                    return code;
+                };
+
                 // Map language codes to full culture codes for localStorage
                 let fullCultureCode = newLang;
                 if (newLang === 'en') {
                     fullCultureCode = 'en-GB';
                 }
+                fullCultureCode = normalizeLangCode(fullCultureCode);
 
                 // Check if translation file exists
                 let translationExists = true;
                 if (newLang) {
                     try {
                         const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
-                        const response = await fetch(`${GITHUB_RAW_BASE}/${newLang}.json`, { method: 'HEAD' });
+                        const normalizedLang = newLang.includes('-')
+                            ? `${newLang.split('-')[0]}-${newLang.split('-')[1].toUpperCase()}`
+                            : newLang;
+                        const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLang}.json`, { method: 'HEAD' });
                         translationExists = response.ok;
                     } catch (err) {
                         // Assume it exists if we can't check (offline mode)

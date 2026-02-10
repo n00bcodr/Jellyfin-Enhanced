@@ -155,188 +155,34 @@
     }
 
     /**
+     * Loads the translation module and exposes JE.loadTranslations.
+     * @returns {Promise<void>}
+     */
+    async function loadTranslationsModule() {
+        if (typeof JE.loadTranslations === 'function') return;
+        await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = ApiClient.getUrl(`/JellyfinEnhanced/js/enhanced/translations.js?v=${Date.now()}`);
+            script.onload = () => resolve();
+            script.onerror = (e) => {
+                console.error('🪼 Jellyfin Enhanced: Failed to load translations module', e);
+                resolve();
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    /**
      * Loads the appropriate language file based on the user's settings.
      * Attempts to fetch from GitHub first (with caching), falls back to bundled translations.
      * @returns {Promise<object>} A promise that resolves to the translations object.
      */
     async function loadTranslations() {
-        const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
-        const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-
-        try {
-            // Get plugin version first
-            let pluginVersion = window.JellyfinEnhanced?.pluginVersion;
-            if (!pluginVersion || pluginVersion === 'unknown') {
-                // Fetch version if not loaded yet
-                try {
-                    const versionResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/version'));
-                    if (versionResponse.ok) {
-                        pluginVersion = await versionResponse.text();
-                        if (window.JellyfinEnhanced) {
-                            window.JellyfinEnhanced.pluginVersion = pluginVersion;
-                        }
-                    }
-                } catch (e) {
-                    console.warn('🪼 Jellyfin Enhanced: Failed to fetch plugin version', e);
-                    pluginVersion = 'unknown';
-                }
-            }
-
-            // Wait briefly for ApiClient user to potentially become available
-            let user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
-            if (user instanceof Promise) {
-                user = await user;
-            }
-
-            const userId = user?.Id;
-            let lang = 'en'; // Default to English
-
-            if (userId) {
-                const storageKey = `${userId}-language`;
-                const storedLang = localStorage.getItem(storageKey);
-                if (storedLang) {
-                    lang = storedLang.split('-')[0]; // Use base language code
-                }
-            }
-
-            // Clean up old translation caches from previous versions
-            try {
-                for (let i = localStorage.length - 1; i >= 0; i--) {
-                    const key = localStorage.key(i);
-                    if (key && (key.startsWith('JE_translation_') || key.startsWith('JE_translation_ts_'))) {
-                        // Remove if it doesn't match current version
-                        if (!key.includes(`_${pluginVersion}`)) {
-                            localStorage.removeItem(key);
-                            console.log(`🪼 Jellyfin Enhanced: Removed old translation cache: ${key}`);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Failed to clean up old translation caches', e);
-            }
-
-            // Check if we have a cached version
-            const cacheKey = `JE_translation_${lang}_${pluginVersion}`;
-            const timestampKey = `JE_translation_ts_${lang}_${pluginVersion}`;
-            const cachedTranslations = localStorage.getItem(cacheKey);
-            const cachedTimestamp = localStorage.getItem(timestampKey);
-
-            if (cachedTranslations && cachedTimestamp) {
-                const age = Date.now() - parseInt(cachedTimestamp, 10);
-                if (age < CACHE_DURATION) {
-                    console.log(`🪼 Jellyfin Enhanced: Using cached translations for ${lang} (age: ${Math.round(age / 1000 / 60)} minutes, version: ${pluginVersion})`);
-                    try {
-                        return JSON.parse(cachedTranslations);
-                    } catch (e) {
-                        console.warn('🪼 Jellyfin Enhanced: Failed to parse cached translations, will fetch fresh', e);
-                    }
-                }
-            }
-
-            // Try fetching from bundled (local) first, then GitHub
-            console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${lang}...`);
-            try {
-                const bundledResponse = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
-                if (bundledResponse.ok) {
-                    const translations = await bundledResponse.json();
-                    // Cache the bundled version
-                    try {
-                        localStorage.setItem(cacheKey, JSON.stringify(translations));
-                        localStorage.setItem(timestampKey, Date.now().toString());
-                        console.log(`🪼 Jellyfin Enhanced: Successfully loaded and cached bundled translations for ${lang} (version: ${pluginVersion})`);
-                    } catch (e) { } // do nothing
-                    return translations;
-                }
-            } catch (bundledError) {
-                console.warn(`🪼 Jellyfin Enhanced: Bundled translations failed, falling back to GitHub:`, bundledError.message);
-            }
-
-            // Fallback to GitHub if bundled fails
-            try {
-                console.log(`🪼 Jellyfin Enhanced: Fetching translations for ${lang} from GitHub...`);
-                const githubResponse = await fetch(`${GITHUB_RAW_BASE}/${lang}.json`, {
-                    method: 'GET',
-                    cache: 'no-cache', // We manage our own cache
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (githubResponse.ok) {
-                    const translations = await githubResponse.json();
-
-                    // Cache the successful fetch
-                    try {
-                        localStorage.setItem(cacheKey, JSON.stringify(translations));
-                        localStorage.setItem(timestampKey, Date.now().toString());
-                        console.log(`🪼 Jellyfin Enhanced: Successfully fetched and cached translations for ${lang} from GitHub (version: ${pluginVersion})`);
-                    } catch (storageError) {
-                        console.warn('🪼 Jellyfin Enhanced: Failed to cache translations (localStorage full?)', storageError);
-                    }
-
-                    return translations;
-                }
-
-                // If GitHub fetch failed with 404, might be a language that doesn't exist
-                if (githubResponse.status === 404 && lang !== 'en') {
-                    console.warn(`🪼 Jellyfin Enhanced: Language ${lang} not found on GitHub, falling back to English`);
-                    // Recursively try English from GitHub
-                    const englishResponse = await fetch(`${GITHUB_RAW_BASE}/en.json`, {
-                        method: 'GET',
-                        cache: 'no-cache',
-                        headers: { 'Accept': 'application/json' }
-                    });
-
-                    if (englishResponse.ok) {
-                        const translations = await englishResponse.json();
-                        try {
-                            const enCacheKey = `JE_translation_en_${pluginVersion}`;
-                            const enTimestampKey = `JE_translation_ts_en_${pluginVersion}`;
-                            localStorage.setItem(enCacheKey, JSON.stringify(translations));
-                            localStorage.setItem(enTimestampKey, Date.now().toString());
-                        } catch (e) { /* ignore */ }
-                        return translations;
-                    }
-                }
-
-                // If rate limited (403) or server error (5xx), throw to trigger bundled fallback
-                if (githubResponse.status === 403) {
-                    console.warn('🪼 Jellyfin Enhanced: GitHub rate limit detected, using bundled fallback');
-                } else if (githubResponse.status >= 500) {
-                    console.warn(`🪼 Jellyfin Enhanced: GitHub server error (${githubResponse.status}), using bundled fallback`);
-                }
-
-                throw new Error(`GitHub fetch failed with status ${githubResponse.status}`);
-            } catch (githubError) {
-                console.warn('🪼 Jellyfin Enhanced: GitHub fetch failed, falling back to bundled translations:', githubError.message);
-            }
-
-            // Fallback to bundled translations served by the plugin
-            console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${lang}...`);
-            let response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${lang}.json`));
-
-            if (response.ok) {
-                const translations = await response.json();
-                // Cache the bundled version too
-                try {
-                    localStorage.setItem(cacheKey, JSON.stringify(translations));
-                    localStorage.setItem(timestampKey, Date.now().toString());
-                } catch (e) { /* ignore */ }
-                return translations;
-            } else {
-                // Last resort: English bundled
-                console.warn(`🪼 Jellyfin Enhanced: Bundled ${lang} not found, falling back to bundled English`);
-                response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
-                if (response.ok) {
-                    return await response.json();
-                } else {
-                    throw new Error("Failed to load English fallback translations");
-                }
-            }
-        } catch (error) {
-            console.error('🪼 Jellyfin Enhanced: Failed to load translations:', error);
-            return {}; // Return empty object on catastrophic failure
+        if (typeof JE.loadTranslations === 'function') {
+            return JE.loadTranslations();
         }
+        console.warn('🪼 Jellyfin Enhanced: Translations module not loaded, falling back to empty translations');
+        return {};
     }
 
      /**
@@ -512,6 +358,7 @@
 
         try {
             // Stage 1: Load base configs and translations
+            await loadTranslationsModule();
             const [[config, version], translations] = await Promise.all([
                 loadPluginData(),
                 loadTranslations() // Load translations first
