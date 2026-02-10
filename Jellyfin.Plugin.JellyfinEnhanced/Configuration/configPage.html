@@ -335,6 +335,26 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Hidden Content</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Hidden Content</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
+                        </div>
+                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                            <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">visibility_off</i>
+                                <div>
+                                    <strong>Hidden Content Page</strong> adds a sidebar link that opens a dedicated page for viewing and managing all hidden items. When disabled, hidden content can still be managed via the settings panel overlay.
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
 
                 <div id="elsewhere" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
@@ -498,13 +518,6 @@
                                         </label>
                                     </div>
                                     <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured.</b></div>
-                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                        <label>
-                                            <input id="jellyseerrUseMoreInfoModal" is="emby-checkbox" type="checkbox"/>
-                                            <span>Open result titles and posters in "More Info" modal</span>
-                                        </label>
-                                    </div>
-                                    <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title or poster opens an in-app More Info modal.<br>When disabled, clicking will open the item in Jellyseerr.</div>
                                 </div>
                             </details>
 
@@ -532,6 +545,13 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Other Features</h3></legend>
                         <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrUseMoreInfoModal" is="emby-checkbox" type="checkbox"/>
+                                    <span>Open result titles and posters in "More Info" modal</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title or poster opens an in-app More Info modal.<br>When disabled, clicking will open the item in Jellyseerr.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrShowReportButton" is="emby-checkbox" type="checkbox"/>
@@ -1084,26 +1104,6 @@
                                     <strong>Calendar Page</strong> adds a Calendar Button in sidebar with a dedicated view that displays upcoming releases from Sonarr and Radarr in a calendar view.
                                     <br><br>
                                     <strong>Requirements:</strong> Configure Sonarr and/or Radarr URLs and API keys.
-                                </div>
-                            </div>
-                        </div>
-                    </fieldset>
-                    <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Hidden Content</h3></legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Hidden Content</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
-                        </div>
-                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
-                            <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">visibility_off</i>
-                                <div>
-                                    <strong>Hidden Content Page</strong> adds a sidebar link that opens a dedicated page for viewing and managing all hidden items. When disabled, hidden content can still be managed via the settings panel overlay.
                                 </div>
                             </div>
                         </div>
