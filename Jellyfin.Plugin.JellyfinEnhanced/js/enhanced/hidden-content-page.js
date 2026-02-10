@@ -373,12 +373,6 @@
       color: rgba(180, 210, 255, 0.95);
     }
 
-    /* Person card style — disabled for now, kept for future use */
-    .je-hidden-person-card .je-hidden-item-poster {
-      border-radius: 50%;
-      aspect-ratio: 1;
-    }
-
     @media (max-width: 768px) {
       .je-hidden-content-page {
         padding: 0.5em;
@@ -1050,9 +1044,6 @@
     const scopedMovies = [];
 
     for (const item of filtered) {
-      // Actor hiding disabled for now — skip people
-      if (item.type === 'Person') continue;
-
       if (item.type === 'Series' || item.type === 'Episode' || item.type === 'Season') {
         seriesRelated.push(item);
       } else if (item.hideScope && item.hideScope !== 'global') {

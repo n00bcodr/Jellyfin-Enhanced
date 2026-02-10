@@ -17,7 +17,6 @@
 
     const hiddenIdSet = new Set();
     const hiddenTmdbIdSet = new Set();
-    const hiddenPersonIdSet = new Set();
     const parentSeriesCache = new Map();
     const parentSeriesRequestMap = new Map();
     const sectionSurfaceCache = new WeakMap();
@@ -60,17 +59,6 @@
     // ============================================================
 
     /**
-     * Escapes a string for safe HTML text-node insertion.
-     * @param {string} str Raw string.
-     * @returns {string} HTML-escaped string.
-     */
-    function escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
-    /**
      * Returns the in-memory hidden-content data object, lazily initialised
      * from `JE.userConfig.hiddenContent`.
      * @returns {{ items: Object, settings: Object }}
@@ -99,7 +87,6 @@
             filterRequests: true,
             filterNextUp: true,
             filterContinueWatching: true,
-            filterCastCrew: true,
             showHideConfirmation: true,
             showHideButtons: true,
             showButtonJellyseerr: true,
@@ -117,16 +104,11 @@
     function rebuildSets() {
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
-        hiddenPersonIdSet.clear();
         const data = getHiddenData();
         const items = data.items || {};
         for (const key of Object.keys(items)) {
             const item = items[key];
-            if (item.type === 'Person') {
-                if (item.itemId) hiddenPersonIdSet.add(item.itemId);
-            } else {
-                if (item.itemId) hiddenIdSet.add(item.itemId);
-            }
+            if (item.itemId) hiddenIdSet.add(item.itemId);
             if (item.tmdbId) hiddenTmdbIdSet.add(String(item.tmdbId));
         }
     }
@@ -148,7 +130,7 @@
      * Checks whether filtering is enabled for a given surface.
      * @param {string} surface One of 'library', 'details', 'discovery', 'search',
      *   'upcoming', 'calendar', 'recommendations', 'requests', 'nextup',
-     *   'continuewatching', 'castcrew'.
+     *   'continuewatching'.
      * @returns {boolean} `true` if hidden items should be filtered on this surface.
      */
     function shouldFilterSurface(surface) {
@@ -165,7 +147,6 @@
             case 'requests': return settings.filterRequests;
             case 'nextup': return settings.filterNextUp;
             case 'continuewatching': return settings.filterContinueWatching;
-            case 'castcrew': return settings.filterCastCrew;
             default: return true;
         }
     }
@@ -1060,7 +1041,7 @@
         header.querySelector('.je-hidden-management-close').addEventListener('click', closeOverlay);
         panel.appendChild(header);
 
-        const toolbar = createManagementToolbar(items);
+        const toolbar = createManagementToolbar();
         panel.appendChild(toolbar.element);
 
         const gridContainer = document.createElement('div');
@@ -1215,35 +1196,6 @@
             if (scope === 'homesections' && (surface === 'nextup' || surface === 'continuewatching')) return true;
         }
         return false;
-    }
-
-    /**
-     * Checks if a person (actor) is hidden.
-     * @param {string} personId The person's Jellyfin ID.
-     * @returns {boolean} `true` if the person is hidden.
-     */
-    function isPersonHidden(personId) {
-        if (!personId) return false;
-        const settings = getSettings();
-        if (!settings.enabled) return false;
-        return hiddenPersonIdSet.has(personId);
-    }
-
-    /**
-     * Filters an array of people (cast/crew), removing hidden persons.
-     * Returns the original array unchanged if filtering is disabled or
-     * there are no hidden persons.
-     * @param {Array} people Array of person objects with Id property.
-     * @returns {Array} Filtered array with hidden persons removed.
-     */
-    function filterActors(people) {
-        if (!shouldFilterSurface('castcrew')) return people;
-        if (!Array.isArray(people)) return people;
-        if (hiddenPersonIdSet.size === 0) return people;
-        return people.filter((person) => {
-            const personId = person.Id || person.id;
-            return !hiddenPersonIdSet.has(personId);
-        });
     }
 
     // ============================================================
@@ -2068,7 +2020,6 @@
         JE.hiddenContent = {
             isHidden,
             isHiddenByTmdbId,
-            isPersonHidden,
             isHiddenOnSurface,
             hideItem,
             unhideItem,
@@ -2080,7 +2031,6 @@
             filterJellyseerrResults,
             filterCalendarEvents,
             filterRequestItems,
-            filterActors,
             filterNativeCards,
             showUndoToast,
             showManagementPanel,

@@ -718,7 +718,7 @@
     const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie'];
 
     // Types that support hiding
-    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series', 'Episode', 'Season', 'Person'];
+    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series', 'Episode', 'Season'];
 
     /**
      * Adds a "Hide" button to the item detail page action buttons area.
@@ -732,8 +732,6 @@
         const settings = JE.hiddenContent.getSettings();
         if (!settings.enabled || !settings.showHideButtons || settings.showButtonDetails === false) return;
         if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
-        // Person type is handled separately in cast section, not as a detail button
-        if (lastDetailsItemType === 'Person') return;
 
         // Don't add duplicate
         if (visiblePage.querySelector('.je-detail-hide-btn')) return;
@@ -825,7 +823,6 @@
 
                 // Fetch full item data for TMDb ID and episode/series metadata
                 let tmdbId = '';
-                let posterPath = '';
                 let seriesId = '';
                 let seriesName = '';
                 let seasonNumber = null;
@@ -851,7 +848,6 @@
                     name: itemName,
                     type: lastDetailsItemType,
                     tmdbId,
-                    posterPath,
                     seriesId,
                     seriesName,
                     seasonNumber,
@@ -913,66 +909,6 @@
         }
     }
 
-    /**
-     * Adds hide buttons to actor cards in the cast/crew section of detail pages.
-     * Filters already-hidden actors from the display.
-     * @param {HTMLElement} visiblePage The visible detail page element.
-     */
-    function addActorHideButtons(visiblePage) {
-        // Actor hiding disabled for now — future feature
-        return;
-        if (!JE.hiddenContent) return;
-        const settings = JE.hiddenContent.getSettings();
-        if (!settings.enabled || !settings.showHideButtons) return;
-
-        // Find cast/crew section - Jellyfin uses .castScrollSlider or .detailSection with People
-        const castContainers = visiblePage.querySelectorAll('.castScrollSlider .card, .detailSection .card.personCard');
-        if (castContainers.length === 0) return;
-
-        for (const card of castContainers) {
-            // Skip already-processed cards
-            if (card.querySelector('.je-actor-hide-btn')) continue;
-
-            const personId = card.dataset?.id || card.dataset?.itemid;
-            if (!personId) continue;
-
-            const cardBox = card.querySelector('.cardBox') || card;
-
-            // If person is hidden and filterCastCrew is on, hide the card
-            if (settings.filterCastCrew && JE.hiddenContent.isPersonHidden(personId)) {
-                card.style.display = 'none';
-                continue;
-            }
-
-            // Add a small hide button
-            cardBox.style.position = 'relative';
-            const hideBtn = document.createElement('button');
-            hideBtn.className = 'je-hide-btn je-actor-hide-btn';
-            hideBtn.title = JE.t('hidden_content_hide_actor');
-
-            const icon = document.createElement('span');
-            icon.className = 'material-icons';
-            icon.setAttribute('aria-hidden', 'true');
-            icon.textContent = 'person_off';
-            icon.style.fontSize = '14px';
-            hideBtn.appendChild(icon);
-
-            hideBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const actorName = card.querySelector('.cardText')?.textContent?.trim() || 'Unknown';
-                JE.hiddenContent.hideItem({
-                    itemId: personId,
-                    name: actorName,
-                    type: 'Person'
-                });
-                card.style.display = 'none';
-            });
-
-            cardBox.appendChild(hideBtn);
-        }
-    }
-
     const handleItemDetails = JE.helpers.debounce(() => {
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
         if (!visiblePage) return;
@@ -1024,7 +960,6 @@
             // Add hide content button on detail pages
             if (JE.hiddenContent) {
                 addHideContentButton(itemId, visiblePage);
-                addActorHideButtons(visiblePage);
             }
         } catch (e) {
         console.warn('🪼 Jellyfin Enhanced: Error in item details handler', e);

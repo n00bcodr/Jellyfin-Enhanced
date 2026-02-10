@@ -131,7 +131,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool FilterRequests { get; set; } = true;
         public bool FilterNextUp { get; set; } = true;
         public bool FilterContinueWatching { get; set; } = true;
-        public bool FilterCastCrew { get; set; } = true;
         public bool ShowHideConfirmation { get; set; } = true;
         public bool ShowButtonJellyseerr { get; set; } = true;
         public bool ShowButtonLibrary { get; set; } = false;

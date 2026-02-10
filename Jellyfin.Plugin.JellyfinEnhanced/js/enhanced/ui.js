@@ -1356,8 +1356,7 @@
                 ['hiddenFilterRecommendations', 'filterRecommendations'],
                 ['hiddenFilterRequests', 'filterRequests'],
                 ['hiddenFilterNextUp', 'filterNextUp'],
-                ['hiddenFilterContinueWatching', 'filterContinueWatching'],
-                ['hiddenFilterCastCrew', 'filterCastCrew']
+                ['hiddenFilterContinueWatching', 'filterContinueWatching']
             ];
             const masterToggle = document.getElementById('hiddenContentEnabledToggle');
             if (masterToggle) {
