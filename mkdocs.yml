@@ -51,5 +51,10 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Features: features.md
+  - Enhanced: enhanced.md
+  - Elsewhere: elsewhere.md
+  - Jellyseerr: jellyseerr.md
+  - ARR: arr.md
+  - Others: others.md
   - FAQ: faq.md
+  - Projects: projects.md
