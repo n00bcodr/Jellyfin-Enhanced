@@ -181,9 +181,13 @@
                                         <input id="tagsCacheTtlDays" is="emby-input" type="number" min="1" max="365" value="30"/>
                                         <div class="fieldDescription">How long to cache the above tags data (1-365 days, default: 30)</div>
                                     </div>
-                                    <div class="checkboxContainer" style="margin-top: 1em;">
-                                        <label><input id="showRatingInPlayer" is="emby-checkbox" type="checkbox"/><span>Show Rating in Video Player</span></label>
-                                        <div class="fieldDescription">Display TMDB and Rotten Tomatoes ratings before "Ends at" time in video player</div>
+                                     <div class="checkboxContainer" style="margin-top: 1em;">
+                                        <label style="line-height: 1.2em; align-self: flex-start;"><input id="showRatingInPlayer" is="emby-checkbox" type="checkbox"/>
+                                            <span>
+                                                Show Rating in Video Player
+                                            <div>Display TMDB and Rotten Tomatoes ratings before "Ends at" time in video player</div>
+                                            </span>
+                                        </label>
                                     </div>
                                     <div style="margin-top: 1em;">
                                         <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
@@ -192,7 +196,7 @@
                                         <div class="fieldDescription">Forces all clients to clear Language, Quality, Genre and Rating tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
                                     </div>
                                 </fieldset>
-                                <div class="checkboxContainer" style="margin-top: 1em;margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-top: 2em;margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
                             </div>
                         </details>
                             <div style="padding-top: 1em;">
