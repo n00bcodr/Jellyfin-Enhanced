@@ -164,6 +164,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Threshold met - prepare to request next season
             var nextSeasonNumber = currentSeasonNumber + 1;
 
+            // Get episode count for next season to verify it has started
+            var nextSeasonEpisodeCount = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, nextSeasonNumber);
+
+            if (nextSeasonEpisodeCount == null || nextSeasonEpisodeCount <= 0)
+            {
+                _logger.Info($"[Auto-Season-Request] Season {nextSeasonNumber} has not started yet (0 episodes) - not requesting");
+                return;
+            }
+
             // Check Jellyseerr for season availability/status - always query to get latest status
             var jellyseerrStatus = await GetSeasonStatusFromJellyseerr(tmdbId, nextSeasonNumber);
 
@@ -233,6 +242,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             var root = doc.RootElement;
 
+                            // Log TMDB's reported number of seasons
+                            if (root.TryGetProperty("numberOfSeasons", out var totalSeasonsProp))
+                            {
+                                var totalSeasons = totalSeasonsProp.GetInt32();
+                                _logger.Info($"[Auto-Season-Request] TMDB reports {totalSeasons} total seasons for TMDB ID {tmdbId}");
+                            }
+
                             // Look for the season in the response
                             if (root.TryGetProperty("seasons", out var seasonsArray))
                             {
@@ -245,7 +261,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         if (season.TryGetProperty("episodeCount", out var episodeCountProp))
                                         {
                                             var episodeCount = episodeCountProp.GetInt32();
-                                            // _logger.Debug($"[Auto-Season-Request] TMDB reports {episodeCount} episodes in season {seasonNumber}");
+                                            _logger.Info($"[Auto-Season-Request] TMDB reports {episodeCount} episodes in season {seasonNumber}");
                                             return episodeCount;
                                         }
                                     }
@@ -254,7 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
 
                         // Season not found in response
-                        _logger.Debug($"[Auto-Season-Request] Season {seasonNumber} not found in TMDB data");
+                        _logger.Info($"[Auto-Season-Request] Season {seasonNumber} not found in TMDB data (season does not exist on TMDB)");
                         return null;
                     }
                     catch (Exception ex)
@@ -319,9 +335,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             if (root.TryGetProperty("numberOfSeasons", out var totalSeasonsProp))
                             {
                                 var totalSeasons = totalSeasonsProp.GetInt32();
+                                _logger.Info($"[Auto-Season-Request] Jellyseerr reports {totalSeasons} total seasons for TMDB ID {tmdbId}");
                                 if (seasonNumber > totalSeasons)
                                 {
-                                    _logger.Debug($"[Auto-Season-Request] Season {seasonNumber} does not exist - show only has {totalSeasons} season(s)");
+                                    _logger.Info($"[Auto-Season-Request] Season {seasonNumber} does not exist on TMDB - show only has {totalSeasons} season(s)");
                                     return null; // Season doesn't exist
                                 }
                             }
@@ -330,6 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             bool hasRequest = false;
                             if (root.TryGetProperty("requests", out var requestsArray))
                             {
+                                _logger.Info($"[Auto-Season-Request] Jellyseerr reports {requestsArray.GetArrayLength()} request(s) for TMDB ID {tmdbId}");
                                 foreach (var request in requestsArray.EnumerateArray())
                                 {
                                     // Check if this request contains the season we're looking for
@@ -341,13 +359,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                                 requestSeasonNum.GetInt32() == seasonNumber)
                                             {
                                                 hasRequest = true;
-                                                _logger.Debug($"[Auto-Season-Request] Found existing request for season {seasonNumber}");
+                                                _logger.Info($"[Auto-Season-Request] Found existing request for season {seasonNumber}");
                                                 break;
                                             }
                                         }
                                         if (hasRequest) break;
                                     }
                                 }
+                            }
+                            else
+                            {
+                                _logger.Info($"[Auto-Season-Request] Jellyseerr reports no requests for TMDB ID {tmdbId}");
                             }
 
                             // Look for the season in the response to check availability
@@ -365,12 +387,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         {
                                             var statusValue = statusProp.GetInt32();
                                             status.IsAvailable = statusValue == 5;
+                                            _logger.Info($"[Auto-Season-Request] Jellyseerr Season {seasonNumber} raw status code: {statusValue} (5 = available)");
                                         }
 
                                         // Set IsRequested based on whether we found a request for this season
                                         status.IsRequested = hasRequest;
 
-                                        _logger.Debug($"[Auto-Season-Request] Season {seasonNumber} status from Jellyseerr: Available={status.IsAvailable}, Requested={status.IsRequested}");
+                                        _logger.Info($"[Auto-Season-Request] Season {seasonNumber} final status from Jellyseerr: Available={status.IsAvailable}, Requested={status.IsRequested}");
                                         return status;
                                     }
                                 }
@@ -378,6 +401,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
 
                         // Season not found in Jellyseerr response - it doesn't exist
+                        _logger.Info($"[Auto-Season-Request] Season {seasonNumber} not found in Jellyseerr response");
                         return null;
                     }
                     catch (Exception ex)
