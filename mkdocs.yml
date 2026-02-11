@@ -28,10 +28,12 @@ theme:
   features:
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
     - navigation.sections
     - navigation.expand
     - navigation.top
     - navigation.footer
+    - navigation.indexes
     - toc.follow
     - toc.integrate
     - search.suggest

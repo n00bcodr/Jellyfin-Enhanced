@@ -116,12 +116,6 @@ sudo chown -R jellyfin:jellyfin /usr/lib/jellyfin/
 sudo chmod -R 755 /usr/lib/jellyfin/
 ```
 
-### Unraid
-
-1. Install file-transformation plugin first
-2. Then install Jellyfin Enhanced normally
-3. Restart the Jellyfin container
-
 ## Troubleshooting Installation
 
 ### Plugin Not Appearing After Installation
@@ -229,9 +223,8 @@ After installation, verify these work:
 
 - [ ] Plugin menu item appears in sidebar
 - [ ] Pressing `?` opens the settings panel
-- [ ] Keyboard shortcuts work (try `Space` to pause/play)
+- [ ] Keyboard shortcuts work
 - [ ] Tags appear on media posters (if enabled)
-- [ ] Pause screen shows when pausing video (if enabled)
 - [ ] No errors in browser console (F12)
 - [ ] No errors in server logs
 
