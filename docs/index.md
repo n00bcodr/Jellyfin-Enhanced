@@ -98,7 +98,7 @@ See [Installation Guide](installation.md) for detailed instructions.
 ## Support & Community
 
 - [GitHub Repository](https://github.com/n00bcodr/Jellyfin-Enhanced)
-- [Discord Community](https://discord.com/channels/1381737066366242896/1442128048873930762)
+- [Discord Community](https://discord.gg/HKA2QNYJ6)
 - [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 - [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 

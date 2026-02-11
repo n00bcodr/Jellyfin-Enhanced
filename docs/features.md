@@ -733,4 +733,4 @@ curl -X POST \
 - [Installation Guide](installation.md) - Setup instructions
 - [FAQ](faq.md) - Common questions
 - [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced) - Source code and issues
-- [Discord](https://discord.com/channels/1381737066366242896/1442128048873930762) - Community support
+- [Discord](https://discord.gg/HKA2QNYJ6) - Community support
