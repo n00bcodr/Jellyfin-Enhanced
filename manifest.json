@@ -6,7 +6,7 @@
     "overview": "Jellyfin Enhanced and Jellyfin Elsewhere for a better Jellyfin experience.",
     "owner": "n00bcodr",
     "category": "General",
-    "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/images/icon.png",
+    "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
         "changelog": "- Respect Plugin Pages Settings\n - Add *arr URL mapping support\n - Add markdown support to reviews\n - Refactor reviews page detection to use onViewPage hook\n - Leverage helpers for throttling, debouncing, and observers\n - Update quality tag documentation for codecs and features\n - Fix load order for dependencies\n - Rework Calendar UI ([#338](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/338))\n - Update funding.yml\n - Update funding.yml\n - Missed \"All Day\" Translation\n - Fix clicking on items not navigating to item in request custom tab\n - Remove debug logging for person tags\n - fix: Add custom tab flags and conditional init\n - Small css tweaks\n - Remove in-memory season request cache\n - Add ArrTags sync filter and UI\n - Update pr.json\n - Fix backdrop issue in custom tabs\n - Update README.md\n - Add plugin-pages support for Bookmarks\n - Fallback to series rating only if missing\n - Add configurable auto-refresh for Downloads page",
