@@ -179,44 +179,6 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 6. Restart server again
 7. Clear browser cache (Ctrl+F5)
 
-## Post-Installation Setup
-
-### Configure Plugin Settings
-
-1. Click **Jellyfin Enhanced** in the sidebar (or press `?`)
-2. Explore the different tabs:
-   - **Shortcuts** - Customize keyboard shortcuts
-   - **Settings** - Enable/disable features
-   - **Jellyseerr** - Configure Jellyseerr integration
-   - **About** - View plugin information
-
-### Enable Jellyseerr Integration (Optional)
-
-If you use Jellyseerr:
-
-1. Open plugin settings → **Jellyseerr** tab
-2. Check "Show Jellyseerr Results in Search"
-3. Enter your Jellyseerr URL(s) (one per line)
-4. Enter your Jellyseerr API Key
-5. Click "Test Connection" to verify
-6. Enable optional features like watchlist sync
-7. Click **Save**
-
-![Jellyseerr Settings](images/jellyseerr.png)
-
-### Customize Appearance
-
-1. Open plugin settings → **Settings** tab
-2. Enable/disable visual features:
-   - Quality Tags
-   - Genre Tags
-   - Language Tags
-   - Rating Tags
-   - People Tags
-3. Adjust tag positions and styles
-4. Configure pause screen options
-5. Set up custom branding (logos, banners)
-
 ## Verification Checklist
 
 After installation, verify these work:
@@ -227,13 +189,6 @@ After installation, verify these work:
 - [ ] Tags appear on media posters (if enabled)
 - [ ] No errors in browser console (F12)
 - [ ] No errors in server logs
-
-## Explore More
-
-- [Explore Features](features.md) - Learn about all available features
-- [Read FAQ](faq.md) - Common questions and answers
-- [Customize CSS](features.md#custom-styling) - Advanced styling options
-- [Join Discord](https://discord.gg/HKA2QNYJ6) - Get help from the community
 
 ## Getting Help
 
