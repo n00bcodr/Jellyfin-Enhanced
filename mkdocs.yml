@@ -87,7 +87,7 @@ nav:
     - Enhanced Settings: settings/enhanced.md
     - Elsewhere Settings: settings/elsewhere.md
     - Jellyseerr Settings: settings/jellyseerr.md
-    - "*arr settings": settings/arr.md
+    - "*arr Settings": settings/arr.md
     - Other Settings: settings/other-settings.md
   - Advanced Usage: 
     - Configurations: advanced-usage/configurations.md
