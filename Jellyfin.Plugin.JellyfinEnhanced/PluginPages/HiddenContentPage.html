@@ -1,0 +1,56 @@
+<div id="je-loading">Loading...</div>
+<div data-role="content">
+  <div class="content-primary je-hidden-content-page">
+    <div id="je-hidden-content-container"></div>
+  </div>
+</div>
+<div id="je-error" style="display:none">
+  Jellyfin Enhanced not ready.
+</div>
+<script>
+(function () {
+  const MAX_WAIT = 5000;
+  const INTERVAL = 50;
+  let waited = 0;
+
+  const loadingEl = document.getElementById("je-loading");
+  const errorEl = document.getElementById("je-error");
+  const preferencesPages = Array.from(document.querySelectorAll("#userPluginPreferencesPage"));
+  const preferencesPage = preferencesPages.find(p => p.offsetWidth > 0 && p.offsetHeight > 0);
+
+  document.querySelectorAll("#je-hidden-content-container").forEach(el => {
+    if (!preferencesPage || !preferencesPage.contains(el)) {
+      el.remove();
+    }
+  });
+
+  if (preferencesPage && !preferencesPage.querySelector("#je-hidden-content-container")) {
+    const newContainer = document.createElement("div");
+    newContainer.id = "je-hidden-content-container";
+    const target = document.querySelector(".je-hidden-content-page") || document.body;
+    target.appendChild(newContainer);
+  }
+
+  const JE = window.JellyfinEnhanced;
+
+  const timer = setInterval(() => {
+    if (JE && JE.hiddenContentPage) {
+      clearInterval(timer);
+
+      loadingEl.remove();
+      JE.hiddenContentPage.injectStyles?.();
+      JE.hiddenContentPage.renderPage?.();
+      console.log('🪼 Jellyfin Enhanced: Hidden Content Page Loaded.');
+      return;
+    }
+
+    waited += INTERVAL;
+    if (waited >= MAX_WAIT) {
+      clearInterval(timer);
+
+      loadingEl.style.display = "none";
+      errorEl.style.display = "block";
+    }
+  }, INTERVAL);
+})();
+</script>

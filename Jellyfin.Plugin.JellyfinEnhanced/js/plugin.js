@@ -469,6 +469,7 @@
                 'enhanced/playback.js',
                 'enhanced/hidden-content.js',
                 'enhanced/hidden-content-page.js',
+                'enhanced/hidden-content-custom-tab.js',
                 'enhanced/subtitles.js',
                 'enhanced/themer.js',
                 'enhanced/ui.js',

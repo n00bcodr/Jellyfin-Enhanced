@@ -6,6 +6,10 @@
   "use strict";
 
   const JE = window.JellyfinEnhanced;
+  const sidebar = document.querySelector('.mainDrawer-scrollContainer');
+  const pluginPagesExists = !!sidebar?.querySelector(
+    'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage"]'
+  );
 
   // ============================================================
   // State
@@ -425,6 +429,12 @@
     }
 
     injectStyles();
+
+    const usingPluginPages = pluginPagesExists && config.HiddenContentUsePluginPages;
+    if (usingPluginPages) {
+      console.log(`${logPrefix} Hidden content page is injected via Plugin Pages`);
+      return;
+    }
 
     injectNavigation();
     setupNavigationWatcher();
@@ -1251,6 +1261,10 @@
   function showPage() {
     if (state.pageVisible) return;
 
+    const config = JE.pluginConfig || {};
+    if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
+    if (config.HiddenContentUseCustomTabs) return;
+
     state.pageVisible = true;
 
     startLocationWatcher();
@@ -1374,12 +1388,31 @@
   }
 
   /**
+   * Render content for custom tabs (without page state management).
+   */
+  function renderForCustomTab() {
+    state._customTabMode = true;
+    injectStyles();
+    renderPage();
+  }
+
+  /**
    * Injects the "Hidden Content" navigation item into the sidebar.
    * Inserts after the Calendar nav item if present, otherwise appends at end.
    */
   function injectNavigation() {
     const config = JE.pluginConfig || {};
     if (!config.HiddenContentEnabled) return;
+    if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
+    if (config.HiddenContentUseCustomTabs) return;
+
+    const pluginPageItem = sidebar?.querySelector(
+      'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage"]'
+    );
+
+    if (pluginPageItem) {
+      pluginPageItem.style.setProperty('display', 'none', 'important');
+    }
 
     if (document.querySelector(".je-nav-hidden-content-item")) return;
 
@@ -1426,7 +1459,16 @@
    * Jellyfin rebuilds the sidebar.
    */
   function setupNavigationWatcher() {
+    const config = JE.pluginConfig || {};
+    if (!config.HiddenContentEnabled) return;
+    if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
+    if (config.HiddenContentUseCustomTabs) return;
+
     const observer = new MutationObserver(() => {
+      const currentConfig = JE.pluginConfig || {};
+      if (currentConfig.HiddenContentUseCustomTabs) return;
+      if (pluginPagesExists && currentConfig.HiddenContentUsePluginPages) return;
+
       if (!document.querySelector('.je-nav-hidden-content-item')) {
         const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
         if (jellyfinEnhancedSection) {
@@ -1451,6 +1493,8 @@
     showPage,
     hidePage,
     renderPage,
+    renderForCustomTab,
+    injectStyles,
   };
 
   JE.initializeHiddenContentPage = initialize;
