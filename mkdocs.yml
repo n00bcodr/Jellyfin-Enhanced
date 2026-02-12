@@ -92,7 +92,7 @@ nav:
   - Advanced Usage: 
     - Configurations: advanced-usage/configurations.md
     - Customization: advanced-usage/customization.md
-    - API Usage: advanced-usage/api.md
+    - API: advanced-usage/api.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
     - Support: faq-support/support.md
