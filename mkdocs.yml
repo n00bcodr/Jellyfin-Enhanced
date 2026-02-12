@@ -76,8 +76,8 @@ nav:
   - Home: index.md
   - JE Features: features.md
   - Installation: 
-    - Standard (recommended): standard.md
-    - 
+    - Standard (recommended): installation/standard.md
+    - Platform-specific: installation/platform-specific.md
   - Post-Installation: post_install.md
   - All Features:
     - Enhanced: enhanced.md
