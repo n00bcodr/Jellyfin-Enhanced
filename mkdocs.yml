@@ -71,16 +71,25 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+# main tabs/headers
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: installation.md
-    - Features Guide: features.md
-    - FAQ: faq.md
   - Features:
+    - Core Features: main.md
     - Enhanced: enhanced.md
     - Elsewhere: elsewhere.md
     - Jellyseerr: jellyseerr.md
     - ARR Integration: arr.md
     - Others: others.md
   - Other Projects: projects.md
+  - Installation: 
+    - Standard (recommended): installation/standard.md
+    - Platform-specific: installation/platform-specific.md
+  - Post-Installation: 
+    - Configurations: post-installation/main.md
+    - Customization: post-installation/customization.md
+    - API Usage: post-installation/api.md
+  - FAQ + Support: 
+    - FAQ: faq-support/faq.md
+    - Support: faq-support/support.md
+  - Other Projects: other-projects.md
