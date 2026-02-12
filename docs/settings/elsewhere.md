@@ -1,5 +1,6 @@
-!!! note
+!!! info "Prerequisites"
 
+    ## Prerequisites
     - TMDB API Key 
       - [Free from TMDB](https://www.themoviedb.org/settings/api)
     - Jellyfin Enhanced plugin installed
