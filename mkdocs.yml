@@ -81,14 +81,17 @@ nav:
     - Jellyseerr: jellyseerr.md
     - ARR Integration: arr.md
     - Others: others.md
-  - Other Projects: projects.md
   - Installation: 
     - Standard (recommended): installation/standard.md
     - Platform-specific: installation/platform-specific.md
-  - Post-Installation: 
-    - Configurations: post-installation/main.md
-    - Customization: post-installation/customization.md
-    - API Usage: post-installation/api.md
+  - Settings:
+    - Enhanced Settings: settings/enhanced.md
+    - Elsewhere Settings: settings/elsewhere.md
+    - Jellyseerr Settings: settings/jellyseerr.md
+  - Advanced Usage: 
+    - Configurations: advanced/main.md
+    - Customization: advanced/customization.md
+    - API Usage: advanced/api.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
     - Support: faq-support/support.md
