@@ -73,7 +73,7 @@ markdown_extensions:
 
 # main tabs/headers
 nav:
-  - Home: home.md
+  - Home: index.md
   - Features:
     - Enhanced: features/enhanced.md
     - Elsewhere: features/elsewhere.md
@@ -90,9 +90,9 @@ nav:
     - "*arr settings": settings/arr.md
     - Other Settings: settings/other-settings.md
   - Advanced Usage: 
-    - Configurations: advanced/configurations.md
-    - Customization: advanced/customization.md
-    - API Usage: advanced/api.md
+    - Configurations: advanced-usage/configurations.md
+    - Customization: advanced-usage/customization.md
+    - API Usage: advanced-usage/api.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
     - Support: faq-support/support.md
