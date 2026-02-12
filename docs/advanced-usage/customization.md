@@ -5,7 +5,7 @@ Customization options are available for many features
 <!--no title-->
 !!! success "Applying Custom CSS"
     
-    ### How to apply custom CSS
+    **How to apply custom CSS**
     1. Jellyfin: Go to `Dashboard` → `Branding`
     2. Paste CSS code into `Custom CSS Code`
     3. Click `Save`
