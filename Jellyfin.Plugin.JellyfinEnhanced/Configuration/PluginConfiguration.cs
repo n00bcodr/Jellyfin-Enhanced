@@ -174,6 +174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DownloadsUseCustomTabs = false;
             DownloadsPagePollingEnabled = true;
             DownloadsPollIntervalSeconds = 30;
+            DownloadsPageShowIssues = false;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
             CalendarPageEnabled = false;
@@ -333,6 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DownloadsUseCustomTabs { get; set; }
         public bool DownloadsPagePollingEnabled { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
+        public bool DownloadsPageShowIssues { get; set; }
 
         // Calendar Page Settings (Sonarr/Radarr Releases)
         public bool CalendarPageEnabled { get; set; }

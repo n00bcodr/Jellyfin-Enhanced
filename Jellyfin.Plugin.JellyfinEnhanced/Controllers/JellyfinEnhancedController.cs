@@ -1430,6 +1430,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Requests Page Settings
                 config.DownloadsPageEnabled,
+                config.DownloadsPageShowIssues,
                 config.DownloadsUsePluginPages,
                 config.DownloadsUseCustomTabs,
                 config.DownloadsPagePollingEnabled,
@@ -2753,7 +2754,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(30);
 
-                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?includeSeries=true&start={startIso}&end={endIso}");
+                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?includeSeries=true&unmonitored=true&start={startIso}&end={endIso}");
                     if (response.IsSuccessStatusCode)
                     {
                         var json = await response.Content.ReadAsStringAsync();
@@ -2849,7 +2850,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(10);
 
-                    var response = await client.GetAsync($"{radarrUrl}/api/v3/calendar?start={startIso}&end={endIso}");
+                    var response = await client.GetAsync($"{radarrUrl}/api/v3/calendar?unmonitored=true&start={startIso}&end={endIso}");
                     if (response.IsSuccessStatusCode)
                     {
                         var json = await response.Content.ReadAsStringAsync();

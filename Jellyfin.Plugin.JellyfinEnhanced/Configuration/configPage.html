@@ -960,6 +960,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Requests" link to the navigation showing active downloads and requests.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show Jellyseerr Issues Section</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Shows open/resolved Jellyseerr issues beneath Requests.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/>
                                     <span>Use Plugin Pages for Requests Page</span>
                                 </label>
@@ -1996,6 +2003,7 @@
 
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
+                document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
                 document.querySelector('#downloadsPagePollingEnabled').checked = config.DownloadsPagePollingEnabled !== false;
@@ -2173,6 +2181,7 @@
 
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
+            config.DownloadsPageShowIssues = document.querySelector('#downloadsPageShowIssues').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
             config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
             const pollInterval = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10);
