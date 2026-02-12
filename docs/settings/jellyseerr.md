@@ -1,7 +1,8 @@
 <!-- GitHub-style title -->
+<!-- bold works better than headers -->
 !!! info "Important"
-    **Prerequisites:** <!-- bold works better than headers -->
-    - Jellyseerr instance:
+    **Prerequisites:**
+    - Jellyseerr instance
         - **API key**
         - Jellyfin users **imported to Jellyseerr**
 
