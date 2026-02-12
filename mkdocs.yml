@@ -71,28 +71,85 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+
 # main tabs/headers
 nav:
+  # ——————————————
+  # landing page
+  # ——————————————
   - Home: index.md
-  - Features:
-    - Enhanced: features/enhanced.md
-    - Elsewhere: features/elsewhere.md
-    - Jellyseerr: features/jellyseerr.md
-    - "*arr Integration": features/arr.md
-    - Other Features: features/other-features.md
+
+
+  # ——————————————
+  # Installation
+  # ——————————————
   - Installation: 
-    - Standard (recommended): installation/standard.md
+    - Standard (recommended): installation/standard-recommended.md
     - Platform-specific: installation/platform-specific.md
-  - Settings:
-    - Enhanced Settings: settings/enhanced.md
-    - Elsewhere Settings: settings/elsewhere.md
-    - Jellyseerr Settings: settings/jellyseerr.md
-    - "*arr Settings": settings/arr.md
-    - Other Settings: settings/other-settings.md
-  - Advanced Usage: 
-    - Configurations: advanced-usage/configurations.md
-    - Customization: advanced-usage/customization.md
-    - API: advanced-usage/api.md
+
+
+  # ——————————————
+  # Enhanced
+  # ——————————————
+  - Enhanced::
+    # Feature overview
+    - Enhanced Features: enhanced/enhanced-features.md
+
+    # Enhanced Settings
+    - Enhanced Settings: enhanced/enhanced-settings.md
+
+
+  # ——————————————
+  # Elsewhere
+  # ——————————————
+  - Elsewhere:
+    # Features overview
+    - Elsewhere Features: elsewhere/elsewhere-features.md
+
+    # Elsewhere Settings
+    - Elsewhere Settings: elsewhere/elsewhere-settings.md
+
+
+  # ——————————————
+  # Jellyseerr
+  # ——————————————
+  - Jellyseerr:
+    # Features overview
+    - Jellyseerr Features: jellyseerr/jellyseerr-features.md
+
+    # Jellyseerr Settings
+    - Jellyserrr Settings: jellyseerr/jellyseerr-settings.md
+
+
+  # ——————————————
+  # *arr
+  # ——————————————
+  - "*arr":
+    # Features overview
+    - "*arr Features": arr/arr-features.md
+
+    # *arr Settings
+    - Other Settings: arr/arr-settings.md
+
+
+  # ——————————————
+  # Other
+  # ——————————————
+  - Other:
+    # Features overview
+    - Other Features: other/other-features.md
+
+    # Other Settings
+    - Other Settings: other/other-settings.md
+
+
+  # ——————————————
+  # Advanced, misc
+  # ——————————————
+  - Advanced: 
+    - Configurations: advanced/configurations.md
+    - Customization: advanced/customization.md
+    - API: advanced/api.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
     - Support: faq-support/support.md
