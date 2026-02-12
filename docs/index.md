@@ -16,7 +16,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 |--------------|-----------|
 | ![Pause Screen](images/pausescreen.png) | ![Elsewhere](images/elsewhere.png) |
 
-| Jellyseerr | Update |
+| Jellyseerr configuration | Update |
 |------------|--------|
 | ![Jellyseerr](images/jellyseerr.png) | ![Update](images/update.png) |
 

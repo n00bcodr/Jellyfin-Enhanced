@@ -3,9 +3,11 @@
 ## Enhanced Panel
 
 Access user-configured settings via the Enhanced panel:
+
 | Shortcuts | Settings |
 |-----------|----------|
-| ![Shortcuts](/images/shortcuts.png) | ![Settings](/images/settings.png) |
+| ![Shortcuts](../images/shortcuts.png) | ![Settings](../images/settings.png) |
+<!-- relative paths for images -->
 
 **Open Panel:**
 - Click **Jellyfin Enhanced** in sidebar
@@ -38,7 +40,5 @@ Most features can be enabled/disabled individually:
 - Pause Screen
 - Auto-skip Intros
 - Auto Picture-in-Picture
-- Jellyseerr Integration
-- ARR Links
-- TMDB Reviews
+- Review tags
 - And more...
