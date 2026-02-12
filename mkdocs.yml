@@ -75,7 +75,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Features:
-    - Core Features: main.md
+    - Core Features: features.md
     - Enhanced: enhanced.md
     - Elsewhere: elsewhere.md
     - Jellyseerr: jellyseerr.md
