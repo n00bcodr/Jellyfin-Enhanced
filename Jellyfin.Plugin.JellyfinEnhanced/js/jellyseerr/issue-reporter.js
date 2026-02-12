@@ -213,15 +213,15 @@
             };
 
             const issueTypeLabels = {
-                1: 'Video',
-                2: 'Audio',
-                3: 'Subtitles',
-                4: 'Other'
+                1: JE.t('jellyseerr_report_issue_type_video') || 'Video',
+                2: JE.t('jellyseerr_report_issue_type_audio') || 'Audio',
+                3: JE.t('jellyseerr_report_issue_type_subtitles') || 'Subtitles',
+                4: JE.t('jellyseerr_report_issue_type_other') || 'Other'
             };
 
             const statusLabels = {
-                1: 'Open',
-                2: 'Resolved'
+                1: JE.t('jellyseerr_issue_open') || 'Open',
+                2: JE.t('jellyseerr_issue_resolved') || 'Resolved'
             };
 
             const fmtDate = (iso) => {
@@ -439,9 +439,9 @@
 
                     // If still no seasons discovered, show a single 'All seasons' option and disable episode selector
                     if (!normalized || normalized.length === 0) {
-                        setOptions(seasonSelect, [{ value: 0, label: 'All seasons' }]);
+                        setOptions(seasonSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All seasons' }]);
                         seasonSelect.disabled = true;
-                        setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                        setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
                         episodeSelect.disabled = true;
                         return;
                     }
@@ -450,10 +450,10 @@
                     const seasonOptions = [];
                     // If more than one season, add 'All seasons'
                     if (normalized.length > 1) {
-                        seasonOptions.push({ value: 0, label: 'All seasons' });
+                        seasonOptions.push({ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All seasons' });
                     }
                     for (const s of normalized) {
-                        seasonOptions.push({ value: s.seasonNumber, label: `Season ${s.seasonNumber}` });
+                        seasonOptions.push({ value: s.seasonNumber, label: `${JE.t('jellyseerr_report_issue_season') || 'Season'} ${s.seasonNumber}` });
                     }
 
                     setOptions(seasonSelect, seasonOptions);
@@ -463,14 +463,14 @@
                     const populateEpisodesForSeason = (seasonNum) => {
                         const s = normalized.find(x => x.seasonNumber === parseInt(seasonNum));
                         if (!s) {
-                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
                             episodeSelect.disabled = true;
                             return;
                         }
                         const eps = s.episodes && s.episodes.length > 0 ? s.episodes : [];
-                        const epOptions = [{ value: 0, label: 'All episodes' }];
+                        const epOptions = [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }];
                         if (eps.length > 0) {
-                            for (const ep of eps) epOptions.push({ value: ep.episodeNumber, label: `Episode ${ep.episodeNumber}${ep.title ? ' — ' + ep.title : ''}` });
+                            for (const ep of eps) epOptions.push({ value: ep.episodeNumber, label: `${JE.t('jellyseerr_report_issue_episode') || 'Episode'} ${ep.episodeNumber}${ep.title ? ' — ' + ep.title : ''}` });
                         }
                         setOptions(episodeSelect, epOptions);
                         episodeSelect.disabled = false;
@@ -514,7 +514,7 @@
                         if (normalized.length > 1) {
                             seasonSelect.value = '0';
                             // Ensure the episode select shows the 'All episodes' option when defaulting
-                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
                             episodeSelect.disabled = true;
                         } else {
                             // Single season - select it
@@ -528,7 +528,7 @@
                         const val = seasonSelect.value;
                         if (!val || val === '0') {
                             // All seasons => show a single "All episodes" option to avoid blank UI and disable selection
-                            setOptions(episodeSelect, [{ value: 0, label: 'All episodes' }]);
+                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
                             episodeSelect.disabled = true;
                         } else {
                             populateEpisodesForSeason(parseInt(val));
