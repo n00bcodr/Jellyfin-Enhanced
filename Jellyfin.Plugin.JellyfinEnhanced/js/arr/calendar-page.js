@@ -1100,6 +1100,26 @@
   `;
 
   const logPrefix = '🪼 Jellyfin Enhanced: Calendar Page:';
+  const STORAGE_KEYS = {
+    showUnmonitored: "je.calendar.showUnmonitored",
+  };
+
+  function getStoredShowUnmonitored() {
+    try {
+      const stored = window.localStorage?.getItem(STORAGE_KEYS.showUnmonitored);
+      if (stored === null) return null;
+      return stored === "true";
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function setStoredShowUnmonitored(value) {
+    try {
+      window.localStorage?.setItem(STORAGE_KEYS.showUnmonitored, String(!!value));
+    } catch (error) {
+    }
+  }
 
   /**
    * Get default view mode from settings, defaults to agenda
@@ -1207,12 +1227,13 @@
   function loadSettings() {
     const config = JE.pluginConfig || {};
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+    const storedShowUnmonitored = getStoredShowUnmonitored();
     state.settings = {
       firstDayOfWeek: config.CalendarFirstDayOfWeek || "Monday",
       timeFormat: config.CalendarTimeFormat || "5pm/5:30pm",
       highlightFavorites: config.CalendarHighlightFavorites || false,
       highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
-      showUnmonitored: JE.currentSettings.calendarShowUnmonitored ?? false,
+      showUnmonitored: storedShowUnmonitored ?? false,
       displayMode: JE.currentSettings.calendarDisplayMode || "list",
     };
   }
@@ -1716,9 +1737,7 @@
   // Toggle show unmonitored series on/off
   function toggleShowUnmonitored() {
     state.settings.showUnmonitored = !state.settings.showUnmonitored;
-    JE.currentSettings = JE.currentSettings || {};
-    JE.currentSettings.calendarShowUnmonitored = state.settings.showUnmonitored;
-    JE.saveSettings?.();
+    setStoredShowUnmonitored(state.settings.showUnmonitored);
     renderPage();
   }
 
