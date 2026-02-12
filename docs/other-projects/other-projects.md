@@ -201,23 +201,6 @@ Contributions welcome on all projects!
 4. Follow code style
 5. Submit detailed PR
 
-
----
-
-## Frequently Asked Questions
-
-
-### Are these official Jellyfin projects?
-
-No, these are community projects by n00bcodr. They are not officially affiliated with Jellyfin, but are designed to enhance the Jellyfin experience. For any support kindly approach Jellyfin Community Discord!
-
-### Will these break my Jellyfin?
-
-No, these projects are designed to be safe:
-- No core file modifications (with file-transformation plugin - highly recommended)
-- Easy to uninstall
-- Active maintenance
-
 ---
 
 ## Stay Updated
@@ -252,5 +235,3 @@ See individual repositories for detailed license information.
 ---
 
 **Made with 💜 for Jellyfin and the community**
-
-[Back to Home](index.md) | [Installation Guide](installation.md) | [FAQ](faq.md)

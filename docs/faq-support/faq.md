@@ -34,6 +34,12 @@ The userscript has been discontinued as the plugin functionality has grown signi
 
 ## Installation & Setup
 
+### Plugin Compatibility
+
+| Plugin | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
+|--------|----------------|----------------|-------|
+| Jellyfin Enhanced | ✅ | ❌ | Use 10.11 manifest |
+
 ### Plugin not appearing after installation?
 
 **Check Installation:**
