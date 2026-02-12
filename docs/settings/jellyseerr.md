@@ -1,6 +1,8 @@
 <!-- use a custom title -->
 !!! info "Prerequisites"
 
+    **Prerequisites:**
+
     - Jellyseerr instance
         - **API key**
         - Jellyfin users **imported to Jellyseerr**
@@ -42,7 +44,9 @@
 
 ## Add Requested Media to Watchlist
 !!! note "Requirements"  
-   
+
+    **Requirements:**
+
    - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
 
 - Automatically add items to Jellyfin watchlist when they become available
@@ -57,6 +61,8 @@
 
 ## Enable 4K Requests
 !!! note "Requirements"
+
+    **Requirements:**
 
     - Jellyseerr instance with **4K configuration**
 
