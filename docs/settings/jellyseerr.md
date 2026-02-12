@@ -1,8 +1,8 @@
 <!-- GitHub-style title -->
 !!! info "Important"
-    ### Prerequisites:
+    **Prerequisites:** <!-- bold works better than headers -->
     - Jellyseerr instance:
-        - API key
+        - **API key**
         - Jellyfin users **imported to Jellyseerr**
 
 ### Step 1: Enable Jellyfin Sign-In in Jellyseerr
