@@ -91,7 +91,7 @@ nav:
   # ——————————————
   # Enhanced
   # ——————————————
-  - Enhanced::
+  - Enhanced:
     # Feature overview
     - Enhanced Features: enhanced/enhanced-features.md
 

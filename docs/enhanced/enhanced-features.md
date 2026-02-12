@@ -4,16 +4,6 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 
 ![Enhanced Panel](/docs/images/panel.gif)
 
-## Table of Contents
-
-- [Playback & Controls](#playback-controls)
-- [Discovery & Integration](#discovery-integration)
-- [Visual Enhancements](#visual-enhancements)
-- [Personal Scripts](#personal-scripts)
-- [Customization](#customization)
-
----
-
 ## Playback & Controls
 
 ### ⌨️ Advanced Keyboard Shortcuts
@@ -589,79 +579,3 @@ Multi-language support with community translations.
 3. Translate the English text
 4. Submit a pull request
 5. Translations available immediately after merge!
-
----
-
-## Compatibility
-
-### Supported Platforms
-
-| Platform | Support | Notes |
-|----------|---------|-------|
-| Jellyfin Web UI | ✅ Full | All features available |
-| Android App | ✅ Full | Official app with embedded web UI |
-| iOS App | ✅ Full | Official app with embedded web UI |
-| Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
-| Android TV | ❌ Not Supported | Native app, no web UI |
-| Third-party Apps | ❌ Not Supported | Depends on embedded web UI |
-
-### Requirements
-
-- Jellyfin 10.11.x
-- Modern web browser
-- JavaScript enabled
-- Clients using embedded Jellyfin web UI
-
-### Known Issues
-
-- JMP v1.12.0 has compatibility issues (use Jellyfin Desktop v2.0.0 instead)
-- Some features require additional plugins (Intro Skipper, Custom Tabs)
-- TMDB API may be blocked in some regions
-
----
-
-## Feature Configuration
-
-### Enhanced Panel
-
-Access all settings via the Enhanced panel:
-
-**Open Panel:**
-- Click **Jellyfin Enhanced** in sidebar
-- Press `?` keyboard shortcut
-
-**Tabs:**
-- **Shortcuts** - Customize keyboard shortcuts
-- **Settings** - Enable/disable features, adjust positions
-- **Jellyseerr** - Configure Jellyseerr integration
-- **ARR** - Configure Sonarr/Radarr integration
-- **About** - Plugin information and links
-
-**Settings Persistence:**
-- Settings saved to browser localStorage
-- Per-user configuration
-- Sync across devices (same browser profile)
-
-### Feature Toggles
-
-Most features can be enabled/disabled individually:
-
-1. Open Enhanced panel
-2. Go to Settings tab
-3. Toggle features on/off
-4. Changes apply immediately (no restart needed)
-
-**Toggleable Features:**
-- Quality Tags
-- Genre Tags
-- Language Tags
-- Rating Tags
-- People Tags
-- Pause Screen
-- Auto-skip Intros
-- Auto Picture-in-Picture
-- Jellyseerr Integration
-- ARR Links
-- Elsewhere Lookup
-- TMDB Reviews
-- And more...
