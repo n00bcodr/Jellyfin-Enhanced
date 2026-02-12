@@ -390,5 +390,6 @@
     "calendar_no_releases": "Nessuna uscita imminente",
     "calendar_watchlist": "Lista da guardare",
     "calendar_watched": "Visto",
+    "calendar_include_unmonitored": "Includi non monitorati",
     "calendar_all_day": "Tutto il giorno"
 }

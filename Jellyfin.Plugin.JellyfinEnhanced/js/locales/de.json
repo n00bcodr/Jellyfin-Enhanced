@@ -388,5 +388,6 @@
     "calendar_no_releases": "Keine bevorstehenden Veröffentlichungen",
     "calendar_watchlist": "Merkliste",
     "calendar_watched": "Gesehen",
+    "calendar_include_unmonitored": "Nicht überwachte einbeziehen",
     "calendar_all_day": "Ganztägig"
 }

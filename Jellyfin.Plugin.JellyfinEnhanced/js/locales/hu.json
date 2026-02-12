@@ -390,5 +390,6 @@
     "calendar_no_releases": "Nincs közelgő megjelenés",
     "calendar_watchlist": "Figyelőlista",
     "calendar_watched": "Megtekintve",
+    "calendar_include_unmonitored": "Nem figyelt tartalmak",
     "calendar_all_day": "Egész nap"
 }

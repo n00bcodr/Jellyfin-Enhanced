@@ -390,5 +390,6 @@
     "calendar_no_releases": "Inga kommande utgåvor",
     "calendar_watchlist": "Bevakningslista",
     "calendar_watched": "Sedd",
+    "calendar_include_unmonitored": "Inkludera oövervakade",
     "calendar_all_day": "Hela dagen"
 }

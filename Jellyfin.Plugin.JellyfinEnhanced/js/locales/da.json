@@ -390,5 +390,6 @@
     "calendar_no_releases": "Ingen kommende udgivelser",
     "calendar_watchlist": "Overvågningsliste",
     "calendar_watched": "Set",
+    "calendar_include_unmonitored": "Inkluder ikke overvåget",
     "calendar_all_day": "Hele dagen"
 }

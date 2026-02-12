@@ -390,5 +390,6 @@
     "calendar_no_releases": "Yaklaşan yayın yok",
     "calendar_watchlist": "İzleme listesi",
     "calendar_watched": "İzlendi",
+    "calendar_include_unmonitored": "İzlenmeyen içeriği dahil et",
     "calendar_all_day": "Bütün gün"
 }

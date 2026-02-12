@@ -390,5 +390,6 @@
     "calendar_no_releases": "Nenhum lançamento próximo",
     "calendar_watchlist": "Lista de observação",
     "calendar_watched": "Assistido",
+    "calendar_include_unmonitored": "Incluir não monitorados",
     "calendar_all_day": "O dia todo"
 }

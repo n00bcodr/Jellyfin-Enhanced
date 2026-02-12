@@ -390,5 +390,6 @@
     "calendar_no_releases": "No treasures arrivin' soon",
     "calendar_watchlist": "Treasure List",
     "calendar_watched": "Already Plundered",
+    "calendar_include_unmonitored": "Show Unmonitored Booty",
     "calendar_all_day": "All day long"
 }

@@ -390,5 +390,6 @@
     "calendar_no_releases": "Нет предстоящих релизов",
     "calendar_watchlist": "Список отслеживания",
     "calendar_watched": "Просмотрено",
+    "calendar_include_unmonitored": "Включить неотслеживаемые",
     "calendar_all_day": "Весь день"
 }

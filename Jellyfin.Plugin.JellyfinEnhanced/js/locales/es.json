@@ -390,5 +390,6 @@
     "calendar_no_releases": "No hay próximos estrenos",
     "calendar_watchlist": "Lista de seguimiento",
     "calendar_watched": "Visto",
+    "calendar_include_unmonitored": "Incluir no monitoreados",
     "calendar_all_day": "Todo el día"
 }
