@@ -1217,10 +1217,12 @@
 
   function getIssueStatusLabel(status) {
     const normalized = String(status || "").toLowerCase();
+    const labelResolved = JE.t?.("jellyseerr_issue_resolved") || "Resolved";
+    const labelOpen = JE.t?.("jellyseerr_issue_open") || "Open";
     if (normalized === "2" || normalized === "resolved") {
-      return { label: "Resolved", className: "je-issue-status-resolved" };
+      return { label: labelResolved, className: "je-issue-status-resolved" };
     }
-    return { label: "Open", className: "je-issue-status-open" };
+    return { label: labelOpen, className: "je-issue-status-open" };
   }
 
   function getIssueMediaTitle(issue) {
@@ -1615,8 +1617,8 @@
       const labelIssues = (JE.t && JE.t('jellyseerr_existing_issues')) || 'Issues';
       html += `<h2>${labelIssues}</h2>`;
 
-      const labelOpen = "Open";
-      const labelResolved = "Resolved";
+      const labelOpen = (JE.t && JE.t('jellyseerr_issue_open')) || 'Open';
+      const labelResolved = (JE.t && JE.t('jellyseerr_issue_resolved')) || 'Resolved';
       html += `
         <div class="je-issues-tabs">
           <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "open" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('open')">${labelOpen}</button>
