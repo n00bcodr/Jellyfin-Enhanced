@@ -15,6 +15,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int SelectedStylePresetIndex { get; set; }
         public int SelectedFontSizePresetIndex { get; set; }
         public int SelectedFontFamilyPresetIndex { get; set; }
+        public string CustomSubtitleTextColor { get; set; } = "#FFFFFFFF";
+        public string CustomSubtitleBgColor { get; set; } = "#00000000";
+        public bool UsingCustomColors { get; set; }
         public bool RandomButtonEnabled { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
         public bool RandomIncludeMovies { get; set; }

@@ -70,6 +70,8 @@
             autoPauseEnabled: true, autoResumeEnabled: false, autoPipEnabled: false,
             autoSkipIntro: false, autoSkipOutro: false,
             selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0,
+            customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000',
+            usingCustomColors: false,
             disableCustomSubtitleStyles: false, randomButtonEnabled: true,
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
