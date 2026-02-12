@@ -1391,7 +1391,7 @@
         if (!shouldFilterSurface(nativeSurface)) return;
         const settings = getSettings();
         if (!settings.enabled) return;
-        if (hiddenIdSet.size === 0) return;
+        if (getHiddenCount() === 0) return;
         const isDetailPage = nativeSurface === 'details';
 
         const toHide = [];
@@ -1734,7 +1734,11 @@
         // Lightweight observer for card/list containers
         if (typeof MutationObserver !== 'undefined') {
             const observer = new MutationObserver((mutations) => {
-                if (!getSettings().enabled || hiddenIdSet.size === 0) return;
+                const settings = getSettings();
+                if (!settings.enabled) return;
+                const shouldFilter = getHiddenCount() > 0;
+                const shouldAddButtons = settings.showHideButtons && settings.showButtonLibrary;
+                if (!shouldFilter && !shouldAddButtons) return;
                 let hasNewItems = false;
                 for (let i = 0; i < mutations.length; i++) {
                     const added = mutations[i].addedNodes;
@@ -1752,8 +1756,8 @@
                     if (hasNewItems) break;
                 }
                 if (hasNewItems) {
-                    debouncedFilterNative();
-                    if (getSettings().showButtonLibrary) addLibraryHideButtons();
+                    if (shouldFilter) debouncedFilterNative();
+                    if (shouldAddButtons) addLibraryHideButtons();
                 }
             });
             observer.observe(document.body, { childList: true, subtree: true });
@@ -2014,7 +2018,7 @@
         injectCSS();
         setupNativeObserver();
 
-        if (hiddenIdSet.size > 0) {
+        if (getHiddenCount() > 0) {
             setTimeout(filterAllNativeCards, INIT_FILTER_DELAY_MS);
         }
 
