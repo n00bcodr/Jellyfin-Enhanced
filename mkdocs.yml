@@ -73,14 +73,13 @@ markdown_extensions:
 
 # main tabs/headers
 nav:
-  - Home: index.md
+  - Home: home.md
   - Features:
-    - Core Features: features.md
-    - Enhanced: enhanced.md
-    - Elsewhere: elsewhere.md
-    - Jellyseerr: jellyseerr.md
-    - ARR Integration: arr.md
-    - Others: others.md
+    - Enhanced: features/enhanced.md
+    - Elsewhere: features/elsewhere.md
+    - Jellyseerr: features/jellyseerr.md
+    - *arr Integration: features/arr.md
+    - Other Features: features/other-features.md
   - Installation: 
     - Standard (recommended): installation/standard.md
     - Platform-specific: installation/platform-specific.md
@@ -88,11 +87,13 @@ nav:
     - Enhanced Settings: settings/enhanced.md
     - Elsewhere Settings: settings/elsewhere.md
     - Jellyseerr Settings: settings/jellyseerr.md
+    - *arr settings: settings/arr.md
+    - Other Settings: settings/other-settings.md
   - Advanced Usage: 
-    - Configurations: advanced/main.md
+    - Configurations: advanced/configurations.md
     - Customization: advanced/customization.md
     - API Usage: advanced/api.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
     - Support: faq-support/support.md
-  - Other Projects: other-projects.md
+  - Other Projects: other-projects/other-projects.md
