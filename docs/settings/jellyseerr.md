@@ -1,8 +1,9 @@
-!!! info
+<!-- GitHub-style title -->
+!!! info "Important"
     ### Prerequisites:
-> - Jellyseerr instance with API access
-> - Jellyseerr API Key
-> - Jellyfin users imported into Jellyseerr
+    - Jellyseerr instance:
+      - API key
+      - Jellyfin users **imported to Jellyseerr**
 
 ### Step 1: Enable Jellyfin Sign-In in Jellyseerr
 
@@ -40,9 +41,10 @@
 # Optional Features
 
 ## Add Requested Media to Watchlist
-!!! note Important
+!!! note "Important"
     
-    Requires the [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks) plugin
+    Requirements:
+    - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
 
 - Automatically add items to Jellyfin watchlist when they become available
 
@@ -57,7 +59,8 @@
 ## Enable 4K Requests
 !!! note "Important"
 
-    Requires Jellyseerr to have 4K configuration
+    Requirements:
+    - Jellyseerr instance with **4K configuration**
 
 - Allow users to request 4K quality
 

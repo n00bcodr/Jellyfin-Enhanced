@@ -1,5 +1,4 @@
-!!! info "Prerequisites"
-
+!!! info "Important"
     ## Prerequisites
     - TMDB API Key 
       - [Free from TMDB](https://www.themoviedb.org/settings/api)
