@@ -1,6 +1,7 @@
 <!-- GitHub-style title -->
 <!-- bold works better than headers -->
 !!! info "Important"
+
     **Prerequisites:**
     - Jellyseerr instance
         - **API key**
