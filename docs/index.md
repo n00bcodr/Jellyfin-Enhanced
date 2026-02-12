@@ -54,7 +54,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Issue Reporting** - Report problems directly to Jellyseerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 
-### 🔗 ARR Integration
+### 🔗 *arr Integration
 - **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages
 - **Tag Links** - Display and filter *arr tags
 - **Calendar View** - Upcoming releases from Sonarr/Radarr

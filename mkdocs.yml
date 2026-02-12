@@ -85,7 +85,8 @@ nav:
   # ——————————————
   - Installation: 
     - Standard (recommended): installation/standard-recommended.md
-    - Platform-specific: installation/platform-specific.md
+    - Advanced (not recommended): installation/advanced-not-recommended.md
+    - Troubleshooting: installation/troubleshooting.md
 
 
   # ——————————————
