@@ -1,8 +1,6 @@
-<!-- GitHub-style title -->
-<!-- bold works better than headers -->
-!!! info "Important"
+<!-- use a custom title -->
+!!! info "Prerequisites"
 
-    **Prerequisites:**
     - Jellyseerr instance
         - **API key**
         - Jellyfin users **imported to Jellyseerr**
@@ -43,10 +41,9 @@
 # Optional Features
 
 ## Add Requested Media to Watchlist
-!!! note "Important"
-    
-    Requirements:
-    - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
+!!! note "Requirements"  
+   
+   - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
 
 - Automatically add items to Jellyfin watchlist when they become available
 
@@ -59,9 +56,8 @@
 - Report video, audio, subtitle, or other problems
 
 ## Enable 4K Requests
-!!! note "Important"
+!!! note "Requirements"
 
-    Requirements:
     - Jellyseerr instance with **4K configuration**
 
 - Allow users to request 4K quality
