@@ -16,6 +16,11 @@
     requestsPage: 1,
     requestsTotalPages: 1,
     requestsFilter: "all",
+    issues: [],
+    issuesPage: 1,
+    issuesTotalPages: 1,
+    issuesError: false,
+    issuesFilter: "open",
     isLoading: false,
     pollTimer: null,
     pageVisible: false,
@@ -57,6 +62,18 @@
   const RADARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg";
 
   const logPrefix = '🪼 Jellyfin Enhanced: Requests Page:';
+
+  const issueMediaCache = new Map();
+
+  const escapeHtml = (value) => {
+    if (value === null || value === undefined) return "";
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  };
 
   // CSS Styles - minimal styling to fit Jellyfin's theme
   const CSS_STYLES = `
@@ -175,13 +192,15 @@
           opacity: 0.95;
           margin-top: 0.6em;
         }
-        .je-requests-tabs {
+        .je-requests-tabs,
+        .je-issues-tabs {
             display: flex;
             gap: 0.5em;
             margin-bottom: 1em;
             flex-wrap: wrap;
         }
-        .je-requests-tab.emby-button {
+        .je-requests-tab.emby-button,
+        .je-issues-tab.emby-button {
             background: transparent;
             border: 1px solid rgba(255,255,255,0.3);
             color: inherit;
@@ -191,11 +210,13 @@
             opacity: 0.7;
             transition: all 0.2s;
         }
-        .je-requests-tab.emby-button:hover {
+        .je-requests-tab.emby-button:hover,
+        .je-issues-tab.emby-button:hover {
             opacity: 1;
             background: rgba(255,255,255,0.1);
         }
-        .je-requests-tab.emby-button.active {
+        .je-requests-tab.emby-button.active,
+        .je-issues-tab.emby-button.active {
             opacity: 1;
         }
         .je-request-card {
@@ -264,6 +285,97 @@
         }
         .je-request-watch-btn:hover { opacity: 0.9; }
         .je-request-watch-btn .material-icons { font-size: 20px; }
+        .je-issues-section h2 {
+          font-size: 1.5em;
+          margin-bottom: 1em;
+        }
+        .je-issue-card {
+          display: flex;
+          gap: 1em;
+          padding: 1em;
+          background: rgba(128,128,128,0.1);
+          border-radius: 0.25em;
+          overflow: visible;
+        }
+        .je-issue-info {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 0.35em;
+        }
+        .je-issue-title-row {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 0.4em;
+          min-width: 0;
+        }
+        .je-issue-title {
+          font-weight: 600;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+        }
+        .je-issue-summary {
+          font-size: 0.85em;
+          opacity: 0.8;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.4em;
+          align-items: center;
+          width: 100%;
+        }
+        .je-issue-view-btn {
+          background: transparent;
+          border: none;
+          color: inherit;
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          opacity: 0.8;
+          margin-left: auto;
+          transition: opacity 0.2s;
+        }
+        .je-issue-view-btn:hover { opacity: 1; }
+        .je-issue-view-btn.is-disabled { opacity: 0.35; cursor: not-allowed; }
+        .je-issue-view-btn .material-icons { font-size: 18px; }
+        .je-issue-message {
+          font-size: 0.9em;
+          opacity: 0.85;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .je-issue-status-chip {
+          font-size: 0.7em;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          padding: 0.25em 0.6em;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.12);
+        }
+        .je-issue-status-open { background: rgba(234, 179, 8, 0.25); color: #f0f9ff; border-color: rgba(234, 179, 8, 0.5); }
+        .je-issue-status-resolved { background: rgba(34, 197, 94, 0.25); color: #f0f9ff; border-color: rgba(34, 197, 94, 0.5); }
+        .je-issue-type-chip {
+          font-size: 0.7em;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          padding: 0.25em 0.6em;
+          border-radius: 999px;
+          background: rgba(59, 130, 246, 0.25);
+          border: 1px solid rgba(59, 130, 246, 0.5);
+          color: #f0f9ff;
+        }
         .je-pagination {
             display: flex;
             justify-content: center;
@@ -488,6 +600,7 @@
     themeStyle.id = "je-downloads-theme-colors";
     themeStyle.textContent = `
       .je-requests-tab.emby-button.active,
+      .je-issues-tab.emby-button.active,
       .je-downloads-tab.emby-button.active {
         background: ${primaryAccent} !important;
         border-color: ${primaryAccent} !important;
@@ -561,6 +674,119 @@
     }
   }
 
+  function getIssueMediaType(issue) {
+    const media = issue?.media || {};
+    return (media.mediaType || issue?.mediaType || issue?.type || "").toLowerCase();
+  }
+
+  function getIssueTmdbId(issue) {
+    const media = issue?.media || {};
+    return media.tmdbId || issue?.tmdbId || null;
+  }
+
+  function applyIssueMediaDetails(issue, details, mediaType) {
+    if (!details || !issue) return issue;
+    const title = details.title || details.name || details.originalTitle || details.originalName;
+    const posterPath = details.posterPath || details.poster_path || null;
+    const releaseDate = details.releaseDate || details.release_date || null;
+    const firstAirDate = details.firstAirDate || details.first_air_date || null;
+    const tmdbId = details.id || details.tmdbId || getIssueTmdbId(issue);
+    const mediaInfo = details.mediaInfo || details.mediaInfo4k || details.mediaInfo4K || null;
+
+    issue.media = {
+      ...(issue.media || {}),
+      title: title || issue.media?.title,
+      name: details.name || issue.media?.name,
+      originalTitle: details.originalTitle || issue.media?.originalTitle,
+      originalName: details.originalName || issue.media?.originalName,
+      posterPath: posterPath || issue.media?.posterPath,
+      releaseDate: releaseDate || issue.media?.releaseDate,
+      firstAirDate: firstAirDate || issue.media?.firstAirDate,
+      tmdbId: tmdbId || issue.media?.tmdbId,
+      mediaType: mediaType || issue.media?.mediaType,
+      mediaInfo: mediaInfo || issue.media?.mediaInfo,
+    };
+
+    return issue;
+  }
+
+  async function fetchIssueMediaDetails(mediaType, tmdbId) {
+    if (!mediaType || !tmdbId) return null;
+    const cacheKey = `${mediaType}:${tmdbId}`;
+    if (issueMediaCache.has(cacheKey)) return issueMediaCache.get(cacheKey);
+
+    const path = mediaType === "tv"
+      ? `/JellyfinEnhanced/jellyseerr/tv/${tmdbId}`
+      : `/JellyfinEnhanced/jellyseerr/movie/${tmdbId}`;
+
+    try {
+      const data = await ApiClient.ajax({
+        type: "GET",
+        url: ApiClient.getUrl(path),
+        dataType: "json",
+        headers: { "X-Jellyfin-User-Id": ApiClient.getCurrentUserId() },
+      });
+      issueMediaCache.set(cacheKey, data || null);
+      return data || null;
+    } catch (error) {
+      issueMediaCache.set(cacheKey, null);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch issues from Jellyseerr
+   */
+  async function fetchIssues() {
+    if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.DownloadsPageShowIssues) {
+      state.issues = [];
+      state.issuesTotalPages = 1;
+      state.issuesError = false;
+      return null;
+    }
+
+    try {
+      const skip = (state.issuesPage - 1) * 20;
+      const filter = state.issuesFilter || "open";
+      const url = ApiClient.getUrl("/JellyfinEnhanced/jellyseerr/issue", {
+        take: 20,
+        skip: skip,
+        filter: filter,
+        sort: "added",
+      });
+
+      const data = await ApiClient.ajax({
+        type: "GET",
+        url: url,
+        dataType: "json",
+        headers: { "X-Jellyfin-User-Id": ApiClient.getCurrentUserId() },
+      });
+
+      let issues = data?.results || [];
+      if (issues.length) {
+        issues = await Promise.all(
+          issues.map(async (issue) => {
+            const mediaType = getIssueMediaType(issue);
+            const tmdbId = getIssueTmdbId(issue);
+            const details = await fetchIssueMediaDetails(mediaType, tmdbId);
+            return applyIssueMediaDetails(issue, details, mediaType);
+          })
+        );
+      }
+
+      state.issues = issues;
+      state.issuesTotalPages = data?.pageInfo?.pages || data?.totalPages || 1;
+      state.issuesError = false;
+      return data;
+    } catch (error) {
+      console.error(`${logPrefix} Failed to fetch issues:`, error);
+      state.issues = [];
+      state.issuesTotalPages = 1;
+      state.issuesError = true;
+      return null;
+    }
+  }
+
   /**
    * Load all data
    */
@@ -568,7 +794,7 @@
     state.isLoading = true;
     renderPage();
 
-    await Promise.all([fetchDownloads(), fetchRequests()]);
+    await Promise.all([fetchDownloads(), fetchRequests(), fetchIssues()]);
 
     state.isLoading = false;
     renderPage();
@@ -979,6 +1205,121 @@
         `;
   }
 
+  function getIssueTypeLabel(issueType) {
+    const labels = {
+      1: JE.t?.("jellyseerr_report_issue_type_video") || "Video",
+      2: JE.t?.("jellyseerr_report_issue_type_audio") || "Audio",
+      3: JE.t?.("jellyseerr_report_issue_type_subtitles") || "Subtitles",
+      4: JE.t?.("jellyseerr_report_issue_type_other") || "Other",
+    };
+    return labels[issueType] || labels[4];
+  }
+
+  function getIssueStatusLabel(status) {
+    const normalized = String(status || "").toLowerCase();
+    const labelResolved = JE.t?.("jellyseerr_issue_resolved") || "Resolved";
+    const labelOpen = JE.t?.("jellyseerr_issue_open") || "Open";
+    if (normalized === "2" || normalized === "resolved") {
+      return { label: labelResolved, className: "je-issue-status-resolved" };
+    }
+    return { label: labelOpen, className: "je-issue-status-open" };
+  }
+
+  function getIssueMediaTitle(issue) {
+    const media = issue?.media || {};
+    return media.title || media.name || media.originalTitle || media.originalName || "Unknown";
+  }
+
+  function getIssueMediaYear(issue) {
+    const media = issue?.media || {};
+    const dateStr = media.releaseDate || media.firstAirDate || "";
+    if (!dateStr || dateStr.length < 4) return "";
+    return dateStr.substring(0, 4);
+  }
+
+  function getIssuePosterUrl(issue) {
+    const media = issue?.media || {};
+    if (media.mediaInfo?.posterPath) return `https://image.tmdb.org/t/p/w300${media.mediaInfo.posterPath}`;
+    if (media.mediaInfo?.poster_path) return `https://image.tmdb.org/t/p/w300${media.mediaInfo.poster_path}`;
+    if (media.posterUrl) return media.posterUrl;
+    if (media.posterPath) return `https://image.tmdb.org/t/p/w300${media.posterPath}`;
+    return "";
+  }
+
+  function getIssueJellyfinMediaId(issue) {
+    const media = issue?.media || {};
+    return media.jellyfinMediaId
+      || media.mediaInfo?.jellyfinMediaId
+      || media.mediaInfo?.jellyfinMediaId4k
+      || media.mediaInfo?.jellyfinMediaId4K
+      || null;
+  }
+
+  function getIssueReporter(issue) {
+    const user = issue?.createdBy || {};
+    return user.jellyfinUsername || user.displayName || user.username || user.email || "Unknown";
+  }
+
+  function getIssueAvatarUrl(issue) {
+    const avatar = issue?.createdBy?.avatar;
+    if (!avatar) return "";
+    if (avatar.startsWith("/")) {
+      return ApiClient.getUrl("/JellyfinEnhanced/proxy/avatar", { path: avatar });
+    }
+    return avatar;
+  }
+
+  function getIssueMessage(issue) {
+    if (issue?.message) return issue.message;
+    const firstComment = Array.isArray(issue?.comments) ? issue.comments[0] : null;
+    return firstComment?.message || "";
+  }
+
+  function renderIssueCard(issue) {
+    const posterUrl = getIssuePosterUrl(issue);
+    const title = getIssueMediaTitle(issue);
+    const year = getIssueMediaYear(issue);
+    const typeLabel = getIssueTypeLabel(issue?.issueType || issue?.problemType);
+    const status = getIssueStatusLabel(issue?.status);
+    const reporter = getIssueReporter(issue);
+    const avatarUrl = getIssueAvatarUrl(issue);
+    const message = getIssueMessage(issue);
+    const mediaType = getIssueMediaType(issue);
+    const tmdbId = getIssueTmdbId(issue);
+    const canView = !!(tmdbId && mediaType);
+    const jellyfinMediaId = getIssueJellyfinMediaId(issue);
+
+    const posterHtml = posterUrl
+      ? `<img class="je-request-poster" src="${posterUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      : `<div class="je-request-poster placeholder"></div>`;
+
+    const avatarHtml = avatarUrl
+      ? `<img class="je-request-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'">`
+      : "";
+
+    return `
+      <div class="je-issue-card" ${jellyfinMediaId ? `data-media-id="${jellyfinMediaId}"` : ""}>
+        ${posterHtml}
+        <div class="je-issue-info">
+          <div class="je-issue-title-row">
+            <div class="je-issue-title">${escapeHtml(title)}${year ? ` <span class="je-request-year">(${escapeHtml(year)})</span>` : ""}</div>
+            <span class="je-issue-status-chip ${status.className}">${escapeHtml(status.label)}</span>
+            <span class="je-issue-type-chip">${escapeHtml(typeLabel)}</span>
+          </div>
+          ${message ? `<div class="je-issue-message">${escapeHtml(message)}</div>` : ""}
+          <div class="je-issue-summary">
+            ${avatarHtml}
+            <span>${escapeHtml(reporter)}</span>
+            ${issue?.createdAt ? `<span>&#8226;</span><span>${escapeHtml(formatRelativeDate(issue.createdAt))}</span>` : ""}
+            <button class="je-issue-view-btn ${canView ? "" : "is-disabled"}" type="button" aria-label="View issue" ${canView ? `data-issue-tmdb-id="${escapeHtml(tmdbId)}" data-issue-media-type="${escapeHtml(mediaType)}" data-issue-title="${escapeHtml(title)}"` : "disabled"}>
+              <span class="material-icons">visibility</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   /**
    * Group downloads by season pack (same show + season + same progress indicates season pack)
    * Returns array of items where season packs are collapsed into single entries
@@ -1271,6 +1612,55 @@
       html += `</div>`;
     }
 
+    if (JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.DownloadsPageShowIssues) {
+      html += `<div class="je-downloads-section je-issues-section">`;
+      const labelIssues = (JE.t && JE.t('jellyseerr_existing_issues')) || 'Issues';
+      html += `<h2>${labelIssues}</h2>`;
+
+      const labelOpen = (JE.t && JE.t('jellyseerr_issue_open')) || 'Open';
+      const labelResolved = (JE.t && JE.t('jellyseerr_issue_resolved')) || 'Resolved';
+      html += `
+        <div class="je-issues-tabs">
+          <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "open" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('open')">${labelOpen}</button>
+          <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "resolved" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('resolved')">${labelResolved}</button>
+        </div>
+      `;
+
+      if (state.isLoading && state.issues.length === 0) {
+        html += `<div class="je-loading">...</div>`;
+      } else if (state.issuesError) {
+        html += `
+          <div class="je-empty-state">
+            <div>${JE.t?.("jellyseerr_load_issues_error") || "Unable to load issues"}</div>
+          </div>
+        `;
+      } else if (state.issues.length === 0) {
+        html += `
+          <div class="je-empty-state">
+            <div>${JE.t?.("jellyseerr_no_issues_yet") || "No issues found"}</div>
+          </div>
+        `;
+      } else {
+        html += `<div class="je-downloads-grid">`;
+        state.issues.forEach((issue) => {
+          html += renderIssueCard(issue);
+        });
+        html += `</div>`;
+
+        if (state.issuesTotalPages > 1) {
+          html += `
+            <div class="je-pagination">
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevIssuesPage()" ${state.issuesPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+              <span>${state.issuesPage} / ${state.issuesTotalPages}</span>
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextIssuesPage()" ${state.issuesPage >= state.issuesTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
+            </div>
+          `;
+        }
+      }
+
+      html += `</div>`;
+    }
+
     container.innerHTML = html;
 
     // Add event listener for refresh button
@@ -1359,8 +1749,21 @@
         return;
       }
 
+      const viewIssueBtn = e.target.closest('.je-issue-view-btn');
+      if (viewIssueBtn && !viewIssueBtn.classList.contains('is-disabled')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const tmdbId = viewIssueBtn.getAttribute('data-issue-tmdb-id');
+        const mediaType = viewIssueBtn.getAttribute('data-issue-media-type');
+        const title = viewIssueBtn.getAttribute('data-issue-title') || '';
+        if (tmdbId && mediaType && JE.jellyseerrIssueReporter?.showReportModal) {
+          JE.jellyseerrIssueReporter.showReportModal(tmdbId, title, mediaType, null, null);
+        }
+        return;
+      }
+
       // Handle card clicks to navigate to item
-      const card = e.target.closest('.je-download-card, .je-request-card');
+      const card = e.target.closest('.je-download-card, .je-request-card, .je-issue-card');
       if (card) {
         const mediaId = card.getAttribute('data-media-id');
         if (mediaId && window.Emby?.Page?.showItem) {
@@ -1586,6 +1989,14 @@
     fetchRequests().then(() => renderPage());
   }
 
+  function filterIssues(filter) {
+    if (!filter || (filter !== "open" && filter !== "resolved")) return;
+    if (state.issuesFilter === filter) return;
+    state.issuesFilter = filter;
+    state.issuesPage = 1;
+    fetchIssues().then(() => renderPage());
+  }
+
   /**
    * Next page
    */
@@ -1603,6 +2014,20 @@
     if (state.requestsPage > 1) {
       state.requestsPage--;
       fetchRequests().then(() => renderPage());
+    }
+  }
+
+  function nextIssuesPage() {
+    if (state.issuesPage < state.issuesTotalPages) {
+      state.issuesPage++;
+      fetchIssues().then(() => renderPage());
+    }
+  }
+
+  function prevIssuesPage() {
+    if (state.issuesPage > 1) {
+      state.issuesPage--;
+      fetchIssues().then(() => renderPage());
     }
   }
 
@@ -1857,8 +2282,11 @@
     filterDownloads,
     searchDownloads,
     filterRequests,
+    filterIssues,
     nextPage,
     prevPage,
+    nextIssuesPage,
+    prevIssuesPage,
     renderPage,
     renderForCustomTab,
     injectStyles

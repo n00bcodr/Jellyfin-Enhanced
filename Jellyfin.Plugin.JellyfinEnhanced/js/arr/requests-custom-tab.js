@@ -22,7 +22,7 @@
       padding: 12px 3vw;
     }
     .backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.requests) {
-      background: rgba(0, 0, 0, 0.5) !important;
+      background: rgba(0, 0, 0, 0.7) !important;
     }
   `;
   document.head.appendChild(style);
