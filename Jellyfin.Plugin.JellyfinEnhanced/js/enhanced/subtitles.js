@@ -138,17 +138,22 @@
             return;
         }
 
-        const stylePreset = JE.subtitlePresets[JE.currentSettings.selectedStylePresetIndex ?? 0];
+        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
+        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
+            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
+            : 'none';
+
         const fontSizePreset = JE.fontSizePresets[JE.currentSettings.selectedFontSizePresetIndex ?? 2];
         const fontFamilyPreset = JE.fontFamilyPresets[JE.currentSettings.selectedFontFamilyPresetIndex ?? 0];
 
-        if (stylePreset && fontSizePreset && fontFamilyPreset) {
+        if (fontSizePreset && fontFamilyPreset) {
             JE.applySubtitleStyles(
-                stylePreset.textColor,
-                stylePreset.bgColor,
+                textColor,
+                bgColor,
                 fontSizePreset.size,
                 fontFamilyPreset.family,
-                stylePreset.textShadow
+                textShadow
             );
         }
     };

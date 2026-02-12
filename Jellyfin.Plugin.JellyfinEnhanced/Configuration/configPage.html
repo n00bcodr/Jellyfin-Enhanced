@@ -355,12 +355,45 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
-                        </div>
-                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
-                            <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">visibility_off</i>
-                                <div>
-                                    <strong>Hidden Content Page</strong> adds a sidebar link that opens a dedicated page for viewing and managing all hidden items. When disabled, hidden content can still be managed via the settings panel overlay.
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="hiddenContentUsePluginPages" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Plugin Pages for Hidden Content</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Hidden Content page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="hiddenContentUseCustomTabs" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Custom Tabs for Hidden Content (instead of sidebar)</span>
+                                </label>
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">Embed Hidden Content in Custom Tabs:</h4>
+                                        <p class="fieldDescription" style="margin: 0 0 0.5em 0;">Display the Hidden Content page in a Custom Tabs tab instead of the sidebar link.</p>
+                                        <p class="fieldDescription" style="margin: 0.5em 0;">You need the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
+                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "Hidden Content").</li>
+                                            <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                        </ol>
+                                        <div style="position: relative;">
+                                            <button type="button" class="je-copy-html-btn raised raised-mini emby-button" data-copy-text="&lt;div class=&quot;jellyfinenhanced hidden-content&quot;&gt;&lt;/div&gt;" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
+                                                <span class="copy-btn-text" style="vertical-align: middle;">Copy</span>
+                                            </button>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="jellyfinenhanced hidden-content"&gt;&lt;/div&gt;
+</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            Already have Custom Tabs installed?
+                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2020,6 +2053,8 @@
 
                 // Hidden Content settings
                 document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
+                document.querySelector('#hiddenContentUsePluginPages').checked = config.HiddenContentUsePluginPages === true;
+                document.querySelector('#hiddenContentUseCustomTabs').checked = config.HiddenContentUseCustomTabs === true;
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -2199,6 +2234,8 @@
 
             // Hidden Content settings
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
+            config.HiddenContentUsePluginPages = document.querySelector('#hiddenContentUsePluginPages').checked;
+            config.HiddenContentUseCustomTabs = document.querySelector('#hiddenContentUseCustomTabs').checked;
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';

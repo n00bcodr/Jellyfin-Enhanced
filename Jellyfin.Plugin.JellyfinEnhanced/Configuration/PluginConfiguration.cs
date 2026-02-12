@@ -187,6 +187,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Hidden Content Settings
             HiddenContentEnabled = false;
+            HiddenContentUsePluginPages = false;
+            HiddenContentUseCustomTabs = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -347,5 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Hidden Content Settings
         public bool HiddenContentEnabled { get; set; }
+        public bool HiddenContentUsePluginPages { get; set; }
+        public bool HiddenContentUseCustomTabs { get; set; }
     }
 }

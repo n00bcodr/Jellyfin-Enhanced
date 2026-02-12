@@ -612,7 +612,7 @@
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
 
         const generatePresetHTML = (presets, type) => {
-            return presets.map((preset, index) => {
+            let html = presets.map((preset, index) => {
                 let previewStyle = '';
                 if (type === 'style') {
                     previewStyle = `background-color: ${preset.bgColor}; color: ${preset.textColor}; border: 1px solid rgba(255,255,255,0.3); text-shadow: #000000 0px 0px 3px;`;
@@ -626,6 +626,7 @@
                         <span style="display: inline-block; ${type === 'style' ? `width: 40px; height: 25px; border-radius: 4px; line-height: 25px;` : ''} ${previewStyle} text-align: center; font-weight: bold;">${preset.previewText}</span>
                     </div>`;
             }).join('');
+            return html;
         };
 
         const userShortcuts = (JE.userConfig.shortcuts.Shortcuts || []).reduce((acc, s) => {
@@ -757,6 +758,28 @@
                                 </label>
                             </div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${primaryAccentColor};">
+                                <div style="font-weight: 600; margin-bottom: 12px;">${JE.icon(JE.IconName.PAINT)}</div>
+                                <div style="display: flex; gap: 12px;">
+                                    <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+                                        <div>
+                                            <div style="font-size: 13px; margin-bottom: 6px; color: rgba(255,255,255,0.8);">Text</div>
+                                            <div style="display: flex; gap: 8px; align-items: center;">
+                                                <input type="color" id="customSubtitleTextColorPicker" value="${JE.currentSettings.customSubtitleTextColor?.substring(0, 7) || '#FFFFFF'}" style="width: 50px; height: 36px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; cursor: pointer; background: transparent;">
+                                                <input type="range" id="customSubtitleTextAlpha" min="0" max="255" value="${parseInt(JE.currentSettings.customSubtitleTextColor?.substring(7, 9) || 'FF', 16)}" style="flex: 1; accent-color: ${primaryAccentColor};">
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 13px; margin-bottom: 6px; color: rgba(255,255,255,0.8);">Background</div>
+                                            <div style="display: flex; gap: 8px; align-items: center;">
+                                                <input type="color" id="customSubtitleBgColorPicker" value="${JE.currentSettings.customSubtitleBgColor?.substring(0, 7) || '#000000'}" style="width: 50px; height: 36px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; cursor: pointer; background: transparent;">
+                                                <input type="range" id="customSubtitleBgAlpha" min="0" max="255" value="${parseInt(JE.currentSettings.customSubtitleBgColor?.substring(7, 9) || '00', 16)}" style="flex: 1; accent-color: ${primaryAccentColor};">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="subtitleColorPreview" style="display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; border-radius: 6px; background: rgba(0,0,0,0.3); color: ${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color: ${JE.currentSettings.customSubtitleBgColor || '#00000000'}; padding: 12px 20px; flex: 0.5; align-self: center;">AaBbCcDd</div>
+                                </div>
+                            </div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
                         </div>
@@ -1318,6 +1341,45 @@
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
+        // Inline custom subtitle color pickers
+        const customTextColorPicker = document.getElementById('customSubtitleTextColorPicker');
+        const customTextAlpha = document.getElementById('customSubtitleTextAlpha');
+        const customBgColorPicker = document.getElementById('customSubtitleBgColorPicker');
+        const customBgAlpha = document.getElementById('customSubtitleBgAlpha');
+
+        const updateCustomSubtitleColors = () => {
+            const textColor = customTextColorPicker.value + parseInt(customTextAlpha.value).toString(16).padStart(2, '0').toUpperCase();
+            const bgColor = customBgColorPicker.value + parseInt(customBgAlpha.value).toString(16).padStart(2, '0').toUpperCase();
+
+            JE.currentSettings.customSubtitleTextColor = textColor;
+            JE.currentSettings.customSubtitleBgColor = bgColor;
+            JE.currentSettings.usingCustomColors = true;
+
+            // Remove border from all style presets
+            const styleContainer = document.getElementById('subtitle-style-presets-container');
+            if (styleContainer) {
+                styleContainer.querySelectorAll('.preset-box').forEach(box => {
+                    box.style.border = '2px solid transparent';
+                });
+            }
+
+            // Update live preview
+            const preview = document.getElementById('subtitleColorPreview');
+            if (preview) {
+                preview.style.color = textColor;
+                preview.style.backgroundColor = bgColor;
+            }
+
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.applySavedStylesWhenReady();
+            resetAutoCloseTimer();
+        };
+
+        if (customTextColorPicker) customTextColorPicker.addEventListener('input', updateCustomSubtitleColors);
+        if (customTextAlpha) customTextAlpha.addEventListener('input', updateCustomSubtitleColors);
+        if (customBgColorPicker) customBgColorPicker.addEventListener('input', updateCustomSubtitleColors);
+        if (customBgAlpha) customBgAlpha.addEventListener('input', updateCustomSubtitleColors);
+
         // ============================================================
         // Hidden Content — settings panel event listeners
         // Binds change handlers for all hidden-content toggles:
@@ -1707,6 +1769,30 @@
                 if (selectedPreset) {
                     if (type === 'style') {
                         JE.currentSettings.selectedStylePresetIndex = presetIndex;
+                        JE.currentSettings.usingCustomColors = false;
+                        JE.currentSettings.customSubtitleTextColor = selectedPreset.textColor;
+                        JE.currentSettings.customSubtitleBgColor = selectedPreset.bgColor;
+
+                        // Update UI inputs
+                        const textColorPicker = document.getElementById('customSubtitleTextColorPicker');
+                        const textAlphaSlider = document.getElementById('customSubtitleTextAlpha');
+                        const bgColorPicker = document.getElementById('customSubtitleBgColorPicker');
+                        const bgAlphaSlider = document.getElementById('customSubtitleBgAlpha');
+                        const preview = document.getElementById('subtitleColorPreview');
+
+                        if (textColorPicker && textAlphaSlider) {
+                            textColorPicker.value = selectedPreset.textColor.substring(0, 7);
+                            textAlphaSlider.value = parseInt(selectedPreset.textColor.substring(7, 9) || 'FF', 16);
+                        }
+                        if (bgColorPicker && bgAlphaSlider) {
+                            bgColorPicker.value = selectedPreset.bgColor.substring(0, 7);
+                            bgAlphaSlider.value = parseInt(selectedPreset.bgColor.substring(7, 9) || '00', 16);
+                        }
+                        if (preview) {
+                            preview.style.color = selectedPreset.textColor;
+                            preview.style.backgroundColor = selectedPreset.bgColor;
+                        }
+
                         const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
@@ -1715,19 +1801,31 @@
                         JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
                         JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
-                        const styleIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const stylePreset = JE.subtitlePresets[styleIndex];
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-                        JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, selectedPreset.size, fontFamily, stylePreset.textShadow);
+
+                        // Use saved custom colors
+                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
+                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
+                            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
+                            : 'none';
+
+                        JE.applySubtitleStyles(textColor, bgColor, selectedPreset.size, fontFamily, textShadow);
                         JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
                     } else if (type === 'font-family') {
                         JE.currentSettings.selectedFontFamilyPresetIndex = presetIndex;
-                        const styleIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
                         const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const stylePreset = JE.subtitlePresets[styleIndex];
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-                        JE.applySubtitleStyles(stylePreset.textColor, stylePreset.bgColor, fontSize, selectedPreset.family, stylePreset.textShadow);
+
+                        // Use saved custom colors
+                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
+                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
+                            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
+                            : 'none';
+
+                        JE.applySubtitleStyles(textColor, bgColor, fontSize, selectedPreset.family, textShadow);
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     }
 
@@ -1743,15 +1841,25 @@
             let currentIndex;
             if (type === 'style') {
                 currentIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
+                // Only highlight if not using custom colors
+                if (!JE.currentSettings.usingCustomColors) {
+                    const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
+                    if (activeBox) {
+                        activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                    }
+                }
             } else if (type === 'font-size') {
                 currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
+                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
+                if (activeBox) {
+                    activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                }
             } else if (type === 'font-family') {
                 currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-            }
-
-            const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-            if (activeBox) {
-                activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
+                if (activeBox) {
+                    activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                }
             }
         };
 

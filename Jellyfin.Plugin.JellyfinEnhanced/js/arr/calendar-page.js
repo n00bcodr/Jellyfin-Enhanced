@@ -31,6 +31,9 @@
     activeFilters: new Set(), // Track active filters
     filterMatchMode: "any",
     filterInvert: false,
+    requestedItems: new Set(),
+    requestedLoaded: false,
+    requestedLoading: false,
     locationSignature: null,
     locationTimer: null,
   };
@@ -1403,6 +1406,60 @@
     }
   }
 
+  async function fetchUserRequests() {
+    if (!JE.pluginConfig?.JellyseerrEnabled) {
+      state.requestedItems = new Set();
+      state.requestedLoaded = true;
+      state.requestedLoading = false;
+      return;
+    }
+
+    state.requestedLoading = true;
+    const requested = new Set();
+    const pageSize = 200;
+    let page = 1;
+    let totalPages = 1;
+
+    try {
+      while (page <= totalPages) {
+        const skip = (page - 1) * pageSize;
+        const url = ApiClient.getUrl("/JellyfinEnhanced/arr/requests", {
+          take: pageSize,
+          skip: skip,
+          userOnly: true,
+        });
+
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        totalPages = data.totalPages || 1;
+        (data.requests || []).forEach((req) => {
+          const tmdbId = req?.tmdbId;
+          const type = (req?.type || "").toLowerCase();
+          if (!tmdbId || !type) return;
+          requested.add(`${type}:${tmdbId}`);
+        });
+
+        page += 1;
+      }
+    } catch (error) {
+      console.warn(`${logPrefix} Failed to fetch user requests:`, error);
+    } finally {
+      state.requestedItems = requested;
+      state.requestedLoaded = true;
+      state.requestedLoading = false;
+      if (state.pageVisible) {
+        renderPage();
+      }
+    }
+  }
+
+  async function ensureRequestData() {
+    if (state.requestedLoading || state.requestedLoaded) return;
+    await fetchUserRequests();
+  }
+
   /**
    * Load all data
    */
@@ -1419,6 +1476,10 @@
 
     // Then fetch user data for those specific events
     await fetchUserData();
+
+    if (state.activeFilters.has("Requests")) {
+      await ensureRequestData();
+    }
 
     state.isLoading = false;
     renderPage();
@@ -1442,12 +1503,25 @@
 
     const filters = Array.from(state.activeFilters);
 
+    const getRequestKey = (event) => {
+      const tmdbId = event?.tmdbId;
+      if (!tmdbId) return null;
+      const type = event.type === "Series" ? "tv" : "movie";
+      return `${type}:${tmdbId}`;
+    };
+
+    const isRequestedEvent = (event) => {
+      const key = getRequestKey(event);
+      return key ? state.requestedItems.has(key) : false;
+    };
+
       return filteredEvents.filter((event) => {
         const userData = state.userDataMap?.get(event.id);
         const matchesFilter = (filterType) => {
           if (filterType === 'Watchlist') return !!userData?.isFavorite;
           if (filterType === 'Watched') return !!userData?.isWatched;
           if (filterType === 'Available') return !!event.hasFile;
+          if (filterType === 'Requests') return isRequestedEvent(event);
           return event.releaseType === filterType;
         };
 
@@ -1716,6 +1790,9 @@
       state.activeFilters.delete(filterType);
     } else {
       state.activeFilters.add(filterType);
+      if (filterType === "Requests") {
+        ensureRequestData();
+      }
     }
     renderPage();
   }
@@ -2190,6 +2267,15 @@
       return state.activeFilters.has(filterType) ? 'active' : 'inactive';
     };
 
+    const showRequestsFilter = !!JE.pluginConfig?.JellyseerrEnabled;
+    const requestsLabel = JE.t?.("requests_requests") || "Requests";
+    const requestsLegend = showRequestsFilter
+      ? `<div class="je-calendar-legend-item ${getItemClass('Requests')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Requests'); event.stopPropagation();">
+          <span class="material-symbols-rounded" style="color: #6f63f2; font-size: 18px;">download</span>
+          <span>${requestsLabel}</span>
+        </div>`
+      : "";
+
     const watchlistLegend = state.settings.highlightFavorites
       ? `<div class="je-calendar-legend-item ${getItemClass('Watchlist')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Watchlist'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: #ffd700; font-size: 18px; font-variation-settings: 'FILL' 1;">bookmark</span>
@@ -2243,6 +2329,7 @@
           <span class="material-symbols-rounded" style="color: #4caf50; font-size: 18px;">check_circle</span>
           <span>${JE.t?.("jellyseerr_btn_available") || "Available"}</span>
         </div>
+        ${requestsLegend}
         ${watchlistLegend}
         ${watchedLegend}
       </div>

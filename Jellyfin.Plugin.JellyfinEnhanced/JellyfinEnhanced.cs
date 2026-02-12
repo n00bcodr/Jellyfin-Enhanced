@@ -156,6 +156,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             bool bookmarksExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.BookmarksPage");
 
+            bool hiddenContentExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.HiddenContentPage");
+
             // Only add calendar page if it's enabled and using plugin pages
             if (!calendarExists && pluginConfig.CalendarPageEnabled && pluginConfig.CalendarUsePluginPages)
             {
@@ -222,6 +225,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (bookmarksPage != null)
                 {
                     config.Value<JArray>("pages")!.Remove(bookmarksPage);
+                }
+            }
+
+            // Only add hidden content page if it's enabled and using plugin pages
+            if (!hiddenContentExists && pluginConfig.HiddenContentEnabled && pluginConfig.HiddenContentUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.HiddenContentPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/hiddenContentPage" },
+                    { "DisplayText", "Hidden Content" },
+                    { "Icon", "visibility_off" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            // Remove hidden content page if it exists but is now disabled or not using plugin pages
+            else if (hiddenContentExists && (!pluginConfig.HiddenContentEnabled || !pluginConfig.HiddenContentUsePluginPages))
+            {
+                var hiddenContentPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.HiddenContentPage");
+                if (hiddenContentPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(hiddenContentPage);
                 }
             }
 
@@ -303,6 +329,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "bookmarksPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.BookmarksPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "hiddenContentPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.HiddenContentPage.html"
                 }
             };
         }
