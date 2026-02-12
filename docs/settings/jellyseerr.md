@@ -2,8 +2,8 @@
 !!! info "Important"
     ### Prerequisites:
     - Jellyseerr instance:
-      - API key
-      - Jellyfin users **imported to Jellyseerr**
+        - API key
+        - Jellyfin users **imported to Jellyseerr**
 
 ### Step 1: Enable Jellyfin Sign-In in Jellyseerr
 
