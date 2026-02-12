@@ -390,6 +390,7 @@
     "calendar_no_releases": "Inga kommande utgåvor",
     "calendar_watchlist": "Bevakningslista",
     "calendar_watched": "Sedd",
+    "calendar_include_unmonitored": "Inkludera oövervakade",
     "calendar_all_day": "Hela dagen",
     "hidden_content_settings_title": "Dolt innehåll",
     "hidden_content_toggle_label": "Aktivera döljning av innehåll",

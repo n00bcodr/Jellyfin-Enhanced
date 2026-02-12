@@ -390,6 +390,7 @@
     "calendar_no_releases": "Nincs közelgő megjelenés",
     "calendar_watchlist": "Figyelőlista",
     "calendar_watched": "Megtekintve",
+    "calendar_include_unmonitored": "Nem figyelt tartalmak",
     "calendar_all_day": "Egész nap",
     "hidden_content_settings_title": "Rejtett tartalom",
     "hidden_content_toggle_label": "Tartalom elrejtésének engedélyezése",

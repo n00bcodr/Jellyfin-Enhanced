@@ -25,6 +25,7 @@
       timeFormat: "5pm/5:30pm",
       highlightFavorites: false,
       highlightWatchedSeries: false,
+      showUnmonitored: false,
     },
     userDataMap: new Map(),
     activeFilters: new Set(), // Track active filters
@@ -1099,6 +1100,26 @@
   `;
 
   const logPrefix = '🪼 Jellyfin Enhanced: Calendar Page:';
+  const STORAGE_KEYS = {
+    showUnmonitored: "je.calendar.showUnmonitored",
+  };
+
+  function getStoredShowUnmonitored() {
+    try {
+      const stored = window.localStorage?.getItem(STORAGE_KEYS.showUnmonitored);
+      if (stored === null) return null;
+      return stored === "true";
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function setStoredShowUnmonitored(value) {
+    try {
+      window.localStorage?.setItem(STORAGE_KEYS.showUnmonitored, String(!!value));
+    } catch (error) {
+    }
+  }
 
   /**
    * Get default view mode from settings, defaults to agenda
@@ -1206,11 +1227,13 @@
   function loadSettings() {
     const config = JE.pluginConfig || {};
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+    const storedShowUnmonitored = getStoredShowUnmonitored();
     state.settings = {
       firstDayOfWeek: config.CalendarFirstDayOfWeek || "Monday",
       timeFormat: config.CalendarTimeFormat || "5pm/5:30pm",
       highlightFavorites: config.CalendarHighlightFavorites || false,
       highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
+      showUnmonitored: storedShowUnmonitored ?? false,
       displayMode: JE.currentSettings.calendarDisplayMode || "list",
     };
   }
@@ -1405,11 +1428,21 @@
    * Filter events based on active filters
    */
   function filterEvents(events) {
-    if (state.activeFilters.size == 0) return events;
+    // First, filter by monitored status if showUnmonitored is false
+    let filteredEvents = events;
+    if (!state.settings.showUnmonitored) {
+      filteredEvents = events.filter((event) => {
+        // Filter out unmonitored items from both Sonarr and Radarr
+        return event.monitored !== false;
+      });
+    }
+
+    // Then apply user-selected filters
+    if (state.activeFilters.size == 0) return filteredEvents;
 
     const filters = Array.from(state.activeFilters);
 
-      return events.filter((event) => {
+      return filteredEvents.filter((event) => {
         const userData = state.userDataMap?.get(event.id);
         const matchesFilter = (filterType) => {
           if (filterType === 'Watchlist') return !!userData?.isFavorite;
@@ -1698,6 +1731,13 @@
   function toggleFilterInvert() {
     if (state.activeFilters.size === 0) return;
     state.filterInvert = !state.filterInvert;
+    renderPage();
+  }
+
+  // Toggle show unmonitored series on/off
+  function toggleShowUnmonitored() {
+    state.settings.showUnmonitored = !state.settings.showUnmonitored;
+    setStoredShowUnmonitored(state.settings.showUnmonitored);
     renderPage();
   }
 
@@ -2165,6 +2205,11 @@
       : "";
 
     const hasTwoFilters = state.activeFilters.size >= 2;
+    const unmonitoredToggle = `
+      <div class="je-calendar-legend-item je-calendar-unmonitored-toggle ${state.settings.showUnmonitored ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.toggleShowUnmonitored(); event.stopPropagation();" style="cursor: pointer; border: 1px solid rgba(128,128,128,0.3); padding: 0.5em 0.75em; margin-bottom: 0.5em;">
+        <span class="material-symbols-rounded" style="color: #ff9800; font-size: 18px;">${state.settings.showUnmonitored ? 'check_box' : 'check_box_outline_blank'}</span>
+        <span>${JE.t?.("calendar_include_unmonitored") || "Include Unmonitored"}</span>
+      </div>`;
     const filterControls = `
       <div class="je-calendar-filter-controls">
         <div class="je-calendar-filter-toggle ${hasTwoFilters ? '' : 'is-disabled'}" role="group" aria-label="Filter mode">
@@ -2176,6 +2221,7 @@
 
     return `
       <div class="je-calendar-legend">
+        ${unmonitoredToggle}
         ${filterControls}
         <div class="je-calendar-legend-item ${getItemClass('CinemaRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('CinemaRelease'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
@@ -2728,6 +2774,7 @@
     shiftPeriod,
     goToday,
     toggleFilter,
+    toggleShowUnmonitored,
     renderPage,
     renderForCustomTab,
     injectStyles,

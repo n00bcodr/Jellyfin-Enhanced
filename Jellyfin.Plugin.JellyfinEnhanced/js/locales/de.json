@@ -388,6 +388,7 @@
     "calendar_no_releases": "Keine bevorstehenden Veröffentlichungen",
     "calendar_watchlist": "Merkliste",
     "calendar_watched": "Gesehen",
+    "calendar_include_unmonitored": "Nicht überwachte einbeziehen",
     "calendar_all_day": "Ganztägig",
     "hidden_content_settings_title": "Versteckte Inhalte",
     "hidden_content_toggle_label": "Inhalte verbergen aktivieren",
