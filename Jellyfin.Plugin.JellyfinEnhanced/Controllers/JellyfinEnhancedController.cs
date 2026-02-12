@@ -2366,7 +2366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("arr/requests")]
         [Authorize]
-        public async Task<IActionResult> GetRequests([FromQuery] int take = 20, [FromQuery] int skip = 0, [FromQuery] string? filter = null)
+        public async Task<IActionResult> GetRequests([FromQuery] int take = 20, [FromQuery] int skip = 0, [FromQuery] string? filter = null, [FromQuery] bool userOnly = false)
         {
             take = Math.Clamp(take, 1, 200);
             skip = Math.Max(0, skip);
@@ -2423,8 +2423,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _ => ""
                 };
 
-                // If user lacks permission, filter to only their requests
-                if (!hasRequestViewPermission)
+                // If user lacks permission or user-only is requested, filter to only their requests
+                if (!hasRequestViewPermission || userOnly)
                 {
                     filterParam += $"&requestedBy={jellyseerrUser.Id}";
                 }
@@ -2546,6 +2546,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             title = title,
                             year = year,
                             posterUrl = posterUrl,
+                            tmdbId = tmdbId,
                             mediaStatus = mediaStatus,
                             requestedBy = displayName ?? username ?? "Unknown",
                             requestedByAvatar = avatarUrl,
@@ -2825,6 +2826,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Overview = (string?)episode.overview,
                                     TvdbId = seriesTvdbId,
                                     ImdbId = seriesImdbId,
+                                    TmdbId = (int?)episode.series.tmdbId,
                                     PosterUrl = seriesPosterUrl,
                                     BackdropUrl = seriesBackdropUrl,
                                     EpisodeTvdbId = (int?)episode.tvdbId,
