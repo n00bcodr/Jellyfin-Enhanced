@@ -78,7 +78,7 @@ nav:
     - Enhanced: features/enhanced.md
     - Elsewhere: features/elsewhere.md
     - Jellyseerr: features/jellyseerr.md
-    - *arr Integration: features/arr.md
+    - "*arr Integration": features/arr.md
     - Other Features: features/other-features.md
   - Installation: 
     - Standard (recommended): installation/standard.md
@@ -87,7 +87,7 @@ nav:
     - Enhanced Settings: settings/enhanced.md
     - Elsewhere Settings: settings/elsewhere.md
     - Jellyseerr Settings: settings/jellyseerr.md
-    - *arr settings: settings/arr.md
+    - "*arr settings": settings/arr.md
     - Other Settings: settings/other-settings.md
   - Advanced Usage: 
     - Configurations: advanced/configurations.md
