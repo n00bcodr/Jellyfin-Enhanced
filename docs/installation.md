@@ -233,7 +233,7 @@ After installation, verify these work:
 - [Explore Features](features.md) - Learn about all available features
 - [Read FAQ](faq.md) - Common questions and answers
 - [Customize CSS](features.md#custom-styling) - Advanced styling options
-- [Join Discord](https://discord.com/channels/1381737066366242896/1442128048873930762) - Get help from the community
+- [Join Discord](https://discord.gg/HKA2QNYJ6) - Get help from the community
 
 ## Getting Help
 
@@ -241,5 +241,5 @@ If you encounter issues:
 
 1. Check the [FAQ](faq.md) for common solutions
 2. Search [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-3. Join the [Discord Community](https://discord.com/channels/1381737066366242896/1442128048873930762)
+3. Join the [Discord Community](https://discord.gg/HKA2QNYJ6)
 4. Create a new issue with logs and details
