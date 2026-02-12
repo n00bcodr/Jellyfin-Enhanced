@@ -74,16 +74,21 @@ markdown_extensions:
 # main tabs/headers
 nav:
   - Home: index.md
-  - JE Features: features.md
-  - Installation: 
-    - Standard (recommended): installation/standard.md
-    - Platform-specific: installation/platform-specific.md
-  - Post-Installation: post_install.md
-  - All Features:
+  - Features:
+    - Core Features: main.md
     - Enhanced: enhanced.md
     - Elsewhere: elsewhere.md
     - Jellyseerr: jellyseerr.md
     - ARR Integration: arr.md
     - Others: others.md
-  - FAQ: faq.md
-  - Other Projects: projects.md
+  - Installation: 
+    - Standard (recommended): installation/standard.md
+    - Platform-specific: installation/platform-specific.md
+  - Post-Installation: 
+    - Configurations: post-installation/main.md
+    - Customization: post-installation/customization.md
+    - API Usage: post-installation/api.md
+  - FAQ + Support: 
+    - FAQ: faq-support/faq.md
+    - Support: faq-support/support.md
+  - Other Projects: other-projects.md
