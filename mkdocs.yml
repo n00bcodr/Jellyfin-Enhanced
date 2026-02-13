@@ -130,7 +130,7 @@ nav:
     - "*arr Features": arr/arr-features.md
 
     # *arr Settings
-    - Other Settings: arr/arr-settings.md
+    - "*arr Settings": arr/arr-settings.md
 
 
   # ——————————————
