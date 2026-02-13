@@ -4,7 +4,7 @@ repo_name: n00bcodr/Jellyfin-Enhanced
 repo_url: https://github.com/n00bcodr/Jellyfin-Enhanced
 site_description: The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 site_author: n00bcodr
-copyright: Copyright &copy; 2024-2026 n00bcodr
+copyright: Copyright &copy; 2024-2026 n00bcodr. Made with 💜 for Jellyfin and the community
 
 theme:
   name: material
@@ -71,16 +71,94 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+
+# main tabs/headers
 nav:
+  # ——————————————
+  # landing page
+  # ——————————————
   - Home: index.md
-  - Getting Started:
-    - Installation: installation.md
-    - Features Guide: features.md
-    - FAQ: faq.md
-  - Features:
-    - Enhanced: enhanced.md
-    - Elsewhere: elsewhere.md
-    - Jellyseerr: jellyseerr.md
-    - ARR Integration: arr.md
-    - Others: others.md
-  - Projects: projects.md
+
+
+  # ——————————————
+  # Installation
+  # ——————————————
+  - Installation: 
+    - Standard Installation (recommended): installation/standard-recommended.md
+    - Advanced Installation (not recommended): installation/advanced-not-recommended.md
+    - Troubleshooting: installation/troubleshooting.md
+
+
+  # ——————————————
+  # Enhanced
+  # ——————————————
+  - Enhanced:
+    # Feature overview
+    - Enhanced Features: enhanced/enhanced-features.md
+
+    # Enhanced Settings
+    - Enhanced Settings: enhanced/enhanced-settings.md
+
+
+  # ——————————————
+  # Elsewhere
+  # ——————————————
+  - Elsewhere:
+    # Features overview
+    - Elsewhere Features: elsewhere/elsewhere-features.md
+
+    # Elsewhere Settings
+    - Elsewhere Settings: elsewhere/elsewhere-settings.md
+
+
+  # ——————————————
+  # Jellyseerr
+  # ——————————————
+  - Jellyseerr:
+    # Features overview
+    - Jellyseerr Features: jellyseerr/jellyseerr-features.md
+
+    # Jellyseerr Settings
+    - Jellyserrr Settings: jellyseerr/jellyseerr-settings.md
+
+
+  # ——————————————
+  # *arr
+  # ——————————————
+  - "*arr":
+    # Features overview
+    - "*arr Features": arr/arr-features.md
+
+    # *arr Settings
+    - "*arr Settings": arr/arr-settings.md
+
+    # Troubleshooting + Support
+    - Troubleshooting + Support: arr/troubleshooting.md
+
+
+  # ——————————————
+  # Other
+  # ——————————————
+  - Other:
+    # Features overview
+    - Other Features: other/other-features.md
+
+    # Other Settings
+    - Other Settings: other/other-settings.md
+
+
+  # ——————————————
+  # Advanced, misc
+  # ——————————————
+  - Advanced: 
+    #- Advanced Configurations: advanced/advanced-configurations.md # i'm not sure this page is necessary
+    - CSS Customization: advanced/css-customization.md
+    - API: advanced/api.md
+    - Project Structure: advanced/project-structure.md
+  - FAQ + Support: 
+    - FAQ: faq-support/faq.md
+    - Report issues: faq-support/report-issues.md
+    - Feature Requests: faq-support/feature-requests.md
+    - Contributing Translations: faq-support/contributing-translations.md
+    - Support + Community: faq-support/support-community.md
+  - Other Projects: other-projects/other-projects.md

@@ -2,17 +2,8 @@
 
 Jellyfin Enhanced bundles dozens of features into one convenient plugin. This guide covers all available features and how to use them.
 
-![Enhanced Panel](images/panel_jellyfish.gif)
-
-## Table of Contents
-
-- [Playback & Controls](#playback-controls)
-- [Discovery & Integration](#discovery-integration)
-- [Visual Enhancements](#visual-enhancements)
-- [Personal Scripts](#personal-scripts)
-- [Customization](#customization)
-
----
+<!-- relative directories -->
+![Enhanced Panel](../images/panel.gif)
 
 ## Playback & Controls
 
@@ -20,7 +11,8 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 
 Comprehensive hotkeys for navigation, playback control, and more.
 
-![Shortcuts](images/shortcuts.png)
+<!-- relative directories -->
+![Shortcuts](../images/shortcuts.png)
 
 **Default Shortcuts:**
 - `Space` - Play/Pause
@@ -67,7 +59,7 @@ Save timestamps and jump to specific moments with visual timeline markers.
 
 Beautiful overlay with media info when you pause a video.
 
-![Pause Screen](images/pausescreen.png)
+![Pause Screen](../images/pausescreen.png)
 
 **Displays:**
 - Media title and logo
@@ -77,8 +69,10 @@ Beautiful overlay with media info when you pause a video.
 - Spinning disc animation
 - Blurred backdrop
 
-**Customization:**
-See [Custom Styling](#custom-styling) section for CSS customization options.
+<!-- custom css note -->
+!!! tip
+
+    [Custom CSS available](../advanced/css-customization.md)
 
 ### ⏯️ Smart Playback
 
@@ -119,7 +113,7 @@ Fine-tune subtitle appearance with presets for style, size, and font.
 
 Search, request, and discover media directly from Jellyfin's search interface.
 
-![Jellyseerr](images/jellyseerr.png)
+![Jellyseerr](../images/jellyseerr.png)
 
 **Features:**
 - Search Jellyseerr from Jellyfin search bar
@@ -144,7 +138,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 - "Enable Jellyfin Sign-In" enabled in Jellyseerr
 - Jellyfin users imported into Jellyseerr
 
-![Jellyfin Sign-In](images/jellyfin-signin.png)
+![Jellyfin Sign-In](../images/jellyfin-signin.png)
 
 **Icon States:**
 
@@ -190,21 +184,11 @@ Quick access to Sonarr, Radarr, and Bazarr (admin only).
 - Display *arr tags as clickable links
 - Filter and customize tag display
 
-**Setup:**
-1. Open plugin settings → **ARR Settings** tab
-2. Enter your Sonarr/Radarr/Bazarr URLs
-3. Enable "Show *arr Links on Item Pages"
-4. Optional: Enable "Show *arr Tags as Links"
-5. Configure tag filters (show/hide specific tags)
-
-**Tag Customization:**
-See [ARR Tag Links CSS](#arr-tag-links-css) for styling options.
-
 ### 🔍 Streaming Provider Lookup
 
 See where else your media is available to stream.
 
-![Elsewhere](images/elsewhere.png)
+![Elsewhere](../images/elsewhere.png)
 
 **Features:**
 - Multi-region support
@@ -245,31 +229,6 @@ Display quality information (4K, HDR, Atmos) directly on posters.
 - **Video Features:** HDR, Dolby Vision, HDR10+, 3D
 - **Audio:** ATMOS, DTS-X, TRUEHD, DTS, Dolby Digital+, 7.1, 5.1
 
-**Configuration:**
-1. Open Enhanced panel → Settings
-2. Enable "Quality Tags"
-3. Adjust position (top-left, top-right, etc.)
-4. Customize via CSS (see below)
-
-**CSS Customization:**
-```css
-/* Change all tag styles */
-.quality-overlay-label {
-    font-size: 0.8rem !important;
-    padding: 3px 10px !important;
-}
-
-/* Target specific tags */
-.quality-overlay-label[data-quality="4K"] {
-    background-color: purple !important;
-}
-
-/* Hide unwanted tags */
-.quality-overlay-label[data-quality="H264"] {
-    display: none !important;
-}
-```
-
 ### 🎭 Genre Tags
 
 Identify genres with themed icons on posters.
@@ -279,26 +238,6 @@ Identify genres with themed icons on posters.
 - Circular badges that expand on hover
 - Show up to 3 genres per item
 - Customizable position
-
-**Configuration:**
-Enable in Enhanced panel → Settings → Genre Tags
-
-**CSS Customization:**
-```css
-/* Always show text (no hover) */
-.genre-tag {
-    width: auto !important;
-    border-radius: 14px !important;
-}
-.genre-tag .genre-text {
-    display: inline !important;
-}
-
-/* Change background color */
-.genre-tag {
-    background-color: rgba(100, 100, 255, 0.8) !important;
-}
-```
 
 ### 🌐 Language Tags
 
@@ -310,33 +249,11 @@ Display available audio languages as country flags on posters.
 - Positioned bottom-left by default
 - Also displays on item detail pages
 
-**Configuration:**
-Enable in Enhanced panel → Settings → Language Tags
-
-**CSS Customization:**
-```css
-/* Change flag size */
-.language-flag {
-    width: 30px !important;
-    height: auto !important;
-}
-
-/* Add border to flags */
-.language-flag {
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
-}
-
-/* Hide specific language */
-.language-flag[data-lang="jp"] {
-    display: none !important;
-}
-```
-
 ### ⭐ Rating Tags
 
 Show TMDB and Rotten Tomatoes ratings on posters and in player.
 
-![Ratings](images/ratings.png)
+![Ratings](../images/ratings.png)
 
 **Features:**
 - TMDB star ratings
@@ -345,28 +262,6 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Optional OSD display during playback
 - Color-coded by rating value
 
-**Configuration:**
-1. Enable in Enhanced panel → Settings
-2. Choose "Rating Tags on Posters"
-3. Optional: Enable "OSD Rating in Player"
-
-**CSS Customization:**
-```css
-/* Customize TMDB rating */
-.rating-tag-tmdb {
-    background: rgba(0, 0, 0, 0.9) !important;
-}
-
-/* Customize critic rating */
-.rating-tag-critic {
-    background: rgba(220, 53, 69, 0.95) !important;
-}
-
-/* Hide specific rating */
-.rating-tag-tmdb {
-    display: none !important;
-}
-```
 
 ### 👤 People Tags
 
@@ -379,33 +274,10 @@ Display age and birthplace information for cast members.
 - Deceased indicator (grayscale + cross)
 - Caching for performance
 
-**Configuration:**
-Enable in Enhanced panel → Settings → People Tags
-
 **Displays:**
 - Age chips (top-left of cast cards)
 - Birthplace banner (bottom of cast cards)
 - Deceased styling (grayscale filter)
-
-**CSS Customization:**
-```css
-/* Customize age chips */
-.je-people-age-chip {
-    padding: 6px 12px !important;
-    font-size: 13px !important;
-}
-
-/* Customize birthplace banner */
-.je-people-place-banner {
-    background: rgba(0, 0, 0, 0.95) !important;
-    padding: 16px !important;
-}
-
-/* Hide age chips */
-.je-people-age-container {
-    display: none !important;
-}
-```
 
 ---
 
@@ -417,7 +289,7 @@ These are optional scripts from the developer's personal collection.
 
 Replace default activity icons with Material Design icons.
 
-![Colored Activity Icons](images/colored-activity-icons.png)
+![Colored Activity Icons](../images/colored-activity-icons.png)
 
 **Features:**
 - Custom colors for each activity type
@@ -431,7 +303,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Color-coded backgrounds for ratings on detail pages.
 
-![Colored Ratings](images/ratings.png)
+![Colored Ratings](../images/ratings.png)
 
 **Features:**
 - Different colors per rating type
@@ -445,7 +317,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Show user profile images on manual login page.
 
-![Login Image](images/login-image.png)
+![Login Image](../images/login-image.png)
 
 **Features:**
 - Display user avatars
@@ -459,7 +331,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Replace default plugin icons with Material Design icons.
 
-![Plugin Icons](images/plugin-icons.png)
+![Plugin Icons](../images/plugin-icons.png)
 
 **Features:**
 - Custom icons for popular plugins
@@ -473,7 +345,7 @@ Enable in Enhanced panel → Settings → Extras
 
 Choose from multiple Jellyfin theme color variants.
 
-![Theme Selector](images/theme-selector.png)
+![Theme Selector](../images/theme-selector.png)
 
 **Features:**
 - Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
@@ -489,45 +361,21 @@ Choose from multiple Jellyfin theme color variants.
 
 ## Customization
 
-### 🎨 Custom Styling
+### 🎨 Custom Styling with CSS
 
-Extensive CSS customization options for all features.
+Extensive CSS customization options. See [Customization](../advanced/customization.md) for more
 
 **Available Customizations:**
-- [Pause Screen CSS](#pause-screen-css)
-- [Quality Tags CSS](#quality-tags-css)
-- [Genre Tags CSS](#genre-tags-css)
-- [Language Tags CSS](#language-tags-css)
-- [Rating Tags CSS](#rating-tags-css)
-- [Rating Tag OSD CSS](#rating-tag-osd-css)
-- [People Tags CSS](#people-tags-css)
-- [ARR Tag Links CSS](#arr-tag-links-css)
-- [Enhanced Panel CSS](#panel-css)
+- Pause Screen CSS
+- Quality Tags CSS
+- Genre Tags CSS
+- Language Tags CSS
+- Rating Tags CSS
+- Rating Tag OSD CSS
+- People Tags CSS
+- ARR Tag Links CSS
+- Enhanced Panel CSS
 
-**How to Apply Custom CSS:**
-1. Go to **Dashboard** → **General** → **Custom CSS**
-2. Add your custom styles
-3. Click **Save**
-4. Refresh browser (Ctrl+F5)
-
-**Example - Hide Pause Screen Logo:**
-```css
-#pause-screen-logo {
-    display: none !important;
-}
-```
-
-**Example - Customize Quality Tags:**
-```css
-.quality-overlay-label {
-    font-size: 0.9rem !important;
-    border-radius: 6px !important;
-}
-
-.quality-overlay-label[data-quality="4K"] {
-    background: linear-gradient(45deg, #c0392b, #e74c3c) !important;
-}
-```
 
 ### 🖼️ Custom Branding
 
@@ -589,148 +437,3 @@ Multi-language support with community translations.
 3. Translate the English text
 4. Submit a pull request
 5. Translations available immediately after merge!
-
----
-
-## Compatibility
-
-### Supported Platforms
-
-| Platform | Support | Notes |
-|----------|---------|-------|
-| Jellyfin Web UI | ✅ Full | All features available |
-| Android App | ✅ Full | Official app with embedded web UI |
-| iOS App | ✅ Full | Official app with embedded web UI |
-| Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
-| Android TV | ❌ Not Supported | Native app, no web UI |
-| Third-party Apps | ❌ Not Supported | Depends on embedded web UI |
-
-### Requirements
-
-- Jellyfin 10.11.x
-- Modern web browser
-- JavaScript enabled
-- Clients using embedded Jellyfin web UI
-
-### Known Issues
-
-- JMP v1.12.0 has compatibility issues (use Jellyfin Desktop v2.0.0 instead)
-- Some features require additional plugins (Intro Skipper, Custom Tabs)
-- TMDB API may be blocked in some regions
-
----
-
-## Feature Configuration
-
-### Enhanced Panel
-
-Access all settings via the Enhanced panel:
-
-**Open Panel:**
-- Click **Jellyfin Enhanced** in sidebar
-- Press `?` keyboard shortcut
-
-**Tabs:**
-- **Shortcuts** - Customize keyboard shortcuts
-- **Settings** - Enable/disable features, adjust positions
-- **Jellyseerr** - Configure Jellyseerr integration
-- **ARR** - Configure Sonarr/Radarr integration
-- **About** - Plugin information and links
-
-**Settings Persistence:**
-- Settings saved to browser localStorage
-- Per-user configuration
-- Sync across devices (same browser profile)
-
-### Feature Toggles
-
-Most features can be enabled/disabled individually:
-
-1. Open Enhanced panel
-2. Go to Settings tab
-3. Toggle features on/off
-4. Changes apply immediately (no restart needed)
-
-**Toggleable Features:**
-- Quality Tags
-- Genre Tags
-- Language Tags
-- Rating Tags
-- People Tags
-- Pause Screen
-- Auto-skip Intros
-- Auto Picture-in-Picture
-- Jellyseerr Integration
-- ARR Links
-- Elsewhere Lookup
-- TMDB Reviews
-- And more...
-
----
-
-## Advanced Usage
-
-### Bookmark API Access
-
-External apps can access bookmark data via Jellyfin API:
-
-**Get Bookmarks:**
-```http
-GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
-Authorization: MediaBrowser Token="{your-api-key}"
-```
-
-**Save Bookmarks:**
-```http
-POST /JellyfinEnhanced/user-settings
-Authorization: MediaBrowser Token="{your-api-key}"
-Content-Type: application/json
-
-{
-  "fileName": "bookmarks.json",
-  "data": { "Bookmarks": {...} }
-}
-```
-
-**Storage Location:**
-```
-/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json
-```
-
-### Jellyseerr API Endpoints
-
-Plugin exposes proxy endpoints for Jellyseerr:
-
-**Check Connection:**
-```bash
-curl -X GET \
-  -H "X-Emby-Token: <API_KEY>" \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status"
-```
-
-**Search:**
-```bash
-curl -X GET \
-  -H "X-Emby-Token: <API_KEY>" \
-  -H "X-Jellyfin-User-Id: <USER_ID>" \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/search?query=Inception"
-```
-
-**Request Media:**
-```bash
-curl -X POST \
-  -H "X-Emby-Token: <API_KEY>" \
-  -H "X-Jellyfin-User-Id: <USER_ID>" \
-  -H "Content-Type: application/json" \
-  -d '{"mediaType": "movie", "mediaId": 27205}' \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/request"
-```
-
----
-
-## Explore More
-
-- [Installation Guide](installation.md) - Setup instructions
-- [FAQ](faq.md) - Common questions
-- [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced) - Source code and issues
-- [Discord](https://discord.gg/HKA2QNYJ6) - Community support

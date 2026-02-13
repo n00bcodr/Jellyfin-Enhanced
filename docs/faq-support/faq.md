@@ -2,6 +2,8 @@
 
 ## General Questions
 
+<!-- todo: make these collapsible  -->
+
 ### What is Jellyfin Enhanced?
 
 Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Jellyseerr integration, custom pause screens, quality tags, and much more - all in one convenient package.
@@ -33,6 +35,12 @@ The userscript has been discontinued as the plugin functionality has grown signi
 ---
 
 ## Installation & Setup
+
+### Plugin Compatibility
+
+| Plugin | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
+|--------|----------------|----------------|-------|
+| Jellyfin Enhanced | ✅ | ❌ | Use 10.11 manifest |
 
 ### Plugin not appearing after installation?
 
@@ -446,69 +454,13 @@ Use Custom CSS for precise control:
 
 ---
 
-## Contributing
 
-### How can I contribute translations?
+## [How can I contribute translations?](../faq-support/contributing-translations.md)
 
-**Add New Language:**
-1. Go to `Jellyfin.Plugin.JellyfinEnhanced/js/locales/`
-2. Copy `en.json`
-3. Rename to your language code (e.g., `es.json`)
-4. Translate all English text
-5. Submit pull request
+## [How can I request features?](../faq-support/feature-requests.md)
 
-**Update Existing Translation:**
-1. Find your language file in `js/locales/`
-2. Update translations
-3. Submit pull request
+## [How can I report bugs?](../faq-support/report-issues.md)
 
-**Translation Updates:**
-- Fetched from GitHub on first load
-- Cached for 24 hours
-- Available immediately after merge
-- No plugin update needed
-
-### How can I report bugs?
-
-**Before Reporting:**
-1. Check [existing issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-2. Verify plugin is up to date
-3. Test with clean browser profile
-4. Gather logs (see above)
-
-**Create Issue:**
-1. Go to [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new)
-2. Use bug report template
-3. Include all requested information
-4. Add logs and screenshots
-5. Submit issue
-
-**Good Bug Reports Include:**
-- Clear description
-- Steps to reproduce
-- Expected vs actual behavior
-- Plugin version
-- Jellyfin version
-- Browser and OS
-- Console/server logs
-- Screenshots
-
-### How can I request features?
-
-**Feature Requests:**
-1. Check [existing requests](https://github.com/n00bcodr/Jellyfin-Enhanced/issues?q=is%3Aissue+label%3Aenhancement)
-2. Go to [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new)
-3. Use feature request template
-4. Describe feature clearly
-5. Explain use case
-6. Submit request
-
-**Good Feature Requests:**
-- Clear description
-- Use case explanation
-- Mockups/examples if applicable
-- Consider existing features
-- Be open to discussion
 
 ---
 
@@ -517,11 +469,13 @@ Use Custom CSS for precise control:
 ### Where can I get help?
 
 **Official Channels:**
+
 - [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues) - Bug reports and feature requests
 - [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions) - General questions and discussion
 - [Discord Community](https://discord.gg/HKA2QNYJ6) - Real-time chat and support
 
 **Before Asking:**
+
 1. Read this FAQ
 2. Check [Installation Guide](installation.md)
 3. Review [Features Guide](features.md)
@@ -529,6 +483,7 @@ Use Custom CSS for precise control:
 5. Check browser console for errors
 
 **When Asking for Help:**
+
 - Describe the problem clearly
 - Include plugin and Jellyfin versions
 - Provide browser and OS info
@@ -539,7 +494,7 @@ Use Custom CSS for precise control:
 
 ## Related Projects
 
-### Other projects by the me
+### Other projects by n00bcodr
 
 - [Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) - Streaming provider lookup (standalone)
 - [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) - Additional tweaks plugin
@@ -550,7 +505,7 @@ Use Custom CSS for precise control:
 
 - [Intro Skipper](https://github.com/intro-skipper/intro-skipper) - Auto-skip intros/outros
 - [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) - Safe file modifications
-- [Custom Tabs](https://github.com/randalsgi ft/CustomTabs) - Custom navigation tabs
+- [Custom Tabs](https://github.com/randalsgift/CustomTabs) - Custom navigation tabs
 - [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) - Watchlist and more
 
 ---
@@ -562,5 +517,3 @@ If your question isn't answered here:
 1. Search [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 2. Ask in [Discord Community](https://discord.gg/HKA2QNYJ6)
 3. Create a [GitHub Issue](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new)
-
-**Made with 💜 for Jellyfin and the community**

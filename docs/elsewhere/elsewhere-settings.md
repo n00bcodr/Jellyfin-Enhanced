@@ -1,29 +1,22 @@
-# Elsewhere Integration
+<!-- use a custom title  -->
+!!! info "Prerequisites"
+    
+    **Prerequisites:**
+    
+    - **TMDB API Key** 
+        - [Free from TMDB](https://www.themoviedb.org/settings/api)
+    - **Jellyfin Enhanced** plugin installed
 
-Discover where your media is available to stream across multiple regions and platforms.
 
-![Elsewhere](images/elsewhere.png)
+## Getting a TMDB API Key
 
-## Overview
+1. Create a free account at [TMDB](https://www.themoviedb.org/)
+2. Go to [Settings → API](https://www.themoviedb.org/settings/api)
+3. Request an API key (choose "Developer" option)
+4. Copy the API Key (v3 auth)
+5. Paste into plugin settings
 
-Jellyfin Elsewhere helps you find where movies and TV shows are available across different streaming services and regions. Powered by TMDB data, it provides comprehensive availability information directly on item detail pages.
-
-## Features
-
-- **Multi-region Support** - Check availability across different countries
-- **Provider Icons** - Visual logos for each streaming service
-- **Customizable Filters** - Show or hide specific providers
-- **Regex Support** - Advanced filtering with pattern matching
-- **TMDB Integration** - Powered by The Movie Database
-
-## Setup
-
-### Prerequisites
-
-- TMDB API Key (free from [TMDB](https://www.themoviedb.org/settings/api))
-- Jellyfin Enhanced plugin installed
-
-### Configuration
+# Setup
 
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Elsewhere Settings** tab
@@ -33,17 +26,11 @@ Jellyfin Elsewhere helps you find where movies and TV shows are available across
 6. Optional: Configure default and ignored providers
 7. Click **Save**
 
-### Getting a TMDB API Key
 
-1. Create a free account at [TMDB](https://www.themoviedb.org/)
-2. Go to [Settings → API](https://www.themoviedb.org/settings/api)
-3. Request an API key (choose "Developer" option)
-4. Copy the API Key (v3 auth)
-5. Paste into plugin settings
 
-## Configuration Options
+# Configuration Options
 
-### Default Region
+## Default Region
 
 Select the primary region for streaming availability checks. Empty defaults to US.
 
@@ -57,7 +44,7 @@ Select the primary region for streaming availability checks. Empty defaults to U
 - `ES` - Spain
 - `IT` - Italy
 
-### Default Providers
+## Default Providers
 
 Comma-separated list of streaming provider names to show by default. Leave blank to show all.
 
@@ -76,7 +63,7 @@ Netflix,Hulu,Disney Plus
 - Hulu
 - Crunchyroll
 
-### Ignore Providers
+## Ignore Providers
 
 Comma-separated list of provider names to hide from results. **Supports regex patterns** for advanced filtering.
 
@@ -105,7 +92,7 @@ Multiple patterns:
 - Remove free streaming options
 - Exclude rental/purchase-only services
 
-### Custom Branding
+## Custom Branding
 
 **Custom Branding Text:**
 - Replace "Jellyfin Elsewhere" with your own text
@@ -118,21 +105,21 @@ Multiple patterns:
 
 ## Usage
 
-### On Item Detail Pages
+## On Item Detail Pages
 
 1. Open any movie or TV show detail page
 2. Scroll to the "Jellyfin Elsewhere" section
 3. View available streaming options
 
-### Information Displayed
+## Information Displayed
 
 - **Provider icons** - Visual logos of streaming services where content is available
 - **Provider names** - Name of each streaming service
 - **Multi-region support** - Shows availability across your selected regions
 
-## Troubleshooting
+# Troubleshooting
 
-### Elsewhere Not Showing
+## Elsewhere Not Showing
 
 **Check Configuration:**
 1. Verify TMDB API key is correct
@@ -145,7 +132,7 @@ Multiple patterns:
 - Use VPN if needed
 - Check [Jellyseerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) for TMDB access issues
 
-### No Providers Showing
+## No Providers Showing
 
 **Possible Causes:**
 - Item not available in selected region
@@ -159,7 +146,7 @@ Multiple patterns:
 - Verify item has TMDB ID
 - Wait and try again later
 
-## Integration with Jellyseerr
+# Integration with Jellyseerr
 
 Elsewhere can be displayed on Jellyseerr discovery pages.
 
@@ -174,7 +161,7 @@ Elsewhere can be displayed on Jellyseerr discovery pages.
 - Same provider information as item pages
 - Helps decide what to request
 
-## Privacy & Data
+# Privacy & Data
 
 **What Data is Sent:**
 - TMDB ID of the item
@@ -191,25 +178,18 @@ Elsewhere can be displayed on Jellyseerr discovery pages.
 - Updated regularly by TMDB community
 - Accuracy depends on TMDB data quality
 
-## Limitations
-## Limitations
+# Limitations
 
 - Availability data depends on TMDB accuracy
 - Some regions have limited provider data
 - Provider availability changes frequently
 - Requires internet connection
 
-## Related Features
-
-- [Jellyseerr Integration](jellyseerr.md) - Request media not in your library
-- [Enhanced Features](enhanced.md) - Core plugin features
-- [FAQ](faq.md) - Common questions and troubleshooting
-
-## Support
+# Support
 
 If you encounter issues:
 
-1. Check [FAQ](faq.md) for common solutions
+1. Check [FAQ](faq-support/faq.md) for common solutions
 2. Verify TMDB API key is valid
 3. Check browser console for errors
 4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)

@@ -8,24 +8,31 @@
 
 The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 
-<div align="center">
-  <video
-    src="https://github.com/user-attachments/assets/c3fed9fe-63c4-4e26-b2b6-73c4817613aa">
-  </video>
-</div>
+| Shortcuts | Settings |
+|-----------|----------|
+| ![Shortcuts](images/shortcuts.png) | ![Settings](images/settings.png) |
 
-## Quick Links
+| Pause Screen | Elsewhere |
+|--------------|-----------|
+| ![Pause Screen](images/pausescreen.png) | ![Elsewhere](images/elsewhere.png) |
 
-- [Installation Guide](installation.md) - Get started with Jellyfin Enhanced
-- [Enhanced Features](enhanced.md) - Core playback, UI, and tag features
-- [Elsewhere Integration](elsewhere.md) - Streaming provider lookup
-- [Jellyseerr Integration](jellyseerr.md) - Search, request, and discover media
-- [ARR Integration](arr.md) - Sonarr, Radarr, and Bazarr links
-- [Other Features](others.md) - Extras, branding, and more
-- [FAQ](faq.md) - Common questions and troubleshooting
-- [Other Projects](projects.md) - Related projects by the developer
+| Jellyseerr configuration | Update |
+|------------|--------|
+| ![Jellyseerr](images/jellyseerr.png) | ![Update](images/update.png) |
 
-## Core Features Overview
+
+## Compatibility
+
+| Platform | Support | Notes |
+|----------|---------|-------|
+| Jellyfin Web UI | ✅ Full | All features available |
+| Android App | ✅ Full | Official app with embedded web UI |
+| iOS App | ✅ Full | Official app with embedded web UI |
+| Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
+| Android TV | ❌ Not Supported | Native app, no web UI |
+| Third-party Apps | ❌ Not Supported | Depends on embedded web UI |
+
+## Features Overview
 
 ### 🎬 Enhanced Features
 - **⌨️ Keyboard Shortcuts** - Comprehensive hotkeys for navigation and playback
@@ -47,7 +54,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Issue Reporting** - Report problems directly to Jellyseerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 
-### 🔗 ARR Integration
+### 🔗 *arr Integration
 - **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages
 - **Tag Links** - Display and filter *arr tags
 - **Calendar View** - Upcoming releases from Sonarr/Radarr
@@ -59,47 +66,3 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Colored Icons** - Activity and plugin icons
 - **Login Images** - User avatars on login page
 - **Multi-language** - Available in 15+ languages
-
-## Screenshots
-
-| Shortcuts | Settings |
-|-----------|----------|
-| ![Shortcuts](images/shortcuts.png) | ![Settings](images/settings.png) |
-
-| Pause Screen | Elsewhere |
-|--------------|-----------|
-| ![Pause Screen](images/pausescreen.png) | ![Elsewhere](images/elsewhere.png) |
-
-| Jellyseerr | Update |
-|------------|--------|
-| ![Jellyseerr](images/jellyseerr.png) | ![Update](images/update.png) |
-
-## Quick Start
-
-1. Go to **Dashboard** → **Plugins** → **Catalog** → ⚙️
-2. Add repository: `https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json`
-3. Install **Jellyfin Enhanced**
-4. Restart Jellyfin server
-5. Press `?` to open the settings panel
-
-See [Installation Guide](installation.md) for detailed instructions.
-
-## Compatibility
-
-| Platform | Support | Notes |
-|----------|---------|-------|
-| Jellyfin Web UI | ✅ Full | All features available |
-| Android App | ✅ Full | Official app with embedded web UI |
-| iOS App | ✅ Full | Official app with embedded web UI |
-| Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
-| Android TV | ❌ Not Supported | Native app, no web UI |
-| Third-party Apps | ❌ Not Supported | Depends on embedded web UI |
-
-## Support & Community
-
-- [GitHub Repository](https://github.com/n00bcodr/Jellyfin-Enhanced)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
-- [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-- [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-
-**Made with 💜 for Jellyfin and the community**
