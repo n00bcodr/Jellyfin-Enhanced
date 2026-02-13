@@ -2,6 +2,8 @@
 
 ## General Questions
 
+<!-- todo: make these collapsible  -->
+
 ### What is Jellyfin Enhanced?
 
 Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Jellyseerr integration, custom pause screens, quality tags, and much more - all in one convenient package.

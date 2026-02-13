@@ -1,6 +1,9 @@
 ## Jellyfin Enhanced API
 
 ### Get Plugin Version
+
+Checks the installed version of the Jellyfin Enhanced plugin:
+
 ```bash
 curl -X GET \
   "<JELLYFIN_ADDRESS>/JellyfinEnhanced/version"
@@ -8,15 +11,43 @@ curl -X GET \
 
 ## Bookmark API + Info
 
-External apps can access bookmark data via Jellyfin API:
+### Storage Directory
+Bookmarks are stored in the server's user data directory at:
+```
+/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json
+```
 
-### Get Bookmarks
+The data structure is:
+```json
+{
+  "Bookmarks": {
+    "unique-bookmark-id": {
+      "itemId": "jellyfin-item-id",
+      "tmdbId": "12345",
+      "tvdbId": "67890",
+      "mediaType": "movie" | "tv",
+      "name": "Item Name",
+      "timestamp": 123.45,
+      "label": "Epic scene",
+      "createdAt": "2026-01-03T12:00:00.000Z",
+      "updatedAt": "2026-01-03T12:00:00.000Z",
+      "syncedFrom": "original-item-id"
+    }
+  }
+}
+```
+
+### API Access
+
+External applications can read and write bookmarks using the Jellyfin Enhanced API endpoints
+
+#### Get Bookmarks
 ```http
 GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
 Authorization: MediaBrowser Token="{your-api-key}"
 ```
 
-### Save Bookmarks
+#### Save Bookmarks
 ```http
 POST /JellyfinEnhanced/user-settings
 Authorization: MediaBrowser Token="{your-api-key}"
@@ -28,17 +59,14 @@ Content-Type: application/json
 }
 ```
 
-### Bookmark Storage Directory
-```
-/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json
-```
-
-
-# Jellyseerr API
+## Jellyseerr Integration API
 
 Plugin exposes proxy endpoints for Jellyseerr:
 
 ### Check Connection Status
+
+Checks if the plugin can connect to any of the configured Jellyseerr URLs using the provided API key.
+
 ```bash
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
@@ -46,6 +74,9 @@ curl -X GET \
 ```
 
 ### Check User Status
+
+Verifies that the currently logged-in Jellyfin user is successfully linked to a Jellyseerr user account.
+
 ```bash
 curl -X GET \
   -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
@@ -53,7 +84,10 @@ curl -X GET \
   "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/user-status"
 ```
 
-### Perform Search
+### Perform A Jellyseerr Search
+
+Executes a search query through the Jellyseerr instance for the specified user.
+
 ```bash
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
@@ -61,7 +95,13 @@ curl -X GET \
   "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/search?query=Inception"
 ```
 
-### Request Media
+### Make a Request on Jellyseerr
+
+Submits a media request to Jellyseerr on behalf of the specified user.
+
+- `mediaType` can be `tv` or `movie`\
+- `mediaId` is the **TMDB ID** of the item
+
 ```bash
 curl -X POST \
   -H "X-Emby-Token: <API_KEY>" \
