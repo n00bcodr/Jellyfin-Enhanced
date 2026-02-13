@@ -69,8 +69,10 @@ Beautiful overlay with media info when you pause a video.
 - Spinning disc animation
 - Blurred backdrop
 
-**Customization:**
-See [Custom Styling](../advanced/customization/#pause-screen) section for CSS customization options.
+<!-- custom css note -->
+!!! tip
+
+    [Custom CSS available](../advanced/css-customization.md)
 
 ### ⏯️ Smart Playback
 

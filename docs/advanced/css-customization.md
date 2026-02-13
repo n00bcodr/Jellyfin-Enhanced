@@ -26,7 +26,10 @@ Hide or customize pause screen elements.
 | **Spinning Disc** | `#pause-screen-disc` | `#pause-screen-disc { display: none; }` |
 | **Backdrop** | `#pause-screen-backdrop` | `#pause-screen-backdrop { display: none; }` |
 
-## Quality Tags
+
+## Tags
+
+### Quality Tags
 
 Customize quality tag appearance.
 
@@ -52,7 +55,7 @@ Customize quality tag appearance.
 }
 ```
 
-## Genre Tags CSS
+### Genre Tags CSS
 
 **Always show text (no hover):**
 ```css
@@ -65,7 +68,7 @@ Customize quality tag appearance.
 }
 ```
 
-## Language Tags CSS
+### Language Tags CSS
 
 **Change flag size:**
 ```css
@@ -82,7 +85,7 @@ Customize quality tag appearance.
 }
 ```
 
-## Rating Tags CSS
+### Rating Tags CSS
 
 **Customize TMDB rating:**
 ```css
@@ -98,7 +101,7 @@ Customize quality tag appearance.
 }
 ```
 
-## People Tags CSS
+### People Tags CSS
 
 **Customize age chips:**
 ```css
