@@ -1920,8 +1920,17 @@
                         await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem);
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
                     } else {
-                        // Partial requests disabled: request all seasons
-                        await requestMedia(tmdbId, 'tv', settings, false, searchResultItem);
+                        // Partial requests disabled: request all non-special seasons to avoid locking specials
+                        const allSeasons = (tvDetails?.seasons || [])
+                            .map(season => season.seasonNumber)
+                            .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
+
+                        if (allSeasons.length > 0) {
+                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem);
+                        } else {
+                            await requestMedia(tmdbId, 'tv', settings, false, searchResultItem);
+                        }
+
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: showTitle }), 4000);
                     }
                     // Notify any listening modals that TV was requested
@@ -2019,7 +2028,12 @@
         tvDetails.mediaInfo?.seasons?.forEach(s => { seasonStatusMap[s.seasonNumber] = s.status; });
         tvDetails.mediaInfo?.requests?.forEach(r => r.seasons?.forEach(sr => { seasonStatusMap[sr.seasonNumber] = sr.status; }));
 
-        tvDetails.seasons.filter(s => s.seasonNumber > 0).forEach(season => {
+        // Filter out seasons with no episodes, except for Season 0 (Specials)
+        const seasons = (tvDetails.seasons || [])
+            .filter(s => s.seasonNumber === 0 || (s.episodeCount && s.episodeCount > 0))
+            .slice()
+            .sort((a, b) => (a.seasonNumber || 0) - (b.seasonNumber || 0));
+        seasons.forEach(season => {
             const seasonNumber = season.seasonNumber;
             let seasonItem = seasonListElement.querySelector(`.jellyseerr-season-item[data-season-number="${seasonNumber}"]`);
 
