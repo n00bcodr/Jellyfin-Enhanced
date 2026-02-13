@@ -60,7 +60,7 @@ Most features can be enabled/disabled individually:
 3. Adjust position (top-left, top-right, etc.)
 
 <!-- custom css note -->
-<!-- explicit directory seemed necessary (idk why) -->
+<!-- explicit path seemed necessary (idk why) -->
 !!! tip
 
     [Custom CSS available](/Jellyfin-Enhanced/advanced/css-customization/#tags)

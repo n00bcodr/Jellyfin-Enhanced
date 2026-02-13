@@ -1,4 +1,4 @@
-# Jellyfin Enhanced API
+## Jellyfin Enhanced API
 
 ### Get Plugin Version
 ```bash

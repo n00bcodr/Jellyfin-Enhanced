@@ -151,6 +151,7 @@ nav:
     - Advanced Configurations: advanced/advanced-configurations.md
     - CSS Customization: advanced/css-customization.md
     - API: advanced/api.md
+    - Project Structure: advanced/project-structure.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
     - Support: faq-support/support.md
