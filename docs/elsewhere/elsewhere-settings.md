@@ -1,9 +1,9 @@
 <!-- use a custom title  -->
 !!! info "Prerequisites"
-    
+
     **Prerequisites:**
-    
-    - **TMDB API Key** 
+
+    - **TMDB API Key**
         - [Free from TMDB](https://www.themoviedb.org/settings/api)
     - **Jellyfin Enhanced** plugin installed
 
@@ -51,7 +51,7 @@ Comma-separated list of streaming provider names to show by default. Leave blank
 **View full list:** [Available Providers](https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt)
 
 **Example:**
-```
+```text
 Netflix,Hulu,Disney Plus
 ```
 
@@ -72,17 +72,17 @@ Comma-separated list of provider names to hide from results. **Supports regex pa
 **Examples:**
 
 Basic (exact names):
-```
+```text
 Apple TV,Google Play Movies
 ```
 
 With regex (hide all "with Ads" providers):
-```
+```text
 .*with Ads
 ```
 
 Multiple patterns:
-```
+```text
 .*with Ads,.*Free,Vudu
 ```
 

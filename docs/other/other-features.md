@@ -54,7 +54,7 @@ Upload your own logos, banners, and favicon to personalize your Jellyfin instanc
 ### Storage Location
 
 Files stored in:
-```
+```text
 /plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/custom_branding/
 ```
 
@@ -170,12 +170,12 @@ Replace default plugin icons with Material Design icons.
 Add custom links to plugin config pages.
 
 **Format:**
-```
+```text
 PluginName|URL
 ```
 
 **Example:**
-```
+```text
 Jellyfin Enhanced|/web/configurationpage?name=JellyfinEnhanced
 Custom Plugin|https://example.com/config
 ```

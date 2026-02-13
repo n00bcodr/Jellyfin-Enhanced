@@ -8,8 +8,8 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 <!-- use a custom title -->
 !!! info "Note"
 
-    **This plugin is NOT affiliated with Jellyseerr/Seerr.** Jellyseerr is an independent project. This plugin simply integrates with it to enhance the Jellyfin experience. 
-    
+    **This plugin is NOT affiliated with Jellyseerr/Seerr.** Jellyseerr is an independent project. This plugin simply integrates with it to enhance the Jellyfin experience.
+
     **Please report any issues with this plugin to the Jellyfin Enhanced repository, not to the Jellyseerr/Seerr team.**
 
 ## Features
@@ -18,7 +18,7 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
     - **Advanced requests** *(requires configuration)*
     - **4K Requests**
     - **Season selection**
-- **Requests Tab** 
+- **Requests Tab**
     - **View request status** - pending, approved, available
 - **Recommendations + Discovery** - Recommendations and similar items on detail pages
 - **Issue Reporting** - Report problems directly to Jellyseerr
@@ -103,6 +103,29 @@ Report problems with media directly to Jellyseerr.
 6. Submit report
 
 **Note:** Button hidden when Jellyseerr unreachable or user not linked.
+
+### Issues on Downloads Page
+
+View and manage Jellyseerr issues directly from the Downloads/Requests page.
+
+**Features:**
+- View all reported issues
+- Filter issues by status
+- Pagination support
+- TMDB detail lookup with caching
+- Issue card rendering with styling
+- Open issue reporter modal from issues list
+
+**Configuration:**
+1. Go to plugin settings → Jellyseerr tab
+2. Check "Show Issues on Downloads Page"
+3. Click **Save**
+
+**Usage:**
+- Navigate to Downloads/Requests page
+- Issues appear in dedicated section
+- Click issue to view details
+- Use Jellyseerr reporter modal for management
 
 ### Watchlist Sync
 
@@ -201,17 +224,17 @@ Map internal and external URLs for different network contexts.
 
 **Format:**
 
-```
+```text
 internal_url|external_url
 ```
 
 **Example:**
 
-```
+```text
 http://jellyseerr:5055|https://jellyseerr.example.com
 ```
 
-**Use Case:** 
+**Use Case:**
 
 Different URLs for local network vs remote access.
 

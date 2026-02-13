@@ -2,6 +2,89 @@
 
 Jellyfin Enhanced bundles dozens of features into one convenient plugin. This guide covers all available features and how to use them.
 
+---
+
+## Content Management
+
+### 🙈 Hidden Content System
+
+Per-user content hiding with server-side storage and granular filtering controls.
+
+**Features:**
+- Hide specific movies/series from all browsing surfaces
+- Hidden state stored server-side per-user
+- Survives browser/device changes
+- Management panel with search and bulk operations
+- Granular filter toggles for different surfaces
+- Undo functionality with toast notifications
+
+**Surfaces with Filtering:**
+- Library views
+- Discovery pages
+- Search results
+- Calendar view
+- Next Up section
+- Continue Watching section
+- Recommendations
+- Requests page
+
+**How to Hide Content:**
+
+1. Navigate to any item detail page
+2. Click the hide button (visibility_off icon)
+3. Choose hide scope:
+   - **Global** - Hide everywhere
+   - **Episode** - Hide this episode only
+   - **Show** - Hide entire series
+   - **Next Up** - Hide from Next Up only
+   - **Continue Watching** - Hide from Continue Watching only
+4. Confirm the action
+
+**Management Panel:**
+
+Access via:
+- Enhanced panel → Settings → Hidden Content
+- Sidebar navigation (if enabled)
+- Custom tab (if configured)
+
+**Management Features:**
+- View all hidden items
+- Search hidden content
+- Unhide individual items
+- Unhide all items at once
+- Group by series/movies
+- Filter by scope
+
+**Configuration:**
+
+1. Open Enhanced panel (press `?`)
+2. Go to Settings tab
+3. Find Hidden Content section
+4. Enable/disable the feature
+5. Configure filter toggles:
+   - Show hide buttons on Jellyseerr items
+   - Show hide buttons in library views
+   - Show hide buttons on detail pages
+   - Filter library views
+   - Filter discovery pages
+   - Filter search results
+   - Filter calendar
+   - Filter Next Up
+   - Filter Continue Watching
+   - Filter recommendations
+   - Filter requests page
+6. Choose integration method:
+   - Plugin Pages (requires Plugin Pages plugin)
+   - Custom Tabs (requires Custom Tabs plugin)
+
+**Performance:**
+- Optimized with CSS classes instead of inline styles
+- Batched DOM visibility changes
+- Chunked API requests for parent series
+- Cached surface detection
+
+---
+
 ## Playback & Controls
 
 ### ⌨️ Advanced Keyboard Shortcuts
@@ -100,7 +183,7 @@ Enable/disable in Enhanced panel → Settings tab
 
 ### 📝 Customizable Subtitles
 
-Fine-tune subtitle appearance with presets for style, size, and font.
+Fine-tune subtitle appearance with presets and custom colors.
 
 **Presets:**
 - Multiple font families
@@ -109,11 +192,24 @@ Fine-tune subtitle appearance with presets for style, size, and font.
 - Text shadow options
 - Position adjustments
 
+**Custom Colors (New in v11):**
+- User-configurable text color with alpha support
+- User-configurable background color with alpha support
+- Live preview in settings
+- Computed text shadow for transparent/black backgrounds
+- Per-user customization
+
 **Usage:**
 1. Open Enhanced panel → Settings
 2. Find Subtitle Presets section
-3. Select your preferred options
-4. Changes apply immediately
+3. Select your preferred preset options
+4. Or use Custom Colors section:
+   - Choose text color
+   - Adjust text alpha
+   - Choose background color
+   - Adjust background alpha
+   - Preview changes live
+5. Changes apply immediately
 
 ---
 
@@ -373,7 +469,7 @@ Choose from multiple Jellyfin theme color variants.
 
 ### 🎨 Custom Styling with CSS
 
-Extensive CSS customization options. See [Customization](../advanced/customization.md) for more
+Extensive CSS customization options. See [CSS Customization Guide](../advanced/css-customization.md) for more details.
 
 **Available Customizations:**
 - Pause Screen CSS
@@ -417,7 +513,7 @@ Upload your own logos, banners, and favicon.
 
 ### 🌍 Internationalization
 
-Multi-language support with community translations.
+Multi-language support with community translations and automatic caching.
 
 **Supported Languages:**
 - Danish (da)
@@ -438,8 +534,22 @@ Multi-language support with community translations.
 **How It Works:**
 - Automatically detects Jellyfin user profile language
 - Fetches latest translations from GitHub on first load
-- Caches translations for 24 hours
+- Caches translations for 24 hours in localStorage
+- Per-version caching with automatic cleanup
 - Falls back to bundled translations if offline
+- Language code normalization (including region variants)
+
+**Translation Cache Refresh (New in v11):**
+- Server-side scheduled task runs on plugin startup
+- Automatically signals all clients to clear cached translations
+- Ensures fresh translations after plugin updates
+- No manual intervention required
+
+**Manual Cache Refresh:**
+1. Open Enhanced panel (press `?`)
+2. Go to Settings tab
+3. Find translation settings
+4. Click "Refresh Translation Cache" button
 
 **Contributing Translations:**
 1. Copy `en.json` from `Jellyfin.Plugin.JellyfinEnhanced/js/locales/`

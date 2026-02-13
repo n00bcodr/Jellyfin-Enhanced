@@ -47,12 +47,12 @@ The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr
 Map internal and external URLs for different network contexts.
 
 **Format:**
-```
+```text
 internal_url|external_url
 ```
 
 **Example:**
-```
+```text
 http://sonarr:8989|https://sonarr.example.com
 http://radarr:7878|https://radarr.example.com
 ```
@@ -115,7 +115,7 @@ Display synced *arr tags as clickable links on item detail pages.
 - Leave empty to show all tags
 
 **Example:**
-```
+```text
 in-netflix,in-disney,4k-upgrade
 ```
 
@@ -125,7 +125,7 @@ in-netflix,in-disney,4k-upgrade
 - Overrides show filter
 
 **Example:**
-```
+```text
 internal-tag,do-not-show
 ```
 
@@ -201,6 +201,11 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 **Highlight Watched Series:**
 - Highlight series you're currently watching
 - Based on watch history
+
+**Requests Filter:**
+- Filter calendar to show only requested items
+- Helps track upcoming releases you've requested
+- Toggle on/off as needed
 
 ### Usage
 

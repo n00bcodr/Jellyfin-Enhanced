@@ -243,7 +243,7 @@ Bookmarks are stored server-side but settings are per-browser.
 - Screen should appear after brief delay
 
 **Customize Elements:**
-See [Pause Screen CSS](features.md#pause-screen-css) for hiding/styling elements.
+See [Pause Screen CSS](../advanced/css-customization.md#pause-screen) for hiding/styling elements.
 
 ### Reviews, Elsewhere, or Jellyseerr icons not working?
 
@@ -318,7 +318,7 @@ Use Custom CSS in Jellyfin settings:
 }
 ```
 
-See [Features Guide](features.md#custom-styling) for complete CSS documentation.
+See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS documentation.
 
 ### How do I upload custom branding?
 
@@ -406,7 +406,7 @@ Use Custom CSS for precise control:
 
 | Error | Solution |
 |-------|----------|
-| `Access to the path '/jellyfin/jellyfin-web/index.html' is denied.` | Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) or follow [Docker workaround](installation.md#docker-installation) |
+| `Access to the path '/jellyfin/jellyfin-web/index.html' is denied.` | Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) or follow [Docker workaround](../installation/troubleshooting.md#docker) |
 | `Access to the path 'C:\Program Files\Jellyfin\Server\jellyfin-web\index.html' is denied.` | Grant "NETWORK SERVICE" Read/Write permissions to Jellyfin folder |
 | Plugin installed but scripts don't load | Run "Jellyfin Enhanced Startup" scheduled task, verify trigger exists |
 | Reviews/Elsewhere/Jellyseerr icons not working | TMDB API may be blocked in your region, see [Jellyseerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) |
@@ -477,8 +477,8 @@ Use Custom CSS for precise control:
 **Before Asking:**
 
 1. Read this FAQ
-2. Check [Installation Guide](installation.md)
-3. Review [Features Guide](features.md)
+2. Check [Installation Guide](../installation/installation.md)
+3. Review [Enhanced Features Guide](../enhanced/enhanced-features.md)
 4. Search existing issues
 5. Check browser console for errors
 

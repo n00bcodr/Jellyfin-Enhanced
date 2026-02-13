@@ -118,7 +118,7 @@ nav:
     - Jellyseerr Features: jellyseerr/jellyseerr-features.md
 
     # Jellyseerr Settings
-    - Jellyserrr Settings: jellyseerr/jellyseerr-settings.md
+    - Jellyseerr Settings: jellyseerr/jellyseerr-settings.md
 
 
   # ——————————————
@@ -132,7 +132,7 @@ nav:
     - "*arr Settings": arr/arr-settings.md
 
     # Troubleshooting + Support
-    - Troubleshooting + Support: arr/troubleshooting.md
+    - Troubleshooting + Support: arr/troubleshooting-support.md
 
 
   # ——————————————
@@ -150,7 +150,6 @@ nav:
   # Advanced, misc
   # ——————————————
   - Advanced:
-    #- Advanced Configurations: advanced/advanced-configurations.md # i'm not sure this page is necessary
     - CSS Customization: advanced/css-customization.md
     - API: advanced/api.md
     - Project Structure: advanced/project-structure.md
@@ -159,5 +158,5 @@ nav:
     - Report issues: faq-support/report-issues.md
     - Feature Requests: faq-support/feature-requests.md
     - Contributing Translations: faq-support/contributing-translations.md
-    - Support + Community: faq-support/support-community.md
+    - Support + Community: faq-support/support.md
   - Other Projects: other-projects/other-projects.md

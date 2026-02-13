@@ -32,7 +32,7 @@
 
 If you see errors like:
 
-```
+```text
 Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 ```
 
@@ -87,7 +87,7 @@ After installation, verify these work:
 
 If you are not using file-transformation and see permission errors like:
 
-```
+```text
 System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 ```
 
@@ -120,8 +120,8 @@ services:
 
     This method is not recommended and won't survive a jellyfin-web upgrade. The recommended method for Docker:
 
-    1. Install as a standard [Jellyfin Plugin](./standard-recommended.md)
-    2. Use the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+    1. Install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+    2. Follow the standard installation process
 
 
 

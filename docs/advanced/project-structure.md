@@ -6,8 +6,7 @@ The plugin architecture uses a single entry point (`plugin.js`) that dynamically
 
 All client-side scripts are now located in the `Jellyfin.Plugin.JellyfinEnhanced/js/` directory.
 
-```
-
+```text
 Jellyfin.Plugin.JellyfinEnhanced/
 └── js/
     ├── locales/
