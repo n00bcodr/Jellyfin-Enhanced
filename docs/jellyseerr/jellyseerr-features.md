@@ -213,22 +213,6 @@ Automatically request media based on viewing behavior.
 - Trigger after X minutes watched
 - Check release date (only request if released)
 
-## Related Features
-
-- [Elsewhere Integration](elsewhere.md) - Streaming provider lookup
-- [Enhanced Features](enhanced.md) - Core plugin features
-- [ARR Integration](arr.md) - Sonarr, Radarr integration
-- [FAQ](faq.md) - Common questions
-
-## Support
-
-If you encounter issues:
-
-1. Check [FAQ](faq.md) for common solutions
-2. Test connection in plugin settings
-3. Check browser console and server logs
-4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-
 ---
 
 **Made with 💜 for Jellyfin and the community**
