@@ -83,22 +83,29 @@ We welcome contributions from the community!
 - 💬 Help others in discussions
 
 **Get Started:**
-- [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-- [Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
+- [Report Issues and Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
+- [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 - [Contributing Translations](faq-support/contributing-translations.md)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
-
-## Support
-
-**Need Help?**
-- [FAQ](faq-support/faq.md)
 - [Troubleshooting Guide](installation/troubleshooting.md)
-- [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
+- [Discord Community](https://discord.gg/8wk3q74s)
 
-**Found a Bug?**
-- [Report an Issue](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
+## Support Me
 
+If Jellyfin Enhanced has enhanced your media experience, consider supporting me !
+
+<div align="center">
+  <a href='https://ko-fi.com/G2G51TIZF0' target='_blank'><img height='6' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi5.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://www.buymeacoffee.com/n00bcodr">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=n00bcodr&button_colour=FFDD00&font_colour=000000&font_family=Ubuntu&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee" />
+  </a>
+</div>
+<br>
+<div align="center">
+  <p><em>Your support helps me buy more drives and improve my hardware :) <br> and give me motivation to keep working on Jellyfin Enhanced!</em></p>
+</div>
+
+---
 
 
 ## Statistics

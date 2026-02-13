@@ -155,4 +155,4 @@ If you encounter issues:
 2. [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
     - Search existing issues
     - Create a new issue *(please include log and details)*
-3. Join the [Discord Community](https://discord.gg/HKA2QNYJ6)
+3. Join the [Discord Community](https://discord.gg/8wk3q74s)

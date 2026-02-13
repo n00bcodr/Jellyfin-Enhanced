@@ -472,7 +472,7 @@ Use Custom CSS for precise control:
 
 - [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues) - Bug reports and feature requests
 - [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions) - General questions and discussion
-- [Discord Community](https://discord.gg/HKA2QNYJ6) - Real-time chat and support
+- [Discord Community](https://discord.gg/8wk3q74s) - Real-time chat and support
 
 **Before Asking:**
 
@@ -515,5 +515,5 @@ Use Custom CSS for precise control:
 If your question isn't answered here:
 
 1. Search [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-2. Ask in [Discord Community](https://discord.gg/HKA2QNYJ6)
+2. Ask in [Discord Community](https://discord.gg/8wk3q74s)
 3. Create a [GitHub Issue](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new)

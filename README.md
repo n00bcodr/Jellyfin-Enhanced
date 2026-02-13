@@ -7,7 +7,7 @@
   <br><br>
   <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20Downloads%40Latest&labelColor=black&color=AA5CC3&cacheSeconds=60">
   <br><br>
-  <a href="https://discord.gg/HKA2QNYJ6"><img alt="Discord" src="https://img.shields.io/badge/Jellyfin%20Enhanced%20-%20Jellyfin%20Community?&logo=discord&logoColor=white&style=for-the-badge&label=Jellyfin%20Community&labelColor=5865F2&color=black"></a>
+  <a href="https://discord.gg/8wk3q74s"><img alt="Discord" src="https://img.shields.io/badge/Jellyfin%20Enhanced%20-%20Jellyfin%20Community?&logo=discord&logoColor=white&style=for-the-badge&label=Jellyfin%20Community&labelColor=5865F2&color=black"></a>
 </p>
 
 <br>
@@ -113,8 +113,8 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 | Android App | ✅ Full | Official app with embedded web UI |
 | iOS App | ✅ Full | Official app with embedded web UI |
 | Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
-| Android TV | ❌ Not Supported | Native app, no web UI |
-| Third-party Apps | ❌ Not Supported | Depends on embedded web UI |
+| Android TV | ❌ Not Supported, but auto-season, movie requests work| Native app, no web UI |
+| Third-party Apps | ❌ Not Supported, but auto-season, movie requests work | Depends on embedded web UI |
 
 <br>
 
@@ -168,7 +168,7 @@ Translations are available immediately after merge!
 
 - [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 - [Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
+- [Discord Community](https://discord.gg/8wk3q74s)
 
 <br>
 
@@ -179,7 +179,7 @@ Need help? Check these resources:
 - [FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
 - [Troubleshooting Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/)
 - [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
+- [Discord Community](https://discord.gg/8wk3q74s)
 
 <br>
 
@@ -187,7 +187,6 @@ Need help? Check these resources:
 
 Other projects by n00bcodr:
 
-- [Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) - Streaming provider lookup (standalone)
 - [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) - Additional tweaks plugin
 - [Jellyfin-JavaScript-Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector) - Custom script injection
 - [Jellyfish](https://github.com/n00bcodr/Jellyfish/) - Custom Jellyfin theme
@@ -226,10 +225,11 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 ### Enjoying Jellyfin Enhanced?
 
 If this plugin has enhanced your Jellyfin experience, consider:
-- ⭐ Starring the repository
-- 🐛 Reporting bugs or suggesting features
-- 🌍 Contributing translations
-- 💬 Joining our [Discord community](https://discord.gg/HKA2QNYJ6)
+  ⭐ Starring the repository
+  🐛 Reporting bugs or suggesting features
+  🌍 Contributing translations
+  💬 Joining [Discord community](https://discord.gg/8wk3q74s)
+  ☕ Supporting me on [Ko-Fi](https://ko-fi.com/n00bcodr)
 
 Made with 💜 for Jellyfin and the community
 

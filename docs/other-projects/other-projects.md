@@ -169,16 +169,16 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 
 **For Jellyfin Enhanced:**
 - [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
+- [Discord Community](https://discord.gg/8wk3q74s)
 - [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 
 **For Jellyfin Tweaks:**
 - [GitHub Issues](https://github.com/n00bcodr/JellyfinTweaks/issues)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
+- [Discord Community](https://discord.gg/8wk3q74s)
 
 **For JavaScript Injector:**
 - [GitHub Issues](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/issues)
-- [Discord Community](https://discord.gg/HKA2QNYJ6)
+- [Discord Community](https://discord.gg/8wk3q74s)
 
 
 

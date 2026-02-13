@@ -169,7 +169,7 @@ When reporting bugs:
 
 If you have questions or need help:
 
-- **Discord**: Reach out on the [Jellyfin Community Discord](https://discord.gg/HKA2QNYJ6)
+- **Discord**: Reach out on the [Jellyfin Community Discord](https://discord.gg/8wk3q74s)
 - **Discussions**: Start a discussion on GitHub
 - **Issues**: For bug-related questions
 
