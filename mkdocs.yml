@@ -85,7 +85,7 @@ nav:
   # ——————————————
   - Installation: 
     - Standard Installation (recommended): installation/standard-recommended.md
-    - Advanced Instllation (not recommended): installation/advanced-not-recommended.md
+    - Advanced Installation (not recommended): installation/advanced-not-recommended.md
     - Troubleshooting: installation/troubleshooting.md
 
 
@@ -154,5 +154,5 @@ nav:
     - Project Structure: advanced/project-structure.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
-    - Support: faq-support/support.md
+    - Support + Community: faq-support/support-community.md
   - Other Projects: other-projects/other-projects.md
