@@ -42,3 +42,20 @@ Most features can be enabled/disabled individually:
 - Auto Picture-in-Picture
 - Review tags
 - And more...
+
+
+
+## Tags: Quality, Genre, Language, Rating, People
+
+### Configuration 
+1. Open Enhanced panel → `Enhanced Settings`
+2. Enable and configure tags you want 
+
+"Quality Tags"
+3. Adjust position (top-left, top-right, etc.)
+
+<!-- custom css note    -->
+<!-- collapsed          -->
+??? tip "Custom CSS"
+
+    [Custom CSS available](../advanced/css-customization.md)
