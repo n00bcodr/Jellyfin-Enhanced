@@ -33,7 +33,7 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 
 ### Search Integration
 
-**How It Works:**
+**Requesting:**
 
 1. Type search query in Jellyfin search bar
 2. Results from both Jellyfin and Jellyseerr appear

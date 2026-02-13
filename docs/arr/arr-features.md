@@ -2,11 +2,25 @@
 
 Quick access to Sonarr, Radarr, and Bazarr from Jellyfin, plus calendar and download monitoring.
 
-## Overview
+!!! success "Note"
 
-The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr instances directly from Jellyfin item pages. Additionally, it can display *arr tags as clickable links and provide calendar and download monitoring pages.
+    ***arr links are only visible to admin users**
+
+    **Other features are visible to all users.**
+
+
+!!! warning
+
+
+    **Security Considerations:**
+
+    - **API Keys** are stored securely on server
+    - **Network Access** - Ensure *arr instances are secure
+    - **HTTPS** - Use HTTPS for remote access
 
 ## Features
+
+The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr instances directly from Jellyfin item pages. Additionally, it can display *arr tags as clickable links and provide calendar and download monitoring pages.
 
 - **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages for any item
 - **Tag Links** - Display *arr tags as clickable links with filtering
@@ -250,83 +264,3 @@ Monitor download queue and status from Sonarr and Radarr.
 - **Paused** - Download paused
 - **Completed** - Download finished
 - **Failed** - Download failed
-
-## Troubleshooting
-
-### Links Not Appearing
-
-**Check Configuration:**
-1. Verify *arr URLs are correct
-2. Ensure "Enable *arr Links" is checked
-3. Confirm you're logged in as administrator
-4. Check item has *arr metadata
-
-**Test URLs:**
-- Open *arr URLs in browser
-- Verify they're accessible from Jellyfin server
-- Check for HTTPS/HTTP mismatches
-
-### Tags Not Syncing
-
-**Check API Keys:**
-1. Verify API keys are correct
-2. Test API access manually
-3. Check *arr logs for errors
-
-**Check Tag Settings:**
-- Verify tag prefix matches *arr tags
-- Check sync filter isn't too restrictive
-- Ensure tags exist in *arr
-
-### Calendar Not Loading
-
-**Check Prerequisites:**
-1. Sonarr/Radarr URLs configured
-2. API keys entered
-3. *arr instances accessible
-4. Calendar page enabled
-
-**Check Logs:**
-- Browser console for client errors
-- Server logs for API errors
-- *arr logs for connection issues
-
-### Requests Page Issues
-
-**Downloads Not Showing:**
-1. Verify polling is enabled
-2. Check poll interval setting
-3. Ensure downloads exist in *arr
-4. Check API connectivity
-
-**Status Not Updating:**
-1. Verify polling is enabled
-2. Check poll interval
-3. Refresh page manually
-4. Check browser console for errors
-
-## Security Considerations
-
-- **Admin Only** - Links only visible to administrators
-- **API Keys** - Stored securely on server
-- **Network Access** - Ensure *arr instances are secure
-- **HTTPS** - Use HTTPS for remote access
-
-## Related Features
-
-- [Jellyseerr Integration](jellyseerr.md) - Request media
-- [Enhanced Features](enhanced.md) - Core plugin features
-- [FAQ](faq.md) - Common questions
-
-## Support
-
-If you encounter issues:
-
-1. Check [FAQ](faq.md) for common solutions
-2. Verify *arr URLs and API keys
-3. Check browser console and server logs
-4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-
----
-
-**Made with 💜 for Jellyfin and the community**

@@ -132,6 +132,9 @@ nav:
     # *arr Settings
     - "*arr Settings": arr/arr-settings.md
 
+    # Troubleshooting + Support
+    - Troubleshooting + Support: arr/troubleshooting.md
+
 
   # ——————————————
   # Other
