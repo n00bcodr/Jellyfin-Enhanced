@@ -26,6 +26,8 @@
     <EmbeddedResource Include="PluginPages\DownloadsPage.html"/>
     <None Remove="PluginPages\BookmarksPage.html"/>
     <EmbeddedResource Include="PluginPages\BookmarksPage.html"/>
+    <None Remove="PluginPages\HiddenContentPage.html"/>
+    <EmbeddedResource Include="PluginPages\HiddenContentPage.html"/>
     <None Remove="Configuration\configPage.html"/>
     <EmbeddedResource Include="Configuration\configPage.html"/>
     <None Remove="plugin.js"/>

@@ -34,12 +34,17 @@
   const JE = window.JellyfinEnhanced;
 
   const timer = setInterval(() => {
-    if (JE && JE.hiddenContentPage) {
+    // Both hiddenContentPage and hiddenContent must be initialized
+    if (JE && JE.hiddenContentPage && JE.hiddenContent) {
       clearInterval(timer);
 
       loadingEl.remove();
-      JE.hiddenContentPage.injectStyles?.();
-      JE.hiddenContentPage.renderPage?.();
+      if (typeof JE.hiddenContentPage.injectStyles === 'function') {
+        JE.hiddenContentPage.injectStyles();
+      }
+      if (typeof JE.hiddenContentPage.renderPage === 'function') {
+        JE.hiddenContentPage.renderPage();
+      }
       console.log('🪼 Jellyfin Enhanced: Hidden Content Page Loaded.');
       return;
     }

@@ -31,7 +31,7 @@
   function waitForHiddenContent(callback) {
     const check = setInterval(() => {
       const JE = window.JE || window.JellyfinEnhanced;
-      if (JE?.hiddenContentPage) {
+      if (JE?.hiddenContentPage && JE?.hiddenContent) {
         clearInterval(check);
         callback(JE);
       }
@@ -40,12 +40,20 @@
 
   // Render hidden content when container appears
   function renderHiddenContent(container, JE) {
+    if (!container || !JE.hiddenContentPage) return;
+
     container.classList.remove('hide');
     container.style.display = '';
 
-    container.innerHTML = '<div id="je-hidden-content-container"></div>';
+    // Ensure the container has the proper child element
+    if (!container.querySelector('#je-hidden-content-container')) {
+      container.innerHTML = '<div id="je-hidden-content-container"></div>';
+    }
 
-    JE.hiddenContentPage.renderForCustomTab?.();
+    // Call the custom tab render function
+    if (typeof JE.hiddenContentPage.renderForCustomTab === 'function') {
+      JE.hiddenContentPage.renderForCustomTab();
+    }
   }
 
   // Watch for container to appear
@@ -56,6 +64,7 @@
       return;
     }
 
+    // Also watch for visibility changes in case it's created later
     const observer = new MutationObserver(() => {
       const container = document.querySelector('.jellyfinenhanced.hidden-content');
       if (container) {

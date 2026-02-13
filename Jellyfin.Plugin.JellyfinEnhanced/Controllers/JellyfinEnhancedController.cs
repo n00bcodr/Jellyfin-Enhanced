@@ -1447,6 +1447,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Hidden Content Settings
                 config.HiddenContentEnabled,
+                config.HiddenContentUsePluginPages,
+                config.HiddenContentUseCustomTabs,
 
             });
         }
