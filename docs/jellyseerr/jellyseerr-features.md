@@ -34,12 +34,14 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 ### Search Integration
 
 **How It Works:**
+
 1. Type search query in Jellyfin search bar
 2. Results from both Jellyfin and Jellyseerr appear
 3. Jellyseerr results show request status
 4. Click to request or view details
 
 **Request Status Indicators:**
+
 - **Available** - Already in your library
 - **Pending** - Request submitted, awaiting approval
 - **Approved** - Request approved, downloading
@@ -85,12 +87,14 @@ Browse and discover content by various criteria.
 Report problems with media directly to Jellyseerr.
 
 **Issue Types:**
+
 - Video (quality, corruption, wrong file)
 - Audio (sync, missing tracks, quality)
 - Subtitles (sync, missing, incorrect)
 - Other (metadata, artwork, etc.)
 
 **How to Report:**
+
 1. Open movie or TV show detail page
 2. Click report icon in action buttons
 3. Select issue type
@@ -105,12 +109,14 @@ Report problems with media directly to Jellyseerr.
 Automatically sync requested media to Jellyfin watchlist.
 
 **Features:**
+
 - Add requested items to watchlist when available
 - Sync Jellyseerr watchlist to Jellyfin
 - Prevent re-addition of removed items
 - Configurable memory retention
 
 **Configuration:**
+
 - **Add Requested Media to Watchlist** - Auto-add when available
 - **Sync Jellyseerr Watchlist** - Sync watchlist items
 - **Prevent Watchlist Re-Addition** - Remember removed items
@@ -133,12 +139,14 @@ When on the search page, a Jellyseerr icon indicates connection status.
 ### Connection Issues
 
 **Icon Shows Offline:**
+
 1. Verify Jellyseerr URL is correct and accessible
 2. Check Jellyseerr is running
 3. Test connection in plugin settings
 4. Check server logs for errors
 
 **Icon Shows User Not Found:**
+
 1. Verify "Enable Jellyfin Sign-In" is enabled in Jellyseerr
 2. Import Jellyfin user into Jellyseerr
 3. Ensure same username in both systems
@@ -147,12 +155,14 @@ When on the search page, a Jellyseerr icon indicates connection status.
 ### Search Not Working
 
 **No Results Appearing:**
+
 1. Check icon status (must be green/active)
 2. Verify API key is correct
 3. Check browser console for errors
 4. Test API endpoints manually
 
 **Results Slow to Load:**
+
 1. Use internal Jellyseerr URL
 2. Check network latency
 3. Verify Jellyseerr performance
@@ -161,12 +171,14 @@ When on the search page, a Jellyseerr icon indicates connection status.
 ### Request Issues
 
 **Cannot Make Requests:**
+
 1. Verify user has request permissions in Jellyseerr
 2. Check request limits not exceeded
 3. Ensure item not already requested
 4. Check Jellyseerr logs
 
 **Requests Not Appearing:**
+
 1. Refresh Jellyseerr page
 2. Check request was successful (no errors)
 3. Verify user permissions
@@ -188,31 +200,33 @@ If reviews, elsewhere, or Jellyseerr icons not working:
 Map internal and external URLs for different network contexts.
 
 **Format:**
+
 ```
 internal_url|external_url
 ```
 
 **Example:**
+
 ```
 http://jellyseerr:5055|https://jellyseerr.example.com
 ```
 
-**Use Case:** Different URLs for local network vs remote access.
+**Use Case:** 
+
+Different URLs for local network vs remote access.
 
 ### Auto-Request Settings
 
 Automatically request media based on viewing behavior.
 
 **Auto Season Request:**
+
 - Trigger when X episodes remaining in season
 - Require all episodes watched (optional)
 - Configurable threshold
 
 **Auto Movie Request:**
+
 - Trigger on playback start
 - Trigger after X minutes watched
 - Check release date (only request if released)
-
----
-
-**Made with 💜 for Jellyfin and the community**
