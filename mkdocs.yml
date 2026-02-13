@@ -151,7 +151,7 @@ nav:
   # Advanced, misc
   # ——————————————
   - Advanced: 
-    - Advanced Configurations: advanced/advanced-configurations.md
+    #- Advanced Configurations: advanced/advanced-configurations.md # i'm not sure this page is necessary
     - CSS Customization: advanced/css-customization.md
     - API: advanced/api.md
     - Project Structure: advanced/project-structure.md
