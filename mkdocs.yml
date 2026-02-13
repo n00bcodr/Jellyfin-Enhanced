@@ -4,7 +4,7 @@ repo_name: n00bcodr/Jellyfin-Enhanced
 repo_url: https://github.com/n00bcodr/Jellyfin-Enhanced
 site_description: The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 site_author: n00bcodr
-copyright: Copyright &copy; 2024-2026 n00bcodr. **Made with 💜 for Jellyfin and the community**
+copyright: Copyright &copy; 2024-2026 n00bcodr. Made with 💜 for Jellyfin and the community
 
 theme:
   name: material
