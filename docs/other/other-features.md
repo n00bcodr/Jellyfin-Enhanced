@@ -488,7 +488,3 @@ If you encounter issues:
 2. Verify settings are correct
 3. Check browser console for errors
 4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-
----
-
-**Made with 💜 for Jellyfin and the community**

@@ -231,7 +231,3 @@ Contributions welcome on all projects!
 All projects are open source under GPL-3.0 license unless otherwise specified.
 
 See individual repositories for detailed license information.
-
----
-
-**Made with 💜 for Jellyfin and the community**

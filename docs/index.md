@@ -66,5 +66,3 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Colored Icons** - Activity and plugin icons
 - **Login Images** - User avatars on login page
 - **Multi-language** - Available in 15+ languages
-
-**Made with 💜 for Jellyfin and the community**

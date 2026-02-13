@@ -570,5 +570,3 @@ If your question isn't answered here:
 1. Search [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 2. Ask in [Discord Community](https://discord.gg/HKA2QNYJ6)
 3. Create a [GitHub Issue](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new)
-
-**Made with 💜 for Jellyfin and the community**
