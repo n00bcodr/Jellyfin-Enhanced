@@ -60,6 +60,7 @@ Most features can be enabled/disabled individually:
 3. Adjust position (top-left, top-right, etc.)
 
 <!-- custom css note -->
+<!-- explicit directory seemed necessary (idk why) -->
 !!! tip
 
-    [Custom CSS available](/docs/advanced/advanced/css-customization/#tags)
+    [Custom CSS available](/advanced/css-customization/#tags)
