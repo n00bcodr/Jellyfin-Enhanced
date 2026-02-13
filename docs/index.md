@@ -6,20 +6,11 @@
   <img src="https://img.shields.io/badge/Jellyfin%20Version-10.11-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin Version">
 </p>
 
-The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 
-| Shortcuts | Settings |
-|-----------|----------|
-| ![Shortcuts](images/shortcuts.png) | ![Settings](images/settings.png) |
-
-| Pause Screen | Elsewhere |
-|--------------|-----------|
-| ![Pause Screen](images/pausescreen.png) | ![Elsewhere](images/elsewhere.png) |
-
-| Jellyseerr configuration | Update |
-|------------|--------|
-| ![Jellyseerr](images/jellyseerr.png) | ![Update](images/update.png) |
-
+<p align="center">
+The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.<br><br>
+  <img src="images/icon.png" alt="Jellyfin Enhanced Logo" width="50%" />
+</p>
 
 ## Compatibility
 
@@ -29,8 +20,8 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 | Android App | ✅ Full | Official app with embedded web UI |
 | iOS App | ✅ Full | Official app with embedded web UI |
 | Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
-| Android TV | ❌ Not Supported | Native app, no web UI |
-| Third-party Apps | ❌ Not Supported | Depends on embedded web UI |
+| Android TV | ❌ Not Supported, but auto-season, movie requests work| Native app, no web UI |
+| Third-party Apps | ❌ Not Supported, but auto-season, movie requests work | Depends on embedded web UI |
 
 ## Features Overview
 
@@ -45,7 +36,6 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 ### 🔍 Elsewhere
 - **Streaming Provider Lookup** - See where media is available
 - **Multi-region Support** - Check availability across regions
-- **Buy, Rent, Stream** - All options in one place
 
 ### 🪼 Jellyseerr
 - **Search Integration** - Request media from Jellyfin search
@@ -53,6 +43,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Discovery Pages** - Browse by genre, network, person, or tag
 - **Issue Reporting** - Report problems directly to Jellyseerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
+- **Auto Requests** - Auto next season and next movie (in collection) requests
 
 ### 🔗 *arr Integration
 - **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages

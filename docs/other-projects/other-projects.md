@@ -1,6 +1,6 @@
-# Other Projects
+# Related Projects
 
-Related projects by n00bcodr for Jellyfin customization and enhancement.
+Other projects by n00bcodr for Jellyfin customization and enhancement.
 
 ## Jellyfin Plugins
 
@@ -210,19 +210,6 @@ Contributions welcome on all projects!
 - **GitHub:** Watch repositories for updates
 - **Discord:** Join community for announcements
 - **Releases:** Check release notes for changes
-
----
-
-## Credits & Acknowledgments
-
-### Special Thanks
-
-- **Jellyfin Team** - For the amazing media server
-- **[BobHasNoSoul](https://github.com/BobHasNoSoul/)** - Huge inspiration for getting into modding Jellyfin
-- **[IAmParadox27](https://github.com/IAmParadox27/)** - Inspiration for making Jellyfin Enhanced as a plugin from a user script.
-- **Community Contributors** - Translations, bug reports, and feedback
-- **Plugin Developers** - Intro Skipper, Custom Tabs, Plugin Pages, and more
-
 
 ---
 
