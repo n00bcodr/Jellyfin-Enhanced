@@ -2,7 +2,7 @@
 
 Discover where your media is available to stream across multiple regions and platforms.
 
-![Elsewhere](images/elsewhere.png)
+![Elsewhere](../images/elsewhere.png)
 
 ## Overview
 
@@ -10,6 +10,7 @@ Jellyfin Elsewhere helps you find where movies and TV shows are available across
 
 ## Features
 
+- **Exclusive branding** - Show off media that is only available for streaming on your server!
 - **Multi-region Support** - Check availability across different countries
 - **Provider Icons** - Visual logos for each streaming service
 - **Customizable Filters** - Show or hide specific providers

@@ -3,9 +3,9 @@
     
     **Prerequisites:**
     
-    - TMDB API Key 
+    - **TMDB API Key** 
         - [Free from TMDB](https://www.themoviedb.org/settings/api)
-    - Jellyfin Enhanced plugin installed
+    - **Jellyfin Enhanced** plugin installed
 
 
 ## Getting a TMDB API Key
