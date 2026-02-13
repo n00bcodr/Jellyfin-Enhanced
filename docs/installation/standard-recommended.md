@@ -42,10 +42,10 @@
 
     - The File Transformation plugin helps avoid permission issues while modifying `index.html`
     - Recommended on all installation types:
-      - Docker
-      - Windows
-      - Linux
-      - etc
+        - Docker
+        - Windows
+        - Linux
+        - etc
     - Without it, you may encounter permission errors
 
 
