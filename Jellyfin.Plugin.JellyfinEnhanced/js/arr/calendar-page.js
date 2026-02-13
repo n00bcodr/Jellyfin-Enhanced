@@ -2705,7 +2705,7 @@
 
     e.preventDefault();
     e.stopPropagation();
-    navigateToJellyfinItem(event, { preferSeries: true });
+    navigateToJellyfinItem(event, { preferSeries: false });
   }
 
   /**
