@@ -157,5 +157,8 @@ nav:
     - Project Structure: advanced/project-structure.md
   - FAQ + Support: 
     - FAQ: faq-support/faq.md
+    - Report issues: faq-support/report-issues.md
+    - Feature Requests: faq-support/feature-requests.md
+    - Contributing Translations: faq-support/contributing-translations.md
     - Support + Community: faq-support/support-community.md
   - Other Projects: other-projects/other-projects.md
