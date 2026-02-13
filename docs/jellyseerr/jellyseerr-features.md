@@ -2,100 +2,34 @@
 
 Search, request, and discover media directly from Jellyfin using your Jellyseerr instance.
 
-![Jellyseerr](images/jellyseerr.png)
+<!-- relative directory  -->
+![Jellyseerr](../images/jellyseerr.png)
 
-## Overview
+<!-- use a custom title -->
+!!! info "Note"
 
-The Jellyseerr integration allows users to search for and request media directly from the Jellyfin search interface. Additionally, requested media can be automatically added to your Jellyfin watchlist once it becomes available in your library.
-
-> **IMPORTANT:** This plugin is not affiliated with Jellyseerr/Seerr. Jellyseerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. Please report any issues with this plugin to the plugin repository, not to the Jellyseerr team.
+    **This plugin is NOT affiliated with Jellyseerr/Seerr.** Jellyseerr is an independent project. This plugin simply integrates with it to enhance the Jellyfin experience. 
+    
+    **Please report any issues with this plugin to the Jellyfin Enhanced repository, not to the Jellyseerr/Seerr team.**
 
 ## Features
 
-- **Search Integration** - Search Jellyseerr from Jellyfin search bar
-- **Request Movies & TV Shows** - Request content directly from search results
-- **Request Status** - View request status (pending, approved, available)
-- **Item Details** - Recommendations and similar items on detail pages
-- **Discovery Pages** - Browse by genre, network, person, or tag
+- **Search + Request** - Search + request from Jellyseerr, directly from Jellyfin search results
+    - **Advanced requests** *(requires configuration)*
+    - **4K Requests**
+    - **Season selection**
+- **Requests Tab** 
+    - **View request status** - pending, approved, available
+- **Recommendations + Discovery** - Recommendations and similar items on detail pages
 - **Issue Reporting** - Report problems directly to Jellyseerr
-- **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist
-- **4K Requests** - Support for 4K quality requests
-- **Season Selection** - Choose specific seasons for TV shows
+- **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *[requires the KefinTweaks glugin](https://github.com/ranaldsgift/KefinTweaks)*
 
-## Setup
 
-### Prerequisites
+<!-- use a custom title -->
+!!! tip "How it works"
 
-- Jellyseerr instance with API access
-- Jellyseerr API Key
-- Jellyfin users imported into Jellyseerr
+    To ensure security and prevent CORS errors, the plugin uses the Jellyfin server as a proxy. This keeps your Jellyseerr API key safe and avoids browser security issues.
 
-### Step 1: Enable Jellyfin Sign-In in Jellyseerr
-
-1. In Jellyseerr, go to **Settings** → **Users**
-2. Enable **"Enable Jellyfin Sign-In"**
-3. Save settings
-
-![Jellyfin Sign-In](images/jellyfin-signin.png)
-
-### Step 2: Import Jellyfin Users
-
-1. In Jellyseerr, go to **Users** page
-2. Click **"Import Jellyfin Users"**
-3. Select users to import
-4. Save changes
-
-**User Access:**
-- Users WITH access: ![Users with access](images/users-with-access.png)
-- Users WITHOUT access: ![Users without access](images/users-no-access.png)
-
-### Step 3: Configure Plugin
-
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to **Jellyseerr Settings** tab
-3. Check **"Show Jellyseerr Results in Search"**
-4. Enter your **Jellyseerr URL(s)** (one per line)
-   - Use internal URL for best performance
-   - Can provide multiple URLs (first successful connection used)
-5. Enter your **Jellyseerr API Key**
-   - Found in Jellyseerr: **Settings** → **General** → **API Key**
-6. Click **"Test Connection"** to verify
-7. Enable optional features (see below)
-8. Click **Save**
-
-### Optional Features
-
-**Add Requested Media to Watchlist:**
-- Automatically add items to Jellyfin watchlist when they become available
-- Requires [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks) plugin
-
-**Sync Jellyseerr Watchlist to Jellyfin:**
-- Sync your Jellyseerr watchlist items to Jellyfin watchlist
-- Items added when they become available in library
-
-**Show 'Report Issue' Button:**
-- Display issue reporting button on item detail pages
-- Report video, audio, subtitle, or other problems
-
-**Enable 4K Requests:**
-- Allow users to request 4K quality
-- Requires Jellyseerr 4K configuration
-
-**Show Advanced Request Options:**
-- Display advanced options in request modal
-- Season selection, quality options, etc.
-
-## Icon States
-
-When on the search page, a Jellyseerr icon indicates connection status.
-
-| **Icon** | **State** | **Description** |
-| :---: | :--- | :--- |
-|<img width="32" alt="active" src="https://github.com/user-attachments/assets/36e9dbab-3fbe-4b5b-b767-a961597ccb96" /> | **Active** | Jellyseerr is successfully connected, and the current Jellyfin user is correctly linked to a Jellyseerr user. <br> Results from Jellyseerr will load along with Jellyfin and requests can be made. |
-| <img width="32" alt="noaccess" src="https://github.com/user-attachments/assets/09a3df03-97bf-499f-91a2-3b03e371ac02" /> | **User Not Found** | Jellyseerr is successfully connected, but the current Jellyfin user is not linked to a Jellyseerr account. <br>Ensure the user has been imported into Jellyseerr from Jellyfin. Results will not load. |
-| <img width="32" alt="offline" src="https://github.com/user-attachments/assets/bd4ea4cb-94ec-450f-ab1a-13e72960ecec" /> | **Offline** | The plugin could not connect to any of the configured Jellyseerr URLs. <br> Check your plugin settings and ensure Jellyseerr is running and accessible. Results will not load. |
-
-## Features
 
 ### Search Integration
 
@@ -115,14 +49,13 @@ When on the search page, a Jellyseerr icon indicates connection status.
 
 View Jellyseerr recommendations and similar items on detail pages.
 
-**Features:**
 - Recommended items section
 - Similar items section
 - Request directly from recommendations
 - Exclude items already in library
 - Real-time request status
 
-**Enable:**
+#### Configure
 1. Check **"Show Jellyseerr Recommendations and Similar items"**
 2. Optional: Enable **"Exclude already in library items"**
 3. Optional: Enable **"Exclude rejected items"**
@@ -137,13 +70,13 @@ Browse and discover content by various criteria.
 - **Person Discovery** - Browse by actor, director, crew
 - **Tag Discovery** - Browse by custom tags
 
-**Features:**
+#### Features
 - Filter by TV/Movies/All
 - Infinite scroll with pagination
 - Request directly from discovery
 - Library awareness (hide owned items)
 
-**Enable:**
+#### Configure
 1. Check respective discovery options in settings
 2. Access via custom navigation or direct URLs
 
@@ -183,52 +116,17 @@ Automatically sync requested media to Jellyfin watchlist.
 - **Prevent Watchlist Re-Addition** - Remember removed items
 - **Memory Retention Days** - How long to remember (default: 365)
 
-## How It Works
 
-To ensure security and prevent CORS errors, the plugin uses the Jellyfin server as a proxy. This keeps your Jellyseerr API key safe and avoids browser security issues.
+### Icon States
 
-### API Endpoints
+When on the search page, a Jellyseerr icon indicates connection status.
 
-The plugin exposes proxy endpoints for troubleshooting.
+| **Icon** | **State** | **Description** |
+| :---: | :--- | :--- |
+|<img width="32" alt="active" src="https://github.com/user-attachments/assets/36e9dbab-3fbe-4b5b-b767-a961597ccb96" /> | **Active** | Jellyseerr is successfully connected, and the current Jellyfin user is correctly linked to a Jellyseerr user. <br> Results from Jellyseerr will load along with Jellyfin and requests can be made. |
+| <img width="32" alt="noaccess" src="https://github.com/user-attachments/assets/09a3df03-97bf-499f-91a2-3b03e371ac02" /> | **User Not Found** | Jellyseerr is successfully connected, but the current Jellyfin user is not linked to a Jellyseerr account. <br>Ensure the user has been imported into Jellyseerr from Jellyfin. Results will not load. |
+| <img width="32" alt="offline" src="https://github.com/user-attachments/assets/bd4ea4cb-94ec-450f-ab1a-13e72960ecec" /> | **Offline** | The plugin could not connect to any of the configured Jellyseerr URLs. <br> Check your plugin settings and ensure Jellyseerr is running and accessible. Results will not load. |
 
-**Get Plugin Version:**
-```bash
-curl -X GET \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/version"
-```
-
-**Check Connection Status:**
-```bash
-curl -X GET \
-  -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/status"
-```
-
-**Check User Status:**
-```bash
-curl -X GET \
-  -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
-  -H "X-Jellyfin-User-Id: <JELLYFIN_USER_ID>" \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/user-status"
-```
-
-**Perform Search:**
-```bash
-curl -X GET \
-  -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
-  -H "X-Jellyfin-User-Id: <JELLYFIN_USER_ID>" \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/search?query=Inception"
-```
-
-**Make Request:**
-```bash
-curl -X POST \
-  -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
-  -H "X-Jellyfin-User-Id: <JELLYFIN_USER_ID>" \
-  -H "Content-Type: application/json" \
-  -d '{"mediaType": "movie", "mediaId": 27205}' \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/request"
-```
 
 ## Troubleshooting
 

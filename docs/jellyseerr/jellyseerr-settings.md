@@ -1,3 +1,5 @@
+# Jellyseerr Settings
+
 <!-- use a custom title -->
 !!! info "Prerequisites"
 
@@ -7,13 +9,16 @@
         - **API key**
         - Jellyfin users **imported to Jellyseerr**
 
+## Setup
+
 ### Step 1: Enable Jellyfin Sign-In in Jellyseerr
 
 1. In Jellyseerr, go to **Settings** → **Users**
 2. Enable **"Enable Jellyfin Sign-In"**
 3. Save settings
 
-![Jellyfin Sign-In](images/jellyfin-signin.png)
+<!-- relative directory  -->
+![Jellyfin Sign-In](../images/jellyfin-signin.png)
 
 ### Step 2: Import Jellyfin Users
 
@@ -23,8 +28,15 @@
 4. Save changes
 
 **User Access:**
-- Users WITH access: ![Users with access](images/users-with-access.png)
-- Users WITHOUT access: ![Users without access](images/users-no-access.png)
+- Users WITH access: 
+  
+  <!-- relative directory  -->
+  ![Users with access](../images/users-with-access.png)
+
+- Users WITHOUT access: 
+  
+  <!-- relative directory  -->
+  ![Users without access](../images/users-no-access.png)
 
 ### Step 3: Configure Plugin
 
@@ -40,9 +52,9 @@
 7. Enable optional features (see below)
 8. Click **Save**
 
-# Optional Features
+## Optional Features
 
-## Add Requested Media to Watchlist
+### Add Requested Media to Watchlist
 !!! note "Requirements"  
 
     **Requirements:**
@@ -51,15 +63,15 @@
 
 - Automatically add items to Jellyfin watchlist when they become available
 
-## Sync Jellyseerr Watchlist to Jellyfin
+### Sync Jellyseerr Watchlist to Jellyfin
 - Sync your Jellyseerr watchlist items to Jellyfin watchlist
 - Items added when they become available in library
 
-## Show 'Report Issue' Button
+### Show 'Report Issue' Button
 - Display issue reporting button on item detail pages
 - Report video, audio, subtitle, or other problems
 
-## Enable 4K Requests
+### Enable 4K Requests
 !!! note "Requirements"
 
     **Requirements:**
@@ -68,6 +80,6 @@
 
 - Allow users to request 4K quality
 
-## Show Advanced Request Options
+### Show Advanced Request Options
 - Display advanced options in request modal
 - Season selection, quality options, etc.

@@ -2,6 +2,7 @@
 
 Discover where your media is available to stream across multiple regions and platforms.
 
+<!-- relative directory  -->
 ![Elsewhere](../images/elsewhere.png)
 
 ## Overview
