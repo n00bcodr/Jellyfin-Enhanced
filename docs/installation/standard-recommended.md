@@ -65,6 +65,6 @@ After restart:
 
 1. Refresh your browser *(`Ctrl+F5` or `Cmd+Shift+R`)*
 2. Access the Jellyfin Enhanced settings panel. Options:
-   - In the sidebar: **Jellyfin Enhanced**
-   - Press `?`
+    - In the sidebar: **Jellyfin Enhanced**
+    - Press `?`
 3. If you see the panel, installation was successful!
