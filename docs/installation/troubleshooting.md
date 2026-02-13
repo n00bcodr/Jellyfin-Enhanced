@@ -83,6 +83,48 @@ After installation, verify these work:
 
 ## Platform-Specific Issues
 
+### Docker
+
+If you are not using file-transformation and see permission errors like:
+
+```
+System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
+```
+
+You'll need to manually map the `index.html` file:
+
+1. Copy the index.html file from your container:
+
+```bash
+docker cp jellyfin:/jellyfin/jellyfin-web/index.html /path/to/your/jellyfin/config/index.html
+```
+
+2. Add volume mapping to your Docker run command:
+
+```bash
+-v /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
+```
+
+3. Or for Docker Compose, add to volumes section:
+
+```yaml
+services:
+  jellyfin:
+    volumes:
+      - /path/to/your/jellyfin/config:/config
+      - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
+```
+
+<!-- use a custom title -->
+!!! warning "Warning"
+
+    This method is not recommended and won't survive a jellyfin-web upgrade. The recommended method for Docker:
+
+    1. Install as a standard [Jellyfin Plugin](./standard-recommended.md)
+    2. Use the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+
+
+
 ### Windows
 
 If you see permission denied errors:
@@ -95,7 +137,7 @@ If you see permission denied errors:
 
 ### Linux
 
-If you encounter permission issues, this is a known solution 
+If you encounter permission issues, this is a known solution
 
 Bash:
 

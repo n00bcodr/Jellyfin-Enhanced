@@ -4,7 +4,7 @@ repo_name: n00bcodr/Jellyfin-Enhanced
 repo_url: https://github.com/n00bcodr/Jellyfin-Enhanced
 site_description: The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 site_author: n00bcodr
-copyright: Copyright &copy; 2024-2026 n00bcodr. Made with 💜 for Jellyfin and the community
+copyright: Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
 
 theme:
   name: material
@@ -83,9 +83,8 @@ nav:
   # ——————————————
   # Installation
   # ——————————————
-  - Installation: 
-    - Standard Installation (recommended): installation/standard-recommended.md
-    - Advanced Installation (not recommended): installation/advanced-not-recommended.md
+  - Installation:
+    - Installation: installation/installation.md
     - Troubleshooting: installation/troubleshooting.md
 
 
@@ -150,12 +149,12 @@ nav:
   # ——————————————
   # Advanced, misc
   # ——————————————
-  - Advanced: 
+  - Advanced:
     #- Advanced Configurations: advanced/advanced-configurations.md # i'm not sure this page is necessary
     - CSS Customization: advanced/css-customization.md
     - API: advanced/api.md
     - Project Structure: advanced/project-structure.md
-  - FAQ + Support: 
+  - FAQ + Support:
     - FAQ: faq-support/faq.md
     - Report issues: faq-support/report-issues.md
     - Feature Requests: faq-support/feature-requests.md

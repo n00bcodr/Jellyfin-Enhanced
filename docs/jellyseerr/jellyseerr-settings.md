@@ -28,13 +28,13 @@
 4. Save changes
 
 **User Access:**
-- Users WITH access: 
-  
+- Users WITH access:
+
   <!-- relative directory  -->
   ![Users with access](../images/users-with-access.png)
 
-- Users WITHOUT access: 
-  
+- Users WITHOUT access:
+
   <!-- relative directory  -->
   ![Users without access](../images/users-no-access.png)
 
@@ -55,13 +55,12 @@
 ## Optional Features
 
 ### Add Requested Media to Watchlist
-!!! note "Requirements"  
+!!! note "Requirements"
 
     **Requirements:**
 
-   - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
-
-- Automatically add items to Jellyfin watchlist when they become available
+      - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
+      - Automatically add items to Jellyfin watchlist when they become available
 
 ### Sync Jellyseerr Watchlist to Jellyfin
 - Sync your Jellyseerr watchlist items to Jellyfin watchlist
@@ -77,8 +76,7 @@
     **Requirements:**
 
     - Jellyseerr instance with **4K configuration**
-
-- Allow users to request 4K quality
+    - Permissions for users to request 4K quality
 
 ### Show Advanced Request Options
 - Display advanced options in request modal

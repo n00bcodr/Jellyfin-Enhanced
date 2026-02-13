@@ -2,9 +2,6 @@
 
 Jellyfin Enhanced bundles dozens of features into one convenient plugin. This guide covers all available features and how to use them.
 
-<!-- relative directories -->
-![Enhanced Panel](../images/panel.gif)
-
 ## Playback & Controls
 
 ### ⌨️ Advanced Keyboard Shortcuts
@@ -15,20 +12,33 @@ Comprehensive hotkeys for navigation, playback control, and more.
 ![Shortcuts](../images/shortcuts.png)
 
 **Default Shortcuts:**
-- `Space` - Play/Pause
-- `F` - Toggle fullscreen
-- `M` - Mute/Unmute
-- `←/→` - Seek backward/forward
-- `↑/↓` - Volume up/down
-- `B` - Create bookmark at current timestamp
-- `?` - Open settings panel
-- And many more...
+
+**Global:**
+   - `/` - Open Search
+   - `Shift+H` - Go to Home
+   - `D` - Go to Dashboard
+   - `Q` - Quick Connect
+   - `R` - Play Random Item
+
+**Player:**
+   - `A` - Cycle Aspect Ratio
+   - `I` - Show Playback Info
+   - `S` - Subtitle Menu
+   - `C` - Cycle Subtitle Tracks
+   - `V` - Cycle Audio Tracks
+   - `+` - Increase Playback Speed
+   - `-` - Decrease Playback Speed
+   - `R` - Reset Playback Speed
+   - `B` - Bookmark Current Time
+   - `P` - Open Episode Preview
+   - `O` - Skip Intro/Outro
+
 
 **Customization:**
 1. Press `?` to open the Enhanced panel
 2. Go to **Shortcuts** tab
 3. Click on any key to set a custom shortcut
-4. Changes save automatically
+4. Changes save automatically per user
 
 ### 📝 Smart Bookmarks
 

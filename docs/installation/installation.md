@@ -14,7 +14,7 @@
 
 ### Step 1: Add Plugin Repository
 
-1. In Jellyfin, navigate to **Dashboard** → **Plugins** → **Catalog** → ⚙️ (Settings icon)
+1. In Jellyfin, navigate to **Dashboard** → **Plugins** → **Manage Repositories**
 2. Click **➕** (Add button) to add a new repository
 3. Give the repository a name (e.g., "Jellyfin Enhanced")
 4. Set the **Repository URL** to the manifest:
@@ -26,19 +26,19 @@
 
 ### Step 2: Install Plugin
 
-1. Go to the **Catalog** tab
+1. Go to the **All** tab
 2. Find **Jellyfin Enhanced** in the plugin list
 3. Click **Install**
 4. Wait for the installation to complete
 
-### Step 3: Install File Transformation Plugin
+### Step 2a: Install File Transformation Plugin (Recommended)
 
 <!-- use a custom title -->
 !!! info "Important"
 
     **It is highly recommended to install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)**
 
-    Why? 
+    Why?
 
     - The File Transformation plugin helps avoid permission issues while modifying `index.html`
     - Recommended on all installation types:
@@ -55,11 +55,13 @@
 4. Then install Jellyfin Enhanced normally
 
 
-### Step 4: Restart Server
+If you do not have file-transformation installed, you might encounter permission issues. Refer [troubleshooting steps](troubleshooting.md)
+
+### Step 3: Restart Server
 
 1. **Restart** your Jellyfin server to complete the installation *(This is required for the plugin to take effect)*
 
-### Step 5: Verify Installation
+### Step 4: Verify Installation
 
 After restart:
 
