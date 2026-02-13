@@ -62,4 +62,4 @@ Most features can be enabled/disabled individually:
 <!-- custom css note -->
 !!! tip
 
-    [Custom CSS available](../advanced/css-customization/#tags)
+    [Custom CSS available](/docs/advanced/advanced/css-customization/#tags)
