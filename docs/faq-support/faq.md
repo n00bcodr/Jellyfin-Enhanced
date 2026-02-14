@@ -503,9 +503,9 @@ Use Custom CSS for precise control:
 
 ### Recommended plugins
 
-- [Intro Skipper](https://github.com/intro-skipper/intro-skipper) - Auto-skip intros/outros
 - [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) - Safe file modifications
-- [Custom Tabs](https://github.com/randalsgift/CustomTabs) - Custom navigation tabs
+- [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) - Custom navigation tabs
+- [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) - Helps Plugins create custom pages for settings and info
 - [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) - Watchlist and more
 
 ---

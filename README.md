@@ -47,7 +47,7 @@ Quick links:
 4. **Restart** your Jellyfin server
 
 > [!IMPORTANT]
-> **Jellyfin 10.11+ Required** - This plugin only supports Jellyfin 10.11 and newer.
+> **Jellyfin 10.11+ Required** - From version 11 this plugin only supports Jellyfin 10.11 and newer.
 
 > [!TIP]
 > **Highly Recommended:** Install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) to avoid permission issues on all installation types (Docker, Windows, Linux, etc.).
@@ -65,7 +65,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Auto-Skip Intros/Outros** - Seamless binge-watching (requires Intro Skipper plugin)
 - **Custom Subtitle Colors** - Full color customization with alpha support
 
-### 🙈 Content Management (New in v11)
+### 🙈 Content Management
 - **Hidden Content System** - Per-user content hiding with server-side storage
 - **Granular Filtering** - Control visibility across library, discovery, search, and more
 - **Management Panel** - Search, unhide, and bulk operations
@@ -193,9 +193,9 @@ Other projects by n00bcodr:
 
 Recommended plugins:
 
-- [Intro Skipper](https://github.com/intro-skipper/intro-skipper) - Auto-skip intros/outros
 - [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) - Safe file modifications
-- [Custom Tabs](https://github.com/randalsgift/CustomTabs) - Custom navigation tabs
+- [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) - Custom navigation tabs
+- [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) - Helps Plugins create custom pages for settings and info
 - [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) - Watchlist and more
 
 <br>
@@ -225,11 +225,7 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 ### Enjoying Jellyfin Enhanced?
 
 If this plugin has enhanced your Jellyfin experience, consider:
-  ⭐ Starring the repository
-  🐛 Reporting bugs or suggesting features
-  🌍 Contributing translations
-  💬 Joining [Discord community](https://discord.gg/8wk3q74s)
-  ☕ Supporting me on [Ko-Fi](https://ko-fi.com/n00bcodr)
+⭐ Starring the repository ⦁ 🐛 Reporting bugs or suggesting features ⦁ 🌍 Contributing translations ⦁ 💬 Joining <a href="https://discord.gg/8wk3q74s">Discord community</a> ⦁ ☕ Supporting me on <a href="https://ko-fi.com/n00bcodr">Ko-Fi</a>
 
 Made with 💜 for Jellyfin and the community
 
