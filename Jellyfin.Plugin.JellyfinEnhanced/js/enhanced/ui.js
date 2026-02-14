@@ -946,6 +946,12 @@
                                         <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_show_button_details')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_show_button_details_desc')}</div></div>
                                     </label>
                                 </div>
+                                <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="hiddenShowButtonCast" ${JE.hiddenContent?.getSettings()?.showButtonCast ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('hidden_content_show_button_cast')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('hidden_content_show_button_cast_desc')}</div></div>
+                                    </label>
+                                </div>
                             </div>
                             <div id="hiddenContentSurfaceToggles" style="margin-bottom: 12px;">
                                 <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
@@ -1391,18 +1397,20 @@
             const hiddenButtonToggles = [
                 ['hiddenShowButtonJellyseerr', 'showButtonJellyseerr'],
                 ['hiddenShowButtonLibrary', 'showButtonLibrary'],
-                ['hiddenShowButtonDetails', 'showButtonDetails']
+                ['hiddenShowButtonDetails', 'showButtonDetails'],
+                ['hiddenShowButtonCast', 'showButtonCast']
             ];
             for (const [id, key] of hiddenButtonToggles) {
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', (e) => {
                         JE.hiddenContent.updateSettings({ [key]: e.target.checked });
-                        if (key === 'showButtonLibrary') {
+                        if (key === 'showButtonLibrary' || key === 'showButtonCast') {
                             if (e.target.checked) {
                                 JE.hiddenContent.addLibraryHideButtons();
                             } else {
                                 JE.hiddenContent.removeLibraryHideButtons();
+                                JE.hiddenContent.addLibraryHideButtons();
                             }
                         }
                         resetAutoCloseTimer();

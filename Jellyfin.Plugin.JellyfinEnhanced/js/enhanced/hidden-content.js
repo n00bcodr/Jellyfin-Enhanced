@@ -92,6 +92,7 @@
             showButtonJellyseerr: true,
             showButtonLibrary: false,
             showButtonDetails: true,
+            showButtonCast: false,
             experimentalHideCollections: false,
             ...data.settings
         };
@@ -1520,7 +1521,7 @@
      * @param {HTMLElement} card The parent `.card` element.
      * @param {string} itemId The Jellyfin item ID.
      */
-    function createLibraryHideButton(cardBox, card, itemId) {
+    function createLibraryHideButton(cardBox, card, itemId, isPerson) {
         cardBox.style.position = 'relative';
         const btn = document.createElement('button');
 
@@ -1573,7 +1574,9 @@
                 if (surface === 'nextup' || surface === 'continuewatching') {
                     await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);
                 } else {
-                    confirmAndHide({ itemId, name: cardName }, () => {
+                    const itemData = { itemId, name: cardName };
+                    if (isPerson) itemData.type = 'Person';
+                    confirmAndHide(itemData, () => {
                         card.classList.add('je-hidden');
                     });
                 }
@@ -1664,7 +1667,9 @@
      */
     function addLibraryHideButtons() {
         const s = getSettings();
-        if (!s.enabled || !s.showHideButtons || !s.showButtonLibrary) return;
+        if (!s.enabled || !s.showHideButtons) return;
+        // At least one of library or cast buttons must be enabled
+        if (!s.showButtonLibrary && !s.showButtonCast) return;
 
         const skipCollections = !s.experimentalHideCollections;
 
@@ -1678,8 +1683,15 @@
             const itemId = getCardItemId(card);
             if (!itemId) continue;
 
-            if (skipCollections) {
-                const cardType = (card.dataset.type || '').toLowerCase();
+            const cardType = (card.dataset.type || '').toLowerCase();
+            const isPerson = cardType === 'person' || card.classList.contains('personCard');
+
+            // Skip Person cards unless showButtonCast is enabled
+            if (isPerson && !s.showButtonCast) continue;
+            // Skip non-Person cards unless showButtonLibrary is enabled
+            if (!isPerson && !s.showButtonLibrary) continue;
+
+            if (skipCollections && !isPerson) {
                 if (cardType === 'collectionfolder' || cardType === 'userview' || cardType === 'boxset' || cardType === 'playlist' || cardType === 'channel') continue;
                 const section = card.closest('.section, .verticalSection, .homeSection');
                 if (section) {
@@ -1688,7 +1700,7 @@
                 }
             }
 
-            createLibraryHideButton(cardBox, card, itemId);
+            createLibraryHideButton(cardBox, card, itemId, isPerson);
         }
     }
 
