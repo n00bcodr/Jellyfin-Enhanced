@@ -184,6 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarTimeFormat = "5pm/5:30pm";
             CalendarHighlightFavorites = false;
             CalendarHighlightWatchedSeries = false;
+            CalendarShowOnlyRequested = false;
 
             // Hidden Content Settings
             HiddenContentEnabled = false;
@@ -346,6 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CalendarTimeFormat { get; set; }
         public bool CalendarHighlightFavorites { get; set; }
         public bool CalendarHighlightWatchedSeries { get; set; }
+        public bool CalendarShowOnlyRequested { get; set; }
 
         // Hidden Content Settings
         public bool HiddenContentEnabled { get; set; }

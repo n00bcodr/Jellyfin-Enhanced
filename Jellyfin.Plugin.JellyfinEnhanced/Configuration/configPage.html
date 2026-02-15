@@ -1146,6 +1146,13 @@
                                 </label>
                             </div>
                             <div class="fieldDescription">Show a border on calendar entries for series you have watched episodes from.</div>
+                            <div class="checkboxContainer" style="margin-top: 1.5em; margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarShowOnlyRequested" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show Requested Items Only by Default</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription">When enabled, the calendar will load showing only Requested items by default, but users can still change filters.</div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                             <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -2050,6 +2057,7 @@
                 document.querySelector('#calendarTimeFormat').value = config.CalendarTimeFormat || '5pm/5:30pm';
                 document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
                 document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
+                document.querySelector('#calendarShowOnlyRequested').checked = config.CalendarShowOnlyRequested || false;
 
                 // Hidden Content settings
                 document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
@@ -2231,6 +2239,7 @@
             config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
             config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;
             config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
+            config.CalendarShowOnlyRequested = document.querySelector('#calendarShowOnlyRequested').checked;
 
             // Hidden Content settings
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;

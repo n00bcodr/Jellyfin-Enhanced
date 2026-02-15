@@ -26,6 +26,7 @@
       highlightFavorites: false,
       highlightWatchedSeries: false,
       showUnmonitored: false,
+      showOnlyRequested: false,
     },
     userDataMap: new Map(),
     activeFilters: new Set(), // Track active filters
@@ -1238,7 +1239,13 @@
       highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
       showUnmonitored: storedShowUnmonitored ?? false,
       displayMode: JE.currentSettings.calendarDisplayMode || "list",
+      showOnlyRequested: config.CalendarShowOnlyRequested || false,
     };
+
+    // If show only requested is enabled, set Requests as active by default
+    if (state.settings.showOnlyRequested && state.activeFilters.size === 0) {
+      state.activeFilters.add("Requests");
+    }
   }
 
   // Inject CSS styles into page
@@ -2291,10 +2298,9 @@
       : "";
 
     const hasTwoFilters = state.activeFilters.size >= 2;
-    const unmonitoredToggle = `
-      <div class="je-calendar-legend-item je-calendar-unmonitored-toggle ${state.settings.showUnmonitored ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.toggleShowUnmonitored(); event.stopPropagation();" style="cursor: pointer; border: 1px solid rgba(128,128,128,0.3); padding: 0.5em 0.75em; margin-bottom: 0.5em;">
-        <span class="material-symbols-rounded" style="color: #ff9800; font-size: 18px;">${state.settings.showUnmonitored ? 'check_box' : 'check_box_outline_blank'}</span>
-        <span>${JE.t?.("calendar_include_unmonitored") || "Include Unmonitored"}</span>
+    const unmonitoredLegend = `<div class="je-calendar-legend-item je-calendar-unmonitored-toggle ${state.settings.showUnmonitored ? 'active' : hasActiveFilters ? 'inactive' : ''}" onclick="window.JellyfinEnhanced.calendarPage.toggleShowUnmonitored(); event.stopPropagation();" style="cursor: pointer;">
+        <span class="material-symbols-rounded" style="color: #ff9800; font-size: 18px;">${state.settings.showUnmonitored ? 'visibility' : 'visibility_off'}</span>
+        <span>${JE.t?.("calendar_include_unmonitored") || "Unmonitored"}</span>
       </div>`;
     const filterControls = `
       <div class="je-calendar-filter-controls">
@@ -2307,7 +2313,6 @@
 
     return `
       <div class="je-calendar-legend">
-        ${unmonitoredToggle}
         ${filterControls}
         <div class="je-calendar-legend-item ${getItemClass('CinemaRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('CinemaRelease'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
@@ -2332,6 +2337,7 @@
         ${requestsLegend}
         ${watchlistLegend}
         ${watchedLegend}
+        ${unmonitoredLegend}
       </div>
     `;
   }

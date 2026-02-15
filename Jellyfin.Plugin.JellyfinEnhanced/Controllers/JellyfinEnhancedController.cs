@@ -1444,6 +1444,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarTimeFormat,
                 config.CalendarHighlightFavorites,
                 config.CalendarHighlightWatchedSeries,
+                config.CalendarShowOnlyRequested,
 
                 // Hidden Content Settings
                 config.HiddenContentEnabled,
