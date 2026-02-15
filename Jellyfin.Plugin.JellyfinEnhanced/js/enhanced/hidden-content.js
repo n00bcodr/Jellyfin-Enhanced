@@ -1401,6 +1401,8 @@
         const cards = document.querySelectorAll(CARD_SEL_NEW);
         for (let i = 0; i < cards.length; i++) {
             const card = cards[i];
+            // Skip image editor cards (they have data-imagetype attribute)
+            if (card.hasAttribute('data-imagetype')) continue;
             const itemId = getCardItemId(card);
             card.setAttribute(PROCESSED_ATTR, '1');
             card.removeAttribute(HIDDEN_PARENT_ATTR);
@@ -1680,6 +1682,10 @@
 
             const card = cardBox.closest('.card');
             if (!card) continue;
+
+            // Skip image editor cards and cards inside dialogs/admin pages
+            if (card.hasAttribute('data-imagetype') || card.closest('.formDialog, .editPageInnerContent')) continue;
+
             const itemId = getCardItemId(card);
             if (!itemId) continue;
 
