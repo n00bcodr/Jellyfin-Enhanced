@@ -30,7 +30,7 @@ Key directories:
 - `Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/` - Core functionality
 - `Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/` - Elsewhere and reviews functionality
 - `Jellyfin.Plugin.JellyfinEnhanced/js/extras/` - n00bcodr's Personal Scripts
-- `Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/` - Jellyseerr integration
+- `Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/` - Seerr integration
 - `Jellyfin.Plugin.JellyfinEnhanced/js/arr/` - *arr integration including calendar and requests
 - `Jellyfin.Plugin.JellyfinEnhanced/js/tags/` - Tag scripts (genre, language, people, quality, rating)
 - `Jellyfin.Plugin.JellyfinEnhanced/js/others/` - Miscellaneous scripts (letterboxd, splashscreen)

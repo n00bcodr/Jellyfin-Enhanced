@@ -27,7 +27,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 Quick links:
 - [Installation Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/)
 - [Features Overview](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/)
-- [Jellyseerr Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/jellyseerr/jellyseerr-features/)
+- [Seerr Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/jellyseerr/jellyseerr-features/)
 - [ARR Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/arr/arr-features/)
 - [FAQ & Troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
 - [CSS Customization](https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/css-customization/)
@@ -70,7 +70,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Granular Filtering** - Control visibility across library, discovery, search, and more
 - **Management Panel** - Search, unhide, and bulk operations
 
-### 🪼 Jellyseerr Integration
+### 🪼 Seerr Integration
 - **Search & Request** - Request media directly from Jellyfin search
 - **Item Details** - Recommendations and similar items on detail pages
 - **Discovery Pages** - Browse by genre, network, person, or tag

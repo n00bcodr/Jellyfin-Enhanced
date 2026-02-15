@@ -31,7 +31,7 @@
             <div style="margin-bottom: 1em;">
                 <button class="jellyfin-tab-button active" data-tab="enhanced" style="background: none; border: none; color: var(--primary-accent-color, #fff); cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid var(--primary-accent-color, #fff);"><h3>Enhanced Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
-                <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Jellyseerr Settings</h3></button>
+                <button class="jellyfin-tab-button" data-tab="jellyseerr" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Seerr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="arr-links" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>*arr Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="extras" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Other Settings</h3></button>
             </div>
@@ -420,7 +420,7 @@
                                     </button>
                                 </div>
                                 <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a></div>
-                                <div class="fieldDescription"><br>Shared with Jellyseerr Settings</div>
+                                <div class="fieldDescription"><br>Shared with Seerr Settings</div>
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="DEFAULT_REGION">Default Region</label>
@@ -467,12 +467,12 @@
                         <legend class="sectionTitle"><h3>Setup</h3></legend>
                         <div class="configSection">
                             <div class="inputContainer">
-                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Jellyseerr URL(s)</label>
+                                <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Seerr URL(s)</label>
                                 <textarea style="display:block; height: 8vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="http://192.168.1.10:5055&#10;https://jellyseerr.example.com"></textarea>
-                                <div class="fieldDescription">Enter your Jellyseerr instance URLs, one per line. The script will use the first one that connects successfully.</div>
+                                <div class="fieldDescription">Enter your Seerr instance URLs, one per line. The script will use the first one that connects successfully.</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="JellyseerrApiKey">Jellyseerr API Key</label>
+                                <label class="inputLabel inputLabelUnfocused" for="JellyseerrApiKey">Seerr API Key</label>
                                 <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
                                     <input id="JellyseerrApiKey" is="emby-input" name="JellyseerrApiKey" type="text" style="flex-grow: 1;"/>
                                     <span id="jellyseerrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
@@ -491,16 +491,16 @@
                                         <span>Test</span>
                                     </button>
                                 </div>
-                                <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a><br>TMDB API key for automatic movie collection requests and Jellyseerr Collection Results. Shared with Elsewhere Settings</div>
+                                <div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" target="_blank" href="https://www.themoviedb.org/settings/api">How to?</a><br>TMDB API key for automatic movie collection requests and Seerr Collection Results. Shared with Elsewhere Settings</div>
                             </div>
 
                             <details style="margin: 2em 0; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
                                 <summary style="cursor: pointer; font-weight: bold;">Advanced URL Mappings (Optional)</summary>
                                 <div style="padding-top: 1em;">
                                     <div class="inputContainer">
-                                        <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Jellyseerr URL Mappings</label>
+                                        <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Seerr URL Mappings</label>
                                         <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
-                                        <div class="fieldDescription">Map your Jellyfin URLs to specific Jellyseerr URLs for displaying links to users. Users will get the appropriate Jellyseerr link when using "Link result titles to Jellyseerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
+                                        <div class="fieldDescription">Map your Jellyfin URLs to specific Seerr URLs for displaying links to users. Users will get the appropriate Seerr link when using "Link result titles to Seerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|JellyseerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
                                     </div>
                                     <div
                                         style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
@@ -516,7 +516,7 @@
                                         style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
                                         <i class="material-icons" style="color: #ffc107; font-size: 18px; margin-top: 2px;">phone_android</i>
                                         <div>
-                                             Make sure proper mappings are added to appropriate URLs in order for mobile clients to open Jellyseerr links correctly.
+                                             Make sure proper mappings are added to appropriate URLs in order for mobile clients to open Seerr links correctly.
                                         </div>
                                     </div>
                                 </div>
@@ -526,8 +526,8 @@
                                 style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
                                 <div>
-                                    "<b>Enable Jellyfin Sign-In</b>" must be enabled in Jellyseerr User Settings (/settings/users)<br><br>
-                                    All users must be imported to Jellyseer as Jellyfin users for them to be able to request content.
+                                    "<b>Enable Jellyfin Sign-In</b>" must be enabled in Seerr User Settings (/settings/users)<br><br>
+                                    All users must be imported to Seerr as Jellyfin users for them to be able to request content.
                                 </div>
                             </div>
                             <div
@@ -535,8 +535,8 @@
                                 <i class="material-icons" style="color: #9b59b6; font-size: 18px;">favorite</i>
                                 <div>
                                     <b>This plugin is not affiliated with Jellyseerr.</b><br><br>
-                                    Jellyseerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience, huge thanks to their API<br><br>
-                                    <b>Please report any issues with this plugin to the plugin repository, not to the Jellyseerr team.</b>
+                                    Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience, huge thanks to their API<br><br>
+                                    <b>Please report any issues with this plugin to the plugin repository, not to the Seerr team.</b>
                                 </div>
                             </div>
                         </div>
@@ -550,17 +550,17 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
                                             <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
-                                            <span>Show Jellyseerr Results in Search</span>
+                                            <span>Show Seerr Results in Search</span>
                                         </label>
                                     </div>
                                     <div class="fieldDescription" style="margin-bottom: 2em;">Enhance Jellyfin search by showing results from Jellyseerr.<br>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
                                             <input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox" data-plugin-config/>
-                                            <span>Show Collections in Jellyseerr Search Results</span>
+                                            <span>Show Collections in Seerr Search Results</span>
                                         </label>
                                     </div>
-                                    <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Jellyseerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured.</b></div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Seerr search results with an option to request the entire collection at once.<br><br><b>Requires TMDB API Key to be configured.</b></div>
                                 </div>
                             </details>
 
@@ -594,7 +594,7 @@
                                     <span>Open result titles and posters in "More Info" modal</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Jellyseerr result title or poster opens an in-app More Info modal.<br>When disabled, clicking will open the item in Jellyseerr.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, clicking a Seerr result title or poster opens an in-app More Info modal.<br>When disabled, clicking will open the item in Jellyseerr.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrShowReportButton" is="emby-checkbox" type="checkbox"/>
@@ -608,14 +608,14 @@
                                     <span>Exclude rejected movies/series from suggestions</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, items marked as rejected in Jellyseerr will not appear in similar/recommended suggestions.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, items marked as rejected in Seerr will not appear in similar/recommended suggestions.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="showElsewhereOnJellyseerr" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show Streaming Providers on Jellyseerr Posters</span>
+                                    <span>Show Streaming Providers on Seerr Posters</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays icons of available streaming services (from your default region) on Jellyseerr Posters.<br><br><b>Requires TMDB API Key to be configured in Elsewhere Settings</b></div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Displays icons of available streaming services (from your default region) on Seerr Posters.<br><br><b>Requires TMDB API Key to be configured in Elsewhere Settings</b></div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -630,14 +630,14 @@
                                             <span>Show similar items on item details page</span>
                                         </label>
                                     </div>
-                                    <div class="fieldDescription" style="margin-bottom: 2em;">Displays similar movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Displays similar movies/shows from Seerr on item details pages. Limited to 20 items.</div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
                                             <input id="jellyseerrShowRecommended" is="emby-checkbox" type="checkbox"/>
                                             <span>Show recommended items on item details page</span>
                                         </label>
                                     </div>
-                                    <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Jellyseerr on item details pages. Limited to 20 items.</div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Seerr on item details pages. Limited to 20 items.</div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
                                             <input id="jellyseerrExcludeLibraryItems" is="emby-checkbox" type="checkbox"/>
@@ -681,7 +681,7 @@
                                             <span>Show "More from [Actor]" on person pages</span>
                                         </label>
                                     </div>
-                                    <div class="fieldDescription" style="margin-bottom: 2em;">When viewing an actor/person page, displays their filmography from Jellyseerr including content not in your library.</div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">When viewing an actor/person page, displays their filmography from Seerr including content not in your library.</div>
                                 </div>
                             </details>
                         </div>
@@ -699,7 +699,7 @@
                                         </label>
                                     </div>
                                     <div class="fieldDescription" style="margin-bottom: 2em;">
-                                        Automatically request the next season in Jellyseerr when a user about to finish the current season.
+                                        Automatically request the next season in Seerr when a user about to finish the current season.
                                         <br><br>
                                     </div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
@@ -804,19 +804,19 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">
-                                When enabled, any media requested through Jellyseerr Search through Jellyfin Enhanced will automatically be added to the requesting user's Watchlist.
+                                When enabled, any media requested through Seerr Search through Jellyfin Enhanced will automatically be added to the requesting user's Watchlist.
                                 <br><br>
                                 <strong>Note:</strong> This feature requires <a class="sectionTitle" target="_blank" href="https://github.com/ranaldsgift/KefinTweaks" style="text-decoration: underline; font-weight: bolder;">KefinTweaks</a> to be installed to actually view the watchlisted items.
                             </div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="syncJellyseerrWatchlist" is="emby-checkbox" type="checkbox"/>
-                                    <span>Sync Jellyseerr Watchlist to Jellyfin</span>
+                                    <span>Sync Seerr Watchlist to Jellyfin</span>
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">
-                                When enabled, items from each user's Jellyseerr watchlist will be automatically synced to their Jellyfin watchlist. <br><br>
-                                Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Jellyseerr to Jellyfin".
+                                When enabled, items from each user's Seerr watchlist will be automatically synced to their Jellyfin watchlist. <br><br>
+                                Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Seerr to Jellyfin".
                             </div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
@@ -831,7 +831,7 @@
                                 <label class="inputLabel inputLabelUnfocused" for="watchlistMemoryRetentionDays">Memory retention period (days):</label>
                                 <input id="watchlistMemoryRetentionDays" is="emby-input" type="number" min="1" max="3650" step="1" style="width: 100px;"/>
                                 <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 1em;">
-                                    How long to remember that an item was processed before allowing it to be re-added.<br>After this period, manually removed items (if unwatched) will be automatically re-added to watchlist if they're still in Jellyseerr requests or Jellyseerr watchlist.
+                                    How long to remember that an item was processed before allowing it to be re-added.<br>After this period, manually removed items (if unwatched) will be automatically re-added to watchlist if they're still in Seerr requests or Seerr watchlist.
                                     <br><br>
                                     <strong>Examples:</strong>
                                     <ul style="margin: 0.5em 0; padding-left: 1.5em;">
@@ -994,10 +994,10 @@
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show Jellyseerr Issues Section</span>
+                                    <span>Show Seerr Issues Section</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Shows open/resolved Jellyseerr issues beneath Requests.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Shows open/resolved Seerr issues beneath Requests.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/>
@@ -1057,7 +1057,7 @@
                                     <div>
                                         <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
                                         <br><br>
-                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Jellyseerr URLs and API keys.
+                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Seerr URLs and API keys.
                                     </div>
                                 </div>
                             </div>
@@ -1739,7 +1739,7 @@
             const apiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
 
             if (!urls.length || !apiKey) {
-                Dashboard.alert({ title: 'Missing Information', message: 'Please provide at least one Jellyseerr URL and an API key to test the connection.' });
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide at least one Seerr URL and an API key to test the connection.' });
                 return;
             }
 
@@ -1764,7 +1764,7 @@
                         break;
                     }
                 } catch (e) {
-                    console.error(`Jellyseerr validation failed for ${url}:`, e);
+                    console.error(`Seerr validation failed for ${url}:`, e);
                 }
             }
 
