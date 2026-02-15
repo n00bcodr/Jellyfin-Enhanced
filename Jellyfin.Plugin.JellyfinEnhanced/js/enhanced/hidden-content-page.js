@@ -1052,9 +1052,12 @@
     const movies = [];
     const seriesRelated = [];
     const scopedMovies = [];
+    const castActors = [];
 
     for (const item of filtered) {
-      if (item.type === 'Series' || item.type === 'Episode' || item.type === 'Season') {
+      if (item.type === 'Person') {
+        castActors.push(item);
+      } else if (item.type === 'Series' || item.type === 'Episode' || item.type === 'Season') {
         seriesRelated.push(item);
       } else if (item.hideScope && item.hideScope !== 'global') {
         scopedMovies.push(item);
@@ -1063,7 +1066,7 @@
       }
     }
 
-    return { movies, seriesRelated, scopedMovies };
+    return { movies, seriesRelated, scopedMovies, castActors };
   }
 
   /**
@@ -1133,6 +1136,24 @@
   }
 
   /**
+   * Renders the cast/actors section with individual cards.
+   * @param {Array} castActors Array of Person-type hidden items.
+   * @param {HTMLElement} container The parent container to append to.
+   */
+  function renderCastSection(castActors, container) {
+    if (castActors.length === 0) return;
+
+    const grid = document.createElement('div');
+    grid.className = 'je-hidden-content-page-grid';
+    for (const item of castActors) {
+      const card = JE.hiddenContent.createItemCard(item);
+      attachUnhideHandler(card, item);
+      grid.appendChild(card);
+    }
+    container.appendChild(createSection('hidden_content_group_cast', grid));
+  }
+
+  /**
    * Renders the full management page with grouped display.
    * Called on page show and whenever hidden content changes.
    */
@@ -1189,9 +1210,10 @@
       emptyDiv.textContent = JE.t('hidden_content_manage_empty');
       container.appendChild(emptyDiv);
     } else {
-      const { movies, seriesRelated, scopedMovies } = partitionItems(filtered);
+      const { movies, seriesRelated, scopedMovies, castActors } = partitionItems(filtered);
       renderMoviesSection(movies, scopedMovies, container);
       renderSeriesSection(seriesRelated, container);
+      renderCastSection(castActors, container);
     }
 
     // Attach search handler

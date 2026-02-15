@@ -730,8 +730,14 @@
     function addHideContentButton(itemId, visiblePage) {
         if (!JE.hiddenContent) return;
         const settings = JE.hiddenContent.getSettings();
-        if (!settings.enabled || !settings.showHideButtons || settings.showButtonDetails === false) return;
-        if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
+        if (!settings.enabled || !settings.showHideButtons) return;
+        const isPerson = lastDetailsItemType === 'Person';
+        if (isPerson) {
+            if (!settings.showButtonCast) return;
+        } else {
+            if (settings.showButtonDetails === false) return;
+            if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
+        }
 
         // Don't add duplicate
         if (visiblePage.querySelector('.je-detail-hide-btn')) return;
@@ -942,7 +948,12 @@
                 return;
             }
 
-            // Skip unsupported item types
+            // Add hide content button on detail pages (including Person pages)
+            if (JE.hiddenContent) {
+                addHideContentButton(itemId, visiblePage);
+            }
+
+            // Skip unsupported item types for media features
             if (!FEATURES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 return;
             }
@@ -955,11 +966,6 @@
             }
             if (JE.currentSettings.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 displayAudioLanguages(itemId, container);
-            }
-
-            // Add hide content button on detail pages
-            if (JE.hiddenContent) {
-                addHideContentButton(itemId, visiblePage);
             }
         } catch (e) {
         console.warn('🪼 Jellyfin Enhanced: Error in item details handler', e);
