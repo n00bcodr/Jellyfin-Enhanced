@@ -151,7 +151,55 @@
     }
 
     function setupFallbackPolling() {
+        // Don't start polling if we're actively playing video
+        if (isVideoPlaying()) {
+            return;
+        }
         fallbackTimer = setInterval(processRatingElements, CONFIG.fallbackInterval);
+    }
+
+    function isOnVideoPage() {
+        // Check if we're on the video player page
+        if (typeof window.JellyfinEnhanced?.isVideoPage === 'function') {
+            return window.JellyfinEnhanced.isVideoPage();
+        }
+        // Fallback check
+        return window.location.hash.startsWith('#/video') || !!document.querySelector('.videoPlayerContainer');
+    }
+
+    function isVideoPlaying() {
+        // Check if we're on the video player page AND the video is actively playing
+        if (!isOnVideoPage()) {
+            return false;
+        }
+
+        // Check if pause screen is visible (pause screen has osdInfo visible)
+        const pauseScreen = document.querySelector('.videoOsdBottom');
+        if (pauseScreen && getComputedStyle(pauseScreen).display !== 'none' && getComputedStyle(pauseScreen).opacity !== '0') {
+            // Pause screen is visible - allow polling
+            return false;
+        }
+
+        // Check if video element exists and is playing
+        const video = document.querySelector('video');
+        if (!video) {
+            return false;
+        }
+
+        return !video.paused;
+    }
+
+    function pausePolling() {
+        if (fallbackTimer) {
+            clearInterval(fallbackTimer);
+            fallbackTimer = null;
+        }
+    }
+
+    function resumePolling() {
+        if (!fallbackTimer && isFeatureEnabled() && !isVideoPlaying()) {
+            fallbackTimer = setInterval(processRatingElements, CONFIG.fallbackInterval);
+        }
     }
 
     function cleanup() {
@@ -191,6 +239,7 @@
     }
 
     let lastUrl = location.href;
+
     new MutationObserver(() => {
         const url = location.href;
         if (url !== lastUrl) {
@@ -204,6 +253,9 @@
     window.addEventListener('beforeunload', cleanup);
     if (window.JellyfinEnhanced) {
         window.JellyfinEnhanced.initializeColoredRatings = initialize;
+        // Expose pause/resume functions for pausescreen.js to control
+        window.JellyfinEnhanced.pauseRatingsPolling = pausePolling;
+        window.JellyfinEnhanced.resumeRatingsPolling = resumePolling;
     }
 
 })();
