@@ -586,6 +586,11 @@
                 this.pauseScreenTimer = null;
               }
 
+              // Resume colored ratings polling when paused
+              if (typeof JE?.resumeRatingsPolling === 'function') {
+                JE.resumeRatingsPolling();
+              }
+
               // Set up delayed pause screen with 3-second delay
               this.pauseScreenTimer = setTimeout(() => {
                 if (this.pauseScreenTimer && video === this.currentVideo && video.paused && !video.ended) {
@@ -602,6 +607,10 @@
               if (this.pauseScreenTimer) {
                 clearTimeout(this.pauseScreenTimer);
                 this.pauseScreenTimer = null;
+              }
+              // Pause colored ratings polling when playing
+              if (typeof JE?.pauseRatingsPolling === 'function') {
+                JE.pauseRatingsPolling();
               }
               this.hideOverlay();
             }

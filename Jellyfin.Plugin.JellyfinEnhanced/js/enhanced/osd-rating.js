@@ -9,6 +9,7 @@
   const ratingCache = new Map();
   const pendingRatings = new Map();
   let scheduledUpdate = null;
+  let osdObserver = null;
 
   function isEnabled() {
     // Controlled by server config; default true unless explicitly disabled
@@ -189,10 +190,20 @@
   }
 
   function observeOsd() {
-    const observer = new MutationObserver(() => {
+    if (osdObserver) return; // Already observing
+    osdObserver = new MutationObserver(() => {
       scheduleUpdate();
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    // Only observe the video player container, not the entire document
+    const observeTarget = document.querySelector('.videoPlayerContainer') || document.body;
+    osdObserver.observe(observeTarget, { childList: true, subtree: true });
+  }
+
+  function disconnectObserver() {
+    if (osdObserver) {
+      osdObserver.disconnect();
+      osdObserver = null;
+    }
   }
 
   JE.initializeOsdRating = function() {
