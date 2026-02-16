@@ -1023,8 +1023,10 @@
             case 'home':
             case 'nextup':
             case 'continuewatching':
-            case 'recentlyadded':
                 return settings.protectHome;
+            case 'recentlyadded':
+            case 'upcoming':
+                return settings.protectHome && settings.protectRecentlyAdded !== false;
             case 'search':
                 return settings.protectSearch;
             case 'player':
