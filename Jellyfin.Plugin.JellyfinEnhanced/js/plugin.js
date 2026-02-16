@@ -5,7 +5,7 @@
     // Create the global namespace immediately with placeholders
     window.JellyfinEnhanced = {
         pluginConfig: {},
-        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
+        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, spoilerMode: { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false } },
         translations: {},
         pluginVersion: 'unknown',
         // Stub functions that will be overwritten by modules
@@ -412,18 +412,21 @@
                          .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e })),
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'hiddenContent', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e }))
+                         .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e })),
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/spoiler-mode.json?_=${Date.now()}`), dataType: 'json' })
+                         .then(data => ({ name: 'spoilerMode', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'spoilerMode', status: 'rejected', reason: e }))
             ];
             // Use allSettled to get results even if some fetches fail
             const results = await Promise.allSettled(fetchPromises);
 
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, spoilerMode: { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false } };
             results.forEach(result => {
                 if (result.status === 'fulfilled' && result.value) {
                     const data = result.value;
                     if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
                         // *** CONVERT PASCALCASE TO CAMELCASE ***
-                        if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent') {
+                        if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent' || data.name === 'spoilerMode') {
                             JE.userConfig[data.name] = toCamelCase(data.value);
                         } else {
                             JE.userConfig[data.name] = data.value;
@@ -433,12 +436,14 @@
                         else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                         else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
                         else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
+                        else if (data.name === 'spoilerMode') JE.userConfig.spoilerMode = { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false };
                         else JE.userConfig[data.name] = {};
                     } else {
                         if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
                         else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                         else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
                         else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
+                        else if (data.name === 'spoilerMode') JE.userConfig.spoilerMode = { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false };
                         else JE.userConfig[data.name] = {};
                     }
                 } else {
@@ -447,6 +452,7 @@
                     else if (name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                     else if (name === 'elsewhere') JE.userConfig.elsewhere = {};
                     else if (name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
+                    else if (name === 'spoilerMode') JE.userConfig.spoilerMode = { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false };
                     else if (name) JE.userConfig[name] = {};
                 }
             });
@@ -470,6 +476,7 @@
                 'enhanced/hidden-content.js',
                 'enhanced/hidden-content-page.js',
                 'enhanced/hidden-content-custom-tab.js',
+                'enhanced/spoiler-mode.js',
                 'enhanced/subtitles.js',
                 'enhanced/themer.js',
                 'enhanced/ui.js',
@@ -588,6 +595,7 @@
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
             // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
             if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
+            if (typeof JE.initializeSpoilerMode === 'function') JE.initializeSpoilerMode();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
                 JE.initializeColoredRatings();

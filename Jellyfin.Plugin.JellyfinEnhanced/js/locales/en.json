@@ -469,5 +469,15 @@
     "hidden_content_n_hidden_items": "{count} hidden items",
     "hidden_content_1_hidden_item": "1 hidden item",
     "hidden_content_unknown_show": "Unknown Show",
-    "hidden_content_experimental_label": "Experimental"
+    "hidden_content_experimental_label": "Experimental",
+    "spoiler_mode_active": "Spoiler On",
+    "spoiler_mode_off": "Spoiler Off",
+    "spoiler_mode_enabled_toast": "Spoiler Mode enabled",
+    "spoiler_mode_disabled_toast": "Spoiler Mode disabled",
+    "spoiler_mode_enable_tooltip": "Click to enable Spoiler Mode",
+    "spoiler_mode_disable_tooltip": "Click to disable Spoiler Mode",
+    "spoiler_mode_hidden_badge": "SPOILER",
+    "spoiler_mode_hidden_overview": "Overview hidden \u2014 tap to reveal",
+    "spoiler_mode_reveal_all": "Reveal (30s)",
+    "spoiler_mode_reveal_all_tooltip": "Reveal all spoilers on this page for 30 seconds"
 }
