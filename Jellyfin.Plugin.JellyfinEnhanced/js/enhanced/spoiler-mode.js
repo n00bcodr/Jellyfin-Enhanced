@@ -736,7 +736,7 @@
                 : (JE.t('spoiler_mode_disabled_toast') !== 'spoiler_mode_disabled_toast'
                     ? JE.t('spoiler_mode_disabled_toast')
                     : 'Spoiler Mode disabled');
-            JE.toast(JE.icon(JE.IconName?.SHIELD || 'shield') + ' ' + statusText);
+            JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + statusText);
 
             // Trigger re-scan of current page
             setTimeout(function () { processCurrentPage(); }, 300);
@@ -1540,7 +1540,7 @@
                         enabled: true
                     });
 
-                    JE.toast(JE.icon(JE.IconName?.SHIELD || 'shield') + ' Spoiler Mode auto-enabled for ' + seriesName);
+                    JE.toast(JE.icon(JE.IconName.SHIELD) + ' Spoiler Mode auto-enabled for ' + seriesName);
                     return; // Already enabled, no need to check tags
                 }
             }
@@ -1595,17 +1595,18 @@
         // Page navigation hook
         if (JE.helpers?.onViewPage) {
             JE.helpers.onViewPage(function () {
+                // Reset detail page guard on navigation
+                lastDetailPageItemId = null;
+                detailPageProcessing = false;
+
                 const surface = getCurrentSurface();
 
                 if (surface === 'details') {
-                    // Detail pages load episodes asynchronously — staggered re-scans
-                    var rescan = function () {
-                        if (protectedIdSet.size > 0) {
-                            filterAllCards();
-                        }
-                    };
-                    setTimeout(rescan, DETAIL_RESCAN_DELAY_MS);
-                    setTimeout(rescan, DETAIL_FINAL_RESCAN_DELAY_MS);
+                    // Detail page episode redaction is handled by the spoiler-detail-page
+                    // MutationObserver; only filter non-episode cards (e.g., "More Like This")
+                    setTimeout(function () {
+                        if (protectedIdSet.size > 0) filterNewCards();
+                    }, DETAIL_RESCAN_DELAY_MS);
                 } else if (surface === 'search') {
                     // Search results load asynchronously — staggered re-scans
                     setTimeout(function () { redactSearchResults(); }, DETAIL_RESCAN_DELAY_MS);
@@ -1663,10 +1664,15 @@
         }
 
         // Listen for detail page changes to add spoiler toggle button
+        var lastDetailPageItemId = null;
+        var detailPageProcessing = false;
+
         if (JE.helpers?.createObserver) {
             JE.helpers.createObserver(
                 'spoiler-detail-page',
                 JE.helpers.debounce(function () {
+                    if (detailPageProcessing) return;
+
                     var visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
                     if (!visiblePage) return;
 
@@ -1675,9 +1681,14 @@
                         var itemId = hashParams.get('id');
                         if (!itemId) return;
 
+                        // Skip if we already processed this item (avoids re-trigger from our own DOM changes)
+                        if (itemId === lastDetailPageItemId && visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
+                        lastDetailPageItemId = itemId;
+                        detailPageProcessing = true;
+
                         var userId = ApiClient.getCurrentUserId();
                         ApiClient.getItem(userId, itemId).then(function (item) {
-                            if (!item) return;
+                            if (!item) { detailPageProcessing = false; return; }
 
                             // Add spoiler toggle for Series and Movies
                             if (item.Type === 'Series' || item.Type === 'Movie') {
@@ -1687,19 +1698,24 @@
 
                             // Redact episode list if on a protected series/season page
                             if (item.Type === 'Series' || item.Type === 'Season') {
-                                redactEpisodeList(itemId, visiblePage);
+                                redactEpisodeList(itemId, visiblePage).then(function () {
+                                    detailPageProcessing = false;
+                                }).catch(function () {
+                                    detailPageProcessing = false;
+                                });
+                            } else {
+                                detailPageProcessing = false;
                             }
-                        }).catch(function () {});
+                        }).catch(function () { detailPageProcessing = false; });
                     } catch (e) {
+                        detailPageProcessing = false;
                         console.warn('🪼 Jellyfin Enhanced: Error in spoiler detail page observer', e);
                     }
-                }, 200),
+                }, 300),
                 document.body,
                 {
                     childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['class', 'style']
+                    subtree: true
                 }
             );
         }

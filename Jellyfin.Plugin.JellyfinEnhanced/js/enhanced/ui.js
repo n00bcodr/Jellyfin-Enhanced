@@ -1027,7 +1027,7 @@
                         </div>
                     </details>` : ''}
                     ${JE.spoilerMode ? `<details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SHIELD || 'shield')} ${JE.t('spoiler_mode_settings_title')}</summary>
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SHIELD)} ${JE.t('spoiler_mode_settings_title')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
                             <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="font-weight:500; margin-bottom:8px;">${JE.t('spoiler_mode_preset_label')}</div>
