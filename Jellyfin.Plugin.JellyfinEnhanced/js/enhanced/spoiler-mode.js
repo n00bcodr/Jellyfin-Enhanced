@@ -529,18 +529,20 @@
     function injectCSS() {
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-spoiler-mode', [
-            /* Ensure image containers are positioned for pseudo-element overlay */
-            '.je-spoiler-blur .cardImageContainer,',
+            /* Ensure image containers are positioned for pseudo-element overlay. */
+            /* Exclude .cardImageContainer inside .cardOverlayContainer (click overlay). */
+            '.je-spoiler-blur .cardScalable > .cardImageContainer,',
             '.je-spoiler-blur .cardImage,',
             '.je-spoiler-blur .listItemImage,',
-            '.je-spoiler-generic .cardImageContainer,',
+            '.je-spoiler-generic .cardScalable > .cardImageContainer,',
             '.je-spoiler-generic .cardImage,',
             '.je-spoiler-generic .listItemImage {',
             '  position: relative;',
             '}',
 
-            /* Blur overlay via pseudo-element — keeps play buttons and badges unblurred */
-            '.je-spoiler-blur .cardImageContainer::after,',
+            /* Blur overlay via pseudo-element — keeps play buttons and badges unblurred. */
+            /* Use child combinator to skip .cardImageContainer inside .cardOverlayContainer. */
+            '.je-spoiler-blur .cardScalable > .cardImageContainer::after,',
             '.je-spoiler-blur .cardImage::after,',
             '.je-spoiler-blur .listItemImage::after {',
             '  content: "";',
@@ -554,7 +556,7 @@
             '}',
 
             /* Generic tile mode — darker blur overlay */
-            '.je-spoiler-generic .cardImageContainer::after,',
+            '.je-spoiler-generic .cardScalable > .cardImageContainer::after,',
             '.je-spoiler-generic .cardImage::after,',
             '.je-spoiler-generic .listItemImage::after {',
             '  content: "";',
@@ -567,16 +569,10 @@
             '  transition: backdrop-filter 0.3s ease;',
             '}',
 
-            /* Play buttons and interactive overlays sit above the blur overlay */
-            '.je-spoiler-blur .cardOverlayButton,',
-            '.je-spoiler-blur .cardOverlayButtonIcon,',
-            '.je-spoiler-blur .cardOverlayContainer,',
+            /* Elements inside the blurred image that must sit above the blur overlay */
             '.je-spoiler-blur .playedIndicator,',
             '.je-spoiler-blur .listItemImageButton,',
             '.je-spoiler-blur .itemProgressBar,',
-            '.je-spoiler-generic .cardOverlayButton,',
-            '.je-spoiler-generic .cardOverlayButtonIcon,',
-            '.je-spoiler-generic .cardOverlayContainer,',
             '.je-spoiler-generic .playedIndicator,',
             '.je-spoiler-generic .listItemImageButton,',
             '.je-spoiler-generic .itemProgressBar {',
@@ -626,7 +622,7 @@
             '}',
 
             /* Reveal animation — remove the blur overlay */
-            '.je-spoiler-revealing .cardImageContainer::after,',
+            '.je-spoiler-revealing .cardScalable > .cardImageContainer::after,',
             '.je-spoiler-revealing .cardImage::after,',
             '.je-spoiler-revealing .listItemImage::after {',
             '  backdrop-filter: none !important;',
