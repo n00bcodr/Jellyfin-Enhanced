@@ -28,7 +28,7 @@
     const REVEAL_ALL_DURATION = 30000;
 
     /** CSS blur radius for spoiler-protected thumbnails. */
-    const BLUR_RADIUS = '15px';
+    const BLUR_RADIUS = '30px';
 
     /** Cache TTL for boundary data (5 minutes). */
     const BOUNDARY_CACHE_TTL = 5 * 60 * 1000;
@@ -529,20 +529,69 @@
     function injectCSS() {
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-spoiler-mode', [
-            /* Spoiler blur for card images */
+            /* Ensure image containers are positioned for pseudo-element overlay */
             '.je-spoiler-blur .cardImageContainer,',
             '.je-spoiler-blur .cardImage,',
-            '.je-spoiler-blur .listItemImage {',
-            '  filter: blur(' + BLUR_RADIUS + ') brightness(0.7) !important;',
-            '  transition: filter 0.3s ease !important;',
-            '}',
-
-            /* Generic tile mode */
+            '.je-spoiler-blur .listItemImage,',
             '.je-spoiler-generic .cardImageContainer,',
             '.je-spoiler-generic .cardImage,',
             '.je-spoiler-generic .listItemImage {',
-            '  filter: brightness(0.15) !important;',
-            '  transition: filter 0.3s ease !important;',
+            '  position: relative;',
+            '}',
+
+            /* Blur overlay via pseudo-element — keeps play buttons and badges unblurred */
+            '.je-spoiler-blur .cardImageContainer::after,',
+            '.je-spoiler-blur .cardImage::after,',
+            '.je-spoiler-blur .listItemImage::after {',
+            '  content: "";',
+            '  position: absolute;',
+            '  top: 0; left: 0; right: 0; bottom: 0;',
+            '  backdrop-filter: blur(' + BLUR_RADIUS + ') saturate(0.6);',
+            '  -webkit-backdrop-filter: blur(' + BLUR_RADIUS + ') saturate(0.6);',
+            '  z-index: 1;',
+            '  pointer-events: none;',
+            '  transition: backdrop-filter 0.3s ease;',
+            '}',
+
+            /* Generic tile mode — darker blur overlay */
+            '.je-spoiler-generic .cardImageContainer::after,',
+            '.je-spoiler-generic .cardImage::after,',
+            '.je-spoiler-generic .listItemImage::after {',
+            '  content: "";',
+            '  position: absolute;',
+            '  top: 0; left: 0; right: 0; bottom: 0;',
+            '  backdrop-filter: blur(' + BLUR_RADIUS + ') brightness(0.5) saturate(0.3);',
+            '  -webkit-backdrop-filter: blur(' + BLUR_RADIUS + ') brightness(0.5) saturate(0.3);',
+            '  z-index: 1;',
+            '  pointer-events: none;',
+            '  transition: backdrop-filter 0.3s ease;',
+            '}',
+
+            /* Play buttons and interactive overlays sit above the blur overlay */
+            '.je-spoiler-blur .cardOverlayButton,',
+            '.je-spoiler-blur .cardOverlayButtonIcon,',
+            '.je-spoiler-blur .cardOverlayContainer,',
+            '.je-spoiler-blur .playedIndicator,',
+            '.je-spoiler-blur .listItemImageButton,',
+            '.je-spoiler-blur .itemProgressBar,',
+            '.je-spoiler-generic .cardOverlayButton,',
+            '.je-spoiler-generic .cardOverlayButtonIcon,',
+            '.je-spoiler-generic .cardOverlayContainer,',
+            '.je-spoiler-generic .playedIndicator,',
+            '.je-spoiler-generic .listItemImageButton,',
+            '.je-spoiler-generic .itemProgressBar {',
+            '  position: relative;',
+            '  z-index: 2;',
+            '}',
+
+            /* Hide secondary/overview text that may leak episode titles */
+            '.je-spoiler-blur .cardText-secondary,',
+            '.je-spoiler-blur .listItem-overview,',
+            '.je-spoiler-blur .listItem-bottomoverview,',
+            '.je-spoiler-generic .cardText-secondary,',
+            '.je-spoiler-generic .listItem-overview,',
+            '.je-spoiler-generic .listItem-bottomoverview {',
+            '  visibility: hidden !important;',
             '}',
 
             /* Spoiler badge overlay on cards */
@@ -576,12 +625,13 @@
             '  cursor: pointer;',
             '}',
 
-            /* Reveal animation */
-            '.je-spoiler-revealing .cardImageContainer,',
-            '.je-spoiler-revealing .cardImage,',
-            '.je-spoiler-revealing .listItemImage {',
-            '  filter: none !important;',
-            '  transition: filter 0.5s ease !important;',
+            /* Reveal animation — remove the blur overlay */
+            '.je-spoiler-revealing .cardImageContainer::after,',
+            '.je-spoiler-revealing .cardImage::after,',
+            '.je-spoiler-revealing .listItemImage::after {',
+            '  backdrop-filter: none !important;',
+            '  -webkit-backdrop-filter: none !important;',
+            '  transition: backdrop-filter 0.5s ease !important;',
             '}',
             '.je-spoiler-revealing .je-spoiler-badge { display: none !important; }',
 
@@ -1062,7 +1112,7 @@
         }
 
         // Add spoiler badge if not already present (using safe DOM methods)
-        const imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage');
+        const imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage') || card.querySelector('.listItemImage');
         if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
             imageContainer.style.position = 'relative';
             const badge = document.createElement('div');
@@ -1073,8 +1123,15 @@
             imageContainer.appendChild(badge);
         }
 
-        // Redact the card title (using textContent only)
+        // Redact all card text elements (using textContent only)
         const titleElements = card.querySelectorAll('.cardText, .listItemBodyText');
+        const redactedTitle = formatRedactedTitle(
+            itemData.ParentIndexNumber,
+            itemData.IndexNumber,
+            itemData.IndexNumberEnd,
+            itemData.ParentIndexNumber === 0
+        );
+        let isFirstText = true;
         for (const titleEl of titleElements) {
             if (titleEl.classList.contains('je-spoiler-text-redacted')) continue;
 
@@ -1083,27 +1140,24 @@
                 titleEl.dataset.jeSpoilerOriginal = titleEl.textContent;
             }
 
-            // Format redacted title
-            const redactedTitle = formatRedactedTitle(
-                itemData.ParentIndexNumber,
-                itemData.IndexNumber,
-                itemData.IndexNumberEnd,
-                itemData.ParentIndexNumber === 0
-            );
-            titleEl.dataset.jeSpoilerRedacted = redactedTitle;
-            titleEl.textContent = redactedTitle;
+            // First text element gets the formatted title; others get cleared
+            const replacement = isFirstText ? redactedTitle : '';
+            titleEl.dataset.jeSpoilerRedacted = replacement;
+            titleEl.textContent = replacement;
             titleEl.classList.add('je-spoiler-text-redacted');
 
-            // Add tap-to-reveal
-            const fieldKey = 'title-' + (itemData.Id || getCardItemId(card));
-            titleEl.classList.add('je-spoiler-revealable');
-            titleEl.addEventListener('click', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                handleTapReveal(titleEl, fieldKey);
-            }, { once: false });
+            // Add tap-to-reveal on the title element
+            if (isFirstText) {
+                const fieldKey = 'title-' + (itemData.Id || getCardItemId(card));
+                titleEl.classList.add('je-spoiler-revealable');
+                titleEl.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleTapReveal(titleEl, fieldKey);
+                }, { once: false });
+            }
 
-            break; // Only redact the first title
+            isFirstText = false;
         }
 
         card.setAttribute(REDACTED_ATTR, '1');
