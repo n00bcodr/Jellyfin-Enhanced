@@ -1596,14 +1596,20 @@
                     setTimeout(function () { filterNewCards(); }, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(function () { filterNewCards(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                 } else if (surface === 'player') {
-                    // Redact player overlay
-                    var hash = window.location.hash || '';
-                    var params = new URLSearchParams(hash.split('?')[1]);
-                    var itemId = params.get('id');
-                    if (itemId) {
-                        setTimeout(function () { redactPlayerOverlay(itemId); }, 500);
-                        handleAutoEnableOnFirstPlay(itemId);
-                    }
+                    // Redact player overlay — stagger to wait for OSD render
+                    setTimeout(function () {
+                        var favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
+                        var playerItemId = favBtn?.dataset?.id;
+                        if (!playerItemId) {
+                            var hash = window.location.hash || '';
+                            var params = new URLSearchParams(hash.split('?')[1]);
+                            playerItemId = params.get('id');
+                        }
+                        if (playerItemId) {
+                            redactPlayerOverlay(playerItemId);
+                            handleAutoEnableOnFirstPlay(playerItemId);
+                        }
+                    }, 500);
                 }
             });
         }
@@ -1681,13 +1687,25 @@
 
         // Listen for player OSD changes
         if (typeof MutationObserver !== 'undefined') {
+            /**
+             * Gets the current playing item ID from OSD or URL hash.
+             * @returns {string|null}
+             */
+            var getPlayerItemId = function () {
+                // Primary: OSD favorite button (most reliable)
+                var favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
+                if (favBtn?.dataset?.id) return favBtn.dataset.id;
+                // Fallback: URL hash
+                var hash = window.location.hash || '';
+                var params = new URLSearchParams(hash.split('?')[1]);
+                return params.get('id') || null;
+            };
+
             var osdCallback = JE.helpers?.debounce
                 ? JE.helpers.debounce(function () {
                     if (getCurrentSurface() !== 'player') return;
                     if (protectedIdSet.size === 0) return;
-                    var hash = window.location.hash || '';
-                    var params = new URLSearchParams(hash.split('?')[1]);
-                    var itemId = params.get('id');
+                    var itemId = getPlayerItemId();
                     if (itemId) {
                         redactPlayerOverlay(itemId);
                     }
