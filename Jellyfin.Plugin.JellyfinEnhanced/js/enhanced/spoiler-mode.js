@@ -1587,6 +1587,14 @@
                     };
                     setTimeout(rescan, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(rescan, DETAIL_FINAL_RESCAN_DELAY_MS);
+                } else if (surface === 'search') {
+                    // Search results load asynchronously — staggered re-scans
+                    setTimeout(function () { redactSearchResults(); }, DETAIL_RESCAN_DELAY_MS);
+                    setTimeout(function () { redactSearchResults(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
+                } else if (surface === 'home') {
+                    // Home sections load asynchronously — re-scan for cards
+                    setTimeout(function () { filterNewCards(); }, DETAIL_RESCAN_DELAY_MS);
+                    setTimeout(function () { filterNewCards(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                 } else if (surface === 'player') {
                     // Redact player overlay
                     var hash = window.location.hash || '';
