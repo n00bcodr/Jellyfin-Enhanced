@@ -479,5 +479,21 @@
     "spoiler_mode_hidden_badge": "SPOILER",
     "spoiler_mode_hidden_overview": "Overview hidden \u2014 tap to reveal",
     "spoiler_mode_reveal_all": "Reveal (30s)",
-    "spoiler_mode_reveal_all_tooltip": "Reveal all spoilers on this page for 30 seconds"
+    "spoiler_mode_reveal_all_tooltip": "Reveal all spoilers on this page for 30 seconds",
+    "spoiler_mode_settings_title": "Spoiler Mode",
+    "spoiler_mode_preset_label": "Preset",
+    "spoiler_mode_preset_balanced": "Balanced (blur artwork)",
+    "spoiler_mode_preset_strict": "Strict (generic tiles, hide metadata)",
+    "spoiler_mode_preset_desc": "Balanced blurs thumbnails; Strict also hides runtime, air date, and guest stars",
+    "spoiler_mode_protect_home": "Protect Home Sections",
+    "spoiler_mode_protect_home_desc": "Redact episodes in Next Up, Continue Watching, and Recently Added",
+    "spoiler_mode_protect_search": "Protect Search",
+    "spoiler_mode_protect_search_desc": "Redact episode results in search",
+    "spoiler_mode_protect_overlay": "Protect Player Overlay",
+    "spoiler_mode_protect_overlay_desc": "Redact episode title and chapters in the video player",
+    "spoiler_mode_protect_calendar": "Protect Calendar",
+    "spoiler_mode_protect_calendar_desc": "Redact episode titles in calendar events",
+    "spoiler_mode_auto_enable": "Auto-Enable on First Play",
+    "spoiler_mode_auto_enable_desc": "Automatically enable Spoiler Mode when you start watching S01E01 of a new series",
+    "spoiler_mode_protected_count": "{count} protected item(s)"
 }

@@ -1026,6 +1026,52 @@
                             </div>
                         </div>
                     </details>` : ''}
+                    ${JE.spoilerMode ? `<details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
+                        <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.SHIELD || 'shield')} ${JE.t('spoiler_mode_settings_title')}</summary>
+                        <div style="padding: 0 16px 16px 16px;">
+                            <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div style="font-weight:500; margin-bottom:8px;">${JE.t('spoiler_mode_preset_label')}</div>
+                                <select id="spoilerPresetSelect" style="width:100%; padding:10px; background:${presetBoxBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; font-size:14px; cursor:pointer; font-family:inherit;">
+                                    <option value="balanced" ${JE.spoilerMode.getSettings().preset === 'balanced' ? 'selected' : ''} style="background:rgba(30,30,30,1); color:#fff;">${JE.t('spoiler_mode_preset_balanced')}</option>
+                                    <option value="strict" ${JE.spoilerMode.getSettings().preset === 'strict' ? 'selected' : ''} style="background:rgba(30,30,30,1); color:#fff;">${JE.t('spoiler_mode_preset_strict')}</option>
+                                </select>
+                                <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:6px;">${JE.t('spoiler_mode_preset_desc')}</div>
+                            </div>
+                            <div style="margin-bottom:8px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
+                                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                                    <input type="checkbox" id="spoilerProtectHome" ${JE.spoilerMode.getSettings().protectHome !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_protect_home')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_protect_home_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom:8px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
+                                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                                    <input type="checkbox" id="spoilerProtectSearch" ${JE.spoilerMode.getSettings().protectSearch !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_protect_search')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_protect_search_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom:8px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
+                                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                                    <input type="checkbox" id="spoilerProtectOverlay" ${JE.spoilerMode.getSettings().protectOverlay !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_protect_overlay')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_protect_overlay_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom:8px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
+                                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                                    <input type="checkbox" id="spoilerProtectCalendar" ${JE.spoilerMode.getSettings().protectCalendar !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_protect_calendar')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_protect_calendar_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom:12px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
+                                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                                    <input type="checkbox" id="spoilerAutoEnableFirstPlay" ${JE.spoilerMode.getSpoilerData().autoEnableOnFirstPlay ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_auto_enable')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_auto_enable_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="font-size:12px; color:rgba(255,255,255,0.4); text-align:center; padding:8px;">
+                                ${JE.t('spoiler_mode_protected_count', { count: Object.keys(JE.spoilerMode.getSpoilerData().rules || {}).length })}
+                            </div>
+                        </div>
+                    </details>` : ''}
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.LANGUAGE)} ${JE.t('panel_settings_language')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
@@ -1485,6 +1531,42 @@
                     } else {
                         JE.hiddenContent.showManagementPanel();
                     }
+                });
+            }
+        }
+
+        // Spoiler Mode settings event listeners
+        if (JE.spoilerMode) {
+            const spoilerPreset = document.getElementById('spoilerPresetSelect');
+            if (spoilerPreset) {
+                spoilerPreset.addEventListener('change', (e) => {
+                    JE.spoilerMode.updateSettings({ preset: e.target.value });
+                    resetAutoCloseTimer();
+                });
+            }
+            const spoilerToggles = [
+                ['spoilerProtectHome', 'protectHome'],
+                ['spoilerProtectSearch', 'protectSearch'],
+                ['spoilerProtectOverlay', 'protectOverlay'],
+                ['spoilerProtectCalendar', 'protectCalendar']
+            ];
+            for (const [id, key] of spoilerToggles) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('change', (e) => {
+                        JE.spoilerMode.updateSettings({ [key]: e.target.checked });
+                        resetAutoCloseTimer();
+                    });
+                }
+            }
+            const autoEnableToggle = document.getElementById('spoilerAutoEnableFirstPlay');
+            if (autoEnableToggle) {
+                autoEnableToggle.addEventListener('change', (e) => {
+                    const data = JE.spoilerMode.getSpoilerData();
+                    data.autoEnableOnFirstPlay = e.target.checked;
+                    JE.userConfig.spoilerMode = data;
+                    JE.saveUserSettings('spoiler-mode.json', data);
+                    resetAutoCloseTimer();
                 });
             }
         }
