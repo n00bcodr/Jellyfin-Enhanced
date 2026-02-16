@@ -1505,14 +1505,18 @@
      */
     async function handleAutoEnableOnFirstPlay(itemId) {
         const data = getSpoilerData();
-        if (!data.autoEnableOnFirstPlay) return;
+        var enableOnFirst = data.autoEnableOnFirstPlay;
+        var hasTagRules = (data.tagAutoEnable || []).length > 0;
+
+        // Skip if neither auto-enable method is active
+        if (!enableOnFirst && !hasTagRules) return;
 
         try {
             const userId = ApiClient.getCurrentUserId();
             const item = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
-                    Fields: 'SeriesId,ParentIndexNumber,IndexNumber'
+                    Fields: 'SeriesId,ParentIndexNumber,IndexNumber,Tags'
                 }),
                 dataType: 'json'
             });
@@ -1523,19 +1527,34 @@
             if (!seriesId) return;
 
             // Check if this is Episode 1 (first play of a new series)
-            const isFirstEpisode = (item.ParentIndexNumber === 1 || item.ParentIndexNumber === 0) &&
-                (item.IndexNumber === 1);
+            if (enableOnFirst) {
+                var isFirstEpisode = (item.ParentIndexNumber === 1 || item.ParentIndexNumber === 0) &&
+                    (item.IndexNumber === 1);
 
-            if (isFirstEpisode && !isProtected(seriesId)) {
-                const seriesName = item.SeriesName || '';
-                setRule({
-                    itemId: seriesId,
-                    itemName: seriesName,
-                    itemType: 'Series',
-                    enabled: true
-                });
+                if (isFirstEpisode && !isProtected(seriesId)) {
+                    var seriesName = item.SeriesName || '';
+                    setRule({
+                        itemId: seriesId,
+                        itemName: seriesName,
+                        itemType: 'Series',
+                        enabled: true
+                    });
 
-                JE.toast(JE.icon(JE.IconName?.SHIELD || 'shield') + ' Spoiler Mode auto-enabled for ' + seriesName);
+                    JE.toast(JE.icon(JE.IconName?.SHIELD || 'shield') + ' Spoiler Mode auto-enabled for ' + seriesName);
+                    return; // Already enabled, no need to check tags
+                }
+            }
+
+            // Check tags on the series (need to fetch series data for tags)
+            if (hasTagRules && !isProtected(seriesId)) {
+                try {
+                    var series = await ApiClient.getItem(userId, seriesId);
+                    if (series) {
+                        checkAndAutoEnableByTag(seriesId, series);
+                    }
+                } catch (e) {
+                    // Ignore — tag check is best-effort
+                }
             }
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: Error in auto-enable on first play', e);
