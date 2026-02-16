@@ -328,10 +328,9 @@
                 // Fetch all episodes for the series with UserData
                 const response = await ApiClient.ajax({
                     type: 'GET',
-                    url: ApiClient.getUrl(`/Shows/${seriesId}/Episodes`, {
+                    url: ApiClient.getUrl('/Shows/' + seriesId + '/Episodes', {
                         UserId: userId,
                         Fields: 'UserData',
-                        IsSpecialSeason: false,
                         SortBy: 'SortName',
                         SortOrder: 'Ascending'
                     }),
@@ -341,11 +340,16 @@
                 const episodes = response?.Items || [];
                 if (episodes.length === 0) return null;
 
-                // Find the last fully watched episode
+                // Find the furthest watched episode by season/episode number.
+                // Skip specials (season 0) — they are checked individually.
                 let lastWatched = null;
                 for (const ep of episodes) {
                     const userData = ep.UserData;
                     if (!userData) continue;
+
+                    // Skip specials — boundary only applies to regular seasons
+                    var epSeason = ep.ParentIndexNumber;
+                    if (epSeason == null || epSeason === 0) continue;
 
                     let isWatched = false;
                     if (threshold === 'played') {
@@ -357,11 +361,17 @@
                     }
 
                     if (isWatched) {
-                        lastWatched = {
-                            season: ep.ParentIndexNumber || 0,
-                            episode: ep.IndexNumber || 0,
-                            episodeId: ep.Id
-                        };
+                        var epNum = ep.IndexNumber || 0;
+                        // Keep the episode with the highest season/episode number
+                        if (!lastWatched ||
+                            epSeason > lastWatched.season ||
+                            (epSeason === lastWatched.season && epNum > lastWatched.episode)) {
+                            lastWatched = {
+                                season: epSeason,
+                                episode: epNum,
+                                episodeId: ep.Id
+                            };
+                        }
                     }
                 }
 
@@ -387,15 +397,20 @@
 
     /**
      * Checks if an episode is past the spoiler boundary.
+     * Specials (season 0) are not covered by boundary logic —
+     * they must be checked individually via shouldRedactEpisode().
      * @param {string} seriesId The series ID.
      * @param {number} seasonNumber The season number.
      * @param {number} episodeNumber The episode number.
-     * @returns {Promise<boolean>} True if the episode should be redacted.
+     * @returns {Promise<boolean|null>} True if past boundary, false if not, null if indeterminate (specials).
      */
     async function isEpisodePastBoundary(seriesId, seasonNumber, episodeNumber) {
+        // Specials (season 0) are outside boundary scope — caller must check individually
+        if (seasonNumber === 0) return null;
+
         const boundary = await computeBoundary(seriesId);
         if (!boundary) {
-            // Nothing watched — everything is past boundary
+            // Nothing watched in regular seasons — everything is past boundary
             return true;
         }
 
@@ -1150,12 +1165,39 @@
             }
 
             if (seriesId && isProtected(seriesId)) {
-                const seasonNum = parseInt(card.dataset.parentindexnumber || card.dataset.season || '0', 10);
-                const epNum = parseInt(card.dataset.indexnumber || card.dataset.episode || '0', 10);
+                var rawSeason = card.dataset.parentindexnumber || card.dataset.season;
+                var rawEp = card.dataset.indexnumber || card.dataset.episode;
+                var hasNumbers = rawSeason != null || rawEp != null;
+                var seasonNum = parseInt(rawSeason || '0', 10);
+                var epNum = parseInt(rawEp || '0', 10);
 
-                if (seasonNum || epNum) {
-                    const pastBoundary = await isEpisodePastBoundary(seriesId, seasonNum, epNum);
-                    if (pastBoundary) {
+                if (hasNumbers) {
+                    var pastBoundary = await isEpisodePastBoundary(seriesId, seasonNum, epNum);
+
+                    if (pastBoundary === null) {
+                        // Specials (season 0) — check individual UserData
+                        try {
+                            var userId = ApiClient.getCurrentUserId();
+                            var item = await ApiClient.ajax({
+                                type: 'GET',
+                                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                                    Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
+                                }),
+                                dataType: 'json'
+                            });
+                            if (item && shouldRedactEpisode(item)) {
+                                redactCard(card, item);
+                            }
+                        } catch (e) {
+                            // If we can't fetch data, redact to be safe
+                            redactCard(card, {
+                                Id: itemId,
+                                ParentIndexNumber: seasonNum,
+                                IndexNumber: epNum,
+                                IndexNumberEnd: null
+                            });
+                        }
+                    } else if (pastBoundary) {
                         redactCard(card, {
                             Id: itemId,
                             ParentIndexNumber: seasonNum,
@@ -1164,18 +1206,29 @@
                         });
                     }
                 } else {
-                    // Fetch item data to get season/episode numbers
+                    // No season/episode numbers on the card — fetch item data
                     try {
-                        const userId = ApiClient.getCurrentUserId();
-                        const item = await ApiClient.ajax({
+                        var userId2 = ApiClient.getCurrentUserId();
+                        var item2 = await ApiClient.ajax({
                             type: 'GET',
-                            url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                            url: ApiClient.getUrl('/Users/' + userId2 + '/Items/' + itemId, {
                                 Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
                             }),
                             dataType: 'json'
                         });
-                        if (item && shouldRedactEpisode(item)) {
-                            redactCard(card, item);
+                        if (item2) {
+                            var itemSeason = item2.ParentIndexNumber;
+                            // For specials or when boundary returns null, check individually
+                            if (itemSeason === 0 || itemSeason == null) {
+                                if (shouldRedactEpisode(item2)) {
+                                    redactCard(card, item2);
+                                }
+                            } else {
+                                var bp = await isEpisodePastBoundary(seriesId, itemSeason, item2.IndexNumber || 0);
+                                if (bp) {
+                                    redactCard(card, item2);
+                                }
+                            }
                         }
                     } catch (e) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check', itemId, e);
