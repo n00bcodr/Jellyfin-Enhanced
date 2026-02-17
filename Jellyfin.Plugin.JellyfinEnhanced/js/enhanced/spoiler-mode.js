@@ -54,6 +54,9 @@
     /** Delay before redacting player OSD after navigation (ms). */
     const PLAYER_OSD_DELAY_MS = 500;
 
+    /** Debounce interval for player OSD redaction on mutations (ms). */
+    const OSD_MUTATION_DEBOUNCE_MS = 200;
+
     /** Maximum entries in each cache before LRU eviction. */
     const MAX_CACHE_SIZE = 50;
 
@@ -647,6 +650,7 @@
                 return seriesId;
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for spoiler check');
+                evictIfNeeded(parentSeriesCache, MAX_CACHE_SIZE);
                 parentSeriesCache.set(itemId, null);
                 return null;
             } finally {
@@ -1933,17 +1937,20 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         ? JE.helpers.debounce(handleDetailPageMutation, TOGGLE_RESCAN_DELAY_MS)
         : handleDetailPageMutation;
 
+    /** OSD handler function (shared between debounced and fallback paths). */
+    function handleOsdMutation() {
+        if (getCurrentSurface() !== 'player') return;
+        if (protectedIdSet.size === 0) return;
+        const itemId = getPlayerItemId();
+        if (itemId) {
+            redactPlayerOverlay(itemId);
+        }
+    }
+
     /** Debounced OSD handler. */
     const debouncedOsdHandler = JE.helpers?.debounce
-        ? JE.helpers.debounce(function () {
-            if (getCurrentSurface() !== 'player') return;
-            if (protectedIdSet.size === 0) return;
-            const itemId = getPlayerItemId();
-            if (itemId) {
-                redactPlayerOverlay(itemId);
-            }
-        }, 200)
-        : function () {};
+        ? JE.helpers.debounce(handleOsdMutation, OSD_MUTATION_DEBOUNCE_MS)
+        : handleOsdMutation;
 
     /**
      * Gets the current playing item ID from OSD or URL hash.
@@ -1971,7 +1978,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         try {
             const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
             const itemId = hashParams.get('id');
-            if (!itemId) return;
+            if (!itemId || !isValidId(itemId)) return;
 
             // Skip if we already processed this item
             if (itemId === lastDetailPageItemId && visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
@@ -2034,11 +2041,18 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             debouncedFilter();
         }
 
+        // Only invoke surface-specific handlers when on their respective surface
+        const surface = getCurrentSurface();
+
         // Detail page handling
-        debouncedDetailPageHandler();
+        if (surface === 'details') {
+            debouncedDetailPageHandler();
+        }
 
         // Player OSD handling
-        debouncedOsdHandler();
+        if (surface === 'player') {
+            debouncedOsdHandler();
+        }
     }
 
     /**
