@@ -1937,7 +1937,10 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         ? JE.helpers.debounce(handleDetailPageMutation, TOGGLE_RESCAN_DELAY_MS)
         : handleDetailPageMutation;
 
-    /** OSD handler function (shared between debounced and fallback paths). */
+    /**
+     * Handles OSD mutations by redacting player overlay when on the player surface.
+     * Shared between debounced and non-debounced code paths.
+     */
     function handleOsdMutation() {
         if (getCurrentSurface() !== 'player') return;
         if (protectedIdSet.size === 0) return;
@@ -2020,6 +2023,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
     function handleMutations(mutations) {
         if (protectedIdSet.size === 0) return;
 
+        // Manual indexed loops with early break for performance (avoid iterating all mutations)
         let hasNewCards = false;
         for (let i = 0; i < mutations.length; i++) {
             const addedNodes = mutations[i].addedNodes;
