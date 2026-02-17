@@ -418,7 +418,7 @@ test.describe('Spoiler Mode', () => {
   // =========================================================================
   // Test 5: Series Page Protection
   // =========================================================================
-  test('series detail page blurs Next Up card but not season cards or poster', async ({ page }) => {
+  test('series detail page blurs Next Up card, future seasons, but not current season or poster', async ({ page }) => {
     await navigateAndWait(page, URLS.series);
     await screenshot(page, '05-series-page-initial');
 
@@ -472,23 +472,33 @@ test.describe('Spoiler Mode', () => {
       expect(posterState.isBlurred).toBe(false);
     }
 
-    // Verify season cards are NOT blurred (season tiles are type "Season", not "Episode")
+    // Verify season card blur behavior:
+    // Season 1 (currently watching) should NOT be blurred.
+    // Season 2 (future/unwatched) SHOULD be blurred.
     const seasonCardState = await page.evaluate(() => {
       const seasonCards = document.querySelectorAll('.card[data-type="Season"]');
-      if (seasonCards.length === 0) return { found: false, anyBlurred: false };
-      let anyBlurred = false;
+      if (seasonCards.length === 0) return { found: false, results: [] };
+      const results: { text: string; blurred: boolean }[] = [];
       for (const card of seasonCards) {
         const cardBox = card.querySelector('.cardBox') || card;
-        if (cardBox.classList.contains('je-spoiler-blur') ||
-            cardBox.classList.contains('je-spoiler-generic')) {
-          anyBlurred = true;
-          break;
-        }
+        const blurred = cardBox.classList.contains('je-spoiler-blur') ||
+                        cardBox.classList.contains('je-spoiler-generic');
+        const text = (card.querySelector('.cardText') as HTMLElement)?.textContent || '';
+        results.push({ text, blurred });
       }
-      return { found: true, anyBlurred };
+      return { found: true, results };
     });
-    if (seasonCardState.found) {
-      expect(seasonCardState.anyBlurred).toBe(false);
+    if (seasonCardState.found && seasonCardState.results.length >= 2) {
+      // Season 1 should be visible (not blurred)
+      const season1 = seasonCardState.results.find(r => r.text.includes('Season 1'));
+      if (season1) {
+        expect(season1.blurred).toBe(false);
+      }
+      // Season 2 should be blurred (future season)
+      const season2 = seasonCardState.results.find(r => r.text.includes('Season 2'));
+      if (season2) {
+        expect(season2.blurred).toBe(true);
+      }
     }
 
     await screenshot(page, '05-series-page-verified');

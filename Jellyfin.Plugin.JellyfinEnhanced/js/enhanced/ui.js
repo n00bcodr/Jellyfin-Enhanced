@@ -1562,10 +1562,7 @@
             const autoEnableToggle = document.getElementById('spoilerAutoEnableFirstPlay');
             if (autoEnableToggle) {
                 autoEnableToggle.addEventListener('change', (e) => {
-                    const data = JE.spoilerMode.getSpoilerData();
-                    data.autoEnableOnFirstPlay = e.target.checked;
-                    JE.userConfig.spoilerMode = data;
-                    JE.saveUserSettings('spoiler-mode.json', data);
+                    JE.spoilerMode.setAutoEnableOnFirstPlay(e.target.checked);
                     resetAutoCloseTimer();
                 });
             }

@@ -45,6 +45,21 @@
     /** Final detail page re-scan delay. */
     const DETAIL_FINAL_RESCAN_DELAY_MS = 1500;
 
+    /** Delay after toggling spoiler mode before re-scanning the page. */
+    const TOGGLE_RESCAN_DELAY_MS = 300;
+
+    /** Long-press threshold for mobile tap-to-reveal (ms). */
+    const LONG_PRESS_THRESHOLD_MS = 300;
+
+    /** Delay before redacting player OSD after navigation (ms). */
+    const PLAYER_OSD_DELAY_MS = 500;
+
+    /** Maximum entries in each cache before LRU eviction. */
+    const MAX_CACHE_SIZE = 50;
+
+    /** Maximum concurrent boundary API requests. */
+    const MAX_CONCURRENT_BOUNDARY_REQUESTS = 4;
+
     /** Data attribute marking a card as already processed by spoiler mode. */
     const PROCESSED_ATTR = 'data-je-spoiler-checked';
 
@@ -59,6 +74,9 @@
 
     /** Selector for not-yet-scanned cards. */
     const CARD_SEL_NEW = '.card[data-id]:not([data-je-spoiler-checked]), .card[data-itemid]:not([data-je-spoiler-checked]), .listItem[data-id]:not([data-je-spoiler-checked])';
+
+    /** GUID format validation for Jellyfin item IDs. */
+    const GUID_RE = /^[0-9a-f]{32}$/i;
 
     /** Preset configurations. */
     const PRESETS = {
@@ -90,6 +108,14 @@
         }
     };
 
+    /** Selectors for finding the detail page button container. */
+    const BUTTON_CONTAINER_SELECTORS = [
+        '.detailButtons',
+        '.itemActionsBottom',
+        '.mainDetailButtons',
+        '.detailButtonsContainer'
+    ];
+
     // ============================================================
     // State
     // ============================================================
@@ -101,8 +127,8 @@
     let saveTimeout = null;
 
     /**
-     * Cache for spoiler boundary data per series.
-     * Map<seriesId, { boundary: { season, episode }, episodes: Array, ts: number }>
+     * LRU cache for spoiler boundary data per series.
+     * Map<seriesId, { boundary: { season, episode }, ts: number }>
      */
     const boundaryCache = new Map();
 
@@ -112,6 +138,12 @@
      */
     const boundaryRequestMap = new Map();
 
+    /** Number of currently active boundary API requests (for throttling). */
+    let activeBoundaryRequests = 0;
+
+    /** Queue of resolve callbacks waiting for a boundary request slot. */
+    const boundaryQueue = [];
+
     /**
      * Set of series/movie IDs that have spoiler mode enabled.
      * Used for fast lookups during card filtering.
@@ -119,7 +151,7 @@
     const protectedIdSet = new Set();
 
     /**
-     * Map of parent series ID lookups for episode/season cards.
+     * LRU cache of parent series ID lookups for episode/season cards.
      * Map<itemId, seriesId|null>
      */
     const parentSeriesCache = new Map();
@@ -127,14 +159,13 @@
     /** In-flight parent series requests. Map<itemId, Promise> */
     const parentSeriesRequestMap = new Map();
 
-    /** Tracks which fields are currently revealed (tap-to-reveal). */
-    const revealedFields = new Map();
-
     /** Whether "Reveal All" is currently active. */
     let revealAllActive = false;
 
     /** Timer for "Reveal All" auto-hide. */
     let revealAllTimer = null;
+
+    /** Interval for "Reveal All" countdown banner. */
     let revealAllCountdownInterval = null;
 
     /**
@@ -143,9 +174,60 @@
      */
     const sectionSurfaceCache = new WeakMap();
 
+    /** The single unified MutationObserver for all DOM watching. */
+    let unifiedObserver = null;
+
+    /** Guard variables for detail page observer (declared before use). */
+    let lastDetailPageItemId = null;
+    let detailPageProcessing = false;
+
     // ============================================================
     // Internal helpers
     // ============================================================
+
+    /**
+     * Validates that a string is a valid Jellyfin GUID.
+     * @param {string} id The ID to validate.
+     * @returns {boolean}
+     */
+    function isValidId(id) {
+        return typeof id === 'string' && GUID_RE.test(id);
+    }
+
+    /**
+     * Evicts the oldest entry from a Map if it exceeds maxSize (LRU eviction).
+     * @param {Map} cache The cache map.
+     * @param {number} maxSize Maximum allowed entries.
+     */
+    function evictIfNeeded(cache, maxSize) {
+        if (cache.size <= maxSize) return;
+        const firstKey = cache.keys().next().value;
+        cache.delete(firstKey);
+    }
+
+    /**
+     * Escapes a string for safe insertion into HTML contexts.
+     * @param {string} str The string to escape.
+     * @returns {string} HTML-safe string.
+     */
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    /**
+     * Finds the button container element on a detail page.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     * @returns {HTMLElement|null} The button container or null.
+     */
+    function findButtonContainer(visiblePage) {
+        for (const sel of BUTTON_CONTAINER_SELECTORS) {
+            const found = visiblePage.querySelector(sel);
+            if (found) return found;
+        }
+        return null;
+    }
 
     /**
      * Returns the in-memory spoiler mode data object, lazily initialised
@@ -198,11 +280,13 @@
                 protectedIdSet.add(rule.itemId);
             }
         }
-        // Toggle pre-hide CSS on body
+        // Toggle pre-hide CSS on body and observer state
         if (protectedIdSet.size > 0) {
             document.body?.classList?.add('je-spoiler-active');
+            connectObserver();
         } else {
             document.body?.classList?.remove('je-spoiler-active');
+            disconnectObserver();
         }
     }
 
@@ -211,7 +295,7 @@
      */
     function debouncedSave() {
         if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
+        saveTimeout = setTimeout(function () {
             saveTimeout = null;
             const data = getSpoilerData();
             JE.saveUserSettings('spoiler-mode.json', data);
@@ -225,7 +309,7 @@
         try {
             window.dispatchEvent(new CustomEvent('je-spoiler-mode-changed'));
         } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Failed to emit spoiler-mode-changed event', e);
+            console.warn('🪼 Jellyfin Enhanced: Failed to emit spoiler-mode-changed event');
         }
     }
 
@@ -291,7 +375,7 @@
     }
 
     /**
-     * Updates global spoiler mode settings.
+     * Updates global spoiler mode settings (immutable pattern).
      * @param {Object} partial Key-value pairs to merge into settings.
      */
     function updateSettings(partial) {
@@ -305,9 +389,44 @@
         emitChange();
     }
 
+    /**
+     * Updates the autoEnableOnFirstPlay top-level flag (immutable pattern).
+     * @param {boolean} enabled Whether auto-enable on first play is active.
+     */
+    function setAutoEnableOnFirstPlay(enabled) {
+        const data = getSpoilerData();
+        spoilerData = { ...data, autoEnableOnFirstPlay: !!enabled };
+        JE.userConfig.spoilerMode = spoilerData;
+        debouncedSave();
+        emitChange();
+    }
+
     // ============================================================
     // Boundary computation
     // ============================================================
+
+    /**
+     * Acquires a slot for a boundary API request, throttling to MAX_CONCURRENT_BOUNDARY_REQUESTS.
+     * @returns {Promise<void>}
+     */
+    async function acquireBoundarySlot() {
+        if (activeBoundaryRequests < MAX_CONCURRENT_BOUNDARY_REQUESTS) {
+            activeBoundaryRequests++;
+            return;
+        }
+        await new Promise(function (resolve) { boundaryQueue.push(resolve); });
+        activeBoundaryRequests++;
+    }
+
+    /**
+     * Releases a boundary API request slot.
+     */
+    function releaseBoundarySlot() {
+        activeBoundaryRequests--;
+        if (boundaryQueue.length > 0) {
+            boundaryQueue.shift()();
+        }
+    }
 
     /**
      * Fetches and computes the spoiler boundary for a series.
@@ -331,11 +450,14 @@
             return boundaryRequestMap.get(seriesId);
         }
 
-        const request = (async () => {
+        const request = (async function () {
+            await acquireBoundarySlot();
             try {
                 const userId = ApiClient.getCurrentUserId();
                 const settings = getSettings();
                 const threshold = settings.watchedThreshold;
+
+                if (!isValidId(seriesId)) return null;
 
                 // Fetch all episodes for the series with UserData
                 const response = await ApiClient.ajax({
@@ -360,7 +482,7 @@
                     if (!userData) continue;
 
                     // Skip specials — boundary only applies to regular seasons
-                    var epSeason = ep.ParentIndexNumber;
+                    const epSeason = ep.ParentIndexNumber;
                     if (epSeason == null || epSeason === 0) continue;
 
                     let isWatched = false;
@@ -373,7 +495,7 @@
                     }
 
                     if (isWatched) {
-                        var epNum = ep.IndexNumber || 0;
+                        const epNum = ep.IndexNumber || 0;
                         // Keep the episode with the highest season/episode number
                         if (!lastWatched ||
                             epSeason > lastWatched.season ||
@@ -387,18 +509,19 @@
                     }
                 }
 
-                // Cache the result
+                // Cache the result (boundary only, not the full episodes array)
+                evictIfNeeded(boundaryCache, MAX_CACHE_SIZE);
                 boundaryCache.set(seriesId, {
                     boundary: lastWatched,
-                    episodes,
                     ts: Date.now()
                 });
 
                 return lastWatched;
             } catch (e) {
-                console.error('🪼 Jellyfin Enhanced: Error computing spoiler boundary for', seriesId, e);
+                console.warn('🪼 Jellyfin Enhanced: Error computing spoiler boundary');
                 return null;
             } finally {
+                releaseBoundarySlot();
                 boundaryRequestMap.delete(seriesId);
             }
         })();
@@ -459,19 +582,8 @@
      * @param {number|null} episodeNumber Episode number (IndexNumber).
      * @param {number|null} endEpisodeNumber End episode number for multi-ep files.
      * @param {boolean} isSpecial Whether this is a special/extra.
-     * @returns {string} Redacted title like "S02E03" or "Special 01".
+     * @returns {string} Redacted title like "S02E03 — Click to reveal" or "Special 01 — Click to reveal".
      */
-    /**
-     * Escapes a string for safe insertion into HTML contexts.
-     * @param {string} str The string to escape.
-     * @returns {string} HTML-safe string.
-     */
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
     function formatRedactedTitle(seasonNumber, episodeNumber, endEpisodeNumber, isSpecial) {
         if (isSpecial || seasonNumber === 0) {
             const num = episodeNumber != null ? String(episodeNumber).padStart(2, '0') : '01';
@@ -480,7 +592,7 @@
         const s = seasonNumber != null ? String(seasonNumber).padStart(2, '0') : '00';
         const e = episodeNumber != null ? String(episodeNumber).padStart(2, '0') : '00';
 
-        var hint = ' \u2014 Click to reveal';
+        const hint = ' \u2014 Click to reveal';
         if (endEpisodeNumber != null && endEpisodeNumber !== episodeNumber) {
             const eEnd = String(endEpisodeNumber).padStart(2, '0');
             return 'S' + s + 'E' + e + '\u2013E' + eEnd + hint;
@@ -506,7 +618,7 @@
 
     /**
      * Fetches the parent series ID for an episode/season item from the API.
-     * Results are cached; in-flight requests are de-duplicated.
+     * Results are cached with LRU eviction; in-flight requests are de-duplicated.
      * @param {string} itemId Jellyfin item ID (episode or season).
      * @returns {Promise<string|null>} The series ID, or null.
      */
@@ -517,8 +629,10 @@
         if (parentSeriesRequestMap.has(itemId)) {
             return parentSeriesRequestMap.get(itemId);
         }
-        const request = (async () => {
+        const request = (async function () {
             try {
+                if (!isValidId(itemId)) return null;
+
                 const userId = ApiClient.getCurrentUserId();
                 const item = await ApiClient.ajax({
                     type: 'GET',
@@ -528,10 +642,11 @@
                     dataType: 'json'
                 });
                 const seriesId = item?.SeriesId || null;
+                evictIfNeeded(parentSeriesCache, MAX_CACHE_SIZE);
                 parentSeriesCache.set(itemId, seriesId);
                 return seriesId;
             } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for spoiler check', itemId, e);
+                console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for spoiler check');
                 parentSeriesCache.set(itemId, null);
                 return null;
             } finally {
@@ -552,155 +667,137 @@
      */
     function injectCSS() {
         if (!JE.helpers?.addCSS) return;
-        JE.helpers.addCSS('je-spoiler-mode', [
-            /* ===== Pre-hide: blur unscanned EPISODE cards to prevent spoiler flash ===== */
-            /* Only Episode cards and listItems may contain spoilers — skip series, */
-            /* season, movie, collection, and actor cards to avoid unnecessary blur. */
-            'body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardScalable,',
-            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-content {',
-            '  overflow: hidden;',
-            '}',
-            'body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardScalable > .cardImageContainer,',
-            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemImage {',
-            '  filter: blur(' + BLUR_RADIUS + ');',
-            '  transform: scale(1.05);',
-            '}',
-            'body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardText-secondary,',
-            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-overview,',
-            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-bottomoverview,',
-            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemBody {',
-            '  visibility: hidden;',
-            '}',
 
-            /* ===== Spoiler blur: applied to confirmed-spoiler cards ===== */
-            /* Clip blur edge artifacts — parent containers need overflow hidden. */
-            '.je-spoiler-blur .cardScalable,',
-            '.je-spoiler-generic .cardScalable {',
-            '  overflow: hidden;',
-            '}',
+        const css = `
+/* ===== Pre-hide: blur unscanned EPISODE cards to prevent spoiler flash ===== */
+body.je-spoiler-active .card[data-type="Episode"]:not([${SCANNED_ATTR}]) .cardScalable,
+body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-content {
+  overflow: hidden;
+}
+body.je-spoiler-active .card[data-type="Episode"]:not([${SCANNED_ATTR}]) .cardScalable > .cardImageContainer,
+body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemImage {
+  filter: blur(${BLUR_RADIUS});
+  transform: scale(1.05);
+}
+body.je-spoiler-active .card[data-type="Episode"]:not([${SCANNED_ATTR}]) .cardText-secondary,
+body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-overview,
+body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-bottomoverview,
+body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
+  visibility: hidden;
+}
 
-            /* Direct filter blur on image elements — produces true visual blur */
-            /* like progressive image loading, not the gray look of backdrop-filter. */
-            /* Use child combinator to skip .cardImageContainer inside .cardOverlayContainer. */
-            '.je-spoiler-blur .cardScalable > .cardImageContainer,',
-            '.je-spoiler-blur .cardImage,',
-            '.je-spoiler-blur .listItemImage {',
-            '  filter: blur(' + BLUR_RADIUS + ');',
-            '  transform: scale(1.05);',
-            '  transition: filter 0.3s ease;',
-            '}',
+/* ===== Spoiler blur: applied to confirmed-spoiler cards ===== */
+.je-spoiler-blur .cardScalable,
+.je-spoiler-generic .cardScalable {
+  overflow: hidden;
+}
 
-            /* Generic tile mode — darker + desaturated blur */
-            '.je-spoiler-generic .cardScalable > .cardImageContainer,',
-            '.je-spoiler-generic .cardImage,',
-            '.je-spoiler-generic .listItemImage {',
-            '  filter: blur(' + BLUR_RADIUS + ') brightness(0.5) saturate(0.3);',
-            '  transform: scale(1.05);',
-            '  transition: filter 0.3s ease;',
-            '}',
+.je-spoiler-blur .cardScalable > .cardImageContainer,
+.je-spoiler-blur .cardImage,
+.je-spoiler-blur .listItemImage {
+  filter: blur(${BLUR_RADIUS});
+  transform: scale(1.05);
+  transition: filter 0.3s ease;
+}
 
-            /* Hide secondary/overview text that may leak episode titles */
-            '.je-spoiler-blur .cardText-secondary,',
-            '.je-spoiler-blur .listItem-overview,',
-            '.je-spoiler-blur .listItem-bottomoverview,',
-            '.je-spoiler-generic .cardText-secondary,',
-            '.je-spoiler-generic .listItem-overview,',
-            '.je-spoiler-generic .listItem-bottomoverview {',
-            '  visibility: hidden !important;',
-            '}',
+.je-spoiler-generic .cardScalable > .cardImageContainer,
+.je-spoiler-generic .cardImage,
+.je-spoiler-generic .listItemImage {
+  filter: blur(${BLUR_RADIUS}) brightness(0.5) saturate(0.3);
+  transform: scale(1.05);
+  transition: filter 0.3s ease;
+}
 
-            /* Spoiler badge overlay on cards */
-            '.je-spoiler-badge {',
-            '  position: absolute;',
-            '  top: 50%; left: 50%;',
-            '  transform: translate(-50%, -50%);',
-            '  z-index: 5;',
-            '  background: rgba(0,0,0,0.75);',
-            '  color: rgba(255,255,255,0.9);',
-            '  padding: 4px 10px;',
-            '  border-radius: 4px;',
-            '  font-size: 11px;',
-            '  font-weight: 600;',
-            '  letter-spacing: 0.5px;',
-            '  text-transform: uppercase;',
-            '  pointer-events: none;',
-            '  white-space: nowrap;',
-            '}',
+.je-spoiler-blur .cardText-secondary,
+.je-spoiler-blur .listItem-overview,
+.je-spoiler-blur .listItem-bottomoverview,
+.je-spoiler-generic .cardText-secondary,
+.je-spoiler-generic .listItem-overview,
+.je-spoiler-generic .listItem-bottomoverview {
+  visibility: hidden !important;
+}
 
-            /* Redacted text styling */
-            '.je-spoiler-text-redacted {',
-            '  color: rgba(255,255,255,0.5) !important;',
-            '  font-style: italic !important;',
-            '}',
+.je-spoiler-badge {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  background: rgba(0,0,0,0.75);
+  color: rgba(255,255,255,0.9);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  pointer-events: none;
+  white-space: nowrap;
+}
 
-            /* Override visibility:hidden so redacted text can be seen and clicked to reveal. */
-            /* Higher specificity than .je-spoiler-blur .cardText-secondary hiding rule. */
-            '.je-spoiler-blur .je-spoiler-text-redacted,',
-            '.je-spoiler-generic .je-spoiler-text-redacted {',
-            '  visibility: visible !important;',
-            '  cursor: pointer;',
-            '}',
+.je-spoiler-text-redacted {
+  color: rgba(255,255,255,0.5) !important;
+  font-style: italic !important;
+}
 
-            /* Hidden overview */
-            '.je-spoiler-overview-hidden {',
-            '  color: rgba(255,255,255,0.3) !important;',
-            '  font-style: italic !important;',
-            '  cursor: pointer;',
-            '}',
+.je-spoiler-blur .je-spoiler-text-redacted,
+.je-spoiler-generic .je-spoiler-text-redacted {
+  visibility: visible !important;
+  cursor: pointer;
+}
 
-            /* Reveal animation — remove the blur filter and show all content */
-            '.je-spoiler-revealing .cardScalable > .cardImageContainer,',
-            '.je-spoiler-revealing .cardImage,',
-            '.je-spoiler-revealing .listItemImage {',
-            '  filter: none !important;',
-            '  transform: scale(1) !important;',
-            '  transition: filter 0.5s ease, transform 0.5s ease !important;',
-            '}',
-            '.je-spoiler-revealing .je-spoiler-badge { display: none !important; }',
-            /* Show all hidden text when revealing */
-            '.je-spoiler-revealing .cardText-secondary,',
-            '.je-spoiler-revealing .listItem-overview,',
-            '.je-spoiler-revealing .listItem-bottomoverview,',
-            '.je-spoiler-revealing .listItemBody {',
-            '  visibility: visible !important;',
-            '}',
+.je-spoiler-overview-hidden {
+  color: rgba(255,255,255,0.3) !important;
+  font-style: italic !important;
+  cursor: pointer;
+}
 
-            /* Spoiler toggle button on detail page */
-            '.je-spoiler-toggle-btn { transition: background 0.2s ease, opacity 0.2s ease; }',
-            '.je-spoiler-toggle-btn.je-spoiler-active { opacity: 1; }',
-            '.je-spoiler-toggle-btn.je-spoiler-active .detailButton-icon { color: #ff9800; }',
+.je-spoiler-revealing .cardScalable > .cardImageContainer,
+.je-spoiler-revealing .cardImage,
+.je-spoiler-revealing .listItemImage {
+  filter: none !important;
+  transform: scale(1) !important;
+  transition: filter 0.5s ease, transform 0.5s ease !important;
+}
+.je-spoiler-revealing .je-spoiler-badge { display: none !important; }
+.je-spoiler-revealing .cardText-secondary,
+.je-spoiler-revealing .listItem-overview,
+.je-spoiler-revealing .listItem-bottomoverview,
+.je-spoiler-revealing .listItemBody {
+  visibility: visible !important;
+}
 
-            /* Reveal all banner */
-            '.je-spoiler-reveal-banner {',
-            '  position: fixed; top: 0; left: 0; right: 0; z-index: 99998;',
-            '  background: linear-gradient(135deg, rgba(255,152,0,0.9), rgba(255,87,34,0.9));',
-            '  color: #fff; padding: 8px 16px; text-align: center;',
-            '  font-size: 13px; font-weight: 600;',
-            '  display: flex; align-items: center; justify-content: center; gap: 12px;',
-            '  backdrop-filter: blur(10px); box-shadow: 0 2px 10px rgba(0,0,0,0.3);',
-            '}',
-            '.je-spoiler-reveal-banner button {',
-            '  background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);',
-            '  color: #fff; padding: 4px 12px; border-radius: 4px;',
-            '  cursor: pointer; font-size: 12px; font-weight: 600;',
-            '}',
-            '.je-spoiler-reveal-banner button:hover { background: rgba(255,255,255,0.3); }',
+.je-spoiler-toggle-btn { transition: background 0.2s ease, opacity 0.2s ease; }
+.je-spoiler-toggle-btn.je-spoiler-active { opacity: 1; }
+.je-spoiler-toggle-btn.je-spoiler-active .detailButton-icon { color: #ff9800; }
 
-            /* Tap-to-reveal cursor */
-            '.je-spoiler-revealable { cursor: pointer; }',
+.je-spoiler-reveal-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 99998;
+  background: linear-gradient(135deg, rgba(255,152,0,0.9), rgba(255,87,34,0.9));
+  color: #fff; padding: 8px 16px; text-align: center;
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  backdrop-filter: blur(10px); box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+.je-spoiler-reveal-banner button {
+  background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);
+  color: #fff; padding: 4px 12px; border-radius: 4px;
+  cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.je-spoiler-reveal-banner button:hover { background: rgba(255,255,255,0.3); }
 
-            /* Lock icon for seasons */
-            '.je-spoiler-lock-icon {',
-            '  display: inline-flex; align-items: center;',
-            '  margin-left: 6px; opacity: 0.6; font-size: 14px;',
-            '}',
+.je-spoiler-revealable { cursor: pointer; }
 
-            /* OSD spoiler redaction */
-            '.je-spoiler-osd-redacted {',
-            '  color: rgba(255,255,255,0.5) !important;',
-            '  font-style: italic !important;',
-            '}'
-        ].join('\n'));
+.je-spoiler-lock-icon {
+  display: inline-flex; align-items: center;
+  margin-left: 6px; opacity: 0.6; font-size: 14px;
+}
+
+.je-spoiler-osd-redacted {
+  color: rgba(255,255,255,0.5) !important;
+  font-style: italic !important;
+}`;
+
+        JE.helpers.addCSS('je-spoiler-mode', css);
     }
 
     // ============================================================
@@ -720,20 +817,7 @@
         // Don't add duplicate
         if (visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
 
-        const selectors = [
-            '.detailButtons',
-            '.itemActionsBottom',
-            '.mainDetailButtons',
-            '.detailButtonsContainer'
-        ];
-        let buttonContainer = null;
-        for (const sel of selectors) {
-            const found = visiblePage.querySelector(sel);
-            if (found) {
-                buttonContainer = found;
-                break;
-            }
-        }
+        const buttonContainer = findButtonContainer(visiblePage);
         if (!buttonContainer) return;
 
         const button = document.createElement('button');
@@ -788,7 +872,7 @@
             }
         }
 
-        button.addEventListener('click', async (e) => {
+        button.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
 
@@ -819,7 +903,7 @@
             JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + statusText);
 
             // Trigger re-scan of current page
-            setTimeout(function () { processCurrentPage(); }, 300);
+            setTimeout(function () { processCurrentPage(); }, TOGGLE_RESCAN_DELAY_MS);
         });
 
         updateState();
@@ -851,20 +935,7 @@
         // Don't add duplicate
         if (visiblePage.querySelector('.je-spoiler-reveal-all-btn')) return;
 
-        const selectors = [
-            '.detailButtons',
-            '.itemActionsBottom',
-            '.mainDetailButtons',
-            '.detailButtonsContainer'
-        ];
-        let buttonContainer = null;
-        for (const sel of selectors) {
-            const found = visiblePage.querySelector(sel);
-            if (found) {
-                buttonContainer = found;
-                break;
-            }
-        }
+        const buttonContainer = findButtonContainer(visiblePage);
         if (!buttonContainer) return;
 
         const button = document.createElement('button');
@@ -1020,7 +1091,7 @@
      * @param {HTMLElement} card The top-level card or listItem element.
      */
     function revealCard(card) {
-        var cardBox = card.querySelector('.cardBox') || card;
+        const cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.add('je-spoiler-revealing');
 
         // Restore ALL text elements to original content
@@ -1037,7 +1108,7 @@
      * @param {HTMLElement} card The top-level card or listItem element.
      */
     function hideCard(card) {
-        var cardBox = card.querySelector('.cardBox') || card;
+        const cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.remove('je-spoiler-revealing');
 
         // Re-redact ALL text elements
@@ -1059,9 +1130,9 @@
         if (card.dataset.jeSpoilerRevealBound) return;
         card.dataset.jeSpoilerRevealBound = '1';
 
-        var cardBox = card.querySelector('.cardBox') || card;
-        var revealed = false;
-        var longPressTimer = null;
+        const cardBox = card.querySelector('.cardBox') || card;
+        let revealed = false;
+        let longPressTimer = null;
 
         function doReveal() {
             if (revealAllActive || revealed) return;
@@ -1077,7 +1148,7 @@
 
         // Desktop: click on any redacted text to reveal
         card.addEventListener('click', function (e) {
-            var target = e.target;
+            const target = e.target;
             // Only trigger when clicking redacted/revealable text (not overlay links/buttons)
             if (target.closest('.je-spoiler-revealable') || target.closest('.je-spoiler-text-redacted')) {
                 e.preventDefault();
@@ -1092,12 +1163,12 @@
         });
 
         // Mobile: long-press to reveal, touchend to hide
-        card.addEventListener('touchstart', function (e) {
+        card.addEventListener('touchstart', function () {
             if (revealed) return;
             longPressTimer = setTimeout(function () {
                 longPressTimer = null;
                 doReveal();
-            }, 300);
+            }, LONG_PRESS_THRESHOLD_MS);
         }, { passive: true });
 
         card.addEventListener('touchend', function () {
@@ -1201,7 +1272,7 @@
 
         // Don't re-redact a card that is already redacted or currently revealed
         if (card.hasAttribute(REDACTED_ATTR)) return;
-        var cardBox0 = card.querySelector('.cardBox') || card;
+        const cardBox0 = card.querySelector('.cardBox') || card;
         if (cardBox0.classList.contains('je-spoiler-revealing')) return;
 
         const settings = getSettings();
@@ -1331,6 +1402,112 @@
     // ============================================================
 
     /**
+     * Fetches episode data from the API and redacts if needed (special episodes).
+     * @param {HTMLElement} card The card element.
+     * @param {string} itemId The item ID.
+     * @param {string} seriesId The parent series ID.
+     * @param {number} seasonNum The season number.
+     * @param {number} epNum The episode number.
+     */
+    async function processSpecialEpisode(card, itemId, seriesId, seasonNum, epNum) {
+        if (!isValidId(itemId)) return;
+
+        const userId = ApiClient.getCurrentUserId();
+        try {
+            const item = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                    Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
+                }),
+                dataType: 'json'
+            });
+            if (item && shouldRedactEpisode(item)) {
+                redactCard(card, item);
+            }
+        } catch (e) {
+            // If we can't fetch data, redact to be safe
+            redactCard(card, {
+                Id: itemId,
+                ParentIndexNumber: seasonNum,
+                IndexNumber: epNum,
+                IndexNumberEnd: null
+            });
+        }
+    }
+
+    /**
+     * Fetches episode data from the API when no season/episode numbers are on the card.
+     * @param {HTMLElement} card The card element.
+     * @param {string} itemId The item ID.
+     * @param {string} seriesId The parent series ID.
+     */
+    async function processEpisodeWithoutNumbers(card, itemId, seriesId) {
+        if (!isValidId(itemId)) return;
+
+        const userId = ApiClient.getCurrentUserId();
+        try {
+            const item = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                    Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
+                }),
+                dataType: 'json'
+            });
+            if (!item) return;
+
+            const itemSeason = item.ParentIndexNumber;
+            // For specials or when boundary returns null, check individually
+            if (itemSeason === 0 || itemSeason == null) {
+                if (shouldRedactEpisode(item)) {
+                    redactCard(card, item);
+                }
+            } else {
+                const bp = await isEpisodePastBoundary(seriesId, itemSeason, item.IndexNumber || 0);
+                if (bp) {
+                    redactCard(card, item);
+                }
+            }
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check');
+        }
+    }
+
+    /**
+     * Processes a season card to determine if it should be blurred.
+     * @param {HTMLElement} card The card element.
+     * @param {string} itemId The season item ID.
+     */
+    async function processSeasonCard(card, itemId) {
+        if (!isValidId(itemId)) return;
+
+        const userId = ApiClient.getCurrentUserId();
+        try {
+            const seasonItem = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                    Fields: 'SeriesId,IndexNumber'
+                }),
+                dataType: 'json'
+            });
+
+            if (!seasonItem) return;
+
+            const seasonSeriesId = seasonItem.SeriesId;
+            const seasonNum = seasonItem.IndexNumber;
+
+            if (!seasonSeriesId || !isProtected(seasonSeriesId) || seasonNum == null) return;
+
+            const boundary = await computeBoundary(seasonSeriesId);
+            // Blur seasons beyond the boundary season, or all if nothing watched
+            if ((boundary && seasonNum > boundary.season) || !boundary) {
+                blurSeasonCard(card);
+            }
+        } catch (e) {
+            // Ignore errors for season cards
+        }
+    }
+
+    /**
      * Processes a single card to determine if it needs spoiler redaction.
      * For episode/season cards, checks if their parent series is protected
      * and whether the episode is past the boundary.
@@ -1353,116 +1530,43 @@
                 return;
             }
 
-            // Check if this is an episode or season that belongs to a protected series
+            // Episode or unknown-type card from a protected series
             if (cardType === 'episode' || cardType === '') {
                 let seriesId = card.dataset.seriesid || null;
                 if (!seriesId) {
                     seriesId = await getParentSeriesId(itemId);
                 }
 
-                if (seriesId && isProtected(seriesId)) {
-                    var rawSeason = card.dataset.parentindexnumber || card.dataset.season;
-                    var rawEp = card.dataset.indexnumber || card.dataset.episode;
-                    var hasNumbers = rawSeason != null || rawEp != null;
-                    var seasonNum = parseInt(rawSeason || '0', 10);
-                    var epNum = parseInt(rawEp || '0', 10);
+                if (!seriesId || !isProtected(seriesId)) return;
 
-                    if (hasNumbers) {
-                        var pastBoundary = await isEpisodePastBoundary(seriesId, seasonNum, epNum);
+                const rawSeason = card.dataset.parentindexnumber || card.dataset.season;
+                const rawEp = card.dataset.indexnumber || card.dataset.episode;
+                const hasNumbers = rawSeason != null || rawEp != null;
+                const seasonNum = parseInt(rawSeason || '0', 10);
+                const epNum = parseInt(rawEp || '0', 10);
 
-                        if (pastBoundary === null) {
-                            // Specials (season 0) — check individual UserData
-                            try {
-                                var userId = ApiClient.getCurrentUserId();
-                                var item = await ApiClient.ajax({
-                                    type: 'GET',
-                                    url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
-                                        Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
-                                    }),
-                                    dataType: 'json'
-                                });
-                                if (item && shouldRedactEpisode(item)) {
-                                    redactCard(card, item);
-                                }
-                            } catch (e) {
-                                // If we can't fetch data, redact to be safe
-                                redactCard(card, {
-                                    Id: itemId,
-                                    ParentIndexNumber: seasonNum,
-                                    IndexNumber: epNum,
-                                    IndexNumberEnd: null
-                                });
-                            }
-                        } else if (pastBoundary) {
-                            redactCard(card, {
-                                Id: itemId,
-                                ParentIndexNumber: seasonNum,
-                                IndexNumber: epNum,
-                                IndexNumberEnd: null
-                            });
-                        }
-                    } else {
-                        // No season/episode numbers on the card — fetch item data
-                        try {
-                            var userId2 = ApiClient.getCurrentUserId();
-                            var item2 = await ApiClient.ajax({
-                                type: 'GET',
-                                url: ApiClient.getUrl('/Users/' + userId2 + '/Items/' + itemId, {
-                                    Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
-                                }),
-                                dataType: 'json'
-                            });
-                            if (item2) {
-                                var itemSeason = item2.ParentIndexNumber;
-                                // For specials or when boundary returns null, check individually
-                                if (itemSeason === 0 || itemSeason == null) {
-                                    if (shouldRedactEpisode(item2)) {
-                                        redactCard(card, item2);
-                                    }
-                                } else {
-                                    var bp = await isEpisodePastBoundary(seriesId, itemSeason, item2.IndexNumber || 0);
-                                    if (bp) {
-                                        redactCard(card, item2);
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check', itemId, e);
-                        }
+                if (hasNumbers) {
+                    const pastBoundary = await isEpisodePastBoundary(seriesId, seasonNum, epNum);
+
+                    if (pastBoundary === null) {
+                        // Specials (season 0) — check individual UserData
+                        await processSpecialEpisode(card, itemId, seriesId, seasonNum, epNum);
+                    } else if (pastBoundary) {
+                        redactCard(card, {
+                            Id: itemId,
+                            ParentIndexNumber: seasonNum,
+                            IndexNumber: epNum,
+                            IndexNumberEnd: null
+                        });
                     }
+                } else {
+                    await processEpisodeWithoutNumbers(card, itemId, seriesId);
                 }
             }
 
-            // Check if this is a season card from a protected series
+            // Season card from a protected series
             if (cardType === 'season') {
-                try {
-                    var userId3 = ApiClient.getCurrentUserId();
-                    var seasonItem = await ApiClient.ajax({
-                        type: 'GET',
-                        url: ApiClient.getUrl('/Users/' + userId3 + '/Items/' + itemId, {
-                            Fields: 'SeriesId,IndexNumber'
-                        }),
-                        dataType: 'json'
-                    });
-
-                    if (seasonItem) {
-                        var seasonSeriesId = seasonItem.SeriesId;
-                        var seasonNum3 = seasonItem.IndexNumber;
-
-                        if (seasonSeriesId && isProtected(seasonSeriesId) && seasonNum3 != null) {
-                            var boundary3 = await computeBoundary(seasonSeriesId);
-                            // Blur seasons beyond the boundary season
-                            if (boundary3 && seasonNum3 > boundary3.season) {
-                                blurSeasonCard(card);
-                            } else if (!boundary3) {
-                                // Nothing watched — blur all seasons
-                                blurSeasonCard(card);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // Ignore errors for season cards
-                }
+                await processSeasonCard(card, itemId);
             }
         } finally {
             // Mark card as fully scanned — removes the pre-hide CSS blur
@@ -1580,12 +1684,14 @@
             }
         }
 
-        // Process episode cards on the detail page
+        // Process episode cards on the detail page in parallel
         const episodeCards = visiblePage.querySelectorAll('.card[data-id], .listItem[data-id]');
+        const promises = [];
         for (const card of episodeCards) {
             card.setAttribute(PROCESSED_ATTR, '1');
-            await processCard(card);
+            promises.push(processCard(card));
         }
+        await Promise.all(promises);
     }
 
     // ============================================================
@@ -1621,6 +1727,8 @@
         if (!seriesId || !isProtected(seriesId)) return;
 
         try {
+            if (!isValidId(itemId)) return;
+
             const userId = ApiClient.getCurrentUserId();
             const item = await ApiClient.ajax({
                 type: 'GET',
@@ -1677,7 +1785,7 @@
             }
 
         } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Error redacting player overlay', e);
+            console.warn('🪼 Jellyfin Enhanced: Error redacting player overlay');
         }
     }
 
@@ -1736,13 +1844,15 @@
      */
     async function handleAutoEnableOnFirstPlay(itemId) {
         const data = getSpoilerData();
-        var enableOnFirst = data.autoEnableOnFirstPlay;
-        var hasTagRules = (data.tagAutoEnable || []).length > 0;
+        const enableOnFirst = data.autoEnableOnFirstPlay;
+        const hasTagRules = (data.tagAutoEnable || []).length > 0;
 
         // Skip if neither auto-enable method is active
         if (!enableOnFirst && !hasTagRules) return;
 
         try {
+            if (!isValidId(itemId)) return;
+
             const userId = ApiClient.getCurrentUserId();
             const item = await ApiClient.ajax({
                 type: 'GET',
@@ -1759,11 +1869,11 @@
 
             // Check if this is Episode 1 (first play of a new series)
             if (enableOnFirst) {
-                var isFirstEpisode = (item.ParentIndexNumber === 1 || item.ParentIndexNumber === 0) &&
+                const isFirstEpisode = (item.ParentIndexNumber === 1 || item.ParentIndexNumber === 0) &&
                     (item.IndexNumber === 1);
 
                 if (isFirstEpisode && !isProtected(seriesId)) {
-                    var seriesName = item.SeriesName || '';
+                    const seriesName = item.SeriesName || '';
                     setRule({
                         itemId: seriesId,
                         itemName: seriesName,
@@ -1779,7 +1889,7 @@
             // Check tags on the series (need to fetch series data for tags)
             if (hasTagRules && !isProtected(seriesId)) {
                 try {
-                    var series = await ApiClient.getItem(userId, seriesId);
+                    const series = await ApiClient.getItem(userId, seriesId);
                     if (series) {
                         checkAndAutoEnableByTag(seriesId, series);
                     }
@@ -1788,7 +1898,7 @@
                 }
             }
         } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Error in auto-enable on first play', e);
+            console.warn('🪼 Jellyfin Enhanced: Error in auto-enable on first play');
         }
     }
 
@@ -1810,7 +1920,7 @@
     }
 
     // ============================================================
-    // Observer setup
+    // Unified observer
     // ============================================================
 
     /** Debounced card filter function. */
@@ -1818,9 +1928,140 @@
         ? JE.helpers.debounce(function () { requestAnimationFrame(filterNewCards); }, FILTER_DEBOUNCE_MS)
         : filterNewCards;
 
+    /** Debounced detail page handler. */
+    const debouncedDetailPageHandler = JE.helpers?.debounce
+        ? JE.helpers.debounce(handleDetailPageMutation, TOGGLE_RESCAN_DELAY_MS)
+        : handleDetailPageMutation;
+
+    /** Debounced OSD handler. */
+    const debouncedOsdHandler = JE.helpers?.debounce
+        ? JE.helpers.debounce(function () {
+            if (getCurrentSurface() !== 'player') return;
+            if (protectedIdSet.size === 0) return;
+            const itemId = getPlayerItemId();
+            if (itemId) {
+                redactPlayerOverlay(itemId);
+            }
+        }, 200)
+        : function () {};
+
     /**
-     * Sets up MutationObservers and page-navigation hooks to trigger
-     * spoiler redaction when new cards appear in the DOM.
+     * Gets the current playing item ID from OSD or URL hash.
+     * @returns {string|null}
+     */
+    function getPlayerItemId() {
+        // Primary: OSD favorite button (most reliable)
+        const favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
+        if (favBtn?.dataset?.id) return favBtn.dataset.id;
+        // Fallback: URL hash
+        const hash = window.location.hash || '';
+        const params = new URLSearchParams(hash.split('?')[1]);
+        return params.get('id') || null;
+    }
+
+    /**
+     * Handles detail page mutations (adding toggle button, redacting episodes).
+     */
+    function handleDetailPageMutation() {
+        if (detailPageProcessing) return;
+
+        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+        if (!visiblePage) return;
+
+        try {
+            const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+            const itemId = hashParams.get('id');
+            if (!itemId) return;
+
+            // Skip if we already processed this item
+            if (itemId === lastDetailPageItemId && visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
+            lastDetailPageItemId = itemId;
+            detailPageProcessing = true;
+
+            const userId = ApiClient.getCurrentUserId();
+            ApiClient.getItem(userId, itemId).then(function (item) {
+                if (!item) { detailPageProcessing = false; return; }
+
+                // Add spoiler toggle for Series and Movies
+                if (item.Type === 'Series' || item.Type === 'Movie') {
+                    addSpoilerToggleButton(itemId, item.Type, visiblePage);
+                    checkAndAutoEnableByTag(itemId, item);
+                }
+
+                // Redact episode list if on a protected series/season page
+                if (item.Type === 'Series' || item.Type === 'Season') {
+                    redactEpisodeList(itemId, visiblePage).then(function () {
+                        detailPageProcessing = false;
+                    }).catch(function () {
+                        detailPageProcessing = false;
+                    });
+                } else {
+                    detailPageProcessing = false;
+                }
+            }).catch(function () { detailPageProcessing = false; });
+        } catch (e) {
+            detailPageProcessing = false;
+            console.warn('🪼 Jellyfin Enhanced: Error in spoiler detail page observer');
+        }
+    }
+
+    /**
+     * Unified MutationObserver callback handling card filtering, detail page,
+     * and player OSD — all in a single observer.
+     * @param {MutationRecord[]} mutations The mutation records.
+     */
+    function handleMutations(mutations) {
+        if (protectedIdSet.size === 0) return;
+
+        let hasNewCards = false;
+        for (let i = 0; i < mutations.length; i++) {
+            const addedNodes = mutations[i].addedNodes;
+            for (let j = 0; j < addedNodes.length; j++) {
+                const node = addedNodes[j];
+                if (node.nodeType === 1 && (
+                    node.classList?.contains('card') ||
+                    node.classList?.contains('listItem') ||
+                    node.querySelector?.('.card[data-id], .listItem[data-id]')
+                )) {
+                    hasNewCards = true;
+                    break;
+                }
+            }
+            if (hasNewCards) break;
+        }
+
+        if (hasNewCards) {
+            debouncedFilter();
+        }
+
+        // Detail page handling
+        debouncedDetailPageHandler();
+
+        // Player OSD handling
+        debouncedOsdHandler();
+    }
+
+    /**
+     * Connects the unified MutationObserver to document.body.
+     * No-op if already connected.
+     */
+    function connectObserver() {
+        if (unifiedObserver || typeof MutationObserver === 'undefined') return;
+        unifiedObserver = new MutationObserver(handleMutations);
+        unifiedObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    /**
+     * Disconnects the unified MutationObserver.
+     */
+    function disconnectObserver() {
+        if (!unifiedObserver) return;
+        unifiedObserver.disconnect();
+        unifiedObserver = null;
+    }
+
+    /**
+     * Sets up page-navigation hooks to trigger spoiler redaction.
      */
     function setupObservers() {
         // Page navigation hook
@@ -1833,153 +2074,30 @@
                 const surface = getCurrentSurface();
 
                 if (surface === 'details') {
-                    // Detail page episode redaction is handled by the spoiler-detail-page
-                    // MutationObserver; only filter non-episode cards (e.g., "More Like This")
                     setTimeout(function () {
                         if (protectedIdSet.size > 0) filterNewCards();
                     }, DETAIL_RESCAN_DELAY_MS);
                 } else if (surface === 'search') {
-                    // Search results load asynchronously — staggered re-scans
                     setTimeout(function () { redactSearchResults(); }, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(function () { redactSearchResults(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                 } else if (surface === 'home') {
-                    // Home sections load asynchronously — re-scan for cards
                     setTimeout(function () { filterNewCards(); }, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(function () { filterNewCards(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                 } else if (surface === 'player') {
-                    // Redact player overlay — stagger to wait for OSD render
                     setTimeout(function () {
-                        var favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
-                        var playerItemId = favBtn?.dataset?.id;
-                        if (!playerItemId) {
-                            var hash = window.location.hash || '';
-                            var params = new URLSearchParams(hash.split('?')[1]);
-                            playerItemId = params.get('id');
-                        }
+                        const playerItemId = getPlayerItemId();
                         if (playerItemId) {
                             redactPlayerOverlay(playerItemId);
                             handleAutoEnableOnFirstPlay(playerItemId);
                         }
-                    }, 500);
+                    }, PLAYER_OSD_DELAY_MS);
                 }
             });
         }
 
-        // MutationObserver for new cards
-        if (typeof MutationObserver !== 'undefined') {
-            var cardObserver = new MutationObserver(function (mutations) {
-                if (protectedIdSet.size === 0) return;
-
-                var hasNewCards = false;
-                for (var i = 0; i < mutations.length; i++) {
-                    var addedNodes = mutations[i].addedNodes;
-                    for (var j = 0; j < addedNodes.length; j++) {
-                        var node = addedNodes[j];
-                        if (node.nodeType === 1 && (
-                            node.classList?.contains('card') ||
-                            node.classList?.contains('listItem') ||
-                            node.querySelector?.('.card[data-id], .listItem[data-id]')
-                        )) {
-                            hasNewCards = true;
-                            break;
-                        }
-                    }
-                    if (hasNewCards) break;
-                }
-
-                if (hasNewCards) {
-                    debouncedFilter();
-                }
-            });
-            cardObserver.observe(document.body, { childList: true, subtree: true });
-        }
-
-        // Listen for detail page changes to add spoiler toggle button
-        var lastDetailPageItemId = null;
-        var detailPageProcessing = false;
-
-        if (JE.helpers?.createObserver) {
-            JE.helpers.createObserver(
-                'spoiler-detail-page',
-                JE.helpers.debounce(function () {
-                    if (detailPageProcessing) return;
-
-                    var visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-                    if (!visiblePage) return;
-
-                    try {
-                        var hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
-                        var itemId = hashParams.get('id');
-                        if (!itemId) return;
-
-                        // Skip if we already processed this item (avoids re-trigger from our own DOM changes)
-                        if (itemId === lastDetailPageItemId && visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
-                        lastDetailPageItemId = itemId;
-                        detailPageProcessing = true;
-
-                        var userId = ApiClient.getCurrentUserId();
-                        ApiClient.getItem(userId, itemId).then(function (item) {
-                            if (!item) { detailPageProcessing = false; return; }
-
-                            // Add spoiler toggle for Series and Movies
-                            if (item.Type === 'Series' || item.Type === 'Movie') {
-                                addSpoilerToggleButton(itemId, item.Type, visiblePage);
-                                checkAndAutoEnableByTag(itemId, item);
-                            }
-
-                            // Redact episode list if on a protected series/season page
-                            if (item.Type === 'Series' || item.Type === 'Season') {
-                                redactEpisodeList(itemId, visiblePage).then(function () {
-                                    detailPageProcessing = false;
-                                }).catch(function () {
-                                    detailPageProcessing = false;
-                                });
-                            } else {
-                                detailPageProcessing = false;
-                            }
-                        }).catch(function () { detailPageProcessing = false; });
-                    } catch (e) {
-                        detailPageProcessing = false;
-                        console.warn('🪼 Jellyfin Enhanced: Error in spoiler detail page observer', e);
-                    }
-                }, 300),
-                document.body,
-                {
-                    childList: true,
-                    subtree: true
-                }
-            );
-        }
-
-        // Listen for player OSD changes
-        if (typeof MutationObserver !== 'undefined') {
-            /**
-             * Gets the current playing item ID from OSD or URL hash.
-             * @returns {string|null}
-             */
-            var getPlayerItemId = function () {
-                // Primary: OSD favorite button (most reliable)
-                var favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
-                if (favBtn?.dataset?.id) return favBtn.dataset.id;
-                // Fallback: URL hash
-                var hash = window.location.hash || '';
-                var params = new URLSearchParams(hash.split('?')[1]);
-                return params.get('id') || null;
-            };
-
-            var osdCallback = JE.helpers?.debounce
-                ? JE.helpers.debounce(function () {
-                    if (getCurrentSurface() !== 'player') return;
-                    if (protectedIdSet.size === 0) return;
-                    var itemId = getPlayerItemId();
-                    if (itemId) {
-                        redactPlayerOverlay(itemId);
-                    }
-                }, 200)
-                : function () {};
-
-            var osdObserver = new MutationObserver(osdCallback);
-            osdObserver.observe(document.body, { childList: true, subtree: true });
+        // Connect the unified observer if there are protected items
+        if (protectedIdSet.size > 0) {
+            connectObserver();
         }
     }
 
@@ -2022,6 +2140,7 @@
             setRule,
             getSettings,
             updateSettings,
+            setAutoEnableOnFirstPlay,
             computeBoundary,
             isEpisodePastBoundary,
             shouldRedactEpisode,
@@ -2040,8 +2159,6 @@
             getSpoilerData,
             rebuildSets
         };
-
-        console.log('🪼 Jellyfin Enhanced: Spoiler Mode initialized (' + protectedIdSet.size + ' protected items)');
     };
 
 })(window.JellyfinEnhanced);
