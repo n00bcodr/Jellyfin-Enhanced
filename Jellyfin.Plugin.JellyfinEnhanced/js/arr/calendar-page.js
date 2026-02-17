@@ -1413,6 +1413,11 @@
     }
   }
 
+  /**
+   * Fetch items the current user has requested via Jellyseerr, then optionally
+   * merge tag-based matches from Sonarr/Radarr as a fallback (Issues #347/#396).
+   * Populates state.requestedItems and triggers a re-render on completion.
+   */
   async function fetchUserRequests() {
     if (!JE.pluginConfig?.JellyseerrEnabled) {
       state.requestedItems = new Set();
@@ -1452,16 +1457,40 @@
       }
     } catch (error) {
       console.warn(`${logPrefix} Failed to fetch user requests:`, error);
-    } finally {
-      state.requestedItems = requested;
-      state.requestedLoaded = true;
-      state.requestedLoading = false;
-      if (state.pageVisible) {
-        renderPage();
+    }
+
+    // Tag-based request matching fallback (Issues #347/#396)
+    // When Jellyseerr loses the user→request mapping, arr tags in the format
+    // "{seerrUserId} - {username}" still identify the requesting user.
+    // This fetches items from Sonarr/Radarr whose tags match the current user's
+    // Seerr numeric ID prefix and merges them into the same requested Set.
+    if (JE.pluginConfig?.CalendarTagBasedRequestMatching) {
+      try {
+        const tagUrl = ApiClient.getUrl("/JellyfinEnhanced/arr/tag-requested-items");
+        const tagResp = await fetch(tagUrl, { headers: getAuthHeaders() });
+        if (tagResp.ok) {
+          const tagData = await tagResp.json();
+          (tagData.items || []).forEach(item => {
+            if (item?.tmdbId && item?.type) requested.add(`${item.type}:${item.tmdbId}`);
+          });
+        }
+      } catch (e) {
+        // Non-critical: tag matching is a fallback, don't break the main request flow
+        console.warn(`${logPrefix} Tag-based request fetch failed (non-critical):`, e);
       }
+    }
+
+    state.requestedItems = requested;
+    state.requestedLoaded = true;
+    state.requestedLoading = false;
+    if (state.pageVisible) {
+      renderPage();
     }
   }
 
+  /**
+   * Ensure request data is loaded, fetching if not already in progress or complete.
+   */
   async function ensureRequestData() {
     if (state.requestedLoading || state.requestedLoaded) return;
     await fetchUserRequests();

@@ -1153,6 +1153,13 @@
                                 </label>
                             </div>
                             <div class="fieldDescription">When enabled, the calendar will load showing only Requested items by default, but users can still change filters.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarTagBasedRequestMatching" is="emby-checkbox" type="checkbox"/>
+                                    <span>Tag-Based Request Matching</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription">When enabled, also uses Sonarr/Radarr tags to identify your requested items. Useful if Jellyseerr request data is incomplete.</div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                             <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -2058,6 +2065,7 @@
                 document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
                 document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
                 document.querySelector('#calendarShowOnlyRequested').checked = config.CalendarShowOnlyRequested || false;
+                document.querySelector('#calendarTagBasedRequestMatching').checked = config.CalendarTagBasedRequestMatching || false;
 
                 // Hidden Content settings
                 document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
@@ -2240,6 +2248,7 @@
             config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;
             config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
             config.CalendarShowOnlyRequested = document.querySelector('#calendarShowOnlyRequested').checked;
+            config.CalendarTagBasedRequestMatching = document.querySelector('#calendarTagBasedRequestMatching').checked;
 
             // Hidden Content settings
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;

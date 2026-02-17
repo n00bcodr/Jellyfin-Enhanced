@@ -118,5 +118,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             return result;
         }
+
+        /// <summary>
+        /// Find Radarr movies whose tags start with the given prefix and return their TMDB IDs.
+        /// Used for tag-based request matching: Seerr tags follow "{seerrUserId} - {username}" format,
+        /// so matching by prefix (e.g. "8 - ") identifies items requested by a specific user.
+        /// </summary>
+        public async Task<List<int>> GetTmdbIdsMatchingTagPrefix(string radarrUrl, string apiKey, string tagPrefix)
+        {
+            var result = new List<int>();
+
+            try
+            {
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+                // Fetch all tags
+                var tagsUrl = $"{radarrUrl.TrimEnd('/')}/api/v3/tag";
+                var tagsResponse = await httpClient.GetAsync(tagsUrl);
+
+                if (!tagsResponse.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Failed to fetch Radarr tags for prefix matching. Status: {tagsResponse.StatusCode}");
+                    return result;
+                }
+
+                var tagsContent = await tagsResponse.Content.ReadAsStringAsync();
+                var tags = JsonSerializer.Deserialize<List<RadarrTag>>(tagsContent) ?? new List<RadarrTag>();
+
+                // Find tag IDs whose label starts with the prefix
+                var matchingTagIds = tags
+                    .Where(t => t.Label.StartsWith(tagPrefix, StringComparison.OrdinalIgnoreCase))
+                    .Select(t => t.Id)
+                    .ToHashSet();
+
+                if (matchingTagIds.Count == 0)
+                {
+                    return result;
+                }
+
+                // Fetch all movies and find those with matching tags
+                var moviesUrl = $"{radarrUrl.TrimEnd('/')}/api/v3/movie";
+                var moviesResponse = await httpClient.GetAsync(moviesUrl);
+
+                if (!moviesResponse.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Failed to fetch Radarr movies for prefix matching. Status: {moviesResponse.StatusCode}");
+                    return result;
+                }
+
+                var moviesContent = await moviesResponse.Content.ReadAsStringAsync();
+                var movies = JsonSerializer.Deserialize<List<RadarrMovie>>(moviesContent) ?? new List<RadarrMovie>();
+
+                result = movies
+                    .Where(m => m.TmdbId > 0 && m.Tags.Any(t => matchingTagIds.Contains(t)))
+                    .Select(m => m.TmdbId)
+                    .ToList();
+
+                _logger.Info($"Found {result.Count} Radarr movies matching tag-based request filter");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error fetching Radarr movies by tag prefix: {ex.Message}");
+            }
+
+            return result;
+        }
     }
 }

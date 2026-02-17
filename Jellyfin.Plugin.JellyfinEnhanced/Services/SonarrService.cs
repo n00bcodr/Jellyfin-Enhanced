@@ -19,6 +19,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         [JsonPropertyName("tvdbId")]
         public int TvdbId { get; set; }
 
+        [JsonPropertyName("tmdbId")]
+        public int TmdbId { get; set; }
+
         [JsonPropertyName("imdbId")]
         public string? ImdbId { get; set; }
 
@@ -114,6 +117,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex)
             {
                 _logger.Error($"Error fetching Sonarr tags: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Find Sonarr series whose tags start with the given prefix and return their TMDB IDs.
+        /// Used for tag-based request matching: Seerr tags follow "{seerrUserId} - {username}" format,
+        /// so matching by prefix (e.g. "8 - ") identifies items requested by a specific user.
+        /// </summary>
+        public async Task<List<int>> GetTmdbIdsMatchingTagPrefix(string sonarrUrl, string apiKey, string tagPrefix)
+        {
+            var result = new List<int>();
+
+            try
+            {
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+                // Fetch all tags
+                var tagsUrl = $"{sonarrUrl.TrimEnd('/')}/api/v3/tag";
+                var tagsResponse = await httpClient.GetAsync(tagsUrl);
+
+                if (!tagsResponse.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Failed to fetch Sonarr tags for prefix matching. Status: {tagsResponse.StatusCode}");
+                    return result;
+                }
+
+                var tagsContent = await tagsResponse.Content.ReadAsStringAsync();
+                var tags = JsonSerializer.Deserialize<List<SonarrTag>>(tagsContent) ?? new List<SonarrTag>();
+
+                // Find tag IDs whose label starts with the prefix
+                var matchingTagIds = tags
+                    .Where(t => t.Label.StartsWith(tagPrefix, StringComparison.OrdinalIgnoreCase))
+                    .Select(t => t.Id)
+                    .ToHashSet();
+
+                if (matchingTagIds.Count == 0)
+                {
+                    return result;
+                }
+
+                // Fetch all series and find those with matching tags
+                var seriesUrl = $"{sonarrUrl.TrimEnd('/')}/api/v3/series";
+                var seriesResponse = await httpClient.GetAsync(seriesUrl);
+
+                if (!seriesResponse.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Failed to fetch Sonarr series for prefix matching. Status: {seriesResponse.StatusCode}");
+                    return result;
+                }
+
+                var seriesContent = await seriesResponse.Content.ReadAsStringAsync();
+                var allSeries = JsonSerializer.Deserialize<List<SonarrSeries>>(seriesContent) ?? new List<SonarrSeries>();
+
+                result = allSeries
+                    .Where(s => s.TmdbId > 0 && s.Tags.Any(t => matchingTagIds.Contains(t)))
+                    .Select(s => s.TmdbId)
+                    .ToList();
+
+                _logger.Info($"Found {result.Count} Sonarr series matching tag-based request filter");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error fetching Sonarr series by tag prefix: {ex.Message}");
             }
 
             return result;

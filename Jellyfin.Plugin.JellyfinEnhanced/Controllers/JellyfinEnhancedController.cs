@@ -1445,6 +1445,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarHighlightFavorites,
                 config.CalendarHighlightWatchedSeries,
                 config.CalendarShowOnlyRequested,
+                config.CalendarTagBasedRequestMatching,
 
                 // Hidden Content Settings
                 config.HiddenContentEnabled,
@@ -2650,6 +2651,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"Failed to fetch Jellyseerr requests: {ex.Message}");
                 return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
             }
+        }
+
+        /// <summary>
+        /// Get arr items tagged with the current user's Jellyseerr ID.
+        /// Fallback for calendar "Requests" filter when Jellyseerr loses user→request mappings.
+        /// Matches Sonarr/Radarr tags by the user's Seerr numeric ID prefix (e.g. "8 - "),
+        /// which is resilient to username changes in either Jellyfin or Jellyseerr.
+        /// Returns { items: [{ type: "tv"|"movie", tmdbId: int }] }
+        /// </summary>
+        [HttpGet("arr/tag-requested-items")]
+        [Authorize]
+        public async Task<IActionResult> GetTagRequestedItems()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, "Plugin configuration not available");
+
+            // Feature guard: return empty if tag-based matching is disabled
+            if (!config.CalendarTagBasedRequestMatching)
+            {
+                return Ok(new { items = new List<object>() });
+            }
+
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+            {
+                return BadRequest(new { message = "Jellyfin User ID was not provided in claims." });
+            }
+
+            // Resolve Jellyfin user → Jellyseerr user (via stable Jellyfin GUID, not username)
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+            {
+                // User not linked in Jellyseerr — can't determine tag prefix
+                return Ok(new { items = new List<object>() });
+            }
+
+            // Seerr tags use format "{seerrUserId} - {username}" — we match only the numeric prefix
+            var tagPrefix = $"{jellyseerrUser.Id} - ";
+            var items = new List<object>();
+
+            try
+            {
+                // Query Sonarr and Radarr in parallel for items with matching tags
+                var sonarrTask = Task.FromResult(new List<int>());
+                var radarrTask = Task.FromResult(new List<int>());
+
+                if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+                {
+                    var sonarrService = new Services.SonarrService(_httpClientFactory, _logger);
+                    sonarrTask = sonarrService.GetTmdbIdsMatchingTagPrefix(config.SonarrUrl, config.SonarrApiKey, tagPrefix);
+                }
+
+                if (!string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
+                {
+                    var radarrService = new Services.RadarrService(_httpClientFactory, _logger);
+                    radarrTask = radarrService.GetTmdbIdsMatchingTagPrefix(config.RadarrUrl, config.RadarrApiKey, tagPrefix);
+                }
+
+                await Task.WhenAll(sonarrTask, radarrTask);
+
+                foreach (var tmdbId in sonarrTask.Result)
+                {
+                    items.Add(new { type = "tv", tmdbId });
+                }
+
+                foreach (var tmdbId in radarrTask.Result)
+                {
+                    items.Add(new { type = "movie", tmdbId });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error fetching tag-requested items: {ex.Message}");
+            }
+
+            return Ok(new { items });
         }
 
         /// <summary>
