@@ -135,6 +135,7 @@
 
     /** Timer for "Reveal All" auto-hide. */
     let revealAllTimer = null;
+    let revealAllCountdownInterval = null;
 
     /**
      * WeakMap caching surface context for DOM sections.
@@ -170,7 +171,9 @@
     function getSettings() {
         const data = getSpoilerData();
         const userPreset = data.settings?.preset || 'balanced';
-        const presetDefaults = PRESETS[userPreset] || PRESETS.balanced;
+        const presetDefaults = Object.prototype.hasOwnProperty.call(PRESETS, userPreset)
+            ? PRESETS[userPreset]
+            : PRESETS.balanced;
 
         return {
             preset: userPreset,
@@ -458,6 +461,17 @@
      * @param {boolean} isSpecial Whether this is a special/extra.
      * @returns {string} Redacted title like "S02E03" or "Special 01".
      */
+    /**
+     * Escapes a string for safe insertion into HTML contexts.
+     * @param {string} str The string to escape.
+     * @returns {string} HTML-safe string.
+     */
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
     function formatRedactedTitle(seasonNumber, episodeNumber, endEpisodeNumber, isSpecial) {
         if (isSpecial || seasonNumber === 0) {
             const num = episodeNumber != null ? String(episodeNumber).padStart(2, '0') : '01';
@@ -930,11 +944,13 @@
 
         document.body.appendChild(banner);
 
-        // Update countdown
-        const countdownInterval = setInterval(function () {
+        // Update countdown (module-level so deactivateRevealAll can clear it)
+        if (revealAllCountdownInterval) clearInterval(revealAllCountdownInterval);
+        revealAllCountdownInterval = setInterval(function () {
             remaining--;
             if (remaining <= 0) {
-                clearInterval(countdownInterval);
+                clearInterval(revealAllCountdownInterval);
+                revealAllCountdownInterval = null;
                 return;
             }
             text.textContent = 'Spoilers revealed \u2014 ' + remaining + 's remaining';
@@ -964,7 +980,8 @@
         // Set auto-hide timer
         if (revealAllTimer) clearTimeout(revealAllTimer);
         revealAllTimer = setTimeout(function () {
-            clearInterval(countdownInterval);
+            clearInterval(revealAllCountdownInterval);
+            revealAllCountdownInterval = null;
             deactivateRevealAll();
         }, duration);
     }
@@ -978,10 +995,14 @@
         // Remove banner
         document.querySelector('.je-spoiler-reveal-banner')?.remove();
 
-        // Clear timer
+        // Clear timers
         if (revealAllTimer) {
             clearTimeout(revealAllTimer);
             revealAllTimer = null;
+        }
+        if (revealAllCountdownInterval) {
+            clearInterval(revealAllCountdownInterval);
+            revealAllCountdownInterval = null;
         }
 
         // Remove revealing class
@@ -1750,7 +1771,7 @@
                         enabled: true
                     });
 
-                    JE.toast(JE.icon(JE.IconName.SHIELD) + ' Spoiler Mode auto-enabled for ' + seriesName);
+                    JE.toast(JE.icon(JE.IconName.SHIELD) + ' Spoiler Mode auto-enabled for ' + escapeHtml(seriesName));
                     return; // Already enabled, no need to check tags
                 }
             }
@@ -2009,7 +2030,8 @@
             filterCalendarEvents,
             activateRevealAll,
             deactivateRevealAll,
-            handleTapReveal,
+            revealCard,
+            hideCard,
             processCurrentPage,
             redactSearchResults,
             redactPlayerOverlay,
