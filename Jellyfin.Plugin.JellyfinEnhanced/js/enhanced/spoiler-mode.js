@@ -48,6 +48,9 @@
     /** Data attribute marking a card as already processed by spoiler mode. */
     const PROCESSED_ATTR = 'data-je-spoiler-checked';
 
+    /** Data attribute set when async processing is fully complete (prevents spoiler flash). */
+    const SCANNED_ATTR = 'data-je-spoiler-scanned';
+
     /** Data attribute marking a card as spoiler-redacted. */
     const REDACTED_ATTR = 'data-je-spoiler-redacted';
 
@@ -191,6 +194,12 @@
             if (rule.enabled) {
                 protectedIdSet.add(rule.itemId);
             }
+        }
+        // Toggle pre-hide CSS on body
+        if (protectedIdSet.size > 0) {
+            document.body?.classList?.add('je-spoiler-active');
+        } else {
+            document.body?.classList?.remove('je-spoiler-active');
         }
     }
 
@@ -452,16 +461,17 @@
     function formatRedactedTitle(seasonNumber, episodeNumber, endEpisodeNumber, isSpecial) {
         if (isSpecial || seasonNumber === 0) {
             const num = episodeNumber != null ? String(episodeNumber).padStart(2, '0') : '01';
-            return 'Special ' + num;
+            return 'Special ' + num + ' \u2014 Click to reveal';
         }
         const s = seasonNumber != null ? String(seasonNumber).padStart(2, '0') : '00';
         const e = episodeNumber != null ? String(episodeNumber).padStart(2, '0') : '00';
 
+        var hint = ' \u2014 Click to reveal';
         if (endEpisodeNumber != null && endEpisodeNumber !== episodeNumber) {
             const eEnd = String(endEpisodeNumber).padStart(2, '0');
-            return 'S' + s + 'E' + e + '\u2013E' + eEnd;
+            return 'S' + s + 'E' + e + '\u2013E' + eEnd + hint;
         }
-        return 'S' + s + 'E' + e;
+        return 'S' + s + 'E' + e + hint;
     }
 
     /**
@@ -529,55 +539,50 @@
     function injectCSS() {
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-spoiler-mode', [
-            /* Ensure image containers are positioned for pseudo-element overlay. */
-            /* Exclude .cardImageContainer inside .cardOverlayContainer (click overlay). */
+            /* ===== Pre-hide: blur unscanned EPISODE cards to prevent spoiler flash ===== */
+            /* Only Episode cards and listItems may contain spoilers — skip series, */
+            /* season, movie, collection, and actor cards to avoid unnecessary blur. */
+            'body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardScalable,',
+            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-content {',
+            '  overflow: hidden;',
+            '}',
+            'body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardScalable > .cardImageContainer,',
+            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemImage {',
+            '  filter: blur(' + BLUR_RADIUS + ');',
+            '  transform: scale(1.05);',
+            '}',
+            'body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardText-secondary,',
+            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-overview,',
+            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-bottomoverview,',
+            'body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemBody {',
+            '  visibility: hidden;',
+            '}',
+
+            /* ===== Spoiler blur: applied to confirmed-spoiler cards ===== */
+            /* Clip blur edge artifacts — parent containers need overflow hidden. */
+            '.je-spoiler-blur .cardScalable,',
+            '.je-spoiler-generic .cardScalable {',
+            '  overflow: hidden;',
+            '}',
+
+            /* Direct filter blur on image elements — produces true visual blur */
+            /* like progressive image loading, not the gray look of backdrop-filter. */
+            /* Use child combinator to skip .cardImageContainer inside .cardOverlayContainer. */
             '.je-spoiler-blur .cardScalable > .cardImageContainer,',
             '.je-spoiler-blur .cardImage,',
-            '.je-spoiler-blur .listItemImage,',
+            '.je-spoiler-blur .listItemImage {',
+            '  filter: blur(' + BLUR_RADIUS + ');',
+            '  transform: scale(1.05);',
+            '  transition: filter 0.3s ease;',
+            '}',
+
+            /* Generic tile mode — darker + desaturated blur */
             '.je-spoiler-generic .cardScalable > .cardImageContainer,',
             '.je-spoiler-generic .cardImage,',
             '.je-spoiler-generic .listItemImage {',
-            '  position: relative;',
-            '}',
-
-            /* Blur overlay via pseudo-element — keeps play buttons and badges unblurred. */
-            /* Use child combinator to skip .cardImageContainer inside .cardOverlayContainer. */
-            '.je-spoiler-blur .cardScalable > .cardImageContainer::after,',
-            '.je-spoiler-blur .cardImage::after,',
-            '.je-spoiler-blur .listItemImage::after {',
-            '  content: "";',
-            '  position: absolute;',
-            '  top: 0; left: 0; right: 0; bottom: 0;',
-            '  backdrop-filter: blur(' + BLUR_RADIUS + ') saturate(0.6);',
-            '  -webkit-backdrop-filter: blur(' + BLUR_RADIUS + ') saturate(0.6);',
-            '  z-index: 1;',
-            '  pointer-events: none;',
-            '  transition: backdrop-filter 0.3s ease;',
-            '}',
-
-            /* Generic tile mode — darker blur overlay */
-            '.je-spoiler-generic .cardScalable > .cardImageContainer::after,',
-            '.je-spoiler-generic .cardImage::after,',
-            '.je-spoiler-generic .listItemImage::after {',
-            '  content: "";',
-            '  position: absolute;',
-            '  top: 0; left: 0; right: 0; bottom: 0;',
-            '  backdrop-filter: blur(' + BLUR_RADIUS + ') brightness(0.5) saturate(0.3);',
-            '  -webkit-backdrop-filter: blur(' + BLUR_RADIUS + ') brightness(0.5) saturate(0.3);',
-            '  z-index: 1;',
-            '  pointer-events: none;',
-            '  transition: backdrop-filter 0.3s ease;',
-            '}',
-
-            /* Elements inside the blurred image that must sit above the blur overlay */
-            '.je-spoiler-blur .playedIndicator,',
-            '.je-spoiler-blur .listItemImageButton,',
-            '.je-spoiler-blur .itemProgressBar,',
-            '.je-spoiler-generic .playedIndicator,',
-            '.je-spoiler-generic .listItemImageButton,',
-            '.je-spoiler-generic .itemProgressBar {',
-            '  position: relative;',
-            '  z-index: 2;',
+            '  filter: blur(' + BLUR_RADIUS + ') brightness(0.5) saturate(0.3);',
+            '  transform: scale(1.05);',
+            '  transition: filter 0.3s ease;',
             '}',
 
             /* Hide secondary/overview text that may leak episode titles */
@@ -614,6 +619,14 @@
             '  font-style: italic !important;',
             '}',
 
+            /* Override visibility:hidden so redacted text can be seen and clicked to reveal. */
+            /* Higher specificity than .je-spoiler-blur .cardText-secondary hiding rule. */
+            '.je-spoiler-blur .je-spoiler-text-redacted,',
+            '.je-spoiler-generic .je-spoiler-text-redacted {',
+            '  visibility: visible !important;',
+            '  cursor: pointer;',
+            '}',
+
             /* Hidden overview */
             '.je-spoiler-overview-hidden {',
             '  color: rgba(255,255,255,0.3) !important;',
@@ -621,15 +634,22 @@
             '  cursor: pointer;',
             '}',
 
-            /* Reveal animation — remove the blur overlay */
-            '.je-spoiler-revealing .cardScalable > .cardImageContainer::after,',
-            '.je-spoiler-revealing .cardImage::after,',
-            '.je-spoiler-revealing .listItemImage::after {',
-            '  backdrop-filter: none !important;',
-            '  -webkit-backdrop-filter: none !important;',
-            '  transition: backdrop-filter 0.5s ease !important;',
+            /* Reveal animation — remove the blur filter and show all content */
+            '.je-spoiler-revealing .cardScalable > .cardImageContainer,',
+            '.je-spoiler-revealing .cardImage,',
+            '.je-spoiler-revealing .listItemImage {',
+            '  filter: none !important;',
+            '  transform: scale(1) !important;',
+            '  transition: filter 0.5s ease, transform 0.5s ease !important;',
             '}',
             '.je-spoiler-revealing .je-spoiler-badge { display: none !important; }',
+            /* Show all hidden text when revealing */
+            '.je-spoiler-revealing .cardText-secondary,',
+            '.je-spoiler-revealing .listItem-overview,',
+            '.je-spoiler-revealing .listItem-bottomoverview,',
+            '.je-spoiler-revealing .listItemBody {',
+            '  visibility: visible !important;',
+            '}',
 
             /* Spoiler toggle button on detail page */
             '.je-spoiler-toggle-btn { transition: background 0.2s ease, opacity 0.2s ease; }',
@@ -974,42 +994,106 @@
     }
 
     /**
-     * Handles tap-to-reveal on a specific spoiler-redacted element.
-     * Reveals the content for the configured duration, then re-hides.
-     * @param {HTMLElement} element The element to reveal.
-     * @param {string} fieldKey A unique key for tracking reveal state.
+     * Reveals all spoiler-redacted content for a card: image, title,
+     * description, time, etc.
+     * @param {HTMLElement} card The top-level card or listItem element.
      */
-    function handleTapReveal(element, fieldKey) {
-        if (revealAllActive) return;
+    function revealCard(card) {
+        var cardBox = card.querySelector('.cardBox') || card;
+        cardBox.classList.add('je-spoiler-revealing');
 
-        const settings = getSettings();
-        const duration = settings.revealDuration || DEFAULT_REVEAL_DURATION;
+        // Restore ALL text elements to original content
+        card.querySelectorAll('.je-spoiler-text-redacted').forEach(function (el) {
+            if (el.dataset.jeSpoilerOriginal) {
+                el.textContent = el.dataset.jeSpoilerOriginal;
+                el.classList.remove('je-spoiler-text-redacted');
+            }
+        });
+    }
 
-        // If already revealed, do nothing
-        if (revealedFields.has(fieldKey)) return;
+    /**
+     * Re-hides all spoiler content for a card after reveal.
+     * @param {HTMLElement} card The top-level card or listItem element.
+     */
+    function hideCard(card) {
+        var cardBox = card.querySelector('.cardBox') || card;
+        cardBox.classList.remove('je-spoiler-revealing');
 
-        revealedFields.set(fieldKey, true);
+        // Re-redact ALL text elements
+        card.querySelectorAll('[data-je-spoiler-redacted]').forEach(function (el) {
+            el.textContent = el.dataset.jeSpoilerRedacted;
+            el.classList.add('je-spoiler-text-redacted');
+        });
+    }
 
-        // Reveal the element
-        element.classList.add('je-spoiler-revealing');
+    /**
+     * Binds reveal/hide handlers to a spoiler-redacted card.
+     *
+     * Desktop: click redacted text to reveal; mouseleave the card area to hide.
+     * Mobile:  long-press (touchstart + 300ms) to reveal; touchend to hide.
+     *
+     * @param {HTMLElement} card The top-level card or listItem element.
+     */
+    function bindCardReveal(card) {
+        if (card.dataset.jeSpoilerRevealBound) return;
+        card.dataset.jeSpoilerRevealBound = '1';
 
-        // Restore original content if stored
-        if (element.dataset.jeSpoilerOriginal) {
-            element.textContent = element.dataset.jeSpoilerOriginal;
-            element.classList.remove('je-spoiler-text-redacted');
+        var cardBox = card.querySelector('.cardBox') || card;
+        var revealed = false;
+        var longPressTimer = null;
+
+        function doReveal() {
+            if (revealAllActive || revealed) return;
+            revealed = true;
+            revealCard(card);
         }
 
-        // Auto-hide after duration
-        setTimeout(function () {
-            revealedFields.delete(fieldKey);
-            element.classList.remove('je-spoiler-revealing');
+        function doHide() {
+            if (!revealed) return;
+            revealed = false;
+            hideCard(card);
+        }
 
-            // Re-redact if applicable
-            if (element.dataset.jeSpoilerRedacted) {
-                element.textContent = element.dataset.jeSpoilerRedacted;
-                element.classList.add('je-spoiler-text-redacted');
+        // Desktop: click on any redacted text to reveal
+        card.addEventListener('click', function (e) {
+            var target = e.target;
+            // Only trigger when clicking redacted/revealable text (not overlay links/buttons)
+            if (target.closest('.je-spoiler-revealable') || target.closest('.je-spoiler-text-redacted')) {
+                e.preventDefault();
+                e.stopPropagation();
+                doReveal();
             }
-        }, duration);
+        });
+
+        // Desktop: mouseleave the entire card to hide
+        cardBox.addEventListener('mouseleave', function () {
+            if (revealed) doHide();
+        });
+
+        // Mobile: long-press to reveal, touchend to hide
+        card.addEventListener('touchstart', function (e) {
+            if (revealed) return;
+            longPressTimer = setTimeout(function () {
+                longPressTimer = null;
+                doReveal();
+            }, 300);
+        }, { passive: true });
+
+        card.addEventListener('touchend', function () {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            if (revealed) doHide();
+        }, { passive: true });
+
+        card.addEventListener('touchcancel', function () {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            if (revealed) doHide();
+        }, { passive: true });
     }
 
     // ============================================================
@@ -1094,6 +1178,11 @@
     function redactCard(card, itemData) {
         if (revealAllActive) return;
 
+        // Don't re-redact a card that is already redacted or currently revealed
+        if (card.hasAttribute(REDACTED_ATTR)) return;
+        var cardBox0 = card.querySelector('.cardBox') || card;
+        if (cardBox0.classList.contains('je-spoiler-revealing')) return;
+
         const settings = getSettings();
         const artworkPolicy = settings.artworkPolicy || 'blur';
 
@@ -1110,7 +1199,6 @@
         // Add spoiler badge if not already present (using safe DOM methods)
         const imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage') || card.querySelector('.listItemImage');
         if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
-            imageContainer.style.position = 'relative';
             const badge = document.createElement('div');
             badge.className = 'je-spoiler-badge';
             badge.textContent = JE.t('spoiler_mode_hidden_badge') !== 'spoiler_mode_hidden_badge'
@@ -1119,41 +1207,75 @@
             imageContainer.appendChild(badge);
         }
 
-        // Redact all card text elements (using textContent only)
+        // Redact card text elements — keep series name visible when a secondary text exists
         const titleElements = card.querySelectorAll('.cardText, .listItemBodyText');
+        const hasSecondaryText = !!card.querySelector('.cardText-secondary');
         const redactedTitle = formatRedactedTitle(
             itemData.ParentIndexNumber,
             itemData.IndexNumber,
             itemData.IndexNumberEnd,
             itemData.ParentIndexNumber === 0
         );
-        let isFirstText = true;
+        let isFirstRedactable = true;
         for (const titleEl of titleElements) {
             if (titleEl.classList.contains('je-spoiler-text-redacted')) continue;
+
+            // If the card has both primary + secondary text (e.g. home page),
+            // the first text is the series name — keep it visible.
+            if (hasSecondaryText && titleEl.classList.contains('cardText-first')) continue;
 
             // Store original text for reveal
             if (!titleEl.dataset.jeSpoilerOriginal) {
                 titleEl.dataset.jeSpoilerOriginal = titleEl.textContent;
             }
 
-            // First text element gets the formatted title; others get cleared
-            const replacement = isFirstText ? redactedTitle : '';
+            // First redactable text gets the formatted title; others get cleared
+            const replacement = isFirstRedactable ? redactedTitle : '';
             titleEl.dataset.jeSpoilerRedacted = replacement;
             titleEl.textContent = replacement;
             titleEl.classList.add('je-spoiler-text-redacted');
 
-            // Add tap-to-reveal on the title element
-            if (isFirstText) {
-                const fieldKey = 'title-' + (itemData.Id || getCardItemId(card));
+            // Mark the first redactable text as the click target for reveal
+            if (isFirstRedactable) {
                 titleEl.classList.add('je-spoiler-revealable');
-                titleEl.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleTapReveal(titleEl, fieldKey);
-                }, { once: false });
             }
 
-            isFirstText = false;
+            isFirstRedactable = false;
+        }
+
+        // Bind hover/touch reveal handlers to the whole card
+        bindCardReveal(card);
+
+        card.setAttribute(REDACTED_ATTR, '1');
+    }
+
+    /**
+     * Blurs a season card poster without redacting the title text.
+     * @param {HTMLElement} card The season card element.
+     */
+    function blurSeasonCard(card) {
+        if (card.hasAttribute(REDACTED_ATTR)) return;
+
+        const settings = getSettings();
+        const artworkPolicy = settings.artworkPolicy || 'blur';
+        const cardBox = card.querySelector('.cardBox') || card;
+
+        if (artworkPolicy === 'blur') {
+            cardBox.classList.add('je-spoiler-blur');
+            cardBox.classList.remove('je-spoiler-generic');
+        } else {
+            cardBox.classList.add('je-spoiler-generic');
+            cardBox.classList.remove('je-spoiler-blur');
+        }
+
+        const imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage');
+        if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
+            const badge = document.createElement('div');
+            badge.className = 'je-spoiler-badge';
+            badge.textContent = JE.t('spoiler_mode_hidden_badge') !== 'spoiler_mode_hidden_badge'
+                ? JE.t('spoiler_mode_hidden_badge')
+                : 'SPOILER';
+            imageContainer.appendChild(badge);
         }
 
         card.setAttribute(REDACTED_ATTR, '1');
@@ -1194,54 +1316,63 @@
      * @param {HTMLElement} card The card element.
      */
     async function processCard(card) {
-        if (card.hasAttribute('data-imagetype')) return; // Skip image editor cards
+        try {
+            if (card.hasAttribute('data-imagetype')) return; // Skip image editor cards
 
-        const itemId = getCardItemId(card);
-        if (!itemId) return;
+            const itemId = getCardItemId(card);
+            if (!itemId) return;
 
-        const cardType = (card.dataset.type || '').toLowerCase();
-        const surface = getCardSurface(card) || getCurrentSurface();
+            const cardType = (card.dataset.type || '').toLowerCase();
+            const surface = getCardSurface(card) || getCurrentSurface();
 
-        if (!shouldProtectSurface(surface)) return;
+            if (!shouldProtectSurface(surface)) return;
 
-        // For a series/movie card on the home page, don't redact the series card itself
-        if (isProtected(itemId) && (cardType === 'series' || cardType === 'movie')) {
-            return;
-        }
-
-        // Check if this is an episode or season that belongs to a protected series
-        if (cardType === 'episode' || cardType === '') {
-            let seriesId = card.dataset.seriesid || null;
-            if (!seriesId) {
-                seriesId = await getParentSeriesId(itemId);
+            // For a series/movie card on the home page, don't redact the series card itself
+            if (isProtected(itemId) && (cardType === 'series' || cardType === 'movie')) {
+                return;
             }
 
-            if (seriesId && isProtected(seriesId)) {
-                var rawSeason = card.dataset.parentindexnumber || card.dataset.season;
-                var rawEp = card.dataset.indexnumber || card.dataset.episode;
-                var hasNumbers = rawSeason != null || rawEp != null;
-                var seasonNum = parseInt(rawSeason || '0', 10);
-                var epNum = parseInt(rawEp || '0', 10);
+            // Check if this is an episode or season that belongs to a protected series
+            if (cardType === 'episode' || cardType === '') {
+                let seriesId = card.dataset.seriesid || null;
+                if (!seriesId) {
+                    seriesId = await getParentSeriesId(itemId);
+                }
 
-                if (hasNumbers) {
-                    var pastBoundary = await isEpisodePastBoundary(seriesId, seasonNum, epNum);
+                if (seriesId && isProtected(seriesId)) {
+                    var rawSeason = card.dataset.parentindexnumber || card.dataset.season;
+                    var rawEp = card.dataset.indexnumber || card.dataset.episode;
+                    var hasNumbers = rawSeason != null || rawEp != null;
+                    var seasonNum = parseInt(rawSeason || '0', 10);
+                    var epNum = parseInt(rawEp || '0', 10);
 
-                    if (pastBoundary === null) {
-                        // Specials (season 0) — check individual UserData
-                        try {
-                            var userId = ApiClient.getCurrentUserId();
-                            var item = await ApiClient.ajax({
-                                type: 'GET',
-                                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
-                                    Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
-                                }),
-                                dataType: 'json'
-                            });
-                            if (item && shouldRedactEpisode(item)) {
-                                redactCard(card, item);
+                    if (hasNumbers) {
+                        var pastBoundary = await isEpisodePastBoundary(seriesId, seasonNum, epNum);
+
+                        if (pastBoundary === null) {
+                            // Specials (season 0) — check individual UserData
+                            try {
+                                var userId = ApiClient.getCurrentUserId();
+                                var item = await ApiClient.ajax({
+                                    type: 'GET',
+                                    url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                                        Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
+                                    }),
+                                    dataType: 'json'
+                                });
+                                if (item && shouldRedactEpisode(item)) {
+                                    redactCard(card, item);
+                                }
+                            } catch (e) {
+                                // If we can't fetch data, redact to be safe
+                                redactCard(card, {
+                                    Id: itemId,
+                                    ParentIndexNumber: seasonNum,
+                                    IndexNumber: epNum,
+                                    IndexNumberEnd: null
+                                });
                             }
-                        } catch (e) {
-                            // If we can't fetch data, redact to be safe
+                        } else if (pastBoundary) {
                             redactCard(card, {
                                 Id: itemId,
                                 ParentIndexNumber: seasonNum,
@@ -1249,44 +1380,72 @@
                                 IndexNumberEnd: null
                             });
                         }
-                    } else if (pastBoundary) {
-                        redactCard(card, {
-                            Id: itemId,
-                            ParentIndexNumber: seasonNum,
-                            IndexNumber: epNum,
-                            IndexNumberEnd: null
-                        });
-                    }
-                } else {
-                    // No season/episode numbers on the card — fetch item data
-                    try {
-                        var userId2 = ApiClient.getCurrentUserId();
-                        var item2 = await ApiClient.ajax({
-                            type: 'GET',
-                            url: ApiClient.getUrl('/Users/' + userId2 + '/Items/' + itemId, {
-                                Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
-                            }),
-                            dataType: 'json'
-                        });
-                        if (item2) {
-                            var itemSeason = item2.ParentIndexNumber;
-                            // For specials or when boundary returns null, check individually
-                            if (itemSeason === 0 || itemSeason == null) {
-                                if (shouldRedactEpisode(item2)) {
-                                    redactCard(card, item2);
-                                }
-                            } else {
-                                var bp = await isEpisodePastBoundary(seriesId, itemSeason, item2.IndexNumber || 0);
-                                if (bp) {
-                                    redactCard(card, item2);
+                    } else {
+                        // No season/episode numbers on the card — fetch item data
+                        try {
+                            var userId2 = ApiClient.getCurrentUserId();
+                            var item2 = await ApiClient.ajax({
+                                type: 'GET',
+                                url: ApiClient.getUrl('/Users/' + userId2 + '/Items/' + itemId, {
+                                    Fields: 'UserData,ParentIndexNumber,IndexNumber,IndexNumberEnd'
+                                }),
+                                dataType: 'json'
+                            });
+                            if (item2) {
+                                var itemSeason = item2.ParentIndexNumber;
+                                // For specials or when boundary returns null, check individually
+                                if (itemSeason === 0 || itemSeason == null) {
+                                    if (shouldRedactEpisode(item2)) {
+                                        redactCard(card, item2);
+                                    }
+                                } else {
+                                    var bp = await isEpisodePastBoundary(seriesId, itemSeason, item2.IndexNumber || 0);
+                                    if (bp) {
+                                        redactCard(card, item2);
+                                    }
                                 }
                             }
+                        } catch (e) {
+                            console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check', itemId, e);
                         }
-                    } catch (e) {
-                        console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check', itemId, e);
                     }
                 }
             }
+
+            // Check if this is a season card from a protected series
+            if (cardType === 'season') {
+                try {
+                    var userId3 = ApiClient.getCurrentUserId();
+                    var seasonItem = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('/Users/' + userId3 + '/Items/' + itemId, {
+                            Fields: 'SeriesId,IndexNumber'
+                        }),
+                        dataType: 'json'
+                    });
+
+                    if (seasonItem) {
+                        var seasonSeriesId = seasonItem.SeriesId;
+                        var seasonNum3 = seasonItem.IndexNumber;
+
+                        if (seasonSeriesId && isProtected(seasonSeriesId) && seasonNum3 != null) {
+                            var boundary3 = await computeBoundary(seasonSeriesId);
+                            // Blur seasons beyond the boundary season
+                            if (boundary3 && seasonNum3 > boundary3.season) {
+                                blurSeasonCard(card);
+                            } else if (!boundary3) {
+                                // Nothing watched — blur all seasons
+                                blurSeasonCard(card);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Ignore errors for season cards
+                }
+            }
+        } finally {
+            // Mark card as fully scanned — removes the pre-hide CSS blur
+            card.setAttribute(SCANNED_ATTR, '1');
         }
     }
 
@@ -1325,9 +1484,10 @@
     function processCurrentPage() {
         if (protectedIdSet.size === 0) return;
 
-        // Reset processed flags so all cards get re-checked
-        document.querySelectorAll('[' + PROCESSED_ATTR + ']').forEach(function (el) {
+        // Reset processed and scanned flags so all cards get re-checked
+        document.querySelectorAll('[' + PROCESSED_ATTR + '], [' + SCANNED_ATTR + ']').forEach(function (el) {
             el.removeAttribute(PROCESSED_ATTR);
+            el.removeAttribute(SCANNED_ATTR);
         });
 
         filterAllCards();
@@ -1818,6 +1978,14 @@
             autoEnableOnFirstPlay: false
         };
         rebuildSets();
+
+        // Activate pre-hide CSS immediately so cards are blurred before they render
+        if (protectedIdSet.size > 0) {
+            document.body.classList.add('je-spoiler-active');
+        } else {
+            document.body.classList.remove('je-spoiler-active');
+        }
+
         injectCSS();
         setupObservers();
 
