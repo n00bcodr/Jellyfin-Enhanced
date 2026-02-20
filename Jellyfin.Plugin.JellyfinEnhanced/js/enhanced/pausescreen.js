@@ -702,7 +702,20 @@
             runtime && `<span>${runtime}</span>`
           ].filter(Boolean).join('');
 
-          this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
+          // Check spoiler mode: redact overview for protected episodes
+          let overviewText = item.Overview || JE.t('pausescreen_no_description');
+          const spoiler = JE.spoilerMode;
+          if (spoiler && item.Type === 'Episode' && item.SeriesId && spoiler.isProtected(item.SeriesId)) {
+              const seasonNum = item.ParentIndexNumber;
+              const epNum = item.IndexNumber || 0;
+              const pastBoundary = await spoiler.isEpisodePastBoundary(item.SeriesId, seasonNum, epNum);
+              if (pastBoundary || pastBoundary === null) {
+                  overviewText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
+                      ? JE.t('spoiler_mode_hidden_overview')
+                      : 'Overview hidden \u2014 tap to reveal';
+              }
+          }
+          this.overlayPlot.textContent = overviewText;
 
           // Images: preload to blob URLs (cached)
           const logoUrls = this.getLogoUrls(item, domain, itemId);

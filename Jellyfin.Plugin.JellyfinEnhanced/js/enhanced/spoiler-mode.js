@@ -921,6 +921,13 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
   font-style: italic !important;
 }
 
+.je-spoiler-metadata-hidden {
+  visibility: hidden !important;
+}
+.je-spoiler-revealing .je-spoiler-metadata-hidden {
+  visibility: visible !important;
+}
+
 .je-spoiler-blur .je-spoiler-text-redacted,
 .je-spoiler-generic .je-spoiler-text-redacted {
   visibility: visible !important;
@@ -1222,6 +1229,12 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             }
         });
 
+        // Reveal hidden metadata (runtime, rating, etc.)
+        document.querySelectorAll('.je-spoiler-metadata-hidden').forEach(function (el) {
+            el.classList.remove('je-spoiler-metadata-hidden');
+            el.classList.add('je-spoiler-metadata-revealed');
+        });
+
         // Restore hidden overviews
         document.querySelectorAll('.je-spoiler-overview-hidden').forEach(function (el) {
             if (el.dataset.jeSpoilerOriginal) {
@@ -1276,12 +1289,18 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         const cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.add('je-spoiler-revealing');
 
-        // Restore ALL text elements to original content
+        // Restore title text elements to original content
         card.querySelectorAll('.je-spoiler-text-redacted').forEach(function (el) {
             if (el.dataset.jeSpoilerOriginal) {
                 el.textContent = el.dataset.jeSpoilerOriginal;
                 el.classList.remove('je-spoiler-text-redacted');
             }
+        });
+
+        // Reveal metadata elements (runtime, rating, etc.) — DOM is intact
+        card.querySelectorAll('.je-spoiler-metadata-hidden').forEach(function (el) {
+            el.classList.remove('je-spoiler-metadata-hidden');
+            el.classList.add('je-spoiler-metadata-revealed');
         });
     }
 
@@ -1293,10 +1312,16 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         const cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.remove('je-spoiler-revealing');
 
-        // Re-redact ALL text elements
+        // Re-redact title text elements
         card.querySelectorAll('[data-je-spoiler-redacted]').forEach(function (el) {
             el.textContent = el.dataset.jeSpoilerRedacted;
             el.classList.add('je-spoiler-text-redacted');
+        });
+
+        // Re-hide metadata elements
+        card.querySelectorAll('.je-spoiler-metadata-revealed').forEach(function (el) {
+            el.classList.remove('je-spoiler-metadata-revealed');
+            el.classList.add('je-spoiler-metadata-hidden');
         });
     }
 
@@ -1493,28 +1518,26 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         let isFirstRedactable = true;
         for (const titleEl of titleElements) {
             if (titleEl.classList.contains('je-spoiler-text-redacted')) continue;
+            if (titleEl.classList.contains('je-spoiler-metadata-hidden')) continue;
 
             // If the card has both primary + secondary text (e.g. home page),
             // the first text is the series name — keep it visible.
             if (hasSecondaryText && titleEl.classList.contains('cardText-first')) continue;
 
-            // Store original text for reveal
-            if (!titleEl.dataset.jeSpoilerOriginal) {
-                titleEl.dataset.jeSpoilerOriginal = titleEl.textContent;
-            }
-
-            // First redactable text gets the formatted title; others get cleared
-            const replacement = isFirstRedactable ? redactedTitle : '';
-            titleEl.dataset.jeSpoilerRedacted = replacement;
-            titleEl.textContent = replacement;
-            titleEl.classList.add('je-spoiler-text-redacted');
-
-            // Mark the first redactable text as the click target for reveal
             if (isFirstRedactable) {
-                titleEl.classList.add('je-spoiler-revealable');
+                // First redactable text gets the formatted title (textContent is safe here)
+                if (!titleEl.dataset.jeSpoilerOriginal) {
+                    titleEl.dataset.jeSpoilerOriginal = titleEl.textContent;
+                }
+                titleEl.dataset.jeSpoilerRedacted = redactedTitle;
+                titleEl.textContent = redactedTitle;
+                titleEl.classList.add('je-spoiler-text-redacted', 'je-spoiler-revealable');
+                isFirstRedactable = false;
+            } else {
+                // Non-title elements (metadata with runtime/rating/star icons):
+                // use CSS visibility to preserve child DOM structure
+                titleEl.classList.add('je-spoiler-metadata-hidden');
             }
-
-            isFirstRedactable = false;
         }
 
         // Bind hover/touch reveal handlers to the whole card
@@ -1608,6 +1631,11 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 delete el.dataset.jeSpoilerRedacted;
             }
             el.classList.remove('je-spoiler-text-redacted', 'je-spoiler-revealable');
+        });
+
+        // Restore metadata elements (DOM was never modified, just hidden via CSS)
+        card.querySelectorAll('.je-spoiler-metadata-hidden, .je-spoiler-metadata-revealed').forEach(function (el) {
+            el.classList.remove('je-spoiler-metadata-hidden', 'je-spoiler-metadata-revealed');
         });
 
         card.removeAttribute(REDACTED_ATTR);
@@ -1799,9 +1827,13 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             if (cardType === 'season') {
                 await processSeasonCard(card, itemId);
             }
-        } finally {
+
             // Mark card as fully scanned — removes the pre-hide CSS blur
             card.setAttribute(SCANNED_ATTR, '1');
+        } catch (e) {
+            // API failure: clear processed flag so filterNewCards retries this card
+            card.removeAttribute(PROCESSED_ATTR);
+            console.warn('🪼 Jellyfin Enhanced: Error processing card for spoiler check, will retry');
         }
     }
 
