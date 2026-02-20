@@ -293,6 +293,30 @@
     }
 
     /**
+     * Converts internal rules into the server `Rules` schema.
+     * @param {Object.<string, Object>} rules Internal rules map.
+     * @returns {Object.<string, Object>} Rules map for persistence.
+     */
+    function rulesToServerRules(rules) {
+        const result = {};
+        const source = rules || {};
+        for (const key of Object.keys(source)) {
+            const rule = source[key];
+            if (!rule || rule.enabled === false) continue;
+            result[key] = {
+                itemId: rule.itemId || key,
+                itemName: rule.itemName || rule.name || '',
+                itemType: rule.itemType || rule.type || '',
+                enabled: rule.enabled !== false,
+                preset: rule.preset || 'balanced',
+                boundaryOverride: rule.boundaryOverride || null,
+                enabledAt: rule.enabledAt || new Date().toISOString()
+            };
+        }
+        return result;
+    }
+
+    /**
      * Normalizes spoiler mode payloads from server (`items`) and local (`rules`)
      * into a single internal shape.
      * @param {Object|null|undefined} rawData Raw spoiler mode object.
@@ -335,20 +359,28 @@
     /**
      * Builds the payload persisted to spoiler-mode.json (server model compatible).
      * @param {{ rules: Object, settings: Object, tagAutoEnable: string[], autoEnableOnFirstPlay: boolean }} data Internal data.
-     * @returns {{ items: Object, settings: Object }} Server-compatible payload.
+     * @returns {{ rules: Object, items: Object, settings: Object, tagAutoEnable: string[], autoEnableOnFirstPlay: boolean }} Server-compatible payload.
      */
     function toServerSpoilerData(data) {
         const source = data || getSpoilerData();
+        const rules = rulesToServerRules(source.rules);
+        const tagAutoEnable = Array.isArray(source.tagAutoEnable) ? source.tagAutoEnable : [];
+        const autoEnableOnFirstPlay = !!source.autoEnableOnFirstPlay;
         const settings = {
             ...(source.settings || {}),
-            autoEnableTags: Array.isArray(source.tagAutoEnable) ? source.tagAutoEnable : [],
-            autoEnableOnFirstPlay: !!source.autoEnableOnFirstPlay,
+            autoEnableTags: tagAutoEnable,
+            autoEnableOnFirstPlay,
             defaultPreset: source.settings?.defaultPreset || source.settings?.preset || 'balanced'
         };
 
         return {
-            items: rulesToItems(source.rules),
-            settings
+            // Current schema expected by the server type model.
+            rules,
+            // Legacy compatibility for older clients/loaders.
+            items: rulesToItems(rules),
+            settings,
+            tagAutoEnable,
+            autoEnableOnFirstPlay
         };
     }
 
