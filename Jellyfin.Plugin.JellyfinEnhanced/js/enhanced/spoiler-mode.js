@@ -162,6 +162,36 @@
     /** In-flight parent series requests. Map<itemId, Promise> */
     const parentSeriesRequestMap = new Map();
 
+    /**
+     * LRU cache for movie watched state.
+     * Map<movieId, { watched: boolean, ts: number }>
+     */
+    const movieWatchedCache = new Map();
+
+    /** In-flight movie watched requests. Map<movieId, Promise> */
+    const movieWatchedRequestMap = new Map();
+
+    /**
+     * LRU cache for collection item listings.
+     * Map<collectionId, { items: Set<movieId>, ts: number }>
+     */
+    const collectionItemsCache = new Map();
+
+    /** In-flight collection items requests. Map<collectionId, Promise> */
+    const collectionItemsRequestMap = new Map();
+
+    /**
+     * Reverse lookup: movieId → Set<collectionId>.
+     * Built lazily when collection contents are fetched.
+     */
+    const collectionMemberMap = new Map();
+
+    /**
+     * Set of protected BoxSet IDs (subset of protectedIdSet where itemType === 'BoxSet').
+     * Rebuilt by rebuildSets() to avoid iterating all rules during card processing.
+     */
+    const protectedCollectionIds = new Set();
+
     /** Whether "Reveal All" is currently active. */
     let revealAllActive = false;
 
@@ -275,12 +305,16 @@
      */
     function rebuildSets() {
         protectedIdSet.clear();
+        protectedCollectionIds.clear();
         const data = getSpoilerData();
         const rules = data.rules || {};
         for (const key of Object.keys(rules)) {
             const rule = rules[key];
             if (rule.enabled) {
                 protectedIdSet.add(rule.itemId);
+                if (rule.itemType === 'BoxSet') {
+                    protectedCollectionIds.add(rule.itemId);
+                }
             }
         }
         // Toggle pre-hide CSS on body and observer state
@@ -373,8 +407,10 @@
         debouncedSave();
         emitChange();
 
-        // Invalidate boundary cache for this item
+        // Invalidate caches for this item
         boundaryCache.delete(itemId);
+        movieWatchedCache.delete(itemId);
+        collectionItemsCache.delete(itemId);
     }
 
     /**
@@ -556,6 +592,148 @@
         if (seasonNumber > boundary.season) return true;
         if (seasonNumber === boundary.season && episodeNumber > boundary.episode) return true;
         return false;
+    }
+
+    // ============================================================
+    // Movie & collection watch-state helpers
+    // ============================================================
+
+    /**
+     * Checks whether a movie has been watched by the current user.
+     * Results are cached with the same TTL as boundary data.
+     * In-flight requests are de-duplicated.
+     * @param {string} movieId The movie Jellyfin ID.
+     * @returns {Promise<boolean>} True if watched.
+     */
+    async function isMovieWatched(movieId) {
+        if (!movieId) return false;
+
+        // Check cache
+        const cached = movieWatchedCache.get(movieId);
+        if (cached && (Date.now() - cached.ts) < BOUNDARY_CACHE_TTL) {
+            return cached.watched;
+        }
+
+        // De-duplicate in-flight requests
+        if (movieWatchedRequestMap.has(movieId)) {
+            return movieWatchedRequestMap.get(movieId);
+        }
+
+        const request = (async function () {
+            try {
+                if (!isValidId(movieId)) return false;
+
+                const userId = ApiClient.getCurrentUserId();
+                const item = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Users/' + userId + '/Items/' + movieId, {
+                        Fields: 'UserData'
+                    }),
+                    dataType: 'json'
+                });
+
+                const watched = item?.UserData?.Played === true;
+                evictIfNeeded(movieWatchedCache, MAX_CACHE_SIZE);
+                movieWatchedCache.set(movieId, { watched, ts: Date.now() });
+                return watched;
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Error checking movie watched state');
+                return false;
+            } finally {
+                movieWatchedRequestMap.delete(movieId);
+            }
+        })();
+
+        movieWatchedRequestMap.set(movieId, request);
+        return request;
+    }
+
+    /**
+     * Fetches the items within a collection (BoxSet) and caches the result.
+     * Also populates the reverse collectionMemberMap for O(1) lookups.
+     * @param {string} collectionId The BoxSet Jellyfin ID.
+     * @returns {Promise<Set<string>>} Set of item IDs in the collection.
+     */
+    async function fetchCollectionItems(collectionId) {
+        if (!collectionId) return new Set();
+
+        // Check cache
+        const cached = collectionItemsCache.get(collectionId);
+        if (cached && (Date.now() - cached.ts) < BOUNDARY_CACHE_TTL) {
+            return cached.items;
+        }
+
+        // De-duplicate in-flight requests
+        if (collectionItemsRequestMap.has(collectionId)) {
+            return collectionItemsRequestMap.get(collectionId);
+        }
+
+        const request = (async function () {
+            try {
+                if (!isValidId(collectionId)) return new Set();
+
+                const userId = ApiClient.getCurrentUserId();
+                const response = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Users/' + userId + '/Items', {
+                        ParentId: collectionId
+                    }),
+                    dataType: 'json'
+                });
+
+                const items = response?.Items || [];
+                const itemIds = new Set(items.map(function (it) { return it.Id; }));
+
+                // Cache the collection contents
+                evictIfNeeded(collectionItemsCache, MAX_CACHE_SIZE);
+                collectionItemsCache.set(collectionId, { items: itemIds, ts: Date.now() });
+
+                // Build reverse map entries
+                for (const id of itemIds) {
+                    if (!collectionMemberMap.has(id)) {
+                        collectionMemberMap.set(id, new Set());
+                    }
+                    collectionMemberMap.get(id).add(collectionId);
+                }
+
+                return itemIds;
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Error fetching collection items');
+                return new Set();
+            } finally {
+                collectionItemsRequestMap.delete(collectionId);
+            }
+        })();
+
+        collectionItemsRequestMap.set(collectionId, request);
+        return request;
+    }
+
+    /**
+     * Checks if a movie belongs to any protected collection (BoxSet).
+     * Uses the reverse collectionMemberMap for fast lookups, falling back
+     * to fetching collection contents for any not-yet-cached collections.
+     * @param {string} movieId The movie Jellyfin ID.
+     * @returns {Promise<string|null>} The first matching protected collection ID, or null.
+     */
+    async function getProtectedCollectionForMovie(movieId) {
+        if (!movieId || protectedCollectionIds.size === 0) return null;
+
+        // Fast path: check reverse map
+        const knownCollections = collectionMemberMap.get(movieId);
+        if (knownCollections) {
+            for (const cid of knownCollections) {
+                if (protectedCollectionIds.has(cid)) return cid;
+            }
+        }
+
+        // Slow path: fetch each protected collection's items (if not cached yet)
+        for (const collectionId of protectedCollectionIds) {
+            const items = await fetchCollectionItems(collectionId);
+            if (items.has(movieId)) return collectionId;
+        }
+
+        return null;
     }
 
     /**
@@ -815,8 +993,8 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
      * @param {HTMLElement} visiblePage The visible detail page element.
      */
     function addSpoilerToggleButton(itemId, itemType, visiblePage) {
-        // Only show for Series and Movies
-        if (itemType !== 'Series' && itemType !== 'Movie') return;
+        // Only show for Series, Movies, and BoxSets (collections)
+        if (itemType !== 'Series' && itemType !== 'Movie' && itemType !== 'BoxSet') return;
 
         // Don't add duplicate
         if (visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
@@ -1378,6 +1556,40 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
     }
 
     /**
+     * Blurs a movie card poster without redacting the title text.
+     * Identical pattern to blurSeasonCard — blur artwork, add SPOILER badge,
+     * keep the movie title visible.
+     * @param {HTMLElement} card The movie card element.
+     */
+    function blurMovieCard(card) {
+        if (card.hasAttribute(REDACTED_ATTR)) return;
+
+        const settings = getSettings();
+        const artworkPolicy = settings.artworkPolicy || 'blur';
+        const cardBox = card.querySelector('.cardBox') || card;
+
+        if (artworkPolicy === 'blur') {
+            cardBox.classList.add('je-spoiler-blur');
+            cardBox.classList.remove('je-spoiler-generic');
+        } else {
+            cardBox.classList.add('je-spoiler-generic');
+            cardBox.classList.remove('je-spoiler-blur');
+        }
+
+        const imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage');
+        if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
+            const badge = document.createElement('div');
+            badge.className = 'je-spoiler-badge';
+            badge.textContent = JE.t('spoiler_mode_hidden_badge') !== 'spoiler_mode_hidden_badge'
+                ? JE.t('spoiler_mode_hidden_badge')
+                : 'SPOILER';
+            imageContainer.appendChild(badge);
+        }
+
+        card.setAttribute(REDACTED_ATTR, '1');
+    }
+
+    /**
      * Removes spoiler redaction from a card element.
      * @param {HTMLElement} card The card element.
      */
@@ -1529,8 +1741,23 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
 
             if (!shouldProtectSurface(surface)) return;
 
-            // For a series/movie card on the home page, don't redact the series card itself
-            if (isProtected(itemId) && (cardType === 'series' || cardType === 'movie')) {
+            // For a series card on the home page, don't redact the series card itself
+            if (isProtected(itemId) && cardType === 'series') {
+                return;
+            }
+
+            // Movie card: directly protected or belongs to a protected collection
+            if (cardType === 'movie') {
+                const directlyProtected = isProtected(itemId);
+                const collectionId = !directlyProtected ? await getProtectedCollectionForMovie(itemId) : null;
+
+                if (directlyProtected || collectionId) {
+                    const watched = await isMovieWatched(itemId);
+                    if (!watched) {
+                        blurMovieCard(card);
+                        bindCardReveal(card);
+                    }
+                }
                 return;
             }
 
@@ -1696,6 +1923,119 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             promises.push(processCard(card));
         }
         await Promise.all(promises);
+    }
+
+    // ============================================================
+    // Collection & movie detail page redaction
+    // ============================================================
+
+    /**
+     * Redacts unwatched movie cards on a BoxSet (collection) detail page.
+     * @param {string} collectionId The BoxSet Jellyfin ID.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    async function redactCollectionPage(collectionId, visiblePage) {
+        if (revealAllActive) return;
+        if (!isProtected(collectionId)) return;
+
+        // Fetch collection items to populate cache
+        await fetchCollectionItems(collectionId);
+
+        const settings = getSettings();
+
+        // Hide overview if configured
+        if (!settings.showSeriesOverview) {
+            const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
+            if (overviewEl && !overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+                overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
+                const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
+                    ? JE.t('spoiler_mode_hidden_overview')
+                    : 'Overview hidden \u2014 tap to reveal';
+                overviewEl.textContent = hiddenText;
+                overviewEl.classList.add('je-spoiler-overview-hidden');
+                overviewEl.addEventListener('click', function () {
+                    if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+                        overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
+                        overviewEl.classList.remove('je-spoiler-overview-hidden');
+                        setTimeout(function () {
+                            if (!revealAllActive) {
+                                overviewEl.textContent = hiddenText;
+                                overviewEl.classList.add('je-spoiler-overview-hidden');
+                            }
+                        }, settings.revealDuration || DEFAULT_REVEAL_DURATION);
+                    }
+                });
+            }
+        }
+
+        // Process all movie cards on the collection page
+        const movieCards = visiblePage.querySelectorAll('.card[data-id], .listItem[data-id]');
+        const promises = [];
+        for (const card of movieCards) {
+            card.setAttribute(PROCESSED_ATTR, '1');
+            const movieId = getCardItemId(card);
+            if (!movieId) continue;
+
+            promises.push((async function () {
+                const watched = await isMovieWatched(movieId);
+                if (!watched) {
+                    blurMovieCard(card);
+                    bindCardReveal(card);
+                }
+                card.setAttribute(SCANNED_ATTR, '1');
+            })());
+        }
+        await Promise.all(promises);
+    }
+
+    /**
+     * Redacts a directly-protected movie's detail page when unwatched.
+     * Hides overview and optionally blurs backdrop.
+     * @param {string} movieId The movie Jellyfin ID.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    async function redactMovieDetailPage(movieId, visiblePage) {
+        if (revealAllActive) return;
+        if (!isProtected(movieId)) return;
+
+        const watched = await isMovieWatched(movieId);
+        if (watched) return;
+
+        const settings = getSettings();
+
+        // Hide overview
+        if (!settings.showSeriesOverview) {
+            const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
+            if (overviewEl && !overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+                overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
+                const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
+                    ? JE.t('spoiler_mode_hidden_overview')
+                    : 'Overview hidden \u2014 tap to reveal';
+                overviewEl.textContent = hiddenText;
+                overviewEl.classList.add('je-spoiler-overview-hidden');
+                overviewEl.addEventListener('click', function () {
+                    if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+                        overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
+                        overviewEl.classList.remove('je-spoiler-overview-hidden');
+                        setTimeout(function () {
+                            if (!revealAllActive) {
+                                overviewEl.textContent = hiddenText;
+                                overviewEl.classList.add('je-spoiler-overview-hidden');
+                            }
+                        }, settings.revealDuration || DEFAULT_REVEAL_DURATION);
+                    }
+                });
+            }
+        }
+
+        // Blur backdrop if strict mode
+        if (settings.artworkPolicy === 'generic' || settings.hideGuestStars) {
+            const backdropEl = visiblePage.querySelector('.backdropImage, .detailImageContainer img');
+            if (backdropEl) {
+                backdropEl.style.filter = 'blur(' + BLUR_RADIUS + ')';
+                backdropEl.style.transition = 'filter 0.3s ease';
+            }
+        }
     }
 
     // ============================================================
@@ -1992,15 +2332,27 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             ApiClient.getItem(userId, itemId).then(function (item) {
                 if (!item) { detailPageProcessing = false; return; }
 
-                // Add spoiler toggle for Series and Movies
-                if (item.Type === 'Series' || item.Type === 'Movie') {
+                // Add spoiler toggle for Series, Movies, and BoxSets
+                if (item.Type === 'Series' || item.Type === 'Movie' || item.Type === 'BoxSet') {
                     addSpoilerToggleButton(itemId, item.Type, visiblePage);
                     checkAndAutoEnableByTag(itemId, item);
                 }
 
-                // Redact episode list if on a protected series/season page
+                // Redact detail page content based on item type
                 if (item.Type === 'Series' || item.Type === 'Season') {
                     redactEpisodeList(itemId, visiblePage).then(function () {
+                        detailPageProcessing = false;
+                    }).catch(function () {
+                        detailPageProcessing = false;
+                    });
+                } else if (item.Type === 'BoxSet') {
+                    redactCollectionPage(itemId, visiblePage).then(function () {
+                        detailPageProcessing = false;
+                    }).catch(function () {
+                        detailPageProcessing = false;
+                    });
+                } else if (item.Type === 'Movie' && isProtected(itemId)) {
+                    redactMovieDetailPage(itemId, visiblePage).then(function () {
                         detailPageProcessing = false;
                     }).catch(function () {
                         detailPageProcessing = false;
@@ -2162,6 +2514,9 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             computeBoundary,
             isEpisodePastBoundary,
             shouldRedactEpisode,
+            isMovieWatched,
+            fetchCollectionItems,
+            getProtectedCollectionForMovie,
             formatRedactedTitle,
             formatShortRedactedTitle,
             filterCalendarEvents,
