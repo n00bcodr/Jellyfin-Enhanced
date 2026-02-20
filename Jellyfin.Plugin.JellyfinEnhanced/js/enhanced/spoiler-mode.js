@@ -225,6 +225,9 @@
     /** The single unified MutationObserver for all DOM watching. */
     let unifiedObserver = null;
 
+    /** Timer IDs from onViewPage navigation callbacks, cleared on re-navigation. */
+    let navigationTimers = [];
+
     /** Guard variables for detail page observer (declared before use). */
     let lastDetailPageItemId = null;
     let detailPageProcessing = false;
@@ -541,6 +544,18 @@
                 }
             }
         }
+        // Prune collectionMemberMap entries for collections no longer protected
+        for (const [memberId, collectionSet] of collectionMemberMap) {
+            for (const cid of collectionSet) {
+                if (!protectedCollectionIds.has(cid)) {
+                    collectionSet.delete(cid);
+                }
+            }
+            if (collectionSet.size === 0) {
+                collectionMemberMap.delete(memberId);
+            }
+        }
+
         // Toggle pre-hide CSS on body and observer state
         if (protectedIdSet.size > 0) {
             document.body?.classList?.add('je-spoiler-active');
@@ -637,6 +652,14 @@
         movieWatchedCache.delete(itemId);
         seasonWatchedCache.delete(itemId);
         collectionItemsCache.delete(itemId);
+
+        // Remove stale reverse lookups for this collection's members
+        for (const [memberId, collectionSet] of collectionMemberMap) {
+            collectionSet.delete(itemId);
+            if (collectionSet.size === 0) {
+                collectionMemberMap.delete(memberId);
+            }
+        }
     }
 
     /**
@@ -752,7 +775,7 @@
 
                     // Skip specials — boundary only applies to regular seasons
                     const epSeason = ep.ParentIndexNumber;
-                    if (epSeason == null || epSeason === 0) continue;
+                    if (epSeason === null || epSeason === undefined || epSeason === 0) continue;
 
                     let isWatched = false;
                     if (threshold === 'played') {
@@ -2067,7 +2090,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
             const itemSeason = item.ParentIndexNumber;
             // For specials or when boundary returns null, check individually
-            if (itemSeason === 0 || itemSeason == null) {
+            if (itemSeason === 0 || itemSeason === null || itemSeason === undefined) {
                 if (shouldRedactEpisode(item)) {
                     redactCard(card, item);
                 }
@@ -2105,7 +2128,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             const seasonSeriesId = seasonItem.SeriesId;
             const seasonNum = seasonItem.IndexNumber;
 
-            if (!seasonSeriesId || !isProtected(seasonSeriesId) || seasonNum == null) return;
+            if (!seasonSeriesId || !isProtected(seasonSeriesId) || seasonNum === null || seasonNum === undefined) return;
 
             const boundary = await computeBoundary(seasonSeriesId);
             // Blur seasons beyond the boundary season, or all if nothing watched
@@ -2963,6 +2986,11 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                 lastDetailPageItemId = null;
                 detailPageProcessing = false;
 
+                // Cancel pending timers from the previous page to prevent
+                // stale callbacks firing after rapid navigation.
+                navigationTimers.forEach(clearTimeout);
+                navigationTimers = [];
+
                 const surface = getCurrentSurface();
 
                 if (surface === 'details') {
@@ -2971,28 +2999,30 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                     setDetailOverviewPending(pending);
                     // Always process detail pages so users can enable spoiler mode
                     // even when no items are currently protected.
-                    setTimeout(function () { handleDetailPageMutation(); }, DETAIL_RESCAN_DELAY_MS);
-                    setTimeout(function () { handleDetailPageMutation(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
-                    setTimeout(function () {
+                    // Two-delay strategy: the first fires after async DOM settles for
+                    // quick renders, the second catches slower lazy-loaded sections.
+                    navigationTimers.push(setTimeout(function () { handleDetailPageMutation(); }, DETAIL_RESCAN_DELAY_MS));
+                    navigationTimers.push(setTimeout(function () { handleDetailPageMutation(); }, DETAIL_FINAL_RESCAN_DELAY_MS));
+                    navigationTimers.push(setTimeout(function () {
                         if (protectedIdSet.size > 0) filterNewCards();
-                    }, DETAIL_RESCAN_DELAY_MS);
+                    }, DETAIL_RESCAN_DELAY_MS));
                 } else if (surface === 'search') {
                     setDetailOverviewPending(false);
-                    setTimeout(function () { redactSearchResults(); }, DETAIL_RESCAN_DELAY_MS);
-                    setTimeout(function () { redactSearchResults(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
+                    navigationTimers.push(setTimeout(function () { redactSearchResults(); }, DETAIL_RESCAN_DELAY_MS));
+                    navigationTimers.push(setTimeout(function () { redactSearchResults(); }, DETAIL_FINAL_RESCAN_DELAY_MS));
                 } else if (surface === 'home') {
                     setDetailOverviewPending(false);
-                    setTimeout(function () { filterNewCards(); }, DETAIL_RESCAN_DELAY_MS);
-                    setTimeout(function () { filterNewCards(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
+                    navigationTimers.push(setTimeout(function () { filterNewCards(); }, DETAIL_RESCAN_DELAY_MS));
+                    navigationTimers.push(setTimeout(function () { filterNewCards(); }, DETAIL_FINAL_RESCAN_DELAY_MS));
                 } else if (surface === 'player') {
                     setDetailOverviewPending(false);
-                    setTimeout(function () {
+                    navigationTimers.push(setTimeout(function () {
                         const playerItemId = getPlayerItemId();
                         if (playerItemId) {
                             redactPlayerOverlay(playerItemId);
                             handleAutoEnableOnFirstPlay(playerItemId);
                         }
-                    }, PLAYER_OSD_DELAY_MS);
+                    }, PLAYER_OSD_DELAY_MS));
                 }
                 if (surface !== 'details' && surface !== 'search' && surface !== 'home' && surface !== 'player') {
                     setDetailOverviewPending(false);
