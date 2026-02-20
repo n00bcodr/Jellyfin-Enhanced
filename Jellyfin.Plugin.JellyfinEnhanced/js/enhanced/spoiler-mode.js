@@ -2358,18 +2358,36 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         if (!settings.protectCalendar) return events;
         if (!Array.isArray(events) || protectedIdSet.size === 0) return events;
 
+        function isProtectedCalendarItem(itemId) {
+            if (!itemId) return false;
+            const raw = String(itemId);
+            const compact = raw.replace(/-/g, '');
+            const lower = raw.toLowerCase();
+            const compactLower = compact.toLowerCase();
+            return isProtected(raw) || isProtected(compact) || isProtected(lower) || isProtected(compactLower);
+        }
+
         return events.map(function (event) {
-            const seriesId = event.seriesId || event.SeriesId;
-            if (!seriesId || !isProtected(seriesId)) return event;
+            const releaseType = event.releaseType || event.ReleaseType;
+            if (releaseType !== 'Episode') return event;
+
+            // Calendar payload uses Jellyfin itemId/itemEpisodeId; seriesId is Sonarr's numeric ID.
+            const protectedItemId = event.itemId || event.ItemId;
+            if (!protectedItemId || !isProtectedCalendarItem(protectedItemId)) return event;
 
             const seasonNum = event.seasonNumber || event.ParentIndexNumber || 0;
             const epNum = event.episodeNumber || event.IndexNumber || 0;
             const redactedTitle = formatShortRedactedTitle(seasonNum, epNum);
+            const seriesName = event.seriesName || event.SeriesName || event.title || event.Title || '';
 
             return {
                 ...event,
-                title: (event.seriesName || event.SeriesName || '') + ' \u2014 ' + redactedTitle,
-                overview: ''
+                title: seriesName,
+                subtitle: redactedTitle,
+                episodeTitle: '',
+                EpisodeTitle: '',
+                overview: '',
+                Overview: ''
             };
         });
     }
