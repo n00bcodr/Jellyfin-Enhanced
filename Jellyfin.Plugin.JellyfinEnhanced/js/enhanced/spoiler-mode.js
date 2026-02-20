@@ -1758,6 +1758,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
      * @param {HTMLElement} card The card element.
      */
     async function processCard(card) {
+        let failed = false;
         try {
             if (card.hasAttribute('data-imagetype')) return; // Skip image editor cards
 
@@ -1827,13 +1828,17 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             if (cardType === 'season') {
                 await processSeasonCard(card, itemId);
             }
-
-            // Mark card as fully scanned — removes the pre-hide CSS blur
-            card.setAttribute(SCANNED_ATTR, '1');
         } catch (e) {
             // API failure: clear processed flag so filterNewCards retries this card
+            failed = true;
             card.removeAttribute(PROCESSED_ATTR);
             console.warn('🪼 Jellyfin Enhanced: Error processing card for spoiler check, will retry');
+        } finally {
+            // Mark card as fully scanned — removes the pre-hide CSS blur
+            // Skip on failure so filterNewCards can retry
+            if (!failed) {
+                card.setAttribute(SCANNED_ATTR, '1');
+            }
         }
     }
 
