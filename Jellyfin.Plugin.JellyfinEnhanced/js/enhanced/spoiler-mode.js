@@ -1916,6 +1916,30 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
     }
 
     /**
+     * Blurs artwork AND redacts title text on a chapter card.
+     * @param {HTMLElement} card The chapter card element.
+     * @param {number} chapterIndex 1-based chapter number for the replacement text.
+     */
+    function redactChapterCard(card, chapterIndex) {
+        if (card.hasAttribute(REDACTED_ATTR)) return;
+
+        blurCardArtwork(card);
+
+        const titleEl = card.querySelector('.cardText');
+        if (titleEl && !titleEl.dataset.jeSpoilerOriginal) {
+            const original = titleEl.textContent;
+            if (original && original.trim()) {
+                titleEl.dataset.jeSpoilerOriginal = original;
+                titleEl.dataset.jeSpoilerRedacted = '1';
+                titleEl.textContent = 'Chapter ' + chapterIndex;
+                titleEl.classList.add('je-spoiler-text-redacted');
+            }
+        }
+
+        bindCardReveal(card);
+    }
+
+    /**
      * Removes spoiler redaction from a card element.
      * @param {HTMLElement} card The card element.
      */
@@ -2136,7 +2160,10 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             }
 
             // Movie card: directly protected or belongs to a protected collection
+            // Chapter cards (data-type="Movie") are handled by detail-page-level
+            // redaction which has access to PlaybackPositionTicks for position-aware filtering.
             if (cardType === 'movie') {
+                if (card.classList.contains('chapterCard')) return;
                 const directlyProtected = isProtected(itemId);
                 const collectionId = !directlyProtected ? await getProtectedCollectionForMovie(itemId) : null;
 
@@ -2379,6 +2406,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         }
         await Promise.all(promises);
 
+        // Redact chapter cards if present (episodes can have Scenes sections too)
+        await redactDetailPageChapters(itemId, visiblePage);
+
         // On season-focused views with no redacted episode cards, keep overview visible.
         if (shouldHideOverview && overviewEl && episodeCards.length > 0) {
             const hasRedactedCards = Array.from(episodeCards).some(function (card) {
@@ -2393,6 +2423,50 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             } else {
                 delete overviewEl.dataset.jeSpoilerOverviewSafeFor;
             }
+        }
+    }
+
+    // ============================================================
+    // Detail page chapter redaction
+    // ============================================================
+
+    /**
+     * Redacts chapter cards on a detail page, skipping chapters the user has
+     * already watched (based on PlaybackPositionTicks).
+     * @param {string} itemId The movie or episode Jellyfin ID.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    async function redactDetailPageChapters(itemId, visiblePage) {
+        if (revealAllActive) return;
+
+        const chapterCards = visiblePage.querySelectorAll('.chapterCard[data-positionticks]');
+        if (chapterCards.length === 0) return;
+
+        let playbackPositionTicks = 0;
+        try {
+            if (!isValidId(itemId)) return;
+
+            const userId = ApiClient.getCurrentUserId();
+            const item = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId, {
+                    Fields: 'UserData'
+                }),
+                dataType: 'json'
+            });
+
+            playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
+        } catch {
+            // If we can't fetch position, redact all chapters to be safe
+            playbackPositionTicks = 0;
+        }
+
+        let chapterIndex = 0;
+        for (const card of chapterCards) {
+            chapterIndex++;
+            const positionTicks = parseInt(card.dataset.positionticks, 10);
+            if (!isNaN(positionTicks) && positionTicks <= playbackPositionTicks) continue;
+            redactChapterCard(card, chapterIndex);
         }
     }
 
@@ -2493,6 +2567,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                 backdropEl.style.transition = 'filter 0.3s ease';
             }
         }
+
+        // Redact chapter cards (Scenes section), skipping already-watched chapters
+        await redactDetailPageChapters(movieId, visiblePage);
     }
 
     // ============================================================
@@ -2525,7 +2602,13 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         if (!settings.protectOverlay) return;
 
         const seriesId = await getParentSeriesId(itemId);
-        if (!seriesId || !isProtected(seriesId)) return;
+        let itemIsProtected = false;
+        if (seriesId && isProtected(seriesId)) {
+            itemIsProtected = true;
+        } else if (isProtected(itemId) || await getProtectedCollectionForMovie(itemId)) {
+            itemIsProtected = true;
+        }
+        if (!itemIsProtected) return;
 
         try {
             if (!isValidId(itemId)) return;
@@ -2539,37 +2622,58 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                 dataType: 'json'
             });
 
-            if (!item || !shouldRedactEpisode(item)) return;
+            if (!item) return;
 
-            const redactedTitle = formatRedactedTitle(
-                item.ParentIndexNumber,
-                item.IndexNumber,
-                item.IndexNumberEnd,
-                item.ParentIndexNumber === 0
-            );
+            const isMovie = item.Type === 'Movie';
+
+            // For episodes, check boundary; for movies, check watched state
+            if (isMovie) {
+                if (item.UserData?.Played) return;
+            } else {
+                if (!shouldRedactEpisode(item)) return;
+            }
 
             // Redact OSD title using textContent
-            const titleSelectors = [
-                '.osdTitle',
-                '.videoOsdTitle',
-                '.osd-title',
-                '.mediaInfoPrimaryContainer h3',
-                '.nowPlayingPageTitle'
-            ];
+            if (!isMovie) {
+                const redactedTitle = formatRedactedTitle(
+                    item.ParentIndexNumber,
+                    item.IndexNumber,
+                    item.IndexNumberEnd,
+                    item.ParentIndexNumber === 0
+                );
 
-            for (const sel of titleSelectors) {
-                const el = document.querySelector(sel);
-                if (el && el.textContent && !el.classList.contains('je-spoiler-osd-redacted')) {
-                    el.dataset.jeSpoilerOriginal = el.textContent;
-                    el.textContent = (item.SeriesName || '') + ' \u2014 ' + redactedTitle;
-                    el.classList.add('je-spoiler-osd-redacted');
+                const titleSelectors = [
+                    '.osdTitle',
+                    '.videoOsdTitle',
+                    '.osd-title',
+                    '.mediaInfoPrimaryContainer h3',
+                    '.nowPlayingPageTitle'
+                ];
+
+                for (const sel of titleSelectors) {
+                    const el = document.querySelector(sel);
+                    if (el && el.textContent && !el.classList.contains('je-spoiler-osd-redacted')) {
+                        el.dataset.jeSpoilerOriginal = el.textContent;
+                        el.textContent = (item.SeriesName || '') + ' \u2014 ' + redactedTitle;
+                        el.classList.add('je-spoiler-osd-redacted');
+                    }
                 }
             }
 
-            // Redact chapter names
+            // Redact chapter names, skipping already-watched chapters
+            const playbackTicks = item.UserData?.PlaybackPositionTicks || 0;
             const chapterElements = document.querySelectorAll('.chapterCard .chapterCardText, [data-chapter-name]');
             let chapterIndex = 1;
             for (const chapterEl of chapterElements) {
+                const parentCard = chapterEl.closest('.chapterCard');
+                const chapterTicks = parentCard ? parseInt(parentCard.dataset.positionticks, 10) : NaN;
+
+                // Skip chapters the user has already watched past
+                if (!isNaN(chapterTicks) && chapterTicks <= playbackTicks) {
+                    chapterIndex++;
+                    continue;
+                }
+
                 if (!chapterEl.classList.contains('je-spoiler-osd-redacted')) {
                     chapterEl.dataset.jeSpoilerOriginal = chapterEl.textContent;
                     chapterEl.textContent = 'Chapter ' + chapterIndex;
@@ -2578,11 +2682,17 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                 chapterIndex++;
             }
 
-            // Blur chapter thumbnail previews
-            const chapterImages = document.querySelectorAll('.chapterCard img, .chapterCardImage');
-            for (const img of chapterImages) {
-                img.style.filter = 'blur(' + BLUR_RADIUS + ')';
-                img.style.transition = 'filter 0.3s ease';
+            // Blur chapter thumbnail previews (position-aware)
+            const chapterCards = document.querySelectorAll('.chapterCard');
+            for (const card of chapterCards) {
+                const chapterTicks = parseInt(card.dataset.positionticks, 10);
+                if (!isNaN(chapterTicks) && chapterTicks <= playbackTicks) continue;
+
+                const imgs = card.querySelectorAll('img, .chapterCardImage');
+                for (const img of imgs) {
+                    img.style.filter = 'blur(' + BLUR_RADIUS + ')';
+                    img.style.transition = 'filter 0.3s ease';
+                }
             }
 
         } catch (err) {
