@@ -328,6 +328,307 @@
         }
     }
 
+    // ── Auto-reload monitors ──────────────────────────────────────────
+    // Two monitors that run after plugin initialization:
+    //   1. User change monitor  — detects SPA user switches and reloads
+    //      so JE re-initializes with correct permissions/settings.
+    //      Fixes: https://github.com/n00bcodr/Jellyfin-Enhanced/issues/402
+    //   2. Config change monitor — snapshots the plugin config on entering
+    //      the admin config page, compares on exit, and reloads only if
+    //      settings actually changed.
+    //
+    // Both use location polling as the primary detection mechanism because
+    // Jellyfin's SPA router uses history.pushState() which does NOT fire
+    // hashchange or popstate events. hashchange/popstate listeners are
+    // kept as supplementary fast-path detectors.
+    // ────────────────────────────────────────────────────────────────────
+
+    let userMonitorStarted = false;
+    let configMonitorStarted = false;
+
+    const RELOAD_COOLDOWN_MS = 5000;
+    const RELOAD_COOLDOWN_KEY = 'JE_last_reload_ts';
+
+    /**
+     * Checks if a reload was triggered recently (within cooldown period).
+     * Prevents infinite reload loops when the server is temporarily unreachable.
+     * @returns {boolean} True if a reload happened recently and should be skipped.
+     */
+    function isReloadOnCooldown() {
+        try {
+            const lastReload = parseInt(sessionStorage.getItem(RELOAD_COOLDOWN_KEY) || '0', 10);
+            return (Date.now() - lastReload) < RELOAD_COOLDOWN_MS;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    /**
+     * Triggers a page reload and records the timestamp in sessionStorage
+     * so subsequent reloads within the cooldown period are suppressed.
+     * Gracefully handles sessionStorage being unavailable (e.g. private browsing).
+     */
+    function reloadWithCooldown() {
+        try { sessionStorage.setItem(RELOAD_COOLDOWN_KEY, Date.now().toString()); } catch (_) {}
+        location.reload();
+    }
+
+    /**
+     * Starts polling for user changes after plugin initialization.
+     *
+     * When a different user logs in via SPA navigation (no full page reload),
+     * stale JE_ sessionStorage keys (e.g. JE_IsAdmin) can leak admin UI to
+     * non-admin users. This monitor detects the user switch, clears those
+     * keys, and forces a clean reload.
+     *
+     * @param {string} initialUserId - The user ID captured during plugin init.
+     */
+    function startUserChangeMonitor(initialUserId) {
+        if (userMonitorStarted) return;
+        userMonitorStarted = true;
+
+        let baselineUserId = initialUserId;
+        let checkInterval = null;
+        const USER_CHECK_DELAY_MS = 500;
+        const USER_POLL_INTERVAL_MS = 1000;
+
+        /**
+         * Compares the current ApiClient user ID against the baseline.
+         * If they differ, clears JE_ session state and reloads.
+         */
+        function checkForUserChange() {
+            try {
+                if (isReloadOnCooldown()) return;
+
+                const currentUserId = typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId
+                    ? ApiClient.getCurrentUserId()
+                    : null;
+
+                // Adopt the first non-null user as baseline (handles late init)
+                if (!baselineUserId && currentUserId) {
+                    baselineUserId = currentUserId;
+                    return;
+                }
+
+                if (baselineUserId && currentUserId && currentUserId !== baselineUserId) {
+                    console.info('🪼 Jellyfin Enhanced: User change detected, reloading page for clean state...');
+                    // Clear JE_ keys but preserve cooldown (set again by reloadWithCooldown)
+                    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                        const key = sessionStorage.key(i);
+                        if (key && key.startsWith('JE_') && key !== RELOAD_COOLDOWN_KEY) {
+                            sessionStorage.removeItem(key);
+                        }
+                    }
+                    if (checkInterval) clearInterval(checkInterval);
+                    reloadWithCooldown();
+                }
+            } catch (e) {
+                console.debug('🪼 Jellyfin Enhanced: User change check error:', e);
+            }
+        }
+
+        // Supplementary listeners for direct hash/popstate navigation
+        window.addEventListener('hashchange', () => setTimeout(checkForUserChange, USER_CHECK_DELAY_MS));
+        window.addEventListener('popstate', () => setTimeout(checkForUserChange, USER_CHECK_DELAY_MS));
+
+        // Primary detection via polling (pushState doesn't fire hashchange/popstate)
+        checkInterval = setInterval(checkForUserChange, USER_POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Starts monitoring navigation to/from the JE admin config page.
+     *
+     * On entering the config page, snapshots both public-config and
+     * private-config (auth-gated, admin-only). On leaving, compares the
+     * current server config against the snapshots and reloads only if
+     * settings actually changed — avoiding unnecessary refreshes when an
+     * admin simply viewed the page without saving.
+     */
+    function startConfigChangeMonitor() {
+        if (configMonitorStarted) return;
+        configMonitorStarted = true;
+
+        let wasOnConfigPage = false;
+        let configSnapshot = null;
+        let privateConfigSnapshot = null;
+        let snapshotPromise = null;
+        let snapshotToken = 0;
+
+        /**
+         * Determines if the current URL hash points to the JE admin config page
+         * by parsing the name= query parameter from the hash fragment.
+         * @returns {boolean}
+         */
+        function isOnJEConfigPage() {
+            const raw = window.location.hash || '';
+            let hash;
+            try { hash = decodeURIComponent(raw); } catch (e) { hash = raw; }
+            if (!hash.includes('configurationpage')) return false;
+            const qIdx = hash.indexOf('?');
+            if (qIdx === -1) return false;
+            const params = new URLSearchParams(hash.substring(qIdx));
+            return (params.get('name') || '').toLowerCase() === 'jellyfin enhanced';
+        }
+
+        /**
+         * Fetches and stores JSON snapshots of public-config and private-config.
+         * Uses a monotonic token to discard stale responses when rapid
+         * enter/leave/enter navigation occurs.
+         */
+        async function snapshotConfig() {
+            const myToken = ++snapshotToken;
+            if (!window.ApiClient?.ajax) {
+                configSnapshot = null;
+                privateConfigSnapshot = null;
+                return;
+            }
+            try {
+                const config = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
+                    dataType: 'json'
+                });
+                if (myToken !== snapshotToken) return;
+                configSnapshot = JSON.stringify(config);
+            } catch (e) {
+                if (myToken !== snapshotToken) return;
+                configSnapshot = null;
+            }
+            try {
+                const pvt = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/private-config'),
+                    dataType: 'json'
+                });
+                if (myToken !== snapshotToken) return;
+                privateConfigSnapshot = JSON.stringify(pvt);
+            } catch (e) {
+                if (myToken !== snapshotToken) return;
+                privateConfigSnapshot = null;
+            }
+        }
+
+        /**
+         * Called when leaving the config page. Compares current server config
+         * against the entry snapshot and reloads if anything changed.
+         * If the snapshot was still in-flight, briefly awaits it before comparing.
+         */
+        async function checkConfigChanged() {
+            if (isReloadOnCooldown()) {
+                console.debug('🪼 Jellyfin Enhanced: Skipping config reload (cooldown active).');
+                return;
+            }
+
+            // Capture and consume snapshots atomically to prevent races
+            const baseline = configSnapshot;
+            const privateBaseline = privateConfigSnapshot;
+            configSnapshot = null;
+            privateConfigSnapshot = null;
+
+            // If the snapshot fetch was still in-flight, await it briefly
+            if (baseline === null && snapshotPromise) {
+                await Promise.race([snapshotPromise, new Promise(r => setTimeout(r, 1500))]);
+                const lateBaseline = configSnapshot;
+                const latePrivateBaseline = privateConfigSnapshot;
+                configSnapshot = null;
+                privateConfigSnapshot = null;
+                if (lateBaseline !== null) {
+                    return compareAndReload(lateBaseline, latePrivateBaseline);
+                }
+            }
+
+            if (baseline === null) {
+                console.debug('🪼 Jellyfin Enhanced: Left config page (no baseline available), skipping reload.');
+                return;
+            }
+
+            return compareAndReload(baseline, privateBaseline);
+        }
+
+        /**
+         * Fetches the current config from the server and compares it against
+         * the provided baselines. Reloads the page if either public or private
+         * config has changed.
+         * @param {string} baseline - JSON string of the public-config snapshot.
+         * @param {string|null} privateBaseline - JSON string of the private-config snapshot, or null.
+         */
+        async function compareAndReload(baseline, privateBaseline) {
+            if (!window.ApiClient?.ajax) return;
+            try {
+                const config = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
+                    dataType: 'json'
+                });
+                let changed = JSON.stringify(config) !== baseline;
+
+                // Compare private config if a baseline was captured (admin-only)
+                if (!changed && privateBaseline !== null) {
+                    try {
+                        const pvt = await ApiClient.ajax({
+                            type: 'GET',
+                            url: ApiClient.getUrl('/JellyfinEnhanced/private-config'),
+                            dataType: 'json'
+                        });
+                        changed = JSON.stringify(pvt) !== privateBaseline;
+                    } catch (e) {
+                        // Private config unavailable on re-check — treat as unchanged
+                    }
+                }
+
+                if (changed) {
+                    console.info('🪼 Jellyfin Enhanced: Config changed, reloading to apply...');
+                    reloadWithCooldown();
+                } else {
+                    console.debug('🪼 Jellyfin Enhanced: Config unchanged, no reload needed.');
+                }
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Could not verify config change, skipping reload.', e);
+            }
+        }
+
+        /**
+         * Tracks navigation state transitions for the config page.
+         * Triggers snapshot on entry, comparison on exit.
+         */
+        function handleLocationChange() {
+            const onConfigNow = isOnJEConfigPage();
+            if (wasOnConfigPage && !onConfigNow) {
+                checkConfigChanged();
+                wasOnConfigPage = false;
+                return;
+            }
+            if (!wasOnConfigPage && onConfigNow) {
+                snapshotPromise = snapshotConfig();
+            }
+            wasOnConfigPage = onConfigNow;
+        }
+
+        // Initialize state (handles case where plugin loads on config page)
+        wasOnConfigPage = isOnJEConfigPage();
+        if (wasOnConfigPage) snapshotPromise = snapshotConfig();
+
+        // Primary detection via location polling (pushState doesn't fire events)
+        let lastLocationSignature = `${window.location.pathname}${window.location.hash}`;
+        setInterval(() => {
+            const sig = `${window.location.pathname}${window.location.hash}`;
+            if (sig !== lastLocationSignature) {
+                lastLocationSignature = sig;
+                handleLocationChange();
+            }
+        }, 500);
+
+        // Supplementary listeners for direct hash/popstate navigation
+        window.addEventListener('hashchange', () => {
+            lastLocationSignature = `${window.location.pathname}${window.location.hash}`;
+            handleLocationChange();
+        });
+        window.addEventListener('popstate', () => {
+            lastLocationSignature = `${window.location.pathname}${window.location.hash}`;
+            handleLocationChange();
+        });
+    }
+
     let mismatchRetryCount = 0;
     const MAX_MISMATCH_RETRIES = 100; // ~30s at 300ms intervals
 
@@ -612,6 +913,12 @@
             }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
+
+            // Start monitoring for user changes (forces reload on user switch)
+            startUserChangeMonitor(userId);
+
+            // Start monitoring for admin config page visits (forces reload when leaving config page)
+            startConfigChangeMonitor();
 
             // Final Stage: Hide splash screen
             if (typeof JE.hideSplashScreen === 'function') {
