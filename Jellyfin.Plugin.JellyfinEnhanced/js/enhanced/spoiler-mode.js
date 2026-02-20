@@ -525,7 +525,9 @@
         };
 
         // Historical payloads store revealDuration in seconds (e.g. 10),
-        // while runtime timers expect milliseconds.
+        // while runtime timers expect milliseconds.  The 300 threshold
+        // distinguishes seconds from milliseconds: a value <= 300 is
+        // treated as seconds (max 5 min reveal), anything above as ms.
         const revealDurationRaw = Number(merged.revealDuration);
         if (!Number.isFinite(revealDurationRaw) || revealDurationRaw <= 0) {
             merged.revealDuration = DEFAULT_REVEAL_DURATION;
@@ -1384,7 +1386,8 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         }
 
         /**
-         * Updates the button state based on current spoiler rule.
+         * Syncs the toggle button's CSS class, tooltip text, and icon
+         * with the current spoiler rule for this item.
          */
         function updateState() {
             const rule = getRule(itemId);
@@ -1673,12 +1676,14 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         let revealed = false;
         let longPressTimer = null;
 
+        /** Shows the card's original content (no-op during reveal-all). */
         function doReveal() {
             if (revealAllActive || revealed) return;
             revealed = true;
             revealCard(card);
         }
 
+        /** Re-hides the card's content after the user stops interacting. */
         function doHide() {
             if (!revealed) return;
             revealed = false;
@@ -1855,7 +1860,10 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             if (hasSecondaryText && titleEl.classList.contains('cardText-first')) continue;
 
             if (isFirstRedactable) {
-                // First redactable text gets the formatted title (textContent is safe here)
+                // First redactable text gets the formatted title (textContent is safe here).
+                // dataset.jeSpoilerRedacted is the JS camelCase API for the same HTML
+                // attribute referenced by REDACTED_ATTR ('data-je-spoiler-redacted').
+                // Here it stores the replacement text so reveal/hide can toggle.
                 if (!titleEl.dataset.jeSpoilerOriginal) {
                     titleEl.dataset.jeSpoilerOriginal = titleEl.textContent;
                 }
@@ -2596,6 +2604,13 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         if (!settings.protectCalendar) return events;
         if (!Array.isArray(events) || protectedIdSet.size === 0) return events;
 
+        /**
+         * Checks all GUID format variants (hyphenated, compact, lowercase)
+         * because calendar payloads may use a different casing than the
+         * protectedIdSet stores.
+         * @param {string} itemId Calendar item Jellyfin ID.
+         * @returns {boolean}
+         */
         function isProtectedCalendarItem(itemId) {
             if (!itemId) return false;
             const raw = String(itemId);
