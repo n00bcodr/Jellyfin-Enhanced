@@ -321,6 +321,18 @@
     }
 
     /**
+     * Returns a translated string for the given key, falling back to a default
+     * when JE.t() returns the raw key (i.e. no translation is loaded).
+     * @param {string} key Translation key.
+     * @param {string} fallback Default text when no translation exists.
+     * @returns {string}
+     */
+    function tFallback(key, fallback) {
+        var translated = JE.t(key);
+        return translated !== key ? translated : fallback;
+    }
+
+    /**
      * Normalizes a spoiler rule entry from either legacy `items` schema
      * (name/type) or current `rules` schema (itemName/itemType).
      * @param {string} key Rule key.
@@ -1366,8 +1378,8 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             const textSpan = document.createElement('span');
             textSpan.className = 'detailButton-icon-text';
             textSpan.textContent = isActive
-                ? (JE.t('spoiler_mode_active') !== 'spoiler_mode_active' ? JE.t('spoiler_mode_active') : 'Spoiler On')
-                : (JE.t('spoiler_mode_off') !== 'spoiler_mode_off' ? JE.t('spoiler_mode_off') : 'Spoiler Off');
+                ? tFallback('spoiler_mode_active', 'Spoiler On')
+                : tFallback('spoiler_mode_off', 'Spoiler Off');
             content.appendChild(textSpan);
         }
 
@@ -1380,15 +1392,11 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
             if (active) {
                 button.classList.add('je-spoiler-active');
-                button.title = JE.t('spoiler_mode_disable_tooltip') !== 'spoiler_mode_disable_tooltip'
-                    ? JE.t('spoiler_mode_disable_tooltip')
-                    : 'Click to disable Spoiler Mode';
+                button.title = tFallback('spoiler_mode_disable_tooltip', 'Click to disable Spoiler Mode');
                 renderContent('shield', true);
             } else {
                 button.classList.remove('je-spoiler-active');
-                button.title = JE.t('spoiler_mode_enable_tooltip') !== 'spoiler_mode_enable_tooltip'
-                    ? JE.t('spoiler_mode_enable_tooltip')
-                    : 'Click to enable Spoiler Mode';
+                button.title = tFallback('spoiler_mode_enable_tooltip', 'Click to enable Spoiler Mode');
                 renderContent('shield_outlined', false);
             }
         }
@@ -1415,12 +1423,8 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
             // Show toast notification using safe text
             const statusText = !isCurrentlyActive
-                ? (JE.t('spoiler_mode_enabled_toast') !== 'spoiler_mode_enabled_toast'
-                    ? JE.t('spoiler_mode_enabled_toast')
-                    : 'Spoiler Mode enabled')
-                : (JE.t('spoiler_mode_disabled_toast') !== 'spoiler_mode_disabled_toast'
-                    ? JE.t('spoiler_mode_disabled_toast')
-                    : 'Spoiler Mode disabled');
+                ? tFallback('spoiler_mode_enabled_toast', 'Spoiler Mode enabled')
+                : tFallback('spoiler_mode_disabled_toast', 'Spoiler Mode disabled');
             JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + statusText);
 
             // Trigger re-scan of current page
@@ -1463,9 +1467,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button je-spoiler-reveal-all-btn';
         button.type = 'button';
-        button.title = JE.t('spoiler_mode_reveal_all_tooltip') !== 'spoiler_mode_reveal_all_tooltip'
-            ? JE.t('spoiler_mode_reveal_all_tooltip')
-            : 'Reveal all spoilers on this page for 30 seconds';
+        button.title = tFallback('spoiler_mode_reveal_all_tooltip', 'Reveal all spoilers on this page for 30 seconds');
 
         const content = document.createElement('div');
         content.className = 'detailButton-content';
@@ -1478,9 +1480,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
         const textSpan = document.createElement('span');
         textSpan.className = 'detailButton-icon-text';
-        textSpan.textContent = JE.t('spoiler_mode_reveal_all') !== 'spoiler_mode_reveal_all'
-            ? JE.t('spoiler_mode_reveal_all')
-            : 'Reveal (30s)';
+        textSpan.textContent = tFallback('spoiler_mode_reveal_all', 'Reveal (30s)');
         content.appendChild(textSpan);
         button.appendChild(content);
 
@@ -1832,9 +1832,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
             const badge = document.createElement('div');
             badge.className = 'je-spoiler-badge';
-            badge.textContent = JE.t('spoiler_mode_hidden_badge') !== 'spoiler_mode_hidden_badge'
-                ? JE.t('spoiler_mode_hidden_badge')
-                : 'SPOILER';
+            badge.textContent = tFallback('spoiler_mode_hidden_badge', 'SPOILER');
             imageContainer.appendChild(badge);
         }
 
@@ -1879,10 +1877,11 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
     }
 
     /**
-     * Blurs a season card poster without redacting the title text.
-     * @param {HTMLElement} card The season card element.
+     * Blurs a card poster without redacting the title text.
+     * Used for both season cards and movie cards.
+     * @param {HTMLElement} card The card element (season or movie).
      */
-    function blurSeasonCard(card) {
+    function blurCardArtwork(card) {
         if (card.hasAttribute(REDACTED_ATTR)) return;
 
         const settings = getSettings();
@@ -1901,43 +1900,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
             const badge = document.createElement('div');
             badge.className = 'je-spoiler-badge';
-            badge.textContent = JE.t('spoiler_mode_hidden_badge') !== 'spoiler_mode_hidden_badge'
-                ? JE.t('spoiler_mode_hidden_badge')
-                : 'SPOILER';
-            imageContainer.appendChild(badge);
-        }
-
-        card.setAttribute(REDACTED_ATTR, '1');
-    }
-
-    /**
-     * Blurs a movie card poster without redacting the title text.
-     * Identical pattern to blurSeasonCard — blur artwork, add SPOILER badge,
-     * keep the movie title visible.
-     * @param {HTMLElement} card The movie card element.
-     */
-    function blurMovieCard(card) {
-        if (card.hasAttribute(REDACTED_ATTR)) return;
-
-        const settings = getSettings();
-        const artworkPolicy = settings.artworkPolicy || 'blur';
-        const cardBox = card.querySelector('.cardBox') || card;
-
-        if (artworkPolicy === 'blur') {
-            cardBox.classList.add('je-spoiler-blur');
-            cardBox.classList.remove('je-spoiler-generic');
-        } else {
-            cardBox.classList.add('je-spoiler-generic');
-            cardBox.classList.remove('je-spoiler-blur');
-        }
-
-        const imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage');
-        if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
-            const badge = document.createElement('div');
-            badge.className = 'je-spoiler-badge';
-            badge.textContent = JE.t('spoiler_mode_hidden_badge') !== 'spoiler_mode_hidden_badge'
-                ? JE.t('spoiler_mode_hidden_badge')
-                : 'SPOILER';
+            badge.textContent = tFallback('spoiler_mode_hidden_badge', 'SPOILER');
             imageContainer.appendChild(badge);
         }
 
@@ -2133,7 +2096,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             const boundary = await computeBoundary(seasonSeriesId);
             // Blur seasons beyond the boundary season, or all if nothing watched
             if ((boundary && seasonNum > boundary.season) || !boundary) {
-                blurSeasonCard(card);
+                blurCardArtwork(card);
             }
         } catch {
             // Ignore errors for season cards
@@ -2172,7 +2135,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                 if (directlyProtected || collectionId) {
                     const watched = await isMovieWatched(itemId);
                     if (!watched) {
-                        blurMovieCard(card);
+                        blurCardArtwork(card);
                         bindCardReveal(card);
                     }
                 }
@@ -2327,9 +2290,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         }
 
         // Redact the series/movie overview if configured (using textContent)
-        const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
-            ? JE.t('spoiler_mode_hidden_overview')
-            : 'Overview hidden \u2014 click to reveal';
+        const hiddenText = tFallback('spoiler_mode_hidden_overview', 'Overview hidden \u2014 click to reveal');
         const restoreOverview = function () {
             if (!overviewEl) return;
             if (overviewEl.dataset.jeSpoilerOriginal) {
@@ -2432,6 +2393,35 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
     // ============================================================
 
     /**
+     * Hides overview text and binds a click-to-reveal handler that auto-hides
+     * after the configured reveal duration. Used on collection and movie
+     * detail pages where the simpler (non-re-entrant) reveal pattern suffices.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    function hideOverviewWithReveal(visiblePage) {
+        const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
+        if (!overviewEl || overviewEl.classList.contains('je-spoiler-overview-hidden')) return;
+
+        const settings = getSettings();
+        overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
+        const hiddenText = tFallback('spoiler_mode_hidden_overview', 'Overview hidden \u2014 click to reveal');
+        overviewEl.textContent = hiddenText;
+        overviewEl.classList.add('je-spoiler-overview-hidden');
+        overviewEl.addEventListener('click', function () {
+            if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+                overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
+                overviewEl.classList.remove('je-spoiler-overview-hidden');
+                setTimeout(function () {
+                    if (!revealAllActive) {
+                        overviewEl.textContent = hiddenText;
+                        overviewEl.classList.add('je-spoiler-overview-hidden');
+                    }
+                }, settings.revealDuration || DEFAULT_REVEAL_DURATION);
+            }
+        });
+    }
+
+    /**
      * Redacts unwatched movie cards on a BoxSet (collection) detail page.
      * @param {string} collectionId The BoxSet Jellyfin ID.
      * @param {HTMLElement} visiblePage The visible detail page element.
@@ -2443,31 +2433,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         // Fetch collection items to populate cache
         await fetchCollectionItems(collectionId);
 
-        const settings = getSettings();
-
         // Hide overview if configured
-        if (!settings.showSeriesOverview) {
-            const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
-            if (overviewEl && !overviewEl.classList.contains('je-spoiler-overview-hidden')) {
-                overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
-                const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
-                    ? JE.t('spoiler_mode_hidden_overview')
-                    : 'Overview hidden \u2014 click to reveal';
-                overviewEl.textContent = hiddenText;
-                overviewEl.classList.add('je-spoiler-overview-hidden');
-                overviewEl.addEventListener('click', function () {
-                    if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
-                        overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
-                        overviewEl.classList.remove('je-spoiler-overview-hidden');
-                        setTimeout(function () {
-                            if (!revealAllActive) {
-                                overviewEl.textContent = hiddenText;
-                                overviewEl.classList.add('je-spoiler-overview-hidden');
-                            }
-                        }, settings.revealDuration || DEFAULT_REVEAL_DURATION);
-                    }
-                });
-            }
+        if (!getSettings().showSeriesOverview) {
+            hideOverviewWithReveal(visiblePage);
         }
 
         // Process all movie cards on the collection page
@@ -2481,7 +2449,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             promises.push((async function () {
                 const watched = await isMovieWatched(movieId);
                 if (!watched) {
-                    blurMovieCard(card);
+                    blurCardArtwork(card);
                     bindCardReveal(card);
                 }
                 card.setAttribute(SCANNED_ATTR, '1');
@@ -2503,34 +2471,13 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         const watched = await isMovieWatched(movieId);
         if (watched) return;
 
-        const settings = getSettings();
-
         // Hide overview
-        if (!settings.showSeriesOverview) {
-            const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
-            if (overviewEl && !overviewEl.classList.contains('je-spoiler-overview-hidden')) {
-                overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
-                const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
-                    ? JE.t('spoiler_mode_hidden_overview')
-                    : 'Overview hidden \u2014 click to reveal';
-                overviewEl.textContent = hiddenText;
-                overviewEl.classList.add('je-spoiler-overview-hidden');
-                overviewEl.addEventListener('click', function () {
-                    if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
-                        overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
-                        overviewEl.classList.remove('je-spoiler-overview-hidden');
-                        setTimeout(function () {
-                            if (!revealAllActive) {
-                                overviewEl.textContent = hiddenText;
-                                overviewEl.classList.add('je-spoiler-overview-hidden');
-                            }
-                        }, settings.revealDuration || DEFAULT_REVEAL_DURATION);
-                    }
-                });
-            }
+        if (!getSettings().showSeriesOverview) {
+            hideOverviewWithReveal(visiblePage);
         }
 
         // Blur backdrop if strict mode
+        const settings = getSettings();
         if (settings.artworkPolicy === 'generic' || settings.hideGuestStars) {
             const backdropEl = visiblePage.querySelector('.backdropImage, .detailImageContainer img');
             if (backdropEl) {
