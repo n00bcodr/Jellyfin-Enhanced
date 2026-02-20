@@ -718,7 +718,7 @@
                   redactSpoilerMedia = true;
                   overviewText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
                       ? JE.t('spoiler_mode_hidden_overview')
-                      : 'Overview hidden \u2014 tap to reveal';
+                      : 'Overview hidden \u2014 click to reveal';
               }
           }
           this.overlayPlot.textContent = overviewText;

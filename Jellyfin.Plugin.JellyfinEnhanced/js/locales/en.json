@@ -477,7 +477,7 @@
     "spoiler_mode_enable_tooltip": "Click to enable Spoiler Mode",
     "spoiler_mode_disable_tooltip": "Click to disable Spoiler Mode",
     "spoiler_mode_hidden_badge": "SPOILER",
-    "spoiler_mode_hidden_overview": "Overview hidden \u2014 tap to reveal",
+    "spoiler_mode_hidden_overview": "Overview hidden \u2014 click to reveal",
     "spoiler_mode_reveal_all": "Reveal (30s)",
     "spoiler_mode_reveal_all_tooltip": "Reveal all spoilers on this page for 30 seconds",
     "spoiler_mode_settings_title": "Spoiler Mode",

@@ -72,6 +72,12 @@
     /** Data attribute marking a card as spoiler-redacted. */
     const REDACTED_ATTR = 'data-je-spoiler-redacted';
 
+    /** Body class toggled while detail-page overview redaction is pending. */
+    const DETAIL_OVERVIEW_PENDING_CLASS = 'je-spoiler-detail-pending';
+
+    /** Class marking overview text as manually revealed during spoiler mode. */
+    const OVERVIEW_REVEALED_CLASS = 'je-spoiler-overview-revealed';
+
     /** Selector for any spoiler-processable card/list-item. */
     const CARD_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
 
@@ -172,6 +178,15 @@
     const movieWatchedRequestMap = new Map();
 
     /**
+     * LRU cache for season fully-watched state.
+     * Map<seasonId, { watched: boolean, ts: number }>
+     */
+    const seasonWatchedCache = new Map();
+
+    /** In-flight season watched requests. Map<seasonId, Promise> */
+    const seasonWatchedRequestMap = new Map();
+
+    /**
      * LRU cache for collection item listings.
      * Map<collectionId, { items: Set<movieId>, ts: number }>
      */
@@ -225,6 +240,59 @@
      */
     function isValidId(id) {
         return typeof id === 'string' && GUID_RE.test(id);
+    }
+
+    /**
+     * Whether detail overview text should be pre-hidden until redaction completes.
+     * @returns {boolean}
+     */
+    function shouldPrehideDetailOverview() {
+        if (revealAllActive) return false;
+        if (protectedIdSet.size === 0) return false;
+        return !getSettings().showSeriesOverview;
+    }
+
+    /**
+     * Returns true when detail overview pre-hide should be skipped to avoid flicker.
+     * Used for already-safe season pages and active manual reveals.
+     * @param {HTMLElement|null} visiblePage The active detail page element.
+     * @returns {boolean}
+     */
+    function shouldSkipDetailOverviewPrehide(visiblePage) {
+        if (!visiblePage) return false;
+        const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
+        if (!overviewEl) return false;
+
+        const hash = window.location.hash || '';
+        const params = new URLSearchParams(hash.split('?')[1]);
+        const detailItemId = params.get('id') || '';
+
+        if (overviewEl.dataset.jeSpoilerOverviewSafeFor === detailItemId && detailItemId) return true;
+
+        // Fast-path from cache for repeat visits to already-known fully watched seasons.
+        if (detailItemId) {
+            const cached = seasonWatchedCache.get(detailItemId);
+            if (cached && cached.watched === true && (Date.now() - cached.ts) < BOUNDARY_CACHE_TTL) {
+                return true;
+            }
+        }
+
+        if (overviewEl.classList.contains(OVERVIEW_REVEALED_CLASS)) return true;
+        const revealUntil = Number(overviewEl.dataset.jeSpoilerRevealUntil || '0');
+        return revealUntil > Date.now();
+    }
+
+    /**
+     * Toggles body-level pre-hide class for detail overview text.
+     * @param {boolean} pending Whether detail processing is pending.
+     */
+    function setDetailOverviewPending(pending) {
+        if (!document.body?.classList) return;
+        if (pending) {
+            document.body.classList.add(DETAIL_OVERVIEW_PENDING_CLASS);
+        } else {
+            document.body.classList.remove(DETAIL_OVERVIEW_PENDING_CLASS);
+        }
     }
 
     /**
@@ -433,13 +501,26 @@
             ? PRESETS[userPreset]
             : PRESETS.balanced;
 
-        return {
+        const merged = {
             preset: userPreset,
             watchedThreshold: 'played',
             boundaryRule: 'showOnlyWatched',
             ...presetDefaults,
             ...data.settings
         };
+
+        // Historical payloads store revealDuration in seconds (e.g. 10),
+        // while runtime timers expect milliseconds.
+        const revealDurationRaw = Number(merged.revealDuration);
+        if (!Number.isFinite(revealDurationRaw) || revealDurationRaw <= 0) {
+            merged.revealDuration = DEFAULT_REVEAL_DURATION;
+        } else if (revealDurationRaw <= 300) {
+            merged.revealDuration = revealDurationRaw * 1000;
+        } else {
+            merged.revealDuration = revealDurationRaw;
+        }
+
+        return merged;
     }
 
     /**
@@ -554,6 +635,7 @@
         // Invalidate caches for this item
         boundaryCache.delete(itemId);
         movieWatchedCache.delete(itemId);
+        seasonWatchedCache.delete(itemId);
         collectionItemsCache.delete(itemId);
     }
 
@@ -797,6 +879,72 @@
     }
 
     /**
+     * Checks whether every episode in a season is watched by current threshold settings.
+     * Results are cached with the same TTL as boundary data.
+     * In-flight requests are de-duplicated.
+     * @param {string} seasonId The season Jellyfin ID.
+     * @returns {Promise<boolean>} True if all episodes are watched.
+     */
+    async function isSeasonFullyWatched(seasonId) {
+        if (!seasonId) return false;
+
+        // Check cache
+        const cached = seasonWatchedCache.get(seasonId);
+        if (cached && (Date.now() - cached.ts) < BOUNDARY_CACHE_TTL) {
+            return cached.watched;
+        }
+
+        // De-duplicate in-flight requests
+        if (seasonWatchedRequestMap.has(seasonId)) {
+            return seasonWatchedRequestMap.get(seasonId);
+        }
+
+        const request = (async function () {
+            try {
+                if (!isValidId(seasonId)) return false;
+
+                const userId = ApiClient.getCurrentUserId();
+                const response = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Users/' + userId + '/Items', {
+                        ParentId: seasonId,
+                        IncludeItemTypes: 'Episode',
+                        Recursive: true,
+                        Fields: 'UserData'
+                    }),
+                    dataType: 'json'
+                });
+
+                const episodes = (response?.Items || []).filter(function (item) {
+                    return item?.Type === 'Episode';
+                });
+
+                if (episodes.length === 0) {
+                    evictIfNeeded(seasonWatchedCache, MAX_CACHE_SIZE);
+                    seasonWatchedCache.set(seasonId, { watched: false, ts: Date.now() });
+                    return false;
+                }
+
+                const watched = episodes.every(function (episode) {
+                    return !shouldRedactEpisode(episode);
+                });
+
+                evictIfNeeded(seasonWatchedCache, MAX_CACHE_SIZE);
+                seasonWatchedCache.set(seasonId, { watched, ts: Date.now() });
+                return watched;
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: Error checking season watched state', err);
+                return false;
+            } finally {
+                seasonWatchedRequestMap.delete(seasonId);
+            }
+        })();
+
+        seasonWatchedRequestMap.set(seasonId, request);
+        return request;
+    }
+
+    /**
      * Fetches the items within a collection (BoxSet) and caches the result.
      * Also populates the reverse collectionMemberMap for O(1) lookups.
      * @param {string} collectionId The BoxSet Jellyfin ID.
@@ -1017,6 +1165,16 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-overv
 body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-bottomoverview,
 body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
   visibility: hidden;
+}
+
+/* ===== Detail page pre-hide: avoid overview flash before async redaction ===== */
+body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hide) .overview,
+body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hide) .itemOverview {
+  visibility: hidden;
+}
+body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hide) .overview.${OVERVIEW_REVEALED_CLASS},
+body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hide) .itemOverview.${OVERVIEW_REVEALED_CLASS} {
+  visibility: visible;
 }
 
 /* ===== Spoiler blur: applied to confirmed-spoiler cards ===== */
@@ -1798,6 +1956,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
      */
     function clearAllRedactions() {
         revealAllActive = false;
+        setDetailOverviewPending(false);
         if (revealAllTimer) {
             clearTimeout(revealAllTimer);
             revealAllTimer = null;
@@ -1821,11 +1980,15 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             el.removeAttribute(SCANNED_ATTR);
         });
 
-        document.querySelectorAll('.je-spoiler-overview-hidden').forEach(function (el) {
+        document.querySelectorAll('.je-spoiler-overview-hidden, .' + OVERVIEW_REVEALED_CLASS + ', [data-je-spoiler-overview-safe-for]').forEach(function (el) {
             if (el.dataset.jeSpoilerOriginal) {
                 el.textContent = el.dataset.jeSpoilerOriginal;
                 delete el.dataset.jeSpoilerOriginal;
             }
+            delete el.dataset.jeSpoilerRevealUntil;
+            delete el.dataset.jeSpoilerOverviewSafeFor;
+            delete el.dataset.jeSpoilerOverviewBound;
+            el.classList.remove(OVERVIEW_REVEALED_CLASS);
             el.classList.remove('je-spoiler-overview-hidden');
         });
 
@@ -2106,13 +2269,14 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         if (revealAllActive) return;
 
         let seriesId = itemId;
+        let detailItem = null;
         const userId = ApiClient.getCurrentUserId();
 
         try {
-            const item = await ApiClient.getItem(userId, itemId);
-            if (item?.Type === 'Season') {
-                seriesId = item.SeriesId || itemId;
-            } else if (item?.Type !== 'Series') {
+            detailItem = await ApiClient.getItem(userId, itemId);
+            if (detailItem?.Type === 'Season') {
+                seriesId = detailItem.SeriesId || itemId;
+            } else if (detailItem?.Type !== 'Series') {
                 return;
             }
         } catch {
@@ -2122,30 +2286,85 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         if (!isProtected(seriesId)) return;
 
         const settings = getSettings();
+        const isSeasonDetail = detailItem?.Type === 'Season';
+        let shouldHideOverview = !settings.showSeriesOverview;
+        const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
+
+        // If this is a season detail page and that season is fully watched,
+        // there is no spoiler risk in the overview text.
+        if (shouldHideOverview && isSeasonDetail) {
+            const fullyWatchedSeason = await isSeasonFullyWatched(itemId);
+            if (fullyWatchedSeason) {
+                shouldHideOverview = false;
+                if (overviewEl) {
+                    overviewEl.dataset.jeSpoilerOverviewSafeFor = itemId;
+                }
+                setDetailOverviewPending(false);
+            }
+        }
 
         // Redact the series/movie overview if configured (using textContent)
-        if (!settings.showSeriesOverview) {
-            const overviewEl = visiblePage.querySelector('.overview, .itemOverview');
-            if (overviewEl && !overviewEl.classList.contains('je-spoiler-overview-hidden')) {
-                overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
-                const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
-                    ? JE.t('spoiler_mode_hidden_overview')
-                    : 'Overview hidden \u2014 tap to reveal';
-                overviewEl.textContent = hiddenText;
-                overviewEl.classList.add('je-spoiler-overview-hidden');
-                overviewEl.addEventListener('click', function () {
-                    if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+        const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
+            ? JE.t('spoiler_mode_hidden_overview')
+            : 'Overview hidden \u2014 click to reveal';
+        const restoreOverview = function () {
+            if (!overviewEl) return;
+            if (overviewEl.dataset.jeSpoilerOriginal) {
+                overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
+                delete overviewEl.dataset.jeSpoilerOriginal;
+            }
+            delete overviewEl.dataset.jeSpoilerRevealUntil;
+            overviewEl.classList.remove(OVERVIEW_REVEALED_CLASS);
+            overviewEl.classList.remove('je-spoiler-overview-hidden');
+        };
+
+        if (overviewEl && !overviewEl.dataset.jeSpoilerOverviewBound) {
+            overviewEl.dataset.jeSpoilerOverviewBound = '1';
+            overviewEl.addEventListener('click', function () {
+                if (!overviewEl.classList.contains('je-spoiler-overview-hidden')) return;
+                if (!overviewEl.dataset.jeSpoilerOriginal) return;
+
+                const revealDuration = getSettings().revealDuration || DEFAULT_REVEAL_DURATION;
+                overviewEl.dataset.jeSpoilerRevealUntil = String(Date.now() + revealDuration);
+                overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
+                overviewEl.classList.add(OVERVIEW_REVEALED_CLASS);
+                overviewEl.classList.remove('je-spoiler-overview-hidden');
+
+                // Auto-hide after reveal duration unless extended by another click.
+                setTimeout(function () {
+                    const revealUntil = Number(overviewEl.dataset.jeSpoilerRevealUntil || '0');
+                    if (revealAllActive || Date.now() < revealUntil) return;
+                    overviewEl.textContent = hiddenText;
+                    overviewEl.classList.remove(OVERVIEW_REVEALED_CLASS);
+                    overviewEl.classList.add('je-spoiler-overview-hidden');
+                }, revealDuration);
+            });
+        }
+
+        if (shouldHideOverview) {
+            if (overviewEl) {
+                const revealUntil = Number(overviewEl.dataset.jeSpoilerRevealUntil || '0');
+                const stillRevealed = revealUntil > Date.now();
+
+                // Keep user reveal state during ongoing detail-page mutations.
+                if (stillRevealed) {
+                    if (overviewEl.dataset.jeSpoilerOriginal) {
                         overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;
-                        overviewEl.classList.remove('je-spoiler-overview-hidden');
-                        // Auto-hide after reveal duration
-                        setTimeout(function () {
-                            if (!revealAllActive) {
-                                overviewEl.textContent = hiddenText;
-                                overviewEl.classList.add('je-spoiler-overview-hidden');
-                            }
-                        }, settings.revealDuration || DEFAULT_REVEAL_DURATION);
                     }
-                });
+                    overviewEl.classList.add(OVERVIEW_REVEALED_CLASS);
+                    overviewEl.classList.remove('je-spoiler-overview-hidden');
+                } else if (!overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+                    delete overviewEl.dataset.jeSpoilerOverviewSafeFor;
+                    overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
+                    overviewEl.textContent = hiddenText;
+                    overviewEl.classList.remove(OVERVIEW_REVEALED_CLASS);
+                    overviewEl.classList.add('je-spoiler-overview-hidden');
+                }
+            }
+        } else if (overviewEl && overviewEl.classList.contains('je-spoiler-overview-hidden')) {
+            restoreOverview();
+            if (isSeasonDetail) {
+                overviewEl.dataset.jeSpoilerOverviewSafeFor = itemId;
             }
         }
 
@@ -2162,10 +2381,27 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         const episodeCards = visiblePage.querySelectorAll('.card[data-id], .listItem[data-id]');
         const promises = [];
         for (const card of episodeCards) {
+            if (card.hasAttribute(SCANNED_ATTR)) continue;
             card.setAttribute(PROCESSED_ATTR, '1');
             promises.push(processCard(card));
         }
         await Promise.all(promises);
+
+        // On season-focused views with no redacted episode cards, keep overview visible.
+        if (shouldHideOverview && overviewEl && episodeCards.length > 0) {
+            const hasRedactedCards = Array.from(episodeCards).some(function (card) {
+                return card.hasAttribute(REDACTED_ATTR);
+            });
+            if (!hasRedactedCards) {
+                restoreOverview();
+                if (isSeasonDetail) {
+                    overviewEl.dataset.jeSpoilerOverviewSafeFor = itemId;
+                }
+                setDetailOverviewPending(false);
+            } else {
+                delete overviewEl.dataset.jeSpoilerOverviewSafeFor;
+            }
+        }
     }
 
     // ============================================================
@@ -2193,7 +2429,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
                 const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
                     ? JE.t('spoiler_mode_hidden_overview')
-                    : 'Overview hidden \u2014 tap to reveal';
+                    : 'Overview hidden \u2014 click to reveal';
                 overviewEl.textContent = hiddenText;
                 overviewEl.classList.add('je-spoiler-overview-hidden');
                 overviewEl.addEventListener('click', function () {
@@ -2253,7 +2489,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 overviewEl.dataset.jeSpoilerOriginal = overviewEl.textContent;
                 const hiddenText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
                     ? JE.t('spoiler_mode_hidden_overview')
-                    : 'Overview hidden \u2014 tap to reveal';
+                    : 'Overview hidden \u2014 click to reveal';
                 overviewEl.textContent = hiddenText;
                 overviewEl.classList.add('je-spoiler-overview-hidden');
                 overviewEl.addEventListener('click', function () {
@@ -2577,21 +2813,45 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         if (detailPageProcessing) return;
 
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-        if (!visiblePage) return;
+        if (!visiblePage) {
+            setDetailOverviewPending(false);
+            return;
+        }
 
         try {
             const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
             const itemId = hashParams.get('id');
-            if (!itemId || !isValidId(itemId)) return;
+            if (!itemId || !isValidId(itemId)) {
+                setDetailOverviewPending(false);
+                return;
+            }
 
             // Skip if we already processed this item
-            if (itemId === lastDetailPageItemId && visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
+            if (itemId === lastDetailPageItemId && visiblePage.querySelector('.je-spoiler-toggle-btn')) {
+                setDetailOverviewPending(false);
+                return;
+            }
+
             lastDetailPageItemId = itemId;
             detailPageProcessing = true;
+            const completeDetailPageProcessing = function () {
+                detailPageProcessing = false;
+                setDetailOverviewPending(false);
+            };
 
             const userId = ApiClient.getCurrentUserId();
             ApiClient.getItem(userId, itemId).then(function (item) {
-                if (!item) { detailPageProcessing = false; return; }
+                if (!item) {
+                    completeDetailPageProcessing();
+                    return;
+                }
+
+                // Only pre-hide after we know the item type.
+                // Skip season pages to avoid overview flicker on fully watched seasons.
+                const prehideOverview = shouldPrehideDetailOverview() &&
+                    !shouldSkipDetailOverviewPrehide(visiblePage) &&
+                    item.Type !== 'Season';
+                setDetailOverviewPending(prehideOverview);
 
                 // Add spoiler toggle for Series, Movies, and BoxSets
                 if (item.Type === 'Series' || item.Type === 'Movie' || item.Type === 'BoxSet') {
@@ -2602,28 +2862,29 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 // Redact detail page content based on item type
                 if (item.Type === 'Series' || item.Type === 'Season') {
                     redactEpisodeList(itemId, visiblePage).then(function () {
-                        detailPageProcessing = false;
+                        completeDetailPageProcessing();
                     }).catch(function () {
-                        detailPageProcessing = false;
+                        completeDetailPageProcessing();
                     });
                 } else if (item.Type === 'BoxSet') {
                     redactCollectionPage(itemId, visiblePage).then(function () {
-                        detailPageProcessing = false;
+                        completeDetailPageProcessing();
                     }).catch(function () {
-                        detailPageProcessing = false;
+                        completeDetailPageProcessing();
                     });
                 } else if (item.Type === 'Movie' && isProtected(itemId)) {
                     redactMovieDetailPage(itemId, visiblePage).then(function () {
-                        detailPageProcessing = false;
+                        completeDetailPageProcessing();
                     }).catch(function () {
-                        detailPageProcessing = false;
+                        completeDetailPageProcessing();
                     });
                 } else {
-                    detailPageProcessing = false;
+                    completeDetailPageProcessing();
                 }
-            }).catch(function () { detailPageProcessing = false; });
+            }).catch(function () { completeDetailPageProcessing(); });
         } catch (err) {
             detailPageProcessing = false;
+            setDetailOverviewPending(false);
             console.warn('🪼 Jellyfin Enhanced: Error in spoiler detail page observer', err);
         }
     }
@@ -2705,6 +2966,9 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 const surface = getCurrentSurface();
 
                 if (surface === 'details') {
+                    const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+                    const pending = shouldPrehideDetailOverview() && !shouldSkipDetailOverviewPrehide(visiblePage);
+                    setDetailOverviewPending(pending);
                     // Always process detail pages so users can enable spoiler mode
                     // even when no items are currently protected.
                     setTimeout(function () { handleDetailPageMutation(); }, DETAIL_RESCAN_DELAY_MS);
@@ -2713,12 +2977,15 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                         if (protectedIdSet.size > 0) filterNewCards();
                     }, DETAIL_RESCAN_DELAY_MS);
                 } else if (surface === 'search') {
+                    setDetailOverviewPending(false);
                     setTimeout(function () { redactSearchResults(); }, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(function () { redactSearchResults(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                 } else if (surface === 'home') {
+                    setDetailOverviewPending(false);
                     setTimeout(function () { filterNewCards(); }, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(function () { filterNewCards(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                 } else if (surface === 'player') {
+                    setDetailOverviewPending(false);
                     setTimeout(function () {
                         const playerItemId = getPlayerItemId();
                         if (playerItemId) {
@@ -2726,6 +2993,9 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                             handleAutoEnableOnFirstPlay(playerItemId);
                         }
                     }, PLAYER_OSD_DELAY_MS);
+                }
+                if (surface !== 'details' && surface !== 'search' && surface !== 'home' && surface !== 'player') {
+                    setDetailOverviewPending(false);
                 }
             });
         }
