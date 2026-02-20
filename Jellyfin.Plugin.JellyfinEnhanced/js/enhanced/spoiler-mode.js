@@ -250,6 +250,121 @@
     }
 
     /**
+     * Normalizes a spoiler rule entry from either legacy `items` schema
+     * (name/type) or current `rules` schema (itemName/itemType).
+     * @param {string} key Rule key.
+     * @param {Object} entry Raw rule/item entry.
+     * @param {string} fallbackPreset Preset fallback.
+     * @returns {Object} Normalized rule entry.
+     */
+    function normalizeRuleEntry(key, entry, fallbackPreset) {
+        const raw = entry || {};
+        return {
+            itemId: raw.itemId || key,
+            itemName: raw.itemName || raw.name || '',
+            itemType: raw.itemType || raw.type || '',
+            enabled: raw.enabled !== false,
+            preset: raw.preset || fallbackPreset || 'balanced',
+            boundaryOverride: raw.boundaryOverride || null,
+            enabledAt: raw.enabledAt || new Date().toISOString()
+        };
+    }
+
+    /**
+     * Converts internal `rules` schema to server-compatible `items` schema.
+     * @param {Object.<string, Object>} rules Internal rules map.
+     * @returns {Object.<string, Object>} Items map.
+     */
+    function rulesToItems(rules) {
+        const result = {};
+        const source = rules || {};
+        for (const key of Object.keys(source)) {
+            const rule = source[key];
+            if (!rule || rule.enabled === false) continue;
+            result[key] = {
+                itemId: rule.itemId || key,
+                name: rule.itemName || '',
+                type: rule.itemType || '',
+                enabledAt: rule.enabledAt || new Date().toISOString(),
+                preset: rule.preset || 'balanced'
+            };
+        }
+        return result;
+    }
+
+    /**
+     * Normalizes spoiler mode payloads from server (`items`) and local (`rules`)
+     * into a single internal shape.
+     * @param {Object|null|undefined} rawData Raw spoiler mode object.
+     * @returns {{ rules: Object, settings: Object, tagAutoEnable: string[], autoEnableOnFirstPlay: boolean }}
+     */
+    function normalizeSpoilerData(rawData) {
+        const raw = (rawData && typeof rawData === 'object') ? rawData : {};
+        const rawSettings = raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
+        const fallbackPreset = rawSettings.defaultPreset || rawSettings.preset || 'balanced';
+
+        const sourceRules = raw.rules && typeof raw.rules === 'object'
+            ? raw.rules
+            : (raw.items && typeof raw.items === 'object' ? raw.items : {});
+
+        const normalizedRules = {};
+        for (const key of Object.keys(sourceRules)) {
+            const normalized = normalizeRuleEntry(key, sourceRules[key], fallbackPreset);
+            if (normalized.enabled) {
+                normalizedRules[key] = normalized;
+            }
+        }
+
+        const tagAutoEnable = Array.isArray(raw.tagAutoEnable)
+            ? raw.tagAutoEnable
+            : (Array.isArray(rawSettings.autoEnableTags) ? rawSettings.autoEnableTags : []);
+
+        const autoEnableOnFirstPlay = typeof raw.autoEnableOnFirstPlay === 'boolean'
+            ? raw.autoEnableOnFirstPlay
+            : !!rawSettings.autoEnableOnFirstPlay;
+
+        return {
+            ...raw,
+            rules: normalizedRules,
+            settings: { ...rawSettings },
+            tagAutoEnable,
+            autoEnableOnFirstPlay
+        };
+    }
+
+    /**
+     * Builds the payload persisted to spoiler-mode.json (server model compatible).
+     * @param {{ rules: Object, settings: Object, tagAutoEnable: string[], autoEnableOnFirstPlay: boolean }} data Internal data.
+     * @returns {{ items: Object, settings: Object }} Server-compatible payload.
+     */
+    function toServerSpoilerData(data) {
+        const source = data || getSpoilerData();
+        const settings = {
+            ...(source.settings || {}),
+            autoEnableTags: Array.isArray(source.tagAutoEnable) ? source.tagAutoEnable : [],
+            autoEnableOnFirstPlay: !!source.autoEnableOnFirstPlay,
+            defaultPreset: source.settings?.defaultPreset || source.settings?.preset || 'balanced'
+        };
+
+        return {
+            items: rulesToItems(source.rules),
+            settings
+        };
+    }
+
+    /**
+     * Mirrors normalized spoiler data into JE.userConfig while preserving legacy
+     * `items` shape for compatibility with existing consumers.
+     */
+    function syncUserSpoilerData() {
+        const data = getSpoilerData();
+        JE.userConfig.spoilerMode = {
+            ...data,
+            items: rulesToItems(data.rules)
+        };
+    }
+
+    /**
      * Finds the button container element on a detail page.
      * @param {HTMLElement} visiblePage The visible detail page element.
      * @returns {HTMLElement|null} The button container or null.
@@ -269,12 +384,8 @@
      */
     function getSpoilerData() {
         if (!spoilerData) {
-            spoilerData = JE.userConfig?.spoilerMode || {
-                rules: {},
-                settings: {},
-                tagAutoEnable: [],
-                autoEnableOnFirstPlay: false
-            };
+            spoilerData = normalizeSpoilerData(JE.userConfig?.spoilerMode);
+            syncUserSpoilerData();
         }
         return spoilerData;
     }
@@ -324,6 +435,7 @@
         } else {
             document.body?.classList?.remove('je-spoiler-active');
             disconnectObserver();
+            clearAllRedactions();
         }
     }
 
@@ -335,7 +447,7 @@
         saveTimeout = setTimeout(function () {
             saveTimeout = null;
             const data = getSpoilerData();
-            JE.saveUserSettings('spoiler-mode.json', data);
+            JE.saveUserSettings('spoiler-mode.json', toServerSpoilerData(data));
         }, SAVE_DEBOUNCE_MS);
     }
 
@@ -345,8 +457,8 @@
     function emitChange() {
         try {
             window.dispatchEvent(new CustomEvent('je-spoiler-mode-changed'));
-        } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Failed to emit spoiler-mode-changed event');
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to emit spoiler-mode-changed event', err);
         }
     }
 
@@ -402,7 +514,7 @@
             delete newRules[itemId];
             spoilerData = { ...data, rules: newRules };
         }
-        JE.userConfig.spoilerMode = spoilerData;
+        syncUserSpoilerData();
         rebuildSets();
         debouncedSave();
         emitChange();
@@ -423,7 +535,7 @@
             ...data,
             settings: { ...data.settings, ...partial }
         };
-        JE.userConfig.spoilerMode = spoilerData;
+        syncUserSpoilerData();
         debouncedSave();
         emitChange();
     }
@@ -434,8 +546,12 @@
      */
     function setAutoEnableOnFirstPlay(enabled) {
         const data = getSpoilerData();
-        spoilerData = { ...data, autoEnableOnFirstPlay: !!enabled };
-        JE.userConfig.spoilerMode = spoilerData;
+        spoilerData = {
+            ...data,
+            autoEnableOnFirstPlay: !!enabled,
+            settings: { ...data.settings, autoEnableOnFirstPlay: !!enabled }
+        };
+        syncUserSpoilerData();
         debouncedSave();
         emitChange();
     }
@@ -556,8 +672,8 @@
                 });
 
                 return lastWatched;
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Error computing spoiler boundary');
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: Error computing spoiler boundary', err);
                 return null;
             } finally {
                 releaseBoundarySlot();
@@ -636,8 +752,8 @@
                 evictIfNeeded(movieWatchedCache, MAX_CACHE_SIZE);
                 movieWatchedCache.set(movieId, { watched, ts: Date.now() });
                 return watched;
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Error checking movie watched state');
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: Error checking movie watched state', err);
                 return false;
             } finally {
                 movieWatchedRequestMap.delete(movieId);
@@ -697,8 +813,8 @@
                 }
 
                 return itemIds;
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Error fetching collection items');
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: Error fetching collection items', err);
                 return new Set();
             } finally {
                 collectionItemsRequestMap.delete(collectionId);
@@ -826,8 +942,8 @@
                 evictIfNeeded(parentSeriesCache, MAX_CACHE_SIZE);
                 parentSeriesCache.set(itemId, seriesId);
                 return seriesId;
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for spoiler check');
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for spoiler check', err);
                 evictIfNeeded(parentSeriesCache, MAX_CACHE_SIZE);
                 parentSeriesCache.set(itemId, null);
                 return null;
@@ -861,6 +977,9 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemImage 
   filter: blur(${BLUR_RADIUS});
   transform: scale(1.05);
 }
+body.je-spoiler-active .card[data-type="Episode"]:not([${SCANNED_ATTR}]) .cardText,
+body.je-spoiler-active .card[data-type="Episode"]:not([${SCANNED_ATTR}]) .textActionButton,
+body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBodyText:not(.secondary),
 body.je-spoiler-active .card[data-type="Episode"]:not([${SCANNED_ATTR}]) .cardText-secondary,
 body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-overview,
 body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItem-bottomoverview,
@@ -1641,6 +1760,59 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
         card.removeAttribute(REDACTED_ATTR);
     }
 
+    /**
+     * Clears all spoiler redaction artifacts from the current DOM.
+     * Used when spoiler mode has no protected items remaining.
+     */
+    function clearAllRedactions() {
+        revealAllActive = false;
+        if (revealAllTimer) {
+            clearTimeout(revealAllTimer);
+            revealAllTimer = null;
+        }
+        if (revealAllCountdownInterval) {
+            clearInterval(revealAllCountdownInterval);
+            revealAllCountdownInterval = null;
+        }
+        document.querySelector('.je-spoiler-reveal-banner')?.remove();
+
+        document.querySelectorAll('.je-spoiler-revealing').forEach(function (el) {
+            el.classList.remove('je-spoiler-revealing');
+        });
+
+        document.querySelectorAll('[' + REDACTED_ATTR + ']').forEach(function (card) {
+            unredactCard(card);
+        });
+
+        document.querySelectorAll('[' + PROCESSED_ATTR + '], [' + SCANNED_ATTR + ']').forEach(function (el) {
+            el.removeAttribute(PROCESSED_ATTR);
+            el.removeAttribute(SCANNED_ATTR);
+        });
+
+        document.querySelectorAll('.je-spoiler-overview-hidden').forEach(function (el) {
+            if (el.dataset.jeSpoilerOriginal) {
+                el.textContent = el.dataset.jeSpoilerOriginal;
+                delete el.dataset.jeSpoilerOriginal;
+            }
+            el.classList.remove('je-spoiler-overview-hidden');
+        });
+
+        document.querySelectorAll('.je-spoiler-osd-redacted').forEach(function (el) {
+            if (el.dataset.jeSpoilerOriginal) {
+                el.textContent = el.dataset.jeSpoilerOriginal;
+                delete el.dataset.jeSpoilerOriginal;
+            }
+            el.classList.remove('je-spoiler-osd-redacted');
+        });
+
+        document.querySelectorAll('.backdropImage, .detailImageContainer img').forEach(function (el) {
+            if ((el.style?.filter || '').indexOf('blur(' + BLUR_RADIUS + ')') !== -1) {
+                el.style.filter = '';
+                el.style.transition = '';
+            }
+        });
+    }
+
     // ============================================================
     // Card filtering (MutationObserver-based)
     // ============================================================
@@ -1649,11 +1821,10 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
      * Fetches episode data from the API and redacts if needed (special episodes).
      * @param {HTMLElement} card The card element.
      * @param {string} itemId The item ID.
-     * @param {string} seriesId The parent series ID.
      * @param {number} seasonNum The season number.
      * @param {number} epNum The episode number.
      */
-    async function processSpecialEpisode(card, itemId, seriesId, seasonNum, epNum) {
+    async function processSpecialEpisode(card, itemId, seasonNum, epNum) {
         if (!isValidId(itemId)) return;
 
         const userId = ApiClient.getCurrentUserId();
@@ -1668,7 +1839,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             if (item && shouldRedactEpisode(item)) {
                 redactCard(card, item);
             }
-        } catch (e) {
+        } catch {
             // If we can't fetch data, redact to be safe
             redactCard(card, {
                 Id: itemId,
@@ -1711,8 +1882,8 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                     redactCard(card, item);
                 }
             }
-        } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check');
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to fetch episode data for spoiler check', err);
         }
     }
 
@@ -1746,7 +1917,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             if ((boundary && seasonNum > boundary.season) || !boundary) {
                 blurSeasonCard(card);
             }
-        } catch (e) {
+        } catch {
             // Ignore errors for season cards
         }
     }
@@ -1810,7 +1981,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
 
                     if (pastBoundary === null) {
                         // Specials (season 0) — check individual UserData
-                        await processSpecialEpisode(card, itemId, seriesId, seasonNum, epNum);
+                        await processSpecialEpisode(card, itemId, seasonNum, epNum);
                     } else if (pastBoundary) {
                         redactCard(card, {
                             Id: itemId,
@@ -1828,11 +1999,11 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             if (cardType === 'season') {
                 await processSeasonCard(card, itemId);
             }
-        } catch (e) {
+        } catch (err) {
             // API failure: clear processed flag so filterNewCards retries this card
             failed = true;
             card.removeAttribute(PROCESSED_ATTR);
-            console.warn('🪼 Jellyfin Enhanced: Error processing card for spoiler check, will retry');
+            console.warn('🪼 Jellyfin Enhanced: Error processing card for spoiler check, will retry', err);
         } finally {
             // Mark card as fully scanned — removes the pre-hide CSS blur
             // Skip on failure so filterNewCards can retry
@@ -1875,7 +2046,10 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
      * Processes the current page: re-scans cards and applies redaction.
      */
     function processCurrentPage() {
-        if (protectedIdSet.size === 0) return;
+        if (protectedIdSet.size === 0) {
+            clearAllRedactions();
+            return;
+        }
 
         // Reset processed and scanned flags so all cards get re-checked
         document.querySelectorAll('[' + PROCESSED_ATTR + '], [' + SCANNED_ATTR + ']').forEach(function (el) {
@@ -1909,7 +2083,7 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
             } else if (item?.Type !== 'Series') {
                 return;
             }
-        } catch (e) {
+        } catch {
             return;
         }
 
@@ -2165,8 +2339,8 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 img.style.transition = 'filter 0.3s ease';
             }
 
-        } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Error redacting player overlay');
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Error redacting player overlay', err);
         }
     }
 
@@ -2274,12 +2448,12 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                     if (series) {
                         checkAndAutoEnableByTag(seriesId, series);
                     }
-                } catch (e) {
+                } catch {
                     // Ignore — tag check is best-effort
                 }
             }
-        } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: Error in auto-enable on first play');
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Error in auto-enable on first play', err);
         }
     }
 
@@ -2398,9 +2572,9 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                     detailPageProcessing = false;
                 }
             }).catch(function () { detailPageProcessing = false; });
-        } catch (e) {
+        } catch (err) {
             detailPageProcessing = false;
-            console.warn('🪼 Jellyfin Enhanced: Error in spoiler detail page observer');
+            console.warn('🪼 Jellyfin Enhanced: Error in spoiler detail page observer', err);
         }
     }
 
@@ -2481,6 +2655,10 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
                 const surface = getCurrentSurface();
 
                 if (surface === 'details') {
+                    // Always process detail pages so users can enable spoiler mode
+                    // even when no items are currently protected.
+                    setTimeout(function () { handleDetailPageMutation(); }, DETAIL_RESCAN_DELAY_MS);
+                    setTimeout(function () { handleDetailPageMutation(); }, DETAIL_FINAL_RESCAN_DELAY_MS);
                     setTimeout(function () {
                         if (protectedIdSet.size > 0) filterNewCards();
                     }, DETAIL_RESCAN_DELAY_MS);
@@ -2517,12 +2695,8 @@ body.je-spoiler-active .listItem[data-id]:not([${SCANNED_ATTR}]) .listItemBody {
      * injects CSS, sets up observers, and exposes the public API.
      */
     JE.initializeSpoilerMode = function () {
-        spoilerData = JE.userConfig?.spoilerMode || {
-            rules: {},
-            settings: {},
-            tagAutoEnable: [],
-            autoEnableOnFirstPlay: false
-        };
+        spoilerData = normalizeSpoilerData(JE.userConfig?.spoilerMode);
+        syncUserSpoilerData();
         rebuildSets();
 
         // Activate pre-hide CSS immediately so cards are blurred before they render
