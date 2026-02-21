@@ -667,16 +667,33 @@
     if (hasJellyfinId) {
       img.src = `${ApiClient.getUrl('/Items/' + group.seriesId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH })}`;
       img.onerror = function() {
-        // Item removed from Jellyfin — fall back to TMDB poster if available
-        if (hasTmdbId && fallbackPosterPath) {
-          this.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${fallbackPosterPath}`;
-          this.onerror = function() { this.style.display = 'none'; };
-        } else {
-          this.style.display = 'none';
-        }
+        var self = this;
         // Signal the card that Jellyfin item is gone
         if (hasTmdbId && JE.jellyseerrMoreInfo) {
           posterLink.dataset.jellyfinRemoved = '1';
+        }
+        // Item removed from Jellyfin — fall back to TMDB poster
+        if (hasTmdbId && fallbackPosterPath) {
+          self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${fallbackPosterPath}`;
+          self.onerror = function() { this.style.display = 'none'; };
+        } else if (hasTmdbId && JE.jellyseerrAPI) {
+          // No posterPath stored — fetch it from Jellyseerr
+          self.onerror = function() { this.style.display = 'none'; };
+          var mainItem = group.items[0];
+          var mediaType = (mainItem && mainItem.type === 'Series') ? 'tv' : 'movie';
+          var fetchFn = mediaType === 'tv'
+              ? JE.jellyseerrAPI.fetchTvShowDetails
+              : JE.jellyseerrAPI.fetchMovieDetails;
+          fetchFn(parseInt(tmdbId, 10)).then(function(details) {
+            var path = details && (details.posterPath || details.poster_path);
+            if (path) {
+              self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${path}`;
+            } else {
+              self.style.display = 'none';
+            }
+          }).catch(function() { self.style.display = 'none'; });
+        } else {
+          self.style.display = 'none';
         }
       };
     } else if (fallbackPosterPath) {

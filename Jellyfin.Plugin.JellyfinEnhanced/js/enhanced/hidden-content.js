@@ -965,16 +965,31 @@
             img.alt = '';
             img.loading = 'lazy';
             img.onerror = function() {
-                // Item removed from Jellyfin — fall back to TMDB poster if available
-                if (hasTmdbId && item.posterPath) {
-                    this.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${item.posterPath}`;
-                    this.onerror = function() { this.style.display = 'none'; };
-                } else {
-                    this.style.display = 'none';
-                }
+                const self = this;
                 // Switch card to Jellyseerr navigation
                 if (hasTmdbId && JE.jellyseerrMoreInfo) {
                     card.dataset.jellyfinRemoved = '1';
+                }
+                // Item removed from Jellyfin — fall back to TMDB poster
+                if (hasTmdbId && item.posterPath) {
+                    self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${item.posterPath}`;
+                    self.onerror = function() { this.style.display = 'none'; };
+                } else if (hasTmdbId && JE.jellyseerrAPI) {
+                    // No posterPath stored — fetch it from Jellyseerr
+                    self.onerror = function() { this.style.display = 'none'; };
+                    const fetchFn = mediaType === 'tv'
+                        ? JE.jellyseerrAPI.fetchTvShowDetails
+                        : JE.jellyseerrAPI.fetchMovieDetails;
+                    fetchFn(parseInt(item.tmdbId, 10)).then(function(details) {
+                        const path = details && (details.posterPath || details.poster_path);
+                        if (path) {
+                            self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${path}`;
+                        } else {
+                            self.style.display = 'none';
+                        }
+                    }).catch(function() { self.style.display = 'none'; });
+                } else {
+                    self.style.display = 'none';
                 }
             };
             posterLink.appendChild(img);
