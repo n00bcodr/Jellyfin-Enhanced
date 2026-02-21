@@ -152,14 +152,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string ItemName { get; set; } = string.Empty;
         public string ItemType { get; set; } = string.Empty;
         public bool Enabled { get; set; }
-        public string Preset { get; set; } = "balanced";
         public string? BoundaryOverride { get; set; }
         public string EnabledAt { get; set; } = string.Empty;
     }
 
     public class SpoilerModeSettings
     {
-        public string Preset { get; set; } = "balanced";
         public string WatchedThreshold { get; set; } = "played";
         public string BoundaryRule { get; set; } = "showOnlyWatched";
         public string ArtworkPolicy { get; set; } = "blur";
@@ -168,6 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ProtectOverlay { get; set; } = true;
         public bool ProtectCalendar { get; set; } = true;
         public bool ProtectRecentlyAdded { get; set; } = true;
+        public bool ProtectEpisodeDetails { get; set; } = true;
         public bool HideRuntime { get; set; }
         public bool HideAirDate { get; set; }
         public bool HideGuestStars { get; set; }
@@ -178,7 +177,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowDisableConfirmation { get; set; } = true;
         public bool AutoEnableOnFirstPlay { get; set; }
         public List<string> AutoEnableTags { get; set; } = new List<string>();
-        public string DefaultPreset { get; set; } = "balanced";
     }
 
     public class UserSpoilerMode

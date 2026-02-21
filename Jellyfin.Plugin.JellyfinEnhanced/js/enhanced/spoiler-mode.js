@@ -9,7 +9,7 @@
  * - Per-user, per-show/movie spoiler rules stored in `spoiler-mode.json`
  * - "Spoiler boundary" = last fully watched episode; everything after is redacted
  * - Reveal controls (tap-to-reveal, press-and-hold, 30s reveal-all)
- * - Presets: Balanced (blur artwork) and Strict (generic tiles, hide runtime/air date)
+ * - Granular settings with sensible defaults (no presets)
  */
 (function (JE) {
     'use strict';
@@ -87,34 +87,20 @@
     /** GUID format validation for Jellyfin item IDs. */
     const GUID_RE = /^[0-9a-f]{32}$/i;
 
-    /** Preset configurations. */
-    const PRESETS = {
-        balanced: {
-            artworkPolicy: 'blur',
-            protectHome: true,
-            protectSearch: true,
-            protectOverlay: true,
-            protectCalendar: true,
-            protectRecentlyAdded: true,
-            hideRuntime: false,
-            hideAirDate: false,
-            hideGuestStars: false,
-            showSeriesOverview: false,
-            revealDuration: DEFAULT_REVEAL_DURATION
-        },
-        strict: {
-            artworkPolicy: 'generic',
-            protectHome: true,
-            protectSearch: true,
-            protectOverlay: true,
-            protectCalendar: true,
-            protectRecentlyAdded: true,
-            hideRuntime: true,
-            hideAirDate: true,
-            hideGuestStars: true,
-            showSeriesOverview: false,
-            revealDuration: DEFAULT_REVEAL_DURATION
-        }
+    /** Default setting values (flat — no presets). */
+    const SETTING_DEFAULTS = {
+        artworkPolicy: 'blur',
+        protectHome: true,
+        protectSearch: true,
+        protectOverlay: true,
+        protectCalendar: true,
+        protectRecentlyAdded: true,
+        protectEpisodeDetails: true,
+        hideRuntime: false,
+        hideAirDate: false,
+        hideGuestStars: false,
+        showSeriesOverview: false,
+        revealDuration: DEFAULT_REVEAL_DURATION
     };
 
     /** Selectors for finding the detail page button container. */
@@ -340,17 +326,15 @@
      * (name/type) or current `rules` schema (itemName/itemType).
      * @param {string} key Rule key.
      * @param {Object} entry Raw rule/item entry.
-     * @param {string} fallbackPreset Preset fallback.
      * @returns {Object} Normalized rule entry.
      */
-    function normalizeRuleEntry(key, entry, fallbackPreset) {
+    function normalizeRuleEntry(key, entry) {
         const raw = entry || {};
         return {
             itemId: raw.itemId || key,
             itemName: raw.itemName || raw.name || '',
             itemType: raw.itemType || raw.type || '',
             enabled: raw.enabled !== false,
-            preset: raw.preset || fallbackPreset || 'balanced',
             boundaryOverride: raw.boundaryOverride || null,
             enabledAt: raw.enabledAt || new Date().toISOString()
         };
@@ -371,8 +355,7 @@
                 itemId: rule.itemId || key,
                 name: rule.itemName || '',
                 type: rule.itemType || '',
-                enabledAt: rule.enabledAt || new Date().toISOString(),
-                preset: rule.preset || 'balanced'
+                enabledAt: rule.enabledAt || new Date().toISOString()
             };
         }
         return result;
@@ -394,7 +377,6 @@
                 itemName: rule.itemName || rule.name || '',
                 itemType: rule.itemType || rule.type || '',
                 enabled: rule.enabled !== false,
-                preset: rule.preset || 'balanced',
                 boundaryOverride: rule.boundaryOverride || null,
                 enabledAt: rule.enabledAt || new Date().toISOString()
             };
@@ -411,7 +393,6 @@
     function normalizeSpoilerData(rawData) {
         const raw = (rawData && typeof rawData === 'object') ? rawData : {};
         const rawSettings = raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
-        const fallbackPreset = rawSettings.defaultPreset || rawSettings.preset || 'balanced';
 
         const sourceRules = raw.rules && typeof raw.rules === 'object'
             ? raw.rules
@@ -419,7 +400,7 @@
 
         const normalizedRules = {};
         for (const key of Object.keys(sourceRules)) {
-            const normalized = normalizeRuleEntry(key, sourceRules[key], fallbackPreset);
+            const normalized = normalizeRuleEntry(key, sourceRules[key]);
             if (normalized.enabled) {
                 normalizedRules[key] = normalized;
             }
@@ -455,8 +436,7 @@
         const settings = {
             ...(source.settings || {}),
             autoEnableTags: tagAutoEnable,
-            autoEnableOnFirstPlay,
-            defaultPreset: source.settings?.defaultPreset || source.settings?.preset || 'balanced'
+            autoEnableOnFirstPlay
         };
 
         return {
@@ -509,21 +489,16 @@
     }
 
     /**
-     * Returns the merged settings object (defaults + user overrides + preset).
+     * Returns the merged settings object (defaults + user overrides).
      * @returns {Object} Merged settings.
      */
     function getSettings() {
         const data = getSpoilerData();
-        const userPreset = data.settings?.preset || 'balanced';
-        const presetDefaults = Object.prototype.hasOwnProperty.call(PRESETS, userPreset)
-            ? PRESETS[userPreset]
-            : PRESETS.balanced;
 
         const merged = {
-            preset: userPreset,
             watchedThreshold: 'played',
             boundaryRule: 'showOnlyWatched',
-            ...presetDefaults,
+            ...SETTING_DEFAULTS,
             ...data.settings
         };
 
@@ -645,9 +620,8 @@
      * @param {string} params.itemName Display name.
      * @param {string} params.itemType Item type (Series, Movie).
      * @param {boolean} params.enabled Whether to enable or disable.
-     * @param {string} [params.preset] Preset to use (balanced, strict, custom).
      */
-    function setRule({ itemId, itemName, itemType, enabled, preset }) {
+    function setRule({ itemId, itemName, itemType, enabled }) {
         const data = getSpoilerData();
         if (enabled) {
             const existingRule = data.rules?.[itemId];
@@ -656,7 +630,6 @@
                 itemName: itemName || existingRule?.itemName || '',
                 itemType: itemType || existingRule?.itemType || '',
                 enabled: true,
-                preset: preset || existingRule?.preset || getSettings().preset || 'balanced',
                 boundaryOverride: existingRule?.boundaryOverride || null,
                 enabledAt: existingRule?.enabledAt || new Date().toISOString()
             };
@@ -1316,6 +1289,20 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
   cursor: pointer;
 }
 
+/* Episode detail page protection — hide spoiler-sensitive sections */
+.je-spoiler-episode-protected .detailImageContainer img {
+  filter: blur(${BLUR_RADIUS}) !important;
+  transition: filter 0.3s ease !important;
+}
+.je-spoiler-episode-protected .mediaInfoContent,
+.je-spoiler-episode-protected .itemGenres,
+.je-spoiler-episode-protected .itemExternalLinks,
+.je-spoiler-episode-protected .itemDirectors,
+.je-spoiler-episode-protected .itemWriters,
+.je-spoiler-episode-protected .itemMiscInfo {
+  visibility: hidden !important;
+}
+
 .je-spoiler-revealing .cardScalable > .cardImageContainer,
 .je-spoiler-revealing .cardImage,
 .je-spoiler-revealing .listItemImage {
@@ -1670,6 +1657,19 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             if (el.dataset.jeSpoilerOriginal) {
                 el.textContent = el.dataset.jeSpoilerOriginal;
                 el.classList.remove('je-spoiler-overview-hidden');
+            }
+        });
+
+        // Remove episode detail page protection class
+        document.querySelectorAll('.je-spoiler-episode-protected').forEach(function (el) {
+            el.classList.remove('je-spoiler-episode-protected');
+        });
+
+        // Remove backdrop blur (episode + movie detail pages)
+        document.querySelectorAll('.backdropImage, .detailImageContainer img').forEach(function (el) {
+            if (el.style.filter && el.style.filter.indexOf('blur') !== -1) {
+                el.style.filter = '';
+                el.style.transition = '';
             }
         });
 
@@ -2106,6 +2106,10 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             el.classList.remove('je-spoiler-overview-hidden');
         });
 
+        document.querySelectorAll('.je-spoiler-episode-protected').forEach(function (el) {
+            el.classList.remove('je-spoiler-episode-protected');
+        });
+
         document.querySelectorAll('.je-spoiler-osd-redacted').forEach(function (el) {
             if (el.dataset.jeSpoilerOriginal) {
                 el.textContent = el.dataset.jeSpoilerOriginal;
@@ -2511,7 +2515,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             }
         }
 
-        // Blur the series backdrop if strict mode
+        // Blur backdrop when artwork policy is generic or guest stars are hidden
         if (settings.artworkPolicy === 'generic' || settings.hideGuestStars) {
             const backdropEl = visiblePage.querySelector('.backdropImage, .detailImageContainer img');
             if (backdropEl) {
@@ -2684,7 +2688,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             hideOverviewWithReveal(visiblePage);
         }
 
-        // Blur backdrop if strict mode
+        // Blur backdrop when artwork policy is generic or guest stars are hidden
         const settings = getSettings();
         if (settings.artworkPolicy === 'generic' || settings.hideGuestStars) {
             const backdropEl = visiblePage.querySelector('.backdropImage, .detailImageContainer img');
@@ -2696,6 +2700,57 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
         // Redact chapter cards (Scenes section), skipping already-watched chapters
         await redactDetailPageChapters(movieId, visiblePage);
+    }
+
+    /**
+     * Redacts an unwatched episode's detail page when protectEpisodeDetails is on.
+     * Hides overview, blurs backdrop and poster, hides metadata and chapters.
+     * Optionally hides Guest Stars section when hideGuestStars is enabled.
+     * @param {Object} episodeItem Jellyfin episode item with UserData.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    async function redactEpisodeDetailPage(episodeItem, visiblePage) {
+        if (revealAllActive) return;
+
+        const settings = getSettings();
+        if (!settings.protectEpisodeDetails) return;
+        if (!shouldRedactEpisode(episodeItem)) return;
+
+        try {
+            // Always hide episode overview (showSeriesOverview only applies to series/collection overviews)
+            hideOverviewWithReveal(visiblePage);
+
+            // Add CSS class that blurs poster and hides metadata (runtime, genres, external links)
+            if (!visiblePage.classList.contains('je-spoiler-episode-protected')) {
+                visiblePage.classList.add('je-spoiler-episode-protected');
+            }
+
+            // Blur backdrop image (lives outside #itemDetailPage in .backdropContainer)
+            const backdropEl = document.querySelector('.backdropImage');
+            if (backdropEl) {
+                backdropEl.style.filter = 'blur(' + BLUR_RADIUS + ')';
+                backdropEl.style.transition = 'filter 0.3s ease';
+            }
+
+            // Hide Guest Stars section only when hideGuestStars is enabled
+            if (settings.hideGuestStars) {
+                const allHeadings = document.querySelectorAll('#itemDetailPage .sectionTitle, #itemDetailPage h2, #itemDetailPage h3');
+                for (let i = 0; i < allHeadings.length; i++) {
+                    const text = (allHeadings[i].textContent || '').trim().toLowerCase();
+                    if (text === 'guest stars' || text === 'guests') {
+                        const section = allHeadings[i].closest('.verticalSection, .detailSection, .detailVerticalSection');
+                        if (section && !section.classList.contains('je-spoiler-metadata-hidden')) {
+                            section.classList.add('je-spoiler-metadata-hidden');
+                        }
+                    }
+                }
+            }
+
+            // Redact chapter cards (Scenes section)
+            await redactDetailPageChapters(episodeItem.Id, visiblePage);
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to fully redact episode detail page', episodeItem?.Id, err);
+        }
     }
 
     // ============================================================
@@ -3103,12 +3158,18 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                         completeDetailPageProcessing();
                     });
                 } else if (item.Type === 'Episode') {
-                    // Episode detail pages can have chapter cards (Scenes section)
                     const epSeriesId = item.SeriesId || null;
-                    if (epSeriesId && isProtected(epSeriesId)) {
-                        redactDetailPageChapters(itemId, visiblePage).then(function () {
+                    const epProtected = epSeriesId && isProtected(epSeriesId);
+                    if (epProtected) {
+                        // Full episode detail page redaction when protectEpisodeDetails is on;
+                        // otherwise fall back to chapters-only redaction.
+                        const redactPromise = getSettings().protectEpisodeDetails
+                            ? redactEpisodeDetailPage(item, visiblePage)
+                            : redactDetailPageChapters(itemId, visiblePage);
+                        redactPromise.then(function () {
                             completeDetailPageProcessing();
-                        }).catch(function () {
+                        }).catch(function (err) {
+                            console.warn('🪼 Jellyfin Enhanced: Episode detail page redaction failed', err);
                             completeDetailPageProcessing();
                         });
                     } else {
@@ -3195,9 +3256,12 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         // Page navigation hook
         if (JE.helpers?.onViewPage) {
             JE.helpers.onViewPage(function () {
-                // Reset detail page guard on navigation
+                // Reset detail page guard and remove episode protection class on navigation
                 lastDetailPageItemId = null;
                 detailPageProcessing = false;
+                document.querySelectorAll('.je-spoiler-episode-protected').forEach(function (el) {
+                    el.classList.remove('je-spoiler-episode-protected');
+                });
 
                 // Cancel pending timers from the previous page to prevent
                 // stale callbacks firing after rapid navigation.

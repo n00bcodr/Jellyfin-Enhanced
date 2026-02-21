@@ -1047,14 +1047,6 @@
                                     <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_confirm_disable_label')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_confirm_disable_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <div style="font-weight:500; margin-bottom:8px;">${JE.t('spoiler_mode_preset_label')}</div>
-                                <select id="spoilerPresetSelect" style="width:100%; padding:10px; background:${presetBoxBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; font-size:14px; cursor:pointer; font-family:inherit;">
-                                    <option value="balanced" ${JE.spoilerMode.getSettings().preset === 'balanced' ? 'selected' : ''} style="background:rgba(30,30,30,1); color:#fff;">${JE.t('spoiler_mode_preset_balanced')}</option>
-                                    <option value="strict" ${JE.spoilerMode.getSettings().preset === 'strict' ? 'selected' : ''} style="background:rgba(30,30,30,1); color:#fff;">${JE.t('spoiler_mode_preset_strict')}</option>
-                                </select>
-                                <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:6px;">${JE.t('spoiler_mode_preset_desc')}</div>
-                            </div>
                             <div style="margin-bottom:8px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
                                 <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
                                     <input type="checkbox" id="spoilerProtectHome" ${JE.spoilerMode.getSettings().protectHome !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -1083,6 +1075,12 @@
                                 <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
                                     <input type="checkbox" id="spoilerProtectRecentlyAdded" ${JE.spoilerMode.getSettings().protectRecentlyAdded !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_protect_recently_added')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_protect_recently_added_desc')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom:8px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
+                                <label style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+                                    <input type="checkbox" id="spoilerProtectEpisodeDetails" ${JE.spoilerMode.getSettings().protectEpisodeDetails !== false ? 'checked' : ''} style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t('spoiler_mode_protect_episode_details')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('spoiler_mode_protect_episode_details_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="margin-top:16px; margin-bottom:8px; font-weight:600; font-size:13px; color:${primaryAccentColor}; text-transform:uppercase; letter-spacing:0.5px;">${JE.t('spoiler_mode_redaction_heading')}</div>
@@ -1639,19 +1637,13 @@
                     resetAutoCloseTimer();
                 });
             }
-            const spoilerPreset = document.getElementById('spoilerPresetSelect');
-            if (spoilerPreset) {
-                spoilerPreset.addEventListener('change', (e) => {
-                    JE.spoilerMode.updateSettings({ preset: e.target.value });
-                    resetAutoCloseTimer();
-                });
-            }
             const spoilerToggles = [
                 ['spoilerProtectHome', 'protectHome'],
                 ['spoilerProtectSearch', 'protectSearch'],
                 ['spoilerProtectOverlay', 'protectOverlay'],
                 ['spoilerProtectCalendar', 'protectCalendar'],
                 ['spoilerProtectRecentlyAdded', 'protectRecentlyAdded'],
+                ['spoilerProtectEpisodeDetails', 'protectEpisodeDetails'],
                 ['spoilerHideRuntime', 'hideRuntime'],
                 ['spoilerHideAirDate', 'hideAirDate'],
                 ['spoilerHideGuestStars', 'hideGuestStars'],
