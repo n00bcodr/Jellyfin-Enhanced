@@ -1686,6 +1686,9 @@
             // Skip image editor cards and cards inside dialogs/admin pages
             if (card.hasAttribute('data-imagetype') || card.closest('.formDialog, .editPageInnerContent')) continue;
 
+            // Skip chapter/scene cards on detail pages
+            if (card.closest('#itemDetailPage') && card.querySelector('.chapterCardImageContainer')) continue;
+
             const itemId = getCardItemId(card);
             if (!itemId) continue;
 
