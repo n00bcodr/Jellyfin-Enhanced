@@ -2819,8 +2819,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
             // Check if this is Episode 1 (first play of a new series)
             if (enableOnFirst) {
-                const isFirstEpisode = (item.ParentIndexNumber === 1 || item.ParentIndexNumber === 0) &&
-                    (item.IndexNumber === 1);
+                const isFirstEpisode = item.ParentIndexNumber === 1 && item.IndexNumber === 1;
 
                 if (isFirstEpisode && !isProtected(seriesId)) {
                     const seriesName = item.SeriesName || '';
@@ -2962,12 +2961,10 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                     item.Type !== 'Season';
                 setDetailOverviewPending(prehideOverview);
 
-                // Add spoiler toggle for Series, Movies, BoxSets, and Episodes (via parent series)
+                // Add spoiler toggle for Series, Movies, and BoxSets
                 if (item.Type === 'Series' || item.Type === 'Movie' || item.Type === 'BoxSet') {
                     addSpoilerToggleButton(itemId, item.Type, visiblePage);
                     checkAndAutoEnableByTag(itemId, item);
-                } else if (item.Type === 'Episode' && item.SeriesId) {
-                    addSpoilerToggleButton(item.SeriesId, 'Series', visiblePage);
                 }
 
                 // Redact detail page content based on item type
