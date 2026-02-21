@@ -595,7 +595,8 @@
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
             // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
             if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
-            if (typeof JE.initializeSpoilerMode === 'function') JE.initializeSpoilerMode();
+            // Skip spoiler mode initialization when feature is disabled server-wide — JE.spoilerMode stays undefined, safely disabling all downstream consumers
+            if (typeof JE.initializeSpoilerMode === 'function' && JE.pluginConfig?.SpoilerModeEnabled !== false) JE.initializeSpoilerMode();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
                 JE.initializeColoredRatings();

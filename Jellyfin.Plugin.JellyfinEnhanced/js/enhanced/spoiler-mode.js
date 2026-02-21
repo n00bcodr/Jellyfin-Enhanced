@@ -719,6 +719,23 @@
         emitChange();
     }
 
+    /**
+     * Replaces the tagAutoEnable list (immutable pattern).
+     * @param {string[]} tags Array of tag strings.
+     */
+    function setTagAutoEnable(tags) {
+        const data = getSpoilerData();
+        const cleaned = Array.isArray(tags) ? tags.filter(Boolean) : [];
+        spoilerData = {
+            ...data,
+            tagAutoEnable: cleaned,
+            settings: { ...data.settings, autoEnableTags: cleaned }
+        };
+        syncUserSpoilerData();
+        debouncedSave();
+        emitChange();
+    }
+
     // ============================================================
     // Boundary computation
     // ============================================================
@@ -1342,9 +1359,116 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 .je-spoiler-osd-redacted {
   color: rgba(255,255,255,0.5) !important;
   font-style: italic !important;
-}`;
+}
+
+.je-spoiler-confirm-overlay {
+  position: fixed; inset: 0; z-index: 100001;
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+}
+.je-spoiler-confirm-dialog {
+  background: linear-gradient(135deg, rgba(30,30,35,0.98), rgba(20,20,25,0.98));
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 12px;
+  padding: 24px; max-width: 420px; width: 90%; color: #fff;
+}
+.je-spoiler-confirm-dialog h3 {
+  margin: 0 0 12px 0; font-size: 18px; font-weight: 600;
+}
+.je-spoiler-confirm-dialog p {
+  margin: 0 0 20px 0; font-size: 14px;
+  color: rgba(255,255,255,0.7); line-height: 1.5;
+}
+.je-spoiler-confirm-buttons {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.je-spoiler-confirm-btn {
+  border: none; color: #fff; padding: 10px 16px;
+  border-radius: 6px; cursor: pointer; font-size: 14px;
+  font-weight: 500; transition: background 0.2s ease; text-align: center;
+}
+.je-spoiler-confirm-reveal {
+  background: rgba(255,152,0,0.6); border: 1px solid rgba(255,152,0,0.7);
+}
+.je-spoiler-confirm-reveal:hover { background: rgba(255,152,0,0.8); }
+.je-spoiler-confirm-disable {
+  background: rgba(220,50,50,0.5); border: 1px solid rgba(220,50,50,0.6);
+}
+.je-spoiler-confirm-disable:hover { background: rgba(220,50,50,0.7); }
+.je-spoiler-confirm-cancel {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+}
+.je-spoiler-confirm-cancel:hover { background: rgba(255,255,255,0.2); }`;
 
         JE.helpers.addCSS('je-spoiler-mode', css);
+    }
+
+    // ============================================================
+    // Spoiler confirmation dialog
+    // ============================================================
+
+    /**
+     * Shows a confirmation dialog when the user clicks an active spoiler toggle.
+     * Offers: Reveal Temporarily, Disable Protection, or Cancel.
+     * @param {string} itemName Display name of the item.
+     * @param {Function} onReveal Called when user chooses temporary reveal.
+     * @param {Function} onDisable Called when user chooses to disable protection.
+     */
+    function showSpoilerConfirmation(itemName, onReveal, onDisable) {
+        document.querySelector('.je-spoiler-confirm-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'je-spoiler-confirm-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'je-spoiler-confirm-dialog';
+
+        const title = document.createElement('h3');
+        title.textContent = tFallback('spoiler_mode_confirm_title', 'Spoiler Protection');
+        dialog.appendChild(title);
+
+        const body = document.createElement('p');
+        body.textContent = tFallback('spoiler_mode_confirm_body', 'What would you like to do with spoiler protection for "{name}"?').replace('{name}', itemName);
+        dialog.appendChild(body);
+
+        const buttons = document.createElement('div');
+        buttons.className = 'je-spoiler-confirm-buttons';
+
+        const closeDialog = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        };
+
+        const revealBtn = document.createElement('button');
+        revealBtn.className = 'je-spoiler-confirm-btn je-spoiler-confirm-reveal';
+        revealBtn.textContent = tFallback('spoiler_mode_confirm_reveal', 'Reveal Temporarily');
+        revealBtn.addEventListener('click', () => { closeDialog(); onReveal(); });
+        buttons.appendChild(revealBtn);
+
+        const disableBtn = document.createElement('button');
+        disableBtn.className = 'je-spoiler-confirm-btn je-spoiler-confirm-disable';
+        disableBtn.textContent = tFallback('spoiler_mode_confirm_disable', 'Disable Protection');
+        disableBtn.addEventListener('click', () => { closeDialog(); onDisable(); });
+        buttons.appendChild(disableBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'je-spoiler-confirm-btn je-spoiler-confirm-cancel';
+        cancelBtn.textContent = tFallback('spoiler_mode_confirm_cancel', 'Cancel');
+        cancelBtn.addEventListener('click', closeDialog);
+        buttons.appendChild(cancelBtn);
+
+        dialog.appendChild(buttons);
+        overlay.appendChild(dialog);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeDialog();
+        });
+
+        const escHandler = (e) => {
+            if (e.key === 'Escape') closeDialog();
+        };
+        document.addEventListener('keydown', escHandler);
+
+        document.body.appendChild(overlay);
     }
 
     // ============================================================
@@ -1360,6 +1484,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
     function addSpoilerToggleButton(itemId, itemType, visiblePage) {
         // Only show for Series, Movies, and BoxSets (collections)
         if (itemType !== 'Series' && itemType !== 'Movie' && itemType !== 'BoxSet') return;
+
+        // Respect the showButtons user setting
+        if (getSettings().showButtons === false) return;
 
         // Don't add duplicate
         if (visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
@@ -1427,23 +1554,38 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
             const itemName = nameEl?.textContent?.trim() || 'Unknown';
 
-            setRule({
-                itemId,
-                itemName,
-                itemType,
-                enabled: !isCurrentlyActive
-            });
+            // Enabling is always instant
+            if (!isCurrentlyActive) {
+                setRule({ itemId, itemName, itemType, enabled: true });
+                updateState();
+                JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + tFallback('spoiler_mode_enabled_toast', 'Spoiler Mode enabled'));
+                setTimeout(function () { processCurrentPage(); }, TOGGLE_RESCAN_DELAY_MS);
+                return;
+            }
 
-            updateState();
-
-            // Show toast notification using safe text
-            const statusText = !isCurrentlyActive
-                ? tFallback('spoiler_mode_enabled_toast', 'Spoiler Mode enabled')
-                : tFallback('spoiler_mode_disabled_toast', 'Spoiler Mode disabled');
-            JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + statusText);
-
-            // Trigger re-scan of current page
-            setTimeout(function () { processCurrentPage(); }, TOGGLE_RESCAN_DELAY_MS);
+            // Disabling — show confirmation dialog with reveal option
+            const settings = getSettings();
+            if (settings.showDisableConfirmation !== false) {
+                showSpoilerConfirmation(
+                    itemName,
+                    // Reveal temporarily
+                    function () {
+                        activateRevealAll();
+                    },
+                    // Disable protection
+                    function () {
+                        setRule({ itemId, itemName, itemType, enabled: false });
+                        updateState();
+                        JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + tFallback('spoiler_mode_disabled_toast', 'Spoiler Mode disabled'));
+                        setTimeout(function () { processCurrentPage(); }, TOGGLE_RESCAN_DELAY_MS);
+                    }
+                );
+            } else {
+                setRule({ itemId, itemName, itemType, enabled: false });
+                updateState();
+                JE.toast(JE.icon(JE.IconName.SHIELD) + ' ' + tFallback('spoiler_mode_disabled_toast', 'Spoiler Mode disabled'));
+                setTimeout(function () { processCurrentPage(); }, TOGGLE_RESCAN_DELAY_MS);
+            }
         });
 
         updateState();
@@ -1456,8 +1598,6 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             buttonContainer.appendChild(button);
         }
 
-        // Also add reveal-all button if spoiler mode is active
-        addRevealAllButton(itemId, visiblePage);
     }
 
     /**
@@ -2272,7 +2412,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      * Processes the current page: re-scans cards and applies redaction.
      */
     function processCurrentPage() {
-        if (protectedIdSet.size === 0) {
+        if (getSettings().enabled === false || protectedIdSet.size === 0) {
             clearAllRedactions();
             return;
         }
@@ -3172,6 +3312,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             getSettings,
             updateSettings,
             setAutoEnableOnFirstPlay,
+            setTagAutoEnable,
             computeBoundary,
             isEpisodePastBoundary,
             shouldRedactEpisode,
