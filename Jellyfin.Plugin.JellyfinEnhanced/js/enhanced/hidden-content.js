@@ -964,7 +964,19 @@
             img.src = `${ApiClient.getUrl('/Items/' + item.itemId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH })}`;
             img.alt = '';
             img.loading = 'lazy';
-            img.onerror = function() { this.style.display = 'none'; };
+            img.onerror = function() {
+                // Item removed from Jellyfin — fall back to TMDB poster if available
+                if (hasTmdbId && item.posterPath) {
+                    this.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${item.posterPath}`;
+                    this.onerror = function() { this.style.display = 'none'; };
+                } else {
+                    this.style.display = 'none';
+                }
+                // Switch card to Jellyseerr navigation
+                if (hasTmdbId && JE.jellyseerrMoreInfo) {
+                    card.dataset.jellyfinRemoved = '1';
+                }
+            };
             posterLink.appendChild(img);
         } else {
             const placeholder = document.createElement('div');
@@ -993,7 +1005,12 @@
         const navigableLinks = [posterLink, nameLink];
         for (const link of navigableLinks) {
             link.addEventListener('click', (e) => {
-                if (hasJellyfinId) {
+                // If item was removed from Jellyfin, fall back to Jellyseerr modal
+                if (hasJellyfinId && card.dataset.jellyfinRemoved === '1' && hasTmdbId && JE.jellyseerrMoreInfo) {
+                    e.preventDefault();
+                    JE.jellyseerrMoreInfo.open(parseInt(item.tmdbId, 10), mediaType);
+                    if (onNavigate) onNavigate();
+                } else if (hasJellyfinId) {
                     if (onNavigate) onNavigate();
                 } else if (hasTmdbId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
