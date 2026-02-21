@@ -1485,8 +1485,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         // Only show for Series, Movies, and BoxSets (collections)
         if (itemType !== 'Series' && itemType !== 'Movie' && itemType !== 'BoxSet') return;
 
-        // Respect the showButtons user setting
-        if (getSettings().showButtons === false) return;
+        // Respect the enabled and showButtons user settings
+        const settings = getSettings();
+        if (settings.enabled === false || settings.showButtons === false) return;
 
         // Don't add duplicate
         if (visiblePage.querySelector('.je-spoiler-toggle-btn')) return;
@@ -2176,6 +2177,17 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                 el.style.transition = '';
             }
         });
+
+        // Catch-all: remove blur/generic classes from any remaining elements
+        document.querySelectorAll('.je-spoiler-blur, .je-spoiler-generic').forEach(function (el) {
+            el.classList.remove('je-spoiler-blur', 'je-spoiler-generic', 'je-spoiler-revealing');
+        });
+
+        // Remove any remaining badges
+        document.querySelectorAll('.je-spoiler-badge').forEach(function (b) { b.remove(); });
+
+        // Remove spoiler toggle buttons and reveal buttons from detail pages
+        document.querySelectorAll('.je-spoiler-toggle-btn, .je-spoiler-reveal-all-btn').forEach(function (b) { b.remove(); });
     }
 
     // ============================================================
@@ -2396,6 +2408,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      * Re-processes all cards on the page (including previously scanned ones).
      */
     function filterAllCards() {
+        if (getSettings().enabled === false) { clearAllRedactions(); return; }
         const cards = document.querySelectorAll(CARD_SEL);
         for (const card of cards) {
             card.setAttribute(PROCESSED_ATTR, '1');
@@ -2735,6 +2748,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      */
     function redactSearchResults() {
         const settings = getSettings();
+        if (settings.enabled === false) return;
         if (!settings.protectSearch) return;
         if (protectedIdSet.size === 0) return;
         filterNewCards();
@@ -2753,6 +2767,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         if (revealAllActive) return;
 
         const settings = getSettings();
+        if (settings.enabled === false) return;
         if (!settings.protectOverlay) return;
 
         const seriesId = await getParentSeriesId(itemId);
@@ -2865,6 +2880,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      */
     function filterCalendarEvents(events) {
         const settings = getSettings();
+        if (settings.enabled === false) return events;
         if (!settings.protectCalendar) return events;
         if (!Array.isArray(events) || protectedIdSet.size === 0) return events;
 
@@ -3058,6 +3074,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      * Handles detail page mutations (adding toggle button, redacting episodes).
      */
     function handleDetailPageMutation() {
+        if (getSettings().enabled === false) return;
         if (detailPageProcessing) return;
 
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
@@ -3155,7 +3172,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      * @param {MutationRecord[]} mutations The mutation records.
      */
     function handleMutations(mutations) {
-        if (protectedIdSet.size === 0) return;
+        if (getSettings().enabled === false || protectedIdSet.size === 0) return;
 
         // Manual indexed loops with early break for performance (avoid iterating all mutations)
         let hasNewCards = false;
@@ -3298,6 +3315,11 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
         injectCSS();
         setupObservers();
+
+        // Re-process page when settings change (e.g. user toggles enabled off)
+        window.addEventListener('je-spoiler-mode-changed', function () {
+            processCurrentPage();
+        });
 
         // Initial filter after a short delay (for async page rendering)
         if (protectedIdSet.size > 0) {
