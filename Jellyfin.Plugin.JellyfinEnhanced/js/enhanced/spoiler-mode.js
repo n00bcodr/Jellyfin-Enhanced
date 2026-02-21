@@ -132,6 +132,9 @@
     /** The in-memory spoiler mode data object. */
     let spoilerData = null;
 
+    /** The user ID that owns the current spoilerData (prevents cross-user saves). */
+    let spoilerDataOwnerId = null;
+
     /** Save debounce timer. */
     let saveTimeout = null;
 
@@ -583,11 +586,20 @@
 
     /**
      * Persists the spoiler mode data to the server after a debounce.
+     * Refuses to save if the current user differs from the user who loaded
+     * the data, preventing cross-user contamination on user switches.
      */
     function debouncedSave() {
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(function () {
             saveTimeout = null;
+            const currentUserId = typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId
+                ? ApiClient.getCurrentUserId()
+                : null;
+            if (spoilerDataOwnerId && currentUserId && spoilerDataOwnerId !== currentUserId) {
+                console.warn('🪼 Jellyfin Enhanced: Spoiler save skipped — user changed from', spoilerDataOwnerId, 'to', currentUserId);
+                return;
+            }
             const data = getSpoilerData();
             JE.saveUserSettings('spoiler-mode.json', toServerSpoilerData(data));
         }, SAVE_DEBOUNCE_MS);
@@ -2145,6 +2157,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         let failed = false;
         try {
             if (card.hasAttribute('data-imagetype')) return; // Skip image editor cards
+            if (card.classList.contains('chapterCard')) return; // Handled by redactDetailPageChapters
 
             const itemId = getCardItemId(card);
             if (!itemId) return;
@@ -2160,10 +2173,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             }
 
             // Movie card: directly protected or belongs to a protected collection
-            // Chapter cards (data-type="Movie") are handled by detail-page-level
-            // redaction which has access to PlaybackPositionTicks for position-aware filtering.
             if (cardType === 'movie') {
-                if (card.classList.contains('chapterCard')) return;
                 const directlyProtected = isProtected(itemId);
                 const collectionId = !directlyProtected ? await getProtectedCollectionForMovie(itemId) : null;
 
@@ -2272,6 +2282,10 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             el.removeAttribute(PROCESSED_ATTR);
             el.removeAttribute(SCANNED_ATTR);
         });
+
+        // Reset detail page state so handleDetailPageMutation re-processes
+        // (needed for chapter redaction on episode/movie detail pages)
+        lastDetailPageItemId = null;
 
         filterAllCards();
     }
@@ -2948,10 +2962,12 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                     item.Type !== 'Season';
                 setDetailOverviewPending(prehideOverview);
 
-                // Add spoiler toggle for Series, Movies, and BoxSets
+                // Add spoiler toggle for Series, Movies, BoxSets, and Episodes (via parent series)
                 if (item.Type === 'Series' || item.Type === 'Movie' || item.Type === 'BoxSet') {
                     addSpoilerToggleButton(itemId, item.Type, visiblePage);
                     checkAndAutoEnableByTag(itemId, item);
+                } else if (item.Type === 'Episode' && item.SeriesId) {
+                    addSpoilerToggleButton(item.SeriesId, 'Series', visiblePage);
                 }
 
                 // Redact detail page content based on item type
@@ -2973,6 +2989,18 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
                     }).catch(function () {
                         completeDetailPageProcessing();
                     });
+                } else if (item.Type === 'Episode') {
+                    // Episode detail pages can have chapter cards (Scenes section)
+                    const epSeriesId = item.SeriesId || null;
+                    if (epSeriesId && isProtected(epSeriesId)) {
+                        redactDetailPageChapters(itemId, visiblePage).then(function () {
+                            completeDetailPageProcessing();
+                        }).catch(function () {
+                            completeDetailPageProcessing();
+                        });
+                    } else {
+                        completeDetailPageProcessing();
+                    }
                 } else {
                     completeDetailPageProcessing();
                 }
@@ -3117,6 +3145,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
      * injects CSS, sets up observers, and exposes the public API.
      */
     JE.initializeSpoilerMode = function () {
+        spoilerDataOwnerId = typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId
+            ? ApiClient.getCurrentUserId()
+            : null;
         spoilerData = normalizeSpoilerData(JE.userConfig?.spoilerMode);
         syncUserSpoilerData();
         rebuildSets();
