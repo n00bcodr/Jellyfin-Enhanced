@@ -1602,65 +1602,6 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
     }
 
-    /**
-     * Adds a "Reveal All Spoilers (30s)" button to the detail page.
-     * @param {string} itemId The item's Jellyfin ID.
-     * @param {HTMLElement} visiblePage The visible detail page element.
-     */
-    function addRevealAllButton(itemId, visiblePage) {
-        // Only show if spoiler mode is active for this item
-        if (!isProtected(itemId)) {
-            visiblePage.querySelector('.je-spoiler-reveal-all-btn')?.remove();
-            return;
-        }
-
-        // Don't add duplicate
-        if (visiblePage.querySelector('.je-spoiler-reveal-all-btn')) return;
-
-        const buttonContainer = findButtonContainer(visiblePage);
-        if (!buttonContainer) return;
-
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
-        button.className = 'button-flat detailButton emby-button je-spoiler-reveal-all-btn';
-        button.type = 'button';
-        button.title = tFallback('spoiler_mode_reveal_all_tooltip', 'Reveal all spoilers on this page for 30 seconds');
-
-        const content = document.createElement('div');
-        content.className = 'detailButton-content';
-
-        const icon = document.createElement('span');
-        icon.className = 'material-icons detailButton-icon';
-        icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = 'visibility';
-        content.appendChild(icon);
-
-        const textSpan = document.createElement('span');
-        textSpan.className = 'detailButton-icon-text';
-        textSpan.textContent = tFallback('spoiler_mode_reveal_all', 'Reveal (30s)');
-        content.appendChild(textSpan);
-        button.appendChild(content);
-
-        button.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            activateRevealAll();
-        });
-
-        // Insert after the spoiler toggle
-        const spoilerToggle = buttonContainer.querySelector('.je-spoiler-toggle-btn');
-        if (spoilerToggle?.nextSibling) {
-            buttonContainer.insertBefore(button, spoilerToggle.nextSibling);
-        } else {
-            const moreButton = buttonContainer.querySelector('.btnMoreCommands');
-            if (moreButton) {
-                buttonContainer.insertBefore(button, moreButton);
-            } else {
-                buttonContainer.appendChild(button);
-            }
-        }
-    }
-
     // ============================================================
     // Reveal controls
     // ============================================================
@@ -2672,6 +2613,8 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         const hiddenText = tFallback('spoiler_mode_hidden_overview', 'Overview hidden \u2014 click to reveal');
         overviewEl.textContent = hiddenText;
         overviewEl.classList.add('je-spoiler-overview-hidden');
+        if (overviewEl.dataset.jeSpoilerOverviewBound) return;
+        overviewEl.dataset.jeSpoilerOverviewBound = '1';
         overviewEl.addEventListener('click', function () {
             if (overviewEl.classList.contains('je-spoiler-overview-hidden')) {
                 overviewEl.textContent = overviewEl.dataset.jeSpoilerOriginal;

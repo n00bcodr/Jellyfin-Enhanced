@@ -1145,7 +1145,7 @@
                             </div>
                             <div style="margin-bottom:12px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid rgba(255,255,255,0.15);">
                                 <div style="font-weight:500; font-size:13px; margin-bottom:6px;">${JE.t('spoiler_mode_tag_auto_enable')}</div>
-                                <input type="text" id="spoilerTagAutoEnable" value="${(JE.spoilerMode.getSpoilerData().tagAutoEnable || []).join(', ')}" placeholder="spoiler, no-spoil" style="width:100%; padding:8px; background:${presetBoxBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; font-size:13px; font-family:inherit; box-sizing:border-box;">
+                                <input type="text" id="spoilerTagAutoEnable" value="${(JE.spoilerMode.getSpoilerData().tagAutoEnable || []).map(t => t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')).join(', ')}" placeholder="spoiler, no-spoil" style="width:100%; padding:8px; background:${presetBoxBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; font-size:13px; font-family:inherit; box-sizing:border-box;">
                                 <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:4px;">${JE.t('spoiler_mode_tag_auto_enable_desc')}</div>
                             </div>
                             <div style="font-size:12px; color:rgba(255,255,255,0.4); text-align:center; padding:8px;">
@@ -1693,7 +1693,10 @@
                     const tags = e.target.value
                         .split(',')
                         .map(t => t.trim())
-                        .filter(Boolean);
+                        .filter(Boolean)
+                        .map(t => t.replace(/[<>"'&]/g, ''))
+                        .filter(t => t.length > 0 && t.length <= 50)
+                        .slice(0, 20);
                     JE.spoilerMode.setTagAutoEnable(tags);
                     resetAutoCloseTimer();
                 });
