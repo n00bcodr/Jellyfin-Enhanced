@@ -2104,8 +2104,9 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         // Remove badge
         card.querySelectorAll('.je-spoiler-badge').forEach(function (b) { b.remove(); });
 
-        // Restore titles
-        card.querySelectorAll('.je-spoiler-text-redacted').forEach(function (el) {
+        // Restore titles — match by class OR data attribute (class may have been
+        // removed by revealCard while the data attributes remain)
+        card.querySelectorAll('.je-spoiler-text-redacted, [data-je-spoiler-original]').forEach(function (el) {
             if (el.dataset.jeSpoilerOriginal) {
                 el.textContent = el.dataset.jeSpoilerOriginal;
                 delete el.dataset.jeSpoilerOriginal;
@@ -2184,11 +2185,25 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
             el.classList.remove('je-spoiler-blur', 'je-spoiler-generic', 'je-spoiler-revealing');
         });
 
+        // Catch-all: restore any remaining redacted text elements (may have lost
+        // their .je-spoiler-text-redacted class during reveal but still carry data)
+        document.querySelectorAll('[data-je-spoiler-original]').forEach(function (el) {
+            el.textContent = el.dataset.jeSpoilerOriginal;
+            delete el.dataset.jeSpoilerOriginal;
+            delete el.dataset.jeSpoilerRedacted;
+            el.classList.remove('je-spoiler-text-redacted', 'je-spoiler-revealable');
+        });
+
         // Remove any remaining badges
         document.querySelectorAll('.je-spoiler-badge').forEach(function (b) { b.remove(); });
 
         // Remove spoiler toggle buttons and reveal buttons from detail pages
         document.querySelectorAll('.je-spoiler-toggle-btn, .je-spoiler-reveal-all-btn').forEach(function (b) { b.remove(); });
+
+        // Clean up card reveal bindings
+        document.querySelectorAll('[data-je-spoiler-reveal-bound]').forEach(function (el) {
+            delete el.dataset.jeSpoilerRevealBound;
+        });
     }
 
     // ============================================================
