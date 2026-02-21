@@ -574,7 +574,7 @@
         }
 
         // Toggle pre-hide CSS on body and observer state
-        if (protectedIdSet.size > 0) {
+        if (protectedIdSet.size > 0 && getSettings().enabled !== false) {
             document.body?.classList?.add('je-spoiler-active');
             connectObserver();
         } else {
@@ -3323,7 +3323,7 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
         rebuildSets();
 
         // Activate pre-hide CSS immediately so cards are blurred before they render
-        if (protectedIdSet.size > 0) {
+        if (protectedIdSet.size > 0 && getSettings().enabled !== false) {
             document.body.classList.add('je-spoiler-active');
         } else {
             document.body.classList.remove('je-spoiler-active');
@@ -3334,6 +3334,11 @@ body.je-spoiler-active.${DETAIL_OVERVIEW_PENDING_CLASS} #itemDetailPage:not(.hid
 
         // Re-process page when settings change (e.g. user toggles enabled off)
         window.addEventListener('je-spoiler-mode-changed', function () {
+            if (getSettings().enabled === false) {
+                document.body.classList.remove('je-spoiler-active');
+            } else if (protectedIdSet.size > 0) {
+                document.body.classList.add('je-spoiler-active');
+            }
             processCurrentPage();
         });
 
