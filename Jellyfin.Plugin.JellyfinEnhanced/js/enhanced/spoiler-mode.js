@@ -623,6 +623,7 @@
      */
     function isProtected(itemId) {
         if (!itemId) return false;
+        if (getSettings().enabled === false) return false;
         return protectedIdSet.has(itemId);
     }
 
