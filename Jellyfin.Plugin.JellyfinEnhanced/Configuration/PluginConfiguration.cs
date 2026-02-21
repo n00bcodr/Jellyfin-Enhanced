@@ -190,6 +190,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentEnabled = false;
             HiddenContentUsePluginPages = false;
             HiddenContentUseCustomTabs = false;
+
+            // Spoiler Mode Settings
+            SpoilerModeEnabled = true;
         }
 
         // Jellyfin Enhanced Settings
@@ -353,5 +356,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentEnabled { get; set; }
         public bool HiddenContentUsePluginPages { get; set; }
         public bool HiddenContentUseCustomTabs { get; set; }
+
+        // Spoiler Mode Settings
+        public bool SpoilerModeEnabled { get; set; }
     }
 }

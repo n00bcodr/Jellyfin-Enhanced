@@ -398,6 +398,18 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Spoiler Mode</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="spoilerModeEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Spoiler Mode</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Enable or disable the Spoiler Mode feature server-wide. When disabled, the spoiler mode toggle, settings, and all redaction are removed. User data is preserved and restored when re-enabled.</div>
+                        </div>
+                    </fieldset>
                 </div>
 
                 <div id="elsewhere" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
@@ -2064,6 +2076,9 @@
                 document.querySelector('#hiddenContentUsePluginPages').checked = config.HiddenContentUsePluginPages === true;
                 document.querySelector('#hiddenContentUseCustomTabs').checked = config.HiddenContentUseCustomTabs === true;
 
+                // Spoiler Mode settings
+                document.querySelector('#spoilerModeEnabled').checked = config.SpoilerModeEnabled !== false;
+
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
@@ -2245,6 +2260,9 @@
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
             config.HiddenContentUsePluginPages = document.querySelector('#hiddenContentUsePluginPages').checked;
             config.HiddenContentUseCustomTabs = document.querySelector('#hiddenContentUseCustomTabs').checked;
+
+            // Spoiler Mode settings
+            config.SpoilerModeEnabled = document.querySelector('#spoilerModeEnabled').checked;
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';
