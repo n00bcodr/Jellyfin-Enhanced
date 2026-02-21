@@ -964,7 +964,34 @@
             img.src = `${ApiClient.getUrl('/Items/' + item.itemId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH })}`;
             img.alt = '';
             img.loading = 'lazy';
-            img.onerror = function() { this.style.display = 'none'; };
+            img.onerror = function() {
+                const self = this;
+                // Switch card to Jellyseerr navigation
+                if (hasTmdbId && JE.jellyseerrMoreInfo) {
+                    card.dataset.jellyfinRemoved = '1';
+                }
+                // Item removed from Jellyfin — fall back to TMDB poster
+                if (hasTmdbId && item.posterPath) {
+                    self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${item.posterPath}`;
+                    self.onerror = function() { this.style.display = 'none'; };
+                } else if (hasTmdbId && JE.jellyseerrAPI) {
+                    // No posterPath stored — fetch it from Jellyseerr
+                    self.onerror = function() { this.style.display = 'none'; };
+                    const fetchFn = mediaType === 'tv'
+                        ? JE.jellyseerrAPI.fetchTvShowDetails
+                        : JE.jellyseerrAPI.fetchMovieDetails;
+                    fetchFn(parseInt(item.tmdbId, 10)).then(function(details) {
+                        const path = details && (details.posterPath || details.poster_path);
+                        if (path) {
+                            self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${path}`;
+                        } else {
+                            self.style.display = 'none';
+                        }
+                    }).catch(function() { self.style.display = 'none'; });
+                } else {
+                    self.style.display = 'none';
+                }
+            };
             posterLink.appendChild(img);
         } else {
             const placeholder = document.createElement('div');
@@ -993,7 +1020,12 @@
         const navigableLinks = [posterLink, nameLink];
         for (const link of navigableLinks) {
             link.addEventListener('click', (e) => {
-                if (hasJellyfinId) {
+                // If item was removed from Jellyfin, fall back to Jellyseerr modal
+                if (hasJellyfinId && card.dataset.jellyfinRemoved === '1' && hasTmdbId && JE.jellyseerrMoreInfo) {
+                    e.preventDefault();
+                    JE.jellyseerrMoreInfo.open(parseInt(item.tmdbId, 10), mediaType);
+                    if (onNavigate) onNavigate();
+                } else if (hasJellyfinId) {
                     if (onNavigate) onNavigate();
                 } else if (hasTmdbId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
@@ -1685,6 +1717,9 @@
 
             // Skip image editor cards and cards inside dialogs/admin pages
             if (card.hasAttribute('data-imagetype') || card.closest('.formDialog, .editPageInnerContent')) continue;
+
+            // Skip chapter/scene cards on detail pages
+            if (card.closest('#itemDetailPage') && card.querySelector('.chapterCardImageContainer')) continue;
 
             const itemId = getCardItemId(card);
             if (!itemId) continue;

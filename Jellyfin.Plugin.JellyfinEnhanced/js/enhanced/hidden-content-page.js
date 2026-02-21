@@ -663,16 +663,48 @@
 
     const img = document.createElement('img');
     img.className = 'je-hidden-group-poster';
+    const fallbackPosterPath = group.items[0]?.posterPath;
     if (hasJellyfinId) {
       img.src = `${ApiClient.getUrl('/Items/' + group.seriesId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH })}`;
-    } else if (group.items[0]?.posterPath) {
-      img.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${group.items[0].posterPath}`;
+      img.onerror = function() {
+        var self = this;
+        // Signal the card that Jellyfin item is gone
+        if (hasTmdbId && JE.jellyseerrMoreInfo) {
+          posterLink.dataset.jellyfinRemoved = '1';
+        }
+        // Item removed from Jellyfin — fall back to TMDB poster
+        if (hasTmdbId && fallbackPosterPath) {
+          self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${fallbackPosterPath}`;
+          self.onerror = function() { this.style.display = 'none'; };
+        } else if (hasTmdbId && JE.jellyseerrAPI) {
+          // No posterPath stored — fetch it from Jellyseerr
+          self.onerror = function() { this.style.display = 'none'; };
+          var mainItem = group.items[0];
+          var mediaType = (mainItem && mainItem.type === 'Series') ? 'tv' : 'movie';
+          var fetchFn = mediaType === 'tv'
+              ? JE.jellyseerrAPI.fetchTvShowDetails
+              : JE.jellyseerrAPI.fetchMovieDetails;
+          fetchFn(parseInt(tmdbId, 10)).then(function(details) {
+            var path = details && (details.posterPath || details.poster_path);
+            if (path) {
+              self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${path}`;
+            } else {
+              self.style.display = 'none';
+            }
+          }).catch(function() { self.style.display = 'none'; });
+        } else {
+          self.style.display = 'none';
+        }
+      };
+    } else if (fallbackPosterPath) {
+      img.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${fallbackPosterPath}`;
+      img.onerror = function() { this.style.display = 'none'; };
     } else if (group.items[0]?.itemId) {
       img.src = `${ApiClient.getUrl('/Items/' + group.items[0].itemId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH })}`;
+      img.onerror = function() { this.style.display = 'none'; };
     }
     img.alt = '';
     img.loading = 'lazy';
-    img.onerror = function() { this.style.display = 'none'; };
     posterLink.appendChild(img);
     return posterLink;
   }
@@ -905,15 +937,32 @@
     const { info, nameEl } = createGroupInfo(group, mainItem, totalItems, hasEpisodes, tmdbId);
     card.appendChild(info);
 
-    // Jellyseerr navigation handler for items without Jellyfin ID
-    if (!hasJellyfinId && hasTmdbId && JE.jellyseerrMoreInfo) {
+    // Jellyseerr navigation handler for items without Jellyfin ID,
+    // or items removed from Jellyfin that have a TMDB ID fallback
+    if (hasTmdbId && JE.jellyseerrMoreInfo) {
       const posterLink = card.querySelector('.je-hidden-group-poster-link');
+      const mediaType = mainItem.type === 'Series' ? 'tv' : 'movie';
       const openJellyseerr = (e) => {
         e.preventDefault();
-        JE.jellyseerrMoreInfo.open(parseInt(tmdbId, 10), 'tv');
+        JE.jellyseerrMoreInfo.open(parseInt(tmdbId, 10), mediaType);
       };
-      posterLink.addEventListener('click', openJellyseerr);
-      nameEl.addEventListener('click', openJellyseerr);
+      if (!hasJellyfinId) {
+        posterLink.addEventListener('click', openJellyseerr);
+        nameEl.addEventListener('click', openJellyseerr);
+      } else {
+        // For items with Jellyfin ID, only use Jellyseerr if item was removed
+        posterLink.addEventListener('click', (e) => {
+          if (posterLink.dataset.jellyfinRemoved === '1') {
+            openJellyseerr(e);
+          }
+        });
+        nameEl.addEventListener('click', (e) => {
+          if (posterLink.dataset.jellyfinRemoved === '1') {
+            e.preventDefault();
+            JE.jellyseerrMoreInfo.open(parseInt(tmdbId, 10), mediaType);
+          }
+        });
+      }
     }
 
     // Single item: inline detail + unhide
