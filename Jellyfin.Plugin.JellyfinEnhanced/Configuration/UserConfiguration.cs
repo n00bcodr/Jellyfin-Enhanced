@@ -173,6 +173,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HideGuestStars { get; set; }
         public int RevealDuration { get; set; } = 10;
         public bool ShowSeriesOverview { get; set; }
+        public bool Enabled { get; set; } = true;
+        public bool ShowButtons { get; set; } = true;
+        public bool ShowDisableConfirmation { get; set; } = true;
+        public bool AutoEnableOnFirstPlay { get; set; }
+        public List<string> AutoEnableTags { get; set; } = new List<string>();
+        public string DefaultPreset { get; set; } = "balanced";
     }
 
     public class UserSpoilerMode
