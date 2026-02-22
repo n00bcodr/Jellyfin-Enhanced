@@ -217,6 +217,11 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
 .je-spoiler-episode-protected .detailImageContainer .cardImageContainer {\n\
   filter: blur(' + BLUR_RADIUS + ') !important;\n\
   transition: filter 0.3s ease !important;\n\
+  cursor: pointer;\n\
+}\n\
+.je-spoiler-episode-protected .detailImageContainer .je-spoiler-poster-revealed,\n\
+.je-spoiler-episode-protected .detailImageContainer img.je-spoiler-poster-revealed {\n\
+  filter: none !important;\n\
 }\n\
 .je-spoiler-episode-protected .mediaInfoContent,\n\
 .je-spoiler-episode-protected .itemGenres,\n\

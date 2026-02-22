@@ -312,6 +312,46 @@
     }
 
     // ============================================================
+    // Poster click-to-reveal
+    // ============================================================
+
+    /**
+     * Binds a click-to-reveal handler on a blurred poster element.
+     * Temporarily removes blur on click, re-applies after revealDuration.
+     * Works for both inline-style blur and CSS-class blur.
+     * @param {HTMLElement} el The blurred poster element.
+     * @param {boolean} [useCssClass] If true, toggle je-spoiler-poster-revealed class instead of inline style.
+     */
+    function bindPosterReveal(el, useCssClass) {
+        if (!el || el.dataset.jeSpoilerPosterBound) return;
+        el.dataset.jeSpoilerPosterBound = '1';
+        el.style.cursor = 'pointer';
+
+        el.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var revealDuration = core.getSettings().revealDuration || core.DEFAULT_REVEAL_DURATION;
+
+            if (useCssClass) {
+                el.classList.add('je-spoiler-poster-revealed');
+            } else {
+                el.dataset.jeSpoilerOriginalFilter = el.style.filter || '';
+                el.style.filter = 'none';
+            }
+
+            setTimeout(function () {
+                if (core.revealAllActive) return;
+                if (useCssClass) {
+                    el.classList.remove('je-spoiler-poster-revealed');
+                } else {
+                    el.style.filter = el.dataset.jeSpoilerOriginalFilter || 'blur(' + core.BLUR_RADIUS + ')';
+                }
+            }, revealDuration);
+        });
+    }
+
+    // ============================================================
     // Detail page episode list redaction
     // ============================================================
 
@@ -597,6 +637,8 @@
                     posterEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
                     posterEl.style.transition = 'filter 0.3s ease';
                 }
+                // Bind click-to-reveal on movie poster (blurred via inline style)
+                if (posterEl) bindPosterReveal(posterEl, false);
             }
         }
 
@@ -678,6 +720,10 @@
                 }
 
                 hideOverviewWithReveal(visiblePage);
+
+                // Bind click-to-reveal on episode poster (blurred via CSS class)
+                var epPosterEl = visiblePage.querySelector('.detailImageContainer .cardImageContainer');
+                if (epPosterEl) bindPosterReveal(epPosterEl, true);
 
                 // Blur backdrop image (lives outside #itemDetailPage in .backdropContainer)
                 var backdropEl = document.querySelector('.backdropImage');
