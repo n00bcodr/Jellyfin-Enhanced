@@ -334,7 +334,7 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
             cardBox.classList.remove('je-spoiler-blur');
         }
 
-        var imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage');
+        var imageContainer = card.querySelector('.cardImageContainer') || card.querySelector('.cardImage') || card.querySelector('.listItemImage');
         if (imageContainer && !imageContainer.querySelector('.je-spoiler-badge')) {
             var badge = document.createElement('div');
             badge.className = 'je-spoiler-badge';

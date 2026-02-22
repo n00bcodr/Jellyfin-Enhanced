@@ -711,7 +711,7 @@
               item.Type === 'Episode' &&
               item.SeriesId &&
               spoiler.isProtected(item.SeriesId)) {
-              const seasonNum = item.ParentIndexNumber;
+              const seasonNum = item.ParentIndexNumber || 0;
               const epNum = item.IndexNumber || 0;
               const pastBoundary = await spoiler.isEpisodePastBoundary(item.SeriesId, seasonNum, epNum);
               if (pastBoundary || pastBoundary === null) {
