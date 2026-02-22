@@ -200,6 +200,9 @@
      * @returns {Promise<void>}
      */
     async function processCard(card) {
+        // Chapter cards are handled exclusively by redactDetailPageChapters
+        if (card.classList.contains('chapterCard')) return;
+
         var settings = core.getSettings();
         if (settings.enabled === false) return;
         if (core.revealAllActive) {

@@ -471,8 +471,8 @@
             core.blurElement(visiblePage.querySelector('.backdropImage, .detailImageContainer img'));
         }
 
-        // Process episode cards on the detail page in parallel
-        var episodeCards = visiblePage.querySelectorAll('.card[data-id], .listItem[data-id]');
+        // Process episode cards on the detail page in parallel (exclude chapter cards)
+        var episodeCards = visiblePage.querySelectorAll('.card[data-id]:not(.chapterCard), .listItem[data-id]');
         var promises = [];
         for (var i = 0; i < episodeCards.length; i++) {
             var card = episodeCards[i];
@@ -525,11 +525,10 @@
         try {
             if (!core.isValidId(itemId)) return;
 
+            var userId = ApiClient.getCurrentUserId();
             var item = await ApiClient.ajax({
                 type: 'GET',
-                url: ApiClient.getUrl('/Items/' + itemId, {
-                    Fields: 'UserData'
-                }),
+                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId),
                 dataType: 'json'
             });
 
@@ -583,8 +582,8 @@
             hideOverviewWithReveal(visiblePage);
         }
 
-        // Process all movie cards on the collection page
-        var movieCards = visiblePage.querySelectorAll('.card[data-id], .listItem[data-id]');
+        // Process all movie cards on the collection page (exclude chapter cards)
+        var movieCards = visiblePage.querySelectorAll('.card[data-id]:not(.chapterCard), .listItem[data-id]');
         var promises = [];
         for (var i = 0; i < movieCards.length; i++) {
             var card = movieCards[i];
