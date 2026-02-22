@@ -326,13 +326,18 @@
         if (!el || el.dataset.jeSpoilerPosterBound) return;
         el.dataset.jeSpoilerPosterBound = '1';
         el.style.cursor = 'pointer';
-        el.style.position = 'relative';
 
-        // Add "Click to reveal" overlay text
-        var overlay = document.createElement('div');
-        overlay.className = 'je-spoiler-poster-overlay';
-        overlay.textContent = core.tFallback('spoiler_mode_click_reveal', 'Click to reveal');
-        el.appendChild(overlay);
+        // Add "Click to reveal" overlay OUTSIDE the blurred element (as sibling)
+        // so it doesn't get blurred. Parent .detailImageContainer is not blurred.
+        var container = el.closest('.detailImageContainer');
+        var overlay = null;
+        if (container && !container.querySelector('.je-spoiler-poster-overlay')) {
+            container.style.position = 'relative';
+            overlay = document.createElement('div');
+            overlay.className = 'je-spoiler-poster-overlay';
+            overlay.textContent = core.tFallback('spoiler_mode_click_reveal', 'Click to reveal');
+            container.appendChild(overlay);
+        }
 
         el.addEventListener('click', function (e) {
             e.preventDefault();
@@ -340,7 +345,7 @@
 
             var revealDuration = core.getSettings().revealDuration || core.DEFAULT_REVEAL_DURATION;
 
-            overlay.style.display = 'none';
+            if (overlay) overlay.style.display = 'none';
             if (useCssClass) {
                 el.classList.add('je-spoiler-poster-revealed');
             } else {
@@ -350,7 +355,7 @@
 
             setTimeout(function () {
                 if (core.revealAllActive) return;
-                overlay.style.display = '';
+                if (overlay) overlay.style.display = '';
                 if (useCssClass) {
                     el.classList.remove('je-spoiler-poster-revealed');
                 } else {
@@ -358,6 +363,13 @@
                 }
             }, revealDuration);
         });
+
+        // Also allow clicking the overlay itself
+        if (overlay) {
+            overlay.style.cursor = 'pointer';
+            overlay.style.pointerEvents = 'auto';
+            overlay.addEventListener('click', function () { el.click(); });
+        }
     }
 
     // ============================================================
@@ -526,32 +538,30 @@
      * @param {HTMLElement} visiblePage The visible detail page element.
      * @returns {Promise<void>}
      */
-    async function redactDetailPageChapters(itemId, visiblePage, knownPlaybackTicks) {
+    async function redactDetailPageChapters(itemId, visiblePage) {
         if (core.revealAllActive) return;
 
         var chapterCards = visiblePage.querySelectorAll('.chapterCard[data-positionticks]');
         if (chapterCards.length === 0) return;
 
-        var playbackPositionTicks = typeof knownPlaybackTicks === 'number' ? knownPlaybackTicks : -1;
+        // Skip if chapters were already processed for this item
+        if (visiblePage.dataset.jeSpoilerChaptersProcessed === itemId) return;
 
-        if (playbackPositionTicks < 0) {
-            try {
-                if (!core.isValidId(itemId)) return;
+        var playbackPositionTicks = 0;
+        try {
+            if (!core.isValidId(itemId)) return;
 
-                var item = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl('/Items/' + itemId, {
-                        Fields: 'UserData'
-                    }),
-                    dataType: 'json'
-                });
+            var userId = ApiClient.getCurrentUserId();
+            var item = await ApiClient.getItem(userId, itemId);
 
-                playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
-            } catch (err) {
-                // If we can't fetch position, redact all chapters to be safe
-                playbackPositionTicks = 0;
-            }
+            playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
+        } catch (err) {
+            // If we can't fetch position, redact all chapters to be safe
+            playbackPositionTicks = 0;
         }
+
+        // Mark as processed to prevent race conditions from duplicate calls
+        visiblePage.dataset.jeSpoilerChaptersProcessed = itemId;
 
         var chapterIndex = 0;
         for (var i = 0; i < chapterCards.length; i++) {
@@ -662,10 +672,12 @@
         // Re-apply after Jellyfin finishes rendering (overview, backdrop, chapters render async)
         setTimeout(function () {
             applyMovieRedaction();
+            delete visiblePage.dataset.jeSpoilerChaptersProcessed;
             redactDetailPageChapters(movieId, visiblePage);
         }, 800);
         setTimeout(function () {
             applyMovieRedaction();
+            delete visiblePage.dataset.jeSpoilerChaptersProcessed;
             redactDetailPageChapters(movieId, visiblePage);
         }, 2000);
     }
@@ -766,20 +778,21 @@
                 }
             }
 
-            // Redact chapter cards (Scenes section), passing known playback position
-            // to avoid redundant API fetches that may fail under load
-            var epPlaybackTicks = episodeItem.UserData?.PlaybackPositionTicks || 0;
-            await redactDetailPageChapters(episodeItem.Id, visiblePage, epPlaybackTicks);
+            // Redact chapter cards (Scenes section)
+            await redactDetailPageChapters(episodeItem.Id, visiblePage);
 
             // Re-apply after Jellyfin finishes rendering (title, backdrop, overview, chapters render async)
             var epId = episodeItem.Id;
             setTimeout(function () {
                 applyEpisodeRedaction();
-                redactDetailPageChapters(epId, visiblePage, epPlaybackTicks);
+                // Reset chapter processed flag so delayed call can re-scan for newly rendered chapters
+                delete visiblePage.dataset.jeSpoilerChaptersProcessed;
+                redactDetailPageChapters(epId, visiblePage);
             }, 800);
             setTimeout(function () {
                 applyEpisodeRedaction();
-                redactDetailPageChapters(epId, visiblePage, epPlaybackTicks);
+                delete visiblePage.dataset.jeSpoilerChaptersProcessed;
+                redactDetailPageChapters(epId, visiblePage);
             }, 2000);
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fully redact episode detail page', episodeItem?.Id, err);
