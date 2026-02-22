@@ -536,11 +536,6 @@
                 }
             }
 
-            // Redact chapter cards on detail pages
-            if (core.redactDetailPageChapters) {
-                await core.redactDetailPageChapters(detailItemId, visiblePage);
-            }
-
             core.setDetailOverviewPending(false);
 
         } catch (err) {
