@@ -131,7 +131,7 @@
                     item.IndexNumber || 0
                 );
 
-                if (pastBoundary !== false) {
+                if (pastBoundary !== false && core.redactCard) {
                     core.redactCard(card, {
                         ParentIndexNumber: item.ParentIndexNumber,
                         IndexNumber: item.IndexNumber,
@@ -176,8 +176,8 @@
 
             var seasonNum = item.IndexNumber || 0;
             if (seasonNum > boundary.season) {
-                core.blurCardArtwork(card);
-                core.bindCardReveal(card);
+                if (core.blurCardArtwork) core.blurCardArtwork(card);
+                if (core.bindCardReveal) core.bindCardReveal(card);
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Error processing season card', itemId, err);
@@ -234,13 +234,13 @@
                 if (cardType === 'movie') {
                     var watched = await core.isMovieWatched(itemId);
                     if (!watched) {
-                        core.blurCardArtwork(card);
-                        core.bindCardReveal(card);
+                        if (core.blurCardArtwork) core.blurCardArtwork(card);
+                        if (core.bindCardReveal) core.bindCardReveal(card);
                     }
                 } else if (cardType === 'series' || cardType === 'boxset') {
                     // Series/BoxSet cards just get a blur
-                    core.blurCardArtwork(card);
-                    core.bindCardReveal(card);
+                    if (core.blurCardArtwork) core.blurCardArtwork(card);
+                    if (core.bindCardReveal) core.bindCardReveal(card);
                 }
                 card.setAttribute(core.SCANNED_ATTR, '1');
                 return;
@@ -252,8 +252,8 @@
                 if (collectionId) {
                     var movieWatched = await core.isMovieWatched(itemId);
                     if (!movieWatched) {
-                        core.blurCardArtwork(card);
-                        core.bindCardReveal(card);
+                        if (core.blurCardArtwork) core.blurCardArtwork(card);
+                        if (core.bindCardReveal) core.bindCardReveal(card);
                     }
                     card.setAttribute(core.SCANNED_ATTR, '1');
                     return;
