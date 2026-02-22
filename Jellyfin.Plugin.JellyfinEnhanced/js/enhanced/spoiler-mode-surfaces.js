@@ -326,6 +326,13 @@
         if (!el || el.dataset.jeSpoilerPosterBound) return;
         el.dataset.jeSpoilerPosterBound = '1';
         el.style.cursor = 'pointer';
+        el.style.position = 'relative';
+
+        // Add "Click to reveal" overlay text
+        var overlay = document.createElement('div');
+        overlay.className = 'je-spoiler-poster-overlay';
+        overlay.textContent = core.tFallback('spoiler_mode_click_reveal', 'Click to reveal');
+        el.appendChild(overlay);
 
         el.addEventListener('click', function (e) {
             e.preventDefault();
@@ -333,6 +340,7 @@
 
             var revealDuration = core.getSettings().revealDuration || core.DEFAULT_REVEAL_DURATION;
 
+            overlay.style.display = 'none';
             if (useCssClass) {
                 el.classList.add('je-spoiler-poster-revealed');
             } else {
@@ -342,6 +350,7 @@
 
             setTimeout(function () {
                 if (core.revealAllActive) return;
+                overlay.style.display = '';
                 if (useCssClass) {
                     el.classList.remove('je-spoiler-poster-revealed');
                 } else {
@@ -517,28 +526,31 @@
      * @param {HTMLElement} visiblePage The visible detail page element.
      * @returns {Promise<void>}
      */
-    async function redactDetailPageChapters(itemId, visiblePage) {
+    async function redactDetailPageChapters(itemId, visiblePage, knownPlaybackTicks) {
         if (core.revealAllActive) return;
 
         var chapterCards = visiblePage.querySelectorAll('.chapterCard[data-positionticks]');
         if (chapterCards.length === 0) return;
 
-        var playbackPositionTicks = 0;
-        try {
-            if (!core.isValidId(itemId)) return;
+        var playbackPositionTicks = typeof knownPlaybackTicks === 'number' ? knownPlaybackTicks : -1;
 
-            var item = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl('/Items/' + itemId, {
-                    Fields: 'UserData'
-                }),
-                dataType: 'json'
-            });
+        if (playbackPositionTicks < 0) {
+            try {
+                if (!core.isValidId(itemId)) return;
 
-            playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
-        } catch (err) {
-            // If we can't fetch position, redact all chapters to be safe
-            playbackPositionTicks = 0;
+                var item = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Items/' + itemId, {
+                        Fields: 'UserData'
+                    }),
+                    dataType: 'json'
+                });
+
+                playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
+            } catch (err) {
+                // If we can't fetch position, redact all chapters to be safe
+                playbackPositionTicks = 0;
+            }
         }
 
         var chapterIndex = 0;
@@ -754,18 +766,20 @@
                 }
             }
 
-            // Redact chapter cards (Scenes section)
-            await redactDetailPageChapters(episodeItem.Id, visiblePage);
+            // Redact chapter cards (Scenes section), passing known playback position
+            // to avoid redundant API fetches that may fail under load
+            var epPlaybackTicks = episodeItem.UserData?.PlaybackPositionTicks || 0;
+            await redactDetailPageChapters(episodeItem.Id, visiblePage, epPlaybackTicks);
 
             // Re-apply after Jellyfin finishes rendering (title, backdrop, overview, chapters render async)
             var epId = episodeItem.Id;
             setTimeout(function () {
                 applyEpisodeRedaction();
-                redactDetailPageChapters(epId, visiblePage);
+                redactDetailPageChapters(epId, visiblePage, epPlaybackTicks);
             }, 800);
             setTimeout(function () {
                 applyEpisodeRedaction();
-                redactDetailPageChapters(epId, visiblePage);
+                redactDetailPageChapters(epId, visiblePage, epPlaybackTicks);
             }, 2000);
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fully redact episode detail page', episodeItem?.Id, err);

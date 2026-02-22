@@ -223,6 +223,19 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
 .je-spoiler-episode-protected .detailImageContainer img.je-spoiler-poster-revealed {\n\
   filter: none !important;\n\
 }\n\
+.je-spoiler-poster-overlay {\n\
+  position: absolute;\n\
+  top: 0; left: 0; right: 0; bottom: 0;\n\
+  display: flex;\n\
+  align-items: center;\n\
+  justify-content: center;\n\
+  color: rgba(255,255,255,0.7);\n\
+  font-size: 0.85em;\n\
+  font-style: italic;\n\
+  text-align: center;\n\
+  z-index: 1;\n\
+  pointer-events: none;\n\
+}\n\
 .je-spoiler-episode-protected .mediaInfoContent,\n\
 .je-spoiler-episode-protected .itemGenres,\n\
 .je-spoiler-episode-protected .itemExternalLinks,\n\
