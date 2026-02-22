@@ -327,16 +327,14 @@
         el.dataset.jeSpoilerPosterBound = '1';
         el.style.cursor = 'pointer';
 
-        // Add "Click to reveal" overlay OUTSIDE the blurred element (as sibling)
-        // so it doesn't get blurred. Parent .detailImageContainer is not blurred.
-        var container = el.closest('.detailImageContainer');
+        // Add "Click to reveal" overlay inside .cardBox (sibling of blurred .cardImageContainer)
+        var cardBox = el.closest('.cardBox');
         var overlay = null;
-        if (container && !container.querySelector('.je-spoiler-poster-overlay')) {
-            container.style.position = 'relative';
+        if (cardBox && !cardBox.querySelector('.je-spoiler-poster-overlay')) {
             overlay = document.createElement('div');
             overlay.className = 'je-spoiler-poster-overlay';
             overlay.textContent = core.tFallback('spoiler_mode_click_reveal', 'Click to reveal');
-            container.appendChild(overlay);
+            cardBox.appendChild(overlay);
         }
 
         el.addEventListener('click', function (e) {
@@ -363,13 +361,6 @@
                 }
             }, revealDuration);
         });
-
-        // Also allow clicking the overlay itself
-        if (overlay) {
-            overlay.style.cursor = 'pointer';
-            overlay.style.pointerEvents = 'auto';
-            overlay.addEventListener('click', function () { el.click(); });
-        }
     }
 
     // ============================================================
@@ -544,9 +535,6 @@
         var chapterCards = visiblePage.querySelectorAll('.chapterCard[data-positionticks]');
         if (chapterCards.length === 0) return;
 
-        // Skip if chapters were already processed for this item
-        if (visiblePage.dataset.jeSpoilerChaptersProcessed === itemId) return;
-
         var playbackPositionTicks = 0;
         try {
             if (!core.isValidId(itemId)) return;
@@ -560,14 +548,21 @@
             playbackPositionTicks = 0;
         }
 
-        // Mark as processed to prevent race conditions from duplicate calls
-        visiblePage.dataset.jeSpoilerChaptersProcessed = itemId;
-
         var chapterIndex = 0;
         for (var i = 0; i < chapterCards.length; i++) {
             chapterIndex++;
             var positionTicks = parseInt(chapterCards[i].dataset.positionticks, 10);
-            if (!isNaN(positionTicks) && positionTicks <= playbackPositionTicks) continue;
+            var isWatched = !isNaN(positionTicks) && positionTicks <= playbackPositionTicks;
+
+            if (isWatched) {
+                // Safety net: forcibly unblur watched chapters that may have been
+                // incorrectly blurred by other code paths (e.g. general card scanner race)
+                if (chapterCards[i].hasAttribute(core.REDACTED_ATTR)) {
+                    if (core.unredactCard) core.unredactCard(chapterCards[i]);
+                }
+                continue;
+            }
+
             if (core.redactChapterCard) {
                 core.redactChapterCard(chapterCards[i], chapterIndex);
             }
@@ -672,12 +667,10 @@
         // Re-apply after Jellyfin finishes rendering (overview, backdrop, chapters render async)
         setTimeout(function () {
             applyMovieRedaction();
-            delete visiblePage.dataset.jeSpoilerChaptersProcessed;
             redactDetailPageChapters(movieId, visiblePage);
         }, 800);
         setTimeout(function () {
             applyMovieRedaction();
-            delete visiblePage.dataset.jeSpoilerChaptersProcessed;
             redactDetailPageChapters(movieId, visiblePage);
         }, 2000);
     }
@@ -785,8 +778,6 @@
             var epId = episodeItem.Id;
             setTimeout(function () {
                 applyEpisodeRedaction();
-                // Reset chapter processed flag so delayed call can re-scan for newly rendered chapters
-                delete visiblePage.dataset.jeSpoilerChaptersProcessed;
                 redactDetailPageChapters(epId, visiblePage);
             }, 800);
             setTimeout(function () {
