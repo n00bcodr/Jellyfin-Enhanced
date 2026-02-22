@@ -26,20 +26,20 @@
         var OVERVIEW_REVEALED_CLASS = core.OVERVIEW_REVEALED_CLASS;
 
         var css = '\
-/* ===== Pre-hide: blur unscanned EPISODE cards to prevent spoiler flash ===== */\n\
-body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardScalable,\n\
+/* ===== Pre-hide: blur unscanned EPISODE cards to prevent spoiler flash (excludes chapter cards) ===== */\n\
+body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']):not(.chapterCard) .cardScalable,\n\
 body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-content {\n\
   overflow: hidden;\n\
 }\n\
-body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardScalable > .cardImageContainer,\n\
+body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']):not(.chapterCard) .cardScalable > .cardImageContainer,\n\
 body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemImage {\n\
   filter: blur(' + BLUR_RADIUS + ');\n\
   transform: scale(1.05);\n\
 }\n\
-body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardText,\n\
-body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .textActionButton,\n\
+body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']):not(.chapterCard) .cardText,\n\
+body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']):not(.chapterCard) .textActionButton,\n\
 body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemBodyText:not(.secondary),\n\
-body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']) .cardText-secondary,\n\
+body.je-spoiler-active .card[data-type="Episode"]:not([' + SCANNED_ATTR + ']):not(.chapterCard) .cardText-secondary,\n\
 body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-overview,\n\
 body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItem-bottomoverview,\n\
 body.je-spoiler-active .listItem[data-id]:not([' + SCANNED_ATTR + ']) .listItemBody {\n\
