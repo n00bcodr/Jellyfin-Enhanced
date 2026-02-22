@@ -525,8 +525,13 @@
         try {
             if (!core.isValidId(itemId)) return;
 
-            var userId = ApiClient.getCurrentUserId();
-            var item = await ApiClient.getItem(userId, itemId);
+            var item = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/Items/' + itemId, {
+                    Fields: 'UserData'
+                }),
+                dataType: 'json'
+            });
 
             playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
         } catch (err) {
