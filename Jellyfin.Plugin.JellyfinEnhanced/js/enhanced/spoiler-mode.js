@@ -74,11 +74,11 @@
     /** Class marking overview text as manually revealed during spoiler mode. */
     var OVERVIEW_REVEALED_CLASS = 'je-spoiler-overview-revealed';
 
-    /** Selector for any spoiler-processable card/list-item. */
-    var CARD_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
+    /** Selector for any spoiler-processable card/list-item (excludes chapter cards). */
+    var CARD_SEL = '.card[data-id]:not(.chapterCard), .card[data-itemid]:not(.chapterCard), .listItem[data-id]';
 
-    /** Selector for not-yet-scanned cards. */
-    var CARD_SEL_NEW = '.card[data-id]:not([data-je-spoiler-checked]), .card[data-itemid]:not([data-je-spoiler-checked]), .listItem[data-id]:not([data-je-spoiler-checked])';
+    /** Selector for not-yet-scanned cards (excludes chapter cards). */
+    var CARD_SEL_NEW = '.card[data-id]:not([data-je-spoiler-checked]):not(.chapterCard), .card[data-itemid]:not([data-je-spoiler-checked]):not(.chapterCard), .listItem[data-id]:not([data-je-spoiler-checked])';
 
     /** GUID format validation for Jellyfin item IDs. */
     var GUID_RE = /^[0-9a-f]{32}$/i;

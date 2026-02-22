@@ -602,12 +602,18 @@
 
         applyMovieRedaction();
 
-        // Re-apply after Jellyfin finishes rendering (title, backdrop, overview render async)
-        setTimeout(function () { applyMovieRedaction(); }, 800);
-        setTimeout(function () { applyMovieRedaction(); }, 2000);
-
         // Redact chapter cards (Scenes section), skipping already-watched chapters
         await redactDetailPageChapters(movieId, visiblePage);
+
+        // Re-apply after Jellyfin finishes rendering (overview, backdrop, chapters render async)
+        setTimeout(function () {
+            applyMovieRedaction();
+            redactDetailPageChapters(movieId, visiblePage);
+        }, 800);
+        setTimeout(function () {
+            applyMovieRedaction();
+            redactDetailPageChapters(movieId, visiblePage);
+        }, 2000);
     }
 
     // ============================================================
@@ -644,12 +650,31 @@
             function applyEpisodeRedaction() {
                 if (core.revealAllActive) return;
 
-                // Redact episode title
+                // Redact episode title with click-to-reveal
                 var nameEl = visiblePage.querySelector('.itemName, h3.itemName');
                 if (nameEl && !nameEl.classList.contains('je-spoiler-text-redacted')) {
                     nameEl.dataset.jeSpoilerOriginal = nameEl.textContent;
                     nameEl.textContent = redactedTitle;
                     nameEl.classList.add('je-spoiler-text-redacted');
+                    nameEl.style.cursor = 'pointer';
+
+                    if (!nameEl.dataset.jeSpoilerTitleBound) {
+                        nameEl.dataset.jeSpoilerTitleBound = '1';
+                        nameEl.addEventListener('click', function () {
+                            if (!nameEl.classList.contains('je-spoiler-text-redacted')) return;
+                            if (!nameEl.dataset.jeSpoilerOriginal) return;
+
+                            nameEl.textContent = nameEl.dataset.jeSpoilerOriginal;
+                            nameEl.classList.remove('je-spoiler-text-redacted');
+
+                            var revealDuration = core.getSettings().revealDuration || core.DEFAULT_REVEAL_DURATION;
+                            setTimeout(function () {
+                                if (core.revealAllActive) return;
+                                nameEl.textContent = redactedTitle;
+                                nameEl.classList.add('je-spoiler-text-redacted');
+                            }, revealDuration);
+                        });
+                    }
                 }
 
                 hideOverviewWithReveal(visiblePage);
@@ -663,10 +688,6 @@
             }
 
             applyEpisodeRedaction();
-
-            // Re-apply after Jellyfin finishes rendering (title, backdrop, overview render async)
-            setTimeout(function () { applyEpisodeRedaction(); }, 800);
-            setTimeout(function () { applyEpisodeRedaction(); }, 2000);
 
             // Add CSS class that blurs poster and hides metadata (runtime, genres, external links)
             if (!visiblePage.classList.contains('je-spoiler-episode-protected')) {
@@ -689,6 +710,17 @@
 
             // Redact chapter cards (Scenes section)
             await redactDetailPageChapters(episodeItem.Id, visiblePage);
+
+            // Re-apply after Jellyfin finishes rendering (title, backdrop, overview, chapters render async)
+            var epId = episodeItem.Id;
+            setTimeout(function () {
+                applyEpisodeRedaction();
+                redactDetailPageChapters(epId, visiblePage);
+            }, 800);
+            setTimeout(function () {
+                applyEpisodeRedaction();
+                redactDetailPageChapters(epId, visiblePage);
+            }, 2000);
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fully redact episode detail page', episodeItem?.Id, err);
         }

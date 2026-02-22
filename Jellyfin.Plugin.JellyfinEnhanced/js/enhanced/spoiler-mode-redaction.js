@@ -213,7 +213,8 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
 .je-spoiler-confirm-cancel:hover { background: rgba(255,255,255,0.2); }\n\
 \n\
 /* Episode detail page protection */\n\
-.je-spoiler-episode-protected .detailImageContainer img {\n\
+.je-spoiler-episode-protected .detailImageContainer img,\n\
+.je-spoiler-episode-protected .detailImageContainer .cardImageContainer {\n\
   filter: blur(' + BLUR_RADIUS + ') !important;\n\
   transition: filter 0.3s ease !important;\n\
 }\n\
@@ -603,8 +604,8 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
             el.classList.remove('je-spoiler-episode-protected');
         });
 
-        // Clear backdrop blurs
-        document.querySelectorAll('.backdropImage, .detailImageContainer img').forEach(function (el) {
+        // Clear backdrop and poster blurs
+        document.querySelectorAll('.backdropImage, .detailImageContainer img, .detailImageContainer .cardImageContainer').forEach(function (el) {
             if (el.style.filter && el.style.filter.indexOf('blur') !== -1) {
                 el.style.filter = '';
                 el.style.transition = '';
