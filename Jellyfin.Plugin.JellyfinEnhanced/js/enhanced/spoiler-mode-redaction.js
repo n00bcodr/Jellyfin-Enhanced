@@ -252,16 +252,20 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
     // Card redaction
     // ============================================================
 
+    /**
+     * Fully redacts a card: blurs artwork, adds SPOILER badge, and replaces
+     * episode title text with a redacted "S01E05 — Click to reveal" format.
+     * @param {HTMLElement} card The card element to redact.
+     * @param {Object} itemData Jellyfin item data with ParentIndexNumber, IndexNumber, etc.
+     */
     function redactCard(card, itemData) {
         if (core.revealAllActive) return;
         if (card.hasAttribute(core.REDACTED_ATTR)) return;
-        var cardBox0 = card.querySelector('.cardBox') || card;
-        if (cardBox0.classList.contains('je-spoiler-revealing')) return;
+        var cardBox = card.querySelector('.cardBox') || card;
+        if (cardBox.classList.contains('je-spoiler-revealing')) return;
 
         var settings = core.getSettings();
         var artworkPolicy = settings.artworkPolicy || 'blur';
-
-        var cardBox = card.querySelector('.cardBox') || card;
         if (artworkPolicy === 'blur') {
             cardBox.classList.add('je-spoiler-blur');
             cardBox.classList.remove('je-spoiler-generic');
@@ -310,6 +314,11 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         card.setAttribute(core.REDACTED_ATTR, '1');
     }
 
+    /**
+     * Applies blur CSS class and SPOILER badge to a card without redacting text.
+     * Used for movie cards in collections and chapter cards.
+     * @param {HTMLElement} card The card element to blur.
+     */
     function blurCardArtwork(card) {
         if (card.hasAttribute(core.REDACTED_ATTR)) return;
 
@@ -336,6 +345,12 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         card.setAttribute(core.REDACTED_ATTR, '1');
     }
 
+    /**
+     * Redacts a chapter card: blurs artwork and replaces the chapter name
+     * with a generic "Chapter N" label.
+     * @param {HTMLElement} card The chapter card element.
+     * @param {number} chapterIndex The 1-based chapter index for the label.
+     */
     function redactChapterCard(card, chapterIndex) {
         if (card.hasAttribute(core.REDACTED_ATTR)) return;
 
@@ -355,6 +370,10 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         bindCardReveal(card);
     }
 
+    /**
+     * Removes all spoiler redaction from a card, restoring original text and artwork.
+     * @param {HTMLElement} card The card element to restore.
+     */
     function unredactCard(card) {
         var cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.remove('je-spoiler-blur', 'je-spoiler-generic', 'je-spoiler-revealing');
@@ -433,14 +452,12 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
                 delete el.dataset.jeSpoilerRedacted;
             }
 
-            // Clean up data attributes
+            // Clean up data attributes (keep *Bound attributes since listeners persist)
             if (el.hasAttribute(core.REDACTED_ATTR)) el.removeAttribute(core.REDACTED_ATTR);
             if (el.hasAttribute(core.PROCESSED_ATTR)) el.removeAttribute(core.PROCESSED_ATTR);
             if (el.hasAttribute(core.SCANNED_ATTR)) el.removeAttribute(core.SCANNED_ATTR);
             if (el.dataset.jeSpoilerRevealUntil) delete el.dataset.jeSpoilerRevealUntil;
             if (el.dataset.jeSpoilerOverviewSafeFor) delete el.dataset.jeSpoilerOverviewSafeFor;
-            if (el.dataset.jeSpoilerOverviewBound) delete el.dataset.jeSpoilerOverviewBound;
-            if (el.dataset.jeSpoilerRevealBound) delete el.dataset.jeSpoilerRevealBound;
 
             // Remove all spoiler CSS classes
             el.classList.remove(
@@ -471,6 +488,10 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
     // Reveal controls
     // ============================================================
 
+    /**
+     * Temporarily reveals a redacted card (shows original text and unblurs artwork).
+     * @param {HTMLElement} card The card element to reveal.
+     */
     function revealCard(card) {
         var cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.add('je-spoiler-revealing');
@@ -488,6 +509,10 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         });
     }
 
+    /**
+     * Re-hides a previously revealed card, restoring the redacted state.
+     * @param {HTMLElement} card The card element to re-hide.
+     */
     function hideCard(card) {
         var cardBox = card.querySelector('.cardBox') || card;
         cardBox.classList.remove('je-spoiler-revealing');
@@ -503,6 +528,11 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         });
     }
 
+    /**
+     * Binds click/touch reveal handlers to a redacted card.
+     * Click on redacted text reveals the original; mouseleave or touchend re-hides.
+     * @param {HTMLElement} card The card element to bind.
+     */
     function bindCardReveal(card) {
         if (card.dataset.jeSpoilerRevealBound) return;
         card.dataset.jeSpoilerRevealBound = '1';
@@ -561,6 +591,11 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         }, { passive: true });
     }
 
+    /**
+     * Activates "Reveal All" mode: temporarily removes all spoiler redaction
+     * across the page and shows a countdown banner. Auto-deactivates after
+     * REVEAL_ALL_DURATION (30s).
+     */
     function activateRevealAll() {
         core.revealAllActive = true;
 
@@ -638,6 +673,10 @@ body.je-spoiler-active.' + DETAIL_OVERVIEW_PENDING_CLASS + ' #itemDetailPage:not
         }, duration);
     }
 
+    /**
+     * Deactivates "Reveal All" mode: re-applies spoiler redaction and removes
+     * the countdown banner.
+     */
     function deactivateRevealAll() {
         core.revealAllActive = false;
 

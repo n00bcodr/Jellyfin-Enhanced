@@ -13,18 +13,8 @@
         return;
     }
 
-    // ============================================================
-    // Local helpers
-    // ============================================================
-
-    /**
-     * Extracts the Jellyfin item ID from a card element.
-     * @param {HTMLElement} el The card element.
-     * @returns {string|null} The item ID or null.
-     */
-    function getCardItemId(el) {
-        return el.dataset?.id || el.dataset?.itemid || null;
-    }
+    /** @see core.getCardItemId — local alias for readability. */
+    var getCardItemId = core.getCardItemId;
 
     // ============================================================
     // Spoiler confirmation dialog
@@ -478,11 +468,7 @@
 
         // Blur backdrop when artwork policy is generic or guest stars are hidden
         if (settings.artworkPolicy === 'generic' || settings.hideGuestStars) {
-            var backdropEl = visiblePage.querySelector('.backdropImage, .detailImageContainer img');
-            if (backdropEl) {
-                backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                backdropEl.style.transition = 'filter 0.3s ease';
-            }
+            core.blurElement(visiblePage.querySelector('.backdropImage, .detailImageContainer img'));
         }
 
         // Process episode cards on the detail page in parallel
@@ -644,17 +630,9 @@
             hideOverviewWithReveal(visiblePage);
 
             if (settings.artworkPolicy === 'blur' || settings.artworkPolicy === 'generic') {
-                var backdropEl = document.querySelector('.backdropImage');
-                if (backdropEl && !backdropEl.style.filter) {
-                    backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                    backdropEl.style.transition = 'filter 0.3s ease';
-                }
+                core.blurElement(document.querySelector('.backdropImage'));
                 var posterEl = visiblePage.querySelector('.detailImageContainer .cardImageContainer');
-                if (posterEl && !posterEl.style.filter) {
-                    posterEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                    posterEl.style.transition = 'filter 0.3s ease';
-                }
-                // Bind click-to-reveal on movie poster (blurred via inline style)
+                core.blurElement(posterEl);
                 if (posterEl) bindPosterReveal(posterEl, false);
             }
         }
@@ -668,11 +646,11 @@
         setTimeout(function () {
             applyMovieRedaction();
             redactDetailPageChapters(movieId, visiblePage);
-        }, 800);
+        }, core.LATE_RENDER_FIRST_DELAY_MS);
         setTimeout(function () {
             applyMovieRedaction();
             redactDetailPageChapters(movieId, visiblePage);
-        }, 2000);
+        }, core.LATE_RENDER_FINAL_DELAY_MS);
     }
 
     // ============================================================
@@ -743,11 +721,7 @@
                 if (epPosterEl) bindPosterReveal(epPosterEl, true);
 
                 // Blur backdrop image (lives outside #itemDetailPage in .backdropContainer)
-                var backdropEl = document.querySelector('.backdropImage');
-                if (backdropEl && !backdropEl.style.filter) {
-                    backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                    backdropEl.style.transition = 'filter 0.3s ease';
-                }
+                core.blurElement(document.querySelector('.backdropImage'));
             }
 
             applyEpisodeRedaction();
@@ -779,12 +753,11 @@
             setTimeout(function () {
                 applyEpisodeRedaction();
                 redactDetailPageChapters(epId, visiblePage);
-            }, 800);
+            }, core.LATE_RENDER_FIRST_DELAY_MS);
             setTimeout(function () {
                 applyEpisodeRedaction();
-                delete visiblePage.dataset.jeSpoilerChaptersProcessed;
                 redactDetailPageChapters(epId, visiblePage);
-            }, 2000);
+            }, core.LATE_RENDER_FINAL_DELAY_MS);
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fully redact episode detail page', episodeItem?.Id, err);
         }

@@ -18,15 +18,8 @@
     // Local helpers
     // ============================================================
 
-    /**
-     * Extracts the Jellyfin item ID from a card element.
-     * Checks both data-id and data-itemid attributes.
-     * @param {HTMLElement} el The card element.
-     * @returns {string|null} The item ID or null.
-     */
-    function getCardItemId(el) {
-        return el.dataset?.id || el.dataset?.itemid || null;
-    }
+    /** @see core.getCardItemId — local alias for readability. */
+    var getCardItemId = core.getCardItemId;
 
     /**
      * Detects the surface context of a card from its parent section headers.

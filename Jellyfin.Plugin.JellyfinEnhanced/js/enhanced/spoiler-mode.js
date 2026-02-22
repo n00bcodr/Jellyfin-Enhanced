@@ -41,6 +41,12 @@
     /** Final detail page re-scan delay. */
     var DETAIL_FINAL_RESCAN_DELAY_MS = 1500;
 
+    /** First delayed re-application for late-rendered detail page elements. */
+    var LATE_RENDER_FIRST_DELAY_MS = 800;
+
+    /** Final delayed re-application for late-rendered detail page elements. */
+    var LATE_RENDER_FINAL_DELAY_MS = 2000;
+
     /** Delay after toggling spoiler mode before re-scanning the page. */
     var TOGGLE_RESCAN_DELAY_MS = 300;
 
@@ -197,6 +203,11 @@
     // Internal helpers
     // ============================================================
 
+    /**
+     * Validates a Jellyfin item ID as a 32-character hex GUID.
+     * @param {string} id The ID to validate.
+     * @returns {boolean} True if the ID is a valid GUID.
+     */
     function isValidId(id) {
         return typeof id === 'string' && GUID_RE.test(id);
     }
@@ -239,29 +250,71 @@
         }
     }
 
+    /**
+     * Evicts the oldest entry from a Map cache if it exceeds maxSize.
+     * @param {Map} cache The Map to check.
+     * @param {number} maxSize Maximum allowed entries.
+     */
     function evictIfNeeded(cache, maxSize) {
         if (cache.size <= maxSize) return;
         var firstKey = cache.keys().next().value;
         cache.delete(firstKey);
     }
 
+    /**
+     * Escapes a string for safe insertion into HTML.
+     * @param {string} str The string to escape.
+     * @returns {string} The HTML-escaped string.
+     */
     function escapeHtml(str) {
         var div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
     }
 
+    /**
+     * Returns a translated string, falling back to the provided default if the
+     * translation key is not found.
+     * @param {string} key The i18n key.
+     * @param {string} fallback The fallback string.
+     * @returns {string} The translated or fallback string.
+     */
     function tFallback(key, fallback) {
         var translated = JE.t(key);
         return translated !== key ? translated : fallback;
     }
 
+    /**
+     * Finds the action button container on a detail page.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     * @returns {HTMLElement|null} The button container or null.
+     */
     function findButtonContainer(visiblePage) {
         for (var i = 0; i < BUTTON_CONTAINER_SELECTORS.length; i++) {
             var found = visiblePage.querySelector(BUTTON_CONTAINER_SELECTORS[i]);
             if (found) return found;
         }
         return null;
+    }
+
+    /**
+     * Extracts the Jellyfin item ID from a card element.
+     * @param {HTMLElement} el The card element.
+     * @returns {string|null} The item ID or null.
+     */
+    function getCardItemId(el) {
+        return el.dataset?.id || el.dataset?.itemid || null;
+    }
+
+    /**
+     * Applies inline blur filter to a DOM element (for backdrops and posters).
+     * Skips if the element already has a filter applied.
+     * @param {HTMLElement} el The element to blur.
+     */
+    function blurElement(el) {
+        if (!el || el.style.filter) return;
+        el.style.filter = 'blur(' + BLUR_RADIUS + ')';
+        el.style.transition = 'filter 0.3s ease';
     }
 
     // ============================================================
@@ -950,6 +1003,8 @@
         INIT_FILTER_DELAY_MS: INIT_FILTER_DELAY_MS,
         DETAIL_RESCAN_DELAY_MS: DETAIL_RESCAN_DELAY_MS,
         DETAIL_FINAL_RESCAN_DELAY_MS: DETAIL_FINAL_RESCAN_DELAY_MS,
+        LATE_RENDER_FIRST_DELAY_MS: LATE_RENDER_FIRST_DELAY_MS,
+        LATE_RENDER_FINAL_DELAY_MS: LATE_RENDER_FINAL_DELAY_MS,
         TOGGLE_RESCAN_DELAY_MS: TOGGLE_RESCAN_DELAY_MS,
         LONG_PRESS_THRESHOLD_MS: LONG_PRESS_THRESHOLD_MS,
         PLAYER_OSD_DELAY_MS: PLAYER_OSD_DELAY_MS,
@@ -998,6 +1053,8 @@
         escapeHtml: escapeHtml,
         tFallback: tFallback,
         findButtonContainer: findButtonContainer,
+        getCardItemId: getCardItemId,
+        blurElement: blurElement,
         shouldPrehideDetailOverview: shouldPrehideDetailOverview,
         shouldSkipDetailOverviewPrehide: shouldSkipDetailOverviewPrehide,
         setDetailOverviewPending: setDetailOverviewPending,
