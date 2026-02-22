@@ -1858,12 +1858,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 _userConfigurationManager.SaveUserConfiguration(userId, "spoiler-mode.json", userConfiguration);
-                _logger.Info($"Saved spoiler mode settings for user {userId} to spoiler-mode.json");
+                _logger.Info("Saved spoiler mode settings for user to spoiler-mode.json");
                 return Ok(new { success = true, file = "spoiler-mode.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save spoiler mode settings for user {userId}: {ex.Message}");
+                _logger.Error("Failed to save spoiler mode settings: " + ex.Message);
                 return StatusCode(500, new { success = false, message = "Failed to save spoiler mode settings." });
             }
         }
