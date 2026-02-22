@@ -232,28 +232,61 @@
 
 
     /**
+     * Loads a single script dynamically.
+     * @param {string} scriptName - Script filename.
+     * @param {string} basePath - The base URL path for the script.
+     * @returns {Promise<{status: string, script: string}>}
+     */
+    function loadScript(scriptName, basePath) {
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`);
+            script.onload = () => {
+                resolve({ status: 'fulfilled', script: scriptName });
+            };
+            script.onerror = (e) => {
+                console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`, e);
+                resolve({ status: 'rejected', script: scriptName, error: e });
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    /**
      * Loads an array of scripts dynamically.
+     * Scripts in ordered chains (e.g. spoiler-mode modules) are loaded
+     * sequentially to guarantee execution order; all other scripts load
+     * in parallel for speed.
      * @param {string[]} scripts - Array of script filenames.
      * @param {string} basePath - The base URL path for the scripts.
      * @returns {Promise<void>} - A promise that resolves when all scripts attempt to load.
      */
-    function loadScripts(scripts, basePath) {
-        const promises = scripts.map(scriptName => {
-            return new Promise((resolve) => { // Always resolve so one failure doesn't stop others
-                const script = document.createElement('script');
-                script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`); // Cache-busting
-                script.onload = () => {
-                    resolve({ status: 'fulfilled', script: scriptName });
-                };
-                script.onerror = (e) => {
-                    console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`, e);
-                    resolve({ status: 'rejected', script: scriptName, error: e }); // Resolve even on error
-                };
-                document.head.appendChild(script);
-            });
-        });
-        // Wait for all promises to settle (either fulfilled or rejected)
-        return Promise.allSettled(promises);
+    async function loadScripts(scripts, basePath) {
+        // Scripts that must execute in listed order (each depends on the previous)
+        const orderedPrefixes = ['enhanced/spoiler-mode'];
+
+        const parallel = [];
+        const sequential = [];
+
+        for (const scriptName of scripts) {
+            if (orderedPrefixes.some(p => scriptName.startsWith(p))) {
+                sequential.push(scriptName);
+            } else {
+                parallel.push(scriptName);
+            }
+        }
+
+        // Load independent scripts in parallel
+        const parallelPromise = Promise.allSettled(
+            parallel.map(s => loadScript(s, basePath))
+        );
+
+        // Load ordered scripts sequentially
+        for (const scriptName of sequential) {
+            await loadScript(scriptName, basePath);
+        }
+
+        await parallelPromise;
     }
 
      /**

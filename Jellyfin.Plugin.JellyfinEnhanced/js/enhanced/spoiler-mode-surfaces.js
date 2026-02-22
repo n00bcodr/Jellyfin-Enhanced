@@ -577,22 +577,34 @@
 
         var settings = core.getSettings();
 
-        // Always hide movie overview when protected and unwatched
-        hideOverviewWithReveal(visiblePage);
+        /**
+         * Applies overview, poster, and backdrop redaction.
+         * Called immediately and again after a delay to catch late-rendered elements.
+         */
+        function applyMovieRedaction() {
+            if (core.revealAllActive) return;
 
-        // Blur poster and backdrop based on artwork policy
-        if (settings.artworkPolicy === 'blur' || settings.artworkPolicy === 'generic') {
-            var backdropEl = visiblePage.querySelector('.backdropImage');
-            if (backdropEl) {
-                backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                backdropEl.style.transition = 'filter 0.3s ease';
-            }
-            var posterEl = visiblePage.querySelector('.detailImageContainer img');
-            if (posterEl) {
-                posterEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                posterEl.style.transition = 'filter 0.3s ease';
+            hideOverviewWithReveal(visiblePage);
+
+            if (settings.artworkPolicy === 'blur' || settings.artworkPolicy === 'generic') {
+                var backdropEl = document.querySelector('.backdropImage');
+                if (backdropEl && !backdropEl.style.filter) {
+                    backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
+                    backdropEl.style.transition = 'filter 0.3s ease';
+                }
+                var posterEl = visiblePage.querySelector('.detailImageContainer .cardImageContainer');
+                if (posterEl && !posterEl.style.filter) {
+                    posterEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
+                    posterEl.style.transition = 'filter 0.3s ease';
+                }
             }
         }
+
+        applyMovieRedaction();
+
+        // Re-apply after Jellyfin finishes rendering (title, backdrop, overview render async)
+        setTimeout(function () { applyMovieRedaction(); }, 800);
+        setTimeout(function () { applyMovieRedaction(); }, 2000);
 
         // Redact chapter cards (Scenes section), skipping already-watched chapters
         await redactDetailPageChapters(movieId, visiblePage);
@@ -618,32 +630,47 @@
         if (!core.shouldRedactEpisode(episodeItem)) return;
 
         try {
-            // Redact episode title (e.g. "S02E05 — Click to reveal" instead of actual name)
-            var nameEl = visiblePage.querySelector('.itemName, h3.itemName');
-            if (nameEl && !nameEl.classList.contains('je-spoiler-text-redacted')) {
-                nameEl.dataset.jeSpoilerOriginal = nameEl.textContent;
-                nameEl.textContent = core.formatRedactedTitle(
-                    episodeItem.ParentIndexNumber,
-                    episodeItem.IndexNumber,
-                    episodeItem.IndexNumberEnd,
-                    episodeItem.ParentIndexNumber === 0
-                );
-                nameEl.classList.add('je-spoiler-text-redacted');
+            var redactedTitle = core.formatRedactedTitle(
+                episodeItem.ParentIndexNumber,
+                episodeItem.IndexNumber,
+                episodeItem.IndexNumberEnd,
+                episodeItem.ParentIndexNumber === 0
+            );
+
+            /**
+             * Applies title, overview, and backdrop redaction for the episode.
+             * Called immediately and again after a delay to catch late-rendered elements.
+             */
+            function applyEpisodeRedaction() {
+                if (core.revealAllActive) return;
+
+                // Redact episode title
+                var nameEl = visiblePage.querySelector('.itemName, h3.itemName');
+                if (nameEl && !nameEl.classList.contains('je-spoiler-text-redacted')) {
+                    nameEl.dataset.jeSpoilerOriginal = nameEl.textContent;
+                    nameEl.textContent = redactedTitle;
+                    nameEl.classList.add('je-spoiler-text-redacted');
+                }
+
+                hideOverviewWithReveal(visiblePage);
+
+                // Blur backdrop image (lives outside #itemDetailPage in .backdropContainer)
+                var backdropEl = document.querySelector('.backdropImage');
+                if (backdropEl && !backdropEl.style.filter) {
+                    backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
+                    backdropEl.style.transition = 'filter 0.3s ease';
+                }
             }
 
-            // Always hide episode overview (showSeriesOverview only applies to series/collection overviews)
-            hideOverviewWithReveal(visiblePage);
+            applyEpisodeRedaction();
+
+            // Re-apply after Jellyfin finishes rendering (title, backdrop, overview render async)
+            setTimeout(function () { applyEpisodeRedaction(); }, 800);
+            setTimeout(function () { applyEpisodeRedaction(); }, 2000);
 
             // Add CSS class that blurs poster and hides metadata (runtime, genres, external links)
             if (!visiblePage.classList.contains('je-spoiler-episode-protected')) {
                 visiblePage.classList.add('je-spoiler-episode-protected');
-            }
-
-            // Blur backdrop image (lives outside #itemDetailPage in .backdropContainer)
-            var backdropEl = document.querySelector('.backdropImage');
-            if (backdropEl) {
-                backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
-                backdropEl.style.transition = 'filter 0.3s ease';
             }
 
             // Hide Guest Stars section only when hideGuestStars is enabled
