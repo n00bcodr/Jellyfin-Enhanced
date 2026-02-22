@@ -571,25 +571,26 @@
      */
     async function redactMovieDetailPage(movieId, visiblePage) {
         if (core.revealAllActive) return;
-        if (!core.isProtected(movieId)) return;
 
         var watched = await core.isMovieWatched(movieId);
         if (watched) return;
 
-        // Cache settings to avoid calling getSettings() twice
         var settings = core.getSettings();
 
-        // Hide overview
-        if (!settings.showSeriesOverview) {
-            hideOverviewWithReveal(visiblePage);
-        }
+        // Always hide movie overview when protected and unwatched
+        hideOverviewWithReveal(visiblePage);
 
-        // Blur backdrop when artwork policy is generic or guest stars are hidden
-        if (settings.artworkPolicy === 'generic' || settings.hideGuestStars) {
-            var backdropEl = visiblePage.querySelector('.backdropImage, .detailImageContainer img');
+        // Blur poster and backdrop based on artwork policy
+        if (settings.artworkPolicy === 'blur' || settings.artworkPolicy === 'generic') {
+            var backdropEl = visiblePage.querySelector('.backdropImage');
             if (backdropEl) {
                 backdropEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
                 backdropEl.style.transition = 'filter 0.3s ease';
+            }
+            var posterEl = visiblePage.querySelector('.detailImageContainer img');
+            if (posterEl) {
+                posterEl.style.filter = 'blur(' + core.BLUR_RADIUS + ')';
+                posterEl.style.transition = 'filter 0.3s ease';
             }
         }
 
@@ -617,6 +618,19 @@
         if (!core.shouldRedactEpisode(episodeItem)) return;
 
         try {
+            // Redact episode title (e.g. "S02E05 — Click to reveal" instead of actual name)
+            var nameEl = visiblePage.querySelector('.itemName, h3.itemName');
+            if (nameEl && !nameEl.classList.contains('je-spoiler-text-redacted')) {
+                nameEl.dataset.jeSpoilerOriginal = nameEl.textContent;
+                nameEl.textContent = core.formatRedactedTitle(
+                    episodeItem.ParentIndexNumber,
+                    episodeItem.IndexNumber,
+                    episodeItem.IndexNumberEnd,
+                    episodeItem.ParentIndexNumber === 0
+                );
+                nameEl.classList.add('je-spoiler-text-redacted');
+            }
+
             // Always hide episode overview (showSeriesOverview only applies to series/collection overviews)
             hideOverviewWithReveal(visiblePage);
 
