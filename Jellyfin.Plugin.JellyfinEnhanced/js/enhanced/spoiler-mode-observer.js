@@ -308,6 +308,19 @@
     // ============================================================
 
     /**
+     * Marks all cards on a detail page as processed and scanned, preventing
+     * filterNewCards from making unnecessary API calls for unprotected items.
+     * @param {HTMLElement} visiblePage The visible detail page element.
+     */
+    function markAllCardsScanned(visiblePage) {
+        var cards = visiblePage.querySelectorAll(core.CARD_SEL);
+        for (var i = 0; i < cards.length; i++) {
+            cards[i].setAttribute(core.PROCESSED_ATTR, '1');
+            cards[i].setAttribute(core.SCANNED_ATTR, '1');
+        }
+    }
+
+    /**
      * Filters only cards that have not yet been processed by spoiler mode.
      * Uses the CARD_SEL_NEW selector to find unprocessed cards.
      */
@@ -455,6 +468,13 @@
                 return;
             }
 
+            // Pre-mark all cards as processed to prevent filterNewCards from
+            // racing and making per-card API calls before we know the protection state
+            var allPageCards = visiblePage.querySelectorAll(core.CARD_SEL);
+            for (var pc = 0; pc < allPageCards.length; pc++) {
+                allPageCards[pc].setAttribute(core.PROCESSED_ATTR, '1');
+            }
+
             // Pre-hide overview if conditions are met
             if (core.shouldPrehideDetailOverview()) {
                 if (!core.shouldSkipDetailOverviewPrehide(visiblePage)) {
@@ -495,6 +515,9 @@
                     if (core.redactEpisodeList) {
                         await core.redactEpisodeList(detailItemId, visiblePage);
                     }
+                } else {
+                    // Not protected — mark all cards as scanned so filterNewCards skips them
+                    markAllCardsScanned(visiblePage);
                 }
             } else if (itemType === 'Season') {
                 var seasonSeriesId = item.SeriesId || '';
@@ -502,6 +525,8 @@
                     if (core.redactEpisodeList) {
                         await core.redactEpisodeList(detailItemId, visiblePage);
                     }
+                } else {
+                    markAllCardsScanned(visiblePage);
                 }
             } else if (itemType === 'BoxSet') {
                 if (core.isProtected(detailItemId)) {
