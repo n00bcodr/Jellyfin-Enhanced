@@ -332,9 +332,11 @@
         var cards = document.querySelectorAll(core.CARD_SEL_NEW);
         for (var i = 0; i < cards.length; i++) {
             var card = cards[i];
-            if (!card.hasAttribute(core.PROCESSED_ATTR)) {
-                processCard(card);
-            }
+            if (card.hasAttribute(core.PROCESSED_ATTR)) continue;
+            // Detail page cards are owned by handleDetailPageMutation — skip them
+            // to avoid per-card API calls that race with the detail handler
+            if (card.closest('#itemDetailPage')) continue;
+            processCard(card);
         }
     }
 
@@ -512,13 +514,13 @@
             }
 
             // Apply redaction based on item type
+            // Set unprotected flag so processCard can bail instantly for late-rendered cards
             if (itemType === 'Series') {
                 if (core.isProtected(detailItemId)) {
                     if (core.redactEpisodeList) {
                         await core.redactEpisodeList(detailItemId, visiblePage, item);
                     }
                 } else {
-                    // Not protected — mark all cards as scanned so filterNewCards skips them
                     markAllCardsScanned(visiblePage);
                 }
             } else if (itemType === 'Season') {
