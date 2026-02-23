@@ -329,13 +329,17 @@
     function filterNewCards() {
         if (core.protectedIdSet.size === 0) return;
 
+        // While the detail page handler is actively processing, skip cards on
+        // the detail page to avoid racing API calls. Once the handler finishes,
+        // cards it didn't cover (season cards, actor page cards) will be processed
+        // normally on the next filterNewCards trigger.
+        var skipDetailCards = core.detailPageProcessing;
+
         var cards = document.querySelectorAll(core.CARD_SEL_NEW);
         for (var i = 0; i < cards.length; i++) {
             var card = cards[i];
             if (card.hasAttribute(core.PROCESSED_ATTR)) continue;
-            // Detail page cards are owned by handleDetailPageMutation — skip them
-            // to avoid per-card API calls that race with the detail handler
-            if (card.closest('#itemDetailPage')) continue;
+            if (skipDetailCards && card.closest('#itemDetailPage')) continue;
             processCard(card);
         }
     }
