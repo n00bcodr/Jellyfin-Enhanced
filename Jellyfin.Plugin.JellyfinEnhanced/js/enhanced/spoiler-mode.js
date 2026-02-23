@@ -995,7 +995,7 @@
                 var item = await ApiClient.ajax({
                     type: 'GET',
                     url: ApiClient.getUrl('/Items/' + itemId, {
-                        Fields: 'SeriesId,ParentIndexNumber,IndexNumber,UserData'
+                        Fields: 'SeriesId'
                     }),
                     dataType: 'json'
                 });

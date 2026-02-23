@@ -365,21 +365,25 @@
      * @param {HTMLElement} visiblePage The visible detail page element.
      * @returns {Promise<void>}
      */
-    async function redactEpisodeList(itemId, visiblePage) {
+    async function redactEpisodeList(itemId, visiblePage, knownItem) {
         if (core.revealAllActive) return;
 
         var seriesId = itemId;
-        var detailItem = null;
-        var userId = ApiClient.getCurrentUserId();
+        var detailItem = knownItem || null;
 
-        try {
-            detailItem = await ApiClient.getItem(userId, itemId);
-            if (detailItem?.Type === 'Season') {
-                seriesId = detailItem.SeriesId || itemId;
-            } else if (detailItem?.Type !== 'Series') {
+        // Use passed item if available, otherwise fetch
+        if (!detailItem) {
+            try {
+                var userId = ApiClient.getCurrentUserId();
+                detailItem = await ApiClient.getItem(userId, itemId);
+            } catch (err) {
                 return;
             }
-        } catch (err) {
+        }
+
+        if (detailItem?.Type === 'Season') {
+            seriesId = detailItem.SeriesId || itemId;
+        } else if (detailItem?.Type !== 'Series') {
             return;
         }
 
@@ -537,6 +541,9 @@
      * @param {HTMLElement} visiblePage The visible detail page element.
      * @returns {Promise<void>}
      */
+    /** Cached playback position per item to avoid re-fetching on delayed re-scans. */
+    var chapterPositionCache = {};
+
     async function redactDetailPageChapters(itemId, visiblePage) {
         if (core.revealAllActive) return;
 
@@ -544,20 +551,26 @@
         if (chapterCards.length === 0) return;
 
         var playbackPositionTicks = 0;
-        try {
-            if (!core.isValidId(itemId)) return;
 
-            var userId = ApiClient.getCurrentUserId();
-            var item = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId),
-                dataType: 'json'
-            });
+        // Reuse cached position from earlier call (avoids re-fetching at 800ms/2s delays)
+        if (chapterPositionCache[itemId] !== undefined) {
+            playbackPositionTicks = chapterPositionCache[itemId];
+        } else {
+            try {
+                if (!core.isValidId(itemId)) return;
 
-            playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
-        } catch (err) {
-            // If we can't fetch position, redact all chapters to be safe
-            playbackPositionTicks = 0;
+                var userId = ApiClient.getCurrentUserId();
+                var item = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Users/' + userId + '/Items/' + itemId),
+                    dataType: 'json'
+                });
+
+                playbackPositionTicks = item?.UserData?.PlaybackPositionTicks || 0;
+            } catch (err) {
+                playbackPositionTicks = 0;
+            }
+            chapterPositionCache[itemId] = playbackPositionTicks;
         }
 
         var chapterIndex = 0;
@@ -816,6 +829,9 @@
      * @param {string} itemId The currently playing item ID.
      * @returns {Promise<void>}
      */
+    /** Cached player overlay item data to avoid re-fetching on OSD mutations. */
+    var playerOverlayCache = { itemId: null, item: null };
+
     async function redactPlayerOverlay(itemId) {
         if (!itemId) return;
         if (core.revealAllActive) return;
@@ -836,13 +852,20 @@
         try {
             if (!core.isValidId(itemId)) return;
 
-            var item = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl('/Items/' + itemId, {
-                    Fields: 'UserData,ParentIndexNumber,IndexNumber'
-                }),
-                dataType: 'json'
-            });
+            // Reuse cached item data if same item (OSD mutations fire repeatedly)
+            var item;
+            if (playerOverlayCache.itemId === itemId) {
+                item = playerOverlayCache.item;
+            } else {
+                item = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/Items/' + itemId, {
+                        Fields: 'UserData,ParentIndexNumber,IndexNumber'
+                    }),
+                    dataType: 'json'
+                });
+                playerOverlayCache = { itemId: itemId, item: item };
+            }
 
             if (!item) return;
 

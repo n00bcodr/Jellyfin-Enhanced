@@ -114,7 +114,9 @@
         if (!core.isValidId(itemId)) return;
 
         try {
-            var item = await ApiClient.ajax({
+            // Check episode data cache first (populated by computeBoundary)
+            var cachedEp = core.getEpisodeData ? core.getEpisodeData(seriesId, itemId) : null;
+            var item = cachedEp || await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/Items/' + itemId, {
                     Fields: 'UserData,ParentIndexNumber,IndexNumber'
@@ -513,7 +515,7 @@
             if (itemType === 'Series') {
                 if (core.isProtected(detailItemId)) {
                     if (core.redactEpisodeList) {
-                        await core.redactEpisodeList(detailItemId, visiblePage);
+                        await core.redactEpisodeList(detailItemId, visiblePage, item);
                     }
                 } else {
                     // Not protected — mark all cards as scanned so filterNewCards skips them
@@ -523,7 +525,7 @@
                 var seasonSeriesId = item.SeriesId || '';
                 if (seasonSeriesId && core.isProtected(seasonSeriesId)) {
                     if (core.redactEpisodeList) {
-                        await core.redactEpisodeList(detailItemId, visiblePage);
+                        await core.redactEpisodeList(detailItemId, visiblePage, item);
                     }
                 } else {
                     markAllCardsScanned(visiblePage);
