@@ -165,6 +165,9 @@
     /** In-flight season watched requests. */
     var seasonWatchedRequestMap = new Map();
 
+    /** Cache of episode data by series: seriesId → Map<episodeId, episodeData>. */
+    var episodeDataCache = new Map();
+
     /** LRU cache for collection item listings. */
     var collectionItemsCache = new Map();
 
@@ -711,6 +714,23 @@
                     ts: Date.now()
                 });
 
+                // Cache episode data for fast lookups on detail pages
+                var epMap = new Map();
+                for (var j = 0; j < episodes.length; j++) {
+                    var epItem = episodes[j];
+                    if (epItem.Id) {
+                        epMap.set(epItem.Id, {
+                            Id: epItem.Id,
+                            ParentIndexNumber: epItem.ParentIndexNumber,
+                            IndexNumber: epItem.IndexNumber,
+                            IndexNumberEnd: epItem.IndexNumberEnd,
+                            UserData: epItem.UserData
+                        });
+                    }
+                }
+                evictIfNeeded(episodeDataCache, MAX_CACHE_SIZE);
+                episodeDataCache.set(seriesId, { data: epMap, ts: Date.now() });
+
                 return lastWatched;
             } catch (err) {
                 console.warn('🪼 Jellyfin Enhanced: Error computing spoiler boundary', err);
@@ -723,6 +743,19 @@
 
         boundaryRequestMap.set(seriesId, request);
         return request;
+    }
+
+    /**
+     * Retrieves cached episode data for a specific episode within a series.
+     * Call computeBoundary(seriesId) first to populate the cache.
+     * @param {string} seriesId The series Jellyfin ID.
+     * @param {string} episodeId The episode Jellyfin ID.
+     * @returns {Object|null} Episode data with Id, ParentIndexNumber, IndexNumber, UserData, or null.
+     */
+    function getEpisodeData(seriesId, episodeId) {
+        var cached = episodeDataCache.get(seriesId);
+        if (!cached || (Date.now() - cached.ts) >= BOUNDARY_CACHE_TTL) return null;
+        return cached.data.get(episodeId) || null;
     }
 
     async function isEpisodePastBoundary(seriesId, seasonNumber, episodeNumber) {
@@ -1080,6 +1113,7 @@
         formatRedactedTitle: formatRedactedTitle,
         formatShortRedactedTitle: formatShortRedactedTitle,
         getParentSeriesId: getParentSeriesId,
+        getEpisodeData: getEpisodeData,
 
         // Placeholders for sub-module functions (registered during their load)
         // Redaction module:

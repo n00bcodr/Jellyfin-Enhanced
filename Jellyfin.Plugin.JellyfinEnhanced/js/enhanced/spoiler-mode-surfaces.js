@@ -471,18 +471,40 @@
             core.blurElement(visiblePage.querySelector('.backdropImage, .detailImageContainer img'));
         }
 
-        // Process episode cards on the detail page in parallel (exclude chapter cards)
+        // Pre-compute boundary (single API call, caches episode data for all episodes)
+        await core.computeBoundary(seriesId);
+
+        // Process episode cards using cached data — no per-card API calls
         var episodeCards = visiblePage.querySelectorAll('.card[data-id]:not(.chapterCard), .listItem[data-id]');
-        var promises = [];
+        var fallbackPromises = [];
         for (var i = 0; i < episodeCards.length; i++) {
             var card = episodeCards[i];
             if (card.hasAttribute(core.SCANNED_ATTR)) continue;
             card.setAttribute(core.PROCESSED_ATTR, '1');
-            if (core.processCard) {
-                promises.push(core.processCard(card));
+
+            var cardItemId = getCardItemId(card);
+            if (!cardItemId) {
+                card.setAttribute(core.SCANNED_ATTR, '1');
+                continue;
+            }
+
+            // Try cached episode data first (populated by computeBoundary)
+            var epData = core.getEpisodeData(seriesId, cardItemId);
+            if (epData) {
+                if (core.shouldRedactEpisode(epData)) {
+                    if (core.redactCard) core.redactCard(card, epData);
+                }
+                card.setAttribute(core.SCANNED_ATTR, '1');
+            } else {
+                // Fallback for non-episode cards or cache misses
+                if (core.processCard) {
+                    fallbackPromises.push(core.processCard(card));
+                }
             }
         }
-        await Promise.all(promises);
+        if (fallbackPromises.length > 0) {
+            await Promise.all(fallbackPromises);
+        }
 
         // Redact chapter cards if present (episodes can have Scenes sections too)
         await redactDetailPageChapters(itemId, visiblePage);
