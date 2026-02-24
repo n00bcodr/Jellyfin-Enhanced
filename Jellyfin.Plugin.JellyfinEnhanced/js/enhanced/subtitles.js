@@ -106,13 +106,20 @@
         startSubtitleObserver();
 
         // Also apply styles to the legacy ::cue for Jellyfin versions <10.11
-        const styleElement = document.getElementById('htmlvideoplayer-cuestyle');
-        if (styleElement?.sheet) {
+        const oldStyleElement = document.getElementById('htmlvideoplayer-cuestyle');
+        if (oldStyleElement?.sheet) {
+            let styleElement = document.getElementById('je-html-videoplayer-cuestyle');
+            if (!styleElement?.sheet) {
+                styleElement = document.createElement('style');
+                styleElement.id = 'je-html-videoplayer-cuestyle'
+                document.head.appendChild(styleElement)
+            }
+		  
             try {
                 while (styleElement.sheet.cssRules.length > 0) styleElement.sheet.deleteRule(0);
                 if (JE.currentSettings.disableCustomSubtitleStyles) return;
                 const cueRule = `
-                .htmlvideoplayer::cue {
+                video.htmlvideoplayer::cue {
                     background-color: ${bgColor} !important;
                     color: ${textColor} !important;
                     font-size: ${fontSize}vw !important;
