@@ -1575,7 +1575,9 @@
 
                 // Custom languages not in Jellyfin's official culture list
                 const CUSTOM_LANGUAGES = {
-                    'pr': { Name: 'Pirate', DisplayName: "Pirate", TwoLetterISOLanguageName: 'pr' }
+                    'pr': { Name: 'Pirate', DisplayName: "Pirate", TwoLetterISOLanguageName: 'pr' },
+                    'en-GB': { Name: 'English (United Kingdom)', DisplayName: "English (United Kingdom)", TwoLetterISOLanguageName: 'en-GB' },
+                    'en-US': { Name: 'English (United States)', DisplayName: "English (United States)", TwoLetterISOLanguageName: 'en-US' }
                 };
 
                 let supportedJELanguages = [];
@@ -1606,14 +1608,21 @@
                     // Check which languages have translation files available on GitHub
                     const checkPromises = cultures.map(async (culture) => {
                         const langCode = culture.TwoLetterISOLanguageName;
+
+                        if (langCode === 'en') {
+                            return;
+                        }
+
                         const normalizedLangCode = langCode.includes('-')
                             ? `${langCode.split('-')[0]}-${langCode.split('-')[1].toUpperCase()}`
                             : langCode;
                         try {
                             const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLangCode}.json`, { method: 'HEAD' });
                             if (response.ok) {
+                                // Store the normalized code back to the culture object for consistency
+                                culture.TwoLetterISOLanguageName = normalizedLangCode;
                                 supportedJELanguages.push(culture);
-                                console.log('🪼 Jellyfin Enhanced: Found translation for:', culture.Name, '('+langCode+')');
+                                console.log('🪼 Jellyfin Enhanced: Found translation for:', culture.Name, '('+normalizedLangCode+')');
                             }
                         } catch (err) {
                             // Translation file doesn't exist
@@ -1622,8 +1631,14 @@
 
                     await Promise.all(checkPromises);
 
-                    // Add custom languages that have translation files
+                    supportedJELanguages.push(CUSTOM_LANGUAGES['en-GB']);
+                    supportedJELanguages.push(CUSTOM_LANGUAGES['en-US']);
+                    // Add other custom languages that have translation files
                     for (const langCode in CUSTOM_LANGUAGES) {
+                        if (langCode === 'en-GB' || langCode === 'en-US') {
+                            continue;
+                        }
+
                         const normalizedLangCode = langCode.includes('-')
                             ? `${langCode.split('-')[0]}-${langCode.split('-')[1].toUpperCase()}`
                             : langCode;
@@ -1653,7 +1668,7 @@
                 // Sort by Name
                 supportedJELanguages.sort((a, b) => a.Name.localeCompare(b.Name));
 
-                // Add options using TwoLetterISOLanguageName as value and Name as display
+                // Add options using TwoLetterISOLanguageName as value and DisplayName as display
                 supportedJELanguages.forEach(culture => {
                     const langCode = culture.TwoLetterISOLanguageName;
                     const option = document.createElement('option');
@@ -1664,13 +1679,17 @@
                     displayLanguageSelect.appendChild(option);
                 });
 
-                // Normalize saved language code with region support (e.g., zh-hk) when available
+                // Normalize saved language code with region support (e.g., zh-HK) when available
                 let normalizedLanguage = '';
                 if (savedLanguage) {
-                    const savedLower = savedLanguage.toLowerCase();
+                    // Normalize the saved language to match dropdown format (e.g., en-GB, zh-HK)
+                    const normalizedSaved = savedLanguage.includes('-')
+                        ? `${savedLanguage.split('-')[0].toLowerCase()}-${savedLanguage.split('-')[1].toUpperCase()}`
+                        : savedLanguage.toLowerCase();
+
                     const hasExactOption = Array.from(displayLanguageSelect.options)
-                        .some(option => option.value === savedLower);
-                    normalizedLanguage = hasExactOption ? savedLower : savedLower.split('-')[0];
+                        .some(option => option.value.toLowerCase() === normalizedSaved.toLowerCase());
+                    normalizedLanguage = hasExactOption ? normalizedSaved : normalizedSaved.split('-')[0];
                 }
 
                 // Set the saved language after options are added
@@ -1692,12 +1711,8 @@
                     return code;
                 };
 
-                // Map language codes to full culture codes for localStorage
-                let fullCultureCode = newLang;
-                if (newLang === 'en') {
-                    fullCultureCode = 'en-GB';
-                }
-                fullCultureCode = normalizeLangCode(fullCultureCode);
+                // Use the language code as-is, no special mapping
+                const fullCultureCode = normalizeLangCode(newLang);
 
                 // Check if translation file exists
                 let translationExists = true;
@@ -1719,7 +1734,7 @@
                 JE.currentSettings.displayLanguage = newLang;
                 await JE.saveUserSettings('settings.json', JE.currentSettings);
 
-                // Save to localStorage (use full culture code)
+                // Save to localStorage (use the same code)
                 if (fullCultureCode) {
                     localStorage.setItem(languageKey, fullCultureCode);
                 } else {

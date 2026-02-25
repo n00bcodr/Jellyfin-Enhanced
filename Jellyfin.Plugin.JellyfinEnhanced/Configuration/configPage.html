@@ -2533,7 +2533,9 @@
             const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
             const CUSTOM_LANGUAGES = {
-                'pr': { Name: 'Pirate', DisplayName: 'Pirate', TwoLetterISOLanguageName: 'pr', LocaleCode: 'pr' }
+                'pr': { Name: 'Pirate', DisplayName: 'Pirate', TwoLetterISOLanguageName: 'pr', LocaleCode: 'pr' },
+                'en-GB': { Name: 'English (United Kingdom)', DisplayName: 'English (United Kingdom)', TwoLetterISOLanguageName: 'en-GB', LocaleCode: 'en-GB' },
+                'en-US': { Name: 'English (United States)', DisplayName: 'English (United States)', TwoLetterISOLanguageName: 'en-US', LocaleCode: 'en-US' }
             };
 
             let supportedLanguages = [];
@@ -2568,6 +2570,12 @@
                 // Check which cultures have translation files on GitHub
                 const checkPromises = cultures.map(async (culture) => {
                     const langCode = culture.TwoLetterISOLanguageName;
+
+                    // Skip generic "en"
+                    if (langCode === 'en') {
+                        return;
+                    }
+
                     let normalizedLangCode;
                     if (langCode.includes('-')) {
                         const parts = langCode.split('-');
@@ -2591,8 +2599,16 @@
 
                 await Promise.all(checkPromises);
 
-                // Check custom languages
+                // Always add English variants
+                supportedLanguages.push(CUSTOM_LANGUAGES['en-GB']);
+                supportedLanguages.push(CUSTOM_LANGUAGES['en-US']);
+                // Check other custom languages
                 for (const langCode in CUSTOM_LANGUAGES) {
+                    // Skip English variants
+                    if (langCode === 'en-GB' || langCode === 'en-US') {
+                        continue;
+                    }
+
                     let normalizedLangCode;
                     if (langCode.includes('-')) {
                         const parts = langCode.split('-');

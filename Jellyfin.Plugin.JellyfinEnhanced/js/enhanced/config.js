@@ -106,7 +106,9 @@
             }
         }
 
-        mergedSettings.displayLanguage = userSettings.displayLanguage || pluginDefaults.DefaultLanguage || '';
+        mergedSettings.displayLanguage = userSettings.hasOwnProperty('displayLanguage')
+            ? userSettings.displayLanguage
+            : (pluginDefaults.DefaultLanguage || '');
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
         return mergedSettings;
     };

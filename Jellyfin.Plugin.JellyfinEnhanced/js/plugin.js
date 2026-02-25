@@ -549,9 +549,8 @@
                     if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
                     return code;
                 };
-                const desiredStorageLanguage = desiredLanguage
-                    ? normalizeLangCode(desiredLanguage === 'en' ? 'en-GB' : desiredLanguage)
-                    : '';
+                // Use the language code as-is, no special mapping
+                const desiredStorageLanguage = desiredLanguage ? normalizeLangCode(desiredLanguage) : '';
 
                 if (storedLanguage !== desiredStorageLanguage) {
                     localStorage.setItem(languageKey, desiredStorageLanguage);
