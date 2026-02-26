@@ -169,6 +169,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var nextSeasonNumber = currentSeasonNumber + 1;
 
             // Check in-memory cache first (fast path to avoid redundant API calls)
+            // Uses a sentinel pattern: write the entry before async work so concurrent
+            // callers see it immediately, then remove on failure to allow retries.
             var cacheKey = $"{tmdbId}_S{nextSeasonNumber}";
             lock (_requestCacheLock)
             {
@@ -177,12 +179,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     .Select(kvp => kvp.Key).ToList();
                 foreach (var key in expiredKeys) _requestedSeasons.Remove(key);
 
-                if (_requestedSeasons.TryGetValue(cacheKey, out var cachedTime) &&
-                    (DateTime.Now - cachedTime).TotalHours < 1)
+                if (_requestedSeasons.ContainsKey(cacheKey))
                 {
                     _logger.Debug($"[Auto-Season-Request] Already requested S{nextSeasonNumber} for TMDB {tmdbId} (cached)");
                     return;
                 }
+
+                // Reserve the slot so concurrent callers see it immediately
+                _requestedSeasons[cacheKey] = DateTime.Now;
             }
 
             // Get episode count for next season to verify it has started
@@ -220,15 +224,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (success)
             {
-                // Update cache so subsequent events for any user won't re-request
-                lock (_requestCacheLock)
-                {
-                    _requestedSeasons[cacheKey] = DateTime.Now;
-                }
                 _logger.Info($"[Auto-Season-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
             }
             else
             {
+                // Remove sentinel so a future attempt can retry
+                lock (_requestCacheLock)
+                {
+                    _requestedSeasons.Remove(cacheKey);
+                }
                 _logger.Warning($"[Auto-Season-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
             }
         }
