@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
+        private readonly object _movieCacheLock = new();
 
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
@@ -93,23 +94,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Check if we've already requested this movie (in-memory cache with 1-hour expiry)
             var requestKey = $"{user.Id}_{nextMovieInfo.TmdbId}";
-            if (!_requestedMovies.ContainsKey(user.Id.ToString()))
+            lock (_movieCacheLock)
             {
-                _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
-            }
-
-            // Check if cached and not expired (1 hour)
-            if (_requestedMovies[user.Id.ToString()].TryGetValue(requestKey, out var cachedTime))
-            {
-                if ((DateTime.Now - cachedTime).TotalHours < 1)
+                if (!_requestedMovies.ContainsKey(user.Id.ToString()))
                 {
-                    _logger.Debug($"[Auto-Movie-Request] Already requested '{nextMovieInfo.Title}' (cached)");
-                    return;
+                    _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
                 }
-                else
+
+                // Check if cached and not expired (1 hour)
+                if (_requestedMovies[user.Id.ToString()].TryGetValue(requestKey, out var cachedTime))
                 {
-                    // Expired, remove from cache
-                    _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    if ((DateTime.Now - cachedTime).TotalHours < 1)
+                    {
+                        _logger.Debug($"[Auto-Movie-Request] Already requested '{nextMovieInfo.Title}' (cached)");
+                        return;
+                    }
+                    else
+                    {
+                        // Expired, remove from cache
+                        _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    }
                 }
             }
 
@@ -118,7 +122,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (success)
             {
-                _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
+                lock (_movieCacheLock)
+                {
+                    if (!_requestedMovies.ContainsKey(user.Id.ToString()))
+                    {
+                        _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
+                    }
+                    _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
+                }
                 _logger.Info($"[Auto-Movie-Request] ✓ Requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
             }
             else
@@ -453,7 +464,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Clears the request cache (useful for testing or resetting)
         public void ClearRequestCache()
         {
-            _requestedMovies.Clear();
+            lock (_movieCacheLock)
+            {
+                _requestedMovies.Clear();
+            }
             _logger.Info("[Auto-Movie-Request] Cleared auto movie request cache");
         }
     }
