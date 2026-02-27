@@ -21,6 +21,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
 
+        // In-memory cache of recently requested seasons to avoid duplicates (keyed by tmdbId_seasonNumber, global across all users)
+        private readonly Dictionary<string, DateTime> _requestedSeasons = new();
+        private readonly object _requestCacheLock = new();
+
         public AutoSeasonRequestService(
             IHttpClientFactory httpClientFactory,
             Logger logger,
@@ -164,6 +168,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Threshold met - prepare to request next season
             var nextSeasonNumber = currentSeasonNumber + 1;
 
+            // Check in-memory cache first (fast path to avoid redundant API calls)
+            // Uses a sentinel pattern: write the entry before async work so concurrent
+            // callers see it immediately, then remove on failure to allow retries.
+            var cacheKey = $"{tmdbId}_S{nextSeasonNumber}";
+            lock (_requestCacheLock)
+            {
+                // Clean up expired entries
+                var expiredKeys = _requestedSeasons.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
+                    .Select(kvp => kvp.Key).ToList();
+                foreach (var key in expiredKeys) _requestedSeasons.Remove(key);
+
+                if (_requestedSeasons.ContainsKey(cacheKey))
+                {
+                    _logger.Debug($"[Auto-Season-Request] Already requested S{nextSeasonNumber} for TMDB {tmdbId} (cached)");
+                    return;
+                }
+
+                // Reserve the slot so concurrent callers see it immediately
+                _requestedSeasons[cacheKey] = DateTime.Now;
+            }
+
             // Get episode count for next season to verify it has started
             var nextSeasonEpisodeCount = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, nextSeasonNumber);
 
@@ -203,6 +228,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             else
             {
+                // Remove sentinel so a future attempt can retry
+                lock (_requestCacheLock)
+                {
+                    _requestedSeasons.Remove(cacheKey);
+                }
                 _logger.Warning($"[Auto-Season-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
             }
         }
@@ -344,8 +374,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             }
 
                             // First, check if there are any requests for this season
+                            // Jellyseerr API nests requests under mediaInfo, not at root level
                             bool hasRequest = false;
-                            if (root.TryGetProperty("requests", out var requestsArray))
+                            if (root.TryGetProperty("mediaInfo", out var mediaInfoElement) &&
+                                mediaInfoElement.TryGetProperty("requests", out var requestsArray))
                             {
                                 _logger.Info($"[Auto-Season-Request] Jellyseerr reports {requestsArray.GetArrayLength()} request(s) for TMDB ID {tmdbId}");
                                 foreach (var request in requestsArray.EnumerateArray())
@@ -369,7 +401,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             }
                             else
                             {
-                                _logger.Info($"[Auto-Season-Request] Jellyseerr reports no requests for TMDB ID {tmdbId}");
+                                _logger.Info($"[Auto-Season-Request] No mediaInfo or no requests found for TMDB ID {tmdbId}");
                             }
 
                             // Look for the season in the response to check availability

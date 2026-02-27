@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
+        private readonly object _movieCacheLock = new();
 
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
@@ -92,25 +93,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Check if we've already requested this movie (in-memory cache with 1-hour expiry)
+            // Uses a sentinel pattern: write the entry before async work so concurrent
+            // callers see it immediately, then remove on failure to allow retries.
             var requestKey = $"{user.Id}_{nextMovieInfo.TmdbId}";
-            if (!_requestedMovies.ContainsKey(user.Id.ToString()))
+            lock (_movieCacheLock)
             {
-                _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
-            }
+                // Clean up expired entries across all users
+                foreach (var cachedUserId in _requestedMovies.Keys.ToList())
+                {
+                    var expired = _requestedMovies[cachedUserId]
+                        .Where(kvp => (DateTime.Now - kvp.Value).TotalHours >= 1)
+                        .Select(kvp => kvp.Key).ToList();
+                    foreach (var key in expired) _requestedMovies[cachedUserId].Remove(key);
+                    if (_requestedMovies[cachedUserId].Count == 0) _requestedMovies.Remove(cachedUserId);
+                }
 
-            // Check if cached and not expired (1 hour)
-            if (_requestedMovies[user.Id.ToString()].TryGetValue(requestKey, out var cachedTime))
-            {
-                if ((DateTime.Now - cachedTime).TotalHours < 1)
+                if (!_requestedMovies.ContainsKey(user.Id.ToString()))
+                {
+                    _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
+                }
+
+                if (_requestedMovies[user.Id.ToString()].ContainsKey(requestKey))
                 {
                     _logger.Debug($"[Auto-Movie-Request] Already requested '{nextMovieInfo.Title}' (cached)");
                     return;
                 }
-                else
-                {
-                    // Expired, remove from cache
-                    _requestedMovies[user.Id.ToString()].Remove(requestKey);
-                }
+
+                // Reserve the slot so concurrent callers see it immediately
+                _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
             }
 
             // Request the movie
@@ -118,11 +128,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (success)
             {
-                _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
                 _logger.Info($"[Auto-Movie-Request] ✓ Requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
             }
             else
             {
+                // Remove sentinel so a future attempt can retry
+                lock (_movieCacheLock)
+                {
+                    if (_requestedMovies.ContainsKey(user.Id.ToString()))
+                    {
+                        _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    }
+                }
                 _logger.Warning($"[Auto-Movie-Request] ✗ Failed to request '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
             }
         }
@@ -453,7 +470,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Clears the request cache (useful for testing or resetting)
         public void ClearRequestCache()
         {
-            _requestedMovies.Clear();
+            lock (_movieCacheLock)
+            {
+                _requestedMovies.Clear();
+            }
             _logger.Info("[Auto-Movie-Request] Cleared auto movie request cache");
         }
     }

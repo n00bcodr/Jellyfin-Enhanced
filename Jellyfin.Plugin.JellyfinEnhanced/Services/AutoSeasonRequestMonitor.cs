@@ -107,6 +107,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (playedToCompletion || completionPercentage >= 0.9)
                 {
+                    // Deduplicate stop events for the same user+item (same pattern as OnPlaybackProgress)
+                    if (e.Session?.UserId == null || e.Item?.Id == null)
+                    {
+                        return;
+                    }
+
+                    var sessionItemKey = $"stopped_{e.Session.UserId}_{e.Item.Id}";
+                    lock (_sessionLock)
+                    {
+                        var expiredKeys = _checkedSessions.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
+                            .Select(kvp => kvp.Key).ToList();
+                        foreach (var key in expiredKeys) _checkedSessions.Remove(key);
+
+                        if (_checkedSessions.ContainsKey(sessionItemKey))
+                        {
+                            _logger.Debug($"[Auto-Season-Request] PlaybackStopped already processed for '{e.Item?.Name}', skipping duplicate");
+                            return;
+                        }
+                        _checkedSessions[sessionItemKey] = DateTime.Now;
+                    }
+
                     _logger.Info($"[Auto-Season-Request] Episode '{e.Item?.Name ?? "Unknown"}' completed by {e.Session?.UserName ?? "Unknown"}, checking threshold");
 
                     // Process this episode completion
