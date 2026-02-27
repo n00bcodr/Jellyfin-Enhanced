@@ -81,7 +81,31 @@
             const style = document.createElement('style');
             style.id = 'je-people-tags-styles';
             style.textContent = `
-                @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+                @font-face {
+                    font-family: 'Material Symbols Rounded';
+                    font-style: normal;
+                    font-weight: 100 700;
+                    font-display: block;
+                    src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+                }
+
+                .material-symbols-rounded {
+                    font-family: 'Material Symbols Rounded';
+                    font-weight: normal;
+                    font-style: normal;
+                    font-size: 24px;
+                    line-height: 1;
+                    letter-spacing: normal;
+                    text-transform: none;
+                    display: inline-block;
+                    white-space: nowrap;
+                    word-wrap: normal;
+                    direction: ltr;
+                    -webkit-font-feature-settings: 'liga';
+                    -moz-font-feature-settings: 'liga';
+                    font-feature-settings: 'liga';
+                    -webkit-font-smoothing: antialiased;
+                }
 
                 /* Ensure cardScalable has position: relative for absolute positioned overlays */
                 #castCollapsible .personCard .cardScalable {

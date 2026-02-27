@@ -255,7 +255,8 @@
             @font-face {
               font-family: 'Material Symbols Rounded';
               font-style: normal;
-              font-weight: 400;
+              font-weight: 100 700;
+              font-display: block;
               src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
             }
             .mediaInfoItem-fileSize .material-icons,
@@ -270,6 +271,8 @@
               word-wrap: normal;
               direction: ltr;
               -webkit-font-feature-settings: 'liga';
+              -moz-font-feature-settings: 'liga';
+              font-feature-settings: 'liga';
               -webkit-font-smoothing: antialiased;
             }
             .jellyseerr-issue-radio-group {
