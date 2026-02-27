@@ -1083,6 +1083,96 @@ function mountRequestedChip(data, mediaType, is4k, response = null) {
     renderActions(data, mediaType);
 }
 
+/**
+ * Check if a TV show has any unrequested seasons by querying the request endpoint
+ * @param {object} data - The TV show data from Jellyseerr
+ * @returns {Promise<boolean>} - True if there are seasons that can be requested
+ */
+async function checkForUnrequestedSeasons(data) {
+    // Get all seasons from TMDB data that have episodes (excluding specials and unaired seasons)
+    const tmdbSeasons = (data.seasons || []).filter(s => s.seasonNumber > 0 && s.episodeCount > 0);
+    if (tmdbSeasons.length === 0) return false;
+
+    const tmdbId = data.id;
+
+    try {
+        // Query the request endpoint to get ALL requests for this show
+        const response = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/request?take=500&skip=0&filter=all`),
+            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+            dataType: 'json'
+        });
+
+        // Collect all season statuses from all requests for this TMDB ID
+        const statusMap = {};
+
+        if (response.results) {
+            for (const request of response.results) {
+                if (request.type === 'tv' && request.media && request.media.tmdbId === tmdbId) {
+                    if (request.seasons) {
+                        for (const season of request.seasons) {
+                            const seasonNum = season.seasonNumber;
+                            const status = season.status;
+                            if (!statusMap[seasonNum] || status > statusMap[seasonNum]) {
+                                statusMap[seasonNum] = status;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check mediaInfo.seasons for available seasons
+        if (data.mediaInfo && data.mediaInfo.seasons) {
+            for (const season of data.mediaInfo.seasons) {
+                const seasonNum = season.seasonNumber;
+                const status = season.status;
+                if (!statusMap[seasonNum] || status > statusMap[seasonNum]) {
+                    statusMap[seasonNum] = status;
+                }
+            }
+        }
+
+        // Check if any TMDB season is unrequested
+        for (const tmdbSeason of tmdbSeasons) {
+            const status = statusMap[tmdbSeason.seasonNumber];
+            if (!status || status === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    } catch (error) {
+        console.error(`[More Info Modal] Error checking unrequested seasons:`, error);
+        return false;
+    }
+}
+
+/**
+ * Build "Request More" button for TV shows with some seasons already requested
+ */
+function buildTvRequestMoreButton(data) {
+    const container = document.createElement('div');
+    container.className = 'je-more-info-actions-row';
+
+    const requestButton = document.createElement('button');
+    requestButton.className = 'jellyseerr-request-button jellyseerr-button-request';
+    requestButton.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request_more') || 'Request More'}</span>`;
+    requestButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Show season selection modal for partially available shows
+        if (JE.jellyseerrUI?.showSeasonSelectionModal) {
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data);
+        }
+    });
+
+    container.appendChild(requestButton);
+    return container;
+}
+
 function renderActions(data, mediaType) {
     if (!currentModal) return;
 
@@ -1181,7 +1271,17 @@ function renderActions(data, mediaType) {
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
         const hasStatus = hasNormalStatus || has4kStatus;
-        if (hasStatus) return;
+
+        // Check if there are unrequested seasons
+        if (hasStatus) {
+            checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
+                if (hasUnrequestedSeasons && actionMount) {
+                    const requestMoreButton = buildTvRequestMoreButton(data);
+                    if (requestMoreButton) actionMount.appendChild(requestMoreButton);
+                }
+            });
+            return;
+        }
 
         const actions = buildTvActions(data);
         if (actions && actionMount) actionMount.appendChild(actions);

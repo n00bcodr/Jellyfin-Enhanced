@@ -368,6 +368,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
+
+        [HttpGet("jellyseerr/request")]
+        [Authorize]
+        public Task<IActionResult> GetJellyseerrRequests([FromQuery] int take = 500, [FromQuery] int skip = 0, [FromQuery] string filter = "all")
+        {
+            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={filter}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/tv/{tmdbId}")]
         [Authorize]
         public Task<IActionResult> GetTvShow(int tmdbId)
