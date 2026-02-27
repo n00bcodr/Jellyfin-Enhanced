@@ -10,38 +10,43 @@
             return;
         }
 
-        // Check admin status with session storage cache
-        const adminCacheKey = 'JE_IsAdmin';
-        let isAdmin = sessionStorage.getItem(adminCacheKey);
+        // Check admin status on every script initialization
+        let isAdmin = false;
 
-        if (isAdmin === null) {
-            // Not cached, fetch user and check
-            try {
-                let user = null;
-                for (let i = 0; i < 20; i++) {  // ~10s retry window
-                    try {
-                        user = await ApiClient.getCurrentUser();
-                        if (user) break;
-                    } catch (e) {
-                        // swallow error, retry
-                    }
-                    await new Promise(r => setTimeout(r, 500));
+        try {
+            let user = null;
+            for (let i = 0; i < 20; i++) {  // ~10s retry window
+                try {
+                    user = await ApiClient.getCurrentUser();
+                    if (user) break;
+                } catch (e) {
+                    // swallow error, retry
                 }
+                await new Promise(r => setTimeout(r, 500));
+            }
 
-                if (!user) {
-                    console.error(`${logPrefix} Could not get current user after retries.`);
-                    return;
-                }
-
-                isAdmin = user?.Policy?.IsAdministrator ? 'true' : 'false';
-                sessionStorage.setItem(adminCacheKey, isAdmin);
-            } catch (err) {
-                console.error(`${logPrefix} Error checking admin status:`, err);
+            if (!user) {
+                console.error(`${logPrefix} Could not get current user after retries.`);
                 return;
             }
+
+            isAdmin = user?.Policy?.IsAdministrator === true;
+
+            // Update settings.json if the value changed
+            if (JE?.currentSettings && JE.currentSettings.isAdmin !== isAdmin && typeof JE.saveUserSettings === 'function') {
+                JE.currentSettings.isAdmin = isAdmin;
+                await JE.saveUserSettings('settings.json', JE.currentSettings);
+                console.log(`${logPrefix} Updated admin status in settings.json: ${isAdmin}`);
+            } else if (JE?.currentSettings) {
+                JE.currentSettings.isAdmin = isAdmin;
+                console.log(`${logPrefix} Admin status: ${isAdmin}`);
+            }
+        } catch (err) {
+            console.error(`${logPrefix} Error checking admin status:`, err);
+            return;
         }
 
-        if (isAdmin !== 'true') {
+        if (!isAdmin) {
             console.log(`${logPrefix} User is not an administrator. Links will not be shown.`);
             return;
         }

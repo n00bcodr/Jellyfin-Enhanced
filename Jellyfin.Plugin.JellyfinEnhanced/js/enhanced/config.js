@@ -85,7 +85,8 @@
             displayLanguage: '',
             calendarDisplayMode: 'list',
             calendarDefaultViewMode: 'agenda',
-            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
+            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts',
+            isAdmin: undefined
         };
 
         const mergedSettings = {};
@@ -110,6 +111,12 @@
             ? userSettings.displayLanguage
             : (pluginDefaults.DefaultLanguage || '');
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
+
+        // Ensure isAdmin is always present (even if undefined) so it can be set later
+        if (!mergedSettings.hasOwnProperty('isAdmin')) {
+            mergedSettings.isAdmin = userSettings.isAdmin !== undefined ? userSettings.isAdmin : undefined;
+        }
+
         return mergedSettings;
     };
 
