@@ -5,7 +5,7 @@
     // Create the global namespace immediately with placeholders
     window.JellyfinEnhanced = {
         pluginConfig: {},
-        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
+        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, spoilerMode: { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false } },
         translations: {},
         pluginVersion: 'unknown',
         // Stub functions that will be overwritten by modules
@@ -232,28 +232,61 @@
 
 
     /**
+     * Loads a single script dynamically.
+     * @param {string} scriptName - Script filename.
+     * @param {string} basePath - The base URL path for the script.
+     * @returns {Promise<{status: string, script: string}>}
+     */
+    function loadScript(scriptName, basePath) {
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`);
+            script.onload = () => {
+                resolve({ status: 'fulfilled', script: scriptName });
+            };
+            script.onerror = (e) => {
+                console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`, e);
+                resolve({ status: 'rejected', script: scriptName, error: e });
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    /**
      * Loads an array of scripts dynamically.
+     * Scripts in ordered chains (e.g. spoiler-mode modules) are loaded
+     * sequentially to guarantee execution order; all other scripts load
+     * in parallel for speed.
      * @param {string[]} scripts - Array of script filenames.
      * @param {string} basePath - The base URL path for the scripts.
      * @returns {Promise<void>} - A promise that resolves when all scripts attempt to load.
      */
-    function loadScripts(scripts, basePath) {
-        const promises = scripts.map(scriptName => {
-            return new Promise((resolve) => { // Always resolve so one failure doesn't stop others
-                const script = document.createElement('script');
-                script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`); // Cache-busting
-                script.onload = () => {
-                    resolve({ status: 'fulfilled', script: scriptName });
-                };
-                script.onerror = (e) => {
-                    console.error(`🪼 Jellyfin Enhanced: Failed to load script '${scriptName}'`, e);
-                    resolve({ status: 'rejected', script: scriptName, error: e }); // Resolve even on error
-                };
-                document.head.appendChild(script);
-            });
-        });
-        // Wait for all promises to settle (either fulfilled or rejected)
-        return Promise.allSettled(promises);
+    async function loadScripts(scripts, basePath) {
+        // Scripts that must execute in listed order (each depends on the previous)
+        const orderedPrefixes = ['enhanced/spoiler-mode'];
+
+        const parallel = [];
+        const sequential = [];
+
+        for (const scriptName of scripts) {
+            if (orderedPrefixes.some(p => scriptName.startsWith(p))) {
+                sequential.push(scriptName);
+            } else {
+                parallel.push(scriptName);
+            }
+        }
+
+        // Load independent scripts in parallel
+        const parallelPromise = Promise.allSettled(
+            parallel.map(s => loadScript(s, basePath))
+        );
+
+        // Load ordered scripts sequentially
+        for (const scriptName of sequential) {
+            await loadScript(scriptName, basePath);
+        }
+
+        await parallelPromise;
     }
 
      /**
@@ -412,18 +445,21 @@
                          .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e })),
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'hiddenContent', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e }))
+                         .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e })),
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/spoiler-mode.json?_=${Date.now()}`), dataType: 'json' })
+                         .then(data => ({ name: 'spoilerMode', status: 'fulfilled', value: data }))
+                         .catch(e => ({ name: 'spoilerMode', status: 'rejected', reason: e }))
             ];
             // Use allSettled to get results even if some fetches fail
             const results = await Promise.allSettled(fetchPromises);
 
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, spoilerMode: { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false } };
             results.forEach(result => {
                 if (result.status === 'fulfilled' && result.value) {
                     const data = result.value;
                     if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
                         // *** CONVERT PASCALCASE TO CAMELCASE ***
-                        if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent') {
+                        if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent' || data.name === 'spoilerMode') {
                             JE.userConfig[data.name] = toCamelCase(data.value);
                         } else {
                             JE.userConfig[data.name] = data.value;
@@ -433,12 +469,14 @@
                         else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                         else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
                         else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
+                        else if (data.name === 'spoilerMode') JE.userConfig.spoilerMode = { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false };
                         else JE.userConfig[data.name] = {};
                     } else {
                         if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
                         else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                         else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
                         else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
+                        else if (data.name === 'spoilerMode') JE.userConfig.spoilerMode = { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false };
                         else JE.userConfig[data.name] = {};
                     }
                 } else {
@@ -447,6 +485,7 @@
                     else if (name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
                     else if (name === 'elsewhere') JE.userConfig.elsewhere = {};
                     else if (name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
+                    else if (name === 'spoilerMode') JE.userConfig.spoilerMode = { rules: {}, settings: {}, tagAutoEnable: [], autoEnableOnFirstPlay: false };
                     else if (name) JE.userConfig[name] = {};
                 }
             });
@@ -470,6 +509,10 @@
                 'enhanced/hidden-content.js',
                 'enhanced/hidden-content-page.js',
                 'enhanced/hidden-content-custom-tab.js',
+                'enhanced/spoiler-mode.js',
+                'enhanced/spoiler-mode-redaction.js',
+                'enhanced/spoiler-mode-surfaces.js',
+                'enhanced/spoiler-mode-observer.js',
                 'enhanced/subtitles.js',
                 'enhanced/themer.js',
                 'enhanced/ui.js',
@@ -587,6 +630,8 @@
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
             // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
             if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
+            // Skip spoiler mode initialization when feature is disabled server-wide — JE.spoilerMode stays undefined, safely disabling all downstream consumers
+            if (typeof JE.initializeSpoilerMode === 'function' && JE.pluginConfig?.SpoilerModeEnabled !== false) JE.initializeSpoilerMode();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
                 JE.initializeColoredRatings();

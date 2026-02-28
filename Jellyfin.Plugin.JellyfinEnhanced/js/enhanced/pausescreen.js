@@ -659,7 +659,6 @@
             this.fetchAbort = new AbortController();
 
             try {
-                const domain = window.location.origin;
                 let record = this.itemCache.get(itemId);
                 if (!record) {
                 const itemResp = await this.fetchWithRetry(ApiClient.getUrl(`/Items/${itemId}`), {
@@ -702,22 +701,48 @@
             runtime && `<span>${runtime}</span>`
           ].filter(Boolean).join('');
 
-          this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
+          // Check spoiler mode: redact overview for protected episodes
+          let overviewText = item.Overview || JE.t('pausescreen_no_description');
+          let redactSpoilerMedia = false;
+          const spoiler = JE.spoilerMode;
+          if (spoiler &&
+              typeof spoiler.isProtected === 'function' &&
+              typeof spoiler.isEpisodePastBoundary === 'function' &&
+              item.Type === 'Episode' &&
+              item.SeriesId &&
+              spoiler.isProtected(item.SeriesId)) {
+              const seasonNum = item.ParentIndexNumber || 0;
+              const epNum = item.IndexNumber || 0;
+              const pastBoundary = await spoiler.isEpisodePastBoundary(item.SeriesId, seasonNum, epNum);
+              if (pastBoundary || pastBoundary === null) {
+                  redactSpoilerMedia = true;
+                  overviewText = JE.t('spoiler_mode_hidden_overview') !== 'spoiler_mode_hidden_overview'
+                      ? JE.t('spoiler_mode_hidden_overview')
+                      : 'Overview hidden \u2014 click to reveal';
+              }
+          }
+          this.overlayPlot.textContent = overviewText;
 
           // Images: preload to blob URLs (cached)
-          const logoUrls = this.getLogoUrls(item, domain, itemId);
-          const discUrls = this.getDiscUrls(item, domain, itemId);
-          const backdropUrls = this.getBackdropUrls(item, domain, itemId);
+          if (redactSpoilerMedia) {
+            this.overlayLogo.src = '';
+            this.overlayDisc.src = '';
+            this.overlayBackdrop.style.backgroundImage = '';
+          } else {
+            const logoUrls = this.getLogoUrls(item, domain, itemId);
+            const discUrls = this.getDiscUrls(item, domain, itemId);
+            const backdropUrls = this.getBackdropUrls(item, domain, itemId);
 
-          const [logoURL, discURL, backdropURL] = await Promise.all([
-            this.firstAvailableBlobURL(logoUrls),
-            this.firstAvailableBlobURL(discUrls),
-            this.firstAvailableBlobURL(backdropUrls)
-          ]);
+            const [logoURL, discURL, backdropURL] = await Promise.all([
+              this.firstAvailableBlobURL(logoUrls),
+              this.firstAvailableBlobURL(discUrls),
+              this.firstAvailableBlobURL(backdropUrls)
+            ]);
 
-          if (logoURL) this.overlayLogo.src = logoURL;
-          if (discURL) this.overlayDisc.src = discURL;
-          if (backdropURL) this.overlayBackdrop.style.backgroundImage = `url("${backdropURL}")`;
+            if (logoURL) this.overlayLogo.src = logoURL;
+            if (discURL) this.overlayDisc.src = discURL;
+            if (backdropURL) this.overlayBackdrop.style.backgroundImage = `url("${backdropURL}")`;
+          }
 
           // Set static progress snapshot if paused
           this.updateProgressStatic();

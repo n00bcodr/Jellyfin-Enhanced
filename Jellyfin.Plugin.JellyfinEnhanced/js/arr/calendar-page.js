@@ -1965,6 +1965,7 @@
     const firstDay = getFirstDayOfMonth(anchor);
     let filteredEvents = filterEvents(state.events);
     if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
+    if (JE.spoilerMode) filteredEvents = JE.spoilerMode.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     if (filteredEvents.length === 0) {
       return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
@@ -2021,6 +2022,7 @@
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     let filteredEvents = filterEvents(state.events);
     if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
+    if (JE.spoilerMode) filteredEvents = JE.spoilerMode.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     if (filteredEvents.length === 0) {
       return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
@@ -2060,6 +2062,7 @@
   function renderAgendaView() {
     let filteredEvents = filterEvents(state.events);
     if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
+    if (JE.spoilerMode) filteredEvents = JE.spoilerMode.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     const dates = Object.keys(groupedEvents).sort();
 
@@ -2094,7 +2097,9 @@
   }
 
   function renderDayView() {
-    const filteredEvents = filterEvents(state.events);
+    let filteredEvents = filterEvents(state.events);
+    if (JE.hiddenContent) filteredEvents = JE.hiddenContent.filterCalendarEvents(filteredEvents);
+    if (JE.spoilerMode) filteredEvents = JE.spoilerMode.filterCalendarEvents(filteredEvents);
     const groupedEvents = groupEventsByDate(filteredEvents);
     const current = new Date(state.currentDate);
     const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;

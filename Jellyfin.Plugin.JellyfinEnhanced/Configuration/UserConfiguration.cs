@@ -147,4 +147,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public Dictionary<string, HiddenContentItem> Items { get; set; } = new Dictionary<string, HiddenContentItem>();
         public HiddenContentSettings Settings { get; set; } = new HiddenContentSettings();
     }
+
+    public class SpoilerModeRule
+    {
+        public string ItemId { get; set; } = string.Empty;
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemType { get; set; } = string.Empty;
+        public bool Enabled { get; set; }
+        public string? BoundaryOverride { get; set; }
+        public string EnabledAt { get; set; } = string.Empty;
+    }
+
+    public class SpoilerModeSettings
+    {
+        public string WatchedThreshold { get; set; } = "played";
+        public string BoundaryRule { get; set; } = "showOnlyWatched";
+        public string ArtworkPolicy { get; set; } = "blur";
+        public bool ProtectHome { get; set; } = true;
+        public bool ProtectSearch { get; set; } = true;
+        public bool ProtectOverlay { get; set; } = true;
+        public bool ProtectCalendar { get; set; } = true;
+        public bool ProtectRecentlyAdded { get; set; } = true;
+        public bool ProtectEpisodeDetails { get; set; } = true;
+        public bool HideRuntime { get; set; }
+        public bool HideAirDate { get; set; }
+        public bool HideGuestStars { get; set; }
+        public int RevealDuration { get; set; } = 10;
+        public bool ShowSeriesOverview { get; set; }
+        public bool Enabled { get; set; } = true;
+        public bool ShowButtons { get; set; } = true;
+        public bool ShowDisableConfirmation { get; set; } = true;
+        public bool AutoEnableOnFirstPlay { get; set; }
+        public List<string> AutoEnableTags { get; set; } = new List<string>();
+    }
+
+    public class UserSpoilerMode
+    {
+        public Dictionary<string, SpoilerModeRule> Rules { get; set; } = new Dictionary<string, SpoilerModeRule>();
+        public SpoilerModeSettings Settings { get; set; } = new SpoilerModeSettings();
+        public List<string> TagAutoEnable { get; set; } = new List<string>();
+        public bool AutoEnableOnFirstPlay { get; set; }
+    }
 }
