@@ -1353,6 +1353,11 @@
     async function fetchProviderIcons(container, tmdbId, mediaType) {
         if (!container || !tmdbId || !mediaType) return;
 
+        // Early exit if TMDB is not configured - prevents slow/failing API calls
+        if (!JE.pluginConfig?.TmdbEnabled) {
+            return;
+        }
+
         const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`);
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];

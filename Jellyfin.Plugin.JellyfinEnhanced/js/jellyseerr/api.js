@@ -180,6 +180,12 @@
      * @returns {Promise<Array>}
      */
     api.addCollections = async function(results) {
+        // Early exit if TMDB is not configured - prevents slow/failing API calls
+        if (!JE.pluginConfig?.TmdbEnabled) {
+            console.debug(`${logPrefix} TMDB not configured, skipping collection data`);
+            return results;
+        }
+
         const movieResults = (results || []).filter(item => item.mediaType === 'movie');
         await Promise.all(movieResults.map(async (movie) => {
             try {

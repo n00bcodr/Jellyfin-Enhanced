@@ -466,6 +466,11 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
  * Build streaming providers section
  */
 function buildStreamingProviders(data) {
+    // Early exit if TMDB is not configured
+    if (!JE?.pluginConfig?.TmdbEnabled) {
+        return '';
+    }
+
     // Resolve region: prefer Elsewhere user setting → plugin fallback → US
     const region = (JE?.userConfig?.elsewhere?.Region || JE?.pluginConfig?.DEFAULT_REGION || 'US')?.toUpperCase();
 

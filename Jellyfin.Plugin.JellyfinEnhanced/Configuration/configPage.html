@@ -2652,6 +2652,81 @@
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);
         resetAllUserSettingsBtn.addEventListener('click', resetAllUserSettings);
+
+        // ================================
+        // TMDB API KEY VALIDATION
+        // ================================
+
+        /**
+         * Updates the state of TMDB-dependent settings based on whether a TMDB API key is present.
+         * Disables checkboxes and adds tooltips when no key is configured.
+         */
+        function updateTmdbDependentSettings() {
+            const tmdbKey = document.querySelector('#TMDB_API_KEY').value.trim();
+            const jellyseerrTmdbKey = document.querySelector('#jellyseerr_TMDB_API_KEY').value.trim();
+            const hasTmdbKey = tmdbKey.length > 0 || jellyseerrTmdbKey.length > 0;
+
+            // List of TMDB-dependent setting IDs
+            const tmdbDependentSettings = [
+                { id: 'showReviews', tooltip: 'Requires TMDB API Key to be configured' },
+                { id: 'showCollectionsInSearch', tooltip: 'Requires TMDB API Key to be configured' },
+                { id: 'showElsewhereOnJellyseerr', tooltip: 'Requires TMDB API Key to be configured' }
+            ];
+
+            tmdbDependentSettings.forEach(setting => {
+                const checkbox = document.getElementById(setting.id);
+                if (!checkbox) return;
+
+                const label = checkbox.closest('label');
+                if (!label) return;
+
+                if (!hasTmdbKey) {
+                    // Disable the checkbox and add visual indication
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                    label.style.opacity = '0.5';
+                    label.style.cursor = 'not-allowed';
+                    label.title = setting.tooltip;
+
+                    // Add a visual indicator icon if not already present
+                    if (!label.querySelector('.tmdb-required-icon')) {
+                        const icon = document.createElement('i');
+                        icon.className = 'material-icons tmdb-required-icon';
+                        icon.textContent = 'key';
+                        icon.style.cssText = 'font-size: 16px; vertical-align: middle; margin-left: 8px; color: #ff9800;';
+                        icon.title = setting.tooltip;
+                        label.querySelector('span').appendChild(icon);
+                    }
+                } else {
+                    // Enable the checkbox and remove visual indication
+                    checkbox.disabled = false;
+                    label.style.opacity = '1';
+                    label.style.cursor = 'pointer';
+                    label.title = '';
+
+                    // Remove the visual indicator icon
+                    const icon = label.querySelector('.tmdb-required-icon');
+                    if (icon) {
+                        icon.remove();
+                    }
+                }
+            });
+        }
+
+        // Update on page load
+        setTimeout(updateTmdbDependentSettings, 100);
+
+        // Update when TMDB keys change
+        document.querySelector('#TMDB_API_KEY').addEventListener('input', updateTmdbDependentSettings);
+        document.querySelector('#jellyseerr_TMDB_API_KEY').addEventListener('input', updateTmdbDependentSettings);
+
+        // Update after successful TMDB test
+        const originalTestTmdb = testTmdbConnection;
+        testTmdbConnection = async function(event) {
+            await originalTestTmdb(event);
+            updateTmdbDependentSettings();
+        };
+
         clearTagsCacheBtn.addEventListener('click', async () => {
             if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
                 Dashboard.showLoadingMsg();
