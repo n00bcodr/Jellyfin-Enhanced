@@ -286,6 +286,16 @@
             request4KBtn.innerHTML = `<span>4K Requested</span>${icons.pending}`;
             request4KBtn.disabled = true;
             request4KBtn.classList.add(status4k === 3 ? 'chip-processing' : 'chip-pending');
+        } else if (status4k === 6) {
+            // 4K is blocklisted
+            request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_blocklisted')}</span>${icons.blocklisted}`;
+            request4KBtn.disabled = true;
+            request4KBtn.classList.add('chip-blocklisted');
+        } else if (status4k === 7) {
+            // 4K is deleted
+            request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_deleted')}</span>${icons.deleted}`;
+            request4KBtn.disabled = true;
+            request4KBtn.classList.add('chip-deleted');
         } else {
             // 4K can be requested
             request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
@@ -345,7 +355,8 @@
             .jellyseerr-status-badge.status-requested { background-color: rgba(136, 61, 206, 0.7); border-color: rgba(147, 51, 234, 0.3); }
             .jellyseerr-status-badge.status-pending { background-color: rgba(251, 146, 60, 0.7); border-color: rgba(251, 146, 60, 0.3); }
             .jellyseerr-status-badge.status-partially-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
-            .jellyseerr-status-badge.status-rejected { background-color: rgba(220, 38, 38, 0.7); border-color: rgba(220, 38, 38, 0.3); }
+            .jellyseerr-status-badge.status-blocklisted { background-color: rgba(120, 53, 15, 0.7); border-color: rgba(120, 53, 15, 0.3); }
+            .jellyseerr-status-badge.status-deleted { background-color: rgba(107, 114, 128, 0.7); border-color: rgba(107, 114, 128, 0.3); }
             @keyframes jellyseerr-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             .jellyseerr-status-badge.status-processing svg { animation: jellyseerr-spin 1s linear infinite; }
             .jellyseerr-media-badge { position: absolute; top: 8px; left: 8px; z-index: 100; color: #fff; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 1em; font-weight: 500; text-transform: uppercase; letter-spacing: 1.5px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); box-shadow: 0 4px 4px -1px rgba(0,0,0,0.1), 0 2px 2px -2px rgba(0,0,0,0.1); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
@@ -387,7 +398,8 @@
             .jellyseerr-request-button.jellyseerr-button-pending { background-color: #b45309 !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-pending:hover:not(:disabled) { background-color: #d97706 !important; transform: translateY(-2px); }
             .jellyseerr-request-button.jellyseerr-button-processing { background-color: #581c87 !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-rejected { background-color: #8a1c1c !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-blocklisted { background-color: #78350f !important; color: #fff !important; }
+            .jellyseerr-request-button.jellyseerr-button-deleted { background-color: #6b7280 !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-partially-available { background-color: #4ca46c !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-partially-available:hover:not(:disabled) { background-color: #5bb876 !important; transform: translateY(-2px); }
             .jellyseerr-request-button.jellyseerr-button-available { background-color: #16a34a !important; color: #fff !important; }
@@ -459,8 +471,11 @@
             .jellyseerr-button-group .jellyseerr-button-processing ~ .jellyseerr-split-arrow {
                 background-color: #581c87 !important;
             }
-            .jellyseerr-button-group .jellyseerr-button-rejected ~ .jellyseerr-split-arrow {
-                background-color: #8a1c1c !important;
+            .jellyseerr-button-group .jellyseerr-button-blocklisted ~ .jellyseerr-split-arrow {
+                background-color: #78350f !important;
+            }
+            .jellyseerr-button-group .jellyseerr-button-deleted ~ .jellyseerr-split-arrow {
+                background-color: #6b7280 !important;
             }
             .jellyseerr-button-group .jellyseerr-button-partially-available ~ .jellyseerr-split-arrow {
                 background-color: #4ca46c !important;
@@ -923,7 +938,7 @@
             status = item.mediaInfo.status || 1;
         }
 
-        // Status codes: 1=Unknown, 2=Pending, 3=Processing/Requested, 4=Partially Available, 5=Available, 6=Rejected/Declined, 7=Requested
+        // MediaStatus: 1=Unknown, 2=Pending, 3=Processing, 4=Partially Available, 5=Available, 6=Blocklisted, 7=Deleted
         let icon = '';
         let statusClass = '';
 
@@ -936,7 +951,7 @@
                 icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0 24.585 24.585 0 01-4.831-1.244.75.75 0 01-.298-1.205A8.217 8.217 0 005.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0 25.057 25.057 0 01-4.496 0z" clip-rule="evenodd" /></svg>`;
                 statusClass = 'status-pending';
                 break;
-            case 3: // Status 3 can be either Processing (with downloads) or Requested (without downloads)
+            case 3: // Processing (with downloads) or Requested (without downloads)
                 // Check if there are active downloads to differentiate
                 if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
                     // Processing - spinner icon with animation
@@ -948,17 +963,17 @@
                     statusClass = 'status-requested';
                 }
                 break;
-            case 7: // Requested (clock icon)
-                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" clip-rule="evenodd"></path></svg>`;
-                statusClass = 'status-requested';
-                break;
             case 4: // Partially Available
                 icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM6.75 9.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clip-rule="evenodd" /></svg>`;
                 statusClass = 'status-partially-available';
                 break;
-            case 6: // Rejected
+            case 6: // Blocklisted
                 icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg>`;
-                statusClass = 'status-rejected';
+                statusClass = 'status-blocklisted';
+                break;
+            case 7: // Deleted
+                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" /></svg>`;
+                statusClass = 'status-deleted';
                 break;
             default:
                 // Unknown status - hide badge
@@ -1466,7 +1481,7 @@
                 }
                 break;
             case 5: setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_all_seasons', {count: seasonAnalysis.total}) : null); break;
-            case 6: setButton(JE.t('jellyseerr_btn_rejected'), icons.cancel, 'jellyseerr-button-rejected', true); break;
+            case 6: setButton(JE.t('jellyseerr_btn_blocklisted'), icons.cancel, 'jellyseerr-button-blocklisted', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request', false, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_seasons_available', {count: seasonAnalysis.total}) : null); break;
         }
     }
@@ -1530,9 +1545,14 @@
                     mainButtonDisabled = true;
                 }
             } else if (status === 6) {
-                mainButtonText = JE.t('jellyseerr_btn_rejected');
+                mainButtonText = JE.t('jellyseerr_btn_blocklisted');
                 mainButtonIcon = icons.cancel;
-                mainButtonClass = 'jellyseerr-button-rejected';
+                mainButtonClass = 'jellyseerr-button-blocklisted';
+                mainButtonDisabled = true;
+            } else if (status === 7) {
+                mainButtonText = JE.t('jellyseerr_btn_deleted');
+                mainButtonIcon = icons.cancel;
+                mainButtonClass = 'jellyseerr-button-deleted';
                 mainButtonDisabled = true;
             } else {
                 mainButtonText = JE.t('jellyseerr_btn_request');
@@ -1645,7 +1665,8 @@
                     setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true);
                 }
                 break;
-            case 6: setButton(JE.t('jellyseerr_btn_rejected'), icons.cancel, 'jellyseerr-button-rejected', true); break;
+            case 6: setButton(JE.t('jellyseerr_btn_blocklisted'), icons.cancel, 'jellyseerr-button-blocklisted', true); break;
+            case 7: setButton(JE.t('jellyseerr_btn_deleted'), icons.cancel, 'jellyseerr-button-deleted', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
         }
 

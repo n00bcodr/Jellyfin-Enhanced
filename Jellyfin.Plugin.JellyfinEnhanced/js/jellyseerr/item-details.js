@@ -325,19 +325,19 @@
 
             const { detailPageContent, moreLikeThisSection } = pageReady;
 
-            // Filter items if configured to exclude library items or rejected items
+            // Filter items if configured to exclude library items or blocklisted items (status 6)
             const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-            const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
+            const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
 
             const filteredSimilarResults = similarResults.filter(item => {
                 if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
-                if (excludeRejectedItems && item.mediaInfo?.status === 6) return false;
+                if (excludeBlocklistedItems && item.mediaInfo?.status === 6) return false; // Status 6 = Blocklisted
                 return true;
             });
 
             const filteredRecommendedResults = recommendedResults.filter(item => {
                 if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
-                if (excludeRejectedItems && item.mediaInfo?.status === 6) return false;
+                if (excludeBlocklistedItems && item.mediaInfo?.status === 6) return false; // Status 6 = Blocklisted
                 return true;
             });
 

@@ -1008,7 +1008,8 @@ function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads
     const labelPartial = JE.t('jellyseerr_btn_partially_available') || 'Partially Available';
     const labelProcessing = JE.t('jellyseerr_btn_processing') || 'Processing';
     const labelRequested = JE.t('jellyseerr_btn_requested') || 'Requested';
-    const labelRejected = JE.t('jellyseerr_btn_rejected') || 'Rejected';
+    const labelBlocklisted = JE.t('jellyseerr_btn_blocklisted') || 'Blocklisted';
+    const labelDeleted = JE.t('jellyseerr_btn_deleted') || 'Deleted';
     const with4k = (text) => is4kChip ? `4K ${text}` : text;
     switch (targetStatus) {
         case 5: return { text: with4k(labelAvailable), className: 'chip-available' };
@@ -1017,7 +1018,8 @@ function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads
             ? { text: with4k(labelProcessing), className: 'chip-processing' }
             : { text: with4k(labelRequested), className: 'chip-requested' };
         case 2: return { text: with4k(labelRequested), className: 'chip-requested' };
-        case 6: return { text: with4k(labelRejected), className: 'chip-rejected' };
+        case 6: return { text: with4k(labelBlocklisted), className: 'chip-blocklisted' };
+        case 7: return { text: with4k(labelDeleted), className: 'chip-deleted' };
         default: return { text: labelRequested, className: 'chip-requested' };
     }
 }
@@ -1743,7 +1745,8 @@ function injectStyles() {
         .je-status-chip.chip-partial { background: rgba(234, 179, 8, 0.25); color: #f0f9ff; border-color: rgba(234, 179, 8, 0.5); }
         .je-status-chip.chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
         .je-status-chip.chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
-        .je-status-chip.chip-rejected { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
+        .je-status-chip.chip-blocklisted { background: rgba(120, 53, 15, 0.25); color: #f0f9ff; border-color: rgba(120, 53, 15, 0.5); }
+        .je-status-chip.chip-deleted { background: rgba(107, 114, 128, 0.25); color: #f0f9ff; border-color: rgba(107, 114, 128, 0.5); }
 
         .je-download-bars {
             display: flex;

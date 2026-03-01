@@ -291,3 +291,4 @@ apiclient/generated
 mono_crash.*.json
 .env
 build.sh
+/.github

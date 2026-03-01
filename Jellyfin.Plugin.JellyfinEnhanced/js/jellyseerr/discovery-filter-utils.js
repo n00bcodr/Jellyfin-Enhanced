@@ -289,7 +289,7 @@
         const { cardClass = 'portraitCard' } = options;
         const fragment = document.createDocumentFragment();
         const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
-        const excludeRejectedItems = JE.pluginConfig?.JellyseerrExcludeRejectedItems === true;
+        const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
         const seen = new Set();
 
         // Filter hidden content before rendering
@@ -309,7 +309,7 @@
                 continue;
             }
 
-            if (excludeRejectedItems && item.mediaInfo?.status === 6) {
+            if (excludeBlocklistedItems && item.mediaInfo?.status === 6) { // Status 6 = Blocklisted
                 continue;
             }
             const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);

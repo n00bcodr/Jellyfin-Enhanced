@@ -1402,7 +1402,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowTagDiscovery,
                 config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrExcludeLibraryItems,
-                config.JellyseerrExcludeRejectedItems,
+                config.JellyseerrExcludeBlocklistedItems,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
@@ -3210,15 +3210,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
         {
-            // Jellyseerr media status values
-            // 1 = Unknown, 2 = Pending, 3 = Processing, 4 = Partially Available, 5 = Available
+            // MediaStatus: 1 = Unknown, 2 = Pending, 3 = Processing, 4 = Partially Available, 5 = Available, 6 = Blocklisted, 7 = Deleted
+            // MediaRequestStatus: 1 = Pending, 2 = Approved, 3 = Declined, 4 = Failed, 5 = Completed
+
+            // Check media status first (higher priority)
+            if (mediaStatus == 7) return "Deleted";
+            if (mediaStatus == 6) return "Blocklisted";
             if (mediaStatus == 5) return "Available";
             if (mediaStatus == 4) return "Partially Available";
             if (mediaStatus == 3) return "Processing";
-            if (requestStatus == 2) return "Approved";
+            if (mediaStatus == 2) return "Pending";
+
+            // Fall back to request status
+            if (requestStatus == 5) return "Completed";
+            if (requestStatus == 4) return "Failed";
             if (requestStatus == 3) return "Declined";
+            if (requestStatus == 2) return "Approved";
             if (requestStatus == 1) return "Pending";
-            return "Processing";
+
+            // Default fallback
+            return "Unknown";
         }
 
         /// <summary>
