@@ -2223,6 +2223,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // ==================== Arr Links ====================
+
+        /// <summary>
+        /// Look up a series' titleSlug in Sonarr by its TVDB ID.
+        /// Used by the frontend to generate accurate Sonarr series links,
+        /// avoiding slug mismatches caused by translated titles.
+        /// </summary>
+        /// <param name="tvdbId">The TVDB ID of the series to look up.</param>
+        [HttpGet("arr/series-slug")]
+        [Authorize]
+        public async Task<IActionResult> GetSeriesSlug([FromQuery] int tvdbId)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (tvdbId <= 0)
+                return BadRequest(new { error = "tvdbId must be a positive integer" });
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, new { error = "Plugin configuration not available" });
+
+            if (string.IsNullOrWhiteSpace(config.SonarrUrl) || string.IsNullOrWhiteSpace(config.SonarrApiKey))
+                return NotFound(new { error = "Sonarr is not configured" });
+
+            try
+            {
+                var sonarrUrl = config.SonarrUrl.TrimEnd('/');
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
+                client.Timeout = TimeSpan.FromSeconds(10);
+
+                var response = await client.GetAsync($"{sonarrUrl}/api/v3/series?tvdbId={tvdbId}");
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                    response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    return StatusCode(502, new { error = "Sonarr authentication failed" });
+
+                if (!response.IsSuccessStatusCode)
+                    return StatusCode(502, new { error = "Sonarr returned an error" });
+
+                var json = await response.Content.ReadAsStringAsync();
+                var series = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
+
+                // Sonarr returns an array when filtering by tvdbId
+                string? titleSlug = null;
+                if (series is Newtonsoft.Json.Linq.JArray arr && arr.Count > 0)
+                {
+                    titleSlug = (string?)arr[0]["titleSlug"];
+                }
+                else if (series != null)
+                {
+                    // Single object response
+                    titleSlug = (string?)series.titleSlug;
+                }
+
+                if (string.IsNullOrEmpty(titleSlug))
+                    return NotFound(new { error = "Series not found in Sonarr" });
+
+                return Ok(new { titleSlug });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to fetch Sonarr series slug for TVDB ID {tvdbId}: {ex.Message}");
+                return StatusCode(502, new { error = "Failed to query Sonarr" });
+            }
+        }
+
         // ==================== Requests Page (Sonarr/Radarr Queue) ====================
 
         /// <summary>
