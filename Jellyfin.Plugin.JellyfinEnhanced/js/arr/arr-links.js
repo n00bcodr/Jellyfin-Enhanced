@@ -56,6 +56,7 @@
         let isAddingLinks = false; // Lock to prevent concurrent runs
         let debounceTimer = null;
         let observer = null;
+        const slugCache = new Map(); // Cache Sonarr titleSlugs by TVDB ID
 
         // Parse URL mappings from config
         function parseUrlMappings(mappingsString) {
@@ -162,17 +163,64 @@
                 return ids;
             }
 
+            /**
+             * Converts a title string into a URL-friendly slug.
+             * Strips diacritics, replaces '&' with 'and', removes non-alphanumeric
+             * characters, and trims leading/trailing hyphens.
+             * @param {string|null} text - The title to slugify
+             * @returns {string} URL-safe slug (e.g., "Modern Love" -> "modern-love")
+             */
             function slugify(text) {
+                if (!text) return '';
                 return text
                     .toString()
-                    .normalize('NFD')
-                    .replace(/[\u0300-\u036f]/g, '')
-                    .replace(/&/g, 'and')
+                    .normalize('NFD')                   // Decompose accented characters
+                    .replace(/[\u0300-\u036f]/g, '')   // Strip diacritical marks
+                    .replace(/&/g, 'and')               // Replace ampersands
                     .toLowerCase()
                     .trim()
-                    .replace(/\s+/g, '-')
-                    .replace(/[^\w-]+/g, '')
-                    .replace(/--+/g, '-');
+                    .replace(/\s+/g, '-')               // Whitespace to hyphens
+                    .replace(/[^\w-]+/g, '')            // Remove non-word characters
+                    .replace(/--+/g, '-')               // Collapse consecutive hyphens
+                    .replace(/^-+|-+$/g, '');           // Trim leading/trailing hyphens
+            }
+
+            /**
+             * Resolves the Sonarr URL slug for a series.
+             * Queries the backend endpoint (which proxies to Sonarr's API) using the
+             * series' TVDB ID to get the actual titleSlug. Results are cached per session.
+             * Falls back to generating a slug from OriginalTitle or translated Name.
+             * @param {Object} item - Jellyfin item object with Name, OriginalTitle, and ProviderIds
+             * @returns {Promise<string>} The resolved Sonarr slug
+             */
+            async function getSonarrSlug(item) {
+                const tvdbId = String(item.ProviderIds?.Tvdb || '');
+
+                if (tvdbId) {
+                    // Check session cache first to avoid redundant API calls
+                    if (slugCache.has(tvdbId)) {
+                        return slugCache.get(tvdbId);
+                    }
+
+                    try {
+                        const slugResp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/series-slug?tvdbId=${encodeURIComponent(tvdbId)}`), {
+                            headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
+                        });
+                        if (slugResp.ok) {
+                            const slugData = await slugResp.json();
+                            if (slugData.titleSlug) {
+                                slugCache.set(tvdbId, slugData.titleSlug);
+                                return slugData.titleSlug;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`${logPrefix} Failed to fetch Sonarr slug, using fallback`, e);
+                    }
+                }
+
+                // Fallback: generate slug from original title (or translated title).
+                // May not match Sonarr's actual slug for disambiguated series (e.g., "modern-love-2019").
+                return slugify(item.OriginalTitle || item.Name);
             }
 
             async function addArrLinks() {
@@ -215,7 +263,7 @@
                     }
 
                     if (item.Type === 'Series' && item.Name && sonarrUrl) {
-                        const seriesSlug = slugify(item.Name);
+                        const seriesSlug = await getSonarrSlug(item);
                         const url = `${sonarrUrl}/series/${seriesSlug}`;
                         anchorElement.appendChild(document.createTextNode(' '));
                         anchorElement.appendChild(createLinkButton("Sonarr", url, "arr-link-sonarr"));
