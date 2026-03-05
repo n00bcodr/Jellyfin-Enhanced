@@ -98,10 +98,21 @@
          */
         async function fetchAndRenderResults(query) {
             const data = await search(query);
-            let results = await prepareResultsWithCollections(data.results || []);
+            let results = data.results || [];
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
             if (results.length > 0) {
+                // Render immediately without waiting for collection data
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+
+                // Enrich with collections in the background, then re-render
+                prepareResultsWithCollections(results).then(enrichedResults => {
+                    if (lastProcessedQuery !== query) return; // query changed, skip
+                    if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
+                    if (enrichedResults.length > results.length) {
+                        // Only re-render if collections were actually added
+                        renderJellyseerrResults(enrichedResults, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+                    }
+                }).catch(() => {}); // collection enrichment is optional
             }
         }
 
@@ -218,7 +229,7 @@
                         lastProcessedQuery = latestQuery;
                         document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                         fetchAndRenderResults(latestQuery);
-                    }, 1000);
+                    }, 300);
                 } else {
                     clearTimeout(debounceTimeout);
                     lastProcessedQuery = null;
@@ -272,6 +283,14 @@
                     isJellyseerrActive = status.active;
                     jellyseerrUserFound = status.userFound;
                     initializePageObserver();
+
+                    // Prefetch TMDB genres in the background for instant discovery
+                    if (isJellyseerrActive && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
+                        Promise.all([
+                            JE.discoveryFilter?.fetchWithManagedRequest?.('/JellyfinEnhanced/tmdb/genres/tv', 'genre', {})?.catch(() => {}),
+                            JE.discoveryFilter?.fetchWithManagedRequest?.('/JellyfinEnhanced/tmdb/genres/movie', 'genre', {})?.catch(() => {})
+                        ]).catch(() => {});
+                    }
                 } else if (Date.now() - startTime > timeout) {
                     console.warn(`${logPrefix} Timed out waiting for user session. Features may be limited.`);
                     initializePageObserver();

@@ -795,24 +795,17 @@
 
         const primarySectionKeywords = ['movies', 'shows', 'film', 'serier', 'filme', 'serien', 'películas', 'series', 'films', 'séries', 'serie tv'];
 
-        let attempts = 0;
-        const maxAttempts = 75; // ~15 seconds
-
-        const injectionInterval = setInterval(() => {
-            attempts++;
+        function injectSection() {
             const noResultsMessage = searchPage.querySelector('.noItemsMessage');
             const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
-            const hasContent = allSections.length > 0;
 
-            if ((hasContent || noResultsMessage) || attempts >= maxAttempts) {
-                clearInterval(injectionInterval);
+            if (noResultsMessage) {
+                noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
+                noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
+                return true;
+            }
 
-                if (noResultsMessage) {
-                    noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
-                    noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
-                    return;
-                }
-
+            if (allSections.length > 0) {
                 let lastPrimarySection = null;
                 for (let i = allSections.length - 1; i >= 0; i--) {
                     const section = allSections[i];
@@ -830,11 +823,32 @@
                     if (resultsContainer) {
                         resultsContainer.prepend(sectionToInject);
                     } else {
-                        searchPage.appendChild(sectionToInject); // Fallback
+                        searchPage.appendChild(sectionToInject);
                     }
                 }
+                return true;
             }
-        }, 200);
+
+            return false;
+        }
+
+        // Try immediate injection first
+        if (!injectSection()) {
+            // Use MutationObserver for faster detection than polling
+            let observer = null;
+            const timeoutId = setTimeout(() => {
+                if (observer) observer.disconnect();
+                injectSection(); // Force inject after timeout
+            }, 3000);
+
+            observer = new MutationObserver(() => {
+                if (injectSection()) {
+                    observer.disconnect();
+                    clearTimeout(timeoutId);
+                }
+            });
+            observer.observe(searchPage, { childList: true, subtree: true });
+        }
     };
 
     /**

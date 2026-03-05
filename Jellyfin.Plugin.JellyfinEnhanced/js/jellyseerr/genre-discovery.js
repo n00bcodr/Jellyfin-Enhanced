@@ -476,16 +476,19 @@
         }
 
         try {
+            // Fetch genre info, user status, TMDB genres, and page ready all in parallel
             const genreInfoPromise = getGenreInfo(genreId, signal);
             const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+            const tmdbGenresPromise = fetchTmdbGenres(signal);
             const pageReadyPromise = waitForPageReady(signal);
 
-            const [genreInfo, status] = await Promise.all([genreInfoPromise, statusPromise]);
+            const [genreInfo, status] = await Promise.all([genreInfoPromise, statusPromise, tmdbGenresPromise]);
 
             if (signal.aborted) return;
 
             if (!status?.active || !genreInfo?.name) return;
 
+            // TMDB genres are already cached from the parallel fetch above
             const tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal);
             if (signal.aborted) return;
 

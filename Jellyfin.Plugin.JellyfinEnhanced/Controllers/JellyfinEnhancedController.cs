@@ -48,6 +48,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+
+        // Cache for Jellyseerr user ID lookups (JellyfinUserId -> JellyseerrUserId)
+        private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
+        private static readonly TimeSpan _userIdCacheTtl = TimeSpan.FromMinutes(30);
+        private static readonly object _userIdCacheLock = new();
+
+        // Cache for Jellyseerr proxy responses (discovery/search endpoints)
+        private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
+        private static readonly TimeSpan _responseCacheTtl = TimeSpan.FromMinutes(10);
+        private static readonly object _responseCacheLock = new();
+
         private static readonly HashSet<string> BrandingFileNames = new(new[]
         {
             "icon-transparent.png",
@@ -139,9 +150,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
-            => (await GetJellyseerrUser(jellyfinUserId))?.Id.ToString();
+        {
+            // Check cache first
+            lock (_userIdCacheLock)
+            {
+                if (_userIdCache.TryGetValue(jellyfinUserId, out var cached) &&
+                    DateTime.UtcNow - cached.CachedAt < _userIdCacheTtl)
+                {
+                    return cached.JellyseerrUserId;
+                }
+            }
+
+            var user = await GetJellyseerrUser(jellyfinUserId);
+            var jellyseerrUserId = user?.Id.ToString();
+
+            if (!string.IsNullOrEmpty(jellyseerrUserId))
+            {
+                lock (_userIdCacheLock)
+                {
+                    _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                }
+            }
+
+            return jellyseerrUserId;
+        }
 
         [Authorize]
+        /// <summary>
+        /// Checks if a Jellyseerr API path is eligible for server-side caching.
+        /// Only GET requests to discovery/search/genre endpoints are cached.
+        /// </summary>
+        private static bool IsCacheableApiPath(string apiPath, HttpMethod method)
+        {
+            if (method != HttpMethod.Get) return false;
+            return apiPath.Contains("/discover/") ||
+                   apiPath.Contains("/genre") ||
+                   apiPath.Contains("/similar") ||
+                   apiPath.Contains("/recommendations") ||
+                   apiPath.Contains("/search?");
+        }
+
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -151,11 +199,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503, "Jellyseerr integration is not configured or enabled.");
             }
 
-            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
-
+            // Resolve user ID (cached)
             string? jellyfinUserId = null;
+            string? jellyseerrUserId = null;
             if (Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
             {
                 jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
@@ -164,21 +210,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _logger.Warning("Could not find Jellyfin User ID in request headers.");
                     return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
                 }
-                var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+                jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
 
                 if (string.IsNullOrEmpty(jellyseerrUserId))
                 {
                     _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
                     return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
                 }
-
-                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
             }
             else
             {
                 _logger.Warning("X-Jellyfin-User-Id header was not present in the request. Aborting.");
                 return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
             }
+
+            // Check server-side response cache for cacheable endpoints
+            bool isCacheable = IsCacheableApiPath(apiPath, method);
+            var cacheKey = $"{jellyfinUserId}:{apiPath}";
+            if (isCacheable)
+            {
+                lock (_responseCacheLock)
+                {
+                    if (_responseCache.TryGetValue(cacheKey, out var cached) &&
+                        DateTime.UtcNow - cached.CachedAt < _responseCacheTtl)
+                    {
+                        return Content(cached.Content, "application/json");
+                    }
+                }
+            }
+
+            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+            httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
 
             int lastStatusCode = 500;
             string lastErrorContent = "Could not connect to any configured Jellyseerr instance.";
@@ -189,9 +253,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var requestUri = $"{trimmedUrl.TrimEnd('/')}{apiPath}";
-                    // Skip logging for similar/recommendations endpoints
-                    bool isSimilarOrRecommendations = apiPath.Contains("/similar") || apiPath.Contains("/recommendations");
-                    if (!isSimilarOrRecommendations)
+                    // Skip logging for high-frequency endpoints
+                    bool isQuietEndpoint = apiPath.Contains("/similar") || apiPath.Contains("/recommendations") || apiPath.Contains("/discover/");
+                    if (!isQuietEndpoint)
                     {
                         _logger.Info($"Proxying Jellyseerr request for user {jellyfinUserId} to: {requestUri}");
                     }
@@ -208,15 +272,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     if (response.IsSuccessStatusCode)
                     {
-                        if (!isSimilarOrRecommendations)
+                        // Cache successful responses for cacheable endpoints
+                        if (isCacheable)
                         {
-                            _logger.Info($"Successfully received response from Jellyseerr for user {jellyfinUserId}. Status: {response.StatusCode}");
+                            lock (_responseCacheLock)
+                            {
+                                // Evict stale entries periodically
+                                if (_responseCache.Count > 200)
+                                {
+                                    var staleKeys = _responseCache
+                                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _responseCacheTtl)
+                                        .Select(kv => kv.Key)
+                                        .ToList();
+                                    foreach (var key in staleKeys)
+                                        _responseCache.Remove(key);
+                                }
+                                _responseCache[cacheKey] = (responseContent, DateTime.UtcNow);
+                            }
                         }
+
                         return Content(responseContent, "application/json");
                     }
 
                     _logger.Warning($"Request to Jellyseerr for user {jellyfinUserId} failed. URL: {trimmedUrl}, Status: {response.StatusCode}, Response: {responseContent}");
-                    // Store the last error so we can return it if all URLs fail
                     lastStatusCode = (int)response.StatusCode;
                     try
                     {
@@ -227,7 +305,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         lastErrorContent = System.Text.Json.JsonSerializer.Serialize(new { message = $"Upstream error from Jellyseerr: {response.ReasonPhrase}" });
                     }
-                    // Continue to try next URL instead of returning immediately
                 }
                 catch (Exception ex)
                 {
