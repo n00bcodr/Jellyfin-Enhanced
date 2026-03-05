@@ -933,9 +933,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     catch (Exception ex)
                     {
-                        var errorMsg = $"Error processing user {user.Username}: {ex.Message}";
-                        _logger.Error($"[Manual Watchlist Sync] {errorMsg}");
-                        errors.Add(errorMsg);
+                        _logger.Error($"[Manual Watchlist Sync] Error processing user {user.Username}: {ex.Message}");
+                        errors.Add("Failed to sync watchlist for a user.");
                     }
                 }
 
@@ -952,7 +951,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (Exception ex)
             {
                 _logger.Error($"[Manual Watchlist Sync] Fatal error: {ex}");
-                return StatusCode(500, new { error = ex.Message });
+                return StatusCode(500, new { error = "An internal error occurred during watchlist sync." });
             }
         }
 
@@ -2143,12 +2142,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 _logger.Error($"Permission denied when uploading branding image: {ex.Message}");
-                return StatusCode(403, $"Permission denied: {ex.Message}");
+                return StatusCode(403, "Permission denied when uploading branding image.");
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error uploading branding image: {ex.Message}");
-                return StatusCode(500, $"Error: {ex.Message}");
+                return StatusCode(500, "An error occurred while uploading the branding image.");
             }
         }
 
@@ -2214,12 +2213,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 _logger.Error($"Permission denied when deleting branding image: {ex.Message}");
-                return StatusCode(403, $"Permission denied: {ex.Message}");
+                return StatusCode(403, "Permission denied when deleting branding image.");
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error deleting branding image: {ex.Message}");
-                return StatusCode(500, $"Error: {ex.Message}");
+                return StatusCode(500, "An error occurred while deleting the branding image.");
             }
         }
 

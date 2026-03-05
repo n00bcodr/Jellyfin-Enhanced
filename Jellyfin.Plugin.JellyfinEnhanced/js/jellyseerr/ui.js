@@ -5,6 +5,13 @@
     const ui = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr UI:';
 
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
     // State variables managed by the main jellyseerr.js, but used by UI functions
     let jellyseerrHoverPopover = null;
     let jellyseerrHoverLock = false;
@@ -163,7 +170,7 @@
                 // For queued items, show 0% progress
                 popoverHTML += `
                     <div class="jellyseerr-popover-item">
-                        <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
+                        <div class="title">${escapeHtml(downloadStatus.title) || JE.t('jellyseerr_popover_downloading')}</div>
                         <div class="jellyseerr-hover-progress"><div class="bar" style="width:0%;"></div></div>
                         <div class="row">
                             <div>0%</div>
@@ -177,12 +184,12 @@
                 const etaText = formatEtaText(downloadStatus);
                 popoverHTML += `
                     <div class="jellyseerr-popover-item">
-                        <div class="title">${downloadStatus.title || JE.t('jellyseerr_popover_downloading')}</div>
+                        <div class="title">${escapeHtml(downloadStatus.title) || JE.t('jellyseerr_popover_downloading')}</div>
                         <div class="jellyseerr-hover-progress"><div class="bar" style="width:${percentage}%;"></div></div>
                         <div class="row">
                             <div>${percentage}%</div>
-                            <div class="status">${statusDisplay}</div>
-                            ${etaText ? `<div class="eta">${etaText}</div>` : ''}
+                            <div class="status">${escapeHtml(statusDisplay)}</div>
+                            ${etaText ? `<div class="eta">${escapeHtml(etaText)}</div>` : ''}
                         </div>
                     </div>`;
             }
@@ -1006,7 +1013,7 @@
         const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
         const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
-        const titleText = item.title || item.name;
+        const titleText = escapeHtml(item.title || item.name);
         // Resolve Jellyseerr URL based on mappings or fallback to base URL
         const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
@@ -1079,7 +1086,7 @@
                 overview.className = 'jellyseerr-overview';
                 overview.style.cursor = 'pointer';
                 overview.innerHTML = `
-                    <div class="content">${((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
+                    <div class="content">${escapeHtml((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
                     <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
                 `;
 
@@ -1625,7 +1632,7 @@
                             if (error.status === 404) {
                                 errorMessage = JE.t('jellyseerr_btn_user_not_found');
                             } else if (error.responseJSON?.message) {
-                                errorMessage = error.responseJSON.message;
+                                errorMessage = escapeHtml(error.responseJSON.message);
                             }
                             mainButton.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
                             mainButton.classList.add('jellyseerr-button-error');
@@ -1795,7 +1802,7 @@
         if (!imageContainer) return;
         const badge = document.createElement('div');
         badge.className = 'jellyseerr-collection-badge';
-        badge.innerHTML = `<span class="material-icons">collections</span><span>${item.collection.name || JE.t('jellyseerr_card_badge_collection')}</span>`;
+        badge.innerHTML = `<span class="material-icons">collections</span><span>${escapeHtml(item.collection.name) || JE.t('jellyseerr_card_badge_collection')}</span>`; // collection name escaped
         badge.title = `Part of ${item.collection.name || 'collection'}`;
         badge.addEventListener('click', (e) => {
             e.preventDefault();
