@@ -335,7 +335,7 @@
         style.textContent = `
             /* LAYOUT & ICONS */
             .jellyseerr-section { margin-bottom: 1em; }
-            .jellyseerr-section .itemsContainer { white-space: nowrap; }
+            .jellyseerr-section .itemsContainer { }
             #jellyseerr-search-icon { position: absolute; right: 10px; top: 68%; transform: translateY(-50%); user-select: none; z-index: 10; transition: filter .2s, opacity .2s, transform .2s; }
             .inputContainer { position: relative !important; }
             .jellyseerr-icon { width: 30px; height: 30px; filter: drop-shadow(2px 2px 6px rgba(0,0,0,0.8)); }
@@ -413,7 +413,7 @@
                 overflow: visible !important;
             }
             .jellyseerr-card .cardBox { overflow: visible !important; }
-            .jellyseerr-section .scrollSlider { overflow: visible !important; }
+            .jellyseerr-section .vertical-wrap { overflow: visible !important; }
 
             /* Library item styling */
             .jellyseerr-card-in-library .cardText-first a {
@@ -905,29 +905,16 @@
     }
         section.appendChild(title);
 
-        const scrollerContainer = document.createElement('div');
-        scrollerContainer.setAttribute('is', 'emby-scroller');
-        scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
-        scrollerContainer.dataset.horizontal = "true";
-        scrollerContainer.dataset.centerfocus = "card";
-
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
-
-        const isTvMode = document.querySelector('.alphaPicker-tv') !== null;
-        if (isTvMode) {
-            itemsContainer.classList.add('itemsContainer-tv');
-            itemsContainer.classList.add('animatedScrollX');
-        }
+        itemsContainer.className = 'vertical-wrap itemsContainer centered padded-left padded-right';
 
         results.forEach(item => {
             const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
             itemsContainer.appendChild(card);
         });
 
-        scrollerContainer.appendChild(itemsContainer);
-        section.appendChild(scrollerContainer);
+        section.appendChild(itemsContainer);
         return section;
     }
 

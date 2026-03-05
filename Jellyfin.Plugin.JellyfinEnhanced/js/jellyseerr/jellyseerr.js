@@ -28,6 +28,14 @@
         let jellyseerrOriginalPosition = null;
         let refreshInterval = null;
 
+        // Infinite scroll pagination state
+        let searchCurrentPage = 0;
+        let searchTotalPages = 0;
+        let searchIsLoading = false;
+        let searchHasMore = false;
+        const searchScrollState = {};
+        let searchDeduplicator = null;
+
 
         // Destructure modules for easy access
         const { checkUserStatus, search, requestMedia } = JE.jellyseerrAPI;
@@ -93,27 +101,112 @@
         }
 
         /**
-         * Fetches and renders search results.
+         * Resets search pagination state for a new query.
+         */
+        function resetSearchPagination() {
+            searchCurrentPage = 0;
+            searchTotalPages = 0;
+            searchIsLoading = false;
+            searchHasMore = false;
+            if (searchDeduplicator) searchDeduplicator.clear();
+            JE.seamlessScroll?.cleanupInfiniteScroll(searchScrollState);
+        }
+
+        /**
+         * Fetches and renders search results (page 1), then sets up infinite scroll.
          * @param {string} query The search query.
          */
         async function fetchAndRenderResults(query) {
-            const data = await search(query);
+            resetSearchPagination();
+            searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+
+            const data = await search(query, 1);
             let results = data.results || [];
+            searchCurrentPage = data.page || 1;
+            searchTotalPages = data.totalPages || 1;
+            searchHasMore = searchCurrentPage < searchTotalPages;
+
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+            if (searchDeduplicator) searchDeduplicator.filter(results);
+
             if (results.length > 0) {
-                // Render immediately without waiting for collection data
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
                 // Enrich with collections in the background, then re-render
                 prepareResultsWithCollections(results).then(enrichedResults => {
-                    if (lastProcessedQuery !== query) return; // query changed, skip
+                    if (lastProcessedQuery !== query) return;
                     if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
                     if (enrichedResults.length > results.length) {
-                        // Only re-render if collections were actually added
                         renderJellyseerrResults(enrichedResults, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
                     }
-                }).catch(() => {}); // collection enrichment is optional
+                }).catch(() => {});
+
+                // Set up infinite scroll if more pages exist
+                if (searchHasMore) {
+                    setupSearchInfiniteScroll(query);
+                }
             }
+        }
+
+        /**
+         * Loads the next page of search results and appends cards to the container.
+         * @param {string} query The current search query.
+         */
+        async function loadMoreSearchResults(query) {
+            if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
+
+            searchIsLoading = true;
+            const nextPage = searchCurrentPage + 1;
+
+            try {
+                const data = await search(query, nextPage);
+                if (lastProcessedQuery !== query) return; // query changed during fetch
+
+                let results = data.results || [];
+                searchCurrentPage = data.page || nextPage;
+                searchTotalPages = data.totalPages || searchTotalPages;
+                searchHasMore = searchCurrentPage < searchTotalPages;
+
+                if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+                if (searchDeduplicator) results = searchDeduplicator.filter(results);
+
+                if (results.length > 0) {
+                    const itemsContainer = document.querySelector('.jellyseerr-section .itemsContainer');
+                    if (itemsContainer) {
+                        const fragment = document.createDocumentFragment();
+                        results.forEach(item => {
+                            const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
+                            fragment.appendChild(card);
+                        });
+                        itemsContainer.appendChild(fragment);
+                    }
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.warn(`${logPrefix} Failed to load more search results:`, error);
+                    // Roll back page on failure
+                    searchHasMore = true;
+                }
+                throw error; // Re-throw for seamlessScroll retry handling
+            } finally {
+                searchIsLoading = false;
+            }
+        }
+
+        /**
+         * Sets up the infinite scroll observer for search results.
+         * @param {string} query The current search query.
+         */
+        function setupSearchInfiniteScroll(query) {
+            if (!JE.seamlessScroll) return;
+
+            JE.seamlessScroll.setupInfiniteScroll(
+                searchScrollState,
+                '.jellyseerr-section',
+                () => loadMoreSearchResults(query),
+                () => searchHasMore,
+                () => searchIsLoading
+            );
         }
 
         /**
@@ -186,16 +279,28 @@
 
             console.log(`${logPrefix} Refreshing data for query: "${query}"`);
             try {
-                const data = await search(query);
+                resetSearchPagination();
+                searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+
+                const data = await search(query, 1);
                 let results = await prepareResultsWithCollections(data.results || []);
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
 
-                itemsContainer.innerHTML = '';
+                searchCurrentPage = data.page || 1;
+                searchTotalPages = data.totalPages || 1;
+                searchHasMore = searchCurrentPage < searchTotalPages;
+                if (searchDeduplicator) searchDeduplicator.filter(results);
+
+                while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 results.forEach(item => {
                     const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
                     itemsContainer.appendChild(card);
                 });
                 updateJellyseerrResults(results, isJellyseerrActive, jellyseerrUserFound);
+
+                if (searchHasMore) {
+                    setupSearchInfiniteScroll(query);
+                }
             } catch (error) {
                 console.warn(`${logPrefix} Failed to refresh Jellyseerr data:`, error);
             }
@@ -227,6 +332,7 @@
                             updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, false, toggleJellyseerrOnlyMode);
                         }
                         lastProcessedQuery = latestQuery;
+                        resetSearchPagination();
                         document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                         fetchAndRenderResults(latestQuery);
                     }, 300);
@@ -234,6 +340,7 @@
                     clearTimeout(debounceTimeout);
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
+                    resetSearchPagination();
                     document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                 }
             };

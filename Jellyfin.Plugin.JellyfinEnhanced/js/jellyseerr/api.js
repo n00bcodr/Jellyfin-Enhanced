@@ -159,12 +159,13 @@
     /**
      * Performs a search against the Jellyseerr API.
      * @param {string} query - The search term.
-     * @returns {Promise<{results: Array}>}
+     * @param {number} [page=1] - Page number for pagination.
+     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.search = async function(query) {
+    api.search = async function(query, page = 1) {
         try {
             const lang = (navigator.language || 'en').split('-')[0];
-            const data = await get(`/search?query=${encodeURIComponent(query)}&language=${lang}`);
+            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`);
 
             // Filter out people results before returning (immutable — don't mutate cached response)
             if (data.results) {

@@ -454,9 +454,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("jellyseerr/search")]
         [Authorize]
-        public Task<IActionResult> JellyseerrSearch([FromQuery] string query, [FromQuery] string? language = null)
+        public Task<IActionResult> JellyseerrSearch([FromQuery] string query, [FromQuery] int page = 1, [FromQuery] string? language = null)
         {
-            var path = $"/api/v1/search?query={Uri.EscapeDataString(query)}";
+            var path = $"/api/v1/search?query={Uri.EscapeDataString(query)}&page={page}";
             if (!string.IsNullOrEmpty(language))
                 path += $"&language={Uri.EscapeDataString(language)}";
             return ProxyJellyseerrRequest(path, HttpMethod.Get);
