@@ -103,6 +103,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         }
         private void CheckPluginPages(IApplicationPaths applicationPaths, IServerConfigurationManager serverConfigurationManager, int pluginPageConfigVersion)
         {
+            try
+            {
             string pluginPagesConfig = Path.Combine(applicationPaths.PluginConfigurationsPath, "Jellyfin.Plugin.PluginPages", "config.json");
 
             JObject config = new JObject();
@@ -252,6 +254,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             }
 
             File.WriteAllText(pluginPagesConfig, config.ToString(Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error while updating Plugin Pages configuration: {ex.Message}");
+            }
         }
         private void UpdateIndexHtml(bool inject)
         {
