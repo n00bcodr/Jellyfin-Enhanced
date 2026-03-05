@@ -102,6 +102,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // _logger.Info($"Attempting to find Jellyseerr user for Jellyfin User ID: {jellyfinUserId}");
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(15);
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
@@ -175,10 +176,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return jellyseerrUserId;
         }
 
-        [Authorize]
+        private static readonly string[] DiscoverFilterParams = {
+            "sortBy", "primaryReleaseDateGte", "primaryReleaseDateLte",
+            "firstAirDateGte", "firstAirDateLte",
+            "voteAverageGte", "voteAverageLte",
+            "withRuntimeGte", "withRuntimeLte",
+            "certification", "watchRegion", "language"
+        };
+
+        /// <summary>
+        /// Appends recognized discover filter query parameters from the current request.
+        /// </summary>
+        private string AppendDiscoverFilters(string basePath)
+        {
+            var sb = new StringBuilder(basePath);
+            foreach (var param in DiscoverFilterParams)
+            {
+                if (Request.Query.TryGetValue(param, out var value) && !string.IsNullOrEmpty(value))
+                {
+                    sb.Append($"&{param}={Uri.EscapeDataString(value!)}");
+                }
+            }
+            return sb.ToString();
+        }
+
         /// <summary>
         /// Checks if a Jellyseerr API path is eligible for server-side caching.
-        /// Only GET requests to discovery/search/genre endpoints are cached.
+        /// Only GET requests to discovery/search/genre/person endpoints are cached.
         /// </summary>
         private static bool IsCacheableApiPath(string apiPath, HttpMethod method)
         {
@@ -187,6 +211,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                    apiPath.Contains("/genre") ||
                    apiPath.Contains("/similar") ||
                    apiPath.Contains("/recommendations") ||
+                   apiPath.Contains("/person/") ||
+                   apiPath.Contains("/collection/") ||
                    apiPath.Contains("/search?");
         }
 
@@ -241,6 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(15);
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
             httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
 
@@ -277,8 +304,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             lock (_responseCacheLock)
                             {
-                                // Evict stale entries periodically
-                                if (_responseCache.Count > 200)
+                                _responseCache[cacheKey] = (responseContent, DateTime.UtcNow);
+
+                                // Evict stale entries periodically (every 50 writes or when over capacity)
+                                if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
                                 {
                                     var staleKeys = _responseCache
                                         .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _responseCacheTtl)
@@ -287,7 +316,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     foreach (var key in staleKeys)
                                         _responseCache.Remove(key);
                                 }
-                                _responseCache[cacheKey] = (responseContent, DateTime.UtcNow);
                             }
                         }
 
@@ -327,6 +355,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(15);
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
@@ -385,37 +414,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetJellyseerrUserStatus()
         {
-            // First check active status
-            var activeResult = await GetJellyseerrStatus() as OkObjectResult;
-            bool active = false;
-            if (activeResult?.Value is not null)
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled ||
+                string.IsNullOrEmpty(config.JellyseerrApiKey) ||
+                string.IsNullOrEmpty(config.JellyseerrUrls))
             {
-                var json = System.Text.Json.JsonSerializer.Serialize(activeResult.Value);
+                return Ok(new { active = false, userFound = false });
+            }
+
+            if (!Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
+                return Ok(new { active = false, userFound = false });
+
+            var jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return Ok(new { active = false, userFound = false });
+
+            // GetJellyseerrUserId uses the user ID cache (30-min TTL).
+            // A successful user lookup implicitly proves Jellyseerr is reachable.
+            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            if (!string.IsNullOrEmpty(jellyseerrUserId))
+            {
+                return Ok(new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId });
+            }
+
+            // User not found - could be server unreachable or user not linked.
+            // Do a lightweight /status check to distinguish.
+            var statusResult = await GetJellyseerrStatus() as OkObjectResult;
+            bool active = false;
+            if (statusResult?.Value is not null)
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(statusResult.Value);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("active", out var a))
                     active = a.GetBoolean();
             }
-            if (!active) return Ok(new { active = false, userFound = false });
-
-            // Get Jellyfin user id from header
-            if (!Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
-                return Ok(new { active = true, userFound = false });
-
-            var jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
-            if (string.IsNullOrEmpty(jellyfinUserId))
-            {
-                return Ok(new { active = true, userFound = false });
-            }
-            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
-            return Ok(new { active = true, userFound = !string.IsNullOrEmpty(jellyseerrUserId) });
+            return Ok(new { active, userFound = false });
         }
 
 
         [HttpGet("jellyseerr/search")]
         [Authorize]
-        public Task<IActionResult> JellyseerrSearch([FromQuery] string query)
+        public Task<IActionResult> JellyseerrSearch([FromQuery] string query, [FromQuery] string? language = null)
         {
-            return ProxyJellyseerrRequest($"/api/v1/search?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
+            var path = $"/api/v1/search?query={Uri.EscapeDataString(query)}";
+            if (!string.IsNullOrEmpty(language))
+                path += $"&language={Uri.EscapeDataString(language)}";
+            return ProxyJellyseerrRequest(path, HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/sonarr")]
@@ -488,13 +532,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/ratingscombined", HttpMethod.Get);
         }
 
-        [HttpGet("jellyseerr/tv/{tmdbId}/seasons")]
-        [Authorize]
-        public Task<IActionResult> GetTvSeasons(int tmdbId)
-        {
-            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/seasons", HttpMethod.Get);
-        }
-
         [HttpGet("jellyseerr/tv/{tmdbId}/similar")]
         [Authorize]
         public Task<IActionResult> GetSimilarTvShows(int tmdbId, [FromQuery] int page = 1)
@@ -520,14 +557,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> DiscoverTvByNetwork(int networkId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest($"/api/v1/discover/tv/network/{networkId}?page={page}", HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/network/{networkId}?page={page}"), HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/movies/studio/{studioId}")]
         [Authorize]
         public Task<IActionResult> DiscoverMoviesByStudio(int studioId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest($"/api/v1/discover/movies/studio/{studioId}?page={page}", HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies/studio/{studioId}?page={page}"), HttpMethod.Get);
         }
 
         [HttpGet("studio/{studioId}")]
@@ -822,28 +859,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> DiscoverTvByGenre(int genreId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest($"/api/v1/discover/tv?page={page}&genre={genreId}", HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv?page={page}&genre={genreId}"), HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/movies/genre/{genreId}")]
         [Authorize]
         public Task<IActionResult> DiscoverMoviesByGenre(int genreId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest($"/api/v1/discover/movies?page={page}&genre={genreId}", HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies?page={page}&genre={genreId}"), HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/tv/keyword/{keywordId}")]
         [Authorize]
         public Task<IActionResult> DiscoverTvByKeyword(int keywordId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest($"/api/v1/discover/tv?page={page}&keywords={keywordId}", HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv?page={page}&keywords={keywordId}"), HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/movies/keyword/{keywordId}")]
         [Authorize]
         public Task<IActionResult> DiscoverMoviesByKeyword(int keywordId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest($"/api/v1/discover/movies?page={page}&keywords={keywordId}", HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies?page={page}&keywords={keywordId}"), HttpMethod.Get);
         }
 
         [HttpGet("tmdb/search/person")]
@@ -880,6 +917,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public Task<IActionResult> GetTmdbTvGenres()
         {
             return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/genreslider/movie")]
+        [Authorize]
+        public Task<IActionResult> GetMovieGenreSlider()
+        {
+            return ProxyJellyseerrRequest("/api/v1/discover/genreslider/movie", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/genreslider/tv")]
+        [Authorize]
+        public Task<IActionResult> GetTvGenreSlider()
+        {
+            return ProxyJellyseerrRequest("/api/v1/discover/genreslider/tv", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/overrideRule")]
