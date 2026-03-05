@@ -557,14 +557,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> DiscoverTvByNetwork(int networkId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/network/{networkId}?page={page}"), HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv?page={page}&network={networkId}"), HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/movies/studio/{studioId}")]
         [Authorize]
         public Task<IActionResult> DiscoverMoviesByStudio(int studioId, [FromQuery] int page = 1)
         {
-            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies/studio/{studioId}?page={page}"), HttpMethod.Get);
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies?page={page}&studio={studioId}"), HttpMethod.Get);
         }
 
         [HttpGet("studio/{studioId}")]
