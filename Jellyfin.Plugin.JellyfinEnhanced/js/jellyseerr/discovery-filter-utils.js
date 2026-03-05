@@ -50,6 +50,11 @@
         runtimeFilterModes.delete(moduleName);
     }
 
+    /**
+     * Gets the current sort mode for a module.
+     * @param {string} moduleName - e.g., 'genre', 'tag', 'person', 'network'
+     * @returns {string} Sort value (empty string = default/popular)
+     */
     function getSortMode(moduleName) {
         return runtimeSortModes.get(moduleName) || '';
     }
@@ -58,17 +63,26 @@
      * Gets the sort value adapted for TV endpoints.
      * TMDB uses first_air_date for TV instead of release_date for movies.
      * @param {string} moduleName
-     * @returns {string}
+     * @returns {string} TV-compatible sort value
      */
     function getTvSortMode(moduleName) {
         const sort = runtimeSortModes.get(moduleName) || '';
         return sort.replace('release_date', 'first_air_date');
     }
 
+    /**
+     * Sets the sort mode for a module.
+     * @param {string} moduleName
+     * @param {string} sort - Sort value from SORT_OPTIONS
+     */
     function setSortMode(moduleName, sort) {
         runtimeSortModes.set(moduleName, sort);
     }
 
+    /**
+     * Resets module sort mode back to default (popular).
+     * @param {string} moduleName
+     */
     function resetSortMode(moduleName) {
         runtimeSortModes.delete(moduleName);
     }

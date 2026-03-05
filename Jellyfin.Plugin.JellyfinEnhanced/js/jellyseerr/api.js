@@ -166,11 +166,10 @@
             const lang = (navigator.language || 'en').split('-')[0];
             const data = await get(`/search?query=${encodeURIComponent(query)}&language=${lang}`);
 
-            // Filter out people results before returning
+            // Filter out people results before returning (immutable — don't mutate cached response)
             if (data.results) {
-                data.results = data.results.filter(result => result.mediaType !== 'person');
-                // Update the totalResults count to reflect filtered results
-                data.totalResults = data.results.length;
+                const filteredResults = data.results.filter(result => result.mediaType !== 'person');
+                return { ...data, results: filteredResults, totalResults: filteredResults.length };
             }
 
             return data;
@@ -437,9 +436,13 @@
             }
         }
 
-        const body = { mediaType, mediaId: parseInt(tmdbId), ...advancedSettings };
-        if (mediaType === 'tv') body.seasons = "all";
-        if (is4k) body.is4k = true;
+        const body = {
+            mediaType,
+            mediaId: parseInt(tmdbId),
+            ...advancedSettings,
+            ...(mediaType === 'tv' ? { seasons: 'all' } : {}),
+            ...(is4k ? { is4k: true } : {})
+        };
 
         const result = await post('/request', body);
 

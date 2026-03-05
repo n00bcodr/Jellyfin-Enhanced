@@ -262,6 +262,14 @@
      * @param {boolean} showFilter
      * @param {Function} onFilterChange
      */
+    /**
+     * Creates the section container with optional filter and sort controls
+     * @param {string} title - Section heading text
+     * @param {boolean} showFilter - Whether to show the All/Movies/Series filter
+     * @param {Function} onFilterChange - Callback when filter changes: (newMode) => void
+     * @param {Function} [onSortChange] - Callback when sort changes: () => void
+     * @returns {HTMLElement} The section element
+     */
     function createSectionContainer(title, showFilter, onFilterChange, onSortChange) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-person-discovery-section';
@@ -321,6 +329,11 @@
         }
     }
 
+    /**
+     * Gets the full result set for a given filter mode, falling back to all results if empty.
+     * @param {string} mode - 'mixed', 'movies', or 'tv'
+     * @returns {Array}
+     */
     function getPagedResultsForMode(mode) {
         let results = getFilteredResults(mode);
         if (results.length === 0 && cachedAllResults.length > 0) {
@@ -329,6 +342,13 @@
         return results;
     }
 
+    /**
+     * Renders the next PAGE_SIZE chunk of results into the container.
+     * Used for client-side pagination of the full credits list.
+     * @param {HTMLElement} itemsContainer - The DOM container for cards
+     * @param {string} mode - Current filter mode
+     * @param {boolean} [reset=false] - If true, clears existing cards and resets counter
+     */
     function renderChunk(itemsContainer, mode, reset = false) {
         if (!itemsContainer) return;
 

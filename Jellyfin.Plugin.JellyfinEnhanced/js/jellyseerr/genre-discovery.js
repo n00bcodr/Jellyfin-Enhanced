@@ -244,10 +244,12 @@
     }
 
     /**
-     * Creates the section container with optional filter control
-     * @param {string} title
-     * @param {boolean} showFilter
-     * @param {Function} onFilterChange
+     * Creates the section container with optional filter and sort controls
+     * @param {string} title - Section heading text
+     * @param {boolean} showFilter - Whether to show the All/Movies/Series filter
+     * @param {Function} onFilterChange - Callback when filter changes: (newMode) => void
+     * @param {Function} [onSortChange] - Callback when sort changes: () => void
+     * @returns {HTMLElement} The section element
      */
     function createSectionContainer(title, showFilter, onFilterChange, onSortChange) {
         const section = document.createElement('div');
@@ -276,15 +278,19 @@
     }
 
     /**
-     * Handles sort change: clears results and re-fetches with new sort order
+     * Handles sort change: clears results and re-fetches with new sort order.
+     * Resets pagination, clears the card container, fetches page 1 with the
+     * new sortBy param, and re-renders the results.
      */
     async function handleSortChange() {
         const itemsContainer = document.querySelector('.jellyseerr-genre-discovery-section .itemsContainer');
         if (!itemsContainer || !currentGenreIds) return;
 
+        // Clear existing cards and scroll observer
         while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
         cleanupScrollObserver();
 
+        // Reset pagination state for fresh fetch
         tvCurrentPage = 1;
         movieCurrentPage = 1;
         tvHasMorePages = true;
@@ -297,6 +303,7 @@
         const signal = currentAbortController?.signal;
         const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
+        // Build fetch promises for available media types
         const fetchPromises = [];
         if (currentGenreIds.tv) {
             fetchPromises.push(
@@ -391,7 +398,9 @@
     }
 
     /**
-     * Loads more items for infinite scroll
+     * Loads more items for infinite scroll.
+     * Fetches the next page of TV and/or movie results based on the current
+     * filter mode, then appends new cards to the container.
      */
     async function loadMoreItems() {
         if (isLoading || !hasMorePages || !currentGenreIds) return;
@@ -399,6 +408,10 @@
         const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
         isLoading = true;
+
+        // Track page state before increment so we can roll back on failure
+        const prevTvPage = tvCurrentPage;
+        const prevMoviePage = movieCurrentPage;
 
         try {
             const signal = currentAbortController?.signal;
@@ -425,13 +438,12 @@
 
             if (promises.length === 0) {
                 hasMorePages = false;
-                isLoading = false;
                 return;
             }
 
             const results = await Promise.all(promises);
 
-            if (signal?.aborted) { isLoading = false; return; }
+            if (signal?.aborted) return;
 
             let newTvResults = [];
             let newMovieResults = [];
@@ -457,23 +469,16 @@
             } else if (filterMode === 'movies') {
                 itemsToAdd = newMovieResults;
             } else {
-                // Mixed - interleave the new results
                 itemsToAdd = JE.discoveryFilter?.interleaveArrays(newTvResults, newMovieResults) ||
                              [...newTvResults, ...newMovieResults];
             }
 
-            if (itemsToAdd.length === 0) {
-                isLoading = false;
-                return;
-            }
+            if (itemsToAdd.length === 0) return;
 
             // Deduplicate items using deduplicator (if available)
             if (itemDeduplicator) {
                 itemsToAdd = itemDeduplicator.filter(itemsToAdd);
-                if (itemsToAdd.length === 0) {
-                    isLoading = false;
-                    return;
-                }
+                if (itemsToAdd.length === 0) return;
             }
 
             const itemsContainer = document.querySelector('.jellyseerr-genre-discovery-section .itemsContainer');
@@ -484,12 +489,15 @@
                 }
             }
         } catch (error) {
+            // Roll back page counters on failure so retry fetches the same page
+            tvCurrentPage = prevTvPage;
+            movieCurrentPage = prevMoviePage;
             if (error.name === 'AbortError') return;
             console.error(`${logPrefix} Error loading more items:`, error);
             throw error; // Re-throw for seamlessScroll retry handling
+        } finally {
+            isLoading = false;
         }
-
-        isLoading = false;
     }
 
     /**
