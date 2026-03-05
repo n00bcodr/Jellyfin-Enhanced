@@ -175,10 +175,10 @@
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
-            const response = await fetchWithManagedRequest(
-                `/JellyfinEnhanced/jellyseerr/discover/tv/genre/${genreId}?page=${page}`,
-                { signal }
-            );
+            const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+            let path = `/JellyfinEnhanced/jellyseerr/discover/tv/genre/${genreId}?page=${page}`;
+            if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+            const response = await fetchWithManagedRequest(path, { signal });
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
@@ -200,10 +200,10 @@
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
-            const response = await fetchWithManagedRequest(
-                `/JellyfinEnhanced/jellyseerr/discover/movies/genre/${genreId}?page=${page}`,
-                { signal }
-            );
+            const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+            let path = `/JellyfinEnhanced/jellyseerr/discover/movies/genre/${genreId}?page=${page}`;
+            if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+            const response = await fetchWithManagedRequest(path, { signal });
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
@@ -249,7 +249,7 @@
      * @param {boolean} showFilter
      * @param {Function} onFilterChange
      */
-    function createSectionContainer(title, showFilter, onFilterChange) {
+    function createSectionContainer(title, showFilter, onFilterChange, onSortChange) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-genre-discovery-section padded-left padded-right';
         section.setAttribute('data-jellyseerr-genre-discovery', 'true');
@@ -257,7 +257,7 @@
 
         // Use shared header helper if available, otherwise create basic header
         if (JE.discoveryFilter?.createSectionHeader) {
-            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange);
+            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange, onSortChange);
             section.appendChild(header);
         } else {
             const titleElement = document.createElement('h2');
@@ -273,6 +273,81 @@
         section.appendChild(itemsContainer);
 
         return section;
+    }
+
+    /**
+     * Handles sort change: clears results and re-fetches with new sort order
+     */
+    async function handleSortChange() {
+        const itemsContainer = document.querySelector('.jellyseerr-genre-discovery-section .itemsContainer');
+        if (!itemsContainer || !currentGenreIds) return;
+
+        while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
+        cleanupScrollObserver();
+
+        tvCurrentPage = 1;
+        movieCurrentPage = 1;
+        tvHasMorePages = true;
+        movieHasMorePages = true;
+        isLoading = false;
+        cachedTvResults = [];
+        cachedMovieResults = [];
+        if (itemDeduplicator) itemDeduplicator.clear();
+
+        const signal = currentAbortController?.signal;
+        const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+
+        const fetchPromises = [];
+        if (currentGenreIds.tv) {
+            fetchPromises.push(
+                fetchTvDiscover(currentGenreIds.tv, 1, signal).then(r => ({ type: 'tv', data: r }))
+            );
+        }
+        if (currentGenreIds.movie) {
+            fetchPromises.push(
+                fetchMovieDiscover(currentGenreIds.movie, 1, signal).then(r => ({ type: 'movie', data: r }))
+            );
+        }
+
+        try {
+            const results = await Promise.all(fetchPromises);
+            if (signal?.aborted) return;
+
+            results.forEach(r => {
+                if (r.type === 'tv') {
+                    cachedTvResults = r.data.results || [];
+                    tvHasMorePages = 1 < (r.data.totalPages || 1);
+                } else {
+                    cachedMovieResults = r.data.results || [];
+                    movieHasMorePages = 1 < (r.data.totalPages || 1);
+                }
+            });
+
+            updateHasMorePages(filterMode);
+
+            let displayResults = getFilteredResults(filterMode);
+            if (displayResults.length === 0 && (cachedTvResults.length > 0 || cachedMovieResults.length > 0)) {
+                displayResults = [...cachedTvResults, ...cachedMovieResults];
+            }
+
+            if (displayResults.length > 0) {
+                const fragment = createCardsFragment(displayResults);
+                itemsContainer.appendChild(fragment);
+                if (itemDeduplicator) {
+                    displayResults.forEach(item => itemDeduplicator.add(item));
+                }
+            }
+
+            JE.discoveryFilter.applyFilterVisibility(itemsContainer, filterMode);
+
+            if (hasMorePages) {
+                setupInfiniteScroll();
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error(`${logPrefix} Sort change error:`, error);
+            }
+        }
     }
 
     /**
@@ -438,6 +513,73 @@
     }
 
     /**
+     * Renders the genre slider with backdrop cards above the items container
+     * @param {HTMLElement} section - The discovery section element
+     * @param {AbortSignal} [signal]
+     */
+    async function renderGenreSlider(section, signal) {
+        if (!JE.jellyseerrAPI?.fetchGenreSlider) return;
+
+        try {
+            const [movieGenres, tvGenres] = await Promise.all([
+                JE.jellyseerrAPI.fetchGenreSlider('movie').catch(() => []),
+                JE.jellyseerrAPI.fetchGenreSlider('tv').catch(() => [])
+            ]);
+
+            if (signal?.aborted) return;
+
+            const genreMap = new Map();
+            for (const g of [...(movieGenres || []), ...(tvGenres || [])]) {
+                if (g && g.id && !genreMap.has(g.id)) {
+                    genreMap.set(g.id, g);
+                }
+            }
+
+            const genres = Array.from(genreMap.values());
+            if (genres.length === 0) return;
+
+            const slider = document.createElement('div');
+            slider.className = 'jellyseerr-genre-slider';
+            slider.style.cssText = 'display:flex;gap:0.75em;overflow-x:auto;padding:0.5em 0 1em;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:thin;';
+
+            for (const genre of genres) {
+                const backdrop = (genre.backdrops && genre.backdrops[0]) || '';
+                const bgUrl = backdrop ? `https://image.tmdb.org/t/p/w780${backdrop}` : '';
+
+                const card = document.createElement('div');
+                card.className = 'jellyseerr-genre-slider-card';
+                card.style.cssText = 'flex:0 0 200px;height:112px;border-radius:8px;display:flex;align-items:flex-end;padding:0.5em 0.75em;scroll-snap-align:start;position:relative;overflow:hidden;cursor:default;'
+                    + (bgUrl ? `background:url(${encodeURI(bgUrl)}) center/cover;` : 'background:rgba(255,255,255,0.1);');
+
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position:absolute;inset:0;background:linear-gradient(transparent 40%,rgba(0,0,0,0.7));border-radius:8px;';
+                card.appendChild(overlay);
+
+                const label = document.createElement('span');
+                label.textContent = genre.name;
+                label.style.cssText = 'position:relative;z-index:1;color:#fff;font-weight:600;font-size:0.9em;text-shadow:0 1px 3px rgba(0,0,0,0.5);';
+                card.appendChild(label);
+
+                if (currentGenreIds && (genre.id === currentGenreIds.tv || genre.id === currentGenreIds.movie)) {
+                    card.style.outline = '2px solid rgba(255,255,255,0.6)';
+                    card.style.outlineOffset = '-2px';
+                }
+
+                slider.appendChild(card);
+            }
+
+            const itemsContainer = section.querySelector('.itemsContainer');
+            if (itemsContainer) {
+                section.insertBefore(slider, itemsContainer);
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.debug(`${logPrefix} Genre slider error:`, error);
+            }
+        }
+    }
+
+    /**
      * Wait for the page to be ready using shared utility
      * @param {AbortSignal} [signal]
      */
@@ -547,8 +689,9 @@
             // Determine if we have both types
             const hasBoth = JE.discoveryFilter?.hasBothTypes(cachedTvResults, cachedMovieResults) || false;
 
-            // Always start each section on "All" (mixed) instead of persisting previous choice.
+            // Always start each section on defaults instead of persisting previous choice.
             JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
+            JE.discoveryFilter?.resetSortMode?.(MODULE_NAME);
             // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
@@ -571,7 +714,7 @@
             if (existing) existing.remove();
 
             const sectionTitle = JE.t('discovery_more_with_genre', { genre: genreInfo.name });
-            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
+            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange, handleSortChange);
             const itemsContainer = section.querySelector('.itemsContainer');
 
             const fragment = createCardsFragment(displayResults);
@@ -587,6 +730,9 @@
             const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
             if (parentContainer?.parentElement) {
                 parentContainer.parentElement.appendChild(section);
+
+                // Render genre slider backdrop cards (non-blocking)
+                renderGenreSlider(section, signal);
 
                 if (hasMorePages) {
                     setupInfiniteScroll();
@@ -646,6 +792,7 @@
         }
         itemDeduplicator = null;
         JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
+        JE.discoveryFilter?.resetSortMode?.(MODULE_NAME);
     }
 
     /**

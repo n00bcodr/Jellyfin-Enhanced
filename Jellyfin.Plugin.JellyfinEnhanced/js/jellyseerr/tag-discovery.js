@@ -109,10 +109,10 @@
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
-            const response = await fetchWithManagedRequest(
-                `/JellyfinEnhanced/jellyseerr/discover/tv/keyword/${keywordId}?page=${page}`,
-                { signal }
-            );
+            const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+            let path = `/JellyfinEnhanced/jellyseerr/discover/tv/keyword/${keywordId}?page=${page}`;
+            if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+            const response = await fetchWithManagedRequest(path, { signal });
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
@@ -134,10 +134,10 @@
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
-            const response = await fetchWithManagedRequest(
-                `/JellyfinEnhanced/jellyseerr/discover/movies/keyword/${keywordId}?page=${page}`,
-                { signal }
-            );
+            const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+            let path = `/JellyfinEnhanced/jellyseerr/discover/movies/keyword/${keywordId}?page=${page}`;
+            if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+            const response = await fetchWithManagedRequest(path, { signal });
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
@@ -183,7 +183,7 @@
      * @param {boolean} showFilter
      * @param {Function} onFilterChange
      */
-    function createSectionContainer(title, showFilter, onFilterChange) {
+    function createSectionContainer(title, showFilter, onFilterChange, onSortChange) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-tag-discovery-section padded-left padded-right';
         section.setAttribute('data-jellyseerr-tag-discovery', 'true');
@@ -191,7 +191,7 @@
 
         // Use shared header helper if available, otherwise create basic header
         if (JE.discoveryFilter?.createSectionHeader) {
-            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange);
+            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange, onSortChange);
             section.appendChild(header);
         } else {
             const titleElement = document.createElement('h2');
@@ -207,6 +207,72 @@
         section.appendChild(itemsContainer);
 
         return section;
+    }
+
+    /**
+     * Handles sort change: clears results and re-fetches with new sort order
+     */
+    async function handleSortChange() {
+        const itemsContainer = document.querySelector('.jellyseerr-tag-discovery-section .itemsContainer');
+        if (!itemsContainer || !currentKeywordId) return;
+
+        while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
+        cleanupScrollObserver();
+
+        tvCurrentPage = 1;
+        movieCurrentPage = 1;
+        tvHasMorePages = true;
+        movieHasMorePages = true;
+        isLoading = false;
+        cachedTvResults = [];
+        cachedMovieResults = [];
+        if (itemDeduplicator) itemDeduplicator.clear();
+
+        const signal = currentAbortController?.signal;
+        const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+
+        try {
+            const results = await Promise.all([
+                fetchTvDiscover(currentKeywordId, 1, signal).then(r => ({ type: 'tv', data: r })),
+                fetchMovieDiscover(currentKeywordId, 1, signal).then(r => ({ type: 'movie', data: r }))
+            ]);
+            if (signal?.aborted) return;
+
+            results.forEach(r => {
+                if (r.type === 'tv') {
+                    cachedTvResults = r.data.results || [];
+                    tvHasMorePages = 1 < (r.data.totalPages || 1);
+                } else {
+                    cachedMovieResults = r.data.results || [];
+                    movieHasMorePages = 1 < (r.data.totalPages || 1);
+                }
+            });
+
+            updateHasMorePages(filterMode);
+
+            let displayResults = getFilteredResults(filterMode);
+            if (displayResults.length === 0 && (cachedTvResults.length > 0 || cachedMovieResults.length > 0)) {
+                displayResults = [...cachedTvResults, ...cachedMovieResults];
+            }
+
+            if (displayResults.length > 0) {
+                const fragment = createCardsFragment(displayResults);
+                itemsContainer.appendChild(fragment);
+                if (itemDeduplicator) {
+                    displayResults.forEach(item => itemDeduplicator.add(item));
+                }
+            }
+
+            JE.discoveryFilter.applyFilterVisibility(itemsContainer, filterMode);
+
+            if (hasMorePages) {
+                setupInfiniteScroll();
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error(`${logPrefix} Sort change error:`, error);
+            }
+        }
     }
 
     /**
@@ -460,8 +526,9 @@
             // Determine if we have both types
             const hasBoth = JE.discoveryFilter?.hasBothTypes(cachedTvResults, cachedMovieResults) || false;
 
-            // Always start each section on "All" (mixed) instead of persisting previous choice.
+            // Always start each section on defaults instead of persisting previous choice.
             JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
+            JE.discoveryFilter?.resetSortMode?.(MODULE_NAME);
             // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
@@ -484,7 +551,7 @@
             if (existing) existing.remove();
 
             const sectionTitle = JE.t('discovery_more_with_tag', { tag: tagName });
-            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
+            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange, handleSortChange);
             const itemsContainer = section.querySelector('.itemsContainer');
 
             const fragment = createCardsFragment(displayResults);
@@ -558,6 +625,7 @@
         }
         itemDeduplicator = null;
         JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
+        JE.discoveryFilter?.resetSortMode?.(MODULE_NAME);
     }
 
     /**
