@@ -54,6 +54,17 @@
         return runtimeSortModes.get(moduleName) || '';
     }
 
+    /**
+     * Gets the sort value adapted for TV endpoints.
+     * TMDB uses first_air_date for TV instead of release_date for movies.
+     * @param {string} moduleName
+     * @returns {string}
+     */
+    function getTvSortMode(moduleName) {
+        const sort = runtimeSortModes.get(moduleName) || '';
+        return sort.replace('release_date', 'first_air_date');
+    }
+
     function setSortMode(moduleName, sort) {
         runtimeSortModes.set(moduleName, sort);
     }
@@ -565,6 +576,7 @@
         setFilterMode,
         resetFilterMode,
         getSortMode,
+        getTvSortMode,
         setSortMode,
         resetSortMode,
         interleaveArrays,

@@ -175,7 +175,7 @@
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
-            const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+            const sortBy = JE.discoveryFilter?.getTvSortMode(MODULE_NAME) || '';
             let path = `/JellyfinEnhanced/jellyseerr/discover/tv/genre/${genreId}?page=${page}`;
             if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
             const response = await fetchWithManagedRequest(path, { signal });
@@ -513,73 +513,6 @@
     }
 
     /**
-     * Renders the genre slider with backdrop cards above the items container
-     * @param {HTMLElement} section - The discovery section element
-     * @param {AbortSignal} [signal]
-     */
-    async function renderGenreSlider(section, signal) {
-        if (!JE.jellyseerrAPI?.fetchGenreSlider) return;
-
-        try {
-            const [movieGenres, tvGenres] = await Promise.all([
-                JE.jellyseerrAPI.fetchGenreSlider('movie').catch(() => []),
-                JE.jellyseerrAPI.fetchGenreSlider('tv').catch(() => [])
-            ]);
-
-            if (signal?.aborted) return;
-
-            const genreMap = new Map();
-            for (const g of [...(movieGenres || []), ...(tvGenres || [])]) {
-                if (g && g.id && !genreMap.has(g.id)) {
-                    genreMap.set(g.id, g);
-                }
-            }
-
-            const genres = Array.from(genreMap.values());
-            if (genres.length === 0) return;
-
-            const slider = document.createElement('div');
-            slider.className = 'jellyseerr-genre-slider';
-            slider.style.cssText = 'display:flex;gap:0.75em;overflow-x:auto;padding:0.5em 0 1em;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:thin;';
-
-            for (const genre of genres) {
-                const backdrop = (genre.backdrops && genre.backdrops[0]) || '';
-                const bgUrl = backdrop ? `https://image.tmdb.org/t/p/w780${backdrop}` : '';
-
-                const card = document.createElement('div');
-                card.className = 'jellyseerr-genre-slider-card';
-                card.style.cssText = 'flex:0 0 200px;height:112px;border-radius:8px;display:flex;align-items:flex-end;padding:0.5em 0.75em;scroll-snap-align:start;position:relative;overflow:hidden;cursor:default;'
-                    + (bgUrl ? `background:url(${encodeURI(bgUrl)}) center/cover;` : 'background:rgba(255,255,255,0.1);');
-
-                const overlay = document.createElement('div');
-                overlay.style.cssText = 'position:absolute;inset:0;background:linear-gradient(transparent 40%,rgba(0,0,0,0.7));border-radius:8px;';
-                card.appendChild(overlay);
-
-                const label = document.createElement('span');
-                label.textContent = genre.name;
-                label.style.cssText = 'position:relative;z-index:1;color:#fff;font-weight:600;font-size:0.9em;text-shadow:0 1px 3px rgba(0,0,0,0.5);';
-                card.appendChild(label);
-
-                if (currentGenreIds && (genre.id === currentGenreIds.tv || genre.id === currentGenreIds.movie)) {
-                    card.style.outline = '2px solid rgba(255,255,255,0.6)';
-                    card.style.outlineOffset = '-2px';
-                }
-
-                slider.appendChild(card);
-            }
-
-            const itemsContainer = section.querySelector('.itemsContainer');
-            if (itemsContainer) {
-                section.insertBefore(slider, itemsContainer);
-            }
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.debug(`${logPrefix} Genre slider error:`, error);
-            }
-        }
-    }
-
-    /**
      * Wait for the page to be ready using shared utility
      * @param {AbortSignal} [signal]
      */
@@ -730,9 +663,6 @@
             const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
             if (parentContainer?.parentElement) {
                 parentContainer.parentElement.appendChild(section);
-
-                // Render genre slider backdrop cards (non-blocking)
-                renderGenreSlider(section, signal);
 
                 if (hasMorePages) {
                     setupInfiniteScroll();

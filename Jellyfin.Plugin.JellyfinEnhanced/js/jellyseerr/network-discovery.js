@@ -233,7 +233,7 @@
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
             }
-            const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+            const sortBy = JE.discoveryFilter?.getTvSortMode(MODULE_NAME) || '';
             let path = `/JellyfinEnhanced/jellyseerr/discover/tv/network/${networkId}?page=${page}`;
             if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
             const response = await fetchWithManagedRequest(path, { signal });
