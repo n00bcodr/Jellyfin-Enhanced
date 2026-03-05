@@ -3302,15 +3302,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Proxy avatar images from Jellyseerr to avoid CORS/mixed content issues.
+        /// Only allows paths that match known Jellyseerr avatar URL patterns.
         /// </summary>
         [HttpGet("proxy/avatar")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
             {
                 return NotFound();
+            }
+
+            // SECURITY: Validate path to prevent SSRF. Only allow known Jellyseerr avatar paths.
+            if (!path.StartsWith("/avatar/", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/v1/avatar/", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Invalid avatar path");
+            }
+
+            // Block path traversal, scheme injection, query strings, and request smuggling
+            if (path.Contains("..") || path.Contains("://") || path.Contains("@")
+                || path.Contains("?") || path.Contains("#")
+                || path.Contains("\r") || path.Contains("\n")
+                || path.Contains("%0d", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("%0a", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("%00"))
+            {
+                return BadRequest("Invalid avatar path");
             }
 
             try
@@ -3325,9 +3344,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return NotFound();
                 }
 
-                var content = await response.Content.ReadAsByteArrayAsync();
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+                if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return NotFound();
+                }
 
+                var content = await response.Content.ReadAsByteArrayAsync();
                 return File(content, contentType);
             }
             catch
