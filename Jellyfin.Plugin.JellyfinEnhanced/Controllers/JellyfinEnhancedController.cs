@@ -49,11 +49,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
 
-        // Cache for Jellyseerr user ID lookups (JellyfinUserId -> JellyseerrUserId)
+        // Cache for Seerr user ID lookups (JellyfinUserId -> SeerrUserId)
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
         private static readonly object _userIdCacheLock = new();
 
-        // Cache for Jellyseerr proxy responses (discovery/search endpoints)
+        // Cache for Seerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
 
@@ -105,11 +105,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
-                _logger.Warning("Jellyseerr configuration is missing. Cannot look up user ID.");
+                _logger.Warning("Seerr configuration is missing. Cannot look up user ID.");
                 return null;
             }
 
-            // _logger.Info($"Attempting to find Jellyseerr user for Jellyfin User ID: {jellyfinUserId}");
+            // _logger.Info($"Attempting to find Seerr user for Jellyfin User ID: {jellyfinUserId}");
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(15);
@@ -120,7 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000"; // Fetch all users to find a match
-                    // _logger.Info($"Requesting users from Jellyseerr URL: {requestUri}");
+                    // _logger.Info($"Requesting users from Seerr URL: {requestUri}");
                     var response = await httpClient.GetAsync(requestUri);
 
                     if (response.IsSuccessStatusCode)
@@ -135,7 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedJellyfinUserId, StringComparison.OrdinalIgnoreCase));
                             if (user != null)
                             {
-                                // _logger.Info($"Found Jellyseerr user ID {user.Id} for Jellyfin user ID {jellyfinUserId} at {url.Trim()}");
+                                // _logger.Info($"Found Seerr user ID {user.Id} for Jellyfin user ID {jellyfinUserId} at {url.Trim()}");
                                 return user;
                             }
                             else
@@ -147,16 +147,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     else
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();
-                        _logger.Warning($"Failed to fetch users from Jellyseerr at {url}. Status: {response.StatusCode}. Response: {errorContent}");
+                        _logger.Warning($"Failed to fetch users from Seerr at {url}. Status: {response.StatusCode}. Response: {errorContent}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Exception while trying to get Jellyseerr user ID from {url}: {ex.Message}");
+                    _logger.Error($"Exception while trying to get Seerr user ID from {url}: {ex.Message}");
                 }
             }
 
-            _logger.Warning($"Could not find a matching Jellyseerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
+            _logger.Warning($"Could not find a matching Seerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
             return null;
         }
 
@@ -217,7 +217,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Checks if a Jellyseerr API path is eligible for server-side caching.
+        /// Checks if a Seerr API path is eligible for server-side caching.
         /// Only GET requests to discovery/search/genre/person endpoints are cached.
         /// </summary>
         private static bool IsCacheableApiPath(string apiPath, HttpMethod method)
@@ -237,8 +237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
-                _logger.Warning("Jellyseerr integration is not configured or enabled.");
-                return StatusCode(503, "Jellyseerr integration is not configured or enabled.");
+                _logger.Warning("Seerr integration is not configured or enabled.");
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
             }
 
             // Resolve user ID (cached)
@@ -256,8 +256,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (string.IsNullOrEmpty(jellyseerrUserId))
                 {
-                    _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
-                    return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
+                    _logger.Warning($"Could not find a Seerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                    return NotFound(new { message = "Current Jellyfin user is not linked to a Seerr user." });
                 }
             }
             else
@@ -300,7 +300,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     bool isQuietEndpoint = apiPath.Contains("/similar") || apiPath.Contains("/recommendations") || apiPath.Contains("/discover/");
                     if (!isQuietEndpoint)
                     {
-                        _logger.Info($"Proxying Jellyseerr request for user {jellyfinUserId} to: {requestUri}");
+                        _logger.Info($"Proxying Seerr request for user {jellyfinUserId} to: {requestUri}");
                     }
 
                     var request = new HttpRequestMessage(method, requestUri);
@@ -338,7 +338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Content(responseContent, "application/json");
                     }
 
-                    _logger.Warning($"Request to Jellyseerr for user {jellyfinUserId} failed. URL: {trimmedUrl}, Status: {response.StatusCode}, Response: {responseContent}");
+                    _logger.Warning($"Request to Seerr for user {jellyfinUserId} failed. URL: {trimmedUrl}, Status: {response.StatusCode}, Response: {responseContent}");
                     lastStatusCode = (int)response.StatusCode;
                     try
                     {
@@ -352,7 +352,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Failed to connect to Jellyseerr URL for user {jellyfinUserId}: {trimmedUrl}. Error: {ex.Message}");
+                    _logger.Error($"Failed to connect to Seerr URL for user {jellyfinUserId}: {trimmedUrl}. Error: {ex.Message}");
                 }
             }
 
@@ -381,7 +381,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var response = await httpClient.GetAsync($"{url.Trim().TrimEnd('/')}/api/v1/status");
                     if (response.IsSuccessStatusCode)
                     {
-                        // _logger.Info($"Successfully connected to Jellyseerr at {url}. Status is active.");
+                        // _logger.Info($"Successfully connected to Seerr at {url}. Status is active.");
                         return Ok(new { active = true });
                     }
                 }
@@ -391,7 +391,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            _logger.Warning("Could not establish a connection with any configured Jellyseerr URL. Status is inactive.");
+            _logger.Warning("Could not establish a connection with any configured Seerr URL. Status is inactive.");
             return Ok(new { active = false });
         }
 
@@ -421,7 +421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Jellyseerr validate failed for {url}: {ex.Message}");
+                _logger.Warning($"Seerr validate failed for {url}: {ex.Message}");
                 return StatusCode(502, new { ok = false, message = "Unable to reach Jellyseerr" });
             }
         }
@@ -445,8 +445,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrEmpty(jellyfinUserId))
                 return Ok(new { active = false, userFound = false });
 
-            // GetJellyseerrUserId uses the user ID cache (30-min TTL).
-            // A successful user lookup implicitly proves Jellyseerr is reachable.
+            // GetSeerrUserId uses the user ID cache (30-min TTL).
+            // A successful user lookup implicitly proves Seerr is reachable.
             var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
@@ -1001,7 +1001,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest(new { error = "Jellyseerr watchlist sync is not enabled" });
                 }
 
-                _logger.Info("[Manual Watchlist Sync] Starting manual Jellyseerr watchlist sync...");
+                _logger.Info("[Manual Watchlist Sync] Starting manual Seerr watchlist sync...");
 
                 int itemsProcessed = 0;
                 int itemsAdded = 0;
@@ -1013,15 +1013,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         _logger.Info($"[Manual Watchlist Sync] Processing user: {user.Username} ({user.Id})");
 
-                        // Get Jellyseerr user ID for this Jellyfin user
+                        // Get Seerr user ID for this Jellyfin user
                         var jellyseerrUserId = await GetJellyseerrUserId(user.Id.ToString());
                         if (string.IsNullOrEmpty(jellyseerrUserId))
                         {
-                            _logger.Warning($"[Manual Watchlist Sync] Could not find Jellyseerr user for {user.Username}");
+                            _logger.Warning($"[Manual Watchlist Sync] Could not find Seerr user for {user.Username}");
                             continue;
                         }
 
-                        // Get watchlist from Jellyseerr
+                        // Get watchlist from Seerr
                         var watchlistItems = await GetJellyseerrWatchlistForUser(jellyseerrUserId);
                         if (watchlistItems == null || watchlistItems.Count == 0)
                         {
@@ -1155,7 +1155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Error($"Error getting Jellyseerr watchlist: {ex}");
+                _logger.Error($"Error getting Seerr watchlist: {ex}");
             }
 
             return null;
@@ -1225,7 +1225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Error($"Error getting Jellyseerr requests: {ex}");
+                _logger.Error($"Error getting Seerr requests: {ex}");
             }
 
             return null;
@@ -1333,7 +1333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
-                _logger.Warning("Jellyseerr integration is not configured or enabled.");
+                _logger.Warning("Seerr integration is not configured or enabled.");
                 return Ok(new { partialRequestsEnabled = false });
             }
 
@@ -1347,7 +1347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/settings/main";
-                    _logger.Info($"Fetching Jellyseerr partial requests setting from: {requestUri}");
+                    _logger.Info($"Fetching Seerr partial requests setting from: {requestUri}");
 
                     var response = await httpClient.GetAsync(requestUri);
                     var responseContent = await response.Content.ReadAsStringAsync();
@@ -1362,19 +1362,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             partialRequestsEnabled = prop.GetBoolean();
                         }
 
-                        _logger.Info($"Jellyseerr partial requests setting: {partialRequestsEnabled}");
+                        _logger.Info($"Seerr partial requests setting: {partialRequestsEnabled}");
                         return Ok(new { partialRequestsEnabled });
                     }
 
-                    _logger.Warning($"Failed to fetch Jellyseerr settings. URL: {trimmedUrl}, Status: {response.StatusCode}");
+                    _logger.Warning($"Failed to fetch Seerr settings. URL: {trimmedUrl}, Status: {response.StatusCode}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Failed to connect to Jellyseerr URL: {trimmedUrl}. Error: {ex.Message}");
+                    _logger.Error($"Failed to connect to Seerr URL: {trimmedUrl}. Error: {ex.Message}");
                 }
             }
 
-            _logger.Warning("Could not fetch Jellyseerr settings from any URL, defaulting partialRequestsEnabled to false");
+            _logger.Warning("Could not fetch Seerr settings from any URL, defaulting partialRequestsEnabled to false");
             return Ok(new { partialRequestsEnabled = false });
         }
 
@@ -1429,7 +1429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
-            // Determine the first configured Jellyseerr URL (if any) for client-side deep links
+            // Determine the first configured Seerr URL (if any) for client-side deep links
             string jellyseerrBaseUrl = string.Empty;
             try
             {
@@ -1529,7 +1529,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.TagsCacheTtlDays,
                 config.DisableTagsOnSearchPage,
 
-                // Jellyseerr Search Settings
+                // Seerr Search Settings
                 config.JellyseerrEnabled,
                 config.JellyseerrShowReportButton,
                 config.JellyseerrEnable4KRequests,
@@ -2586,7 +2586,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Get requests from Jellyseerr with pagination and filtering.
+        /// Get requests from Seerr with pagination and filtering.
         /// </summary>
         [HttpGet("arr/requests")]
         [Authorize]
@@ -2624,8 +2624,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (jellyseerrUser == null)
                 {
-                    _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
-                    return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
+                    _logger.Warning($"Could not find a Seerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                    return NotFound(new { message = "Current Jellyfin user is not linked to a Seerr user." });
                 }
 
                 // Check if user has permission to view all requests
@@ -2656,7 +2656,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/request?take={take}&skip={skip}{filterParam}");
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.Warning($"Jellyseerr request failed with status {response.StatusCode}");
+                    _logger.Warning($"Seerr request failed with status {response.StatusCode}");
                     return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
                 }
 
@@ -2868,7 +2868,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Failed to fetch Jellyseerr requests: {ex.Message}");
+                _logger.Warning($"Failed to fetch Seerr requests: {ex.Message}");
                 return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
             }
         }
@@ -3319,7 +3319,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Fetch metadata from Jellyseerr's TMDB integration.
+        /// Fetch metadata from Seerr's TMDB integration.
         /// For movies: title, year, poster, digitalReleaseDate, theatricalReleaseDate
         /// For TV shows: title, year, poster, initialAirDate (first air date), nextAirDate (next episode air date)
         /// </summary>
@@ -3446,7 +3446,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Proxy avatar images from Jellyseerr to avoid CORS/mixed content issues.
+        /// Proxy avatar images from Seerr to avoid CORS/mixed content issues.
         /// </summary>
         [HttpGet("proxy/avatar")]
         [AllowAnonymous]

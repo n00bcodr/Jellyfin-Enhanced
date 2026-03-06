@@ -1,5 +1,5 @@
 // /js/jellyseerr/person-discovery.js
-// Adds "More from [Actor]" section to person detail pages using Jellyseerr API
+// Adds "More from [Actor]" section to person detail pages using Seerr API
 (function(JE) {
     'use strict';
 
@@ -161,7 +161,7 @@
     }
 
     /**
-     * Fetches person credits from Jellyseerr
+     * Fetches person credits from Seerr
      * @param {number} personId
      * @param {AbortSignal} [signal]
      */

@@ -1,5 +1,5 @@
 // /js/jellyseerr/network-discovery.js
-// Adds "More from [Network]" section to studio/network list pages using Jellyseerr API
+// Adds "More from [Network]" section to studio/network list pages using Seerr API
 (function(JE) {
     'use strict';
 
@@ -223,7 +223,7 @@
     }
 
     /**
-     * Fetches discover results from Jellyseerr for a network (TV)
+     * Fetches discover results from Seerr for a network (TV)
      * @param {number} networkId
      * @param {number} page
      * @param {AbortSignal} [signal]
@@ -250,7 +250,7 @@
     }
 
     /**
-     * Fetches discover results from Jellyseerr for a movie studio
+     * Fetches discover results from Seerr for a movie studio
      * @param {number} studioId
      * @param {number} page
      * @param {AbortSignal} [signal]

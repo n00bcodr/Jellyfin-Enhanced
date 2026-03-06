@@ -2,7 +2,7 @@
 (function(JE) {
     'use strict';
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr API:';
+    const logPrefix = '🪼 Jellyfin Enhanced: Seerr API:';
     const api = {};
 
     // Cache for user status (shared across all modules)
@@ -76,7 +76,7 @@
     }
 
     /**
-     * Performs a GET request to the Jellyseerr proxy endpoint.
+     * Performs a GET request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/search?query=...').
      * @param {object} [options] - Optional settings (signal, skipCache, skipRetry).
      * @returns {Promise<any>} - The JSON response from the server.
@@ -88,7 +88,7 @@
     }
 
     /**
-     * Performs a POST request to the Jellyseerr proxy endpoint.
+     * Performs a POST request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/request').
      * @param {object} body - The JSON body to send with the request.
      * @returns {Promise<any>} - The server's response.
@@ -128,7 +128,7 @@
     }
 
     /**
-     * Checks if the Jellyseerr server is active and if the current user is linked.
+     * Checks if the Seerr server is active and if the current user is linked.
      * Caches the result to avoid repeated API calls.
      * @returns {Promise<{active: boolean, userFound: boolean}>}
      */
@@ -157,7 +157,7 @@
     };
 
     /**
-     * Performs a search against the Jellyseerr API.
+     * Performs a search against the Seerr API.
      * @param {string} query - The search term.
      * @param {number} [page=1] - Page number for pagination.
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
@@ -187,7 +187,7 @@
      */
     api.fetchMovieCollection = async function(tmdbId) {
         try {
-            // Try Jellyseerr movie detail first (includes collection field directly)
+            // Try Seerr movie detail first (includes collection field directly)
             const jellyseerrRes = await get(`/movie/${tmdbId}`);
             if (jellyseerrRes?.collection) {
                 const c = jellyseerrRes.collection;
@@ -240,7 +240,7 @@
     };
 
     /**
-     * Fetches detailed information for a specific TV show from Jellyseerr.
+     * Fetches detailed information for a specific TV show from Seerr.
      * @param {number} tmdbId - The TMDB ID of the TV show.
      * @returns {Promise<object|null>}
      */
@@ -254,7 +254,7 @@
     };
 
     /**
-     * Fetches override rules from Jellyseerr.
+     * Fetches override rules from Seerr.
      * @returns {Promise<Array>}
      */
     api.fetchOverrideRules = async function() {
@@ -273,15 +273,15 @@
     };
 
     /**
-     * Gets the current Jellyseerr user ID from the user status.
-     * @returns {Promise<string|null>} - Jellyseerr user ID or null if not found.
+     * Gets the current Seerr user ID from the user status.
+     * @returns {Promise<string|null>} - Seerr user ID or null if not found.
      */
     api.getCurrentJellyseerrUserId = async function() {
         try {
             const status = await api.checkUserStatus();
             return (status && status.jellyseerrUserId) ? String(status.jellyseerrUserId) : null;
         } catch (error) {
-            console.warn(`${logPrefix} Failed to get current Jellyseerr user ID:`, error);
+            console.warn(`${logPrefix} Failed to get current Seerr user ID:`, error);
             return null;
         }
     };
@@ -392,7 +392,7 @@
                         settings.rootFolder = rule.rootFolder;
                     }
                     if (rule.tags) {
-                        // Convert tags to array format that Jellyseerr expects
+                        // Convert tags to array format that Seerr expects
                         if (Array.isArray(rule.tags)) {
                             settings.tags = rule.tags;
                         } else if (typeof rule.tags === 'string') {
@@ -495,7 +495,7 @@
     };
 
     /**
-     * Fetches existing issues for a Jellyseerr media (by TMDB id + type).
+     * Fetches existing issues for a Seerr media (by TMDB id + type).
      * @param {number|string} tmdbId
      * @param {'movie'|'tv'} mediaType
      * @param {object} [options]
@@ -583,7 +583,7 @@
 
 
     /**
-     * Checks if partial series requests are enabled in Jellyseerr settings.
+     * Checks if partial series requests are enabled in Seerr settings.
      * @returns {Promise<boolean>} - True if partial requests are enabled, false otherwise.
      */
     api.isPartialRequestsEnabled = async function() {
@@ -627,28 +627,28 @@
     };
 
     /**
-     * Reports an issue for a media item to Jellyseerr.
+     * Reports an issue for a media item to Seerr.
      * @param {number} mediaId - The TMDB/TVDB ID of the media.
      * @param {string} mediaType - 'movie' or 'tv'.
      * @param {string} problemType - Type of issue (e.g., 'no_season', 'episode_missing', etc.).
      * @param {string} [message=''] - Optional description of the issue.
-     * @returns {Promise<any>} - The response from Jellyseerr.
+     * @returns {Promise<any>} - The response from Seerr.
      */
     /**
-     * Maps problem types to Jellyseerr issue types and season/episode info
-     * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
+     * Maps problem types to Seerr issue types and season/episode info
+     * Seerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
      */
     // NOTE: Previous mappings for textual problem types were removed —
     // the current implementation expects a numeric issueType (1..4)
     // to be provided by the UI. Keep logic in `api.reportIssue` that
-    // parses the numeric value and forwards it to Jellyseerr.
+    // parses the numeric value and forwards it to Seerr.
 
     api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
 
-            // Fetch the correct internal media id from Jellyseerr
+            // Fetch the correct internal media id from Seerr
 
             let apiResult = null;
             if (mediaType === 'movie') {
@@ -673,7 +673,7 @@
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
             const result = await post('/issue', body);
-            console.debug(`${logPrefix} Issue reported for Jellyseerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
+            console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {
             console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
@@ -702,7 +702,7 @@
     api.fetchRecommendedTvShows = (tmdbId, pageOrOptions) => fetchRelated('tv', tmdbId, 'recommendations', pageOrOptions);
 
     /**
-     * Fetches detailed information for a specific movie from Jellyseerr.
+     * Fetches detailed information for a specific movie from Seerr.
      * @param {number} tmdbId - The TMDB ID of the movie.
      * @returns {Promise<object|null>}
      */
@@ -716,7 +716,7 @@
     };
 
     /**
-     * Fetches collection details from Jellyseerr.
+     * Fetches collection details from Seerr.
      * @param {number} collectionId - The TMDB collection ID.
      * @returns {Promise<object|null>}
      */
@@ -730,7 +730,7 @@
     };
 
     /**
-     * Fetches genre slider data (genres with backdrop images) from Jellyseerr.
+     * Fetches genre slider data (genres with backdrop images) from Seerr.
      * @param {'movie'|'tv'} mediaType
      * @returns {Promise<Array>}
      */
@@ -745,10 +745,10 @@
     };
 
     /**
-     * Resolves the Jellyseerr base URL based on URL mappings or falls back to the default base URL.
+     * Resolves the Seerr base URL based on URL mappings or falls back to the default base URL.
      * This function checks if there are URL mappings configured and matches the current Jellyfin server URL
-     * against the mappings to determine the appropriate Jellyseerr URL.
-     * @returns {string} - The resolved Jellyseerr base URL (without trailing slash), or empty string if none configured.
+     * against the mappings to determine the appropriate Seerr URL.
+     * @returns {string} - The resolved Seerr base URL (without trailing slash), or empty string if none configured.
      */
     api.resolveJellyseerrBaseUrl = function() {
         let baseUrl = '';

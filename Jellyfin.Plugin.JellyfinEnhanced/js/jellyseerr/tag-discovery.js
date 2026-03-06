@@ -1,5 +1,5 @@
 // /js/jellyseerr/tag-discovery.js
-// Adds "More [Tag]" section to tag list pages using Jellyseerr API
+// Adds "More [Tag]" section to tag list pages using Seerr API
 (function(JE) {
     'use strict';
 

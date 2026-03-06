@@ -3,7 +3,7 @@
     'use strict';
 
     const ui = {};
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr UI:';
+    const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
 
     // State variables managed by the main jellyseerr.js, but used by UI functions
     let jellyseerrHoverPopover = null;
@@ -325,7 +325,7 @@
     // ================================
 
     /**
-     * Adds main CSS styles for Jellyseerr integration.
+     * Adds main CSS styles for Seerr integration.
      */
     ui.addMainStyles = function() {
         const styleId = 'jellyseerr-styles';
@@ -676,10 +676,10 @@
     // ================================
 
     /**
-     * Updates the Jellyseerr icon in the search field based on current state.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * Updates the Seerr icon in the search field based on current state.
+     * @param {boolean} isSeerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
-     * @param {boolean} isJellyseerrOnlyMode - If the results are filtered.
+     * @param {boolean} isSeerrOnlyMode - If the results are filtered.
      * @param {function} onToggleFilter - The function to call to toggle the filter.
      */
     ui.updateJellyseerrIcon = function(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, onToggleFilter) {
@@ -773,11 +773,11 @@
     }
 
     /**
-     * Renders Jellyseerr search results into the search page with improved placement logic.
+     * Renders Seerr search results into the search page with improved placement logic.
      * @param {Array} results - Array of search result items.
      * @param {string} query - The search query that generated these results.
-     * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} isSeerrOnlyMode - Whether the filter is active.
+     * @param {boolean} isSeerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     ui.renderJellyseerrResults = function(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound) {
@@ -852,10 +852,10 @@
     };
 
     /**
-     * Creates the main Jellyseerr results section.
+     * Creates the main Seerr results section.
      * @param {Array} results - Array of search result items.
-     * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} isSeerrOnlyMode - Whether the filter is active.
+     * @param {boolean} isSeerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Section element.
      */
@@ -997,9 +997,9 @@
     }
 
     /**
-     * Creates an individual Jellyseerr result card.
-     * @param {Object} item - Search result item from Jellyseerr API.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * Creates an individual Seerr result card.
+     * @param {Object} item - Search result item from Seerr API.
+     * @param {boolean} isSeerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Card element.
      */
@@ -1008,7 +1008,7 @@
         const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
         const titleText = item.title || item.name;
-        // Resolve Jellyseerr URL based on mappings or fallback to base URL
+        // Resolve Seerr URL based on mappings or fallback to base URL
         const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
@@ -1340,8 +1340,8 @@
     }
 
     /**
-     * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Jellyseerr poster.
-     * This function is called only if the "Show Elsewhere on Jellyseerr" setting is enabled and a TMDB API key is present.
+     * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Seerr poster.
+     * This function is called only if the "Show Elsewhere on Seerr" setting is enabled and a TMDB API key is present.
      * It retrieves providers based on the default region and filters configured in the Elsewhere plugin settings.
      *
      * @async
@@ -1416,7 +1416,7 @@
      * Configures the request button based on item status and type.
      * @param {HTMLElement} button - Button element to configure.
      * @param {Object} item - Media item data.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} isSeerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     function configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound) {
@@ -2329,9 +2329,9 @@
     };
 
     /**
-     * Updates existing Jellyseerr results in the DOM with fresh data.
+     * Updates existing Seerr results in the DOM with fresh data.
      * @param {Array} newResults - The new array of result items from the API.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
+     * @param {boolean} isSeerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound) {

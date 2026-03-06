@@ -1,5 +1,5 @@
 // /js/jellyseerr/genre-discovery.js
-// Adds "More [Genre]" section to genre list pages using Jellyseerr API
+// Adds "More [Genre]" section to genre list pages using Seerr API
 (function(JE) {
     'use strict';
 

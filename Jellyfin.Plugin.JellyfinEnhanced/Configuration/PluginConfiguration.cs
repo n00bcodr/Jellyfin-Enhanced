@@ -89,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "SkipIntroOutro", Key = "O", Label = "Skip Intro/Outro", Category = "Player" }
             };
 
-            // Jellyseerr Search Settings
+            // Seerr Search Settings
             JellyseerrEnabled = false;
             JellyseerrShowReportButton = false;
             JellyseerrEnable4KRequests = false;
@@ -253,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }
 
-        // Jellyseerr Search Settings
+        // Seerr Search Settings
         public bool JellyseerrEnabled { get; set; }
         public bool JellyseerrShowReportButton { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }

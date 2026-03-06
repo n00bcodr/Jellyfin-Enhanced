@@ -3,17 +3,17 @@
     'use strict';
 
     /**
-     * Main initialization function for Jellyseerr search integration.
+     * Main initialization function for Seerr search integration.
      * This function sets up the state, observers, and event listeners.
      */
     JE.initializeJellyseerrScript = function() {
-        // Early exit if Jellyseerr is disabled in plugin settings
+        // Early exit if Seerr is disabled in plugin settings
         if (!JE.pluginConfig.JellyseerrEnabled) {
-            console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Integration is disabled in plugin settings.');
+            console.log('🪼 Jellyfin Enhanced: Seerr Search: Integration is disabled in plugin settings.');
             return;
         }
 
-        const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr:';
+        const logPrefix = '🪼 Jellyfin Enhanced: Seerr:';
         console.log(`${logPrefix} Initializing...`);
 
         // ================================
@@ -47,7 +47,7 @@
         } = JE.jellyseerrUI;
 
         /**
-         * Toggles between showing all search results vs only Jellyseerr results.
+         * Toggles between showing all search results vs only Seerr results.
          */
         function toggleJellyseerrOnlyMode() {
             isJellyseerrOnlyMode = !isJellyseerrOnlyMode;
@@ -211,7 +211,7 @@
 
         /**
          * Adds collection data and synthetic collection cards to a raw result set.
-         * @param {Array} rawResults Raw search results from Jellyseerr.
+         * @param {Array} rawResults Raw search results from Seerr.
          * @returns {Promise<Array>} Enriched results including collections and badges.
          */
         async function prepareResultsWithCollections(rawResults) {
@@ -302,7 +302,7 @@
                     setupSearchInfiniteScroll(query);
                 }
             } catch (error) {
-                console.warn(`${logPrefix} Failed to refresh Jellyseerr data:`, error);
+                console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
             }
         }
 
@@ -466,7 +466,7 @@
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
                             const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
-                            console.log('Jellyseerr 4K request response:', response);
+                            console.log('Seerr 4K request response:', response);
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
                                 searchResultItem.mediaInfo.status4k = 3;
