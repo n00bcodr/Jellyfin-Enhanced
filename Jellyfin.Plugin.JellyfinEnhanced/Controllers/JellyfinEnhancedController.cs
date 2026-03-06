@@ -152,20 +152,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
-            // Check cache first
-            lock (_userIdCacheLock)
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            bool cacheEnabled = config == null || !config.JellyseerrDisableCache;
+
+            // Check cache first (unless disabled)
+            if (cacheEnabled)
             {
-                if (_userIdCache.TryGetValue(jellyfinUserId, out var cached) &&
-                    DateTime.UtcNow - cached.CachedAt < _userIdCacheTtl)
+                lock (_userIdCacheLock)
                 {
-                    return cached.JellyseerrUserId;
+                    if (_userIdCache.TryGetValue(jellyfinUserId, out var cached) &&
+                        DateTime.UtcNow - cached.CachedAt < _userIdCacheTtl)
+                    {
+                        return cached.JellyseerrUserId;
+                    }
                 }
             }
 
             var user = await GetJellyseerrUser(jellyfinUserId);
             var jellyseerrUserId = user?.Id.ToString();
 
-            if (!string.IsNullOrEmpty(jellyseerrUserId))
+            if (!string.IsNullOrEmpty(jellyseerrUserId) && cacheEnabled)
             {
                 lock (_userIdCacheLock)
                 {
@@ -251,7 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             // Check server-side response cache for cacheable endpoints
-            bool isCacheable = IsCacheableApiPath(apiPath, method);
+            bool isCacheable = IsCacheableApiPath(apiPath, method) && !config.JellyseerrDisableCache;
             var cacheKey = $"{jellyfinUserId}:{apiPath}";
             if (isCacheable)
             {
@@ -1531,6 +1537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
+                config.JellyseerrDisableCache,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,

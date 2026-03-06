@@ -106,6 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrApiKey = "";
             JellyseerrUrlMappings = "";
             ShowCollectionsInSearch = true;
+            JellyseerrDisableCache = false;
 
             // Arr Links Settings
             ArrLinksEnabled = false;
@@ -269,6 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string JellyseerrApiKey { get; set; }
         public string JellyseerrUrlMappings { get; set; }
         public bool ShowCollectionsInSearch { get; set; }
+        public bool JellyseerrDisableCache { get; set; }
 
         // Arr Links Settings
         public bool ArrLinksEnabled { get; set; }
