@@ -907,7 +907,7 @@
 
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'vertical-wrap itemsContainer centered padded-left padded-right';
+        itemsContainer.className = 'vertical-wrap itemsContainer padded-left padded-right';
 
         results.forEach(item => {
             const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
