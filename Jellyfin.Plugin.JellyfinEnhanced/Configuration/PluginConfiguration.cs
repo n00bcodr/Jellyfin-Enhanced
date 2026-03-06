@@ -107,6 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrUrlMappings = "";
             ShowCollectionsInSearch = true;
             JellyseerrDisableCache = false;
+            JellyseerrResponseCacheTtlMinutes = 10;
+            JellyseerrUserIdCacheTtlMinutes = 30;
 
             // Arr Links Settings
             ArrLinksEnabled = false;
@@ -271,6 +273,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string JellyseerrUrlMappings { get; set; }
         public bool ShowCollectionsInSearch { get; set; }
         public bool JellyseerrDisableCache { get; set; }
+        public int JellyseerrResponseCacheTtlMinutes { get; set; }
+        public int JellyseerrUserIdCacheTtlMinutes { get; set; }
 
         // Arr Links Settings
         public bool ArrLinksEnabled { get; set; }

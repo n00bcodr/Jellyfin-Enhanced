@@ -696,6 +696,16 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, all Jellyseerr proxy requests bypass the server-side cache and are fetched fresh from Jellyseerr every time. This is useful for testing but will increase load on your Jellyseerr instance. <b>Not recommended for normal use.</b></div>
+                            <div class="inputContainer" style="margin-bottom: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrResponseCacheTtlMinutes">Response Cache TTL (minutes)</label>
+                                <input id="jellyseerrResponseCacheTtlMinutes" is="emby-input" type="number" min="1" max="1440" value="10"/>
+                                <div class="fieldDescription">How long Jellyseerr API responses (search, discovery, recommendations) are cached. Default: 10 minutes.</div>
+                            </div>
+                            <div class="inputContainer" style="margin-bottom: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrUserIdCacheTtlMinutes">User ID Cache TTL (minutes)</label>
+                                <input id="jellyseerrUserIdCacheTtlMinutes" is="emby-input" type="number" min="1" max="1440" value="30"/>
+                                <div class="fieldDescription">How long the Jellyfin → Jellyseerr user ID mapping is cached. Default: 30 minutes.</div>
+                            </div>
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
@@ -1991,6 +2001,8 @@
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#jellyseerrExcludeBlocklistedItems').checked = !!config.JellyseerrExcludeBlocklistedItems;
                 document.querySelector('#jellyseerrDisableCache').checked = !!config.JellyseerrDisableCache;
+                document.querySelector('#jellyseerrResponseCacheTtlMinutes').value = config.JellyseerrResponseCacheTtlMinutes || 10;
+                document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value = config.JellyseerrUserIdCacheTtlMinutes || 30;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -2160,6 +2172,8 @@
             config.JellyseerrExcludeLibraryItems = document.querySelector('#jellyseerrExcludeLibraryItems').checked;
             config.JellyseerrExcludeBlocklistedItems = document.querySelector('#jellyseerrExcludeBlocklistedItems').checked;
             config.JellyseerrDisableCache = document.querySelector('#jellyseerrDisableCache').checked;
+            config.JellyseerrResponseCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrResponseCacheTtlMinutes').value, 10) || 10;
+            config.JellyseerrUserIdCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value, 10) || 30;
             config.JellyseerrShowNetworkDiscovery = document.querySelector('#jellyseerrShowNetworkDiscovery').checked;
             config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;
             config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;

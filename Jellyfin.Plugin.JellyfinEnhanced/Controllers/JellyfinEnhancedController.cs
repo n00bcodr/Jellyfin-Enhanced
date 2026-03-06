@@ -51,13 +51,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // Cache for Jellyseerr user ID lookups (JellyfinUserId -> JellyseerrUserId)
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
-        private static readonly TimeSpan _userIdCacheTtl = TimeSpan.FromMinutes(30);
         private static readonly object _userIdCacheLock = new();
 
         // Cache for Jellyseerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
-        private static readonly TimeSpan _responseCacheTtl = TimeSpan.FromMinutes(10);
         private static readonly object _responseCacheLock = new();
+
+        private static TimeSpan GetResponseCacheTtl()
+        {
+            var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrResponseCacheTtlMinutes ?? 10;
+            return TimeSpan.FromMinutes(Math.Max(1, minutes));
+        }
+
+        private static TimeSpan GetUserIdCacheTtl()
+        {
+            var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrUserIdCacheTtlMinutes ?? 30;
+            return TimeSpan.FromMinutes(Math.Max(1, minutes));
+        }
 
         private static readonly HashSet<string> BrandingFileNames = new(new[]
         {
@@ -161,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userIdCacheLock)
                 {
                     if (_userIdCache.TryGetValue(jellyfinUserId, out var cached) &&
-                        DateTime.UtcNow - cached.CachedAt < _userIdCacheTtl)
+                        DateTime.UtcNow - cached.CachedAt < GetUserIdCacheTtl())
                     {
                         return cached.JellyseerrUserId;
                     }
@@ -264,7 +274,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_responseCacheLock)
                 {
                     if (_responseCache.TryGetValue(cacheKey, out var cached) &&
-                        DateTime.UtcNow - cached.CachedAt < _responseCacheTtl)
+                        DateTime.UtcNow - cached.CachedAt < GetResponseCacheTtl())
                     {
                         return Content(cached.Content, "application/json");
                     }
@@ -316,7 +326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
                                 {
                                     var staleKeys = _responseCache
-                                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _responseCacheTtl)
+                                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > GetResponseCacheTtl())
                                         .Select(kv => kv.Key)
                                         .ToList();
                                     foreach (var key in staleKeys)
