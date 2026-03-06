@@ -466,7 +466,7 @@
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
                             const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
-                            console.log('Seerr 4K request response:', response);
+                            console.debug(`${logPrefix} Seerr 4K request response:`, response);
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
                                 searchResultItem.mediaInfo.status4k = 3;

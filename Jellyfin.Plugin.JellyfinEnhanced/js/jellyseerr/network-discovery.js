@@ -106,6 +106,7 @@
 
     /**
      * Extracts studio ID from the current URL
+     * @returns {string|null} The studio ID or null if not on a studio page
      */
     function getStudioIdFromUrl() {
         const hash = window.location.hash;
@@ -154,6 +155,8 @@
 
     /**
      * Gets TMDB TV network ID from known networks list
+     * @param {string} networkName - Name of the network to look up
+     * @returns {number|null} TMDB network ID or null if not found
      */
     function getKnownNetworkId(networkName) {
         const key = networkName.toLowerCase().trim();
@@ -299,7 +302,9 @@
     }
 
     /**
-     * Creates cards using shared utility
+     * Creates a document fragment of media cards from results
+     * @param {Array} results - Array of media result objects
+     * @returns {DocumentFragment} Fragment containing rendered card elements
      */
     function createCardsFragment(results) {
         return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });

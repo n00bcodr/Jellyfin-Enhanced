@@ -37,6 +37,7 @@
 
     /**
      * Extracts person ID from the current URL (detail page)
+     * @returns {string|null} The person ID or null if not on a person detail page
      */
     function getPersonIdFromUrl() {
         const hash = window.location.hash;
@@ -250,18 +251,14 @@
     }
 
     /**
-     * Creates cards using shared utility (overflowPortraitCard for person page)
+     * Creates a document fragment of media cards from results
+     * @param {Array} results - Array of media result objects
+     * @returns {DocumentFragment} Fragment containing rendered card elements
      */
     function createCardsFragment(results) {
         return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' });
     }
 
-    /**
-     * Creates the section container with optional filter control
-     * @param {string} title
-     * @param {boolean} showFilter
-     * @param {Function} onFilterChange
-     */
     /**
      * Creates the section container with optional filter and sort controls
      * @param {string} title - Section heading text

@@ -42,6 +42,7 @@
 
     /**
      * Extracts tag name from the current URL
+     * @returns {string|null} The tag name or null if not on a tag page
      */
     function getTagFromUrl() {
         const hash = window.location.hash;
@@ -171,7 +172,9 @@
     }
 
     /**
-     * Creates cards using shared utility
+     * Creates a document fragment of media cards from results
+     * @param {Array} results - Array of media result objects
+     * @returns {DocumentFragment} Fragment containing rendered card elements
      */
     function createCardsFragment(results) {
         return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });

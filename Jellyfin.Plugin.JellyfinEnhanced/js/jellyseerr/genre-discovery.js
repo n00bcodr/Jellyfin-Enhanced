@@ -87,6 +87,7 @@
 
     /**
      * Extracts genre ID from the current URL
+     * @returns {string|null} The genre ID or null if not on a genre page
      */
     function getGenreIdFromUrl() {
         const hash = window.location.hash;
@@ -105,6 +106,7 @@
      * Gets genre information from Jellyfin
      * @param {string} genreId
      * @param {AbortSignal} [signal]
+     * @returns {Promise<Object|null>} Genre info object or null
      */
     async function getGenreInfo(genreId, signal) {
         if (genreInfoCache.has(genreId)) {
@@ -135,6 +137,7 @@
      * Gets TMDB genre IDs from genre name (fetches from TMDB API)
      * @param {string} genreName
      * @param {AbortSignal} [signal]
+     * @returns {Promise<{tv: number|null, movie: number|null}|null>} Genre IDs or null
      */
     async function getTmdbGenreIds(genreName, signal) {
         const cacheKey = genreName.toLowerCase().trim();
@@ -237,7 +240,9 @@
     }
 
     /**
-     * Creates cards using shared utility
+     * Creates a document fragment of media cards from results
+     * @param {Array} results - Array of media result objects
+     * @returns {DocumentFragment} Fragment containing rendered card elements
      */
     function createCardsFragment(results) {
         return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });

@@ -14,8 +14,11 @@
     const OVERRIDE_RULES_TTL = 5 * 60 * 1000; // 5 minutes
 
     /**
-     * Internal fetch helper using request manager when available
-     * Falls back to ApiClient.ajax for compatibility
+     * Internal fetch helper using request manager when available.
+     * Falls back to ApiClient.ajax for compatibility.
+     * @param {string} url - The fully-qualified URL to fetch.
+     * @param {object} [options] - Optional settings (signal, skipCache, skipRetry, cacheKey).
+     * @returns {Promise<any>} - The parsed JSON response.
      */
     async function managedFetch(url, options = {}) {
         const { signal, skipCache = false, skipRetry = false, cacheKey } = options;
@@ -68,7 +71,12 @@
         });
     }
 
-    // TMDB proxy helper
+    /**
+     * Performs a GET request to the TMDB proxy endpoint.
+     * @param {string} path - The TMDB API path (e.g., '/movie/123').
+     * @param {object} [options] - Optional settings (signal, skipCache, skipRetry).
+     * @returns {Promise<any>} - The JSON response from the server.
+     */
     async function tmdbGet(path, options = {}) {
         const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
         const cacheKey = options.skipCache ? null : `tmdb:${path}`;
@@ -683,6 +691,11 @@
 
     /**
      * Fetches related media (similar or recommendations) for a given TMDB ID.
+     * @param {string} mediaType - 'movie' or 'tv'.
+     * @param {number} tmdbId - The TMDB ID.
+     * @param {string} relation - 'similar' or 'recommendations'.
+     * @param {number|object} [pageOrOptions=1] - Page number or options object with page property.
+     * @returns {Promise<{results: Array, page: number, totalPages: number}>}
      */
     async function fetchRelated(mediaType, tmdbId, relation, pageOrOptions = 1) {
         const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
