@@ -681,7 +681,15 @@
                                             <span>Show "More from [Actor]" on person pages</span>
                                         </label>
                                     </div>
-                                    <div class="fieldDescription" style="margin-bottom: 2em;">When viewing an actor/person page, displays their filmography from Seerr including content not in your library.</div>
+                                    <div class="fieldDescription" style="margin-bottom: 1em;">When viewing an actor/person page, displays their filmography from Seerr including content not in your library.</div>
+
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
+                                            <input id="jellyseerrShowCollectionDiscovery" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show missing collection movies on BoxSet pages</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">When viewing a collection/BoxSet page, shows movies from the collection that are not yet in your library with request buttons.</div>
                                 </div>
                             </details>
                         </div>
@@ -1998,6 +2006,7 @@
                 document.querySelector('#jellyseerrShowGenreDiscovery').checked = config.JellyseerrShowGenreDiscovery !== false;
                 document.querySelector('#jellyseerrShowTagDiscovery').checked = config.JellyseerrShowTagDiscovery !== false;
                 document.querySelector('#jellyseerrShowPersonDiscovery').checked = config.JellyseerrShowPersonDiscovery !== false;
+                document.querySelector('#jellyseerrShowCollectionDiscovery').checked = config.JellyseerrShowCollectionDiscovery !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#jellyseerrExcludeBlocklistedItems').checked = !!config.JellyseerrExcludeBlocklistedItems;
                 document.querySelector('#jellyseerrDisableCache').checked = !!config.JellyseerrDisableCache;
@@ -2178,6 +2187,7 @@
             config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;
             config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;
             config.JellyseerrShowPersonDiscovery = document.querySelector('#jellyseerrShowPersonDiscovery').checked;
+            config.JellyseerrShowCollectionDiscovery = document.querySelector('#jellyseerrShowCollectionDiscovery').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');

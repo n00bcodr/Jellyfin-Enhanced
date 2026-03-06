@@ -677,9 +677,9 @@
 
     /**
      * Updates the Seerr icon in the search field based on current state.
-     * @param {boolean} isSeerrActive - If the server is reachable.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
-     * @param {boolean} isSeerrOnlyMode - If the results are filtered.
+     * @param {boolean} isJellyseerrOnlyMode - If the results are filtered.
      * @param {function} onToggleFilter - The function to call to toggle the filter.
      */
     ui.updateJellyseerrIcon = function(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, onToggleFilter) {
@@ -776,8 +776,8 @@
      * Renders Seerr search results into the search page with improved placement logic.
      * @param {Array} results - Array of search result items.
      * @param {string} query - The search query that generated these results.
-     * @param {boolean} isSeerrOnlyMode - Whether the filter is active.
-     * @param {boolean} isSeerrActive - If the server is reachable.
+     * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     ui.renderJellyseerrResults = function(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound) {
@@ -854,8 +854,8 @@
     /**
      * Creates the main Seerr results section.
      * @param {Array} results - Array of search result items.
-     * @param {boolean} isSeerrOnlyMode - Whether the filter is active.
-     * @param {boolean} isSeerrActive - If the server is reachable.
+     * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Section element.
      */
@@ -999,7 +999,7 @@
     /**
      * Creates an individual Seerr result card.
      * @param {Object} item - Search result item from Seerr API.
-     * @param {boolean} isSeerrActive - If the server is reachable.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Card element.
      */
@@ -1416,7 +1416,7 @@
      * Configures the request button based on item status and type.
      * @param {HTMLElement} button - Button element to configure.
      * @param {Object} item - Media item data.
-     * @param {boolean} isSeerrActive - If the server is reachable.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     function configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound) {
@@ -2331,7 +2331,7 @@
     /**
      * Updates existing Seerr results in the DOM with fresh data.
      * @param {Array} newResults - The new array of result items from the API.
-     * @param {boolean} isSeerrActive - If the server is reachable.
+     * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound) {

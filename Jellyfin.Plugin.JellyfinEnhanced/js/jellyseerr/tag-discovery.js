@@ -237,7 +237,10 @@
         cachedMovieResults = [];
         if (itemDeduplicator) itemDeduplicator.clear();
 
-        const signal = currentAbortController?.signal;
+        // Abort previous requests and create a fresh controller to prevent race conditions
+        if (currentAbortController) currentAbortController.abort();
+        currentAbortController = new AbortController();
+        const signal = currentAbortController.signal;
         const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
         try {
@@ -245,7 +248,7 @@
                 fetchTvDiscover(currentKeywordId, 1, signal).then(r => ({ type: 'tv', data: r })),
                 fetchMovieDiscover(currentKeywordId, 1, signal).then(r => ({ type: 'movie', data: r }))
             ]);
-            if (signal?.aborted) return;
+            if (signal.aborted) return;
 
             results.forEach(r => {
                 if (r.type === 'tv') {

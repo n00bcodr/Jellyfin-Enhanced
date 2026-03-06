@@ -100,6 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowGenreDiscovery = true;
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
+            JellyseerrShowCollectionDiscovery = true;
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = false;
             JellyseerrUrls = "";
@@ -264,6 +265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowGenreDiscovery { get; set; }
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }
+        public bool JellyseerrShowCollectionDiscovery { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool JellyseerrExcludeBlocklistedItems { get; set; } = false;
         public bool ShowElsewhereOnJellyseerr { get; set; }

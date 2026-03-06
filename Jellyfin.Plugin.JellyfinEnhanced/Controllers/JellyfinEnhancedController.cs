@@ -306,7 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var request = new HttpRequestMessage(method, requestUri);
                     if (content != null)
                     {
-                        _logger.Info($"Request body: {content}");
+                        _logger.Debug($"Request body: {content}");
                         request.Content = new StringContent(content, Encoding.UTF8, "application/json");
                     }
 
@@ -614,6 +614,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to get studio info for {studioId}: {ex.Message}");
                 return StatusCode(500, new { message = "Failed to get studio info" });
+            }
+        }
+
+        [HttpGet("boxset/{boxsetId}")]
+        [Authorize]
+        public IActionResult GetBoxSetInfo(Guid boxsetId)
+        {
+            try
+            {
+                var boxset = _libraryManager.GetItemById(boxsetId);
+                if (boxset == null || boxset.GetType().Name != "BoxSet")
+                {
+                    return NotFound(new { message = "BoxSet not found" });
+                }
+
+                // Get TMDB collection ID from provider IDs
+                string? tmdbId = null;
+                if (boxset.ProviderIds != null && boxset.ProviderIds.TryGetValue("Tmdb", out var id))
+                {
+                    tmdbId = id;
+                }
+
+                return Ok(new
+                {
+                    id = boxset.Id,
+                    name = boxset.Name,
+                    tmdbId = tmdbId,
+                    type = boxset.GetType().Name
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get boxset info for {boxsetId}: {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get boxset info" });
             }
         }
 
