@@ -899,13 +899,7 @@
 
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
-
-        const isTvMode = document.querySelector('.alphaPicker-tv') !== null;
-        if (isTvMode) {
-            itemsContainer.classList.add('itemsContainer-tv');
-            itemsContainer.classList.add('animatedScrollX');
-        }
+        itemsContainer.className = 'vertical-wrap itemsContainer padded-left padded-right';
 
         results.forEach(item => {
             const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
