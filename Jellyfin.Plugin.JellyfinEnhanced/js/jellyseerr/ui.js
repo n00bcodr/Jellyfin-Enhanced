@@ -908,16 +908,29 @@
     }
         section.appendChild(title);
 
+        const scrollerContainer = document.createElement('div');
+        scrollerContainer.setAttribute('is', 'emby-scroller');
+        scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
+        scrollerContainer.dataset.horizontal = "true";
+        scrollerContainer.dataset.centerfocus = "card";
+
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'vertical-wrap itemsContainer padded-left padded-right';
+        itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+
+        const isTvMode = document.querySelector('.alphaPicker-tv') !== null;
+        if (isTvMode) {
+            itemsContainer.classList.add('itemsContainer-tv');
+            itemsContainer.classList.add('animatedScrollX');
+        }
 
         results.forEach(item => {
             const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
             itemsContainer.appendChild(card);
         });
 
-        section.appendChild(itemsContainer);
+        scrollerContainer.appendChild(itemsContainer);
+        section.appendChild(scrollerContainer);
         return section;
     }
 
