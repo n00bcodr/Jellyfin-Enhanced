@@ -8,20 +8,20 @@
     // Configuration
     const CONFIG = {
         retry: {
-            maxAttempts: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
+            maxAttempts: 2,
+            baseDelayMs: 500,
+            maxDelayMs: 5000,
             jitterFactor: 0.3,
             retryableStatuses: [408, 429, 500, 502, 503, 504],
-            timeoutBudgetMs: 30000
+            timeoutBudgetMs: 15000
         },
         cache: {
-            ttlMs: 5 * 60 * 1000, // 5 minutes
-            maxEntries: 100
+            ttlMs: 30 * 60 * 1000, // 30 minutes - discovery data rarely changes
+            maxEntries: 200
         },
         concurrency: {
-            maxConcurrent: 4,
-            maxQueueSize: 50
+            maxConcurrent: 8,
+            maxQueueSize: 100
         }
     };
 

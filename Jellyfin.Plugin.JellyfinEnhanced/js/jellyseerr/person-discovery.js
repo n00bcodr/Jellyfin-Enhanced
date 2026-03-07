@@ -1,5 +1,5 @@
 // /js/jellyseerr/person-discovery.js
-// Adds "More from [Actor]" section to person detail pages using Jellyseerr API
+// Adds "More from [Actor]" section to person detail pages using Seerr API
 (function(JE) {
     'use strict';
 
@@ -37,6 +37,7 @@
 
     /**
      * Extracts person ID from the current URL (detail page)
+     * @returns {string|null} The person ID or null if not on a person detail page
      */
     function getPersonIdFromUrl() {
         const hash = window.location.hash;
@@ -161,7 +162,7 @@
     }
 
     /**
-     * Fetches person credits from Jellyseerr
+     * Fetches person credits from Seerr
      * @param {number} personId
      * @param {AbortSignal} [signal]
      */
@@ -189,26 +190,55 @@
     }
 
     /**
+     * Sorts results client-side based on current sort mode
+     * @param {Array} results
+     * @returns {Array} new sorted array
+     */
+    function applySortOrder(results) {
+        const sortBy = JE.discoveryFilter?.getSortMode(MODULE_NAME) || '';
+        if (!sortBy) return results; // default order from API (popularity)
+
+        const sorted = [...results];
+        if (sortBy === 'vote_average.desc') {
+            sorted.sort((a, b) => (b.voteAverage || 0) - (a.voteAverage || 0));
+        } else if (sortBy === 'release_date.desc') {
+            sorted.sort((a, b) => {
+                const dateA = a.releaseDate || a.firstAirDate || '';
+                const dateB = b.releaseDate || b.firstAirDate || '';
+                return dateB.localeCompare(dateA);
+            });
+        } else if (sortBy === 'release_date.asc') {
+            sorted.sort((a, b) => {
+                const dateA = a.releaseDate || a.firstAirDate || '';
+                const dateB = b.releaseDate || b.firstAirDate || '';
+                return dateA.localeCompare(dateB);
+            });
+        }
+        return sorted;
+    }
+
+    /**
      * Gets filtered results based on current filter mode
      * @param {string} mode - 'mixed', 'movies', or 'tv'
      * @returns {Array}
      */
     function getFilteredResults(mode) {
+        const sorted = applySortOrder(cachedAllResults);
         const filter = JE.discoveryFilter;
         if (!filter) {
-            return cachedAllResults;
+            return sorted;
         }
 
         if (mode === filter.MODES.MOVIES) {
-            return filter.filterByMediaType(cachedAllResults, mode);
+            return filter.filterByMediaType(sorted, mode);
         }
         if (mode === filter.MODES.TV) {
-            return filter.filterByMediaType(cachedAllResults, mode);
+            return filter.filterByMediaType(sorted, mode);
         }
 
         // Mixed mode - interleave TV and Movies for balanced display
-        const tvResults = cachedAllResults.filter(item => item.mediaType === 'tv');
-        const movieResults = cachedAllResults.filter(item => item.mediaType === 'movie');
+        const tvResults = sorted.filter(item => item.mediaType === 'tv');
+        const movieResults = sorted.filter(item => item.mediaType === 'movie');
         return filter.interleaveArrays(tvResults, movieResults);
     }
 
@@ -221,19 +251,23 @@
     }
 
     /**
-     * Creates cards using shared utility (overflowPortraitCard for person page)
+     * Creates a document fragment of media cards from results
+     * @param {Array} results - Array of media result objects
+     * @returns {DocumentFragment} Fragment containing rendered card elements
      */
     function createCardsFragment(results) {
         return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' });
     }
 
     /**
-     * Creates the section container with optional filter control
-     * @param {string} title
-     * @param {boolean} showFilter
-     * @param {Function} onFilterChange
+     * Creates the section container with optional filter and sort controls
+     * @param {string} title - Section heading text
+     * @param {boolean} showFilter - Whether to show the All/Movies/Series filter
+     * @param {Function} onFilterChange - Callback when filter changes: (newMode) => void
+     * @param {Function} [onSortChange] - Callback when sort changes: () => void
+     * @returns {HTMLElement} The section element
      */
-    function createSectionContainer(title, showFilter, onFilterChange) {
+    function createSectionContainer(title, showFilter, onFilterChange, onSortChange) {
         const section = document.createElement('div');
         section.className = 'verticalSection jellyseerr-person-discovery-section';
         section.setAttribute('data-jellyseerr-person-discovery', 'true');
@@ -241,7 +275,7 @@
 
         // Use shared header helper if available, otherwise create basic header
         if (JE.discoveryFilter?.createSectionHeader) {
-            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange);
+            const header = JE.discoveryFilter.createSectionHeader(title, MODULE_NAME, showFilter, onFilterChange, onSortChange);
             section.appendChild(header);
         } else {
             const titleElement = document.createElement('h2');
@@ -261,6 +295,21 @@
     }
 
     /**
+     * Handles sort change: re-sorts cached results and re-renders
+     */
+    function handleSortChange() {
+        const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
+        const itemsContainer = document.querySelector('.jellyseerr-person-discovery-section .itemsContainer');
+        if (!itemsContainer) return;
+
+        renderChunk(itemsContainer, filterMode, true);
+        cleanupScrollObserver();
+        if (hasMorePages) {
+            setupInfiniteScroll();
+        }
+    }
+
+    /**
      * Re-renders the section with the new filter mode
      * @param {string} newMode
      */
@@ -277,6 +326,11 @@
         }
     }
 
+    /**
+     * Gets the full result set for a given filter mode, falling back to all results if empty.
+     * @param {string} mode - 'mixed', 'movies', or 'tv'
+     * @returns {Array}
+     */
     function getPagedResultsForMode(mode) {
         let results = getFilteredResults(mode);
         if (results.length === 0 && cachedAllResults.length > 0) {
@@ -285,11 +339,18 @@
         return results;
     }
 
+    /**
+     * Renders the next PAGE_SIZE chunk of results into the container.
+     * Used for client-side pagination of the full credits list.
+     * @param {HTMLElement} itemsContainer - The DOM container for cards
+     * @param {string} mode - Current filter mode
+     * @param {boolean} [reset=false] - If true, clears existing cards and resets counter
+     */
     function renderChunk(itemsContainer, mode, reset = false) {
         if (!itemsContainer) return;
 
         if (reset) {
-            itemsContainer.innerHTML = '';
+            while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
             renderedCount = 0;
         }
 
@@ -440,8 +501,9 @@
             // Check if we have both media types
             const hasBoth = hasBothMediaTypes();
 
-            // Always start each section on "All" (mixed) instead of persisting previous choice.
+            // Always start each section on defaults instead of persisting previous choice.
             JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
+            JE.discoveryFilter?.resetSortMode?.(MODULE_NAME);
             // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(MODULE_NAME) || 'mixed';
 
@@ -468,7 +530,7 @@
 
             // Create and insert section
             const sectionTitle = JE.t('discovery_more_from_person', { person: personInfo.name });
-            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange);
+            const section = createSectionContainer(sectionTitle, hasBoth, handleFilterChange, handleSortChange);
             const itemsContainer = section.querySelector('.itemsContainer');
 
             // Seed first page and let seamless scroll load the rest.
@@ -535,6 +597,7 @@
         // Clear cached results
         cachedAllResults = [];
         JE.discoveryFilter?.resetFilterMode?.(MODULE_NAME);
+        JE.discoveryFilter?.resetSortMode?.(MODULE_NAME);
     }
 
     /**

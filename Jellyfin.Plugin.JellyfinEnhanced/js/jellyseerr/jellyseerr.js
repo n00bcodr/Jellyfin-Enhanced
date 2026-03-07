@@ -3,17 +3,17 @@
     'use strict';
 
     /**
-     * Main initialization function for Jellyseerr search integration.
+     * Main initialization function for Seerr search integration.
      * This function sets up the state, observers, and event listeners.
      */
     JE.initializeJellyseerrScript = function() {
-        // Early exit if Jellyseerr is disabled in plugin settings
+        // Early exit if Seerr is disabled in plugin settings
         if (!JE.pluginConfig.JellyseerrEnabled) {
-            console.log('🪼 Jellyfin Enhanced: Jellyseerr Search: Integration is disabled in plugin settings.');
+            console.log('🪼 Jellyfin Enhanced: Seerr Search: Integration is disabled in plugin settings.');
             return;
         }
 
-        const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr:';
+        const logPrefix = '🪼 Jellyfin Enhanced: Seerr:';
         console.log(`${logPrefix} Initializing...`);
 
         // ================================
@@ -28,6 +28,14 @@
         let jellyseerrOriginalPosition = null;
         let refreshInterval = null;
 
+        // Infinite scroll pagination state
+        let searchCurrentPage = 0;
+        let searchTotalPages = 0;
+        let searchIsLoading = false;
+        let searchHasMore = false;
+        const searchScrollState = {};
+        let searchDeduplicator = null;
+
 
         // Destructure modules for easy access
         const { checkUserStatus, search, requestMedia } = JE.jellyseerrAPI;
@@ -39,7 +47,7 @@
         } = JE.jellyseerrUI;
 
         /**
-         * Toggles between showing all search results vs only Jellyseerr results.
+         * Toggles between showing all search results vs only Seerr results.
          */
         function toggleJellyseerrOnlyMode() {
             isJellyseerrOnlyMode = !isJellyseerrOnlyMode;
@@ -93,21 +101,117 @@
         }
 
         /**
-         * Fetches and renders search results.
+         * Resets search pagination state for a new query.
+         */
+        function resetSearchPagination() {
+            searchCurrentPage = 0;
+            searchTotalPages = 0;
+            searchIsLoading = false;
+            searchHasMore = false;
+            if (searchDeduplicator) searchDeduplicator.clear();
+            JE.seamlessScroll?.cleanupInfiniteScroll(searchScrollState);
+        }
+
+        /**
+         * Fetches and renders search results (page 1), then sets up infinite scroll.
          * @param {string} query The search query.
          */
         async function fetchAndRenderResults(query) {
-            const data = await search(query);
-            let results = await prepareResultsWithCollections(data.results || []);
+            resetSearchPagination();
+            searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+
+            const data = await search(query, 1);
+            let results = data.results || [];
+            searchCurrentPage = data.page || 1;
+            searchTotalPages = data.totalPages || 1;
+            searchHasMore = searchCurrentPage < searchTotalPages;
+
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+            if (searchDeduplicator) searchDeduplicator.filter(results);
+
             if (results.length > 0) {
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+
+                // Enrich with collections in the background, then re-render
+                prepareResultsWithCollections(results).then(enrichedResults => {
+                    if (lastProcessedQuery !== query) return;
+                    if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
+                    if (enrichedResults.length > results.length) {
+                        renderJellyseerrResults(enrichedResults, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+                    }
+                }).catch(() => {});
+
+                // Set up infinite scroll if more pages exist
+                if (searchHasMore) {
+                    setupSearchInfiniteScroll(query);
+                }
             }
         }
 
         /**
+         * Loads the next page of search results and appends cards to the container.
+         * @param {string} query The current search query.
+         */
+        async function loadMoreSearchResults(query) {
+            if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
+
+            searchIsLoading = true;
+            const nextPage = searchCurrentPage + 1;
+
+            try {
+                const data = await search(query, nextPage);
+                if (lastProcessedQuery !== query) return; // query changed during fetch
+
+                let results = data.results || [];
+                searchCurrentPage = data.page || nextPage;
+                searchTotalPages = data.totalPages || searchTotalPages;
+                searchHasMore = searchCurrentPage < searchTotalPages;
+
+                if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+                if (searchDeduplicator) results = searchDeduplicator.filter(results);
+
+                if (results.length > 0) {
+                    const itemsContainer = document.querySelector('.jellyseerr-section .itemsContainer');
+                    if (itemsContainer) {
+                        const fragment = document.createDocumentFragment();
+                        results.forEach(item => {
+                            const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
+                            fragment.appendChild(card);
+                        });
+                        itemsContainer.appendChild(fragment);
+                    }
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.warn(`${logPrefix} Failed to load more search results:`, error);
+                    // Roll back page on failure
+                    searchHasMore = true;
+                }
+                throw error; // Re-throw for seamlessScroll retry handling
+            } finally {
+                searchIsLoading = false;
+            }
+        }
+
+        /**
+         * Sets up the infinite scroll observer for search results.
+         * @param {string} query The current search query.
+         */
+        function setupSearchInfiniteScroll(query) {
+            if (!JE.seamlessScroll) return;
+
+            JE.seamlessScroll.setupInfiniteScroll(
+                searchScrollState,
+                '.jellyseerr-section',
+                () => loadMoreSearchResults(query),
+                () => searchHasMore,
+                () => searchIsLoading
+            );
+        }
+
+        /**
          * Adds collection data and synthetic collection cards to a raw result set.
-         * @param {Array} rawResults Raw search results from Jellyseerr.
+         * @param {Array} rawResults Raw search results from Seerr.
          * @returns {Promise<Array>} Enriched results including collections and badges.
          */
         async function prepareResultsWithCollections(rawResults) {
@@ -175,18 +279,30 @@
 
             console.log(`${logPrefix} Refreshing data for query: "${query}"`);
             try {
-                const data = await search(query);
+                resetSearchPagination();
+                searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+
+                const data = await search(query, 1);
                 let results = await prepareResultsWithCollections(data.results || []);
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
 
-                itemsContainer.innerHTML = '';
+                searchCurrentPage = data.page || 1;
+                searchTotalPages = data.totalPages || 1;
+                searchHasMore = searchCurrentPage < searchTotalPages;
+                if (searchDeduplicator) searchDeduplicator.filter(results);
+
+                while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 results.forEach(item => {
                     const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
                     itemsContainer.appendChild(card);
                 });
                 updateJellyseerrResults(results, isJellyseerrActive, jellyseerrUserFound);
+
+                if (searchHasMore) {
+                    setupSearchInfiniteScroll(query);
+                }
             } catch (error) {
-                console.warn(`${logPrefix} Failed to refresh Jellyseerr data:`, error);
+                console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
             }
         }
 
@@ -216,13 +332,15 @@
                             updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, false, toggleJellyseerrOnlyMode);
                         }
                         lastProcessedQuery = latestQuery;
+                        resetSearchPagination();
                         document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                         fetchAndRenderResults(latestQuery);
-                    }, 1000);
+                    }, 300);
                 } else {
                     clearTimeout(debounceTimeout);
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
+                    resetSearchPagination();
                     document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
                 }
             };
@@ -272,6 +390,14 @@
                     isJellyseerrActive = status.active;
                     jellyseerrUserFound = status.userFound;
                     initializePageObserver();
+
+                    // Prefetch TMDB genres in the background for instant discovery
+                    if (isJellyseerrActive && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
+                        Promise.all([
+                            JE.discoveryFilter?.fetchWithManagedRequest?.('/JellyfinEnhanced/tmdb/genres/tv', 'genre', {})?.catch(() => {}),
+                            JE.discoveryFilter?.fetchWithManagedRequest?.('/JellyfinEnhanced/tmdb/genres/movie', 'genre', {})?.catch(() => {})
+                        ]).catch(() => {});
+                    }
                 } else if (Date.now() - startTime > timeout) {
                     console.warn(`${logPrefix} Timed out waiting for user session. Features may be limited.`);
                     initializePageObserver();
@@ -340,7 +466,7 @@
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
                             const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
-                            console.log('Jellyseerr 4K request response:', response);
+                            console.debug(`${logPrefix} Seerr 4K request response:`, response);
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
                                 searchResultItem.mediaInfo.status4k = 3;
