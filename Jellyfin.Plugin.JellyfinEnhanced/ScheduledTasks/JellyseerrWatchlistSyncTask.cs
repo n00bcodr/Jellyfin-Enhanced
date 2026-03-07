@@ -243,8 +243,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     if (usersResponse.TryGetProperty("results", out var usersArray))
                     {
-                        var userCount = usersArray.GetArrayLength();
-                        // _logger.Info($"[Jellyseerr Watchlist Sync] Found {userCount} Jellyseerr users");
+                        // _logger.Info($"[Jellyseerr Watchlist Sync] Found {usersArray.GetArrayLength()} Jellyseerr users");
 
                         // Normalize Jellyfin user ID by removing hyphens for comparison
                         var normalizedJellyfinUserId = jellyfinUserId.Replace("-", "");
@@ -506,8 +505,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 {
                     // Check if this item was already processed for this user
                     var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                    var itemKey = $"{watchlistItem.MediaType}:{watchlistItem.TmdbId}";
-
                     if (processedItems.Items.Any(p => p.TmdbId == watchlistItem.TmdbId && p.MediaType == watchlistItem.MediaType))
                     {
                         return Task.FromResult(WatchlistItemResult.AlreadyProcessed);
