@@ -379,9 +379,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     };
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
-                    var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                    using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                    var response = await httpClient.PostAsync(requestUri, content);
+                    using var response = await httpClient.PostAsync(requestUri, content);
                     var responseContent = await response.Content.ReadAsStringAsync();
 
                     if (response.IsSuccessStatusCode)
