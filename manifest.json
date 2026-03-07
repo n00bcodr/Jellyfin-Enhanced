@@ -9,6 +9,22 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "-",
+        "targetAbi": "10.11.0.0",
+        "version": "11.2.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/11.2.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "A59B019B1400CA6C600DDF1224BCD1CB",
+        "timestamp": "2026-03-07T23:31:15"
+      },
+      {
+        "changelog": "- Critical security update",
+        "targetAbi": "10.10.7.0",
+        "version": "10.11.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/10.11.1.0/Jellyfin.Plugin.JellyfinEnhanced_10.10.7.zip",
+        "checksum": "9C0828014F9E8E93177F147DDD921B8C",
+        "timestamp": "2026-03-07T22:52:52"
+      },
+      {
         "changelog": "- Create pt-BR.json\n - Pause colored ratings polling during playback\n - feat: add cast/actors support for hidden content system ([#390](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/390))\n - Update ratings.css\n - fix(ratings): update South Korea rating selector to KR-19\n - fix: prevent hide icon from appearing on image editor cards\n - Add 'Show Requested Items Only' calendar setting\n - Jellyseerr Rebranding - 1st pass\n - Add en-US and en-GB identical to en\n - Added dutch locale ([#411](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/411))\n - fix: hidden content page and hide button improvements ([#407](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/407))\n - fix(subtitles): disable custom subtitles now respects default subtitle settings ([#414](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/414))\n - Add en-GB/en-US locales and normalize lang codes\n - Add Jellyseerr request API and TV 'Request More'\n - fix: prevent duplicate Jellyseerr requests from auto-season-request ([#418](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/418))\n - Add isAdmin setting and persist admin status\n - Embed Material Symbols Rounded via @font-face",
         "targetAbi": "10.11.0.0",
         "version": "11.1.0.0",
