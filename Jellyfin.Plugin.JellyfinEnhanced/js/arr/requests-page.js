@@ -1018,7 +1018,7 @@
 
   /**
    * Format future release date as relative time
-   * Examples: "today", "tomorrow", "in 7 days", "on 28<sup>th</sup> February"
+   * Examples: "today", "tomorrow", "in 7 days", "on 14th February"
    */
   function formatFutureReleaseDate(dateStr) {
     if (!dateStr) return null;
@@ -1049,12 +1049,16 @@
       const day = date.getDate();
       const month = date.toLocaleString('default', { month: 'long' });
       const suffix = getOrdinalSuffix(day);
-      return labelOn.replace("{date}", `${day}${suffix} ${month}`);
+      return {
+        isHtml: true,
+        text: labelOn.replace("{date}", `${day}${suffix} ${month}`)
+      };
     }
   }
 
   /**
-   * Get ordinal suffix for day number as superscript (1<sup>st</sup>, 2<sup>nd</sup>, etc.)
+   * Get ordinal suffix for day number as superscript (1st, 2nd, etc.)
+   * Returns plain text suffix without HTML tags
    */
   function getOrdinalSuffix(day) {
     if (day > 3 && day < 21) return '<sup>th</sup>';
@@ -1219,6 +1223,16 @@
       watchButton = `<button class="je-request-watch-btn" title="${escapeHtml(playLabel)}" aria-label="${escapeHtml(playLabel)}" data-media-id="${escapeHtml(item.jellyfinMediaId)}">${playIcon}</button>`;
     }
 
+    // Handle release date label - check if it contains HTML
+    let releaseDateHtml = "";
+    if (releaseDateLabel) {
+      if (typeof releaseDateLabel === 'object' && releaseDateLabel.isHtml) {
+        releaseDateHtml = `<span class="je-release-date-chip">${releaseDateLabel.text}</span>`;
+      } else {
+        releaseDateHtml = `<span class="je-release-date-chip">${escapeHtml(releaseDateLabel)}</span>`;
+      }
+    }
+
     return `
             <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${escapeHtml(item.jellyfinMediaId)}"` : ''}>
                 ${posterHtml}
@@ -1229,7 +1243,7 @@
                           <div class="je-request-title">${escapeHtml(item.title || "Unknown")}</div>
                           ${item.year ? `<span class="je-request-year">(${escapeHtml(item.year)})</span>` : ""}
                         </div>
-                        <span class="je-requests-status-chip ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>${releaseDateLabel ? `<span class="je-release-date-chip">${escapeHtml(releaseDateLabel)}</span>` : ""}
+                        <span class="je-requests-status-chip ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>${releaseDateHtml}
                       </div>
                     </div>
                     <div class="je-request-meta">
