@@ -64,37 +64,6 @@ jobs:
             echo "No vulnerable packages found."
           fi
 
-  # JavaScript/TypeScript security audit
-  npm-audit:
-    name: NPM Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Check for package.json
-        id: check-package
-        run: |
-          if [ -f "package.json" ]; then
-            echo "has-package=true" >> $GITHUB_OUTPUT
-          else
-            echo "has-package=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Install dependencies
-        if: steps.check-package.outputs.has-package == 'true'
-        run: npm ci || npm install
-
-      - name: Run npm audit
-        if: steps.check-package.outputs.has-package == 'true'
-        run: npm audit --audit-level=moderate
-        continue-on-error: true
-
   # SARIF upload for GitHub Security tab
   upload-sarif:
     name: Upload SARIF Results
