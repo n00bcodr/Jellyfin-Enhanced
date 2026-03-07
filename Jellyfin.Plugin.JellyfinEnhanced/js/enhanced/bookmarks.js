@@ -19,10 +19,6 @@
     }
   }
 
-  const bookmarks = {
-    markers: [] // Visual markers for current video
-  };
-
   const escapeHtml = JE.escapeHtml;
 
   /**

@@ -8,9 +8,9 @@
     const WATCHPROGRESS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
     const FILESIZE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
     const LANGUAGE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-    const watchProgressCache = {}; // { [itemId]: { languages: Array, ts: number } }
-    const fileSizeCache = {}; // { [itemId]: { size: number|null, unavailable: boolean, ts: number } }
-    const audioLanguageCache = {}; // { [itemId]: { languages: Array, unavailable: boolean, ts: number } }
+    const watchProgressCache = new Map(); // Map<itemId, { progress: number, totalPlaybackTicks: number, totalRuntimeTicks: number, ts: number }>
+    const fileSizeCache = new Map(); // Map<itemId, { size: number|null, unavailable: boolean, ts: number }>
+    const audioLanguageCache = new Map(); // Map<itemId, { languages: Array, unavailable: boolean, ts: number }>
 
     /**
      * Converts bytes into a human-readable format (e.g., KB, MB, GB).
@@ -62,12 +62,12 @@
         const includeItemTypes = itemTypes.join(',');
 
         let apiUrl = ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=${includeItemTypes}&Recursive=true&SortBy=Random&Limit=100&Fields=ExternalUrls`);
-        
+
         try {
             const response = await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
             if (response && response.Items && response.Items.length > 0) {
                 let items = response.Items;
-                
+
                 if (JE.currentSettings.randomUnwatchedOnly) {
                     items = items.filter(item => {
                         // For movies: check if not played
@@ -85,7 +85,7 @@
                         throw new Error('No unwatched items found in selected libraries.');
                     }
                 }
-                
+
                 const randomIndex = Math.floor(Math.random() * items.length);
                 return items[randomIndex];
             }
@@ -191,7 +191,7 @@
 
         // Check cache first to avoid repeated network calls
         const now = Date.now();
-        const cached = watchProgressCache[itemId];
+        const cached = watchProgressCache.get(itemId);
 
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-watchProgress';
@@ -204,7 +204,7 @@
         placeholder.style.cursor = 'pointer';
         // onClick handler to toggle between percentage and time-based display
         placeholder.addEventListener('click', () => {
-            const watchProgress = watchProgressCache[itemId];
+            const watchProgress = watchProgressCache.get(itemId);
             if (!watchProgress) return;
 
             const div = document.querySelector(`.mediaInfoItem-watchProgress[data-item-id="${itemId}"]`)
@@ -234,7 +234,7 @@
                     }
                 }
             }
-        })
+        });
         // Show loading indicator
         placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
         // Insert first so subsequent observer runs are triggered
@@ -359,12 +359,12 @@
                 placeholder.innerHTML = getIconSpan(watchProgress.progress);
                 placeholder.appendChild(getWatchProgressValue(watchProgress));
 
-                watchProgressCache[itemId] = watchProgress
+                watchProgressCache.set(itemId, watchProgress);
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
-                watchProgressCache[itemId] = { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now };
+                watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
             }
         };
 
@@ -392,7 +392,7 @@
 
         // Check cache first to avoid repeated network calls
         const now = Date.now();
-        const cached = fileSizeCache[itemId];
+        const cached = fileSizeCache.get(itemId);
 
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
@@ -434,16 +434,16 @@
                 if (totalSize > 0) {
                     placeholder.style.verticalAlign = 'middle';
                     placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
-                    fileSizeCache[itemId] = { size: totalSize, unavailable: false, ts: now };
+                    fileSizeCache.set(itemId, { size: totalSize, unavailable: false, ts: now });
                 } else {
                     renderUnavailable();
-                    fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
+                    fileSizeCache.set(itemId, { size: null, unavailable: true, ts: now });
                 }
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching item size for ID %s:', itemId, error);
                 // Keep placeholder with dash to prevent repeated calls
                 renderUnavailable();
-                fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
+                fileSizeCache.set(itemId, { size: null, unavailable: true, ts: now });
             }
         };
 
@@ -635,7 +635,7 @@
         const performFetch = async () => {
             // Check cache first
             const now = Date.now();
-            const cached = audioLanguageCache[itemId];
+            const cached = audioLanguageCache.get(itemId);
             if (cached && (now - cached.ts) < LANGUAGE_CACHE_TTL) {
                 if (cached.unavailable || !cached.languages || cached.languages.length === 0) {
                     renderUnavailable();
@@ -660,7 +660,7 @@
                     } else {
                         // No episodes found
                         renderUnavailable();
-                        audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
+                        audioLanguageCache.set(itemId, { languages: [], unavailable: true, ts: Date.now() });
                         return;
                     }
                 }
@@ -684,15 +684,15 @@
                 if (uniqueLanguages.length > 0) {
                     renderLanguages(uniqueLanguages);
                     // Cache the successful result
-                    audioLanguageCache[itemId] = { languages: uniqueLanguages, unavailable: false, ts: Date.now() };
+                    audioLanguageCache.set(itemId, { languages: uniqueLanguages, unavailable: false, ts: Date.now() });
                 } else {
                     renderUnavailable();
-                    audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
+                    audioLanguageCache.set(itemId, { languages: [], unavailable: true, ts: Date.now() });
                 }
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching audio languages for %s:', itemId, error);
                 renderUnavailable();
-                audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
+                audioLanguageCache.set(itemId, { languages: [], unavailable: true, ts: Date.now() });
             }
         };
 
