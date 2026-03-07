@@ -9,6 +9,14 @@
         TV: 'tv'
     };
     const runtimeFilterModes = new Map();
+    const runtimeSortModes = new Map();
+
+    const SORT_OPTIONS = [
+        { value: '', label: 'Popular' },
+        { value: 'vote_average.desc', label: 'Top Rated' },
+        { value: 'release_date.desc', label: 'Newest' },
+        { value: 'release_date.asc', label: 'Oldest' }
+    ];
 
     /**
      * Gets the current filter mode for a module from runtime state.
@@ -40,6 +48,43 @@
      */
     function resetFilterMode(moduleName) {
         runtimeFilterModes.delete(moduleName);
+    }
+
+    /**
+     * Gets the current sort mode for a module.
+     * @param {string} moduleName - e.g., 'genre', 'tag', 'person', 'network'
+     * @returns {string} Sort value (empty string = default/popular)
+     */
+    function getSortMode(moduleName) {
+        return runtimeSortModes.get(moduleName) || '';
+    }
+
+    /**
+     * Gets the sort value adapted for TV endpoints.
+     * TMDB uses first_air_date for TV instead of release_date for movies.
+     * @param {string} moduleName
+     * @returns {string} TV-compatible sort value
+     */
+    function getTvSortMode(moduleName) {
+        const sort = runtimeSortModes.get(moduleName) || '';
+        return sort.replace('release_date', 'first_air_date');
+    }
+
+    /**
+     * Sets the sort mode for a module.
+     * @param {string} moduleName
+     * @param {string} sort - Sort value from SORT_OPTIONS
+     */
+    function setSortMode(moduleName, sort) {
+        runtimeSortModes.set(moduleName, sort);
+    }
+
+    /**
+     * Resets module sort mode back to default (popular).
+     * @param {string} moduleName
+     */
+    function resetSortMode(moduleName) {
+        runtimeSortModes.delete(moduleName);
     }
 
     /**
@@ -207,14 +252,66 @@
     }
 
     /**
-     * Creates a section header with title and optional filter control
+     * Creates the sort control dropdown
+     * @param {string} moduleName
+     * @param {Function} onSortChange - Callback: (newSort) => void
+     * @returns {HTMLElement}
+     */
+    function createSortControl(moduleName, onSortChange) {
+        const currentSort = getSortMode(moduleName);
+
+        const container = document.createElement('div');
+        container.className = 'jellyseerr-discovery-sort';
+        container.style.cssText = 'display:inline-flex;align-items:center;gap:0.4em;font-size:0.85em;margin-left:auto;';
+
+        const label = document.createElement('span');
+        label.textContent = 'Sort:';
+        label.style.cssText = 'color:rgba(255,255,255,0.5);';
+        container.appendChild(label);
+
+        const select = document.createElement('select');
+        select.className = 'jellyseerr-sort-select';
+        select.style.cssText = `
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.85);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: inherit;
+            font-family: inherit;
+            cursor: pointer;
+            outline: none;
+        `;
+
+        SORT_OPTIONS.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            option.style.cssText = 'background:#1a1a2e;color:#fff;';
+            if (currentSort === opt.value) option.selected = true;
+            select.appendChild(option);
+        });
+
+        select.addEventListener('change', () => {
+            const newSort = select.value;
+            setSortMode(moduleName, newSort);
+            if (onSortChange) onSortChange(newSort);
+        });
+
+        container.appendChild(select);
+        return container;
+    }
+
+    /**
+     * Creates a section header with title, optional filter control, and sort dropdown
      * @param {string} title - Section title text
      * @param {string} moduleName - Module name for filter persistence
      * @param {boolean} showFilter - Whether to show the filter control
      * @param {Function} onFilterChange - Callback when filter changes
+     * @param {Function} [onSortChange] - Callback when sort changes
      * @returns {HTMLElement} - The header element
      */
-    function createSectionHeader(title, moduleName, showFilter, onFilterChange) {
+    function createSectionHeader(title, moduleName, showFilter, onFilterChange, onSortChange) {
         const header = document.createElement('div');
         header.className = 'jellyseerr-discovery-header';
         header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;';
@@ -228,6 +325,11 @@
         if (showFilter) {
             const filterControl = createFilterControl(moduleName, onFilterChange);
             header.appendChild(filterControl);
+        }
+
+        if (onSortChange) {
+            const sortControl = createSortControl(moduleName, onSortChange);
+            header.appendChild(sortControl);
         }
 
         return header;
@@ -483,15 +585,21 @@
     // Export utilities
     JE.discoveryFilter = {
         MODES: FILTER_MODES,
+        SORT_OPTIONS,
         getFilterMode,
         setFilterMode,
+        resetFilterMode,
+        getSortMode,
+        getTvSortMode,
+        setSortMode,
+        resetSortMode,
         interleaveArrays,
         filterByMediaType,
         hasBothTypes,
         resultHasBothTypes,
         createFilterControl,
+        createSortControl,
         createSectionHeader,
-        resetFilterMode,
         // Shared utilities
         fetchWithManagedRequest,
         createCardsFragment,

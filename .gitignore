@@ -291,4 +291,30 @@ apiclient/generated
 mono_crash.*.json
 .env
 build.sh
-/.github
+
+#########################
+# Security & Secrets
+#########################
+
+# API Keys and secrets
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.json
+appsettings.*.json
+!appsettings.json
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Security scan results
+*.sarif
+security-report.json
+vulnerability-report.json
+
+# Credentials
+credentials.json
+auth.json

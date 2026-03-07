@@ -507,6 +507,7 @@
                 'jellyseerr/person-discovery.js',
                 'jellyseerr/genre-discovery.js',
                 'jellyseerr/tag-discovery.js',
+                'jellyseerr/collection-discovery.js',
 
                 // tags
                 'tags/genretags.js',

@@ -89,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "SkipIntroOutro", Key = "O", Label = "Skip Intro/Outro", Category = "Player" }
             };
 
-            // Jellyseerr Search Settings
+            // Seerr Search Settings
             JellyseerrEnabled = false;
             JellyseerrShowReportButton = false;
             JellyseerrEnable4KRequests = false;
@@ -100,12 +100,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowGenreDiscovery = true;
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
+            JellyseerrShowCollectionDiscovery = true;
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
             JellyseerrUrlMappings = "";
             ShowCollectionsInSearch = true;
+            JellyseerrDisableCache = false;
+            JellyseerrResponseCacheTtlMinutes = 10;
+            JellyseerrUserIdCacheTtlMinutes = 30;
 
             // Arr Links Settings
             ArrLinksEnabled = false;
@@ -250,7 +254,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }
 
-        // Jellyseerr Search Settings
+        // Seerr Search Settings
         public bool JellyseerrEnabled { get; set; }
         public bool JellyseerrShowReportButton { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }
@@ -261,6 +265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowGenreDiscovery { get; set; }
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }
+        public bool JellyseerrShowCollectionDiscovery { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool JellyseerrExcludeBlocklistedItems { get; set; } = false;
         public bool ShowElsewhereOnJellyseerr { get; set; }
@@ -269,6 +274,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string JellyseerrApiKey { get; set; }
         public string JellyseerrUrlMappings { get; set; }
         public bool ShowCollectionsInSearch { get; set; }
+        public bool JellyseerrDisableCache { get; set; }
+        public int JellyseerrResponseCacheTtlMinutes { get; set; }
+        public int JellyseerrUserIdCacheTtlMinutes { get; set; }
 
         // Arr Links Settings
         public bool ArrLinksEnabled { get; set; }

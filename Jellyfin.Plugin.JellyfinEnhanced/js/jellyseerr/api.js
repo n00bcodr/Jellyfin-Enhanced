@@ -2,15 +2,23 @@
 (function(JE) {
     'use strict';
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr API:';
+    const logPrefix = '🪼 Jellyfin Enhanced: Seerr API:';
     const api = {};
 
     // Cache for user status (shared across all modules)
     let cachedUserStatus = null;
 
+    // Cache for override rules
+    let cachedOverrideRules = null;
+    let overrideRulesCachedAt = 0;
+    const OVERRIDE_RULES_TTL = 5 * 60 * 1000; // 5 minutes
+
     /**
-     * Internal fetch helper using request manager when available
-     * Falls back to ApiClient.ajax for compatibility
+     * Internal fetch helper using request manager when available.
+     * Falls back to ApiClient.ajax for compatibility.
+     * @param {string} url - The fully-qualified URL to fetch.
+     * @param {object} [options] - Optional settings (signal, skipCache, skipRetry, cacheKey).
+     * @returns {Promise<any>} - The parsed JSON response.
      */
     async function managedFetch(url, options = {}) {
         const { signal, skipCache = false, skipRetry = false, cacheKey } = options;
@@ -63,7 +71,12 @@
         });
     }
 
-    // TMDB proxy helper
+    /**
+     * Performs a GET request to the TMDB proxy endpoint.
+     * @param {string} path - The TMDB API path (e.g., '/movie/123').
+     * @param {object} [options] - Optional settings (signal, skipCache, skipRetry).
+     * @returns {Promise<any>} - The JSON response from the server.
+     */
     async function tmdbGet(path, options = {}) {
         const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
         const cacheKey = options.skipCache ? null : `tmdb:${path}`;
@@ -71,7 +84,7 @@
     }
 
     /**
-     * Performs a GET request to the Jellyseerr proxy endpoint.
+     * Performs a GET request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/search?query=...').
      * @param {object} [options] - Optional settings (signal, skipCache, skipRetry).
      * @returns {Promise<any>} - The JSON response from the server.
@@ -83,15 +96,39 @@
     }
 
     /**
-     * Performs a POST request to the Jellyseerr proxy endpoint.
+     * Performs a POST request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/request').
      * @param {object} body - The JSON body to send with the request.
      * @returns {Promise<any>} - The server's response.
      */
     async function post(path, body) {
+        const url = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${path}`);
+
+        if (JE.requestManager) {
+            const fetchFn = async () => {
+                const response = await JE.requestManager.fetchWithRetry(
+                    url,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
+                            'X-Emby-Token': ApiClient.accessToken(),
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    },
+                    { ...JE.requestManager.CONFIG.retry, maxAttempts: 1 }
+                );
+                const text = await response.text();
+                return text ? JSON.parse(text) : {};
+            };
+            return JE.requestManager.withConcurrencyLimit(fetchFn);
+        }
+
         return ApiClient.ajax({
             type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${path}`),
+            url: url,
             data: JSON.stringify(body),
             contentType: 'application/json',
             headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() }
@@ -99,7 +136,7 @@
     }
 
     /**
-     * Checks if the Jellyseerr server is active and if the current user is linked.
+     * Checks if the Seerr server is active and if the current user is linked.
      * Caches the result to avoid repeated API calls.
      * @returns {Promise<{active: boolean, userFound: boolean}>}
      */
@@ -128,19 +165,20 @@
     };
 
     /**
-     * Performs a search against the Jellyseerr API.
+     * Performs a search against the Seerr API.
      * @param {string} query - The search term.
-     * @returns {Promise<{results: Array}>}
+     * @param {number} [page=1] - Page number for pagination.
+     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.search = async function(query) {
+    api.search = async function(query, page = 1) {
         try {
-            const data = await get(`/search?query=${encodeURIComponent(query)}`);
+            const lang = (navigator.language || 'en').split('-')[0];
+            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`);
 
-            // Filter out people results before returning
+            // Filter out people results before returning (immutable — don't mutate cached response)
             if (data.results) {
-                data.results = data.results.filter(result => result.mediaType !== 'person');
-                // Update the totalResults count to reflect filtered results
-                data.totalResults = data.results.length;
+                const filteredResults = data.results.filter(result => result.mediaType !== 'person');
+                return { ...data, results: filteredResults, totalResults: filteredResults.length };
             }
 
             return data;
@@ -157,15 +195,30 @@
      */
     api.fetchMovieCollection = async function(tmdbId) {
         try {
-            const res = await tmdbGet(`/movie/${tmdbId}`);
-            const belongs = res?.belongs_to_collection || res?.belongsToCollection;
-            if (belongs && (belongs.id || belongs.tmdbId)) {
+            // Try Seerr movie detail first (includes collection field directly)
+            const jellyseerrRes = await get(`/movie/${tmdbId}`);
+            if (jellyseerrRes?.collection) {
+                const c = jellyseerrRes.collection;
                 return {
-                    id: belongs.id || belongs.tmdbId,
-                    name: belongs.name,
-                    posterPath: belongs.poster_path || belongs.posterPath,
-                    backdropPath: belongs.backdrop_path || belongs.backdropPath
+                    id: c.id,
+                    name: c.name,
+                    posterPath: c.posterPath,
+                    backdropPath: c.backdropPath
                 };
+            }
+
+            // Fallback to TMDB proxy
+            if (JE.pluginConfig?.TmdbEnabled) {
+                const res = await tmdbGet(`/movie/${tmdbId}`);
+                const belongs = res?.belongs_to_collection || res?.belongsToCollection;
+                if (belongs && (belongs.id || belongs.tmdbId)) {
+                    return {
+                        id: belongs.id || belongs.tmdbId,
+                        name: belongs.name,
+                        posterPath: belongs.poster_path || belongs.posterPath,
+                        backdropPath: belongs.backdrop_path || belongs.backdropPath
+                    };
+                }
             }
             return null;
         } catch (error) {
@@ -180,28 +233,22 @@
      * @returns {Promise<Array>}
      */
     api.addCollections = async function(results) {
-        // Early exit if TMDB is not configured - prevents slow/failing API calls
-        if (!JE.pluginConfig?.TmdbEnabled) {
-            console.debug(`${logPrefix} TMDB not configured, skipping collection data`);
-            return results;
-        }
+        if (!results || results.length === 0) return results;
 
-        const movieResults = (results || []).filter(item => item.mediaType === 'movie');
-        await Promise.all(movieResults.map(async (movie) => {
+        return Promise.all(results.map(async (item) => {
+            if (item.mediaType !== 'movie') return item;
             try {
-                const collection = await api.fetchMovieCollection(movie.id);
-                if (collection) {
-                    movie.collection = collection;
-                }
+                const collection = await api.fetchMovieCollection(item.id);
+                if (collection) return { ...item, collection };
             } catch (e) {
                 // ignore per-movie errors
             }
+            return item;
         }));
-        return results;
     };
 
     /**
-     * Fetches detailed information for a specific TV show from Jellyseerr.
+     * Fetches detailed information for a specific TV show from Seerr.
      * @param {number} tmdbId - The TMDB ID of the TV show.
      * @returns {Promise<object|null>}
      */
@@ -215,39 +262,34 @@
     };
 
     /**
-     * Fetches override rules from Jellyseerr.
+     * Fetches override rules from Seerr.
      * @returns {Promise<Array>}
      */
     api.fetchOverrideRules = async function() {
+        if (cachedOverrideRules !== null && Date.now() - overrideRulesCachedAt < OVERRIDE_RULES_TTL) {
+            return cachedOverrideRules;
+        }
         try {
             const rules = await get('/overrideRule');
-            return Array.isArray(rules) ? rules : [];
+            cachedOverrideRules = Array.isArray(rules) ? rules : [];
+            overrideRulesCachedAt = Date.now();
+            return cachedOverrideRules;
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch override rules:`, error);
-            return [];
+            return cachedOverrideRules || [];
         }
     };
 
     /**
-     * Gets the current Jellyseerr user ID from the user status.
-     * @returns {Promise<string|null>} - Jellyseerr user ID or null if not found.
+     * Gets the current Seerr user ID from the user status.
+     * @returns {Promise<string|null>} - Seerr user ID or null if not found.
      */
     api.getCurrentJellyseerrUserId = async function() {
         try {
-            // We can get this from the existing user-status endpoint
-            const status = await get('/user-status');
-            if (status && status.userFound) {
-                // We need to fetch the actual user ID - let's get it from the users endpoint
-                const users = await get('/user?take=1000');
-                if (users && users.results) {
-                    const jellyfinUserId = ApiClient.getCurrentUserId();
-                    const matchingUser = users.results.find(u => u.jellyfinUserId === jellyfinUserId);
-                    return matchingUser ? matchingUser.id.toString() : null;
-                }
-            }
-            return null;
+            const status = await api.checkUserStatus();
+            return (status && status.jellyseerrUserId) ? String(status.jellyseerrUserId) : null;
         } catch (error) {
-            console.warn(`${logPrefix} Failed to get current Jellyseerr user ID:`, error);
+            console.warn(`${logPrefix} Failed to get current Seerr user ID:`, error);
             return null;
         }
     };
@@ -358,7 +400,7 @@
                         settings.rootFolder = rule.rootFolder;
                     }
                     if (rule.tags) {
-                        // Convert tags to array format that Jellyseerr expects
+                        // Convert tags to array format that Seerr expects
                         if (Array.isArray(rule.tags)) {
                             settings.tags = rule.tags;
                         } else if (typeof rule.tags === 'string') {
@@ -403,9 +445,13 @@
             }
         }
 
-        const body = { mediaType, mediaId: parseInt(tmdbId), ...advancedSettings };
-        if (mediaType === 'tv') body.seasons = "all";
-        if (is4k) body.is4k = true;
+        const body = {
+            mediaType,
+            mediaId: parseInt(tmdbId),
+            ...advancedSettings,
+            ...(mediaType === 'tv' ? { seasons: 'all' } : {}),
+            ...(is4k ? { is4k: true } : {})
+        };
 
         const result = await post('/request', body);
 
@@ -457,7 +503,7 @@
     };
 
     /**
-     * Fetches existing issues for a Jellyseerr media (by TMDB id + type).
+     * Fetches existing issues for a Seerr media (by TMDB id + type).
      * @param {number|string} tmdbId
      * @param {'movie'|'tv'} mediaType
      * @param {object} [options]
@@ -518,22 +564,24 @@
         try {
             const servers = await get(`/${serverType}`);
             const serverList = Array.isArray(servers) ? servers : [servers];
-            const validServers = [];
 
-            for (const server of serverList) {
-                if (!server || typeof server.id !== 'number') continue;
-                try {
-                    const details = await get(`/${serverType}/${server.id}`);
-                    server.qualityProfiles = details.profiles || [];
-                    server.rootFolders = details.rootFolders || [];
-                    validServers.push(server);
-                } catch (e) {
-                    console.error(`${logPrefix} Could not fetch details for ${serverType} server ID ${server.id}:`, e);
-                    server.qualityProfiles = [];
-                    server.rootFolders = [];
-                    validServers.push(server);
-                }
-            }
+            const validServers = await Promise.all(
+                serverList
+                    .filter(server => server && typeof server.id === 'number')
+                    .map(async (server) => {
+                        try {
+                            const details = await get(`/${serverType}/${server.id}`);
+                            return {
+                                ...server,
+                                qualityProfiles: details.profiles || [],
+                                rootFolders: details.rootFolders || []
+                            };
+                        } catch (e) {
+                            console.error(`${logPrefix} Could not fetch details for ${serverType} server ID ${server.id}:`, e);
+                            return { ...server, qualityProfiles: [], rootFolders: [] };
+                        }
+                    })
+            );
             return { servers: validServers, tags: [] };
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch ${serverType} servers:`, error);
@@ -543,7 +591,7 @@
 
 
     /**
-     * Checks if partial series requests are enabled in Jellyseerr settings.
+     * Checks if partial series requests are enabled in Seerr settings.
      * @returns {Promise<boolean>} - True if partial requests are enabled, false otherwise.
      */
     api.isPartialRequestsEnabled = async function() {
@@ -587,28 +635,28 @@
     };
 
     /**
-     * Reports an issue for a media item to Jellyseerr.
+     * Reports an issue for a media item to Seerr.
      * @param {number} mediaId - The TMDB/TVDB ID of the media.
      * @param {string} mediaType - 'movie' or 'tv'.
      * @param {string} problemType - Type of issue (e.g., 'no_season', 'episode_missing', etc.).
      * @param {string} [message=''] - Optional description of the issue.
-     * @returns {Promise<any>} - The response from Jellyseerr.
+     * @returns {Promise<any>} - The response from Seerr.
      */
     /**
-     * Maps problem types to Jellyseerr issue types and season/episode info
-     * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
+     * Maps problem types to Seerr issue types and season/episode info
+     * Seerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)
      */
     // NOTE: Previous mappings for textual problem types were removed —
     // the current implementation expects a numeric issueType (1..4)
     // to be provided by the UI. Keep logic in `api.reportIssue` that
-    // parses the numeric value and forwards it to Jellyseerr.
+    // parses the numeric value and forwards it to Seerr.
 
     api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
 
-            // Fetch the correct internal media id from Jellyseerr
+            // Fetch the correct internal media id from Seerr
 
             let apiResult = null;
             if (mediaType === 'movie') {
@@ -633,7 +681,7 @@
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
             const result = await post('/issue', body);
-            console.debug(`${logPrefix} Issue reported for Jellyseerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
+            console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {
             console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
@@ -642,79 +690,32 @@
     };
 
     /**
-     * Fetches similar movies for a given TMDB ID.
-     * @param {number} tmdbId - The TMDB ID of the movie.
-     * @param {number|object} pageOrOptions - Page number or options object.
-     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
+     * Fetches related media (similar or recommendations) for a given TMDB ID.
+     * @param {string} mediaType - 'movie' or 'tv'.
+     * @param {number} tmdbId - The TMDB ID.
+     * @param {string} relation - 'similar' or 'recommendations'.
+     * @param {number|object} [pageOrOptions=1] - Page number or options object with page property.
+     * @returns {Promise<{results: Array, page: number, totalPages: number}>}
      */
-    api.fetchSimilarMovies = async function(tmdbId, pageOrOptions = 1) {
+    async function fetchRelated(mediaType, tmdbId, relation, pageOrOptions = 1) {
         const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
         const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            return await get(`/movie/${tmdbId}/similar?page=${page}`, options);
+            return await get(`/${mediaType}/${tmdbId}/${relation}?page=${page}`, options);
         } catch (error) {
             if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Failed to fetch similar movies for TMDB ID ${tmdbId}:`, error);
+            console.error(`${logPrefix} Failed to fetch ${relation} ${mediaType} for TMDB ID ${tmdbId}:`, error);
             return { results: [], page: 1, totalPages: 0, totalResults: 0 };
         }
-    };
+    }
+
+    api.fetchSimilarMovies = (tmdbId, pageOrOptions) => fetchRelated('movie', tmdbId, 'similar', pageOrOptions);
+    api.fetchRecommendedMovies = (tmdbId, pageOrOptions) => fetchRelated('movie', tmdbId, 'recommendations', pageOrOptions);
+    api.fetchSimilarTvShows = (tmdbId, pageOrOptions) => fetchRelated('tv', tmdbId, 'similar', pageOrOptions);
+    api.fetchRecommendedTvShows = (tmdbId, pageOrOptions) => fetchRelated('tv', tmdbId, 'recommendations', pageOrOptions);
 
     /**
-     * Fetches recommended movies for a given TMDB ID.
-     * @param {number} tmdbId - The TMDB ID of the movie.
-     * @param {number|object} pageOrOptions - Page number or options object.
-     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
-     */
-    api.fetchRecommendedMovies = async function(tmdbId, pageOrOptions = 1) {
-        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
-        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
-        try {
-            return await get(`/movie/${tmdbId}/recommendations?page=${page}`, options);
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Failed to fetch recommended movies for TMDB ID ${tmdbId}:`, error);
-            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
-        }
-    };
-
-    /**
-     * Fetches similar TV shows for a given TMDB ID.
-     * @param {number} tmdbId - The TMDB ID of the TV show.
-     * @param {number|object} pageOrOptions - Page number or options object.
-     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
-     */
-    api.fetchSimilarTvShows = async function(tmdbId, pageOrOptions = 1) {
-        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
-        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
-        try {
-            return await get(`/tv/${tmdbId}/similar?page=${page}`, options);
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Failed to fetch similar TV shows for TMDB ID ${tmdbId}:`, error);
-            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
-        }
-    };
-
-    /**
-     * Fetches recommended TV shows for a given TMDB ID.
-     * @param {number} tmdbId - The TMDB ID of the TV show.
-     * @param {number|object} pageOrOptions - Page number or options object.
-     * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
-     */
-    api.fetchRecommendedTvShows = async function(tmdbId, pageOrOptions = 1) {
-        const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
-        const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
-        try {
-            return await get(`/tv/${tmdbId}/recommendations?page=${page}`, options);
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Failed to fetch recommended TV shows for TMDB ID ${tmdbId}:`, error);
-            return { results: [], page: 1, totalPages: 0, totalResults: 0 };
-        }
-    };
-
-    /**
-     * Fetches detailed information for a specific movie from Jellyseerr.
+     * Fetches detailed information for a specific movie from Seerr.
      * @param {number} tmdbId - The TMDB ID of the movie.
      * @returns {Promise<object|null>}
      */
@@ -728,7 +729,7 @@
     };
 
     /**
-     * Fetches collection details from Jellyseerr.
+     * Fetches collection details from Seerr.
      * @param {number} collectionId - The TMDB collection ID.
      * @returns {Promise<object|null>}
      */
@@ -742,10 +743,25 @@
     };
 
     /**
-     * Resolves the Jellyseerr base URL based on URL mappings or falls back to the default base URL.
+     * Fetches genre slider data (genres with backdrop images) from Seerr.
+     * @param {'movie'|'tv'} mediaType
+     * @returns {Promise<Array>}
+     */
+    api.fetchGenreSlider = async function(mediaType) {
+        const type = mediaType === 'movie' ? 'movie' : 'tv';
+        try {
+            return await get(`/discover/genreslider/${type}`);
+        } catch (error) {
+            console.error(`${logPrefix} Failed to fetch genre slider for ${type}:`, error);
+            return [];
+        }
+    };
+
+    /**
+     * Resolves the Seerr base URL based on URL mappings or falls back to the default base URL.
      * This function checks if there are URL mappings configured and matches the current Jellyfin server URL
-     * against the mappings to determine the appropriate Jellyseerr URL.
-     * @returns {string} - The resolved Jellyseerr base URL (without trailing slash), or empty string if none configured.
+     * against the mappings to determine the appropriate Seerr URL.
+     * @returns {string} - The resolved Seerr base URL (without trailing slash), or empty string if none configured.
      */
     api.resolveJellyseerrBaseUrl = function() {
         let baseUrl = '';

@@ -3,7 +3,7 @@
     'use strict';
 
     const ui = {};
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr UI:';
+    const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
     const escapeHtml = JE.escapeHtml;
 
     // State variables managed by the main jellyseerr.js, but used by UI functions
@@ -328,7 +328,7 @@
     // ================================
 
     /**
-     * Adds main CSS styles for Jellyseerr integration.
+     * Adds main CSS styles for Seerr integration.
      */
     ui.addMainStyles = function() {
         const styleId = 'jellyseerr-styles';
@@ -338,7 +338,7 @@
         style.textContent = `
             /* LAYOUT & ICONS */
             .jellyseerr-section { margin-bottom: 1em; }
-            .jellyseerr-section .itemsContainer { white-space: nowrap; }
+            .jellyseerr-section .itemsContainer { }
             #jellyseerr-search-icon { position: absolute; right: 10px; top: 68%; transform: translateY(-50%); user-select: none; z-index: 10; transition: filter .2s, opacity .2s, transform .2s; }
             .inputContainer { position: relative !important; }
             .jellyseerr-icon { width: 30px; height: 30px; filter: drop-shadow(2px 2px 6px rgba(0,0,0,0.8)); }
@@ -416,7 +416,7 @@
                 overflow: visible !important;
             }
             .jellyseerr-card .cardBox { overflow: visible !important; }
-            .jellyseerr-section .scrollSlider { overflow: visible !important; }
+            .jellyseerr-section .vertical-wrap { overflow: visible !important; }
 
             /* Library item styling */
             .jellyseerr-card-in-library .cardText-first a {
@@ -679,7 +679,7 @@
     // ================================
 
     /**
-     * Updates the Jellyseerr icon in the search field based on current state.
+     * Updates the Seerr icon in the search field based on current state.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @param {boolean} isJellyseerrOnlyMode - If the results are filtered.
@@ -776,7 +776,7 @@
     }
 
     /**
-     * Renders Jellyseerr search results into the search page with improved placement logic.
+     * Renders Seerr search results into the search page with improved placement logic.
      * @param {Array} results - Array of search result items.
      * @param {string} query - The search query that generated these results.
      * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
@@ -798,24 +798,17 @@
 
         const primarySectionKeywords = ['movies', 'shows', 'film', 'serier', 'filme', 'serien', 'películas', 'series', 'films', 'séries', 'serie tv'];
 
-        let attempts = 0;
-        const maxAttempts = 75; // ~15 seconds
-
-        const injectionInterval = setInterval(() => {
-            attempts++;
+        function injectSection() {
             const noResultsMessage = searchPage.querySelector('.noItemsMessage');
             const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
-            const hasContent = allSections.length > 0;
 
-            if ((hasContent || noResultsMessage) || attempts >= maxAttempts) {
-                clearInterval(injectionInterval);
+            if (noResultsMessage) {
+                noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
+                noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
+                return true;
+            }
 
-                if (noResultsMessage) {
-                    noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
-                    noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
-                    return;
-                }
-
+            if (allSections.length > 0) {
                 let lastPrimarySection = null;
                 for (let i = allSections.length - 1; i >= 0; i--) {
                     const section = allSections[i];
@@ -833,15 +826,36 @@
                     if (resultsContainer) {
                         resultsContainer.prepend(sectionToInject);
                     } else {
-                        searchPage.appendChild(sectionToInject); // Fallback
+                        searchPage.appendChild(sectionToInject);
                     }
                 }
+                return true;
             }
-        }, 200);
+
+            return false;
+        }
+
+        // Try immediate injection first
+        if (!injectSection()) {
+            // Use MutationObserver for faster detection than polling
+            let observer = null;
+            const timeoutId = setTimeout(() => {
+                if (observer) observer.disconnect();
+                injectSection(); // Force inject after timeout
+            }, 3000);
+
+            observer = new MutationObserver(() => {
+                if (injectSection()) {
+                    observer.disconnect();
+                    clearTimeout(timeoutId);
+                }
+            });
+            observer.observe(searchPage, { childList: true, subtree: true });
+        }
     };
 
     /**
-     * Creates the main Jellyseerr results section.
+     * Creates the main Seerr results section.
      * @param {Array} results - Array of search result items.
      * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
@@ -894,29 +908,16 @@
     }
         section.appendChild(title);
 
-        const scrollerContainer = document.createElement('div');
-        scrollerContainer.setAttribute('is', 'emby-scroller');
-        scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
-        scrollerContainer.dataset.horizontal = "true";
-        scrollerContainer.dataset.centerfocus = "card";
-
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
-
-        const isTvMode = document.querySelector('.alphaPicker-tv') !== null;
-        if (isTvMode) {
-            itemsContainer.classList.add('itemsContainer-tv');
-            itemsContainer.classList.add('animatedScrollX');
-        }
+        itemsContainer.className = 'vertical-wrap itemsContainer padded-left padded-right';
 
         results.forEach(item => {
             const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
             itemsContainer.appendChild(card);
         });
 
-        scrollerContainer.appendChild(itemsContainer);
-        section.appendChild(scrollerContainer);
+        section.appendChild(itemsContainer);
         return section;
     }
 
@@ -999,8 +1000,8 @@
     }
 
     /**
-     * Creates an individual Jellyseerr result card.
-     * @param {Object} item - Search result item from Jellyseerr API.
+     * Creates an individual Seerr result card.
+     * @param {Object} item - Search result item from Seerr API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      * @returns {HTMLElement} - Card element.
@@ -1011,7 +1012,7 @@
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
         // Escape API-sourced values before interpolation into search card HTML
         const titleText = escapeHtml(item.title || item.name);
-        // Resolve Jellyseerr URL based on mappings or fallback to base URL
+        // Resolve Seerr URL based on mappings or fallback to base URL
         const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
@@ -1343,8 +1344,8 @@
     }
 
     /**
-     * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Jellyseerr poster.
-     * This function is called only if the "Show Elsewhere on Jellyseerr" setting is enabled and a TMDB API key is present.
+     * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Seerr poster.
+     * This function is called only if the "Show Elsewhere on Seerr" setting is enabled and a TMDB API key is present.
      * It retrieves providers based on the default region and filters configured in the Elsewhere plugin settings.
      *
      * @async
@@ -2333,7 +2334,7 @@
     };
 
     /**
-     * Updates existing Jellyseerr results in the DOM with fresh data.
+     * Updates existing Seerr results in the DOM with fresh data.
      * @param {Array} newResults - The new array of result items from the API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
