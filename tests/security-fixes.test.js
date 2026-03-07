@@ -23,6 +23,11 @@ const CONTROLLER_PATH = path.join(__dirname, '..', 'Jellyfin.Plugin.JellyfinEnha
 let passed = 0;
 let failed = 0;
 
+/**
+ * Records a test result and prints a pass/fail indicator to stdout.
+ * @param {boolean} condition - Whether the assertion passed.
+ * @param {string} message - Description of the assertion.
+ */
 function assert(condition, message) {
     if (condition) {
         passed++;
@@ -186,11 +191,11 @@ console.log('\n--- Collection modal API data escaping ---');
 
 const jellyseerrUi = fs.readFileSync(path.join(JS_DIR, 'jellyseerr', 'ui.js'), 'utf8');
 
-assert(jellyseerrUi.includes('JE.escapeHtml(movie.title)'),
+assert(jellyseerrUi.includes('escapeHtml(movie.title)'),
     'jellyseerr/ui.js: movie.title is escaped in collection modal');
-assert(jellyseerrUi.includes('JE.escapeHtml(movie.id)'),
+assert(jellyseerrUi.includes('escapeHtml(movie.id)'),
     'jellyseerr/ui.js: movie.id is escaped in collection modal');
-assert(jellyseerrUi.includes('JE.escapeHtml(poster)'),
+assert(jellyseerrUi.includes('escapeHtml(poster)'),
     'jellyseerr/ui.js: poster URL is escaped in collection modal');
 
 // 7. Authorization hardening
@@ -215,13 +220,13 @@ assert(controllerCs.includes('if (!IsAdminUser())') && controllerCs.includes('re
 // ---------------------------------------------------------------------------
 console.log('\n--- Season request modal API data escaping ---');
 
-assert(jellyseerrUi.includes('JE.escapeHtml(season.name'),
+assert(jellyseerrUi.includes('escapeHtml(season.name'),
     'jellyseerr/ui.js: season.name is escaped in season modal');
-assert(jellyseerrUi.includes('JE.escapeHtml(season.airDate'),
+assert(jellyseerrUi.includes('escapeHtml(season.airDate'),
     'jellyseerr/ui.js: season.airDate is escaped in season modal');
-assert(jellyseerrUi.includes('JE.escapeHtml(season.episodeCount'),
+assert(jellyseerrUi.includes('escapeHtml(season.episodeCount'),
     'jellyseerr/ui.js: season.episodeCount is escaped in season modal');
-assert(jellyseerrUi.includes('JE.escapeHtml(seasonNumber)'),
+assert(jellyseerrUi.includes('escapeHtml(seasonNumber)'),
     'jellyseerr/ui.js: seasonNumber is escaped in data attribute');
 
 // ---------------------------------------------------------------------------

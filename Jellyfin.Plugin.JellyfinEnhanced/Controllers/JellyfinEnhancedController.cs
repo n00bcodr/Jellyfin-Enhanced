@@ -1268,6 +1268,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            // Non-admin users receive an empty config object rather than a 403 so that the
+            // client-side plugin initialises without error but never sees sensitive fields.
             if (!IsAdminUser())
             {
                 return new JsonResult(new { });
@@ -1506,6 +1508,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
+        /// <summary>
+        /// Validates that the authenticated user is allowed to access the requested user's configuration.
+        /// Non-admin users may only access their own config; admins may access any user's config.
+        /// </summary>
+        /// <param name="requestedUserId">The user ID from the route parameter.</param>
+        /// <param name="authorizedUserId">On success, the validated user ID in N-format (no dashes).</param>
+        /// <returns>An error <see cref="IActionResult"/> if access is denied, or <c>null</c> if authorized.</returns>
         private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
         {
             authorizedUserId = string.Empty;
@@ -3306,6 +3315,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return NotFound();
                 }
 
+                // Only serve image responses to prevent the proxy from being abused
+                // to relay arbitrary content types (defence-in-depth against SSRF).
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
                 if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
                 {

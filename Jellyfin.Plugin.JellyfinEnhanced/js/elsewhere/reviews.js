@@ -28,6 +28,12 @@
 
         const escapeHtml = JE.escapeHtml;
 
+        /**
+         * Converts markdown text to safe HTML. Escapes raw HTML before applying
+         * markdown transforms so that API-sourced review content cannot inject tags.
+         * @param {string} text - Raw markdown text from TMDB reviews.
+         * @returns {string} HTML string safe for innerHTML assignment.
+         */
         function parseMarkdown(text) {
             if (!text) return '';
 

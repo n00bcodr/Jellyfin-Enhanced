@@ -145,6 +145,12 @@
             overflow: 'hidden'
         });
 
+        /**
+         * Converts a markdown string to safe HTML. Escapes raw HTML before applying
+         * markdown transforms so that API-sourced text cannot inject tags.
+         * @param {string} text - Raw markdown text (may contain untrusted content).
+         * @returns {string} HTML string safe for innerHTML assignment.
+         */
         const markdownToHtml = (text) => {
             if (!text) return '';
             // Escape all HTML first so raw tags like <script> or <img onerror=...>

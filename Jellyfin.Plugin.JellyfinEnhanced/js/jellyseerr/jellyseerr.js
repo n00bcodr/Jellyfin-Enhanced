@@ -362,6 +362,7 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
+                        // Escape API error before display to prevent reflected XSS
                         JE.toast(escapeHtml(errorMessage), 4000);
                         item.disabled = false;
                         item.innerHTML = `<span>Request in 4K</span>`;
@@ -409,6 +410,7 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
+                        // Escape API error before innerHTML to prevent reflected XSS
                         button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUI.icons.error}`;
                         button.classList.add('jellyseerr-button-error');
                     }

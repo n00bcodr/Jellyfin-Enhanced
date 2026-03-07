@@ -6,13 +6,6 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr UI:';
     const escapeHtml = JE.escapeHtml;
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
     // State variables managed by the main jellyseerr.js, but used by UI functions
     let jellyseerrHoverPopover = null;
     let jellyseerrHoverLock = false;
@@ -147,6 +140,8 @@
             ...(item.mediaInfo?.downloadStatus4k || [])
         ];
 
+        // Download status fields originate from the Jellyseerr API and must be
+        // escaped before interpolation into HTML to prevent stored XSS.
         if (allDownloads.length === 0) {
             console.debug(`${logPrefix} No download status found`);
             return null;
@@ -1014,6 +1009,7 @@
         const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
         const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
+        // Escape API-sourced values before interpolation into search card HTML
         const titleText = escapeHtml(item.title || item.name);
         // Resolve Jellyseerr URL based on mappings or fallback to base URL
         const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
@@ -1633,8 +1629,9 @@
                             if (error.status === 404) {
                                 errorMessage = JE.t('jellyseerr_btn_user_not_found');
                             } else if (error.responseJSON?.message) {
-                                errorMessage = escapeHtml(error.responseJSON.message);
+                                errorMessage = error.responseJSON.message;
                             }
+                            // Escape API-sourced error message before inserting into HTML
                             mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
                             mainButton.classList.add('jellyseerr-button-error');
                         }
@@ -2102,13 +2099,13 @@
             const checkboxDisabled = !partialRequestsEnabled || !canRequest;
 
             seasonItem.innerHTML = `
-                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${JE.escapeHtml(seasonNumber)}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
+                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${escapeHtml(seasonNumber)}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
                 <div class="jellyseerr-season-info">
-                    <div class="jellyseerr-season-name">${JE.escapeHtml(season.name || `Season ${seasonNumber}`)}</div>
-                    <div class="jellyseerr-season-meta">${JE.escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}</div>
+                    <div class="jellyseerr-season-name">${escapeHtml(season.name || `Season ${seasonNumber}`)}</div>
+                    <div class="jellyseerr-season-meta">${escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}</div>
                 </div>
-                <div class="jellyseerr-season-episodes">${JE.escapeHtml(season.episodeCount || 0)} ep</div>
-                <div class="jellyseerr-season-status jellyseerr-season-status-${JE.escapeHtml(statusClass)}">${JE.escapeHtml(statusText)}</div>
+                <div class="jellyseerr-season-episodes">${escapeHtml(season.episodeCount || 0)} ep</div>
+                <div class="jellyseerr-season-status jellyseerr-season-status-${escapeHtml(statusClass)}">${escapeHtml(statusText)}</div>
             `;
 
             if(existingCheckbox) {
@@ -2202,15 +2199,15 @@
                 <div class="jellyseerr-collection-movie-row">
                     <input type="checkbox"
                            class="jellyseerr-collection-checkbox"
-                           id="movie-${JE.escapeHtml(movie.id)}"
-                           data-tmdb-id="${JE.escapeHtml(movie.id)}"
+                           id="movie-${escapeHtml(movie.id)}"
+                           data-tmdb-id="${escapeHtml(movie.id)}"
                            ${isDisabled ? 'disabled' : 'checked'}>
-                    <img src="${JE.escapeHtml(poster)}" alt="${JE.escapeHtml(movie.title)}" class="jellyseerr-collection-movie-poster">
+                    <img src="${escapeHtml(poster)}" alt="${escapeHtml(movie.title)}" class="jellyseerr-collection-movie-poster">
                     <div class="jellyseerr-collection-movie-details">
-                        <div class="title">${JE.escapeHtml(movie.title)}</div>
-                        <div class="year">${JE.escapeHtml(year)}</div>
+                        <div class="title">${escapeHtml(movie.title)}</div>
+                        <div class="year">${escapeHtml(year)}</div>
                     </div>
-                    <div class="jellyseerr-season-status jellyseerr-season-status-${JE.escapeHtml(statusClass)}">${JE.escapeHtml(statusText)}</div>
+                    <div class="jellyseerr-season-status jellyseerr-season-status-${escapeHtml(statusClass)}">${escapeHtml(statusText)}</div>
                 </div>
             `;
         }).join('');

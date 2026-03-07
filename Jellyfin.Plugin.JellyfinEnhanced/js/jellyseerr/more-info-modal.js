@@ -829,6 +829,7 @@ function buildSingle4kButton(data) {
             await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
+            // Escape API error message before innerHTML to prevent reflected XSS
             const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
             button.disabled = false;
             button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>`;
@@ -884,6 +885,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
                 mainButton.disabled = false;
+                // Escape API error before innerHTML to prevent reflected XSS
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
                 mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUIIcons?.error || ''}`;
                 mainButton.classList.add('jellyseerr-button-error');
@@ -976,6 +978,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 mountRequestedChip(data, 'movie', false);
             } catch (error) {
                 requestButton.disabled = false;
+                // Escape API error before innerHTML to prevent reflected XSS
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
                 requestButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUIIcons?.error || ''}`;
                 requestButton.classList.add('jellyseerr-button-error');
@@ -1411,8 +1414,6 @@ function showError(message) {
     console.error(message);
     alert(message);
 }
-
-const escapeHtml = JE.escapeHtml;
 
 /**
  * Format currency
