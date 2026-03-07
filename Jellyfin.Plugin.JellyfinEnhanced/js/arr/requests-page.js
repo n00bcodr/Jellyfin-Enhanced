@@ -1154,41 +1154,41 @@
 
     let posterHtml = "";
     if (item.posterUrl) {
-      posterHtml = `<img class="je-request-poster" src="${item.posterUrl}" alt="" loading="lazy">`;
+      posterHtml = `<img class="je-request-poster" src="${escapeHtml(item.posterUrl)}" alt="" loading="lazy">`;
     } else {
       posterHtml = `<div class="je-request-poster placeholder"></div>`;
     }
 
     let avatarHtml = "";
     if (item.requestedByAvatar) {
-      avatarHtml = `<img class="je-request-avatar" src="${item.requestedByAvatar}" alt="" onerror="this.style.display='none'">`;
+      avatarHtml = `<img class="je-request-avatar" src="${escapeHtml(item.requestedByAvatar)}" alt="" onerror="this.style.display='none'">`;
     }
 
     let watchButton = "";
     if (item.jellyfinMediaId && (item.mediaStatus === "Available" || item.mediaStatus === "Partially Available")) {
       const playLabel = JE.t?.("jellyseerr_btn_available") || "Available";
       const playIcon = '<span class="material-icons">play_arrow</span>';
-      watchButton = `<button class="je-request-watch-btn" title="${playLabel}" aria-label="${playLabel}" data-media-id="${item.jellyfinMediaId}">${playIcon}</button>`;
+      watchButton = `<button class="je-request-watch-btn" title="${escapeHtml(playLabel)}" aria-label="${escapeHtml(playLabel)}" data-media-id="${escapeHtml(item.jellyfinMediaId)}">${playIcon}</button>`;
     }
 
     return `
-            <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${item.jellyfinMediaId}"` : ''}>
+            <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${escapeHtml(item.jellyfinMediaId)}"` : ''}>
                 ${posterHtml}
                 <div class="je-request-info">
                     <div class="je-request-header">
                       <div>
                         <div class="je-request-title-row">
-                          <div class="je-request-title">${item.title || "Unknown"}</div>
-                          ${item.year ? `<span class="je-request-year">(${item.year})</span>` : ""}
+                          <div class="je-request-title">${escapeHtml(item.title || "Unknown")}</div>
+                          ${item.year ? `<span class="je-request-year">(${escapeHtml(item.year)})</span>` : ""}
                         </div>
-                        <span class="je-requests-status-chip ${status.className}">${status.label}</span>${releaseDateLabel ? `<span class="je-release-date-chip">${releaseDateLabel}</span>` : ""}
+                        <span class="je-requests-status-chip ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>${releaseDateLabel ? `<span class="je-release-date-chip">${escapeHtml(releaseDateLabel)}</span>` : ""}
                       </div>
                     </div>
                     <div class="je-request-meta">
                       <div class="je-request-meta-left">
                         ${avatarHtml}
-                        <span>${item.requestedBy || "Unknown"}</span>
-                        ${item.createdAt ? `<span>&#8226;</span><span>${formatRelativeDate(item.createdAt)}</span>` : ""}
+                        <span>${escapeHtml(item.requestedBy || "Unknown")}</span>
+                        ${item.createdAt ? `<span>&#8226;</span><span>${escapeHtml(formatRelativeDate(item.createdAt))}</span>` : ""}
                       </div>
                     </div>
                     ${watchButton ? `<div class="je-request-actions">${watchButton}</div>` : ""}
@@ -1282,15 +1282,15 @@
     const jellyfinMediaId = getIssueJellyfinMediaId(issue);
 
     const posterHtml = posterUrl
-      ? `<img class="je-request-poster" src="${posterUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      ? `<img class="je-request-poster" src="${escapeHtml(posterUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
       : `<div class="je-request-poster placeholder"></div>`;
 
     const avatarHtml = avatarUrl
-      ? `<img class="je-request-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'">`
+      ? `<img class="je-request-avatar" src="${escapeHtml(avatarUrl)}" alt="" onerror="this.style.display='none'">`
       : "";
 
     return `
-      <div class="je-issue-card" ${jellyfinMediaId ? `data-media-id="${jellyfinMediaId}"` : ""}>
+      <div class="je-issue-card" ${jellyfinMediaId ? `data-media-id="${escapeHtml(jellyfinMediaId)}"` : ""}>
         ${posterHtml}
         <div class="je-issue-info">
           <div class="je-issue-title-row">

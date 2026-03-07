@@ -207,6 +207,33 @@ assert(jellyseerrUi.includes('JE.escapeHtml(seasonNumber)'),
     'jellyseerr/ui.js: seasonNumber is escaped in data attribute');
 
 // ---------------------------------------------------------------------------
+// 6c. Request/issue card avatar and API data escaping
+// ---------------------------------------------------------------------------
+console.log('\n--- Request/issue card avatar and API data escaping ---');
+
+const requestsPage = fs.readFileSync(path.join(JS_DIR, 'arr', 'requests-page.js'), 'utf8');
+
+// Request card: avatar, poster, title, requestedBy, jellyfinMediaId all escaped
+assert(requestsPage.includes('escapeHtml(item.requestedByAvatar)'),
+    'requests-page.js: requestedByAvatar is escaped');
+assert(requestsPage.includes('escapeHtml(item.posterUrl)'),
+    'requests-page.js: posterUrl is escaped in request card');
+assert(requestsPage.includes('escapeHtml(item.title'),
+    'requests-page.js: item.title is escaped in request card');
+assert(requestsPage.includes('escapeHtml(item.requestedBy'),
+    'requests-page.js: item.requestedBy is escaped');
+assert(requestsPage.includes('escapeHtml(item.jellyfinMediaId)'),
+    'requests-page.js: jellyfinMediaId is escaped in request card');
+
+// Issue card: avatar, poster, jellyfinMediaId escaped
+assert(requestsPage.includes('escapeHtml(avatarUrl)'),
+    'requests-page.js: avatarUrl is escaped in issue card');
+assert(requestsPage.includes('escapeHtml(posterUrl)'),
+    'requests-page.js: posterUrl is escaped in issue card');
+assert(requestsPage.includes('escapeHtml(jellyfinMediaId)'),
+    'requests-page.js: jellyfinMediaId is escaped in issue card');
+
+// ---------------------------------------------------------------------------
 // 7. escapeHtml consolidation — no local definitions remain
 // ---------------------------------------------------------------------------
 console.log('\n--- escapeHtml consolidation ---');
