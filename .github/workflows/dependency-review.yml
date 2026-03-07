@@ -22,7 +22,5 @@ jobs:
           fail-on-severity: moderate
           # Comment on the PR with the results
           comment-summary-in-pr: always
-          # Deny licenses that are not compatible
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
-          # Allow specific licenses
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD
+          # Deny licenses that are not compatible with Jellyfin
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.0, LGPL-2.1, LGPL-3.0
