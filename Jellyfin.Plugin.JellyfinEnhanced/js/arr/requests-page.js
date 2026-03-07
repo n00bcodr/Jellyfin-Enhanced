@@ -64,6 +64,7 @@
   const logPrefix = '🪼 Jellyfin Enhanced: Requests Page:';
 
   const issueMediaCache = new Map();
+  const avatarObjectUrlCache = new Map();
 
   const escapeHtml = JE.escapeHtml;
 
@@ -615,6 +616,53 @@
     };
   }
 
+  function clearAvatarObjectUrlCache() {
+    avatarObjectUrlCache.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
+    avatarObjectUrlCache.clear();
+  }
+
+  async function resolveProtectedAvatarUrl(avatarUrl) {
+    if (!avatarUrl) return "";
+    if (!avatarUrl.startsWith("/JellyfinEnhanced/proxy/avatar")) return avatarUrl;
+
+    if (avatarObjectUrlCache.has(avatarUrl)) {
+      return avatarObjectUrlCache.get(avatarUrl);
+    }
+
+    try {
+      const response = await fetch(avatarUrl, { headers: getAuthHeaders() });
+      if (!response.ok) return "";
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      avatarObjectUrlCache.set(avatarUrl, objectUrl);
+      return objectUrl;
+    } catch {
+      return "";
+    }
+  }
+
+  function hydrateAvatarImages(container) {
+    const avatarImgs = container.querySelectorAll("img.je-request-avatar[data-avatar-src]");
+    avatarImgs.forEach(async (img) => {
+      const sourceUrl = img.getAttribute("data-avatar-src");
+      if (!sourceUrl) {
+        img.style.display = "none";
+        return;
+      }
+
+      const resolvedUrl = await resolveProtectedAvatarUrl(sourceUrl);
+      if (!img.isConnected) return;
+
+      if (!resolvedUrl) {
+        img.style.display = "none";
+        return;
+      }
+
+      img.src = resolvedUrl;
+      img.style.display = "";
+    });
+  }
+
   /**
    * Fetch download queue from backend
    */
@@ -1161,7 +1209,7 @@
 
     let avatarHtml = "";
     if (item.requestedByAvatar) {
-      avatarHtml = `<img class="je-request-avatar" src="${escapeHtml(item.requestedByAvatar)}" alt="" onerror="this.style.display='none'">`;
+      avatarHtml = `<img class="je-request-avatar" data-avatar-src="${escapeHtml(item.requestedByAvatar)}" alt="" loading="lazy" style="display:none" onerror="this.style.display='none'">`;
     }
 
     let watchButton = "";
@@ -1286,7 +1334,7 @@
       : `<div class="je-request-poster placeholder"></div>`;
 
     const avatarHtml = avatarUrl
-      ? `<img class="je-request-avatar" src="${escapeHtml(avatarUrl)}" alt="" onerror="this.style.display='none'">`
+      ? `<img class="je-request-avatar" data-avatar-src="${escapeHtml(avatarUrl)}" alt="" loading="lazy" style="display:none" onerror="this.style.display='none'">`
       : "";
 
     return `
@@ -1653,7 +1701,9 @@
       html += `</div>`;
     }
 
+    clearAvatarObjectUrlCache();
     container.innerHTML = html;
+    hydrateAvatarImages(container);
 
     // Add event listener for refresh button
     const refreshBtn = container.querySelector('.je-refresh-btn');
@@ -1907,6 +1957,7 @@
 
     state.pageVisible = false;
     state.previousPage = null;
+    clearAvatarObjectUrlCache();
     stopPolling();
     stopLocationWatcher();
   }

@@ -3467,31 +3467,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            // SECURITY: Validate path to prevent SSRF. Only allow known Jellyseerr avatar paths.
-            if (!path.StartsWith("/avatar/", StringComparison.OrdinalIgnoreCase)
-                && !path.StartsWith("/api/v1/avatar/", StringComparison.OrdinalIgnoreCase))
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0]
+                .Trim().TrimEnd('/');
+
+            // Strip query string (?v=timestamp) and fragment — only the path is needed.
+            var avatarPath = path.Trim();
+            var q = avatarPath.IndexOf('?');
+            if (q >= 0) avatarPath = avatarPath[..q];
+            var f = avatarPath.IndexOf('#');
+            if (f >= 0) avatarPath = avatarPath[..f];
+
+            if (!avatarPath.StartsWith('/'))
+                avatarPath = $"/{avatarPath}";
+
+            // Block path traversal, scheme injection, and request smuggling.
+            if (avatarPath.Contains("..") || avatarPath.Contains("://") || avatarPath.Contains("@")
+                || avatarPath.Contains("\r") || avatarPath.Contains("\n")
+                || avatarPath.Contains("%0d", StringComparison.OrdinalIgnoreCase)
+                || avatarPath.Contains("%0a", StringComparison.OrdinalIgnoreCase)
+                || avatarPath.Contains("%00"))
             {
+                _logger.Warning("ProxyAvatar: unsafe characters in path blocked");
                 return BadRequest("Invalid avatar path");
             }
 
-            // Block path traversal, scheme injection, query strings, and request smuggling
-            if (path.Contains("..") || path.Contains("://") || path.Contains("@")
-                || path.Contains("?") || path.Contains("#")
-                || path.Contains("\r") || path.Contains("\n")
-                || path.Contains("%0d", StringComparison.OrdinalIgnoreCase)
-                || path.Contains("%0a", StringComparison.OrdinalIgnoreCase)
-                || path.Contains("%00"))
+            // SSRF guard: only allow known Jellyseerr avatar path prefixes.
+            if (!avatarPath.StartsWith("/avatar/", StringComparison.OrdinalIgnoreCase)
+                && !avatarPath.StartsWith("/avatarproxy/", StringComparison.OrdinalIgnoreCase)
+                && !avatarPath.StartsWith("/api/v1/avatar/", StringComparison.OrdinalIgnoreCase))
             {
+                _logger.Warning($"ProxyAvatar: path not in allowed list '{avatarPath}'");
                 return BadRequest("Invalid avatar path");
             }
 
             try
             {
-                var jellyseerrUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim().TrimEnd('/');
                 var client = _httpClientFactory.CreateClient();
-                var url = $"{jellyseerrUrl}{path}";
+                client.Timeout = TimeSpan.FromSeconds(10); // Add timeout for avatar fetches
 
-                var response = await client.GetAsync(url);
+                var response = await client.GetAsync($"{jellyseerrUrl}{avatarPath}");
                 if (!response.IsSuccessStatusCode)
                 {
                     return NotFound();
@@ -3506,10 +3521,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 var content = await response.Content.ReadAsByteArrayAsync();
+
+                // Add cache headers to reduce repeated fetches
+                Response.Headers["Cache-Control"] = "public, max-age=3600";
+
                 return File(content, contentType);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"ProxyAvatar exception: {ex.Message}");
                 return NotFound();
             }
         }
