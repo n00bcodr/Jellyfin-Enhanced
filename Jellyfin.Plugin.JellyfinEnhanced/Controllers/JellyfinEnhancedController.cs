@@ -917,9 +917,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     catch (Exception ex)
                     {
-                        var errorMsg = $"Error processing user {user.Username}: {ex.Message}";
-                        _logger.Error($"[Manual Watchlist Sync] {errorMsg}");
-                        errors.Add(errorMsg);
+                        _logger.Error($"[Manual Watchlist Sync] Error processing user {user.Username}: {ex.Message}");
+                        errors.Add("Failed to sync watchlist for a user.");
                     }
                 }
 
@@ -936,7 +935,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (Exception ex)
             {
                 _logger.Error($"[Manual Watchlist Sync] Fatal error: {ex}");
-                return StatusCode(500, new { error = ex.Message });
+                return StatusCode(500, new { error = "An internal error occurred during watchlist sync." });
             }
         }
 
@@ -2106,12 +2105,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 _logger.Error($"Permission denied when uploading branding image: {ex.Message}");
-                return StatusCode(403, $"Permission denied: {ex.Message}");
+                return StatusCode(403, "Permission denied when uploading branding image.");
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error uploading branding image: {ex.Message}");
-                return StatusCode(500, $"Error: {ex.Message}");
+                return StatusCode(500, "An error occurred while uploading the branding image.");
             }
         }
 
@@ -2177,12 +2176,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 _logger.Error($"Permission denied when deleting branding image: {ex.Message}");
-                return StatusCode(403, $"Permission denied: {ex.Message}");
+                return StatusCode(403, "Permission denied when deleting branding image.");
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error deleting branding image: {ex.Message}");
-                return StatusCode(500, $"Error: {ex.Message}");
+                return StatusCode(500, "An error occurred while deleting the branding image.");
             }
         }
 
@@ -3265,15 +3264,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Proxy avatar images from Jellyseerr to avoid CORS/mixed content issues.
+        /// Only allows paths that match known Jellyseerr avatar URL patterns.
         /// </summary>
         [HttpGet("proxy/avatar")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
             {
                 return NotFound();
+            }
+
+            // SECURITY: Validate path to prevent SSRF. Only allow known Jellyseerr avatar paths.
+            if (!path.StartsWith("/avatar/", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/v1/avatar/", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Invalid avatar path");
+            }
+
+            // Block path traversal, scheme injection, query strings, and request smuggling
+            if (path.Contains("..") || path.Contains("://") || path.Contains("@")
+                || path.Contains("?") || path.Contains("#")
+                || path.Contains("\r") || path.Contains("\n")
+                || path.Contains("%0d", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("%0a", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("%00"))
+            {
+                return BadRequest("Invalid avatar path");
             }
 
             try
@@ -3288,9 +3306,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return NotFound();
                 }
 
-                var content = await response.Content.ReadAsByteArrayAsync();
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+                if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return NotFound();
+                }
 
+                var content = await response.Content.ReadAsByteArrayAsync();
                 return File(content, contentType);
             }
             catch
