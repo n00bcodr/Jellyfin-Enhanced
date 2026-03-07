@@ -361,7 +361,7 @@
 
                 watchProgressCache[itemId] = watchProgress
             } catch (error) {
-                console.error(`🪼 Jellyfin Enhanced: Error fetching watch progress for ID ${itemId}:`, error);
+                console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
                 watchProgressCache[itemId] = { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now };
@@ -440,7 +440,7 @@
                     fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
                 }
             } catch (error) {
-                console.error(`🪼 Jellyfin Enhanced: Error fetching item size for ID ${itemId}:`, error);
+                console.error('🪼 Jellyfin Enhanced: Error fetching item size for ID %s:', itemId, error);
                 // Keep placeholder with dash to prevent repeated calls
                 renderUnavailable();
                 fileSizeCache[itemId] = { size: null, unavailable: true, ts: now };
@@ -690,7 +690,7 @@
                     audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
                 }
             } catch (error) {
-                console.error(`🪼 Jellyfin Enhanced: Error fetching audio languages for ${itemId}:`, error);
+                console.error('🪼 Jellyfin Enhanced: Error fetching audio languages for %s:', itemId, error);
                 renderUnavailable();
                 audioLanguageCache[itemId] = { languages: [], unavailable: true, ts: Date.now() };
             }
