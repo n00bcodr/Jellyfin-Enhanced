@@ -240,12 +240,6 @@
           margin-top: 0.5em;
         }
         .je-request-meta-left { display: inline-flex; align-items: center; gap: 0.5em; min-width: 0; }
-        .je-request-avatar {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
         .je-request-actions {
             margin-top: 1em;
         }
@@ -938,11 +932,6 @@
       posterHtml = `<div class="je-request-poster placeholder"></div>`;
     }
 
-    let avatarHtml = "";
-    if (item.requestedByAvatar) {
-      avatarHtml = `<img class="je-request-avatar" src="${item.requestedByAvatar}" alt="" onerror="this.style.display='none'">`;
-    }
-
     let watchButton = "";
     if (item.jellyfinMediaId && (item.mediaStatus === "Available" || item.mediaStatus === "Partially Available")) {
       const playLabel = JE.t?.("jellyseerr_btn_available") || "Available";
@@ -965,7 +954,6 @@
                     </div>
                     <div class="je-request-meta">
                       <div class="je-request-meta-left">
-                        ${avatarHtml}
                         <span>${item.requestedBy || "Unknown"}</span>
                         ${item.createdAt ? `<span>&#8226;</span><span>${formatRelativeDate(item.createdAt)}</span>` : ""}
                       </div>

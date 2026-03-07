@@ -2272,14 +2272,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // Get requester info
                         string? displayName = requestedBy?["displayName"]?.Value<string>();
                         string? username = requestedBy?["username"]?.Value<string>();
-                        string? avatar = requestedBy?["avatar"]?.Value<string>();
-
-                        // Proxy avatar through our backend to avoid CORS/mixed content issues
-                        string? avatarUrl = null;
-                        if (!string.IsNullOrEmpty(avatar))
-                        {
-                            avatarUrl = $"/JellyfinEnhanced/proxy/avatar?path={Uri.EscapeDataString(avatar)}";
-                        }
 
                         // Handle createdAt - could be string or DateTime
                         string? createdAtStr = null;
@@ -2300,7 +2292,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             posterUrl = posterUrl,
                             mediaStatus = mediaStatus,
                             requestedBy = displayName ?? username ?? "Unknown",
-                            requestedByAvatar = avatarUrl,
                             createdAt = createdAtStr,
                             jellyfinMediaId = media?["jellyfinMediaId"]?.Value<string>(),
                             digitalReleaseDate = digitalReleaseDate,
@@ -3009,42 +3000,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (requestStatus == 3) return "Declined";
             if (requestStatus == 1) return "Pending";
             return "Processing";
-        }
-
-        /// <summary>
-        /// Proxy avatar images from Jellyseerr to avoid CORS/mixed content issues.
-        /// </summary>
-        [HttpGet("proxy/avatar")]
-        [AllowAnonymous]
-        public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
-            {
-                return NotFound();
-            }
-
-            try
-            {
-                var jellyseerrUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim().TrimEnd('/');
-                var client = _httpClientFactory.CreateClient();
-                var url = $"{jellyseerrUrl}{path}";
-
-                var response = await client.GetAsync(url);
-                if (!response.IsSuccessStatusCode)
-                {
-                    return NotFound();
-                }
-
-                var content = await response.Content.ReadAsByteArrayAsync();
-                var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
-
-                return File(content, contentType);
-            }
-            catch
-            {
-                return NotFound();
-            }
         }
 
         /// <summary>
