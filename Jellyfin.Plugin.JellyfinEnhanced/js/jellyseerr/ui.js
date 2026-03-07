@@ -2094,13 +2094,13 @@
             const checkboxDisabled = !partialRequestsEnabled || !canRequest;
 
             seasonItem.innerHTML = `
-                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${seasonNumber}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
+                <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${JE.escapeHtml(seasonNumber)}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
                 <div class="jellyseerr-season-info">
-                    <div class="jellyseerr-season-name">${season.name || `Season ${seasonNumber}`}</div>
-                    <div class="jellyseerr-season-meta">${season.airDate ? season.airDate.substring(0, 4) : ''}</div>
+                    <div class="jellyseerr-season-name">${JE.escapeHtml(season.name || `Season ${seasonNumber}`)}</div>
+                    <div class="jellyseerr-season-meta">${JE.escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}</div>
                 </div>
-                <div class="jellyseerr-season-episodes">${season.episodeCount || 0} ep</div>
-                <div class="jellyseerr-season-status jellyseerr-season-status-${statusClass}">${statusText}</div>
+                <div class="jellyseerr-season-episodes">${JE.escapeHtml(season.episodeCount || 0)} ep</div>
+                <div class="jellyseerr-season-status jellyseerr-season-status-${JE.escapeHtml(statusClass)}">${JE.escapeHtml(statusText)}</div>
             `;
 
             if(existingCheckbox) {

@@ -164,6 +164,20 @@ assert('[click](vbscript:alert(1))'.match(linkRegex) === null,
 // Verify the actual file uses the safe pattern
 assert(uiJs.includes('(https?:\\/\\/[^)]+)'), 'ui.js: markdownToHtml uses https-only link regex');
 
+// markdownToHtml must escape raw HTML before applying regex transforms
+assert(uiJs.includes('escapeHtml(text)'), 'ui.js: markdownToHtml escapes input before regex transforms');
+assert(uiJs.includes('&gt;\\s*\\[!'), 'ui.js: blockquote regex matches &gt; (escaped >)');
+
+// Simulate the full pipeline: raw HTML in markdown should be neutralised
+const simulatedEscape = escapeHtml('<img src=x onerror=alert(1)>');
+assert(!simulatedEscape.includes('<img'), 'markdownToHtml pipeline: <img> tag is escaped');
+assert(simulatedEscape.includes('&lt;img'), 'markdownToHtml pipeline: <img> becomes &lt;img');
+
+// Markdown syntax should still work after escaping (these chars are not HTML metacharacters)
+assert(escapeHtml('## Heading') === '## Heading', 'markdownToHtml pipeline: ## passes through escapeHtml');
+assert(escapeHtml('**bold**') === '**bold**', 'markdownToHtml pipeline: **bold** passes through escapeHtml');
+assert(escapeHtml('`code`') === '`code`', 'markdownToHtml pipeline: backtick code passes through escapeHtml');
+
 // ---------------------------------------------------------------------------
 // 6. Collection modal escapes API data
 // ---------------------------------------------------------------------------
@@ -177,6 +191,20 @@ assert(jellyseerrUi.includes('JE.escapeHtml(movie.id)'),
     'jellyseerr/ui.js: movie.id is escaped in collection modal');
 assert(jellyseerrUi.includes('JE.escapeHtml(poster)'),
     'jellyseerr/ui.js: poster URL is escaped in collection modal');
+
+// ---------------------------------------------------------------------------
+// 6b. Season request modal escapes API data
+// ---------------------------------------------------------------------------
+console.log('\n--- Season request modal API data escaping ---');
+
+assert(jellyseerrUi.includes('JE.escapeHtml(season.name'),
+    'jellyseerr/ui.js: season.name is escaped in season modal');
+assert(jellyseerrUi.includes('JE.escapeHtml(season.airDate'),
+    'jellyseerr/ui.js: season.airDate is escaped in season modal');
+assert(jellyseerrUi.includes('JE.escapeHtml(season.episodeCount'),
+    'jellyseerr/ui.js: season.episodeCount is escaped in season modal');
+assert(jellyseerrUi.includes('JE.escapeHtml(seasonNumber)'),
+    'jellyseerr/ui.js: seasonNumber is escaped in data attribute');
 
 // ---------------------------------------------------------------------------
 // 7. escapeHtml consolidation — no local definitions remain

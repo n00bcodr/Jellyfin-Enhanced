@@ -147,10 +147,12 @@
 
         const markdownToHtml = (text) => {
             if (!text) return '';
-            return text
-                // Blockquotes with callouts (WARNING, NOTE, etc.)
-                .replace(/^>\s*\[!(WARNING|NOTE|TIP|IMPORTANT)\]\s*\r?\n((?:>.*(?:\r?\n|$))+)/gm, (match, type, content) => {
-                    const noteContent = content.replace(/^>\s?/gm, '');
+            // Escape all HTML first so raw tags like <script> or <img onerror=...>
+            // are neutralised before the markdown regex chain builds its own HTML.
+            return escapeHtml(text)
+                // Blockquotes with callouts — match &gt; since input is now escaped
+                .replace(/^&gt;\s*\[!(WARNING|NOTE|TIP|IMPORTANT)\]\s*\r?\n((?:&gt;.*(?:\r?\n|$))+)/gm, (match, type, content) => {
+                    const noteContent = content.replace(/^&gt;\s?/gm, '');
                     const colors = {
                         WARNING: { border: '#f0ad4e', bg: 'rgba(240, 173, 78, 0.1)', icon: JE.icon(JE.IconName.WARNING) },
                         NOTE: { border: '#00a4dc', bg: 'rgba(0, 164, 220, 0.1)', icon: JE.icon(JE.IconName.NOTE) },
