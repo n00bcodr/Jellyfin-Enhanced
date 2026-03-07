@@ -2194,15 +2194,15 @@
                 <div class="jellyseerr-collection-movie-row">
                     <input type="checkbox"
                            class="jellyseerr-collection-checkbox"
-                           id="movie-${movie.id}"
-                           data-tmdb-id="${movie.id}"
+                           id="movie-${JE.escapeHtml(movie.id)}"
+                           data-tmdb-id="${JE.escapeHtml(movie.id)}"
                            ${isDisabled ? 'disabled' : 'checked'}>
-                    <img src="${poster}" alt="${movie.title}" class="jellyseerr-collection-movie-poster">
+                    <img src="${JE.escapeHtml(poster)}" alt="${JE.escapeHtml(movie.title)}" class="jellyseerr-collection-movie-poster">
                     <div class="jellyseerr-collection-movie-details">
-                        <div class="title">${movie.title}</div>
-                        <div class="year">${year}</div>
+                        <div class="title">${JE.escapeHtml(movie.title)}</div>
+                        <div class="year">${JE.escapeHtml(year)}</div>
                     </div>
-                    <div class="jellyseerr-season-status jellyseerr-season-status-${statusClass}">${statusText}</div>
+                    <div class="jellyseerr-season-status jellyseerr-season-status-${JE.escapeHtml(statusClass)}">${JE.escapeHtml(statusText)}</div>
                 </div>
             `;
         }).join('');
