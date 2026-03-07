@@ -2685,20 +2685,7 @@
     }
   }
 
-  // Escape HTML characters
-  function escapeHtml(text) {
-    if (text === null || text === undefined) {
-      return "";
-    }
-    const map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return String(text).replace(/[&<>"']/g, (m) => map[m]);
-  }
+  const escapeHtml = JE.escapeHtml;
 
   /**
    * Search for an item by provider IDs using the server endpoint.

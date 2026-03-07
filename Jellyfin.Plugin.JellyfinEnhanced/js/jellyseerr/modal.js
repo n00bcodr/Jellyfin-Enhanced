@@ -5,10 +5,7 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr Modal:';
     const modal = {};
 
-    function escapeHtml(str) {
-        if (typeof str !== 'string') return str;
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    }
+    const escapeHtml = JE.escapeHtml;
 
     /**
      * Creates and manages a generic modal for Jellyseerr requests.
@@ -39,12 +36,6 @@
         } else {
             backdropImage = 'linear-gradient(45deg, #3b82f6, #8b5cf6)';
         }
-
-        // Escape DOM-sourced text to prevent XSS when reinterpreted as HTML
-        const safeTitle = escapeHtml(title);
-        const safeSubtitle = escapeHtml(subtitle);
-        const safeCancelLabel = escapeHtml(JE.t('jellyseerr_modal_cancel'));
-        const safeButtonLabel = escapeHtml(buttonText || JE.t('jellyseerr_modal_request'));
 
         // Build modal structure — bodyHtml is intentionally trusted HTML from internal callers
         const contentEl = document.createElement('div');

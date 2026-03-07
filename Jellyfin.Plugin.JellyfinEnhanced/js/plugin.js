@@ -58,6 +58,15 @@
                 this._flush();
             }
         },
+        /**
+         * Escapes HTML special characters to prevent XSS when interpolating into HTML strings.
+         * @param {string} str - The value to escape.
+         * @returns {string} The escaped string safe for HTML interpolation.
+         */
+        escapeHtml: (str) => {
+            if (typeof str !== 'string') return String(str ?? '');
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        },
         // Placeholder functions
         t: (key, params = {}) => { // Actual implementation defined later
             const translations = window.JellyfinEnhanced?.translations || {};

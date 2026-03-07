@@ -6,10 +6,7 @@
 
     const GITHUB_REPO = 'n00bcodr/Jellyfin-Enhanced';
 
-    function escapeHtml(str) {
-        if (typeof str !== 'string') return String(str ?? '');
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    }
+    const escapeHtml = JE.escapeHtml;
 
     /**
      * Helper function to determine if the current page is the video player.
