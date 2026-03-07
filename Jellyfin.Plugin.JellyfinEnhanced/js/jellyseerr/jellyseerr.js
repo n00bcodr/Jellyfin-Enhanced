@@ -14,6 +14,7 @@
         }
 
         const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr:';
+        const escapeHtml = JE.escapeHtml;
         console.log(`${logPrefix} Initializing...`);
 
         // ================================
@@ -361,7 +362,7 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        JE.toast(errorMessage, 4000);
+                        JE.toast(escapeHtml(errorMessage), 4000);
                         item.disabled = false;
                         item.innerHTML = `<span>Request in 4K</span>`;
                     }
@@ -408,7 +409,7 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        button.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUI.icons.error}`;
+                        button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUI.icons.error}`;
                         button.classList.add('jellyseerr-button-error');
                     }
                 }

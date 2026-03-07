@@ -4,6 +4,7 @@
 
     const moreInfoModal = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr More Info:';
+    const escapeHtml = JE.escapeHtml;
 
     let currentModal = null;
 
@@ -830,7 +831,7 @@ function buildSingle4kButton(data) {
         } catch (error) {
             const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
             button.disabled = false;
-            button.innerHTML = `<span>${errorMessage}</span>`;
+            button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>`;
             button.classList.add('jellyseerr-button-error');
         }
     });
@@ -884,7 +885,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             } catch (error) {
                 mainButton.disabled = false;
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
-                mainButton.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUIIcons?.error || ''}`;
+                mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUIIcons?.error || ''}`;
                 mainButton.classList.add('jellyseerr-button-error');
             }
         });
@@ -976,7 +977,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             } catch (error) {
                 requestButton.disabled = false;
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
-                requestButton.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUIIcons?.error || ''}`;
+                requestButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUIIcons?.error || ''}`;
                 requestButton.classList.add('jellyseerr-button-error');
             }
         });

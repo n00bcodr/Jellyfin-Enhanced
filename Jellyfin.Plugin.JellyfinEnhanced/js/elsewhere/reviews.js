@@ -49,8 +49,8 @@
             // Inline code (`code`)
             html = html.replace(/`(.+?)`/g, '<code>$1</code>');
 
-            // Links [text](url)
-            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            // Links [text](url) - only allow http(s) schemes
+            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
             // Auto-link plain URLs (http:// or https://)
             // Match URLs that aren't already inside href attributes
@@ -365,5 +365,4 @@
         });
     };
 })(window.JellyfinEnhanced);
-
 

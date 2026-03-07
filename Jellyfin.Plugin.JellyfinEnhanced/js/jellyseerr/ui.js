@@ -4,6 +4,7 @@
 
     const ui = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr UI:';
+    const escapeHtml = JE.escapeHtml;
 
     // State variables managed by the main jellyseerr.js, but used by UI functions
     let jellyseerrHoverPopover = null;
@@ -1627,7 +1628,7 @@
                             } else if (error.responseJSON?.message) {
                                 errorMessage = error.responseJSON.message;
                             }
-                            mainButton.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
+                            mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
                             mainButton.classList.add('jellyseerr-button-error');
                         }
                     }
@@ -1700,7 +1701,7 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        button.innerHTML = `<span>${errorMessage}</span>${icons.error}`;
+                        button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
                         button.classList.add('jellyseerr-button-error');
                     }
                 }

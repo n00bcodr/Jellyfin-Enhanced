@@ -155,30 +155,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
-            string? jellyfinUserId = null;
-            if (Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
             {
-                jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
-                if (string.IsNullOrEmpty(jellyfinUserId))
-                {
-                    _logger.Warning("Could not find Jellyfin User ID in request headers.");
-                    return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
-                }
-                var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
-
-                if (string.IsNullOrEmpty(jellyseerrUserId))
-                {
-                    _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
-                    return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
-                }
-
-                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
+                _logger.Warning("Could not resolve Jellyfin user ID from the authenticated principal.");
+                return Forbid();
             }
-            else
+
+            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            if (string.IsNullOrEmpty(jellyseerrUserId))
             {
-                _logger.Warning("X-Jellyfin-User-Id header was not present in the request. Aborting.");
-                return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
+                _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
             }
+            httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
 
             int lastStatusCode = 500;
             string lastErrorContent = "Could not connect to any configured Jellyseerr instance.";
@@ -320,15 +310,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             if (!active) return Ok(new { active = false, userFound = false });
 
-            // Get Jellyfin user id from header
-            if (!Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
-                return Ok(new { active = true, userFound = false });
-
-            var jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
             if (string.IsNullOrEmpty(jellyfinUserId))
-            {
                 return Ok(new { active = true, userFound = false });
-            }
             var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             return Ok(new { active = true, userFound = !string.IsNullOrEmpty(jellyseerrUserId) });
         }
@@ -1285,6 +1269,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            if (!IsAdminUser())
+            {
+                return new JsonResult(new { });
+            }
+
             // Determine the first configured Jellyseerr URL (if any) for client-side deep links
             string jellyseerrBaseUrl = string.Empty;
             try
@@ -1802,12 +1791,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetUserHiddenContent(string userId)
         {
-            if (!IsCurrentUserRequest(userId))
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
             {
-                return Forbid();
+                return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json");
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
             return Ok(userConfig);
         }
 
@@ -1816,9 +1806,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserHiddenContent(string userId, [FromBody] UserHiddenContent userConfiguration)
         {
-            if (!IsCurrentUserRequest(userId))
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
             {
-                return Forbid();
+                return authorizationResult;
             }
 
             if (userConfiguration == null)
@@ -1828,43 +1819,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "hidden-content.json", userConfiguration);
-                _logger.Info($"Saved hidden content for user {userId} to hidden-content.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                _logger.Info($"Saved hidden content for user {authorizedUserId} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save hidden content for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save hidden content for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
             }
-        }
-
-        private bool IsCurrentUserRequest(string requestedUserId)
-        {
-            var currentUserId = UserHelper.GetCurrentUserId(User);
-            if (string.IsNullOrWhiteSpace(requestedUserId))
-            {
-                return false;
-            }
-
-            // Some API-key based contexts may not include user claims; keep compatibility.
-            if (currentUserId == null)
-            {
-                return true;
-            }
-
-            // Support both hyphenated and compact user-id formats.
-            var normalizedRequested = requestedUserId.Replace("-", string.Empty, StringComparison.Ordinal)
-                .Trim()
-                .ToLowerInvariant();
-            var normalizedCurrent = currentUserId.Value.ToString("N").ToLowerInvariant();
-            if (string.Equals(normalizedRequested, normalizedCurrent, StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            // Allow administrators to access other users' hidden-content config when needed.
-            return User.IsInRole("Administrator");
         }
 
         [HttpPost("reset-all-users-settings")]

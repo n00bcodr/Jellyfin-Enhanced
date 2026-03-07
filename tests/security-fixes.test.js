@@ -18,6 +18,7 @@ const path = require('path');
 
 const JS_DIR = path.join(__dirname, '..', 'Jellyfin.Plugin.JellyfinEnhanced', 'js');
 const WORKFLOW_DIR = path.join(__dirname, '..', '.github', 'workflows');
+const CONTROLLER_PATH = path.join(__dirname, '..', 'Jellyfin.Plugin.JellyfinEnhanced', 'Controllers', 'JellyfinEnhancedController.cs');
 
 let passed = 0;
 let failed = 0;
@@ -192,8 +193,25 @@ assert(jellyseerrUi.includes('JE.escapeHtml(movie.id)'),
 assert(jellyseerrUi.includes('JE.escapeHtml(poster)'),
     'jellyseerr/ui.js: poster URL is escaped in collection modal');
 
+// 7. Authorization hardening
 // ---------------------------------------------------------------------------
-// 6b. Season request modal escapes API data
+console.log('\n--- Authorization hardening ---');
+
+const controllerCs = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+
+assert(controllerCs.includes('var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();'),
+    'controller: Jellyseerr proxy resolves user from claims');
+assert(!controllerCs.includes('Request.Headers.TryGetValue("X-Jellyfin-User-Id"'),
+    'controller: no caller-controlled Jellyfin user header authorization remains');
+assert(controllerCs.includes('var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);'),
+    'controller: hidden-content endpoints use AuthorizeUserConfigAccess');
+assert(!controllerCs.includes('private bool IsCurrentUserRequest('),
+    'controller: permissive IsCurrentUserRequest helper removed');
+assert(controllerCs.includes('if (!IsAdminUser())') && controllerCs.includes('return new JsonResult(new { });'),
+    'controller: private-config is minimized for non-admin users');
+
+// ---------------------------------------------------------------------------
+// 8. Season request modal escapes API data
 // ---------------------------------------------------------------------------
 console.log('\n--- Season request modal API data escaping ---');
 
@@ -207,13 +225,12 @@ assert(jellyseerrUi.includes('JE.escapeHtml(seasonNumber)'),
     'jellyseerr/ui.js: seasonNumber is escaped in data attribute');
 
 // ---------------------------------------------------------------------------
-// 6c. Request/issue card avatar and API data escaping
+// 9. Request/issue card avatar and API data escaping
 // ---------------------------------------------------------------------------
 console.log('\n--- Request/issue card avatar and API data escaping ---');
 
 const requestsPage = fs.readFileSync(path.join(JS_DIR, 'arr', 'requests-page.js'), 'utf8');
 
-// Request card: avatar, poster, title, requestedBy, jellyfinMediaId all escaped
 assert(requestsPage.includes('escapeHtml(item.requestedByAvatar)'),
     'requests-page.js: requestedByAvatar is escaped');
 assert(requestsPage.includes('escapeHtml(item.posterUrl)'),
@@ -224,8 +241,6 @@ assert(requestsPage.includes('escapeHtml(item.requestedBy'),
     'requests-page.js: item.requestedBy is escaped');
 assert(requestsPage.includes('escapeHtml(item.jellyfinMediaId)'),
     'requests-page.js: jellyfinMediaId is escaped in request card');
-
-// Issue card: avatar, poster, jellyfinMediaId escaped
 assert(requestsPage.includes('escapeHtml(avatarUrl)'),
     'requests-page.js: avatarUrl is escaped in issue card');
 assert(requestsPage.includes('escapeHtml(posterUrl)'),
@@ -234,7 +249,7 @@ assert(requestsPage.includes('escapeHtml(jellyfinMediaId)'),
     'requests-page.js: jellyfinMediaId is escaped in issue card');
 
 // ---------------------------------------------------------------------------
-// 7. escapeHtml consolidation — no local definitions remain
+// 10. escapeHtml consolidation — no local definitions remain
 // ---------------------------------------------------------------------------
 console.log('\n--- escapeHtml consolidation ---');
 
@@ -257,7 +272,16 @@ assert(pluginJs.includes('@param {string} str'), 'plugin.js: escapeHtml has JSDo
 assert(pluginJs.includes('@returns {string}'), 'plugin.js: escapeHtml has JSDoc @returns');
 
 // ---------------------------------------------------------------------------
-// 8. Release notes escaping
+// 11. Review markdown link safety
+// ---------------------------------------------------------------------------
+console.log('\n--- Reviews markdown link safety ---');
+
+const reviewsJs = fs.readFileSync(path.join(JS_DIR, 'elsewhere', 'reviews.js'), 'utf8');
+assert(reviewsJs.includes('\\[([^\\]]+)\\]\\((https?:\\/\\/[^)\\s]+)\\)'),
+    'reviews.js: markdown links only allow http(s) schemes');
+
+// ---------------------------------------------------------------------------
+// 12. Release notes escaping
 // ---------------------------------------------------------------------------
 console.log('\n--- Release notes escaping ---');
 
