@@ -4,6 +4,7 @@
 
     const moreInfoModal = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr More Info:';
+    const escapeHtml = JE.escapeHtml;
 
     let currentModal = null;
 
@@ -828,9 +829,10 @@ function buildSingle4kButton(data) {
             await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
+            // Escape API error message before innerHTML to prevent reflected XSS
             const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
             button.disabled = false;
-            button.innerHTML = `<span>${errorMessage}</span>`;
+            button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>`;
             button.classList.add('jellyseerr-button-error');
         }
     });
@@ -883,8 +885,9 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
                 mainButton.disabled = false;
+                // Escape API error before innerHTML to prevent reflected XSS
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
-                mainButton.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUIIcons?.error || ''}`;
+                mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUIIcons?.error || ''}`;
                 mainButton.classList.add('jellyseerr-button-error');
             }
         });
@@ -975,8 +978,9 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 mountRequestedChip(data, 'movie', false);
             } catch (error) {
                 requestButton.disabled = false;
+                // Escape API error before innerHTML to prevent reflected XSS
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
-                requestButton.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUIIcons?.error || ''}`;
+                requestButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUIIcons?.error || ''}`;
                 requestButton.classList.add('jellyseerr-button-error');
             }
         });
@@ -1409,16 +1413,6 @@ function showError(message) {
     // You can customize this to match your error handling
     console.error(message);
     alert(message);
-}
-
-/**
- * Escape HTML to prevent XSS
- */
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 /**

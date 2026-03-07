@@ -26,12 +26,14 @@
                 });
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        const escapeHtml = JE.escapeHtml;
 
+        /**
+         * Converts markdown text to safe HTML. Escapes raw HTML before applying
+         * markdown transforms so that API-sourced review content cannot inject tags.
+         * @param {string} text - Raw markdown text from TMDB reviews.
+         * @returns {string} HTML string safe for innerHTML assignment.
+         */
         function parseMarkdown(text) {
             if (!text) return '';
 
@@ -53,8 +55,8 @@
             // Inline code (`code`)
             html = html.replace(/`(.+?)`/g, '<code>$1</code>');
 
-            // Links [text](url)
-            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            // Links [text](url) - only allow http(s) schemes
+            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
             // Auto-link plain URLs (http:// or https://)
             // Match URLs that aren't already inside href attributes
@@ -369,5 +371,4 @@
         });
     };
 })(window.JellyfinEnhanced);
-
 

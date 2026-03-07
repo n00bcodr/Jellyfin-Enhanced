@@ -14,6 +14,7 @@
         }
 
         const logPrefix = '🪼 Jellyfin Enhanced: Seerr:';
+        const escapeHtml = JE.escapeHtml;
         console.log(`${logPrefix} Initializing...`);
 
         // ================================
@@ -487,7 +488,8 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        JE.toast(errorMessage, 4000);
+                        // Escape API error before display to prevent reflected XSS
+                        JE.toast(escapeHtml(errorMessage), 4000);
                         item.disabled = false;
                         item.innerHTML = `<span>Request in 4K</span>`;
                     }
@@ -534,7 +536,8 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        button.innerHTML = `<span>${errorMessage}</span>${JE.jellyseerrUI.icons.error}`;
+                        // Escape API error before innerHTML to prevent reflected XSS
+                        button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUI.icons.error}`;
                         button.classList.add('jellyseerr-button-error');
                     }
                 }

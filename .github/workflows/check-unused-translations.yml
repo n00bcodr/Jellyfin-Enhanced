@@ -3,6 +3,9 @@ name: "Check Unused Translation Keys"
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check-unused-keys:
     runs-on: ubuntu-latest

@@ -241,29 +241,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503, "Seerr integration is not configured or enabled.");
             }
 
-            // Resolve user ID (cached)
-            string? jellyfinUserId = null;
-            string? jellyseerrUserId = null;
-            if (Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
+            // Resolve user ID from authenticated principal (not caller-controlled headers)
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
             {
-                jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
-                if (string.IsNullOrEmpty(jellyfinUserId))
-                {
-                    _logger.Warning("Could not find Jellyfin User ID in request headers.");
-                    return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
-                }
-                jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
-
-                if (string.IsNullOrEmpty(jellyseerrUserId))
-                {
-                    _logger.Warning($"Could not find a Seerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
-                    return NotFound(new { message = "Current Jellyfin user is not linked to a Seerr user." });
-                }
+                _logger.Warning("Could not resolve Jellyfin user ID from the authenticated principal.");
+                return Forbid();
             }
-            else
+
+            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            if (string.IsNullOrEmpty(jellyseerrUserId))
             {
-                _logger.Warning("X-Jellyfin-User-Id header was not present in the request. Aborting.");
-                return BadRequest(new { message = "Jellyfin User ID was not provided in the request." });
+                _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
             }
 
             // Check server-side response cache for cacheable endpoints
@@ -438,10 +428,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Ok(new { active = false, userFound = false });
             }
 
-            if (!Request.Headers.TryGetValue("X-Jellyfin-User-Id", out var jellyfinUserIdValues))
-                return Ok(new { active = false, userFound = false });
-
-            var jellyfinUserId = jellyfinUserIdValues.FirstOrDefault();
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
             if (string.IsNullOrEmpty(jellyfinUserId))
                 return Ok(new { active = false, userFound = false });
 
@@ -1111,9 +1098,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     catch (Exception ex)
                     {
-                        var errorMsg = $"Error processing user {user.Username}: {ex.Message}";
-                        _logger.Error($"[Manual Watchlist Sync] {errorMsg}");
-                        errors.Add(errorMsg);
+                        _logger.Error($"[Manual Watchlist Sync] Error processing user {user.Username}: {ex.Message}");
+                        errors.Add("Failed to sync watchlist for a user.");
                     }
                 }
 
@@ -1130,7 +1116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (Exception ex)
             {
                 _logger.Error($"[Manual Watchlist Sync] Fatal error: {ex}");
-                return StatusCode(500, new { error = ex.Message });
+                return StatusCode(500, new { error = "An internal error occurred during watchlist sync." });
             }
         }
 
@@ -1463,6 +1449,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            // Non-admin users receive an empty config object rather than a 403 so that the
+            // client-side plugin initialises without error but never sees sensitive fields.
+            if (!IsAdminUser())
+            {
+                return new JsonResult(new { });
+            }
+
             // Determine the first configured Seerr URL (if any) for client-side deep links
             string jellyseerrBaseUrl = string.Empty;
             try
@@ -1697,6 +1690,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
         }
 
+        /// <summary>
+        /// Validates that the authenticated user is allowed to access the requested user's configuration.
+        /// Non-admin users may only access their own config; admins may access any user's config.
+        /// </summary>
+        /// <param name="requestedUserId">The user ID from the route parameter.</param>
+        /// <param name="authorizedUserId">On success, the validated user ID in N-format (no dashes).</param>
+        /// <returns>An error <see cref="IActionResult"/> if access is denied, or <c>null</c> if authorized.</returns>
         private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
         {
             authorizedUserId = string.Empty;
@@ -1981,12 +1981,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult GetUserHiddenContent(string userId)
         {
-            if (!IsCurrentUserRequest(userId))
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
             {
-                return Forbid();
+                return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json");
+            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
             return Ok(userConfig);
         }
 
@@ -1995,9 +1996,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Produces("application/json")]
         public IActionResult SaveUserHiddenContent(string userId, [FromBody] UserHiddenContent userConfiguration)
         {
-            if (!IsCurrentUserRequest(userId))
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
             {
-                return Forbid();
+                return authorizationResult;
             }
 
             if (userConfiguration == null)
@@ -2007,43 +2009,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "hidden-content.json", userConfiguration);
-                _logger.Info($"Saved hidden content for user {userId} to hidden-content.json");
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                _logger.Info($"Saved hidden content for user {authorizedUserId} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save hidden content for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to save hidden content for user {authorizedUserId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
             }
-        }
-
-        private bool IsCurrentUserRequest(string requestedUserId)
-        {
-            var currentUserId = UserHelper.GetCurrentUserId(User);
-            if (string.IsNullOrWhiteSpace(requestedUserId))
-            {
-                return false;
-            }
-
-            // Some API-key based contexts may not include user claims; keep compatibility.
-            if (currentUserId == null)
-            {
-                return true;
-            }
-
-            // Support both hyphenated and compact user-id formats.
-            var normalizedRequested = requestedUserId.Replace("-", string.Empty, StringComparison.Ordinal)
-                .Trim()
-                .ToLowerInvariant();
-            var normalizedCurrent = currentUserId.Value.ToString("N").ToLowerInvariant();
-            if (string.Equals(normalizedRequested, normalizedCurrent, StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            // Allow administrators to access other users' hidden-content config when needed.
-            return User.IsInRole("Administrator");
         }
 
         [HttpPost("reset-all-users-settings")]
@@ -2322,12 +2296,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 _logger.Error($"Permission denied when uploading branding image: {ex.Message}");
-                return StatusCode(403, $"Permission denied: {ex.Message}");
+                return StatusCode(403, "Permission denied when uploading branding image.");
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error uploading branding image: {ex.Message}");
-                return StatusCode(500, $"Error: {ex.Message}");
+                return StatusCode(500, "An error occurred while uploading the branding image.");
             }
         }
 
@@ -2393,12 +2367,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 _logger.Error($"Permission denied when deleting branding image: {ex.Message}");
-                return StatusCode(403, $"Permission denied: {ex.Message}");
+                return StatusCode(403, "Permission denied when deleting branding image.");
             }
             catch (Exception ex)
             {
                 _logger.Error($"Error deleting branding image: {ex.Message}");
-                return StatusCode(500, $"Error: {ex.Message}");
+                return StatusCode(500, "An error occurred while deleting the branding image.");
             }
         }
 
@@ -3481,15 +3455,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Proxy avatar images from Seerr to avoid CORS/mixed content issues.
+        /// Only allows paths that match known Seerr avatar URL patterns.
         /// </summary>
         [HttpGet("proxy/avatar")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
             {
                 return NotFound();
+            }
+
+            // SECURITY: Validate path to prevent SSRF. Only allow known Jellyseerr avatar paths.
+            if (!path.StartsWith("/avatar/", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/v1/avatar/", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Invalid avatar path");
+            }
+
+            // Block path traversal, scheme injection, query strings, and request smuggling
+            if (path.Contains("..") || path.Contains("://") || path.Contains("@")
+                || path.Contains("?") || path.Contains("#")
+                || path.Contains("\r") || path.Contains("\n")
+                || path.Contains("%0d", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("%0a", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("%00"))
+            {
+                return BadRequest("Invalid avatar path");
             }
 
             try
@@ -3504,9 +3497,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return NotFound();
                 }
 
-                var content = await response.Content.ReadAsByteArrayAsync();
+                // Only serve image responses to prevent the proxy from being abused
+                // to relay arbitrary content types (defence-in-depth against SSRF).
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+                if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return NotFound();
+                }
 
+                var content = await response.Content.ReadAsByteArrayAsync();
                 return File(content, contentType);
             }
             catch

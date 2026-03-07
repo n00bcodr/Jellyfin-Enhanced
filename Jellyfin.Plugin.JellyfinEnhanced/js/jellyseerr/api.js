@@ -183,7 +183,7 @@
 
             return data;
         } catch (error) {
-            console.error(`${logPrefix} Search failed for query "${query}":`, error);
+            console.error('%s Search failed for query "%s":', logPrefix, query, error);
             return { results: [] };
         }
     };

@@ -4,15 +4,7 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced: Issue Reporter:';
     const issueReporter = {};
-    const escapeHtml = (str) => {
-        if (str === null || str === undefined) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    };
+    const escapeHtml = JE.escapeHtml;
 
     // Cache for user permission to report
     let cachedUserCanReport = null;

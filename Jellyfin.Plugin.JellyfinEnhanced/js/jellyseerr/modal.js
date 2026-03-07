@@ -5,6 +5,8 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr Modal:';
     const modal = {};
 
+    const escapeHtml = JE.escapeHtml;
+
     /**
      * Creates and manages a generic modal for Jellyseerr requests.
      * @param {object} options - Configuration for the modal.
@@ -28,28 +30,61 @@
         // Support both backdropUrl (full URL) and backdropPath (TMDB path)
         let backdropImage;
         if (backdropUrl) {
-            backdropImage = `url('${backdropUrl}')`;
+            backdropImage = `url('${escapeHtml(backdropUrl)}')`;
         } else if (backdropPath) {
-            backdropImage = `url('https://image.tmdb.org/t/p/w1280${backdropPath}')`;
+            backdropImage = `url('https://image.tmdb.org/t/p/w1280${escapeHtml(backdropPath)}')`;
         } else {
             backdropImage = 'linear-gradient(45deg, #3b82f6, #8b5cf6)';
         }
 
-        modalElement.innerHTML = `
-            <div class="jellyseerr-season-content" role="document" aria-labelledby="jellyseerr-modal-title">
-                <div class="jellyseerr-season-header" style="background-image: ${backdropImage}; background-size: cover; background-position: center;">
-                    <div id="jellyseerr-modal-title" class="jellyseerr-season-title">${title}</div>
-                    <div class="jellyseerr-season-subtitle">${subtitle}</div>
-                </div>
-                <div class="jellyseerr-modal-body" style="padding: 24px; max-height: calc(80vh - 200px); overflow-y: auto;">
-                    ${bodyHtml}
-                </div>
-                <div class="jellyseerr-modal-footer">
-                    <button class="jellyseerr-modal-button jellyseerr-modal-button-secondary" aria-label="${JE.t('jellyseerr_modal_cancel')}">${JE.t('jellyseerr_modal_cancel')}</button>
-                    <button class="jellyseerr-modal-button jellyseerr-modal-button-primary" aria-label="${buttonText || JE.t('jellyseerr_modal_request')}">${buttonText || JE.t('jellyseerr_modal_request')}</button>
-                </div>
-            </div>
-        `;
+        // Build modal structure — bodyHtml is intentionally trusted HTML from internal callers
+        const contentEl = document.createElement('div');
+        contentEl.className = 'jellyseerr-season-content';
+        contentEl.setAttribute('role', 'document');
+        contentEl.setAttribute('aria-labelledby', 'jellyseerr-modal-title');
+
+        const headerEl = document.createElement('div');
+        headerEl.className = 'jellyseerr-season-header';
+        headerEl.style.cssText = `background-image: ${backdropImage}; background-size: cover; background-position: center;`;
+
+        const titleEl = document.createElement('div');
+        titleEl.id = 'jellyseerr-modal-title';
+        titleEl.className = 'jellyseerr-season-title';
+        titleEl.textContent = title;
+
+        const subtitleEl = document.createElement('div');
+        subtitleEl.className = 'jellyseerr-season-subtitle';
+        subtitleEl.textContent = subtitle;
+
+        headerEl.appendChild(titleEl);
+        headerEl.appendChild(subtitleEl);
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'jellyseerr-modal-body';
+        bodyEl.style.cssText = 'padding: 24px; max-height: calc(80vh - 200px); overflow-y: auto;';
+        bodyEl.innerHTML = bodyHtml;
+
+        const footerEl = document.createElement('div');
+        footerEl.className = 'jellyseerr-modal-footer';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'jellyseerr-modal-button jellyseerr-modal-button-secondary';
+        cancelBtn.setAttribute('aria-label', JE.t('jellyseerr_modal_cancel'));
+        cancelBtn.textContent = JE.t('jellyseerr_modal_cancel');
+
+        const primaryBtn = document.createElement('button');
+        primaryBtn.className = 'jellyseerr-modal-button jellyseerr-modal-button-primary';
+        primaryBtn.setAttribute('aria-label', buttonText || JE.t('jellyseerr_modal_request'));
+        primaryBtn.textContent = buttonText || JE.t('jellyseerr_modal_request');
+
+        footerEl.appendChild(cancelBtn);
+        footerEl.appendChild(primaryBtn);
+
+        contentEl.appendChild(headerEl);
+        contentEl.appendChild(bodyEl);
+        contentEl.appendChild(footerEl);
+
+        modalElement.appendChild(contentEl);
 
         // Handle keyboard navigation
         const handleKeydown = (e) => {
@@ -135,12 +170,11 @@
         };
 
         // Event listeners for closing the modal
-        modalElement.querySelector('.jellyseerr-modal-button-secondary').addEventListener('click', () => history.back());
+        cancelBtn.addEventListener('click', () => history.back());
         modalElement.addEventListener('click', (e) => { if (e.target === modalElement) history.back(); });
 
         // Event listener for the primary action button
-        const requestButton = modalElement.querySelector('.jellyseerr-modal-button-primary');
-        requestButton.addEventListener('click', () => onSave(modalElement, requestButton, close));
+        primaryBtn.addEventListener('click', () => onSave(modalElement, primaryBtn, close));
 
         return { modalElement, show, close };
     };
