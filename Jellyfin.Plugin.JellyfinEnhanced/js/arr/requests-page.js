@@ -419,6 +419,8 @@
         .je-requests-status-chip.je-chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
         .je-requests-status-chip.je-chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
         .je-requests-status-chip.je-chip-rejected { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
+        .je-requests-status-chip.je-chip-blocklisted { background: rgba(245, 158, 11, 0.25); color: #f0f9ff; border-color: rgba(245, 158, 11, 0.5); }
+        .je-requests-status-chip.je-chip-deleted { background: rgba(107, 114, 128, 0.25); color: #f0f9ff; border-color: rgba(107, 114, 128, 0.5); }
         .je-requests-status-chip.je-chip-coming-soon { background: rgba(156, 39, 176, 0.25); color: #f0f9ff; border-color: rgba(156, 39, 176, 0.5); }
         .je-release-date-chip {
           display: inline-flex;
@@ -1120,6 +1122,8 @@
     const labelPending = JE.t?.("jellyseerr_btn_pending") || "Pending Approval";
     const labelRequested = JE.t?.("jellyseerr_btn_requested") || "Requested";
     const labelRejected = JE.t?.("jellyseerr_btn_rejected") || "Rejected";
+    const labelBlocklisted = JE.t?.("jellyseerr_btn_blocklisted") || "Blocklisted";
+    const labelDeleted = JE.t?.("jellyseerr_btn_deleted") || "Deleted";
     const labelComingSoon = JE.t?.("requests_coming_soon") || "Coming Soon";
 
     // Check for "Coming Soon" status - items with future release dates
@@ -1148,6 +1152,10 @@
         return { label: labelPending, className: "je-chip-requested" };
       case "declined":
         return { label: labelRejected, className: "je-chip-rejected" };
+      case "blocklisted":
+        return { label: labelBlocklisted, className: "je-chip-blocklisted" };
+      case "deleted":
+        return { label: labelDeleted, className: "je-chip-deleted" };
       default:
         return { label: status || labelRequested, className: "je-chip-requested" };
     }
