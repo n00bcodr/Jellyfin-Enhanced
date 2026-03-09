@@ -2116,6 +2116,9 @@
                 // Add event listener
                 document.querySelector('#preventWatchlistReAddition').addEventListener('change', toggleWatchlistRetentionVisibility);
 
+                // Update TMDB-dependent settings after config is loaded
+                updateTmdbDependentSettings();
+
                 Dashboard.hideLoadingMsg();
             });
         }
@@ -2709,7 +2712,8 @@
                 { id: 'elsewhereEnabled', tooltip: 'Requires TMDB API Key to be configured' },
                 { id: 'showReviews', tooltip: 'Requires TMDB API Key to be configured' },
                 { id: 'showCollectionsInSearch', tooltip: 'Requires TMDB API Key to be configured' },
-                { id: 'showElsewhereOnJellyseerr', tooltip: 'Requires TMDB API Key to be configured' }
+                { id: 'showElsewhereOnJellyseerr', tooltip: 'Requires TMDB API Key to be configured' },
+                { id: 'autoMovieRequestEnabled', tooltip: 'Requires TMDB API Key to be configured' }
             ];
 
             tmdbDependentSettings.forEach(setting => {
@@ -2751,9 +2755,6 @@
                 }
             });
         }
-
-        // Update on page load
-        setTimeout(updateTmdbDependentSettings, 100);
 
         // Update when TMDB keys change
         document.querySelector('#TMDB_API_KEY').addEventListener('input', updateTmdbDependentSettings);
