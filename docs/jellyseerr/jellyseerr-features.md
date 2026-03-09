@@ -104,9 +104,54 @@ Report problems with media directly to Jellyseerr.
 
 **Note:** Button hidden when Jellyseerr unreachable or user not linked.
 
+## Requests Page
+
+Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and issues in one dedicated page.
+
+### Setup
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to **Seerr Settings** tab
+3. Check **"Enable Requests Page"**
+4. Optionally check **"Show Downloads in Requests Page"** to display active *arr downloads (enabled by default)
+5. Optionally check **"Show Seerr Issues Section"** to display Jellyseerr issues
+6. Choose integration method:
+   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
+   - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
+7. Configure polling settings (see below)
+8. Click **Save**
+9. Restart Jellyfin if using Plugin Pages
+
+### Polling Settings
+
+**Enable Polling:**
+- Auto-refresh download status
+- Recommended: Enabled
+
+**Poll Interval:**
+- Default: 30 seconds
+- Range: 30-300 seconds
+- Lower = more frequent updates, higher server load
+
+### Usage
+
+**Access Requests Page:**
+- Click "Requests" in sidebar (Plugin Pages)
+- Navigate to custom tab (Custom Tabs)
+- Direct URL: `/web/index.html#!/jellyfinenhanced/requests`
+
+**Features:**
+- View active downloads (if enabled)
+- View Jellyseerr requests with status
+- View reported issues (if enabled)
+- Progress bars and ETA for downloads
+- Quality and size information
+- Filter by status
+- Search functionality
+
 ### Issues on Downloads Page
 
-View and manage Jellyseerr issues directly from the Downloads/Requests page.
+View and manage Jellyseerr issues directly from the Requests page.
 
 **Features:**
 - View all reported issues
@@ -117,12 +162,13 @@ View and manage Jellyseerr issues directly from the Downloads/Requests page.
 - Open issue reporter modal from issues list
 
 **Configuration:**
-1. Go to plugin settings → Jellyseerr tab
-2. Check "Show Issues on Downloads Page"
-3. Click **Save**
+1. Go to plugin settings → Seerr Settings tab
+2. Check **"Enable Requests Page"**
+3. Check **"Show Seerr Issues Section"**
+4. Click **Save**
 
 **Usage:**
-- Navigate to Downloads/Requests page
+- Navigate to Requests page
 - Issues appear in dedicated section
 - Click issue to view details
 - Use Jellyseerr reporter modal for management

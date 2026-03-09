@@ -1505,9 +1505,12 @@
 
     let html = "";
 
-    // Active Downloads Section
-    html += `<div class="je-downloads-section je-active-downloads-section" style="margin-top: 2em;">`;
-    const labelActiveDownloads = (JE.t && JE.t('requests_downloads')) || 'Downloads';
+    // Active Downloads Section - only shows if ShowDownloadsInRequests is enabled
+    const showDownloads = JE.pluginConfig?.ShowDownloadsInRequests !== false;
+
+    if (showDownloads) {
+      html += `<div class="je-downloads-section je-active-downloads-section" style="margin-top: 2em;">`;
+      const labelActiveDownloads = (JE.t && JE.t('requests_downloads')) || 'Downloads';
 
     html += `
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1em;">
@@ -1603,6 +1606,7 @@
     }
 
     html += `</div>`;
+    }
 
     // Requests Section
     if (JE.pluginConfig?.JellyseerrEnabled) {

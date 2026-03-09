@@ -81,3 +81,42 @@
 ### Show Advanced Request Options
 - Display advanced options in request modal
 - Season selection, quality options, etc.
+
+## Requests Page Management
+
+### Enable Requests Page
+
+Display a dedicated page showing active downloads from *arr and requests from Jellyseerr.
+
+**Configuration:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to **Seerr Settings** tab (look for the section titled "Requests Page")
+3. Check **"Enable Requests Page"**
+4. Choose integration method:
+   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
+   - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
+5. Click **Save** and restart Jellyfin if using Plugin Pages
+
+### Show Downloads Section
+
+Control whether active downloads from Sonarr/Radarr appear on the Requests page.
+
+- **Enabled by default** - Shows active downloads alongside requests and issues
+- Requires *arr integration to be configured
+- Can be toggled independently
+
+### Show Seerr Issues Section
+
+Display Jellyseerr issues on the Requests page.
+
+- View all reported issues
+- Filter by issue status
+- Link to Jellyseerr reporter modal
+
+### Auto-Refresh Settings
+
+- **Enable Auto-Refresh** - Automatically refresh download and request status
+- **Poll Interval** - How often to refresh (30-300 seconds, default: 30)
+  - Lower = more frequent updates (higher server load)
+  - Higher = less frequent updates (lower server load)

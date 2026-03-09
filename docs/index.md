@@ -44,12 +44,12 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Issue Reporting** - Report problems directly to Jellyseerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 - **Auto Requests** - Auto next season and next movie (in collection) requests
+- **Requests Page** - Monitor downloads and Seerr requests
 
 ### 🔗 *arr Integration
 - **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages
 - **Tag Links** - Display and filter *arr tags
 - **Calendar View** - Upcoming releases from Sonarr/Radarr
-- **Requests Page** - Monitor download queue
 
 ### 🎨 Other Features
 - **Custom Branding** - Upload your own logos and banners

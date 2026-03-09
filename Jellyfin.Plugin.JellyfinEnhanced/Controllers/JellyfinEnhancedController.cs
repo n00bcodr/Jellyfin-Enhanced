@@ -1611,6 +1611,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Requests Page Settings
                 config.DownloadsPageEnabled,
                 config.DownloadsPageShowIssues,
+                config.ShowDownloadsInRequests,
                 config.DownloadsUsePluginPages,
                 config.DownloadsUseCustomTabs,
                 config.DownloadsPagePollingEnabled,

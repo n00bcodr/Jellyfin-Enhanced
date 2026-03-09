@@ -717,6 +717,94 @@
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Requests Page</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsPageEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Requests Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Requests" link to the navigation showing active downloads and requests.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="showDownloadsInRequests" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show Downloads in Requests Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Shows active downloads from Sonarr/Radarr on the Requests page. (Requires *arr links and API keys to be configured)</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show Seerr Issues Section</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Shows open/resolved Seerr issues beneath Requests.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Plugin Pages for Requests Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Requests page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Custom Tabs for Requests (instead of sidebar)</span>
+                                </label>
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">Embed Requests in Custom Tabs:</h4>
+                                        <p class="fieldDescription" style="margin: 0 0 0.5em 0;">Display the Requests page in a Custom Tabs tab instead of the sidebar link.</p>
+                                        <p class="fieldDescription" style="margin: 0.5em 0;">You need the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
+                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "Requests")</li>
+                                            <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                        </ol>
+                                        <div style="position: relative;">
+                                            <button type="button" class="je-copy-html-btn raised raised-mini emby-button" data-copy-text="&lt;div class=&quot;jellyfinenhanced requests&quot;&gt;&lt;/div&gt;" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
+                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
+                                                <span class="copy-btn-text" style="vertical-align: middle;">Copy</span>
+                                            </button>
+                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="jellyfinenhanced requests"&gt;&lt;/div&gt;
+</code></pre>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 1em;">
+                                            Already have Custom Tabs installed?
+                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 1em;">
+                                <label>
+                                    <input id="downloadsPagePollingEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Auto-Refresh for Downloads</span>
+                                </label>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
+                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="30" max="300"/>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Minimum is 30 seconds and applies only when auto-refresh is enabled.</div>
+                        </div>
+                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
+                                        <br><br>
+                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Seerr URLs and API keys.
+                                    </div>
+                                </div>
+                            </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Automatic Requests</h3></legend>
                         <div class="configSection">
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -1010,87 +1098,6 @@
                                 </div>
                             </div>
                         </div>
-                    </fieldset>
-                    <fieldset class="verticalSection-extrabottompadding">
-                        <legend class="sectionTitle"><h3>Requests Page</h3></legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="downloadsPageEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Requests Page</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Requests" link to the navigation showing active downloads and requests.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show Seerr Issues Section</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Shows open/resolved Seerr issues beneath Requests.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/>
-                                    <span>Use Plugin Pages for Requests Page</span>
-                                </label>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">Replaces the default Requests page with a <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> implementation.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
-                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
-                                <label>
-                                    <input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/>
-                                    <span>Use Custom Tabs for Requests (instead of sidebar)</span>
-                                </label>
-                            </div>
-                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
-                                <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
-                                    <div>
-                                        <h4 style="margin: 0 0 0.5em 0;">Embed Requests in Custom Tabs:</h4>
-                                        <p class="fieldDescription" style="margin: 0 0 0.5em 0;">Display the Requests page in a Custom Tabs tab instead of the sidebar link.</p>
-                                        <p class="fieldDescription" style="margin: 0.5em 0;">You need the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
-                                        <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
-                                            <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
-                                            <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
-                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "Requests")</li>
-                                            <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
-                                        </ol>
-                                        <div style="position: relative;">
-                                            <button type="button" class="je-copy-html-btn raised raised-mini emby-button" data-copy-text="&lt;div class=&quot;jellyfinenhanced requests&quot;&gt;&lt;/div&gt;" style="position: absolute; top: 8px; right: 8px; background-color: rgba(255,255,255,0.1); border: none; padding: 4px 8px; min-width: 80px; transition: color 0.3s;">
-                                                <i class="material-icons" style="font-size: 16px; margin-right: 4px; vertical-align: middle;">content_copy</i>
-                                                <span class="copy-btn-text" style="vertical-align: middle;">Copy</span>
-                                            </button>
-                                            <pre style="background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; font-family: 'Courier New', Courier, monospace;"><code>&lt;div class="jellyfinenhanced requests"&gt;&lt;/div&gt;
-</code></pre>
-                                        </div>
-                                        <div class="fieldDescription" style="margin-top: 1em;">
-                                            Already have Custom Tabs installed?
-                                            <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="checkboxContainer" style="margin-bottom: 1em;">
-                                <label>
-                                    <input id="downloadsPagePollingEnabled" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable Auto-Refresh for Downloads</span>
-                                </label>
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="downloadsPollIntervalSeconds">Poll Interval (seconds)</label>
-                                <input id="downloadsPollIntervalSeconds" is="emby-input" type="number" min="30" max="300"/>
-                            </div>
-                            <div class="fieldDescription" style="margin-bottom: 2em;">How often to refresh download status automatically. Minimum is 30 seconds and applies only when auto-refresh is enabled.</div>
-                        </div>
-                        <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
-                                <div style="display: flex; align-items: flex-start; gap: 1em;">
-                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
-                                    <div>
-                                        <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
-                                        <br><br>
-                                        <strong>Requirements:</strong> Configure Sonarr/Radarr and Seerr URLs and API keys.
-                                    </div>
-                                </div>
-                            </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Calendar Page</h3></legend>
@@ -2077,6 +2084,7 @@
 
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
+                document.querySelector('#showDownloadsInRequests').checked = config.ShowDownloadsInRequests !== false;
                 document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
@@ -2265,6 +2273,7 @@
 
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
+            config.ShowDownloadsInRequests = document.querySelector('#showDownloadsInRequests').checked;
             config.DownloadsPageShowIssues = document.querySelector('#downloadsPageShowIssues').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
             config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
