@@ -4,7 +4,7 @@ Customization options are available for many features
 
 <!-- preferred admonitions formatting -->
 !!! success "Applying Custom CSS"
-    
+
     **How to apply custom CSS:**
 
     1. Jellyfin: Go to `Dashboard` → `Branding`
@@ -51,6 +51,44 @@ Customize quality tag appearance.
 **Hide unwanted tags:**
 ```css
 .quality-overlay-label[data-quality="H264"] {
+    display: none !important;
+}
+```
+
+**Customize media stub tags (BluRay, HD DVD, DVD, VHS, HDTV, Physical):**
+```css
+/* Change BluRay tag color */
+.quality-overlay-label[data-quality="BluRay"] {
+    background-color: rgba(0, 150, 255, 0.95) !important;
+    color: #ffffff !important;
+}
+
+/* Change HD DVD tag color */
+.quality-overlay-label[data-quality="HD DVD"] {
+    background-color: rgba(200, 0, 50, 0.95) !important;
+    color: #ffffff !important;
+}
+
+/* Change DVD tag color */
+.quality-overlay-label[data-quality="DVD"] {
+    background-color: rgba(200, 100, 0, 0.95) !important;
+    color: #ffffff !important;
+}
+
+/* Change VHS tag color */
+.quality-overlay-label[data-quality="VHS"] {
+    background-color: rgba(160, 82, 45, 0.95) !important;
+    color: #ffffff !important;
+}
+
+/* Change HDTV tag color */
+.quality-overlay-label[data-quality="HDTV"] {
+    background-color: rgba(100, 100, 100, 0.95) !important;
+    color: #ffffff !important;
+}
+
+/* Hide generic Physical media tag */
+.quality-overlay-label[data-quality="Physical"] {
     display: none !important;
 }
 ```
@@ -215,19 +253,19 @@ Available hooks:
 
 !!! note
 
-    **Automatic Theme Detection:** 
-    
-    The Enhanced Panel automatically detects your active theme using unique CSS variables and applies appropriate styling without any configuration needed. It detects most popular Jellyfin themes. 
-    
+    **Automatic Theme Detection:**
+
+    The Enhanced Panel automatically detects your active theme using unique CSS variables and applies appropriate styling without any configuration needed. It detects most popular Jellyfin themes.
+
     **Supported Themes:**
-    
+
     - **Jellyfish**: Uses theme's accent colors and blur effects
     - **ElegantFin**: Matches the theme's header and accent color
     - **Default**: Clean, universal styling for unrecognized themes
 
 
 
-**Custom Styling with CSS:** 
+**Custom Styling with CSS:**
 
 If you want to override the automatic theming or customize the panel appearance further, you can use the CSS selectors below.
 

@@ -103,7 +103,13 @@
             'MPEG2': { bg: 'rgba(96, 125, 139, 0.9)', text: '#ffffff' },
             'MPEG4': { bg: 'rgba(158, 158, 158, 0.9)', text: '#ffffff' },
             'MJPEG': { bg: 'rgba(233, 30, 99, 0.9)', text: '#ffffff' },
-            'THEORA': { bg: 'rgba(139, 195, 74, 0.9)', text: '#ffffff' }
+            'THEORA': { bg: 'rgba(139, 195, 74, 0.9)', text: '#ffffff' },
+            'BluRay': { bg: 'rgba(0, 102, 204, 0.95)', text: '#ffffff' },
+            'HD DVD': { bg: 'rgba(128, 0, 32, 0.95)', text: '#ffffff' },
+            'DVD': { bg: 'rgba(153, 76, 0, 0.95)', text: '#ffffff' },
+            'VHS': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
+            'HDTV': { bg: 'rgba(192, 192, 192, 0.9)', text: '#000000' },
+            'Physical': { bg: 'rgba(102, 102, 102, 0.9)', text: '#ffffff' }
         };
 
         // --- CONFIGURATION ---
@@ -561,6 +567,47 @@
                             break; // Found 3D, no need to check other sources
                         }
                     }
+                }
+            }
+
+            // --- MEDIA STUB TAG LOGIC ---
+            // Detect media stubs (.disc files) for BluRay, DVD, or generic Physical media
+            const stubSignals = [];
+            if (itemData) {
+                stubSignals.push(
+                    itemData.Name || '',
+                    itemData.Path || ''
+                );
+            }
+            if (Array.isArray(mediaSources)) {
+                mediaSources.forEach((source) => {
+                    stubSignals.push(source?.Path || '', source?.Name || '');
+                });
+            }
+
+            const stubContext = stubSignals.filter(Boolean).join(' | ').toLowerCase();
+
+            // Check for .disc extension (media stub indicator)
+            if (stubContext.includes('.disc')) {
+                // Parse filename/path for specific media type patterns
+                const blurayRegex = /bluray|blu-ray|bdrip|bd-rip|bdremux/;
+                const hddvdRegex = /hddvd|hd-dvd|hd dvd/;
+                const dvdRegex = /dvd|dvdrip|dvd-rip|dvdremux/;
+                const vhsRegex = /vhs/;
+                const hdtvRegex = /hdtv/;
+
+                if (blurayRegex.test(stubContext)) {
+                    qualities.add('BluRay');
+                } else if (hddvdRegex.test(stubContext)) {
+                    qualities.add('HD DVD');
+                } else if (dvdRegex.test(stubContext)) {
+                    qualities.add('DVD');
+                } else if (vhsRegex.test(stubContext)) {
+                    qualities.add('VHS');
+                } else if (hdtvRegex.test(stubContext)) {
+                    qualities.add('HDTV');
+                } else {
+                    qualities.add('Physical');
                 }
             }
 

@@ -334,6 +334,7 @@ Display quality information (4K, HDR, Atmos) directly on posters.
 - **Video Format:** AV1, HEVC, H265, VP9, H264
 - **Video Features:** HDR, Dolby Vision, HDR10+, 3D
 - **Audio:** ATMOS, DTS-X, TRUEHD, DTS, Dolby Digital+, 7.1, 5.1
+- **Media Stubs:** BluRay, HD DVD, DVD, VHS, HDTV, Physical (for physical media files)
 
 ### 🎭 Genre Tags
 
