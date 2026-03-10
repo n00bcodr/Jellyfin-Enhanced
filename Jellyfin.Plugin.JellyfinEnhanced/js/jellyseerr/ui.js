@@ -1121,6 +1121,9 @@
                         if (tmdbId && mediaType) {
                             JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                         }
+                    } else if (jellyfinHref) {
+                        // For existing media in library, navigate to Jellyfin item
+                        window.location.hash = jellyfinHref.replace('#!', '');
                     } else if (jellyseerrUrl) {
                         window.open(jellyseerrUrl, '_blank', 'noopener,noreferrer');
                     }
