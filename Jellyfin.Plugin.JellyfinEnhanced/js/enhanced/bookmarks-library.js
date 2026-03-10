@@ -3,10 +3,10 @@
  * Creates <div class="sections bookmarks"></div> for CustomTabs plugin
  */
 
-(function () {
+(function (JE) {
   'use strict';
 
-  if (!window.JellyfinEnhanced?.pluginConfig?.BookmarksEnabled) {
+  if (!JE?.pluginConfig?.BookmarksEnabled) {
     console.log('🪼 Jellyfin Enhanced: Bookmarks library feature is disabled');
     return;
   }
@@ -2300,4 +2300,4 @@
     init();
   }
 
-})();
+})(window.JellyfinEnhanced);
