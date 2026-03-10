@@ -466,6 +466,13 @@
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Setup</h3></legend>
                         <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Seerr integration</span>
+                                </label>
+                            </div>
+
                             <div class="inputContainer">
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrls">Seerr URL(s)</label>
                                 <textarea style="display:block; height: 8vh !important;" class="emby-textarea emby-input" id="jellyseerrUrls" name="jellyseerrUrls" placeholder="http://192.168.1.10:5055&#10;https://jellyseerr.example.com"></textarea>
@@ -549,7 +556,7 @@
                                 <div style="padding-top: 1em;">
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
-                                            <input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/>
+                                            <input id="jellyseerrShowSearchResults" is="emby-checkbox" type="checkbox"/>
                                             <span>Show Seerr Results in Search</span>
                                         </label>
                                     </div>
@@ -2003,6 +2010,7 @@
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
+                document.querySelector('#jellyseerrShowSearchResults').checked = config.JellyseerrShowSearchResults !== false;
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrUseMoreInfoModal').checked = !!config.JellyseerrUseMoreInfoModal;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
@@ -2183,6 +2191,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
+            config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;
             config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrUseMoreInfoModal = document.querySelector('#jellyseerrUseMoreInfoModal').checked;

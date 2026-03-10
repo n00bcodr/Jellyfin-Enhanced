@@ -752,7 +752,7 @@
         }
         // Don't add if plugin or report-button feature is disabled
         if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.JellyseerrShowReportButton) {
-            console.debug(`${logPrefix} Jellyseerr or report button disabled, skipping`);
+            console.debug(`${logPrefix} Jellyseerr integration or report button disabled, skipping`);
             return false;
         }
 
@@ -1036,9 +1036,11 @@
      */
     issueReporter.initialize = async function () {
         if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.JellyseerrShowReportButton) {
-            console.debug(`${logPrefix} Jellyseerr or report-button feature disabled, skipping initialization`);
+            console.debug(`${logPrefix} Jellyseerr integration or report-button feature disabled, skipping initialization`);
             return;
         }
+
+        JE.jellyseerrUI?.addMainStyles?.();
 
         console.log(`${logPrefix} Initializing... (verifying Jellyseerr status)`);
 

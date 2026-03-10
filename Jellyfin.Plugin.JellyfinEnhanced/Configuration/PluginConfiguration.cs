@@ -91,6 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Seerr Search Settings
             JellyseerrEnabled = false;
+            JellyseerrShowSearchResults = true;
             JellyseerrShowReportButton = false;
             JellyseerrEnable4KRequests = false;
             JellyseerrShowAdvanced = false;
@@ -257,6 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Seerr Search Settings
         public bool JellyseerrEnabled { get; set; }
+        public bool JellyseerrShowSearchResults { get; set; }
         public bool JellyseerrShowReportButton { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }

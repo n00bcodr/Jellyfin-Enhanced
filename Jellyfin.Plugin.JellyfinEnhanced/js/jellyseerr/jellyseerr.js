@@ -7,9 +7,13 @@
      * This function sets up the state, observers, and event listeners.
      */
     JE.initializeJellyseerrScript = function() {
-        // Early exit if Seerr is disabled in plugin settings
+        // Early exit if Seerr integration or search results are disabled in plugin settings
         if (!JE.pluginConfig.JellyseerrEnabled) {
             console.log('🪼 Jellyfin Enhanced: Seerr Search: Integration is disabled in plugin settings.');
+            return;
+        }
+        if (JE.pluginConfig.JellyseerrShowSearchResults === false) {
+            console.log('🪼 Jellyfin Enhanced: Seerr Search: Search results are disabled in plugin settings.');
             return;
         }
 

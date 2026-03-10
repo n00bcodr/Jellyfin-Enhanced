@@ -2395,4 +2395,10 @@
     ui.formatEtaText = formatEtaText;
     JE.jellyseerrUI = ui;
 
+    // Inject styles immediately on module load so all self-initializing Jellyseerr
+    // sub-modules (item-details, discovery pages, issue reporter, etc.) get CSS
+    // regardless of whether the search module is enabled.
+    ui.addMainStyles();
+    ui.addSeasonModalStyles();
+
 })(window.JellyfinEnhanced);
