@@ -42,9 +42,9 @@
                 return;
             }
 
-            // Convert bookmark data back to PascalCase for server
+            // Convert data back to PascalCase for server C# deserialization
             let dataToSave = settings;
-            if (fileName === 'bookmark.json' && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
+            if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
                 dataToSave = window.JellyfinEnhanced.toPascalCase(settings);
             }
 
