@@ -823,6 +823,10 @@ function buildSingle4kButton(data) {
     button.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (JE.pluginConfig.JellyseerrShowAdvanced) {
+            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
+            return;
+        }
         button.disabled = true;
         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
         try {
@@ -937,6 +941,11 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             option.addEventListener('click', async (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
+                if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                    close4k();
+                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
+                    return;
+                }
                 option.disabled = true;
                 option.textContent = JE.t('jellyseerr_btn_requesting');
                 try {
@@ -971,6 +980,10 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         requestButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
+                return;
+            }
             requestButton.disabled = true;
             requestButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             try {
