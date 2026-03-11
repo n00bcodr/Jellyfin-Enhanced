@@ -648,7 +648,9 @@
 
             try {
                 const userId = ApiClient.getCurrentUserId();
-                const item = await ApiClient.getItem(userId, itemId);
+                const item = JE.helpers?.getItemCached
+                    ? await JE.helpers.getItemCached(itemId, { userId })
+                    : await ApiClient.getItem(userId, itemId);
 
                 let sourceItem = item;
 
@@ -835,7 +837,9 @@
                 let episodeNumber = null;
                 try {
                     const userId = ApiClient.getCurrentUserId();
-                    const item = await ApiClient.getItem(userId, itemId);
+                    const item = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId, { userId })
+                        : await ApiClient.getItem(userId, itemId);
                     tmdbId = item?.ProviderIds?.Tmdb || '';
                     seriesId = item?.SeriesId || '';
                     seriesName = item?.SeriesName || '';
@@ -936,7 +940,9 @@
             if (!lastDetailsItemType) {
                 if (!itemTypeFetchInProgress) {
                     const userId = ApiClient.getCurrentUserId();
-                    itemTypeFetchInProgress = ApiClient.getItem(userId, itemId)
+                    itemTypeFetchInProgress = (JE.helpers?.getItemCached
+                        ? JE.helpers.getItemCached(itemId, { userId })
+                        : ApiClient.getItem(userId, itemId))
                         .then(item => {
                             lastDetailsItemType = item?.Type || null;
                             itemTypeFetchInProgress = null;

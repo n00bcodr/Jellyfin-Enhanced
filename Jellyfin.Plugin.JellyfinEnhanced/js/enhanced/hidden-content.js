@@ -1640,7 +1640,9 @@
 
         try {
             const userId = ApiClient.getCurrentUserId();
-            const item = await ApiClient.getItem(userId, itemId);
+            const item = JE.helpers?.getItemCached
+                ? await JE.helpers.getItemCached(itemId, { userId })
+                : await ApiClient.getItem(userId, itemId);
             const itemType = item?.Type || '';
             const seriesId = item?.SeriesId || '';
             const seriesName = item?.SeriesName || '';
@@ -1662,7 +1664,9 @@
                 dialogOpts.onChooseShow = async () => {
                     let seriesTmdbId = '';
                     try {
-                        const series = await ApiClient.getItem(userId, seriesId);
+                        const series = JE.helpers?.getItemCached
+                            ? await JE.helpers.getItemCached(seriesId, { userId })
+                            : await ApiClient.getItem(userId, seriesId);
                         seriesTmdbId = series?.ProviderIds?.Tmdb || '';
                     } catch (err) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to fetch series TMDB ID', err);

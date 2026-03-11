@@ -43,7 +43,9 @@
                     const parentId = item.SeriesId || item.ParentId || (item.Series && item.Series.Id) || null;
                     const userId = ApiClient.getCurrentUserId();
                     if (parentId && userId) {
-                        const parentItem = await ApiClient.getItem(userId, parentId);
+                        const parentItem = JE.helpers?.getItemCached
+                            ? await JE.helpers.getItemCached(parentId, { userId })
+                            : await ApiClient.getItem(userId, parentId);
                         tmdbId = parentItem?.ProviderIds?.Tmdb || parentItem?.ProviderIds?.['Tmdb'] || null;
                         if (tmdbId) {
                             console.debug(`${logPrefix} Availability check resolved TMDB via parent: ${tmdbId}`);
@@ -777,7 +779,9 @@
                 return false;
             }
 
-            const item = await ApiClient.getItem(userId, itemId);
+            const item = JE.helpers?.getItemCached
+                ? await JE.helpers.getItemCached(itemId, { userId })
+                : await ApiClient.getItem(userId, itemId);
             if (!item) {
                 console.debug(`${logPrefix} Could not fetch item data`);
                 return false;
@@ -880,7 +884,9 @@
                         console.debug(`${logPrefix} Found parentId ${parentId} for ${item.Name}, fetching parent item`);
                         const userId2 = ApiClient.getCurrentUserId();
                         if (userId2) {
-                            const parentItem = await ApiClient.getItem(userId2, parentId);
+                            const parentItem = JE.helpers?.getItemCached
+                                ? await JE.helpers.getItemCached(parentId, { userId: userId2 })
+                                : await ApiClient.getItem(userId2, parentId);
                             if (parentItem) {
                                 const parentTmdb = parentItem.ProviderIds?.Tmdb;
                                 if (parentTmdb) {

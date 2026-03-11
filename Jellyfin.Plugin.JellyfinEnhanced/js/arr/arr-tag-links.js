@@ -60,7 +60,9 @@
 
             isAddingLinks = true;
             try {
-                const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+                const item = JE.helpers?.getItemCached
+                    ? await JE.helpers.getItemCached(itemId)
+                    : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
 
                 if (!item?.Tags || item.Tags.length === 0) {
                     // Mark as processed even if no tags - don't keep checking

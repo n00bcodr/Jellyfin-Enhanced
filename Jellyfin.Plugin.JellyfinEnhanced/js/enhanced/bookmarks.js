@@ -357,7 +357,9 @@
 
     for (const itemId of itemIds) {
       try {
-        await ApiClient.getItem(userId, itemId);
+        await (JE.helpers?.getItemCached
+          ? JE.helpers.getItemCached(itemId, { userId })
+          : ApiClient.getItem(userId, itemId));
         // Item exists, keep bookmarks
       } catch (e) {
         // Item doesn't exist, mark bookmarks for deletion

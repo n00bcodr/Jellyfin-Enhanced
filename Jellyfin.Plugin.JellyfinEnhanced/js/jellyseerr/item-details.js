@@ -25,7 +25,9 @@
             }
 
             const userId = ApiClient.getCurrentUserId();
-            const item = await ApiClient.getItem(userId, itemId);
+            const item = JE.helpers?.getItemCached
+                ? await JE.helpers.getItemCached(itemId, { userId })
+                : await ApiClient.getItem(userId, itemId);
 
             // Check for abort after request
             if (signal?.aborted) {

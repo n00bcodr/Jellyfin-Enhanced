@@ -250,7 +250,9 @@
                     const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                     if (!itemId) return;
 
-                    const item = await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+                    const item = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId)
+                        : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
 
                     // Only process movies and TV shows
                     if (item?.Type !== 'Movie' && item?.Type !== 'Series') return;
