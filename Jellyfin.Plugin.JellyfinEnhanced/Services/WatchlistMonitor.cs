@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -24,6 +25,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly Logger _logger;
+        private readonly Dictionary<string, (List<RequestItemWithUser> Items, DateTime CachedAt)> _requestsCache = new();
+        private readonly object _requestsCacheLock = new();
+        private readonly ConcurrentDictionary<string, Task<List<RequestItemWithUser>?>> _requestsInFlight = new();
 
         public WatchlistMonitor(
             ILibraryManager libraryManager,
@@ -39,6 +43,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _httpClientFactory = httpClientFactory;
             _userConfigurationManager = userConfigurationManager;
             _logger = logger;
+        }
+
+        private static string NormalizeUserId(string? userId)
+        {
+            return string.IsNullOrEmpty(userId) ? string.Empty : userId.Replace("-", string.Empty);
+        }
+
+        private static TimeSpan GetRequestsCacheTtl()
+        {
+            return TimeSpan.FromSeconds(30);
         }
 
         // Initialize and start monitoring library events.
@@ -135,7 +149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // _logger.Info($"[Watchlist] New {mediaType} added to library: '{e.Item.Name}' (TMDB: {tmdbId})");
 
                 // Query Jellyseerr for ALL requests in a single API call
-                var jellyseerrUrl = config.JellyseerrUrls?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                var jellyseerrUrl = config.JellyseerrUrls?.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim().TrimEnd('/');
                 if (string.IsNullOrEmpty(jellyseerrUrl) || string.IsNullOrEmpty(config.JellyseerrApiKey))
                 {
                     _logger.Warning("[Watchlist] Jellyseerr URL or API key not configured");
@@ -160,16 +174,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
+                var usersByNormalizedId = _userManager.Users
+                    .GroupBy(user => NormalizeUserId(user.Id.ToString()), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+                var requesterIds = matchingRequests
+                    .Select(request => NormalizeUserId(request.RequestedByJellyfinUserId))
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
                 // Add to watchlist for each user who requested it (only log if actually added)
                 var addedCount = 0;
                 var addedUsers = new List<string>();
 
-                foreach (var request in matchingRequests)
+                foreach (var jellyfinUserId in requesterIds)
                 {
-                    var jellyfinUserId = request.RequestedByJellyfinUserId!.Replace("-", "");
-                    var user = _userManager.Users.FirstOrDefault(u => u.Id.ToString().Replace("-", "").Equals(jellyfinUserId, StringComparison.OrdinalIgnoreCase));
-
-                    if (user == null)
+                    if (!usersByNormalizedId.TryGetValue(jellyfinUserId, out var user))
                     {
                         continue;
                     }
@@ -239,42 +260,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Get ALL requests from Jellyseerr in a single API call
         private async Task<List<RequestItemWithUser>?> GetAllJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl)
         {
+            var cacheKey = jellyseerrUrl.TrimEnd('/');
+            var cacheTtl = GetRequestsCacheTtl();
+
+            lock (_requestsCacheLock)
+            {
+                if (_requestsCache.TryGetValue(cacheKey, out var cached) &&
+                    DateTime.UtcNow - cached.CachedAt < cacheTtl)
+                {
+                    return cached.Items;
+                }
+            }
+
+            async Task<List<RequestItemWithUser>?> FetchAsync()
+            {
+                try
+                {
+                    var requestUri = $"{cacheKey}/api/v1/request?take=1000&skip=0&sort=added&filter=all";
+
+                    var response = await httpClient.GetAsync(requestUri);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.Warning($"[Watchlist] Failed to fetch requests from Jellyseerr: {response.StatusCode}");
+                        return null;
+                    }
+
+                    var content = await response.Content.ReadAsStringAsync();
+                    var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+                    if (!json.TryGetProperty("results", out var resultsArray))
+                    {
+                        _logger.Warning("[Watchlist] Requests response missing results array");
+                        return null;
+                    }
+
+                    var items = new List<RequestItemWithUser>();
+                    foreach (var item in resultsArray.EnumerateArray())
+                    {
+                        var parsed = ParseRequestItemWithUser(item);
+                        if (parsed != null)
+                        {
+                            items.Add(parsed);
+                        }
+                    }
+
+                    return items;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"[Watchlist] Error fetching all requests: {ex.Message}");
+                    return null;
+                }
+            }
+
+            var fetchTask = _requestsInFlight.GetOrAdd(cacheKey, _ => FetchAsync());
             try
             {
-                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/request?take=1000&skip=0&sort=added&filter=all";
-
-                var response = await httpClient.GetAsync(requestUri);
-                if (!response.IsSuccessStatusCode)
+                var items = await fetchTask;
+                if (items != null)
                 {
-                    _logger.Warning($"[Watchlist] Failed to fetch requests from Jellyseerr: {response.StatusCode}");
-                    return null;
-                }
-
-                var content = await response.Content.ReadAsStringAsync();
-                var json = JsonSerializer.Deserialize<JsonElement>(content);
-
-                if (!json.TryGetProperty("results", out var resultsArray))
-                {
-                    _logger.Warning("[Watchlist] Requests response missing results array");
-                    return null;
-                }
-
-                var items = new List<RequestItemWithUser>();
-                foreach (var item in resultsArray.EnumerateArray())
-                {
-                    var parsed = ParseRequestItemWithUser(item);
-                    if (parsed != null)
+                    lock (_requestsCacheLock)
                     {
-                        items.Add(parsed);
+                        _requestsCache[cacheKey] = (items, DateTime.UtcNow);
                     }
                 }
-
                 return items;
             }
-            catch (Exception ex)
+            finally
             {
-                _logger.Error($"[Watchlist] Error fetching all requests: {ex.Message}");
-                return null;
+                _requestsInFlight.TryRemove(cacheKey, out _);
             }
         }
 

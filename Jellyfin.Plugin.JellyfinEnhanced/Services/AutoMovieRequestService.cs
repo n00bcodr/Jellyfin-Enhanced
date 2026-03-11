@@ -24,6 +24,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
         private readonly object _movieCacheLock = new();
+        private readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
+        private readonly object _userIdCacheLock = new();
 
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
@@ -35,6 +37,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger = logger;
             _userManager = userManager;
             _libraryManager = libraryManager;
+        }
+
+        private static string[] GetConfiguredUrls(string? urls)
+        {
+            return (urls ?? string.Empty)
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(url => url.Trim().TrimEnd('/'))
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .ToArray();
+        }
+
+        private static string NormalizeUserId(string userId)
+        {
+            return userId.Replace("-", string.Empty).ToLowerInvariant();
+        }
+
+        private static TimeSpan GetJellyseerrUserIdCacheTtl()
+        {
+            var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrUserIdCacheTtlMinutes ?? 30;
+            return TimeSpan.FromMinutes(Math.Max(1, minutes));
         }
 
         // Checks a movie to determine if the next movie in collection should be requested.
@@ -224,7 +246,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var urls = GetConfiguredUrls(config.JellyseerrUrls);
                 var httpClient = _httpClientFactory.CreateClient();
                 httpClient.DefaultRequestHeaders.Clear();
                 httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
@@ -361,7 +383,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return false;
             }
 
-            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
             httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
@@ -411,10 +433,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
 
-            // Normalize the Jellyfin user ID (remove dashes for comparison)
-            var normalizedJellyfinUserId = jellyfinUserId.Replace("-", "").ToLowerInvariant();
+            var normalizedJellyfinUserId = NormalizeUserId(jellyfinUserId);
 
-            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            lock (_userIdCacheLock)
+            {
+                if (_jellyseerrUserIdCache.TryGetValue(normalizedJellyfinUserId, out var cached) &&
+                    DateTime.UtcNow - cached.CachedAt < GetJellyseerrUserIdCacheTtl())
+                {
+                    return cached.JellyseerrUserId;
+                }
+            }
+
+            var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
@@ -445,7 +475,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                                         if (normalizedJellyseerrId == normalizedJellyfinUserId)
                                         {
-                                            return id.GetInt32().ToString();
+                                            var jellyseerrUserId = id.GetInt32().ToString();
+                                            lock (_userIdCacheLock)
+                                            {
+                                                _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                                            }
+                                            return jellyseerrUserId;
                                         }
                                     }
                                 }

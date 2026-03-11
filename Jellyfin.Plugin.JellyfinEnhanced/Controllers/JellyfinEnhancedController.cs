@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
@@ -53,9 +54,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
         private static readonly object _userIdCacheLock = new();
 
+        // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload)
+        private static readonly Dictionary<string, (JellyseerrUser User, DateTime CachedAt)> _userCache = new();
+        private static readonly object _userCacheLock = new();
+
         // Cache for Seerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
+
+        // Cache for request-page TMDB enrichments (movie/tv detail lookups via Jellyseerr)
+        private static readonly Dictionary<string, (TmdbEnrichmentResult Data, DateTime CachedAt)> _tmdbEnrichmentCache = new();
+        private static readonly object _tmdbEnrichmentCacheLock = new();
+        private static readonly ConcurrentDictionary<string, Task<TmdbEnrichmentResult>> _tmdbEnrichmentInFlight = new();
 
         private static TimeSpan GetResponseCacheTtl()
         {
@@ -67,6 +77,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrUserIdCacheTtlMinutes ?? 30;
             return TimeSpan.FromMinutes(Math.Max(1, minutes));
+        }
+
+        private static TimeSpan GetTmdbEnrichmentCacheTtl()
+        {
+            var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrResponseCacheTtlMinutes ?? 10;
+            return TimeSpan.FromMinutes(Math.Max(1, minutes));
+        }
+
+        private sealed class TmdbEnrichmentResult
+        {
+            public string? Title { get; init; }
+            public int? Year { get; init; }
+            public string? PosterUrl { get; init; }
+            public string? DigitalReleaseDate { get; init; }
+            public string? TheatricalReleaseDate { get; init; }
+            public string? InitialAirDate { get; init; }
+            public string? NextAirDate { get; init; }
         }
 
         private static readonly HashSet<string> BrandingFileNames = new(new[]
@@ -109,6 +136,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
 
+            bool cacheEnabled = !config.JellyseerrDisableCache;
+            if (cacheEnabled)
+            {
+                lock (_userCacheLock)
+                {
+                    if (_userCache.TryGetValue(jellyfinUserId, out var cached) &&
+                        DateTime.UtcNow - cached.CachedAt < GetUserIdCacheTtl())
+                    {
+                        return cached.User;
+                    }
+                }
+            }
+
             // _logger.Info($"Attempting to find Seerr user for Jellyfin User ID: {jellyfinUserId}");
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
@@ -135,6 +175,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedJellyfinUserId, StringComparison.OrdinalIgnoreCase));
                             if (user != null)
                             {
+                                if (cacheEnabled)
+                                {
+                                    lock (_userCacheLock)
+                                    {
+                                        _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
+                                    }
+                                }
                                 // _logger.Info($"Found Seerr user ID {user.Id} for Jellyfin user ID {jellyfinUserId} at {url.Trim()}");
                                 return user;
                             }
@@ -3336,13 +3383,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl)
         {
-            try
-            {
-                var endpoint = type == "movie" ? "movie" : "tv";
-                var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/{endpoint}/{tmdbId}");
+            var cacheKey = $"{(type == "movie" ? "movie" : "tv")}:{tmdbId}";
+            var cacheTtl = GetTmdbEnrichmentCacheTtl();
+            var cacheEnabled = !(JellyfinEnhanced.Instance?.Configuration?.JellyseerrDisableCache ?? false);
 
-                if (response.IsSuccessStatusCode)
+            if (cacheEnabled)
+            {
+                lock (_tmdbEnrichmentCacheLock)
                 {
+                    if (_tmdbEnrichmentCache.TryGetValue(cacheKey, out var cached) &&
+                        DateTime.UtcNow - cached.CachedAt < cacheTtl)
+                    {
+                        var hit = cached.Data;
+                        return (hit.Title, hit.Year, hit.PosterUrl, hit.DigitalReleaseDate, hit.TheatricalReleaseDate, hit.InitialAirDate, hit.NextAirDate);
+                    }
+                }
+            }
+
+            async Task<TmdbEnrichmentResult> FetchEnrichmentAsync()
+            {
+                try
+                {
+                    var endpoint = type == "movie" ? "movie" : "tv";
+                    var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/{endpoint}/{tmdbId}");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return new TmdbEnrichmentResult();
+                    }
+
                     var content = await response.Content.ReadAsStringAsync();
                     var data = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
 
@@ -3364,7 +3433,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             theatricalReleaseDate = rd.GetString();
                         }
 
-                        // Try to get release dates from releaseDates object (which contains releases.results array)
                         if (data.TryGetProperty("releases", out var releases) && releases.TryGetProperty("results", out var results))
                         {
                             foreach (var regionRelease in results.EnumerateArray())
@@ -3376,13 +3444,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         if (release.TryGetProperty("type", out var typeProp))
                                         {
                                             var releaseType = typeProp.GetInt32();
-                                            // Type 4 = Digital, Type 5 = Physical, Type 3 = Theatrical
                                             if (releaseType == 4 && release.TryGetProperty("release_date", out var digitalDateProp))
                                             {
                                                 var dateStr = digitalDateProp.GetString();
                                                 if (!string.IsNullOrEmpty(dateStr))
                                                 {
-                                                    // Keep the earliest digital release date we find
                                                     if (digitalReleaseDate == null || string.Compare(dateStr, digitalReleaseDate, StringComparison.Ordinal) < 0)
                                                     {
                                                         digitalReleaseDate = dateStr.Length >= 10 ? dateStr.Substring(0, 10) : dateStr;
@@ -3421,15 +3487,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         posterUrl = $"https://image.tmdb.org/t/p/w300{poster.GetString()}";
                     }
 
-                    return (title, year, posterUrl, digitalReleaseDate, theatricalReleaseDate, initialAirDate, nextAirDate);
+                    return new TmdbEnrichmentResult
+                    {
+                        Title = title,
+                        Year = year,
+                        PosterUrl = posterUrl,
+                        DigitalReleaseDate = digitalReleaseDate,
+                        TheatricalReleaseDate = theatricalReleaseDate,
+                        InitialAirDate = initialAirDate,
+                        NextAirDate = nextAirDate
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to enrich request with TMDB data: {ex.Message}");
+                    return new TmdbEnrichmentResult();
                 }
             }
-            catch (Exception ex)
+
+            TmdbEnrichmentResult result;
+            if (cacheEnabled)
             {
-                _logger.Warning($"Failed to enrich request with TMDB data: {ex.Message}");
+                var fetchTask = _tmdbEnrichmentInFlight.GetOrAdd(cacheKey, _ => FetchEnrichmentAsync());
+                try
+                {
+                    result = await fetchTask;
+                }
+                finally
+                {
+                    _tmdbEnrichmentInFlight.TryRemove(cacheKey, out _);
+                }
+
+                lock (_tmdbEnrichmentCacheLock)
+                {
+                    _tmdbEnrichmentCache[cacheKey] = (result, DateTime.UtcNow);
+
+                    if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
+                    {
+                        var staleKeys = _tmdbEnrichmentCache
+                            .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > cacheTtl)
+                            .Select(kv => kv.Key)
+                            .ToList();
+                        foreach (var staleKey in staleKeys)
+                        {
+                            _tmdbEnrichmentCache.Remove(staleKey);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                result = await FetchEnrichmentAsync();
             }
 
-            return (null, null, null, null, null, null, null);
+            return (result.Title, result.Year, result.PosterUrl, result.DigitalReleaseDate, result.TheatricalReleaseDate, result.InitialAirDate, result.NextAirDate);
         }
 
         private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
