@@ -27,6 +27,7 @@
       highlightWatchedSeries: false,
       showUnmonitored: false,
       showOnlyRequested: false,
+      forceOnlyRequested: false,
     },
     userDataMap: new Map(),
     activeFilters: new Set(), // Track active filters
@@ -1256,6 +1257,7 @@
     const config = JE.pluginConfig || {};
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
     const storedShowUnmonitored = getStoredShowUnmonitored();
+    const forceOnlyRequested = config.CalendarForceOnlyRequested || false;
     state.settings = {
       firstDayOfWeek: config.CalendarFirstDayOfWeek || "Monday",
       timeFormat: config.CalendarTimeFormat || "5pm/5:30pm",
@@ -1264,11 +1266,18 @@
       showUnmonitored: storedShowUnmonitored ?? false,
       displayMode: JE.currentSettings.calendarDisplayMode || "list",
       showOnlyRequested: config.CalendarShowOnlyRequested || false,
+      forceOnlyRequested,
     };
 
     // If show only requested is enabled, set Requests as active by default
-    if (state.settings.showOnlyRequested && state.activeFilters.size === 0) {
+    if (!state.settings.forceOnlyRequested && state.settings.showOnlyRequested && state.activeFilters.size === 0) {
       state.activeFilters.add("Requests");
+    }
+
+    // Force-only mode handles request filtering globally, so the Requests chip/filter
+    // should not remain active in the interactive filter set.
+    if (state.settings.forceOnlyRequested) {
+      state.activeFilters.delete("Requests");
     }
   }
 
@@ -1508,7 +1517,7 @@
     // Then fetch user data for those specific events
     await fetchUserData();
 
-    if (state.activeFilters.has("Requests")) {
+    if (state.activeFilters.has("Requests") || state.settings.forceOnlyRequested) {
       await ensureRequestData();
     }
 
@@ -1529,11 +1538,6 @@
       });
     }
 
-    // Then apply user-selected filters
-    if (state.activeFilters.size == 0) return filteredEvents;
-
-    const filters = Array.from(state.activeFilters);
-
     const getRequestKey = (event) => {
       const tmdbId = event?.tmdbId;
       if (!tmdbId) return null;
@@ -1545,6 +1549,16 @@
       const key = getRequestKey(event);
       return key ? state.requestedItems.has(key) : false;
     };
+
+    // Hard-enforced mode: always scope to requested items regardless of interactive filters.
+    if (state.settings.forceOnlyRequested) {
+      filteredEvents = filteredEvents.filter((event) => isRequestedEvent(event));
+    }
+
+    // Then apply user-selected filters
+    if (state.activeFilters.size == 0) return filteredEvents;
+
+    const filters = Array.from(state.activeFilters);
 
       return filteredEvents.filter((event) => {
         const userData = state.userDataMap?.get(event.id);
@@ -1817,6 +1831,10 @@
 
   // Toggle filter on/off
   function toggleFilter(filterType) {
+    if (state.settings.forceOnlyRequested && filterType === "Requests") {
+      return;
+    }
+
     if (state.activeFilters.has(filterType)) {
       state.activeFilters.delete(filterType);
     } else {
@@ -2298,7 +2316,7 @@
       return state.activeFilters.has(filterType) ? 'active' : 'inactive';
     };
 
-    const showRequestsFilter = !!JE.pluginConfig?.JellyseerrEnabled;
+    const showRequestsFilter = !!JE.pluginConfig?.JellyseerrEnabled && !state.settings.forceOnlyRequested;
     const requestsLabel = JE.t?.("requests_requests") || "Requests";
     const requestsLegend = showRequestsFilter
       ? `<div class="je-calendar-legend-item ${getItemClass('Requests')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Requests'); event.stopPropagation();">
