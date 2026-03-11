@@ -121,6 +121,9 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
 
         // Re-render the action buttons/chips to show updated status (chip, downloads, request button)
         renderActions(data, mediaType);
+        if (mediaType === 'tv') {
+            enrichSeasonCardsWithJellyfinLinks(data, modal);
+        }
 
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
@@ -131,6 +134,106 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
     }
+}
+
+function getSeasonStatusInfo(data, seasonNumber) {
+    const seasons = data?.mediaInfo?.seasons;
+    if (!Array.isArray(seasons) || !seasonNumber) return null;
+    return seasons.find(s => Number(s?.seasonNumber) === Number(seasonNumber)) || null;
+}
+
+function getSeasonJellyfinId(seasonInfo, is4k = false) {
+    if (!seasonInfo || typeof seasonInfo !== 'object') return null;
+    if (is4k) {
+        return seasonInfo.jellyfinMediaId4k || seasonInfo.jellyfinSeasonId4k || seasonInfo.jellyfinId4k || null;
+    }
+    return seasonInfo.jellyfinMediaId || seasonInfo.jellyfinSeasonId || seasonInfo.jellyfinId || null;
+}
+
+function buildSeasonAvailabilityLinks(seasonInfo, jellyfinSeasonId = null, jellyfinSeasonId4k = null) {
+    const normalStatus = seasonInfo?.status;
+    const status4k = seasonInfo?.status4k;
+    const isNormalAvailable = normalStatus === 5 || normalStatus === 4 || (!normalStatus && !!jellyfinSeasonId);
+    const is4kAvailable = status4k === 5 || status4k === 4 || (!status4k && !!jellyfinSeasonId4k);
+
+    const pills = [];
+
+    if (isNormalAvailable) {
+        if (jellyfinSeasonId) {
+            pills.push(`<a is="emby-linkbutton" class="season-link-chip available" href="#!/details?id=${encodeURIComponent(jellyfinSeasonId)}">Available</a>`);
+        } else {
+            pills.push('<span class="season-link-chip available">Available</span>');
+        }
+    }
+
+    if (is4kAvailable) {
+        if (jellyfinSeasonId4k) {
+            pills.push(`<a is="emby-linkbutton" class="season-link-chip available-4k" href="#!/details?id=${encodeURIComponent(jellyfinSeasonId4k)}">4K Available</a>`);
+        } else if (jellyfinSeasonId) {
+            pills.push(`<a is="emby-linkbutton" class="season-link-chip available-4k" href="#!/details?id=${encodeURIComponent(jellyfinSeasonId)}">4K Available</a>`);
+        } else {
+            pills.push('<span class="season-link-chip available-4k">4K Available</span>');
+        }
+    }
+
+    if (!pills.length) return '';
+    return `<div class="season-links">${pills.join('')}</div>`;
+}
+
+async function fetchJellyfinSeasonMap(seriesId) {
+    const userId = ApiClient.getCurrentUserId?.();
+    if (!userId || !seriesId) return {};
+
+    try {
+        const response = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                ParentId: seriesId,
+                IncludeItemTypes: 'Season',
+                Recursive: false,
+                Fields: 'ParentIndexNumber,IndexNumber,Name'
+            }),
+            dataType: 'json'
+        });
+
+        const map = {};
+        const items = Array.isArray(response?.Items) ? response.Items : [];
+        for (const season of items) {
+            const seasonNumber = Number(season?.IndexNumber);
+            if (season?.Id && Number.isFinite(seasonNumber) && seasonNumber > 0) {
+                map[seasonNumber] = season.Id;
+            }
+        }
+        return map;
+    } catch (error) {
+        console.debug(`${logPrefix} Could not load Jellyfin season links:`, error);
+        return {};
+    }
+}
+
+async function enrichSeasonCardsWithJellyfinLinks(data, modal = currentModal) {
+    if (!modal || data?.mediaType === 'movie') return;
+
+    const cards = modal.querySelectorAll('[data-season-number]');
+    if (!cards.length) return;
+
+    const seriesId = data?.mediaInfo?.jellyfinMediaId;
+    if (!seriesId) return;
+
+    if (!data._jellyfinSeasonIdMap) {
+        data._jellyfinSeasonIdMap = await fetchJellyfinSeasonMap(seriesId);
+    }
+
+    cards.forEach(card => {
+        const seasonNumber = Number(card.dataset.seasonNumber);
+        const mount = card.querySelector('[data-season-links]');
+        if (!mount || !Number.isFinite(seasonNumber)) return;
+
+        const seasonInfo = getSeasonStatusInfo(data, seasonNumber);
+        const seasonId = getSeasonJellyfinId(seasonInfo, false) || data._jellyfinSeasonIdMap?.[seasonNumber] || null;
+        const seasonId4k = getSeasonJellyfinId(seasonInfo, true) || null;
+        mount.innerHTML = buildSeasonAvailabilityLinks(seasonInfo, seasonId, seasonId4k);
+    });
 }
 
 /**
@@ -249,6 +352,9 @@ function showModal(data, mediaType) {
 
     // Render action buttons/chips after mount
     renderActions(data, mediaType);
+    if (mediaType === 'tv') {
+        enrichSeasonCardsWithJellyfinLinks(data, modal);
+    }
 
     // Listen for TV season requests to update status
     if (mediaType === 'tv') {
@@ -271,6 +377,7 @@ function showModal(data, mediaType) {
             }
 
             renderActions(data, mediaType);
+            enrichSeasonCardsWithJellyfinLinks(data, modal);
         };
         document.addEventListener('jellyseerr-tv-requested', handleTvRequest);
         modal._cleanupTvListener = () => document.removeEventListener('jellyseerr-tv-requested', handleTvRequest);
@@ -636,7 +743,28 @@ function buildMediaFacts(data, mediaType, tmdbId) {
     const jellyseerrBaseUrl = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
     const jellyseerrLink = jellyseerrBaseUrl ? `${jellyseerrBaseUrl}/${mediaType}/${tmdbId}` : null;
 
+    // Jellyfin library IDs (set when item is available in the local library)
+    const jellyfinMediaId = data.mediaInfo?.jellyfinMediaId || null;
+    const jellyfinMediaId4k = data.mediaInfo?.jellyfinMediaId4k || null;
+
+    const jellyfinSvg = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 512 512"><defs><linearGradient id="je_jfl_a" x1="97.487" x2="522.047" y1="483.902" y2="729.018" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient><linearGradient id="je_jfl_b" x1="94.186" x2="518.747" y1="489.619" y2="734.735" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient></defs><path d="M256 196.2c-22.4 0-94.8 131.3-83.8 153.4s156.8 21.9 167.7 0-61.3-153.4-83.9-153.4" style="fill:url(#je_jfl_a)"/><path d="M256 0C188.3 0-29.8 395.4 3.4 462.2s472.3 66 505.2 0S323.8 0 256 0m165.6 404.3c-21.6 43.2-309.3 43.8-331.1 0S211.7 101.4 256 101.4 443.2 361 421.6 404.3" style="fill:url(#je_jfl_b)"/></svg>';
+    const jellyfinSvg4k = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 512 512"><defs><linearGradient id="jf4k-a" x1="97.487" x2="522.047" y1="483.902" y2="729.018" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient><linearGradient id="jf4k-b" x1="94.186" x2="518.747" y1="489.619" y2="734.735" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient><linearGradient id="jf4k-c" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#1a1a2e"/><stop offset="100%" style="stop-color:#16213e"/></linearGradient></defs><path d="M256 196.2c-22.4 0-94.8 131.3-83.8 153.4s156.8 21.9 167.7 0-61.3-153.4-83.9-153.4" style="fill:url(#jf4k-a)"/><path d="M256 0C188.3 0-29.8 395.4 3.4 462.2s472.3 66 505.2 0S323.8 0 256 0m165.6 404.3c-21.6 43.2-309.3 43.8-331.1 0S211.7 101.4 256 101.4 443.2 361 421.6 404.3" style="fill:url(#jf4k-b)"/><rect x="310" y="330" width="202" height="170" rx="20" fill="url(#jf4k-c)"/><rect x="312" y="332" width="198" height="166" rx="19" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/><text x="411" y="462" text-anchor="middle" fill="#fff" font-weight="900" font-size="140" font-family="Arial Black, Arial, sans-serif" letter-spacing="-3">4K</text></svg>';
+
     const links = [
+        jellyfinMediaId ? {
+            href: `#!/details?id=${jellyfinMediaId}`,
+            title: 'Open in Jellyfin',
+            className: 'je-more-info-fact jellyfin',
+            svg: jellyfinSvg,
+            internal: true
+        } : null,
+        jellyfinMediaId4k ? {
+            href: `#!/details?id=${jellyfinMediaId4k}`,
+            title: 'Open 4K version in Jellyfin',
+            className: 'je-more-info-fact jellyfin jellyfin-4k',
+            svg: jellyfinSvg4k,
+            internal: true
+        } : null,
         jellyseerrLink ? {
             href: jellyseerrLink,
             title: 'View on Seerr',
@@ -686,7 +814,7 @@ function buildMediaFacts(data, mediaType, tmdbId) {
         <div class="je-more-info-media-facts" aria-label="External links">
             <div class="je-more-info-media-facts-row">
                 ${links.map(link => `
-                    <a is="emby-linkbutton" class="${link.className}" href="${escapeHtml(link.href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(link.title)}">
+                    <a is="emby-linkbutton" class="${link.className}" href="${escapeHtml(link.href)}" ${link.internal ? '' : 'target="_blank" rel="noopener noreferrer"'} title="${escapeHtml(link.title)}">
                         ${link.svg}
                     </a>
                 `).join('')}
@@ -1355,12 +1483,15 @@ function buildSeasonsSection(data) {
             <h3>Seasons</h3>
             <div class="seasons-grid">
                 ${data.seasons.map(season => {
+                    const seasonInfo = getSeasonStatusInfo(data, season.seasonNumber);
+                    const seasonJellyfinId = getSeasonJellyfinId(seasonInfo, false);
+                    const seasonJellyfinId4k = getSeasonJellyfinId(seasonInfo, true);
                     const posterUrl = season.posterPath
                         ? `https://image.tmdb.org/t/p/w185${season.posterPath}`
                         : '';
 
                     return `
-                        <div class="season-card">
+                        <div class="season-card" data-season-number="${season.seasonNumber || ''}">
                             <div class="season-poster">
                                 ${posterUrl ? `<img src="${posterUrl}" alt="${escapeHtml(season.name)}" />` : ''}
                             </div>
@@ -1370,6 +1501,7 @@ function buildSeasonsSection(data) {
                                     ${season.episodeCount} Episodes
                                     ${season.airDate ? ` • ${new Date(season.airDate).getFullYear()}` : ''}
                                 </div>
+                                <div data-season-links>${buildSeasonAvailabilityLinks(seasonInfo, seasonJellyfinId, seasonJellyfinId4k)}</div>
                                 ${season.overview ? `<div class="season-overview">${escapeHtml(season.overview)}</div>` : ''}
                             </div>
                         </div>
@@ -2457,6 +2589,44 @@ function injectStyles() {
             font-size: 0.85rem;
             line-height: 1.4;
             opacity: 0.8;
+        }
+
+        .je-more-info-modal .season-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-bottom: 0.55rem;
+        }
+
+        .je-more-info-modal a[is="emby-linkbutton"].season-link-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            padding: 0.2rem 0.6rem !important;
+            font-size: 0.74rem;
+            font-weight: 600;
+            line-height: 1;
+            color: #e5e7eb !important;
+            text-decoration: none;
+            background: rgba(255, 255, 255, 0.06) !important;
+        }
+
+        .je-more-info-modal a[is="emby-linkbutton"].season-link-chip.available {
+            color: #9af5c6 !important;
+            border-color: rgba(44, 194, 129, 0.45) !important;
+            background: rgba(44, 194, 129, 0.16) !important;
+        }
+
+        .je-more-info-modal a[is="emby-linkbutton"].season-link-chip.available-4k {
+            color: #b5d8ff !important;
+            border-color: rgba(70, 142, 255, 0.45) !important;
+            background: rgba(70, 142, 255, 0.16) !important;
+        }
+
+        .je-more-info-modal a[is="emby-linkbutton"].season-link-chip:hover {
+            filter: brightness(1.08);
+            transform: translateY(-1px);
         }
 
         @media (max-width: 1024px) {
