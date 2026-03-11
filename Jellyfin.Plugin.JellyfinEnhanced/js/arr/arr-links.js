@@ -14,15 +14,19 @@
         let isAdmin = false;
 
         try {
-            let user = null;
-            for (let i = 0; i < 20; i++) {  // ~10s retry window
-                try {
-                    user = await ApiClient.getCurrentUser();
-                    if (user) break;
-                } catch (e) {
-                    // swallow error, retry
+            // Use the user object pre-fetched during plugin.js init (Stage 2) when available.
+            // Falls back to a short direct fetch so the module isn't blocked for up to 10 s.
+            let user = JE.currentUser || null;
+            if (!user) {
+                for (let i = 0; i < 5; i++) {  // shortened retry window (~2.5s)
+                    try {
+                        user = await ApiClient.getCurrentUser();
+                        if (user) break;
+                    } catch (e) {
+                        // swallow error, retry
+                    }
+                    await new Promise(r => setTimeout(r, 500));
                 }
-                await new Promise(r => setTimeout(r, 500));
             }
 
             if (!user) {

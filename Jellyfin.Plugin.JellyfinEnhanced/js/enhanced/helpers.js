@@ -63,6 +63,45 @@
     }
 
     /**
+     * Patch history.pushState / history.replaceState to emit a 'je:navigate' event.
+     * Jellyfin's SPA router calls pushState for some transitions without changing
+     * location.hash, so hashchange/popstate are never fired for those navigations.
+     * This single patch lets all modules listen to one synthetic event instead of polling.
+     */
+    function patchNavigationEvents() {
+        if (history.__jePushed) return; // only patch once
+        history.__jePushed = true;
+
+        const _push = history.pushState.bind(history);
+        const _replace = history.replaceState.bind(history);
+
+        history.pushState = function(...args) {
+            _push(...args);
+            window.dispatchEvent(new Event('je:navigate'));
+        };
+        history.replaceState = function(...args) {
+            _replace(...args);
+            window.dispatchEvent(new Event('je:navigate'));
+        };
+    }
+
+    /**
+     * Subscribe to all navigation events: pushState, replaceState, hashchange, popstate.
+     * @param {Function} callback - Called on every navigation.
+     * @returns {Function} Unsubscribe function.
+     */
+    function onNavigate(callback) {
+        window.addEventListener('je:navigate', callback);
+        window.addEventListener('hashchange', callback);
+        window.addEventListener('popstate', callback);
+        return () => {
+            window.removeEventListener('je:navigate', callback);
+            window.removeEventListener('hashchange', callback);
+            window.removeEventListener('popstate', callback);
+        };
+    }
+
+    /**
      * Initialize the utils by hooking into Emby.Page.onViewShow
      */
     function initialize() {
@@ -71,6 +110,9 @@
             setTimeout(initialize, 100);
             return;
         }
+
+        // Patch navigation history methods so pushState fires je:navigate
+        patchNavigationEvents();
 
         // Store original onViewShow if it exists
         originalOnViewShow = window.Emby.Page.onViewShow;
@@ -345,24 +387,24 @@
      */
     async function retry(fn, maxAttempts = 5, baseDelay = 1000) {
         let lastError;
-        
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return await fn();
             } catch (error) {
                 lastError = error;
-                
+
                 if (attempt === maxAttempts) {
                     console.error(`🪼 Jellyfin Enhanced: Failed after ${maxAttempts} attempts:`, error);
                     throw error;
                 }
-                
+
                 const delay = baseDelay * Math.pow(2, attempt - 1);
                 console.warn(`🪼 Jellyfin Enhanced: Attempt ${attempt}/${maxAttempts} failed, retrying in ${delay}ms...`, error);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
-        
+
         throw lastError;
     }
 
@@ -373,7 +415,7 @@
      */
     function isElementVisible(element) {
         if (!element) return false;
-        
+
         const rect = element.getBoundingClientRect();
         return (
             rect.top >= 0 &&
@@ -393,22 +435,22 @@
     function waitForCondition(condition, timeout = 5000, interval = 100) {
         return new Promise((resolve) => {
             const startTime = Date.now();
-            
+
             const checkCondition = () => {
                 if (condition()) {
                     resolve(true);
                     return;
                 }
-                
+
                 if (Date.now() - startTime >= timeout) {
                     console.warn('🪼 Jellyfin Enhanced: Timeout waiting for condition');
                     resolve(false);
                     return;
                 }
-                
+
                 setTimeout(checkCondition, interval);
             };
-            
+
             checkCondition();
         });
     }
@@ -424,12 +466,12 @@
         if (existing) {
             existing.remove();
         }
-        
+
         const style = document.createElement('style');
         style.id = id;
         style.textContent = css;
         document.head.appendChild(style);
-        
+
         console.log(`🪼 Jellyfin Enhanced: Added CSS: ${id}`);
     }
 
@@ -463,6 +505,7 @@
     // Expose helpers
     JE.helpers = {
         onViewPage,
+        onNavigate,
         getItemCached,
         getCurrentView,
         createObserver,
