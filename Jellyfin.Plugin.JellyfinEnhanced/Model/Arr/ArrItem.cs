@@ -146,7 +146,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         /// Root folder path from Sonarr/Radarr (used server-side for library access fallback).
         /// Not serialized to clients to avoid exposing server filesystem paths.
         /// </summary>
-        [System.Text.Json.Serialization.JsonIgnore]
+        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
         public string? RootFolderPath { get; set; }
     }
 }

@@ -1265,6 +1265,7 @@
       highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
       showUnmonitored: storedShowUnmonitored ?? false,
       displayMode: JE.currentSettings.calendarDisplayMode || "list",
+      filterByLibraryAccess: config.CalendarFilterByLibraryAccess !== false,
       showOnlyRequested: config.CalendarShowOnlyRequested || false,
       forceOnlyRequested,
     };
@@ -1541,7 +1542,7 @@
     // Defense-in-depth: hide events the user cannot access.
     // If user-data was fetched, events with an itemId but no user-data
     // entry are from inaccessible libraries. (Primary filtering is server-side.)
-    if (state.userDataMap && state.userDataMap.size > 0) {
+    if (state.settings.filterByLibraryAccess && state.userDataMap && state.userDataMap.size > 0) {
       const checkedEventIds = new Set(state.userDataMap.keys());
       filteredEvents = filteredEvents.filter(
         (event) => !event.itemId || checkedEventIds.has(event.id),

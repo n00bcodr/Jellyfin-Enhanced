@@ -3220,71 +3220,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Filter events by user library access permissions (Issue #443)
             if (config.CalendarFilterByLibraryAccess)
             {
-            var calendarUserId = UserHelper.GetCurrentUserId(User);
-            if (calendarUserId.HasValue)
-            {
-                var calendarUser = _userManager.GetUserById(calendarUserId.Value);
-                if (calendarUser != null)
+                var calendarUserId = UserHelper.GetCurrentUserId(User);
+                if (calendarUserId.HasValue)
                 {
-                    var uniqueItemIds = events
-                        .Select(e => e.ItemId)
-                        .Where(id => id.HasValue)
-                        .Select(id => id!.Value)
-                        .Distinct()
-                        .ToList();
-
-                    if (uniqueItemIds.Count > 0)
+                    var calendarUser = _userManager.GetUserById(calendarUserId.Value);
+                    if (calendarUser != null)
                     {
-                        // Check each unique ItemId against user's library access.
-                        // GetItemById with user returns null if the user cannot access the item.
-                        var accessibleIds = new HashSet<Guid>();
-                        foreach (var id in uniqueItemIds)
+                        var uniqueItemIds = events
+                            .Select(e => e.ItemId)
+                            .Where(id => id.HasValue)
+                            .Select(id => id!.Value)
+                            .Distinct()
+                            .ToList();
+
+                        if (uniqueItemIds.Count > 0)
                         {
-                            var item = _libraryManager.GetItemById<BaseItem>(id, calendarUser);
-                            if (item != null)
+                            // GetItemById with user returns null if the user cannot access the item
+                            var accessibleIds = new HashSet<Guid>();
+                            foreach (var id in uniqueItemIds)
                             {
-                                accessibleIds.Add(id);
+                                if (_libraryManager.GetItemById<BaseItem>(id, calendarUser) != null)
+                                {
+                                    accessibleIds.Add(id);
+                                }
                             }
-                        }
 
-                        // Build rootFolderPath accessibility map from items already in Jellyfin.
-                        // If ANY item from a rootFolderPath is accessible, the user has access to that library.
-                        var rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
-                        {
-                            var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
-                            if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
+                            // Build rootFolderPath accessibility map from items already in Jellyfin.
+                            // If ANY item from a root folder is accessible, the user has access to that library.
+                            var rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                            foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
                             {
-                                rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
+                                var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
+                                if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
+                                {
+                                    rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
+                                }
                             }
+
+                            events = events.Where(e =>
+                            {
+                                if (e.ItemId.HasValue)
+                                    return accessibleIds.Contains(e.ItemId.Value);
+
+                                // Items not in Jellyfin: use root folder mapping to infer access
+                                if (!string.IsNullOrEmpty(e.RootFolderPath)
+                                    && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
+                                    return hasAccess;
+
+                                // No information available: show by default
+                                return true;
+                            }).ToList();
                         }
-
-                        // Filter: keep events that are accessible or have no way to determine access
-                        events = events.Where(e =>
-                        {
-                            // Items in Jellyfin: check direct access
-                            if (e.ItemId.HasValue)
-                                return accessibleIds.Contains(e.ItemId.Value);
-
-                            // Items NOT in Jellyfin but with a known root folder:
-                            // use the auto-discovered mapping to determine access
-                            if (!string.IsNullOrEmpty(e.RootFolderPath)
-                                && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
-                                return hasAccess;
-
-                            // No information available: show by default
-                            return true;
-                        }).ToList();
                     }
                 }
-            }
             }
 
             return Ok(new { events });
         }
 
         /// <summary>
-        /// Extracts the root folder (first path component) from a full item path.
+        /// Extracts the parent folder from a full item path.
         /// e.g., "/tv/Scrubs (2026) {tvdb-465690}" → "/tv"
         /// </summary>
         private static string? GetRootFolderFromPath(string? path)
