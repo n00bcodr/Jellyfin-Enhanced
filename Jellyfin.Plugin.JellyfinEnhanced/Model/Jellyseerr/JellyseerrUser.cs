@@ -9,6 +9,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr {
         [JsonPropertyName("jellyfinUserId")]
         public string? JellyfinUserId { get; set; }
 
+        [JsonPropertyName("displayName")]
+        public string? DisplayName { get; set; }
+
+        [JsonPropertyName("jellyfinUsername")]
+        public string? JellyfinUsername { get; set; }
+
         [JsonPropertyName("permissions")]
         public JellyseerrPermission Permissions { get; set; }
     }

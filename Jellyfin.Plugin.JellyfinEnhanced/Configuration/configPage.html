@@ -1204,6 +1204,18 @@
                                 </label>
                             </div>
                             <div class="fieldDescription">When enabled, the calendar always shows only your requested items and the Requests filter is hidden.</div>
+                            <div class="checkboxContainer" style="margin-top: 1.5em; margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="calendarTagMatchingEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Tag-Based Request Matching</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription">When enabled, the Requests filter also checks Sonarr/Radarr tags (format: <code>{seerr_id}-{username}</code>) to identify requested items. This catches items where Jellyseerr has lost track of the requesting user but the tags remain in Sonarr/Radarr. Requires Sonarr/Radarr API keys to be configured.</div>
+                            <div id="calendarTagMappingsContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="calendarTagUserMappings">Custom Tag-to-User Mappings (Optional)</label>
+                                <textarea style="display:block; height: 8vh !important;" class="emby-textarea emby-input" id="calendarTagUserMappings" name="calendarTagUserMappings" rows="3" placeholder="seerrUsername=jellyfinUsername&#10;oldName=currentJellyfinName"></textarea>
+                                <div class="fieldDescription">Map Seerr tag usernames to Jellyfin usernames when they don't match. One mapping per line in <code>tagName=jellyfinUsername</code> format.</div>
+                            </div>
                         </div>
                         <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                             <div style="display: flex; align-items: flex-start; gap: 1em;">
@@ -2116,6 +2128,8 @@
                 document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
                 document.querySelector('#calendarShowOnlyRequested').checked = config.CalendarShowOnlyRequested || false;
                 document.querySelector('#calendarForceOnlyRequested').checked = config.CalendarForceOnlyRequested || false;
+                document.querySelector('#calendarTagMatchingEnabled').checked = config.CalendarTagMatchingEnabled || false;
+                document.querySelector('#calendarTagUserMappings').value = config.CalendarTagUserMappings || '';
 
                 // Hidden Content settings
                 document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
@@ -2308,6 +2322,8 @@
             config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
             config.CalendarShowOnlyRequested = document.querySelector('#calendarShowOnlyRequested').checked;
             config.CalendarForceOnlyRequested = document.querySelector('#calendarForceOnlyRequested').checked;
+            config.CalendarTagMatchingEnabled = document.querySelector('#calendarTagMatchingEnabled').checked;
+            config.CalendarTagUserMappings = document.querySelector('#calendarTagUserMappings').value || '';
 
             // Hidden Content settings
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
