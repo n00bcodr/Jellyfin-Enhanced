@@ -1626,6 +1626,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarTimeFormat,
                 config.CalendarHighlightFavorites,
                 config.CalendarHighlightWatchedSeries,
+                config.CalendarFilterByLibraryAccess,
                 config.CalendarShowOnlyRequested,
                 config.CalendarForceOnlyRequested,
 
@@ -3217,6 +3218,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             // Filter events by user library access permissions (Issue #443)
+            if (config.CalendarFilterByLibraryAccess)
+            {
             var calendarUserId = UserHelper.GetCurrentUserId(User);
             if (calendarUserId.HasValue)
             {
@@ -3274,6 +3277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }).ToList();
                     }
                 }
+            }
             }
 
             return Ok(new { events });
