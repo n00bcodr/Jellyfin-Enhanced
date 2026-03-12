@@ -58,6 +58,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (JellyseerrUser User, DateTime CachedAt)> _userCache = new();
         private static readonly object _userCacheLock = new();
 
+        // Cache for tag-based request matching (per-user, 5-minute TTL)
+        private static readonly Dictionary<string, (List<string> Keys, DateTime CachedAt)> _tagRequestCache = new();
+        private static readonly object _tagRequestCacheLock = new();
+        private static readonly TimeSpan _tagRequestCacheTtl = TimeSpan.FromMinutes(5); 27af073 (refactor: parallelize Sonarr/Radarr fetches and add caching)
+
         // Cache for Seerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
@@ -3436,97 +3441,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (matchPatterns.Count == 0)
                 return Ok(new { tagRequestKeys = new List<string>() });
 
+            // Check cache first
+            lock (_tagRequestCacheLock)
+            {
+                if (_tagRequestCache.TryGetValue(jellyfinUserId, out var cached) &&
+                    DateTime.UtcNow - cached.CachedAt < _tagRequestCacheTtl)
+                {
+                    return Ok(new { tagRequestKeys = cached.Keys });
+                }
+            }
+
             var tagRequestKeys = new List<string>();
 
-            try
+            // Process Sonarr and Radarr in parallel with independent error handling
+            async Task<List<string>> FetchSonarrTagKeys()
             {
-                // Process Sonarr
-                if (hasSonarr)
+                var keys = new List<string>();
+                try
                 {
                     var sonarrUrl = config.SonarrUrl.TrimEnd('/');
                     var client = _httpClientFactory.CreateClient();
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(15);
 
-                    // Fetch tag definitions
                     var tagsResponse = await client.GetAsync($"{sonarrUrl}/api/v3/tag");
-                    if (tagsResponse.IsSuccessStatusCode)
+                    if (!tagsResponse.IsSuccessStatusCode) return keys;
+
+                    var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                    var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrTag>>(tagsJson) ?? new List<Services.SonarrTag>();
+                    var matchingTagIds = tags.Where(t => matchPatterns.Contains(t.Label)).Select(t => t.Id).ToHashSet();
+
+                    if (matchingTagIds.Count == 0) return keys;
+
+                    var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
+                    if (!seriesResponse.IsSuccessStatusCode) return keys;
+
+                    var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
+                    var allSeries = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrSeries>>(seriesJson) ?? new List<Services.SonarrSeries>();
+
+                    foreach (var series in allSeries)
                     {
-                        var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
-                        var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrTag>>(tagsJson) ?? new List<Services.SonarrTag>();
-
-                        // Find matching tag IDs
-                        var matchingTagIds = tags
-                            .Where(t => matchPatterns.Contains(t.Label))
-                            .Select(t => t.Id)
-                            .ToHashSet();
-
-                        if (matchingTagIds.Count > 0)
-                        {
-                            // Fetch all series to find those with matching tags
-                            var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
-                            if (seriesResponse.IsSuccessStatusCode)
-                            {
-                                var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
-                                var allSeries = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrSeries>>(seriesJson) ?? new List<Services.SonarrSeries>();
-
-                                foreach (var series in allSeries)
-                                {
-                                    if (series.TmdbId > 0 && series.Tags.Any(t => matchingTagIds.Contains(t)))
-                                    {
-                                        tagRequestKeys.Add($"tv:{series.TmdbId}");
-                                    }
-                                }
-                            }
-                        }
+                        if (series.TmdbId > 0 && series.Tags.Any(t => matchingTagIds.Contains(t)))
+                            keys.Add($"tv:{series.TmdbId}");
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to fetch Sonarr tag requests: {ex.Message}");
+                }
+                return keys;
+            }
 
-                // Process Radarr
-                if (hasRadarr)
+            async Task<List<string>> FetchRadarrTagKeys()
+            {
+                var keys = new List<string>();
+                try
                 {
                     var radarrUrl = config.RadarrUrl.TrimEnd('/');
                     var client = _httpClientFactory.CreateClient();
                     client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
                     client.Timeout = TimeSpan.FromSeconds(15);
 
-                    // Fetch tag definitions
                     var tagsResponse = await client.GetAsync($"{radarrUrl}/api/v3/tag");
-                    if (tagsResponse.IsSuccessStatusCode)
+                    if (!tagsResponse.IsSuccessStatusCode) return keys;
+
+                    var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                    var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrTag>>(tagsJson) ?? new List<Services.RadarrTag>();
+                    var matchingTagIds = tags.Where(t => matchPatterns.Contains(t.Label)).Select(t => t.Id).ToHashSet();
+
+                    if (matchingTagIds.Count == 0) return keys;
+
+                    var moviesResponse = await client.GetAsync($"{radarrUrl}/api/v3/movie");
+                    if (!moviesResponse.IsSuccessStatusCode) return keys;
+
+                    var moviesJson = await moviesResponse.Content.ReadAsStringAsync();
+                    var allMovies = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrMovie>>(moviesJson) ?? new List<Services.RadarrMovie>();
+
+                    foreach (var movie in allMovies)
                     {
-                        var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
-                        var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrTag>>(tagsJson) ?? new List<Services.RadarrTag>();
-
-                        // Find matching tag IDs
-                        var matchingTagIds = tags
-                            .Where(t => matchPatterns.Contains(t.Label))
-                            .Select(t => t.Id)
-                            .ToHashSet();
-
-                        if (matchingTagIds.Count > 0)
-                        {
-                            // Fetch all movies to find those with matching tags
-                            var moviesResponse = await client.GetAsync($"{radarrUrl}/api/v3/movie");
-                            if (moviesResponse.IsSuccessStatusCode)
-                            {
-                                var moviesJson = await moviesResponse.Content.ReadAsStringAsync();
-                                var allMovies = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrMovie>>(moviesJson) ?? new List<Services.RadarrMovie>();
-
-                                foreach (var movie in allMovies)
-                                {
-                                    if (movie.TmdbId > 0 && movie.Tags.Any(t => matchingTagIds.Contains(t)))
-                                    {
-                                        tagRequestKeys.Add($"movie:{movie.TmdbId}");
-                                    }
-                                }
-                            }
-                        }
+                        if (movie.TmdbId > 0 && movie.Tags.Any(t => matchingTagIds.Contains(t)))
+                            keys.Add($"movie:{movie.TmdbId}");
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to fetch Radarr tag requests: {ex.Message}");
+                }
+                return keys;
             }
-            catch (Exception ex)
+
+            var sonarrTask = hasSonarr ? FetchSonarrTagKeys() : Task.FromResult(new List<string>());
+            var radarrTask = hasRadarr ? FetchRadarrTagKeys() : Task.FromResult(new List<string>());
+            await Task.WhenAll(sonarrTask, radarrTask);
+
+            tagRequestKeys.AddRange(sonarrTask.Result);
+            tagRequestKeys.AddRange(radarrTask.Result);
+
+            // Cache the result
+            lock (_tagRequestCacheLock)
             {
-                _logger.Warning($"Failed to fetch tag-based requests: {ex.Message}");
+                _tagRequestCache[jellyfinUserId] = (tagRequestKeys, DateTime.UtcNow);
             }
 
             return Ok(new { tagRequestKeys });

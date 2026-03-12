@@ -369,7 +369,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarShowOnlyRequested { get; set; }
         public bool CalendarForceOnlyRequested { get; set; }
         public bool CalendarTagMatchingEnabled { get; set; }
-        public string CalendarTagUserMappings { get; set; }
+        public string CalendarTagUserMappings { get; set; } = "";
 
         // Hidden Content Settings
         public bool HiddenContentEnabled { get; set; }
