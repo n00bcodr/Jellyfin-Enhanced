@@ -1689,6 +1689,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarFilterByLibraryAccess,
                 config.CalendarShowOnlyRequested,
                 config.CalendarForceOnlyRequested,
+                config.CalendarTagMatchingEnabled,
 
                 // Hidden Content Settings
                 config.HiddenContentEnabled,
@@ -3353,6 +3354,182 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return trimmed;
 
             return trimmed.Substring(0, lastSlash);
+        }
+
+        /// <summary>
+        /// Get tmdbId keys for items tagged as requested by the current user in Sonarr/Radarr.
+        /// Matches tags in the format "{seerr_id}-{username}" or "{seerr_id} - {username}".
+        /// </summary>
+        [HttpGet("arr/calendar/tag-requests")]
+        [Authorize]
+        public async Task<IActionResult> GetCalendarTagRequests()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, "Plugin configuration not available");
+
+            if (!config.CalendarTagMatchingEnabled)
+                return Ok(new { tagRequestKeys = new List<string>() });
+
+            // Need Sonarr or Radarr configured with API keys
+            bool hasSonarr = !string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey);
+            bool hasRadarr = !string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey);
+
+            if (!hasSonarr && !hasRadarr)
+                return Ok(new { tagRequestKeys = new List<string>() });
+
+            // Get the current user's Jellyseerr user info
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return Ok(new { tagRequestKeys = new List<string>() });
+
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+                return Ok(new { tagRequestKeys = new List<string>() });
+
+            // Build patterns to match against tags
+            var seerrId = jellyseerrUser.Id.ToString();
+            var matchPatterns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Primary patterns using Seerr user ID + display name
+            var displayName = jellyseerrUser.DisplayName;
+            var jellyfinUsername = jellyseerrUser.JellyfinUsername;
+
+            if (!string.IsNullOrEmpty(displayName))
+            {
+                matchPatterns.Add($"{seerrId}-{displayName}");
+                matchPatterns.Add($"{seerrId} - {displayName}");
+            }
+
+            if (!string.IsNullOrEmpty(jellyfinUsername))
+            {
+                matchPatterns.Add($"{seerrId}-{jellyfinUsername}");
+                matchPatterns.Add($"{seerrId} - {jellyfinUsername}");
+            }
+
+            // Custom user mappings from config (format: "tagName=jellyfinUsername" per line)
+            if (!string.IsNullOrWhiteSpace(config.CalendarTagUserMappings) && Guid.TryParse(jellyfinUserId, out var parsedUserId))
+            {
+                var jellyfinUser = _userManager.GetUserById(parsedUserId);
+                if (jellyfinUser != null)
+                {
+                    var mappings = config.CalendarTagUserMappings.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var mapping in mappings)
+                    {
+                        var parts = mapping.Split('=', 2);
+                        if (parts.Length == 2)
+                        {
+                            var tagName = parts[0].Trim();
+                            var targetJellyfinUser = parts[1].Trim();
+
+                            if (string.Equals(jellyfinUser.Username, targetJellyfinUser, StringComparison.OrdinalIgnoreCase))
+                            {
+                                matchPatterns.Add(tagName);
+                                matchPatterns.Add($"{seerrId}-{tagName}");
+                                matchPatterns.Add($"{seerrId} - {tagName}");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (matchPatterns.Count == 0)
+                return Ok(new { tagRequestKeys = new List<string>() });
+
+            var tagRequestKeys = new List<string>();
+
+            try
+            {
+                // Process Sonarr
+                if (hasSonarr)
+                {
+                    var sonarrUrl = config.SonarrUrl.TrimEnd('/');
+                    var client = _httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
+                    client.Timeout = TimeSpan.FromSeconds(15);
+
+                    // Fetch tag definitions
+                    var tagsResponse = await client.GetAsync($"{sonarrUrl}/api/v3/tag");
+                    if (tagsResponse.IsSuccessStatusCode)
+                    {
+                        var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                        var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrTag>>(tagsJson) ?? new List<Services.SonarrTag>();
+
+                        // Find matching tag IDs
+                        var matchingTagIds = tags
+                            .Where(t => matchPatterns.Contains(t.Label))
+                            .Select(t => t.Id)
+                            .ToHashSet();
+
+                        if (matchingTagIds.Count > 0)
+                        {
+                            // Fetch all series to find those with matching tags
+                            var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
+                            if (seriesResponse.IsSuccessStatusCode)
+                            {
+                                var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
+                                var allSeries = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrSeries>>(seriesJson) ?? new List<Services.SonarrSeries>();
+
+                                foreach (var series in allSeries)
+                                {
+                                    if (series.TmdbId > 0 && series.Tags.Any(t => matchingTagIds.Contains(t)))
+                                    {
+                                        tagRequestKeys.Add($"tv:{series.TmdbId}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Process Radarr
+                if (hasRadarr)
+                {
+                    var radarrUrl = config.RadarrUrl.TrimEnd('/');
+                    var client = _httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
+                    client.Timeout = TimeSpan.FromSeconds(15);
+
+                    // Fetch tag definitions
+                    var tagsResponse = await client.GetAsync($"{radarrUrl}/api/v3/tag");
+                    if (tagsResponse.IsSuccessStatusCode)
+                    {
+                        var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                        var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrTag>>(tagsJson) ?? new List<Services.RadarrTag>();
+
+                        // Find matching tag IDs
+                        var matchingTagIds = tags
+                            .Where(t => matchPatterns.Contains(t.Label))
+                            .Select(t => t.Id)
+                            .ToHashSet();
+
+                        if (matchingTagIds.Count > 0)
+                        {
+                            // Fetch all movies to find those with matching tags
+                            var moviesResponse = await client.GetAsync($"{radarrUrl}/api/v3/movie");
+                            if (moviesResponse.IsSuccessStatusCode)
+                            {
+                                var moviesJson = await moviesResponse.Content.ReadAsStringAsync();
+                                var allMovies = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrMovie>>(moviesJson) ?? new List<Services.RadarrMovie>();
+
+                                foreach (var movie in allMovies)
+                                {
+                                    if (movie.TmdbId > 0 && movie.Tags.Any(t => matchingTagIds.Contains(t)))
+                                    {
+                                        tagRequestKeys.Add($"movie:{movie.TmdbId}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to fetch tag-based requests: {ex.Message}");
+            }
+
+            return Ok(new { tagRequestKeys });
         }
 
         /// <summary>

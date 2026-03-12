@@ -1446,8 +1446,30 @@
     }
   }
 
+  /**
+   * Fetch tag-matched request keys from Sonarr/Radarr tags.
+   * @returns {Promise<Set<string>>} Set of "{type}:{tmdbId}" keys matched by tags.
+   */
+  async function fetchTagMatchedRequests() {
+    if (!JE.pluginConfig?.CalendarTagMatchingEnabled) {
+      return new Set();
+    }
+
+    try {
+      const url = ApiClient.getUrl("/JellyfinEnhanced/arr/calendar/tag-requests");
+      const response = await fetch(url, { headers: getAuthHeaders() });
+      if (!response.ok) return new Set();
+
+      const data = await response.json();
+      return new Set(data.tagRequestKeys || []);
+    } catch (error) {
+      console.warn(`${logPrefix} Failed to fetch tag-matched requests:`, error);
+      return new Set();
+    }
+  }
+
   async function fetchUserRequests() {
-    if (!JE.pluginConfig?.JellyseerrEnabled) {
+    if (!JE.pluginConfig?.JellyseerrEnabled && !JE.pluginConfig?.CalendarTagMatchingEnabled) {
       state.requestedItems = new Set();
       state.requestedLoaded = true;
       state.requestedLoading = false;
@@ -1456,11 +1478,15 @@
 
     state.requestedLoading = true;
     const requested = new Set();
-    const pageSize = 200;
-    let page = 1;
-    let totalPages = 1;
 
-    try {
+    // Fetch Jellyseerr requests and tag-matched requests in parallel
+    const jellyseerrPromise = (async () => {
+      if (!JE.pluginConfig?.JellyseerrEnabled) return;
+
+      const pageSize = 200;
+      let page = 1;
+      let totalPages = 1;
+
       while (page <= totalPages) {
         const skip = (page - 1) * pageSize;
         const url = ApiClient.getUrl("/JellyfinEnhanced/arr/requests", {
@@ -1483,8 +1509,24 @@
 
         page += 1;
       }
+    })();
+
+    const tagPromise = fetchTagMatchedRequests();
+
+    try {
+      const [, tagMatched] = await Promise.all([
+        jellyseerrPromise.catch((error) => {
+          console.warn(`${logPrefix} Failed to fetch user requests:`, error);
+        }),
+        tagPromise,
+      ]);
+
+      // Merge tag-matched keys into the requested set
+      if (tagMatched) {
+        tagMatched.forEach((key) => requested.add(key));
+      }
     } catch (error) {
-      console.warn(`${logPrefix} Failed to fetch user requests:`, error);
+      console.warn(`${logPrefix} Failed to fetch request data:`, error);
     } finally {
       state.requestedItems = requested;
       state.requestedLoaded = true;

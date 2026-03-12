@@ -22,6 +22,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         [JsonPropertyName("imdbId")]
         public string? ImdbId { get; set; }
 
+        [JsonPropertyName("tmdbId")]
+        public int TmdbId { get; set; }
+
         [JsonPropertyName("tags")]
         public List<int> Tags { get; set; } = new List<int>();
     }

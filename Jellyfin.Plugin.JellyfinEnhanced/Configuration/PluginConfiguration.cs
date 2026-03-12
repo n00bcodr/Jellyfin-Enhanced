@@ -194,6 +194,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarFilterByLibraryAccess = true;
             CalendarShowOnlyRequested = false;
             CalendarForceOnlyRequested = false;
+            CalendarTagMatchingEnabled = false;
+            CalendarTagUserMappings = "";
 
             // Hidden Content Settings
             HiddenContentEnabled = false;
@@ -366,6 +368,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarFilterByLibraryAccess { get; set; }
         public bool CalendarShowOnlyRequested { get; set; }
         public bool CalendarForceOnlyRequested { get; set; }
+        public bool CalendarTagMatchingEnabled { get; set; }
+        public string CalendarTagUserMappings { get; set; }
 
         // Hidden Content Settings
         public bool HiddenContentEnabled { get; set; }
