@@ -3067,7 +3067,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     BackdropUrl = seriesBackdropUrl,
                                     EpisodeTvdbId = (int?)episode.tvdbId,
                                     EpisodeImdbId = (string?)episode.imdbId,
-                                    RootFolderPath = GetRootFolderFromPath(episode.series.path)
+                                    RootFolderPath = GetRootFolderFromPath((string?)episode.series.path)
                                 });
                             }
                         }
@@ -3191,7 +3191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         BackdropUrl = backdropUrl,
                                         TmdbId = (int?)movie.tmdbId,
                                         ImdbId = (string?)movie.imdbId,
-                                        RootFolderPath = GetRootFolderFromPath(movie.path)
+                                        RootFolderPath = GetRootFolderFromPath((string?)movie.path)
                                     });
                                 }
                             }
@@ -3236,9 +3236,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         if (uniqueItemIds.Count > 0)
                         {
                             // GetItemById with user returns null if the user cannot access the item
-                            var accessibleIds = uniqueItemIds
-                                .Where(id => _libraryManager.GetItemById<BaseItem>(id, calendarUser) != null)
-                                .ToHashSet();
+                            var accessibleIds = new HashSet<Guid>();
+                            foreach (var id in uniqueItemIds)
+                            {
+                                if (_libraryManager.GetItemById<BaseItem>(id, calendarUser) != null)
+                                {
+                                    accessibleIds.Add(id);
+                                }
+                            }
 
                             // Build rootFolderPath accessibility map from items already in Jellyfin.
                             // If ANY item from a root folder is accessible, the user has access to that library.
