@@ -141,5 +141,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         /// </summary>
         [JsonPropertyName("tmdbId")]
         public int? TmdbId { get; set; }
+
+        /// <summary>
+        /// Root folder path from Sonarr/Radarr (used server-side for library access fallback).
+        /// Not serialized to clients to avoid exposing server filesystem paths.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? RootFolderPath { get; set; }
     }
 }

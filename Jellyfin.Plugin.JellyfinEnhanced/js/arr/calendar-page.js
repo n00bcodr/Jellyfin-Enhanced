@@ -1538,6 +1538,16 @@
       });
     }
 
+    // Defense-in-depth: hide events the user cannot access.
+    // If user-data was fetched, events with an itemId but no user-data
+    // entry are from inaccessible libraries. (Primary filtering is server-side.)
+    if (state.userDataMap && state.userDataMap.size > 0) {
+      const checkedEventIds = new Set(state.userDataMap.keys());
+      filteredEvents = filteredEvents.filter(
+        (event) => !event.itemId || checkedEventIds.has(event.id),
+      );
+    }
+
     const getRequestKey = (event) => {
       const tmdbId = event?.tmdbId;
       if (!tmdbId) return null;
