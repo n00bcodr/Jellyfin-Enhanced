@@ -1991,7 +1991,7 @@
                         if (query) {
                             const mainController = JE.jellyseerr;
                             if (mainController) {
-                                mainController.fetchAndRenderResults(query);
+                                mainController.fetchAndRenderResults(query, { skipCache: true });
                             }
                         }
                     }, 1000);

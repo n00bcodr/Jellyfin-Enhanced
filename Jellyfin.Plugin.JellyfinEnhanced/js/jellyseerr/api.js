@@ -136,6 +136,60 @@
     }
 
     /**
+     * Invalidate Seerr/TMDB caches impacted by a successful request.
+     * Keeps UI surfaces in sync without waiting for a hard refresh.
+     * @param {number|string} tmdbId
+     * @param {'movie'|'tv'} mediaType
+     */
+    function invalidateRequestCaches(tmdbId, mediaType) {
+        if (!JE.requestManager) {
+            return;
+        }
+
+        const id = String(tmdbId);
+        const type = String(mediaType || '').toLowerCase();
+        if (!id || (type !== 'movie' && type !== 'tv')) {
+            return;
+        }
+
+        const patterns = [
+            // Item detail responses used by modals/cards.
+            `jellyseerr:/${type}/${id}`,
+            // Generic result surfaces that may include this media item.
+            'jellyseerr:/search?',
+            'jellyseerr:/discover/',
+            // Request lists and watchlist views can reflect new state.
+            'jellyseerr:/request?',
+            'jellyseerr:/watchlist?'
+        ];
+
+        // Movie requests can affect collection rendering.
+        if (type === 'movie') {
+            patterns.push(`tmdb:/movie/${id}`);
+        }
+
+        patterns.forEach(pattern => JE.requestManager.clearCacheMatching(pattern));
+    }
+
+    /**
+     * Broadcast successful request events so all UI surfaces can update immediately.
+     * @param {number|string} tmdbId
+     * @param {'movie'|'tv'} mediaType
+     * @param {boolean} is4k
+     */
+    function emitMediaRequested(tmdbId, mediaType, is4k = false) {
+        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', {
+            detail: { tmdbId: String(tmdbId), mediaType: String(mediaType || '').toLowerCase(), is4k: !!is4k }
+        }));
+
+        if (String(mediaType || '').toLowerCase() === 'tv') {
+            document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', {
+                detail: { tmdbId: String(tmdbId), mediaType: 'tv' }
+            }));
+        }
+    }
+
+    /**
      * Checks if the Seerr server is active and if the current user is linked.
      * Caches the result to avoid repeated API calls.
      * @returns {Promise<{active: boolean, userFound: boolean}>}
@@ -170,10 +224,11 @@
      * @param {number} [page=1] - Page number for pagination.
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
-    api.search = async function(query, page = 1) {
+    api.search = async function(query, page = 1, options = {}) {
         try {
             const lang = (navigator.language || 'en').split('-')[0];
-            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`);
+            const { skipCache = false } = options;
+            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache });
 
             // Filter out people results before returning (immutable — don't mutate cached response)
             if (data.results) {
@@ -457,6 +512,8 @@
 
         // Add to watchlist after successful request
         if (result) {
+            invalidateRequestCaches(tmdbId, mediaType);
+            emitMediaRequested(tmdbId, mediaType, is4k);
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
             } catch (error) {
@@ -491,6 +548,8 @@
 
         // Add to watchlist after successful request
         if (result) {
+            invalidateRequestCaches(tmdbId, 'tv');
+            emitMediaRequested(tmdbId, 'tv', false);
             try {
                 await api.addToWatchlist(tmdbId, 'tv');
             } catch (error) {
