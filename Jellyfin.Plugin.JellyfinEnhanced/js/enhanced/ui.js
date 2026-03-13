@@ -821,7 +821,8 @@
                                     <div style="flex:1;">
                                         <select id="watchProgressModeSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
                                             <option value="percentage" ${JE.currentSettings.watchProgressMode === 'percentage' ? 'selected' : ''}>Percentage</option>
-                                            <option value="time" ${JE.currentSettings.watchProgressMode === 'time' ? 'selected' : ''}>Time</option>
+                                            <option value="time" ${JE.currentSettings.watchProgressMode === 'time' ? 'selected' : ''}>Time Watched</option>
+                                            <option value="remaining" ${JE.currentSettings.watchProgressMode === 'remaining' ? 'selected' : ''}>Time Remaining</option>
                                         </select>
                                     </div>
                                     <div style="flex:1;">

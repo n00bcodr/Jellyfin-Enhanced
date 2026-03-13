@@ -202,6 +202,37 @@
         placeholder.style.alignItems = 'center';
         placeholder.style.margin = '0 1em 0 0 !important';
         placeholder.style.cursor = 'pointer';
+        const getWatchProgressDisplay = (watchProgress, mode) => {
+            const safeTotal = Math.max(0, watchProgress.totalRuntimeTicks || 0);
+            const safePlayed = Math.max(0, Math.min(safeTotal, watchProgress.totalPlaybackTicks || 0));
+
+            if (mode === 'time') {
+                return `${getTimeString(safePlayed)} / ${getTimeString(safeTotal)}`;
+            }
+
+            if (mode === 'remaining') {
+                const remaining = Math.max(0, safeTotal - safePlayed);
+                return `-${getTimeString(remaining)} / ${getTimeString(safeTotal)}`;
+            }
+
+            return `${watchProgress.progress}%`;
+        };
+
+        const persistWatchProgressMode = (mode) => {
+            if (!window.JellyfinEnhanced) return;
+            window.JellyfinEnhanced.currentSettings = window.JellyfinEnhanced.currentSettings || {};
+            window.JellyfinEnhanced.currentSettings.watchProgressMode = mode;
+            if (typeof window.JellyfinEnhanced.saveUserSettings === 'function') {
+                window.JellyfinEnhanced.saveUserSettings('settings.json', window.JellyfinEnhanced.currentSettings);
+            }
+        };
+
+        const nextWatchProgressMode = (currentMode) => {
+            if (currentMode === 'percentage') return 'time';
+            if (currentMode === 'time') return 'remaining';
+            return 'percentage';
+        };
+
         // onClick handler to toggle between percentage and time-based display
         placeholder.addEventListener('click', () => {
             const watchProgress = watchProgressCache.get(itemId);
@@ -211,29 +242,11 @@
                 .querySelector('.mediaInfoItem-watchProgress-value');
             if (!div) return;
 
-            if (div.dataset.type === 'percentage') {
-                div.dataset.type = 'time';
-                div.innerHTML = `${getTimeString(watchProgress.totalPlaybackTicks)} / ${getTimeString(watchProgress.totalRuntimeTicks)}`;
-                // Persist user choice
-                if (window.JellyfinEnhanced) {
-                    window.JellyfinEnhanced.currentSettings = window.JellyfinEnhanced.currentSettings || {};
-                    window.JellyfinEnhanced.currentSettings.watchProgressMode = 'time';
-                    if (typeof window.JellyfinEnhanced.saveUserSettings === 'function') {
-                        window.JellyfinEnhanced.saveUserSettings('settings.json', window.JellyfinEnhanced.currentSettings);
-                    }
-                }
-            } else if (div.dataset.type === 'time') {
-                div.dataset.type = 'percentage';
-                div.innerHTML = `${watchProgress.progress}%`;
-                // Persist user choice
-                if (window.JellyfinEnhanced) {
-                    window.JellyfinEnhanced.currentSettings = window.JellyfinEnhanced.currentSettings || {};
-                    window.JellyfinEnhanced.currentSettings.watchProgressMode = 'percentage';
-                    if (typeof window.JellyfinEnhanced.saveUserSettings === 'function') {
-                        window.JellyfinEnhanced.saveUserSettings('settings.json', window.JellyfinEnhanced.currentSettings);
-                    }
-                }
-            }
+            const currentMode = div.dataset.type || 'percentage';
+            const newMode = nextWatchProgressMode(currentMode);
+            div.dataset.type = newMode;
+            div.innerHTML = getWatchProgressDisplay(watchProgress, newMode);
+            persistWatchProgressMode(newMode);
         });
         // Show loading indicator
         placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">hourglass_empty</span> ...`;
@@ -314,13 +327,9 @@
             const valueDiv = document.createElement('div');
             valueDiv.className = 'mediaInfoItem-watchProgress-value';
             const defaultMode = (window.JellyfinEnhanced?.currentSettings?.watchProgressMode || 'percentage');
-            if (defaultMode === 'time') {
-                valueDiv.dataset.type = 'time';
-                valueDiv.innerHTML = `${getTimeString(watchProgress.totalPlaybackTicks)} / ${getTimeString(watchProgress.totalRuntimeTicks)}`;
-            } else {
-                valueDiv.dataset.type = 'percentage';
-                valueDiv.innerHTML = `${watchProgress.progress}%`;
-            }
+            const resolvedMode = (defaultMode === 'time' || defaultMode === 'remaining') ? defaultMode : 'percentage';
+            valueDiv.dataset.type = resolvedMode;
+            valueDiv.innerHTML = getWatchProgressDisplay(watchProgress, resolvedMode);
 
             return valueDiv;
         }
