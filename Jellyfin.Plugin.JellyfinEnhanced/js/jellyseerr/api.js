@@ -380,13 +380,10 @@
 
             // Find the first matching rule
             for (const rule of applicableRules) {
-                let matches = true;
-
                 // Check language condition (pipe-separated ISO codes)
                 if (rule.language && mediaData.originalLanguage) {
                     const allowedLanguages = rule.language.split('|').map(l => l.trim().toLowerCase());
                     if (!allowedLanguages.includes(mediaData.originalLanguage.toLowerCase())) {
-                        matches = false;
                         continue;
                     }
                 }
@@ -402,7 +399,6 @@
                     );
 
                     if (!hasMatchingGenre) {
-                        matches = false;
                         continue;
                     }
                 }
@@ -417,7 +413,6 @@
                     );
 
                     if (!hasMatchingKeyword) {
-                        matches = false;
                         continue;
                     }
                 }
@@ -428,49 +423,45 @@
                     if (currentUserId) {
                         const allowedUsers = rule.users.split(',').map(u => u.trim());
                         if (!allowedUsers.includes(currentUserId)) {
-                            matches = false;
                             continue;
                         }
                     } else {
                         // If we can't determine the user ID, skip this rule
-                        matches = false;
                         continue;
                     }
                 }
 
-                if (matches) {
-                    console.debug(`${logPrefix} Matched override rule ${rule.id}:`, {
-                        language: rule.language,
-                        genre: rule.genre,
-                        profileId: rule.profileId,
-                        rootFolder: rule.rootFolder
-                    });
+                console.debug(`${logPrefix} Matched override rule ${rule.id}:`, {
+                    language: rule.language,
+                    genre: rule.genre,
+                    profileId: rule.profileId,
+                    rootFolder: rule.rootFolder
+                });
 
-                    // Return the settings to apply
-                    const settings = {};
-                    if (rule.profileId !== null && rule.profileId !== undefined) {
-                        settings.profileId = rule.profileId;
-                    }
-                    if (rule.rootFolder) {
-                        settings.rootFolder = rule.rootFolder;
-                    }
-                    if (rule.tags) {
-                        // Convert tags to array format that Seerr expects
-                        if (Array.isArray(rule.tags)) {
-                            settings.tags = rule.tags;
-                        } else if (typeof rule.tags === 'string') {
-                            // Handle pipe-separated string or single value
-                            settings.tags = rule.tags.split('|').map(t => parseInt(t.trim())).filter(t => !isNaN(t));
-                        } else if (typeof rule.tags === 'number') {
-                            settings.tags = [rule.tags];
-                        }
-                    }
-                    if (rule[serviceIdKey] !== null && rule[serviceIdKey] !== undefined) {
-                        settings.serverId = rule[serviceIdKey];
-                    }
-
-                    return settings;
+                // Return the settings to apply
+                const settings = {};
+                if (rule.profileId !== null && rule.profileId !== undefined) {
+                    settings.profileId = rule.profileId;
                 }
+                if (rule.rootFolder) {
+                    settings.rootFolder = rule.rootFolder;
+                }
+                if (rule.tags) {
+                    // Convert tags to array format that Seerr expects
+                    if (Array.isArray(rule.tags)) {
+                        settings.tags = rule.tags;
+                    } else if (typeof rule.tags === 'string') {
+                        // Handle pipe-separated string or single value
+                        settings.tags = rule.tags.split('|').map(t => parseInt(t.trim())).filter(t => !isNaN(t));
+                    } else if (typeof rule.tags === 'number') {
+                        settings.tags = [rule.tags];
+                    }
+                }
+                if (rule[serviceIdKey] !== null && rule[serviceIdKey] !== undefined) {
+                    settings.serverId = rule[serviceIdKey];
+                }
+
+                return settings;
             }
 
             console.debug(`${logPrefix} No matching override rules found`);

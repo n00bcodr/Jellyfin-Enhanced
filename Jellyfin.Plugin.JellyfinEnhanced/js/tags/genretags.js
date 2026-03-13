@@ -97,7 +97,7 @@
             'abenteuer': 'explore', 'komödie': 'mood', 'krimi': 'local_police', 'dokumentarfilm': 'article',
             'familienfilm': 'family_restroom', 'geschichte': 'history_edu', 'kriegsfilm': 'military_tech',
             'musikfilm': 'music_video', 'liebesfilm': 'favorite', 'fernsehfilm': 'tv',
-            'spielshow': 'quiz', 'reality-tv': 'live_tv',
+            'spielshow': 'quiz',
 
             // Italian (it)
             'azione': 'sports_martial_arts', 'avventura': 'explore', 'animazione': 'animation', 'commedia': 'mood',
@@ -111,19 +111,19 @@
             'eventyr': 'explore', 'komedie': 'mood', 'krimi': 'local_police', 'dokumentar': 'article',
             'familie': 'family_restroom', 'historie': 'history_edu', 'gyser': 'skull', 'musik': 'music_note',
             'mysterie': 'psychology_alt', 'romantik': 'favorite', 'krig': 'military_tech', 'tv-film': 'tv',
-            'spilshow': 'quiz', 'reality-tv': 'live_tv',
+            'spilshow': 'quiz',
 
             // Swedish (sv)
             'äventyr': 'explore', 'komedi': 'mood', 'brott': 'local_police', 'dokumentär': 'article',
-            'familj': 'family_restroom', 'historia': 'history_edu', 'skräck': 'skull', 'musik': 'music_note',
-            'mysterium': 'psychology_alt', 'romantik': 'favorite', 'krigs': 'military_tech',
-            'spelshow': 'quiz', 'reality-tv': 'live_tv',
+            'familj': 'family_restroom', 'skräck': 'skull',
+            'mysterium': 'psychology_alt', 'krigs': 'military_tech',
+            'spelshow': 'quiz',
 
             // Hungarian (hu)
             'akció': 'sports_martial_arts', 'kaland': 'explore', 'animációs': 'animation', 'vígjáték': 'mood',
             'bűnügyi': 'local_police', 'dokumentum': 'article', 'dráma': 'theater_comedy', 'családi': 'family_restroom',
-            'történelmi': 'history_edu', 'horror': 'skull', 'zenei': 'music_note', 'misztikus': 'psychology_alt',
-            'romantikus': 'favorite', 'sci-fi': 'science', 'tv film': 'tv', 'háborús': 'military_tech',
+            'történelmi': 'history_edu', 'zenei': 'music_note', 'misztikus': 'psychology_alt',
+            'romantikus': 'favorite', 'tv film': 'tv', 'háborús': 'military_tech',
             'életrajzi': 'menu_book', 'játékshow': 'quiz', 'valóság-tv': 'live_tv',
 
             // Russian (ru)

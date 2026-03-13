@@ -50,7 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 var logFileName = $"{LogFilePrefix}{DateTime.Now:yyyy-MM-dd}.log";
                 var logFilePath = Path.Combine(_appPaths.LogDirectoryPath, logFileName);
-                var logMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {msg}{Environment.NewLine}";
+                var sanitizedMessage = SanitizeForLog(msg);
+                var logMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {sanitizedMessage}{Environment.NewLine}";
 
                 // Write to dedicated plugin log file
                 lock (_writeLock)
@@ -62,16 +63,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 switch (level)
                 {
                     case "DEBUG":
-                        _jfLogger.LogDebug("{Message}", msg);
+                        _jfLogger.LogDebug("{Message}", sanitizedMessage);
                         break;
                     case "ERROR":
-                        _jfLogger.LogError("{Message}", msg);
+                        _jfLogger.LogError("{Message}", sanitizedMessage);
                         break;
                     case "WARN":
-                        _jfLogger.LogWarning("{Message}", msg);
+                        _jfLogger.LogWarning("{Message}", sanitizedMessage);
                         break;
                     default:
-                        _jfLogger.LogInformation("{Message}", msg);
+                        _jfLogger.LogInformation("{Message}", sanitizedMessage);
                         break;
                 }
             }
@@ -103,6 +104,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 Console.WriteLine($"Error during log rotation: {ex.Message}");
             }
+        }
+
+        private static string SanitizeForLog(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return string.Empty;
+            }
+
+            // Prevent log forging via CR/LF injection while preserving visible intent.
+            return message.Replace("\r", "\\r", StringComparison.Ordinal)
+                .Replace("\n", "\\n", StringComparison.Ordinal);
         }
     }
 }

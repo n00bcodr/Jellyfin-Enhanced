@@ -623,8 +623,38 @@
     avatarObjectUrlCache.clear();
   }
 
+  function isSafeAvatarUrl(url) {
+    if (!url || typeof url !== "string") return false;
+
+    // Relative paths are resolved by the browser against current origin and are allowed.
+    if (url.startsWith("/")) return true;
+
+    if (url.startsWith("blob:")) return true;
+
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return true;
+      }
+
+      // Only allow image data URLs.
+      if (parsed.protocol === "data:") {
+        return /^data:image\//i.test(url);
+      }
+    } catch {
+      return false;
+    }
+
+    return false;
+  }
+
   async function resolveProtectedAvatarUrl(avatarUrl) {
     if (!avatarUrl) return "";
+
+    if (!isSafeAvatarUrl(avatarUrl)) {
+      return "";
+    }
+
     if (!avatarUrl.startsWith("/JellyfinEnhanced/proxy/avatar")) return avatarUrl;
 
     if (avatarObjectUrlCache.has(avatarUrl)) {
@@ -656,6 +686,11 @@
       if (!img.isConnected) return;
 
       if (!resolvedUrl) {
+        img.style.display = "none";
+        return;
+      }
+
+      if (!isSafeAvatarUrl(resolvedUrl)) {
         img.style.display = "none";
         return;
       }

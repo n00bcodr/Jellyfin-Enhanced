@@ -216,14 +216,13 @@ function findUnusedKeys() {
 
     // Recursively search for translation key usage in JavaScript files
     function searchDirectory(dir) {
-        const files = fs.readdirSync(dir);
-        files.forEach(file => {
-            const filePath = path.join(dir, file);
-            const stat = fs.statSync(filePath);
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries.forEach(entry => {
+            const filePath = path.join(dir, entry.name);
 
-            if (stat.isDirectory() && file !== 'locales' && file !== 'node_modules') {
+            if (entry.isDirectory() && entry.name !== 'locales' && entry.name !== 'node_modules') {
                 searchDirectory(filePath);
-            } else if (file.endsWith('.js')) {
+            } else if (entry.isFile() && entry.name.endsWith('.js')) {
                 const content = fs.readFileSync(filePath, 'utf8');
 
                 const tMatches = content.matchAll(/(?:JE|window\.JellyfinEnhanced)\.t\s*(?:\?\.)?\s*\(\s*['"]([^'"]+)['"]/g);
@@ -320,10 +319,6 @@ function createTranslationTemplate(lang) {
     }
 
     const filePath = path.join(LOCALES_DIR, `${lang}.json`);
-    if (fs.existsSync(filePath)) {
-        logError(`Translation file ${lang}.json already exists!`);
-        return;
-    }
 
     const baseTranslation = loadTranslation(BASE_LANG);
     if (!baseTranslation) {
@@ -337,9 +332,18 @@ function createTranslationTemplate(lang) {
         template[key] = baseTranslation[key]; // Start with English, translator will replace
     });
 
-    fs.writeFileSync(filePath, JSON.stringify(template, null, 4) + '\n', 'utf8');
-    logSuccess(`Created translation template: ${filePath}`);
-    logInfo(`Now edit ${lang}.json and translate the English values to ${lang.toUpperCase()}`);
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(template, null, 4) + '\n', { encoding: 'utf8', flag: 'wx' });
+        logSuccess(`Created translation template: ${filePath}`);
+        logInfo(`Now edit ${lang}.json and translate the English values to ${lang.toUpperCase()}`);
+    } catch (error) {
+        if (error.code === 'EEXIST') {
+            logError(`Translation file ${lang}.json already exists!`);
+            return;
+        }
+
+        throw error;
+    }
 }
 
 /**

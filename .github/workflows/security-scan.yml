@@ -48,9 +48,6 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Restore dependencies
-        run: dotnet restore Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
-
       - name: List vulnerable packages
         run: dotnet list Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj package --vulnerable --include-transitive 2>&1 | tee vulnerable-packages.txt
 

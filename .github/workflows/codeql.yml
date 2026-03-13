@@ -51,12 +51,8 @@ jobs:
         dotnet-version: '9.0.x'
 
     - if: matrix.build-mode == 'manual'
-      name: Restore dependencies
-      run: dotnet restore Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
-
-    - if: matrix.build-mode == 'manual'
       name: Build
-      run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj --no-restore --configuration Release
+      run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj --configuration Release
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98
