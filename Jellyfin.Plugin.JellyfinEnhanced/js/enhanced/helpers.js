@@ -16,10 +16,90 @@
     // Active observers registry for lifecycle management
     const activeObservers = new Map();
 
-    // Cache for current view information
-    let cachedItem = null;
-    let cachedItemId = null;
-    let fetchInProgress = null;
+    // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
+    const itemCache = new Map();
+    const ITEM_CACHE_TTL_MS = 5000;
+
+    /**
+     * Deduplicated item fetch with short TTL cache.
+     * Prevents multiple modules from requesting the same item concurrently on detail page navigation.
+     * @param {string} itemId
+     * @param {Object} [options]
+     * @param {string} [options.userId]
+     * @param {number} [options.ttlMs]
+     * @param {boolean} [options.forceRefresh]
+     * @returns {Promise<object|null>}
+     */
+    async function getItemCached(itemId, options = {}) {
+        if (!itemId) return null;
+
+        const ttlMs = Number.isFinite(options.ttlMs) ? options.ttlMs : ITEM_CACHE_TTL_MS;
+        const userId = options.userId || ApiClient.getCurrentUserId();
+        const key = `${userId}:${itemId}`;
+        const now = Date.now();
+        const entry = itemCache.get(key);
+
+        if (!options.forceRefresh && entry) {
+            if (entry.promise) {
+                return entry.promise;
+            }
+            if (entry.item && (now - entry.ts) < ttlMs) {
+                return entry.item;
+            }
+        }
+
+        const promise = ApiClient.getItem(userId, itemId)
+            .then((item) => {
+                itemCache.set(key, { item, ts: Date.now(), promise: null });
+                return item;
+            })
+            .catch((err) => {
+                itemCache.delete(key);
+                throw err;
+            });
+
+        itemCache.set(key, { item: null, ts: now, promise });
+        return promise;
+    }
+
+    /**
+     * Patch history.pushState / history.replaceState to emit a 'je:navigate' event.
+     * Jellyfin's SPA router calls pushState for some transitions without changing
+     * location.hash, so hashchange/popstate are never fired for those navigations.
+     * This single patch lets all modules listen to one synthetic event instead of polling.
+     */
+    function patchNavigationEvents() {
+        if (history.__jePushed) return; // only patch once
+        history.__jePushed = true;
+
+        const _push = history.pushState.bind(history);
+        const _replace = history.replaceState.bind(history);
+
+        history.pushState = function(...args) {
+            _push(...args);
+            window.dispatchEvent(new Event('je:navigate'));
+        };
+        history.replaceState = function(...args) {
+            _replace(...args);
+            window.dispatchEvent(new Event('je:navigate'));
+        };
+    }
+
+    /**
+     * Subscribe to all navigation events: pushState, replaceState, hashchange, popstate.
+     * @param {Function} callback - Called on every navigation.
+     * @returns {Function} Unsubscribe function.
+     */
+    function onNavigate(callback) {
+        window.addEventListener('je:navigate', callback);
+        window.addEventListener('hashchange', callback);
+        window.addEventListener('popstate', callback);
+        return () => {
+            window.removeEventListener('je:navigate', callback);
+            window.removeEventListener('hashchange', callback);
+            window.removeEventListener('popstate', callback);
+        };
+    }
 
     /**
      * Initialize the utils by hooking into Emby.Page.onViewShow
@@ -30,6 +110,9 @@
             setTimeout(initialize, 100);
             return;
         }
+
+        // Patch navigation history methods so pushState fires je:navigate
+        patchNavigationEvents();
 
         // Store original onViewShow if it exists
         originalOnViewShow = window.Emby.Page.onViewShow;
@@ -93,31 +176,9 @@
             const itemId = params.get('id');
 
             if (!itemId) return null;
-
-            // Return cached item if same ID
-            if (cachedItemId === itemId && cachedItem) {
-                return cachedItem;
-            }
-
-            // If fetch is in progress for this item, reuse it
-            if (fetchInProgress && cachedItemId === itemId) {
-                return fetchInProgress;
-            }
-
-            const userId = ApiClient.getCurrentUserId();
-            cachedItemId = itemId;
-            
-            fetchInProgress = ApiClient.getItem(userId, itemId);
-            const item = await fetchInProgress;
-            
-            cachedItem = item;
-            fetchInProgress = null;
-            
-            return item;
+            return await getItemCached(itemId);
         } catch (err) {
             console.error('🪼 Jellyfin Enhanced: Error fetching item:', err);
-            cachedItem = null;
-            fetchInProgress = null;
             return null;
         }
     }
@@ -326,24 +387,24 @@
      */
     async function retry(fn, maxAttempts = 5, baseDelay = 1000) {
         let lastError;
-        
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return await fn();
             } catch (error) {
                 lastError = error;
-                
+
                 if (attempt === maxAttempts) {
                     console.error(`🪼 Jellyfin Enhanced: Failed after ${maxAttempts} attempts:`, error);
                     throw error;
                 }
-                
+
                 const delay = baseDelay * Math.pow(2, attempt - 1);
                 console.warn(`🪼 Jellyfin Enhanced: Attempt ${attempt}/${maxAttempts} failed, retrying in ${delay}ms...`, error);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
-        
+
         throw lastError;
     }
 
@@ -354,7 +415,7 @@
      */
     function isElementVisible(element) {
         if (!element) return false;
-        
+
         const rect = element.getBoundingClientRect();
         return (
             rect.top >= 0 &&
@@ -374,22 +435,22 @@
     function waitForCondition(condition, timeout = 5000, interval = 100) {
         return new Promise((resolve) => {
             const startTime = Date.now();
-            
+
             const checkCondition = () => {
                 if (condition()) {
                     resolve(true);
                     return;
                 }
-                
+
                 if (Date.now() - startTime >= timeout) {
                     console.warn('🪼 Jellyfin Enhanced: Timeout waiting for condition');
                     resolve(false);
                     return;
                 }
-                
+
                 setTimeout(checkCondition, interval);
             };
-            
+
             checkCondition();
         });
     }
@@ -405,12 +466,12 @@
         if (existing) {
             existing.remove();
         }
-        
+
         const style = document.createElement('style');
         style.id = id;
         style.textContent = css;
         document.head.appendChild(style);
-        
+
         console.log(`🪼 Jellyfin Enhanced: Added CSS: ${id}`);
     }
 
@@ -444,6 +505,8 @@
     // Expose helpers
     JE.helpers = {
         onViewPage,
+        onNavigate,
+        getItemCached,
         getCurrentView,
         createObserver,
         disconnectObserver,

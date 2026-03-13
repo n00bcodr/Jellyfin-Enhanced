@@ -121,11 +121,12 @@
          * Fetches and renders search results (page 1), then sets up infinite scroll.
          * @param {string} query The search query.
          */
-        async function fetchAndRenderResults(query) {
+        async function fetchAndRenderResults(query, options = {}) {
+            const { skipCache = false } = options;
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-            const data = await search(query, 1);
+            const data = await search(query, 1, { skipCache });
             let results = data.results || [];
             searchCurrentPage = data.page || 1;
             searchTotalPages = data.totalPages || 1;
@@ -482,7 +483,7 @@
                             // Refresh the results to update the UI
                             const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
                             if (query) {
-                                setTimeout(() => fetchAndRenderResults(query), 1000);
+                                setTimeout(() => fetchAndRenderResults(query, { skipCache: true }), 1000);
                             }
                         }
                     } catch (error) {

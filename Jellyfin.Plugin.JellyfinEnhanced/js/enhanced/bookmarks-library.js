@@ -1178,7 +1178,9 @@
       const itemId = group.details.itemId;
       if (itemId) {
         itemPromises.push(
-          apiClient.getItem(userId, itemId)
+          (JE.helpers?.getItemCached
+            ? JE.helpers.getItemCached(itemId, { userId })
+            : apiClient.getItem(userId, itemId))
             .then(item => ({ key, group, item, orphaned: false }))
             .catch(err => {
               console.warn(`Failed to fetch item ${itemId}:`, err);
@@ -1914,7 +1916,9 @@
       try {
         // Fetch full details for new item
         const userId = apiClient.getCurrentUserId();
-        const fullItem = await apiClient.getItem(userId, selectedItem.Id);
+        const fullItem = JE.helpers?.getItemCached
+          ? await JE.helpers.getItemCached(selectedItem.Id, { userId })
+          : await apiClient.getItem(userId, selectedItem.Id);
 
         const newDetails = {
           itemId: fullItem.Id,
@@ -1980,7 +1984,9 @@
     // Check each item
     for (const [itemId, group] of Object.entries(byItem)) {
       try {
-        await apiClient.getItem(userId, itemId);
+        await (JE.helpers?.getItemCached
+          ? JE.helpers.getItemCached(itemId, { userId })
+          : apiClient.getItem(userId, itemId));
         // Item exists, not orphaned
       } catch (e) {
         // Item doesn't exist, it's orphaned

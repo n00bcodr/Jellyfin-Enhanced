@@ -406,6 +406,10 @@
             // Stage 2: Fetch user-specific settings
             const userId = ApiClient.getCurrentUserId();
 
+            // Prefetch full user object once (needed for admin check in arr-links etc.)
+            // Fire-and-forget alongside stage-2 network calls; result available as JE.currentUser
+            ApiClient.getCurrentUser().then(u => { JE.currentUser = u; }).catch(() => {});
+
             const fetchPromises = [
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json?_=${Date.now()}`), dataType: 'json' })
                          .then(data => ({ name: 'settings', status: 'fulfilled', value: data }))

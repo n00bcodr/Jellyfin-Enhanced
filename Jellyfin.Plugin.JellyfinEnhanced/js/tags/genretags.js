@@ -205,7 +205,9 @@
 
         async function fetchItemGenres(userId, itemId) {
             try {
-                const item = await ApiClient.getItem(userId, itemId);
+                const item = JE.helpers?.getItemCached
+                    ? await JE.helpers.getItemCached(itemId, { userId })
+                    : await ApiClient.getItem(userId, itemId);
                 if (!item || !MEDIA_TYPES.has(item.Type)) return null;
 
                 let sourceItem = item;
@@ -213,7 +215,9 @@
                 // For Season, get genres from the parent Series
                 if (item.Type === 'Season' && item.SeriesId) {
                     try {
-                        const series = await ApiClient.getItem(userId, item.SeriesId);
+                        const series = JE.helpers?.getItemCached
+                            ? await JE.helpers.getItemCached(item.SeriesId, { userId })
+                            : await ApiClient.getItem(userId, item.SeriesId);
                         if (series && series.Genres && series.Genres.length > 0) {
                             sourceItem = series;
                         }

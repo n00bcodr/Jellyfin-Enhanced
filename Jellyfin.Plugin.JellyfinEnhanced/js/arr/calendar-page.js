@@ -37,7 +37,7 @@
     requestedLoaded: false,
     requestedLoading: false,
     locationSignature: null,
-    locationTimer: null,
+    locationUnsubscribe: null,
   };
 
   // Status color mapping
@@ -1206,28 +1206,26 @@
   }
 
 
-  // Poll location because Jellyfin's router uses pushState (no popstate/hashchange fired for pushState)
+  // Use event-based navigation detection (pushState/hashchange/popstate via je:navigate)
   function startLocationWatcher() {
-    if (state.locationTimer) return;
+    if (state.locationUnsubscribe) return;
 
     state.locationSignature = `${window.location.pathname}${window.location.hash}`;
 
-    // Use throttle helper if available for better performance
-    const throttledCheck = JE.helpers?.throttle?.(() => {
+    const check = () => {
       const signature = `${window.location.pathname}${window.location.hash}`;
       if (signature !== state.locationSignature) {
         state.locationSignature = signature;
         handleNavigation();
       }
-    }, 150) || (() => {
-      const signature = `${window.location.pathname}${window.location.hash}`;
-      if (signature !== state.locationSignature) {
-        state.locationSignature = signature;
-        handleNavigation();
-      }
-    });
+    };
 
-    state.locationTimer = setInterval(throttledCheck, 150);
+    state.locationUnsubscribe = JE.helpers?.onNavigate
+      ? JE.helpers.onNavigate(check)
+      : (() => {
+          const t = setInterval(check, 150);
+          return () => clearInterval(t);
+        })();
   }
 
   /**
@@ -1246,9 +1244,9 @@
   }
 
   function stopLocationWatcher() {
-    if (state.locationTimer) {
-      clearInterval(state.locationTimer);
-      state.locationTimer = null;
+    if (state.locationUnsubscribe) {
+      state.locationUnsubscribe();
+      state.locationUnsubscribe = null;
     }
   }
 

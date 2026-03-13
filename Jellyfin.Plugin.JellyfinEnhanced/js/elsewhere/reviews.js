@@ -321,7 +321,9 @@
                 const userId = ApiClient.getCurrentUserId();
 
                 if (itemId && userId) {
-                    const item = await ApiClient.getItem(userId, itemId);
+                    const item = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId, { userId })
+                        : await ApiClient.getItem(userId, itemId);
                     const tmdbId = item?.ProviderIds?.Tmdb;
                     const mediaType = item?.Type;
 
