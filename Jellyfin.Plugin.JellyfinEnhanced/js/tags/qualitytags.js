@@ -210,23 +210,82 @@
          * @returns {HTMLElement} The created div element for the tag.
          */
         function createResponsiveLabel(label) {
+            const normalizedLabel = normalizeQualityLabel(label);
             const badge = document.createElement('div');
             badge.textContent = label;
             badge.className = overlayClass;
 
-            if (resolutionOrder.includes(label)) {
+            if (resolutionOrder.includes(normalizedLabel)) {
                 badge.classList.add('resolution');
-            } else if (codecOrder.includes(label)) {
+            } else if (codecOrder.includes(normalizedLabel)) {
                 badge.classList.add('video-format');
-            } else if (videoOrder.includes(label)) {
+            } else if (videoOrder.includes(normalizedLabel)) {
                 badge.classList.add('video-codec');
-            } else if (audioOrder.includes(label)) {
+            } else if (audioOrder.includes(normalizedLabel)) {
                 badge.classList.add('audio-codec');
             } else {
                 badge.classList.add('other-quality');
             }
-            badge.dataset.quality = label;
+            badge.dataset.quality = normalizedLabel;
             return badge;
+        }
+
+        /**
+         * Normalizes dynamic quality labels to their base key for sorting and CSS color matching.
+         * @param {string} label - The quality label to normalize.
+         * @returns {string} The normalized base label.
+         */
+        function normalizeQualityLabel(label) {
+            if (!label || typeof label !== 'string') return label;
+
+            const audioBases = ['Dolby Digital+', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS'];
+            for (const base of audioBases) {
+                if (label === base || label.startsWith(`${base} `)) {
+                    return base;
+                }
+            }
+
+            return label;
+        }
+
+        /**
+         * Finds the richest channel layout available across audio streams.
+         * @param {Array} audioStreams - Audio streams from item metadata.
+         * @returns {string|null} A channel tag such as "7.1", "5.1", or "2.0".
+         */
+        function getChannelTag(audioStreams) {
+            if (!Array.isArray(audioStreams) || audioStreams.length === 0) return null;
+
+            let maxChannels = 0;
+            let detectedLayoutTag = null;
+
+            for (const stream of audioStreams) {
+                const channels = stream.Channels || 0;
+                if (channels > maxChannels) {
+                    maxChannels = channels;
+                }
+
+                const layoutSignals = `${stream.ChannelLayout || ''} ${stream.DisplayTitle || ''}`.toLowerCase();
+                if (!detectedLayoutTag) {
+                    if (/\b7[. ]?1\b/.test(layoutSignals)) {
+                        detectedLayoutTag = '7.1';
+                    } else if (/\b5[. ]?1\b/.test(layoutSignals)) {
+                        detectedLayoutTag = '5.1';
+                    } else if (/\bstereo\b|\b2[. ]?0\b/.test(layoutSignals)) {
+                        detectedLayoutTag = '2.0';
+                    }
+                }
+            }
+
+            if (detectedLayoutTag) {
+                return detectedLayoutTag;
+            }
+
+            if (maxChannels >= 8) return '7.1';
+            if (maxChannels >= 6) return '5.1';
+            if (maxChannels >= 2) return '2.0';
+
+            return null;
         }
 
         // --- CORE LOGIC ---
@@ -481,23 +540,18 @@
 
                 if (atmosMatch) {
                     audioTag = 'ATMOS';
-                    qualities.add(audioTag);
                     break; // Stop all further audio checks
                 } else if (truehdMatch) {
                     audioTag = 'TRUEHD';
-                    qualities.add(audioTag);
                     break;
                 } else if (dtsxMatch) {
                     audioTag = 'DTS-X';
-                    qualities.add(audioTag);
                     break;
                 } else if (dtsMatch) {
                     audioTag = 'DTS';
-                    qualities.add(audioTag);
                     break;
                 } else if (ddpMatch) {
                     audioTag = 'Dolby Digital+';
-                    qualities.add(audioTag);
                     break;
                 }
             }
@@ -516,7 +570,6 @@
                         } else {
                             audioTag = 'TRUEHD';
                         }
-                        qualities.add(audioTag);
                         break;
                     } else if (codec.includes('dts')) {
                         if (codec.includes('x') || profile.includes('x')) {
@@ -524,34 +577,25 @@
                         } else {
                             audioTag = 'DTS';
                         }
-                        qualities.add(audioTag);
                         break;
                     } else if (codec.includes('eac3') || codec.includes('ddp')) {
                         audioTag = 'Dolby Digital+';
-                        qualities.add(audioTag);
                         break;
                     }
                 }
             }
 
-            if (!audioTag) {
+            const channelTag = getChannelTag(audioStreams);
 
-                // Priority 3: Channel Layout Fallback
-                let maxChannels = 0;
-                audioStreams.forEach((stream, index) => {
-                    const channels = stream.Channels || 0;
-                    if (channels > maxChannels) {
-                        maxChannels = channels;
-                    }
-                });
-
-                if (maxChannels >= 8) {
-                    audioTag = '7.1';
-                    qualities.add(audioTag);
-                } else if (maxChannels === 6) {
-                    audioTag = '5.1';
-                    qualities.add(audioTag);
+            // Append channel layout to codec tag instead of creating a separate channel tag.
+            if (audioTag) {
+                if (channelTag && !audioTag.includes(channelTag)) {
+                    audioTag = `${audioTag} ${channelTag}`;
                 }
+                qualities.add(audioTag);
+            } else if (channelTag === '7.1' || channelTag === '5.1') {
+                // Preserve previous fallback behavior when no codec tag is detected.
+                qualities.add(channelTag);
             }
 
             // --- 3D VIDEO LOGIC ---
@@ -755,25 +799,28 @@
             }
 
             const sortedQualities = qualities.sort((a, b) => {
-                const aIsRes = resolutionOrder.includes(a);
-                const bIsRes = resolutionOrder.includes(b);
-                const aIsCodec = codecOrder.includes(a);
-                const bIsCodec = codecOrder.includes(b);
-                const aIsFeat = featureOrder.includes(a);
-                const bIsFeat = featureOrder.includes(b);
+                const aKey = normalizeQualityLabel(a);
+                const bKey = normalizeQualityLabel(b);
+
+                const aIsRes = resolutionOrder.includes(aKey);
+                const bIsRes = resolutionOrder.includes(bKey);
+                const aIsCodec = codecOrder.includes(aKey);
+                const bIsCodec = codecOrder.includes(bKey);
+                const aIsFeat = featureOrder.includes(aKey);
+                const bIsFeat = featureOrder.includes(bKey);
 
                 // Resolution first
                 if (aIsRes && !bIsRes) return -1;
                 if (!aIsRes && bIsRes) return 1;
-                if (aIsRes && bIsRes) return resolutionOrder.indexOf(a) - resolutionOrder.indexOf(b);
+                if (aIsRes && bIsRes) return resolutionOrder.indexOf(aKey) - resolutionOrder.indexOf(bKey);
 
                 // Codec second
                 if (aIsCodec && !bIsCodec) return -1;
                 if (!aIsCodec && bIsCodec) return 1;
-                if (aIsCodec && bIsCodec) return codecOrder.indexOf(a) - codecOrder.indexOf(b);
+                if (aIsCodec && bIsCodec) return codecOrder.indexOf(aKey) - codecOrder.indexOf(bKey);
 
                 // Features last
-                return featureOrder.indexOf(a) - featureOrder.indexOf(b);
+                return featureOrder.indexOf(aKey) - featureOrder.indexOf(bKey);
             });
 
             sortedQualities.forEach((quality) => {
