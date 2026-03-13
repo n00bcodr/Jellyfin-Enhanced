@@ -31,7 +31,6 @@
         let isJellyseerrOnlyMode = false;
         let hiddenSections = [];
         let jellyseerrOriginalPosition = null;
-        let refreshInterval = null;
 
         // Infinite scroll pagination state
         let searchCurrentPage = 0;

@@ -1029,7 +1029,6 @@
       group.bookmarks.sort((a, b) => a.timestamp - b.timestamp);
     });
 
-    const totalItems = Object.keys(groupedByItem).length;
     const totalBookmarks = bookmarkEntries.length;
     let currentTab = container.dataset.currentTab || 'movie';
     if (currentTab === 'tv' && typeCounts.tv.items === 0 && typeCounts.movie.items > 0) {
@@ -1543,25 +1542,6 @@
       return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
     return `${m}:${s.toString().padStart(2, '0')}`;
-  }
-
-  /**
-   * Format date string
-   */
-  function formatDate(dateStr) {
-    if (!dateStr) return 'Unknown';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return dateStr;
-    }
   }
 
   const escapeHtml = JE.escapeHtml;

@@ -974,8 +974,6 @@ function buildSingle4kButton(data) {
 function buildMovieActions(data, actionMount, chipMount, show4kOption) {
     const status = data.mediaInfo ? data.mediaInfo.status : 1;
     const status4k = data.mediaInfo ? data.mediaInfo.status4k : 1;
-    const downloads = data.mediaInfo?.downloadStatus || [];
-    const downloads4k = data.mediaInfo?.downloadStatus4k || [];
 
     // If already requested in any format, renderActions will handle chips/downloads
     if ((status && status !== 1) || (status4k && status4k !== 1)) {

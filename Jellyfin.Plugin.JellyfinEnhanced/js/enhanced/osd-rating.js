@@ -199,13 +199,6 @@
     osdObserver.observe(observeTarget, { childList: true, subtree: true });
   }
 
-  function disconnectObserver() {
-    if (osdObserver) {
-      osdObserver.disconnect();
-      osdObserver = null;
-    }
-  }
-
   JE.initializeOsdRating = function() {
     if (!isEnabled()) {
       console.log(`${logPrefix} Feature is disabled in settings.`);

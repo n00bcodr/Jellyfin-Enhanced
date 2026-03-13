@@ -77,7 +77,12 @@
         let mutationDebounceTimer = null;
 
         const visibilityObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => { if (entry.isIntersecting) processElement(entry.target, true); });
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    visibilityObserver.unobserve(entry.target);
+                    processElement(entry.target, true);
+                }
+            });
         }, { rootMargin: '200px', threshold: 0.1 });
 
         function saveCache() {
@@ -217,7 +222,11 @@
             // Queue for fetching
             if (!queuedItemIds.has(itemId)) {
                 queuedItemIds.add(itemId);
-                requestQueue.push({ el, itemId, itemType });
+                if (isVisible) {
+                    requestQueue.unshift({ el, itemId, itemType });
+                } else {
+                    requestQueue.push({ el, itemId, itemType });
+                }
                 if (!isProcessingQueue) {
                     processQueue();
                 }
@@ -311,7 +320,11 @@
             if (!JE.currentSettings?.ratingTagsEnabled) {
                 return;
             }
-            document.querySelectorAll('.cardImageContainer').forEach(el => processElement(el));
+            document.querySelectorAll('.cardImageContainer').forEach(el => {
+                if (!processedElements.has(el)) {
+                    visibilityObserver.observe(el);
+                }
+            });
         }
 
         function observeDOM() {
@@ -335,6 +348,10 @@
             if (JE._cacheManager) {
                 JE._cacheManager.register(saveCache);
             }
+
+            window.addEventListener('beforeunload', () => {
+                visibilityObserver.disconnect();
+            });
         }
 
         function injectCSS() {

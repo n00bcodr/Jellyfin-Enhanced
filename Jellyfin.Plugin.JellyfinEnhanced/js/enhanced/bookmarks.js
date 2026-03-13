@@ -1044,7 +1044,6 @@
       console.log(`${logPrefix} Initializing enhanced bookmarks...`);
 
       let updateTimeout = null;
-      let osdInjectionTimeout = null;
       let lastVideoUrl = null;
       let lastInjectedOsdKey = null;
       const osdObserverId = 'je-bookmarks-osd';
@@ -1053,17 +1052,6 @@
       function getOsdKey() {
         const video = document.querySelector('.videoPlayerContainer video');
         return video?.currentSrc || video?.src || window.location.href;
-      }
-
-      function debouncedUpdate() {
-        if (updateTimeout) clearTimeout(updateTimeout);
-        updateTimeout = setTimeout(() => {
-          const currentUrl = window.location.href;
-          if (JE.isVideoPage() && currentUrl !== lastVideoUrl) {
-            lastVideoUrl = currentUrl;
-            updateBookmarkMarkersForCurrentVideo();
-          }
-        }, 500);
       }
 
       // Debounced OSD injection - prevents rapid re-injection

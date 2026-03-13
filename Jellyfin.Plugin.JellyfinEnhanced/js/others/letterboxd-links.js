@@ -13,7 +13,6 @@
         console.log(`${logPrefix} Initializing...`);
 
         let isAddingLinks = false; // Lock to prevent concurrent runs
-        let intervalId = null;
         let processedItemIds = new Set(); // Cache of items we've already processed
         let lastVisibleItemId = null; // Track the currently visible item
 

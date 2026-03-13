@@ -1442,7 +1442,7 @@
     }
 
     // Process season groups
-    for (const [key, episodes] of seasonPackMap) {
+    for (const [, episodes] of seasonPackMap) {
       if (episodes.length >= 3) {
         // 3+ episodes with same progress = season pack, collapse them
         const first = episodes[0];
@@ -1568,7 +1568,6 @@
     } else {
       // Get statuses and pagination info
       const statuses = getDownloadStatuses();
-      const paginationInfo = getDownloadsPaginationInfo();
       const showSearchBar = state.downloads.length > 0; // Show search when there are any downloads
 
       // Render tabs and search

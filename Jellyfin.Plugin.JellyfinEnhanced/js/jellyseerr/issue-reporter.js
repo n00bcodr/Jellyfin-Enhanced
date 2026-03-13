@@ -138,7 +138,7 @@
         `;
 
         // Create modal using the existing modal system
-        const { modalElement, show, close } = JE.jellyseerrModal.create({
+        const { modalElement, show } = JE.jellyseerrModal.create({
             title: JE.t('jellyseerr_report_issue_title'),
             subtitle: itemName,
             bodyHtml: formHtml,
@@ -266,7 +266,6 @@
                             .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
                             .map(issue => {
                                 const status = issue.status;
-                                const typeLabel = issueTypeLabels[issue.issueType] || 'Other';
                                 const createdBy = escapeHtml(
                                     issue.createdBy?.jellyfinUsername ||
                                     issue.createdBy?.displayName ||

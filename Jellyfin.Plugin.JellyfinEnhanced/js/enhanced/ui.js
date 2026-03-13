@@ -515,11 +515,9 @@
         }
         // Get theme-appropriate styles
         const themeVars = JE.themer.getThemeVariables();
-        const currentTheme = JE.themer.activeTheme;
 
         // Define theme-aware variables
         const panelBgColor = themeVars.panelBg;
-        const secondaryBg = themeVars.secondaryBg;
         const headerFooterBg = themeVars.secondaryBg;
         const detailsBackground = themeVars.secondaryBg;
         const primaryAccentColor = themeVars.primaryAccent;
@@ -560,7 +558,6 @@
         });
 
         const pluginShortcuts = Array.isArray(JE.pluginConfig.Shortcuts) ? JE.pluginConfig.Shortcuts : [];
-        const shortcuts = pluginShortcuts.reduce((acc, s) => ({ ...acc, [s.Name]: s }), {});
 
         // Ensure activeShortcuts is initialized before building the panel
         if (!JE.state.activeShortcuts || Object.keys(JE.state.activeShortcuts).length === 0) {

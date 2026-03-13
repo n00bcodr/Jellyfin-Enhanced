@@ -659,7 +659,6 @@
             this.fetchAbort = new AbortController();
 
             try {
-                const domain = window.location.origin;
                 let record = this.itemCache.get(itemId);
                 if (!record) {
                 const itemResp = await this.fetchWithRetry(ApiClient.getUrl(`/Items/${itemId}`), {

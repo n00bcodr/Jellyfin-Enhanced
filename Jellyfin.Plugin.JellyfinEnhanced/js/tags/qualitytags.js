@@ -58,17 +58,6 @@
         const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
         const featureOrder = [...videoOrder, ...audioOrder];
 
-        // Defines resolution tiers and their priority for display.
-        const QUALITY_THRESHOLDS = {
-            '8K': { width: 7680, priority: 7 },
-            '4K': { width: 3500, priority: 6 },
-            '1440p': { width: 2560, priority: 5 },
-            '1080p': { width: 1920, priority: 4 },
-            '720p': { width: 1280, priority: 3 },
-            '480p': { width: 720, priority: 2 },
-            'SD': { width: 0, priority: 1 }
-        };
-
         // Color definitions for each quality tag.
         const qualityColors = {
             '8K': { bg: 'rgba(220, 20, 60, 0.95)', text: '#ffffff' },
@@ -135,7 +124,6 @@
         let requestQueue = []; // A queue for API requests to avoid server overload.
         let isProcessingQueue = false;
         const queuedItemIds = new Set(); // De-duplicate queued requests per itemId
-        let mutationDebounceTimer = null;
         let renderDebounceTimer = null;
 
         // --- OBSERVERS ---
@@ -806,8 +794,6 @@
                 const bIsRes = resolutionOrder.includes(bKey);
                 const aIsCodec = codecOrder.includes(aKey);
                 const bIsCodec = codecOrder.includes(bKey);
-                const aIsFeat = featureOrder.includes(aKey);
-                const bIsFeat = featureOrder.includes(bKey);
 
                 // Resolution first
                 if (aIsRes && !bIsRes) return -1;

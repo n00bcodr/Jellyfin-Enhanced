@@ -1631,7 +1631,7 @@
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
-                            const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
                             if (!item.mediaInfo) item.mediaInfo = {};
                             item.mediaInfo.status = 3;
                             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
@@ -1705,7 +1705,7 @@
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
                         if (!item.mediaInfo) item.mediaInfo = {};
                         item.mediaInfo.status = 3;
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
@@ -1834,10 +1834,10 @@
      */
     ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { requestMedia, fetchAdvancedRequestData, fetchMovieDetails } = JE.jellyseerrAPI;
+        const { requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
 
         const bodyHtml = createAdvancedOptionsHTML('movie');
-        const { modalElement, show, close } = create({
+        const { modalElement, show } = create({
             title: JE.t('jellyseerr_modal_title_movie'),
             subtitle: title,
             bodyHtml,
