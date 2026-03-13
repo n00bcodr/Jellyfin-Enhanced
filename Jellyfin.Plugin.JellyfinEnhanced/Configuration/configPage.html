@@ -1192,6 +1192,13 @@
                             <div class="fieldDescription">Show a border on calendar entries for series you have watched episodes from.</div>
                             <div class="checkboxContainer" style="margin-top: 1.5em; margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="calendarFilterByLibraryAccess" is="emby-checkbox" type="checkbox"/>
+                                    <span>Filter by Library Access</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription">When enabled, the calendar only shows items from libraries the user has access to. Upcoming items not yet in Jellyfin are filtered based on their Sonarr/Radarr root folder.</div>
+                            <div class="checkboxContainer" style="margin-top: 1.5em; margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="calendarShowOnlyRequested" is="emby-checkbox" type="checkbox"/>
                                     <span>Show Requested Items Only by Default</span>
                                 </label>
@@ -2114,6 +2121,7 @@
                 document.querySelector('#calendarTimeFormat').value = config.CalendarTimeFormat || '5pm/5:30pm';
                 document.querySelector('#calendarHighlightFavorites').checked = config.CalendarHighlightFavorites || false;
                 document.querySelector('#calendarHighlightWatchedSeries').checked = config.CalendarHighlightWatchedSeries || false;
+                document.querySelector('#calendarFilterByLibraryAccess').checked = config.CalendarFilterByLibraryAccess !== false;
                 document.querySelector('#calendarShowOnlyRequested').checked = config.CalendarShowOnlyRequested || false;
                 document.querySelector('#calendarForceOnlyRequested').checked = config.CalendarForceOnlyRequested || false;
 
@@ -2306,6 +2314,7 @@
             config.CalendarTimeFormat = document.querySelector('#calendarTimeFormat').value || '5pm/5:30pm';
             config.CalendarHighlightFavorites = document.querySelector('#calendarHighlightFavorites').checked;
             config.CalendarHighlightWatchedSeries = document.querySelector('#calendarHighlightWatchedSeries').checked;
+            config.CalendarFilterByLibraryAccess = document.querySelector('#calendarFilterByLibraryAccess').checked;
             config.CalendarShowOnlyRequested = document.querySelector('#calendarShowOnlyRequested').checked;
             config.CalendarForceOnlyRequested = document.querySelector('#calendarForceOnlyRequested').checked;
 

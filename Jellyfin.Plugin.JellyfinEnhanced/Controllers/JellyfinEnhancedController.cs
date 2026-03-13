@@ -1673,6 +1673,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarTimeFormat,
                 config.CalendarHighlightFavorites,
                 config.CalendarHighlightWatchedSeries,
+                config.CalendarFilterByLibraryAccess,
                 config.CalendarShowOnlyRequested,
                 config.CalendarForceOnlyRequested,
 
@@ -3112,7 +3113,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     PosterUrl = seriesPosterUrl,
                                     BackdropUrl = seriesBackdropUrl,
                                     EpisodeTvdbId = (int?)episode.tvdbId,
-                                    EpisodeImdbId = (string?)episode.imdbId
+                                    EpisodeImdbId = (string?)episode.imdbId,
+                                    RootFolderPath = GetRootFolderFromPath((string?)episode.series.path)
                                 });
                             }
                         }
@@ -3235,7 +3237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         PosterUrl = posterUrl,
                                         BackdropUrl = backdropUrl,
                                         TmdbId = (int?)movie.tmdbId,
-                                        ImdbId = (string?)movie.imdbId
+                                        ImdbId = (string?)movie.imdbId,
+                                        RootFolderPath = GetRootFolderFromPath((string?)movie.path)
                                     });
                                 }
                             }
@@ -3261,7 +3264,82 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 evt.ItemEpisodeId = ProviderHelper.GetBestItemId(ProviderHelper.GetEpisodeProviders(evt), itemMap);
             }
 
+            // Filter events by user library access permissions (Issue #443)
+            if (config.CalendarFilterByLibraryAccess)
+            {
+                var calendarUserId = UserHelper.GetCurrentUserId(User);
+                if (calendarUserId.HasValue)
+                {
+                    var calendarUser = _userManager.GetUserById(calendarUserId.Value);
+                    if (calendarUser != null)
+                    {
+                        var uniqueItemIds = events
+                            .Select(e => e.ItemId)
+                            .Where(id => id.HasValue)
+                            .Select(id => id!.Value)
+                            .Distinct()
+                            .ToList();
+
+                        if (uniqueItemIds.Count > 0)
+                        {
+                            // GetItemById with user returns null if the user cannot access the item
+                            var accessibleIds = new HashSet<Guid>();
+                            foreach (var id in uniqueItemIds)
+                            {
+                                if (_libraryManager.GetItemById<BaseItem>(id, calendarUser) != null)
+                                {
+                                    accessibleIds.Add(id);
+                                }
+                            }
+
+                            // Build rootFolderPath accessibility map from items already in Jellyfin.
+                            // If ANY item from a root folder is accessible, the user has access to that library.
+                            var rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                            foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
+                            {
+                                var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
+                                if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
+                                {
+                                    rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
+                                }
+                            }
+
+                            events = events.Where(e =>
+                            {
+                                if (e.ItemId.HasValue)
+                                    return accessibleIds.Contains(e.ItemId.Value);
+
+                                // Items not in Jellyfin: use root folder mapping to infer access
+                                if (!string.IsNullOrEmpty(e.RootFolderPath)
+                                    && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
+                                    return hasAccess;
+
+                                // No information available: show by default
+                                return true;
+                            }).ToList();
+                        }
+                    }
+                }
+            }
+
             return Ok(new { events });
+        }
+
+        /// <summary>
+        /// Extracts the parent folder from a full item path.
+        /// e.g., "/tv/Scrubs (2026) {tvdb-465690}" → "/tv"
+        /// </summary>
+        private static string? GetRootFolderFromPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            var trimmed = path.TrimEnd('/');
+            var lastSlash = trimmed.LastIndexOf('/');
+            if (lastSlash <= 0)
+                return trimmed;
+
+            return trimmed.Substring(0, lastSlash);
         }
 
         /// <summary>
