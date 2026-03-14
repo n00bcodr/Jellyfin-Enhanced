@@ -1,6 +1,10 @@
 /**
  * Calendar Custom Tab
  * Creates <div class="jellyfinenhanced calendar"></div> for CustomTabs plugin
+ *
+ * Uses a persistent observer to remount whenever the home page DOM is rebuilt
+ * (e.g. after SPA navigation). Targets the LAST matching container to avoid
+ * rendering into a stale DOM-cached copy.
  */
 
 (function () {
@@ -10,27 +14,29 @@
     return;
   }
 
-  // Only initialize if custom tabs are enabled
   if (!window.JellyfinEnhanced?.pluginConfig?.CalendarUseCustomTabs) {
     return;
   }
 
-  // Inject custom styles
-  const style = document.createElement('style');
-  style.textContent = `
-    .jellyfinenhanced.calendar {
-      padding: 12px 3vw;
-    }
-    .backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.calendar) {
-      background: rgba(0, 0, 0, 0.7) !important;
-    }
-  `;
+  var style = document.createElement('style');
+  style.textContent = [
+    '.jellyfinenhanced.calendar {',
+    '  padding: 12px 3vw;',
+    '}',
+    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.calendar) {',
+    '  background: rgba(0, 0, 0, 0.7) !important;',
+    '}'
+  ].join('\n');
   document.head.appendChild(style);
 
-  // Wait for JE.calendarPage to be ready
+  /** The last DOM node we mounted into. */
+  var lastMountedContainer = null;
+  var clickHandlerAttached = false;
+
+  /** Wait for JE.calendarPage to be ready before initializing. */
   function waitForCalendar(callback) {
-    const check = setInterval(() => {
-      const JE = window.JE || window.JellyfinEnhanced;
+    var check = setInterval(function () {
+      var JE = window.JE || window.JellyfinEnhanced;
       if (JE?.calendarPage) {
         clearInterval(check);
         callback(JE);
@@ -38,42 +44,68 @@
     }, 100);
   }
 
-  // Render calendar when container appears
+  /**
+   * Find the correct (visible/active) calendar container.
+   * Jellyfin's DOM caching can leave multiple copies -- find the one
+   * inside the active (non-hidden) page, falling back to the last one.
+   */
+  function findActiveContainer() {
+    var all = document.querySelectorAll('.jellyfinenhanced.calendar');
+    if (all.length === 0) return null;
+    for (var i = all.length - 1; i >= 0; i--) {
+      var page = all[i].closest('.page');
+      if (page && !page.classList.contains('hide')) return all[i];
+    }
+    return all[all.length - 1];
+  }
+
+  /** Render calendar into the given container. */
   function renderCalendar(container, JE) {
     container.classList.remove('hide');
     container.style.display = '';
 
-    container.innerHTML = '<div id="je-calendar-container"></div>';
+    var child = document.createElement('div');
+    child.id = 'je-calendar-container-tab';
+    container.textContent = '';
+    container.appendChild(child);
 
-    // Use dedicated custom tab rendering method
-    JE.calendarPage.renderForCustomTab?.();
+    JE.calendarPage.renderForCustomTab?.(child);
 
-    // Handle event clicks
-    if (typeof JE.calendarPage.handleEventClick === 'function') {
+    if (!clickHandlerAttached && typeof JE.calendarPage.handleEventClick === 'function') {
       document.addEventListener("click", JE.calendarPage.handleEventClick);
+      clickHandlerAttached = true;
     }
+
+    lastMountedContainer = container;
   }
 
-  // Watch for container to appear
+  /** Persistent watcher -- keeps observing so we remount after SPA navigation. */
   function watchForContainer(JE) {
-    const container = document.querySelector('.jellyfinenhanced.calendar');
-    if (container) {
-      renderCalendar(container, JE);
-      return;
-    }
+    function tryMount() {
+      var container = findActiveContainer();
+      if (!container) {
+        lastMountedContainer = null;
+        return;
+      }
 
-    const observer = new MutationObserver(() => {
-      const container = document.querySelector('.jellyfinenhanced.calendar');
-      if (container) {
-        observer.disconnect();
+      var shouldMount = container !== lastMountedContainer
+        || !container.hasChildNodes()
+        || (lastMountedContainer && !document.contains(lastMountedContainer));
+
+      if (shouldMount) {
         renderCalendar(container, JE);
       }
+    }
+
+    tryMount();
+
+    var observer = new MutationObserver(function () {
+      tryMount();
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  // Initialize
-  waitForCalendar((JE) => {
+  waitForCalendar(function (JE) {
     watchForContainer(JE);
   });
 

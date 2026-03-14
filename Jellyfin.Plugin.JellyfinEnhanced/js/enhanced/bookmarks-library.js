@@ -887,6 +887,7 @@
   let sectionObserver = null;
   let isRendering = false;
   let lastRenderTs = 0;
+  let lastMountedContainer = null;
 
   function getJE() {
     // Try common globals first
@@ -927,7 +928,7 @@
         hookViewEvents();
         document.addEventListener('je-bookmarks-updated', renderIfSectionExists);
 
-        // Watch for section being injected by CustomTabs
+        // Watch for section being injected by CustomTabs (persistent -- do not disconnect)
         sectionObserver = new MutationObserver(() => renderIfSectionExists());
         sectionObserver.observe(document.body, { childList: true, subtree: true });
 
@@ -947,21 +948,41 @@
     const now = Date.now();
     if (now - lastRenderTs < 150) return;
 
-    const container = document.querySelector('.sections.bookmarks');
-    if (container) {
-      console.log(`${logPrefix} Section found, rendering...`);
+    const container = findActiveBookmarksContainer();
+    if (!container) {
+      lastMountedContainer = null;
+      return;
+    }
+
+    // Only render if container changed (new DOM node) or is empty
+    const shouldRender = container !== lastMountedContainer
+      || !container.hasChildNodes()
+      || (lastMountedContainer && !document.contains(lastMountedContainer));
+
+    if (shouldRender) {
       revealSection(container);
       isRendering = true;
       renderBookmarksLibrary(container).finally(() => {
         isRendering = false;
         lastRenderTs = Date.now();
       });
-      // Disconnect observer once section is found to prevent self-triggering loops
-      if (sectionObserver) {
-        sectionObserver.disconnect();
-        sectionObserver = null;
-      }
+      lastMountedContainer = container;
     }
+  }
+
+  /**
+   * Find the correct (visible/active) bookmarks container.
+   * Jellyfin's DOM caching can leave multiple copies -- find the one
+   * inside the active (non-hidden) page, falling back to the last one.
+   */
+  function findActiveBookmarksContainer() {
+    const all = document.querySelectorAll('.sections.bookmarks');
+    if (all.length === 0) return null;
+    for (let i = all.length - 1; i >= 0; i--) {
+      const page = all[i].closest('.page');
+      if (page && !page.classList.contains('hide')) return all[i];
+    }
+    return all[all.length - 1];
   }
 
   /**
@@ -971,11 +992,11 @@
     document.addEventListener('viewshow', (e) => {
       // CustomTabs provides a view element on e.detail.view
       const view = e.detail?.view || document;
-      const container = view.querySelector?.('.sections.bookmarks');
+      const container = view.querySelector?.('.sections.bookmarks') || findActiveBookmarksContainer();
       if (container) {
-        console.log(`${logPrefix} viewshow event: rendering bookmarks section`);
         revealSection(container);
         renderBookmarksLibrary(container);
+        lastMountedContainer = container;
       }
     });
   }

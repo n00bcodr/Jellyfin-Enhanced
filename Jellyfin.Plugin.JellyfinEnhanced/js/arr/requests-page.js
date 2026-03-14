@@ -31,6 +31,7 @@
     downloadsSearchQuery: "",
     downloadsSearchVisible: false,
     searchDebounceTimer: null,
+    _customTabContainer: null,
   };
 
   // Status color mapping - using theme-aware colors
@@ -1532,10 +1533,20 @@
   }
 
   /**
-   * Render the full page
+   * Render the full page.
+   * @param {HTMLElement} [targetContainer] - Optional container to render into
+   *   (used by custom-tab mode to avoid duplicate-ID conflicts).
    */
-  function renderPage() {
-    const container = document.getElementById("je-downloads-container");
+  function renderPage(targetContainer) {
+    if (targetContainer) {
+      state._customTabContainer = targetContainer;
+    }
+    // Clear stale reference if detached from DOM or on Plugin Pages route
+    if (state._customTabContainer && (!document.contains(state._customTabContainer)
+      || window.location.hash.indexOf('userpluginsettings') !== -1)) {
+      state._customTabContainer = null;
+    }
+    const container = targetContainer || state._customTabContainer || document.getElementById("je-downloads-container");
     if (!container) return;
 
     let html = "";
@@ -2363,12 +2374,14 @@
   }
 
   /**
-   * Render content for custom tabs (without page state management)
+   * Render content for custom tabs (without page state management).
+   * @param {HTMLElement} [targetContainer] - Optional container element to
+   *   render into, avoiding global getElementById lookups.
    */
-  function renderForCustomTab() {
+  function renderForCustomTab(targetContainer) {
     state._customTabMode = true;
     injectStyles();
-    renderPage();
+    renderPage(targetContainer);
     loadAllData();
     startPolling();
   }
