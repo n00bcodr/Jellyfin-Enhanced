@@ -1538,16 +1538,19 @@
    *   (used by custom-tab mode to avoid duplicate-ID conflicts).
    */
   function renderPage(targetContainer) {
+    let container;
     if (targetContainer) {
       state._customTabContainer = targetContainer;
-    }
-    // Clear stale reference if detached from DOM or on Plugin Pages route
-    if (state._customTabContainer && (!document.contains(state._customTabContainer)
-      || window.location.hash.indexOf('userpluginsettings') !== -1)) {
+      container = targetContainer;
+    } else if (state._customTabContainer && document.contains(state._customTabContainer)
+      && window.location.hash.indexOf('userpluginsettings') === -1) {
+      // Re-use stored custom tab container, but not on Plugin Pages route
+      container = state._customTabContainer;
+    } else {
       state._customTabContainer = null;
+      container = document.getElementById("je-downloads-container");
+      if (!container) return;
     }
-    const container = targetContainer || state._customTabContainer || document.getElementById("je-downloads-container");
-    if (!container) return;
 
     let html = "";
 

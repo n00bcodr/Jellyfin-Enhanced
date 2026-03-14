@@ -32,9 +32,11 @@
   /** The last DOM node we mounted into. */
   var lastMountedContainer = null;
 
-  /** Wait for JE.downloadsPage to be ready before initializing. */
+  /** Wait for JE.downloadsPage to be ready before initializing (30s timeout). */
   function waitForDownloads(callback) {
+    var attempts = 0;
     var check = setInterval(function () {
+      if (++attempts > 300) { clearInterval(check); return; }
       var JE = window.JE || window.JellyfinEnhanced;
       if (JE?.downloadsPage) {
         clearInterval(check);
@@ -93,8 +95,15 @@
 
     tryMount();
 
+    var mountPending = false;
     var observer = new MutationObserver(function () {
-      tryMount();
+      if (!mountPending) {
+        mountPending = true;
+        requestAnimationFrame(function () {
+          mountPending = false;
+          tryMount();
+        });
+      }
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }

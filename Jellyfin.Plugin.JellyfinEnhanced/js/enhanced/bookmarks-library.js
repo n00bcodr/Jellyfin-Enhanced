@@ -929,7 +929,16 @@
         document.addEventListener('je-bookmarks-updated', renderIfSectionExists);
 
         // Watch for section being injected by CustomTabs (persistent -- do not disconnect)
-        sectionObserver = new MutationObserver(() => renderIfSectionExists());
+        let mountPending = false;
+        sectionObserver = new MutationObserver(() => {
+          if (!mountPending) {
+            mountPending = true;
+            requestAnimationFrame(() => {
+              mountPending = false;
+              renderIfSectionExists();
+            });
+          }
+        });
         sectionObserver.observe(document.body, { childList: true, subtree: true });
 
         // Try immediate render in case tab is already visible
@@ -990,12 +999,17 @@
    */
   function hookViewEvents() {
     document.addEventListener('viewshow', (e) => {
+      if (isRendering) return;
       // CustomTabs provides a view element on e.detail.view
       const view = e.detail?.view || document;
       const container = view.querySelector?.('.sections.bookmarks') || findActiveBookmarksContainer();
       if (container) {
         revealSection(container);
-        renderBookmarksLibrary(container);
+        isRendering = true;
+        renderBookmarksLibrary(container).finally(() => {
+          isRendering = false;
+          lastRenderTs = Date.now();
+        });
         lastMountedContainer = container;
       }
     });
