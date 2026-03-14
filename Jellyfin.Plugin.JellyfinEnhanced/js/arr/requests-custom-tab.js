@@ -3,8 +3,8 @@
  * Creates <div class="jellyfinenhanced requests"></div> for CustomTabs plugin
  *
  * Uses a persistent observer to remount whenever the home page DOM is rebuilt
- * (e.g. after SPA navigation). Targets the LAST matching container to avoid
- * rendering into a stale DOM-cached copy.
+ * (e.g. after SPA navigation). Only runs when on the home page; suspends
+ * when navigated away.
  */
 
 (function () {
@@ -32,6 +32,13 @@
   /** The last DOM node we mounted into. */
   var lastMountedContainer = null;
 
+  /** @returns {boolean} Whether the current URL hash is the home page. */
+  function isOnHomePage() {
+    var hash = window.location.hash;
+    return hash === '' || hash === '#/home' || hash === '#/home.html'
+      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+  }
+
   /** Wait for JE.downloadsPage to be ready before initializing (30s timeout). */
   function waitForDownloads(callback) {
     var attempts = 0;
@@ -46,21 +53,25 @@
   }
 
   /**
-   * Find the correct (visible/active) requests container.
-   * Jellyfin's DOM caching can leave multiple copies -- find the one
-   * inside the active (non-hidden) page, falling back to the last one.
+   * Find the requests container inside the active (non-hidden) home page.
+   * Returns null if no visible container exists -- never falls back to a
+   * stale DOM-cached copy.
+   * @returns {HTMLElement|null}
    */
   function findActiveContainer() {
     var all = document.querySelectorAll('.jellyfinenhanced.requests');
-    if (all.length === 0) return null;
     for (var i = all.length - 1; i >= 0; i--) {
       var page = all[i].closest('.page');
       if (page && !page.classList.contains('hide')) return all[i];
     }
-    return all[all.length - 1];
+    return null;
   }
 
-  /** Render downloads into the given container. */
+  /**
+   * Render downloads into the given container using a scoped child element.
+   * @param {HTMLElement} container - The active .jellyfinenhanced.requests element.
+   * @param {Object} JE - The JellyfinEnhanced global object.
+   */
   function renderDownloads(container, JE) {
     container.classList.remove('hide');
     container.style.display = '';
@@ -75,9 +86,16 @@
     lastMountedContainer = container;
   }
 
-  /** Persistent watcher -- keeps observing so we remount after SPA navigation. */
+  /**
+   * Persistent watcher -- observes .mainAnimatedPages for DOM rebuilds and
+   * remounts the requests tab when a new active container appears. Suspends
+   * checks when not on the home page.
+   * @param {Object} JE - The JellyfinEnhanced global object.
+   */
   function watchForContainer(JE) {
     function tryMount() {
+      if (!isOnHomePage()) return;
+
       var container = findActiveContainer();
       if (!container) {
         lastMountedContainer = null;
@@ -95,6 +113,7 @@
 
     tryMount();
 
+    var observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
     var mountPending = false;
     var observer = new MutationObserver(function () {
       if (!mountPending) {
@@ -105,7 +124,7 @@
         });
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(observeTarget, { childList: true, subtree: true });
   }
 
   waitForDownloads(function (JE) {

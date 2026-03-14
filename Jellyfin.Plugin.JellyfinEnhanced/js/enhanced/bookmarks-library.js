@@ -929,6 +929,7 @@
         document.addEventListener('je-bookmarks-updated', renderIfSectionExists);
 
         // Watch for section being injected by CustomTabs (persistent -- do not disconnect)
+        const observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
         let mountPending = false;
         sectionObserver = new MutationObserver(() => {
           if (!mountPending) {
@@ -939,7 +940,7 @@
             });
           }
         });
-        sectionObserver.observe(document.body, { childList: true, subtree: true });
+        sectionObserver.observe(observeTarget, { childList: true, subtree: true });
 
         // Try immediate render in case tab is already visible
         renderIfSectionExists();
@@ -980,18 +981,18 @@
   }
 
   /**
-   * Find the correct (visible/active) bookmarks container.
-   * Jellyfin's DOM caching can leave multiple copies -- find the one
-   * inside the active (non-hidden) page, falling back to the last one.
+   * Find the bookmarks container inside the active (non-hidden) home page.
+   * Returns null if no visible container exists -- never falls back to a
+   * stale DOM-cached copy.
+   * @returns {HTMLElement|null}
    */
   function findActiveBookmarksContainer() {
     const all = document.querySelectorAll('.sections.bookmarks');
-    if (all.length === 0) return null;
     for (let i = all.length - 1; i >= 0; i--) {
       const page = all[i].closest('.page');
       if (page && !page.classList.contains('hide')) return all[i];
     }
-    return all[all.length - 1];
+    return null;
   }
 
   /**
