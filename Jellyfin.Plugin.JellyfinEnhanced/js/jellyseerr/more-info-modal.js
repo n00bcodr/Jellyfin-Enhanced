@@ -974,9 +974,10 @@ function buildSingle4kButton(data) {
 function buildMovieActions(data, actionMount, chipMount, show4kOption) {
     const status = data.mediaInfo ? data.mediaInfo.status : 1;
     const status4k = data.mediaInfo ? data.mediaInfo.status4k : 1;
+    const canRequestMain = !status || status === 1 || status === 7;
 
-    // If already requested in any format, renderActions will handle chips/downloads
-    if ((status && status !== 1) || (status4k && status4k !== 1)) {
+    // Only block the main movie action when the item is not requestable.
+    if (!canRequestMain) {
         return null;
     }
 
@@ -1060,6 +1061,11 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             option.textContent = 'Request in 4K';
             option.disabled = true;
             option.classList.add(status4k === 3 ? 'je-4k-processing' : 'je-4k-pending');
+        } else if (status4k === 6) {
+            // 4K is blocklisted
+            option.textContent = 'Request in 4K';
+            option.disabled = true;
+            option.classList.add('je-4k-blocklisted');
         } else {
             // 4K can be requested
             option.textContent = 'Request in 4K';
@@ -1371,10 +1377,11 @@ function renderActions(data, mediaType) {
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
-        const hasStatus = hasNormalStatus || has4kStatus;
-        const alreadyRequested = hasStatus;
-        if (alreadyRequested) {
-            if (show4k && (!status4k || status4k === 1) && actionMount) {
+        const canRequestNormal = !status || status === 1 || status === 7;
+        const canRequest4k = !status4k || status4k === 1 || status4k === 7;
+
+        if (!canRequestNormal) {
+            if (show4k && canRequest4k && actionMount) {
                 const followUp = buildSingle4kButton(data);
                 if (followUp) actionMount.appendChild(followUp);
             }
@@ -1421,9 +1428,15 @@ function renderActions(data, mediaType) {
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
         const hasStatus = hasNormalStatus || has4kStatus;
+        const hasDeletedStatus = status === 7 || status4k === 7;
 
         // Check if there are unrequested seasons
         if (hasStatus) {
+            if (hasDeletedStatus && actionMount) {
+                const requestMoreButton = buildTvRequestMoreButton(data);
+                if (requestMoreButton) actionMount.appendChild(requestMoreButton);
+                return;
+            }
             checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
                 if (hasUnrequestedSeasons && actionMount) {
                     const requestMoreButton = buildTvRequestMoreButton(data);
@@ -1888,7 +1901,7 @@ function injectStyles() {
         .je-status-chip.chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
         .je-status-chip.chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
         .je-status-chip.chip-blocklisted { background: rgba(120, 53, 15, 0.25); color: #f0f9ff; border-color: rgba(120, 53, 15, 0.5); }
-        .je-status-chip.chip-deleted { background: rgba(107, 114, 128, 0.25); color: #f0f9ff; border-color: rgba(107, 114, 128, 0.5); }
+        .je-status-chip.chip-deleted { background: rgba(220, 38, 38, 0.22); color: #ffe4e6; border-color: rgba(248, 113, 113, 0.55); }
 
         .je-download-bars {
             display: flex;
@@ -1992,6 +2005,7 @@ function injectStyles() {
         .je-4k-popup-item.je-4k-request { background-color: #5a3fb8 !important; color: #fff !important; }
         .je-4k-popup-item.je-4k-pending { background-color: #b45309 !important; color: #fff !important; }
         .je-4k-popup-item.je-4k-processing { background-color: #581c87 !important; color: #fff !important; }
+        .je-4k-popup-item.je-4k-blocklisted { background-color: #78350f !important; color: #fff !important; }
         .je-4k-popup-item.je-4k-available { background-color: #16a34a !important; color: #fff !important; }
 
         .je-more-info-modal .overview-section {
