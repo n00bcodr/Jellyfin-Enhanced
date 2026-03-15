@@ -38,6 +38,7 @@
     requestedLoading: false,
     locationSignature: null,
     locationUnsubscribe: null,
+    _customTabContainer: null,
   };
 
   // Status color mapping
@@ -2424,13 +2425,26 @@
   }
 
   /**
-   * Render the full page
+   * Render the full page.
+   * @param {HTMLElement} [targetContainer] - Optional container to render into
+   *   (used by custom-tab mode to avoid duplicate-ID conflicts).
    */
-  function renderPage() {
+  function renderPage(targetContainer) {
     syncPageModeClasses();
-    const page = createPageContainer();
-    const container = document.getElementById("je-calendar-container");
-    if (!page || !container) return;
+    let container;
+    if (targetContainer) {
+      state._customTabContainer = targetContainer;
+      container = targetContainer;
+    } else if (state._customTabContainer && document.contains(state._customTabContainer)
+      && window.location.hash.indexOf('userpluginsettings') === -1) {
+      // Re-use stored custom tab container, but not on Plugin Pages route
+      container = state._customTabContainer;
+    } else {
+      state._customTabContainer = null;
+      const page = createPageContainer();
+      container = document.getElementById("je-calendar-container");
+      if (!page || !container) return;
+    }
 
     if (typeof state.sidebarCollapsed !== "boolean") {
       state.sidebarCollapsed = getDefaultSidebarCollapsed();
@@ -2886,12 +2900,14 @@
   }
 
   /**
-   * Render content for custom tabs (without page state management)
+   * Render content for custom tabs (without page state management).
+   * @param {HTMLElement} [targetContainer] - Optional container element to
+   *   render into, avoiding global getElementById lookups.
    */
-  function renderForCustomTab() {
+  function renderForCustomTab(targetContainer) {
     injectStyles();
     loadSettings();
-    renderPage();
+    renderPage(targetContainer);
     loadAllData();
   }
 

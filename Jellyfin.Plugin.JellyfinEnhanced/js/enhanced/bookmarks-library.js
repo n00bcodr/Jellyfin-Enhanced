@@ -887,6 +887,7 @@
   let sectionObserver = null;
   let isRendering = false;
   let lastRenderTs = 0;
+  let lastMountedContainer = null;
 
   function getJE() {
     // Try common globals first
@@ -927,9 +928,19 @@
         hookViewEvents();
         document.addEventListener('je-bookmarks-updated', renderIfSectionExists);
 
-        // Watch for section being injected by CustomTabs
-        sectionObserver = new MutationObserver(() => renderIfSectionExists());
-        sectionObserver.observe(document.body, { childList: true, subtree: true });
+        // Watch for section being injected by CustomTabs (persistent -- do not disconnect)
+        const observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
+        let mountPending = false;
+        sectionObserver = new MutationObserver(() => {
+          if (!mountPending) {
+            mountPending = true;
+            requestAnimationFrame(() => {
+              mountPending = false;
+              renderIfSectionExists();
+            });
+          }
+        });
+        sectionObserver.observe(observeTarget, { childList: true, subtree: true });
 
         // Try immediate render in case tab is already visible
         renderIfSectionExists();
@@ -947,21 +958,41 @@
     const now = Date.now();
     if (now - lastRenderTs < 150) return;
 
-    const container = document.querySelector('.sections.bookmarks');
-    if (container) {
-      console.log(`${logPrefix} Section found, rendering...`);
+    const container = findActiveBookmarksContainer();
+    if (!container) {
+      lastMountedContainer = null;
+      return;
+    }
+
+    // Only render if container changed (new DOM node) or is empty
+    const shouldRender = container !== lastMountedContainer
+      || !container.hasChildNodes()
+      || (lastMountedContainer && !document.contains(lastMountedContainer));
+
+    if (shouldRender) {
       revealSection(container);
       isRendering = true;
       renderBookmarksLibrary(container).finally(() => {
         isRendering = false;
         lastRenderTs = Date.now();
       });
-      // Disconnect observer once section is found to prevent self-triggering loops
-      if (sectionObserver) {
-        sectionObserver.disconnect();
-        sectionObserver = null;
-      }
+      lastMountedContainer = container;
     }
+  }
+
+  /**
+   * Find the bookmarks container inside the active (non-hidden) home page.
+   * Returns null if no visible container exists -- never falls back to a
+   * stale DOM-cached copy.
+   * @returns {HTMLElement|null}
+   */
+  function findActiveBookmarksContainer() {
+    const all = document.querySelectorAll('.sections.bookmarks');
+    for (let i = all.length - 1; i >= 0; i--) {
+      const page = all[i].closest('.page');
+      if (page && !page.classList.contains('hide')) return all[i];
+    }
+    return null;
   }
 
   /**
@@ -969,13 +1000,18 @@
    */
   function hookViewEvents() {
     document.addEventListener('viewshow', (e) => {
+      if (isRendering) return;
       // CustomTabs provides a view element on e.detail.view
       const view = e.detail?.view || document;
-      const container = view.querySelector?.('.sections.bookmarks');
+      const container = view.querySelector?.('.sections.bookmarks') || findActiveBookmarksContainer();
       if (container) {
-        console.log(`${logPrefix} viewshow event: rendering bookmarks section`);
         revealSection(container);
-        renderBookmarksLibrary(container);
+        isRendering = true;
+        renderBookmarksLibrary(container).finally(() => {
+          isRendering = false;
+          lastRenderTs = Date.now();
+        });
+        lastMountedContainer = container;
       }
     });
   }

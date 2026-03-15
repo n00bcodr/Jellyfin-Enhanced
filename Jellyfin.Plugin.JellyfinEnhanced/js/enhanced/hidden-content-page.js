@@ -22,6 +22,7 @@
     scopedOnly: false,
     locationSignature: null,
     locationTimer: null,
+    _customTabContainer: null,
   };
 
   const logPrefix = '🪼 Jellyfin Enhanced: Hidden Content Page:';
@@ -1205,11 +1206,24 @@
   /**
    * Renders the full management page with grouped display.
    * Called on page show and whenever hidden content changes.
+   * @param {HTMLElement} [targetContainer] - Optional container to render into
+   *   (used by custom-tab mode to avoid duplicate-ID conflicts).
    */
-  function renderPage() {
-    const page = createPageContainer();
-    const container = document.getElementById("je-hidden-content-container");
-    if (!page || !container) return;
+  function renderPage(targetContainer) {
+    let container;
+    if (targetContainer) {
+      state._customTabContainer = targetContainer;
+      container = targetContainer;
+    } else if (state._customTabContainer && document.contains(state._customTabContainer)
+      && window.location.hash.indexOf('userpluginsettings') === -1) {
+      // Re-use stored custom tab container, but not on Plugin Pages route
+      container = state._customTabContainer;
+    } else {
+      state._customTabContainer = null;
+      const page = createPageContainer();
+      container = document.getElementById("je-hidden-content-container");
+      if (!page || !container) return;
+    }
 
     const allItems = JE.hiddenContent.getAllHiddenItems();
     const searchQuery = state.searchQuery.toLowerCase();
@@ -1460,11 +1474,13 @@
 
   /**
    * Render content for custom tabs (without page state management).
+   * @param {HTMLElement} [targetContainer] - Optional container element to
+   *   render into, avoiding global getElementById lookups.
    */
-  function renderForCustomTab() {
+  function renderForCustomTab(targetContainer) {
     state._customTabMode = true;
     injectStyles();
-    renderPage();
+    renderPage(targetContainer);
   }
 
   /**
