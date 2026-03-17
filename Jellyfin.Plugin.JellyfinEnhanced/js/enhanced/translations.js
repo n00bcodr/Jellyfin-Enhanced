@@ -17,8 +17,11 @@
         const normalizedLang = normalizeLangCode(primaryLang);
         const langCodes = [];
 
-        if (normalizedLang) {
-            langCodes.push(normalizedLang);
+        // Treat generic zh as simplified Chinese (zh-CN) unless a region-specific variant is requested.
+        const preferredZh = normalizedLang === 'zh' ? 'zh-CN' : normalizedLang;
+
+        if (preferredZh) {
+            langCodes.push(preferredZh);
         }
 
         if (normalizedLang && normalizedLang.includes('-')) {

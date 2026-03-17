@@ -1587,6 +1587,7 @@
                 // Custom languages not in Jellyfin's official culture list
                 const CUSTOM_LANGUAGES = {
                     'pr': { Name: 'Pirate', DisplayName: "Pirate", TwoLetterISOLanguageName: 'pr' },
+                    'zh-CN': { Name: '简体中文', DisplayName: "简体中文", TwoLetterISOLanguageName: 'zh-CN' },
                     'en-GB': { Name: 'English (United Kingdom)', DisplayName: "English (United Kingdom)", TwoLetterISOLanguageName: 'en-GB' },
                     'en-US': { Name: 'English (United States)', DisplayName: "English (United States)", TwoLetterISOLanguageName: 'en-US' }
                 };
