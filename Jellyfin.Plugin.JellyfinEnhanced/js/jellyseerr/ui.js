@@ -1902,7 +1902,7 @@
 
 
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { fetchTvShowDetails, requestTvSeasons, fetchAdvancedRequestData, fetchRequestSettings, requestMedia } = JE.jellyseerrAPI;
+        const { fetchTvShowDetails, fetchTmdbTvDetails, requestTvSeasons, fetchAdvancedRequestData, fetchRequestSettings, requestMedia } = JE.jellyseerrAPI;
 
         // Fetch Seerr request settings (partial requests + special episodes)
         let partialRequestsEnabled = false;
@@ -1920,6 +1920,27 @@
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
+        }
+
+        // If seasons are missing air dates (TheTVDB), backfill from TMDB
+        const hasMissingAirDates = tvDetails.seasons.some(s => s.episodeCount > 0 && !s.airDate);
+        if (hasMissingAirDates && JE.pluginConfig?.TmdbEnabled) {
+            try {
+                const tmdbData = await fetchTmdbTvDetails(tmdbId);
+                if (tmdbData?.seasons) {
+                    const tmdbSeasonMap = {};
+                    tmdbData.seasons.forEach(s => { tmdbSeasonMap[s.season_number] = s; });
+                    tvDetails.seasons = tvDetails.seasons.map(s => {
+                        const tmdbSeason = tmdbSeasonMap[s.seasonNumber];
+                        if (tmdbSeason && !s.airDate) {
+                            return { ...s, airDate: tmdbSeason.air_date || '' };
+                        }
+                        return s;
+                    });
+                }
+            } catch (e) {
+                console.debug(`${logPrefix} Could not backfill air dates from TMDB:`, e);
+            }
         }
 
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
