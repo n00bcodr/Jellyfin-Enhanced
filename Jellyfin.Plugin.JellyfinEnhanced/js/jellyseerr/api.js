@@ -317,6 +317,21 @@
     };
 
     /**
+     * Fetches season detail with episodes from Seerr.
+     * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @param {number} seasonNumber - The season number.
+     * @returns {Promise<object|null>}
+     */
+    api.fetchTvSeasonDetails = async function(tmdbId, seasonNumber) {
+        try {
+            return await get(`/tv/${tmdbId}/season/${seasonNumber}`);
+        } catch (error) {
+            console.debug(`${logPrefix} Failed to fetch season ${seasonNumber} for TMDB ID ${tmdbId}:`, error);
+            return null;
+        }
+    };
+
+    /**
      * Fetches TV show details from TMDB directly (bypasses Seerr metadata provider).
      * Useful for getting season air dates when Seerr uses TheTVDB (which omits them).
      * @param {number} tmdbId - The TMDB ID of the TV show.

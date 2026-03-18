@@ -554,6 +554,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/tv/{tmdbId}/season/{seasonNumber}")]
+        [Authorize]
+        public Task<IActionResult> GetTvSeason(int tmdbId, int seasonNumber)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/season/{seasonNumber}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/movie/{tmdbId}")]
         [Authorize]
         public Task<IActionResult> GetMovie(int tmdbId)
