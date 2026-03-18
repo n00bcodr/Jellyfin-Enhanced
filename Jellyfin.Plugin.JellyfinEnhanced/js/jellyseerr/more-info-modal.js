@@ -1501,13 +1501,21 @@ function buildSeasonsSection(data) {
                         ? `https://image.tmdb.org/t/p/w185${season.posterPath}`
                         : '';
 
+                    // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label
+                    const sNum = season.seasonNumber;
+                    const trimmedName = (season.name || '').trim();
+                    const isNumericOnly = trimmedName === String(sNum) || /^0*\d+$/.test(trimmedName);
+                    const displayName = (trimmedName && !isNumericOnly)
+                        ? trimmedName
+                        : (sNum === 0 ? JE.t('jellyseerr_season_specials') : JE.t('jellyseerr_season_name', { number: sNum }));
+
                     return `
                         <div class="season-card" data-season-number="${season.seasonNumber || ''}">
                             <div class="season-poster">
-                                ${posterUrl ? `<img src="${posterUrl}" alt="${escapeHtml(season.name)}" />` : ''}
+                                ${posterUrl ? `<img src="${posterUrl}" alt="${escapeHtml(displayName)}" />` : ''}
                             </div>
                             <div class="season-info">
-                                <div class="season-name">${escapeHtml(season.name)}</div>
+                                <div class="season-name">${escapeHtml(displayName)}</div>
                                 <div class="season-meta">
                                     ${season.episodeCount} Episodes
                                     ${season.airDate ? ` • ${new Date(season.airDate).getFullYear()}` : ''}

@@ -655,6 +655,23 @@
     };
 
     /**
+     * Fetches Seerr request settings (partial requests + special episodes).
+     * @returns {Promise<{partialRequestsEnabled: boolean, enableSpecialEpisodes: boolean}>}
+     */
+    api.fetchRequestSettings = async function() {
+        try {
+            const result = await get('/settings/partial-requests');
+            return {
+                partialRequestsEnabled: !!(result && result.partialRequestsEnabled),
+                enableSpecialEpisodes: !!(result && result.enableSpecialEpisodes)
+            };
+        } catch (error) {
+            console.warn(`${logPrefix} Failed to fetch request settings:`, error);
+            return { partialRequestsEnabled: false, enableSpecialEpisodes: false };
+        }
+    };
+
+    /**
      * Adds requested media to the pending watchlist.
      * The item will be automatically added to the watchlist when it appears in the library.
      * @param {number} tmdbId - The TMDB ID of the media.
