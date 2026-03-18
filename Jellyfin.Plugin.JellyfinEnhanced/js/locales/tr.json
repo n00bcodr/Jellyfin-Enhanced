@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Koleksiyon bilgisi yüklenemedi",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Koleksiyonda film bulunamadı",
     "jellyseerr_select_all_seasons": "Tüm sezonları seç",
+    "jellyseerr_season_specials": "Specials",
+    "jellyseerr_season_name": "Season {number}",
     "jellyseerr_season_status_not_requested": "İstenmedi",
     "jellyseerr_season_status_requested": "İstendi",
     "jellyseerr_season_status_processing": "İşleniyor",

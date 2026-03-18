@@ -671,20 +671,6 @@
 
 
     /**
-     * Checks if partial series requests are enabled in Seerr settings.
-     * @returns {Promise<boolean>} - True if partial requests are enabled, false otherwise.
-     */
-    api.isPartialRequestsEnabled = async function() {
-        try {
-            const result = await get('/settings/partial-requests');
-            return !!(result && result.partialRequestsEnabled);
-        } catch (error) {
-            console.warn(`${logPrefix} Failed to fetch partial requests setting:`, error);
-            return false;
-        }
-    };
-
-    /**
      * Fetches Seerr request settings (partial requests + special episodes).
      * @returns {Promise<{partialRequestsEnabled: boolean, enableSpecialEpisodes: boolean}>}
      */

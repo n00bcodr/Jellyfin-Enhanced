@@ -8,103 +8,115 @@
 
     let currentModal = null;
 
+    /**
+     * Validates that a string starts with an ISO date format (YYYY-MM-DD).
+     * @param {string} d - The date string to validate.
+     * @returns {boolean} True if the string matches the date pattern.
+     */
     const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}/.test(d);
 
+    /** Validates that a TMDB poster path matches the expected format (e.g., /abc123.jpg). */
+    const isValidPosterPath = (p) => /^\/[a-zA-Z0-9._-]+\.[a-zA-Z]+$/.test(p);
+
 /**
- * Backfill missing season metadata (posterPath, overview, airDate) from TMDB and episode data.
- * Updates the DOM season cards in-place after data arrives.
- * @param {number} tmdbId
- * @param {object} data - The Seerr TV show details
+ * Backfills missing season metadata (posterPath, overview, airDate) from TMDB and episode data.
+ * Fetches data asynchronously, then updates DOM season cards in-place.
+ * @param {number} tmdbId - The TMDB ID of the TV show.
+ * @param {object} data - The Seerr TV show details object (seasons are mutated with backfilled values).
  */
 async function backfillSeasonMetadata(tmdbId, data) {
-    if (!currentModal || !data?.seasons) return;
+    try {
+        if (!currentModal || !data?.seasons) return;
 
-    const api = JE.jellyseerrAPI;
-    const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath));
-    if (seasonsMissingData.length === 0) return;
+        const api = JE.jellyseerrAPI;
+        const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath));
+        if (seasonsMissingData.length === 0) return;
 
-    // Fetch TMDB data + per-season episode data in parallel
-    const tmdbPromise = (JE.pluginConfig?.TmdbEnabled && api?.fetchTmdbTvDetails)
-        ? api.fetchTmdbTvDetails(tmdbId).catch(() => null)
-        : Promise.resolve(null);
+        // Fetch TMDB data + per-season episode data in parallel
+        const tmdbPromise = (JE.pluginConfig?.TmdbEnabled && api?.fetchTmdbTvDetails)
+            ? api.fetchTmdbTvDetails(tmdbId).catch(() => null)
+            : Promise.resolve(null);
 
-    const episodePromises = (api?.fetchTvSeasonDetails)
-        ? seasonsMissingData.map(s =>
-            api.fetchTvSeasonDetails(tmdbId, s.seasonNumber)
-                .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
-                .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '' }))
-        )
-        : [];
+        const episodePromises = (api?.fetchTvSeasonDetails)
+            ? seasonsMissingData.map(s =>
+                api.fetchTvSeasonDetails(tmdbId, s.seasonNumber)
+                    .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
+                    .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '' }))
+            )
+            : [];
 
-    const [tmdbData, ...episodeResults] = await Promise.all([tmdbPromise, ...episodePromises]);
+        const [tmdbData, ...episodeResults] = await Promise.all([tmdbPromise, ...episodePromises]);
 
-    // Build TMDB season lookup
-    const tmdbMap = {};
-    if (tmdbData?.seasons) {
-        tmdbData.seasons.forEach(s => { tmdbMap[s.season_number] = s; });
-    }
-
-    // Build episode air date lookup
-    const epDateMap = {};
-    episodeResults.forEach(r => {
-        if (r.firstEpDate && isValidDate(r.firstEpDate)) {
-            epDateMap[r.seasonNumber] = r.firstEpDate;
+        // Build TMDB season lookup
+        const tmdbMap = {};
+        if (tmdbData?.seasons) {
+            tmdbData.seasons.forEach(s => { tmdbMap[s.season_number] = s; });
         }
-    });
 
-    // Bail if modal was closed/replaced
-    if (!currentModal || String(currentModal.dataset?.tmdbId) !== String(tmdbId)) return;
-
-    // Update each season card in the DOM
-    data.seasons.forEach(season => {
-        const sNum = season.seasonNumber;
-        const card = currentModal.querySelector(`.season-card[data-season-number="${sNum}"]`);
-        if (!card) return;
-
-        const tmdbSeason = tmdbMap[sNum];
-
-        // Backfill posterPath
-        if (!season.posterPath && tmdbSeason?.poster_path && tmdbSeason.poster_path !== 'None') {
-            season.posterPath = tmdbSeason.poster_path;
-            const posterEl = card.querySelector('.season-poster');
-            if (posterEl && !posterEl.querySelector('img')) {
-                const img = document.createElement('img');
-                img.src = `https://image.tmdb.org/t/p/w185${season.posterPath}`;
-                img.alt = card.querySelector('.season-name')?.textContent || '';
-                posterEl.appendChild(img);
+        // Build episode air date lookup
+        const epDateMap = {};
+        episodeResults.forEach(r => {
+            if (r.firstEpDate && isValidDate(r.firstEpDate)) {
+                epDateMap[r.seasonNumber] = r.firstEpDate;
             }
-        }
+        });
 
-        // Backfill overview
-        if (!season.overview && tmdbSeason?.overview) {
-            season.overview = tmdbSeason.overview;
-            const infoEl = card.querySelector('.season-info');
-            if (infoEl && !infoEl.querySelector('.season-overview')) {
-                const overviewEl = document.createElement('div');
-                overviewEl.className = 'season-overview';
-                overviewEl.textContent = season.overview;
-                infoEl.appendChild(overviewEl);
+        // Bail if modal was closed/replaced during async fetch
+        if (!currentModal || String(currentModal.dataset?.tmdbId) !== String(tmdbId)) return;
+
+        // Update each season card in the DOM
+        data.seasons.forEach(season => {
+            const sNum = season.seasonNumber;
+            const card = currentModal.querySelector(`.season-card[data-season-number="${CSS.escape(String(sNum))}"]`);
+            if (!card) return;
+
+            const tmdbSeason = tmdbMap[sNum];
+
+            // Backfill posterPath (validate format to prevent loading from unexpected URLs)
+            if (!season.posterPath && tmdbSeason?.poster_path && isValidPosterPath(tmdbSeason.poster_path)) {
+                season.posterPath = tmdbSeason.poster_path;
+                const posterEl = card.querySelector('.season-poster');
+                if (posterEl && !posterEl.querySelector('img')) {
+                    const img = document.createElement('img');
+                    img.src = `https://image.tmdb.org/t/p/w185${season.posterPath}`;
+                    img.alt = card.querySelector('.season-name')?.textContent || '';
+                    posterEl.appendChild(img);
+                }
             }
-        }
 
-        // Backfill airDate (episode date first, then TMDB)
-        if (!season.airDate) {
-            const epDate = epDateMap[sNum];
-            const tmdbDate = tmdbSeason?.air_date || '';
-            const bestDate = epDate || (isValidDate(tmdbDate) ? tmdbDate : '');
-            if (bestDate) {
-                season.airDate = bestDate;
-                const metaEl = card.querySelector('.season-meta');
-                if (metaEl) {
-                    const year = new Date(bestDate).getFullYear();
-                    const currentText = metaEl.textContent || '';
-                    if (!currentText.includes(String(year))) {
-                        metaEl.textContent = `${season.episodeCount} Episodes • ${year}`;
+            // Backfill overview (textContent is safe from XSS)
+            if (!season.overview && tmdbSeason?.overview) {
+                season.overview = tmdbSeason.overview;
+                const infoEl = card.querySelector('.season-info');
+                if (infoEl && !infoEl.querySelector('.season-overview')) {
+                    const overviewEl = document.createElement('div');
+                    overviewEl.className = 'season-overview';
+                    overviewEl.textContent = season.overview;
+                    infoEl.appendChild(overviewEl);
+                }
+            }
+
+            // Backfill airDate (episode date first, then TMDB fallback)
+            if (!season.airDate) {
+                const epDate = epDateMap[sNum];
+                const tmdbDate = tmdbSeason?.air_date || '';
+                const bestDate = epDate || (isValidDate(tmdbDate) ? tmdbDate : '');
+                if (bestDate) {
+                    season.airDate = bestDate;
+                    const metaEl = card.querySelector('.season-meta');
+                    if (metaEl) {
+                        const year = new Date(bestDate).getFullYear();
+                        const currentText = metaEl.textContent || '';
+                        if (!currentText.includes(String(year))) {
+                            metaEl.textContent = `${season.episodeCount} Episodes \u2022 ${year}`;
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    } catch (e) {
+        console.debug(`${logPrefix} Failed to backfill season metadata:`, e);
+    }
 }
 
 /**
@@ -1605,7 +1617,9 @@ function buildSeasonsSection(data) {
                         ? `https://image.tmdb.org/t/p/w185${season.posterPath}`
                         : '';
 
-                    // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label
+                    // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label.
+                    // The numeric regex catches bare numbers and zero-padded variants (e.g., "01");
+                    // this may also match year-named seasons, which is an acceptable tradeoff.
                     const sNum = season.seasonNumber;
                     const trimmedName = (season.name || '').trim();
                     const isNumericOnly = trimmedName === String(sNum) || /^0*\d+$/.test(trimmedName);
@@ -1614,15 +1628,15 @@ function buildSeasonsSection(data) {
                         : (sNum === 0 ? JE.t('jellyseerr_season_specials') : JE.t('jellyseerr_season_name', { number: sNum }));
 
                     return `
-                        <div class="season-card" data-season-number="${season.seasonNumber || ''}">
+                        <div class="season-card" data-season-number="${escapeHtml(String(sNum))}">
                             <div class="season-poster">
-                                ${posterUrl ? `<img src="${posterUrl}" alt="${escapeHtml(displayName)}" />` : ''}
+                                ${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="${escapeHtml(displayName)}" />` : ''}
                             </div>
                             <div class="season-info">
                                 <div class="season-name">${escapeHtml(displayName)}</div>
                                 <div class="season-meta">
-                                    ${season.episodeCount} Episodes
-                                    ${season.airDate ? ` • ${new Date(season.airDate).getFullYear()}` : ''}
+                                    ${escapeHtml(season.episodeCount || 0)} Episodes
+                                    ${season.airDate && isValidDate(season.airDate) ? ` \u2022 ${escapeHtml(season.airDate.substring(0, 4))}` : ''}
                                 </div>
                                 <div data-season-links>${buildSeasonAvailabilityLinks(seasonInfo, seasonJellyfinId, seasonJellyfinId4k)}</div>
                                 ${season.overview ? `<div class="season-overview">${escapeHtml(season.overview)}</div>` : ''}

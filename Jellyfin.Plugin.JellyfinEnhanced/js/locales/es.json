@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} No se pudieron cargar los detalles de la colección",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} No se encontraron películas en la colección",
     "jellyseerr_select_all_seasons": "Seleccionar todas las temporadas",
+    "jellyseerr_season_specials": "Specials",
+    "jellyseerr_season_name": "Season {number}",
     "jellyseerr_season_status_not_requested": "No solicitada",
     "jellyseerr_season_status_requested": "Solicitada",
     "jellyseerr_season_status_processing": "Procesando",

@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Kunne ikke laste inn samlingsdetaljer",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Ingen filmer funnet i samlingen",
     "jellyseerr_select_all_seasons": "Velg alle sesonger",
+    "jellyseerr_season_specials": "Specials",
+    "jellyseerr_season_name": "Season {number}",
     "jellyseerr_season_status_not_requested": "Ikke forespurt",
     "jellyseerr_season_status_requested": "Forespurt",
     "jellyseerr_season_status_processing": "Behandler",

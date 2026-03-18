@@ -2015,9 +2015,19 @@
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)
         const airDateCache = {};
+
+        /**
+         * Validates that a string starts with an ISO date format (YYYY-MM-DD).
+         * @param {string} d - The date string to validate.
+         * @returns {boolean} True if the string matches the date pattern.
+         */
         const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}/.test(d);
 
-        /** Merges cached air dates into a tvDetails object. */
+        /**
+         * Merges cached air dates into a Seerr tvDetails object.
+         * Seasons without an airDate are backfilled from the cache (immutable per-season).
+         * @param {object} details - The Seerr TV show details object.
+         */
         function applyAirDateBackfill(details) {
             if (!details?.seasons || Object.keys(airDateCache).length === 0) return;
             details.seasons = details.seasons.map(s => {
@@ -2170,7 +2180,9 @@
             // Disable checkbox if partial requests are disabled OR if the season can't be requested
             const checkboxDisabled = !partialRequestsEnabled || !canRequest;
 
-            // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label
+            // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label.
+            // The numeric regex catches bare numbers and zero-padded variants (e.g., "01");
+            // this may also match year-named seasons, which is an acceptable tradeoff.
             const trimmedName = (season.name || '').trim();
             const isNumericOnly = trimmedName === String(seasonNumber) || /^0*\d+$/.test(trimmedName);
             const displayName = (trimmedName && !isNumericOnly)

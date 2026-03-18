@@ -1428,7 +1428,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     if (response.IsSuccessStatusCode)
                     {
-                        var settings = JsonDocument.Parse(responseContent);
+                        using var settings = JsonDocument.Parse(responseContent);
                         var partialRequestsEnabled = false;
                         if (settings.RootElement.TryGetProperty("partialRequestsEnabled", out var prop))
                         {
