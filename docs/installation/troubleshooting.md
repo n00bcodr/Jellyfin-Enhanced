@@ -11,16 +11,18 @@
 **Run Startup Task:**
 
 1. Go to `Dashboard` → `Scheduled Tasks`
-2. Find "Jellyfin Enhanced Startup" task
-3. Click **Run** to execute it manually
-4. Refresh your browser (Ctrl+F5)
+2. Under `Jellyfin Enhanced`, find the task: `Jellyfin Enhanced Startup`
+3. Execute the task manually *(click the button: `▶︎`)*
+4. Refresh your browser *(`Ctrl + F5`)*
 
 **Clear Browser Cache:**
 
-1. Press Ctrl+Shift+Delete (Windows/Linux) or Cmd+Shift+Delete (Mac)
-2. Select "Cached images and files"
+1. Open menu: 
+  * Windows/Linux: `Ctrl+Shift+Delete`
+  * MacOS: `Cmd+Shift+Delete`
+2. Select "Cached images and files" *(or similar)*
 3. Clear cache
-4. Refresh the page
+4. Refresh browser
 
 **Restart Server:**
 
@@ -37,16 +39,18 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 ```
 
 **Solution:**
+
 - Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) *(recommended)*
+
 - Or, try [platform-specific permission fixes](#platform-specific-issues)
 
 ### Scripts Not Loading
 
 **Check Scheduled Task:**
 
-1. **Dashboard** → **Scheduled Tasks**
-2. Look for "Jellyfin Enhanced Startup"
-3. Verify it has a trigger for "On application startup"
+1. Jellyfin: `Dashboard` → `Scheduled Tasks`
+2. Look for the tasks under `Jellyfin Enhanced` — mainly `Jellyfin Enhanced Startup`
+3. `Jellyfin Enhanced Startup` should have the trigger: `On application startup`
 4. If missing, add the trigger manually
 
 **Check Browser Console:**
@@ -68,18 +72,6 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 6. Restart server again
 7. Clear browser cache (Ctrl+F5)
 
-### Verification Checklist
-
-After installation, verify these work:
-
-<!-- TODO: make checklists render correctly (MkDocs needs a plugin i think) -->
-- [ ] Plugin menu item appears in sidebar
-- [ ] Pressing `?` opens the settings panel
-- [ ] Keyboard shortcuts work
-- [ ] Tags appear on media posters (if enabled)
-- [ ] No errors in browser console (F12)
-- [ ] No errors in server logs
-
 
 ## Platform-Specific Issues
 
@@ -91,7 +83,7 @@ If you are not using file-transformation and see permission errors like:
 System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 ```
 
-You'll need to manually map the `index.html` file:
+You'll need to manually map the `index.html` file 
 
 1. Copy the index.html file from your container:
 
@@ -118,26 +110,28 @@ services:
 <!-- use a custom title -->
 !!! warning "Warning"
 
-    This method is not recommended and won't survive a jellyfin-web upgrade. The recommended method for Docker:
+    This method is not recommended and won't survive a `jellyfin-web` upgrade. The recommended method for Docker:
 
     1. Install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
     2. Follow the standard installation process
 
-
-
 ### Windows
 
-If you see permission denied errors:
+**Permission denied errors / permission issues**
+
+Known solution: 
 
 1. Navigate to your Jellyfin installation folder (usually `C:\Program Files\Jellyfin\Server`)
-2. Right-click the folder → Properties → Security
-3. Grant "NETWORK SERVICE" **Read** and **Write** permissions
+2. Right-click the folder → `Properties` → `Security`
+3. Grant `NETWORK SERVICE` **Read** and **Write** permissions
 4. Apply to all subfolders and files
 5. Restart Jellyfin service
 
 ### Linux
 
-If you encounter permission issues, this is a known solution
+**Permission issues**
+
+Known solution:
 
 Bash:
 
