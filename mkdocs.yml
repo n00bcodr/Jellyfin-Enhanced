@@ -70,6 +70,10 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  # lists
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
 
 
 # main tabs/headers
