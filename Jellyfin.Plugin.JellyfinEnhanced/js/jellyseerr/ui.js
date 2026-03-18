@@ -1922,27 +1922,6 @@
             return;
         }
 
-        // If seasons are missing air dates (TheTVDB), backfill from TMDB
-        const hasMissingAirDates = tvDetails.seasons.some(s => s.episodeCount > 0 && !s.airDate);
-        if (hasMissingAirDates && JE.pluginConfig?.TmdbEnabled) {
-            try {
-                const tmdbData = await fetchTmdbTvDetails(tmdbId);
-                if (tmdbData?.seasons) {
-                    const tmdbSeasonMap = {};
-                    tmdbData.seasons.forEach(s => { tmdbSeasonMap[s.season_number] = s; });
-                    tvDetails.seasons = tvDetails.seasons.map(s => {
-                        const tmdbSeason = tmdbSeasonMap[s.seasonNumber];
-                        if (tmdbSeason && !s.airDate) {
-                            return { ...s, airDate: tmdbSeason.air_date || '' };
-                        }
-                        return s;
-                    });
-                }
-            } catch (e) {
-                console.debug(`${logPrefix} Could not backfill air dates from TMDB:`, e);
-            }
-        }
-
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
 
         // Show season selection UI with Select All checkbox header
@@ -2029,10 +2008,25 @@
             }
         });
 
-        // Populate season list inside the modal
+        // Populate season list inside the modal (shows immediately, air dates may be empty)
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
         modalInstance.show();
+
+        // Async backfill: if seasons are missing air dates (TheTVDB), fetch from TMDB and re-render
+        const hasMissingAirDates = tvDetails.seasons.some(s => s.episodeCount > 0 && !s.airDate);
+        if (hasMissingAirDates && JE.pluginConfig?.TmdbEnabled) {
+            fetchTmdbTvDetails(tmdbId).then(tmdbData => {
+                if (!tmdbData?.seasons) return;
+                const tmdbSeasonMap = {};
+                tmdbData.seasons.forEach(s => { tmdbSeasonMap[s.season_number] = s; });
+                tvDetails.seasons = tvDetails.seasons.map(s => {
+                    const tmdbSeason = tmdbSeasonMap[s.seasonNumber];
+                    return (!s.airDate && tmdbSeason) ? { ...s, airDate: tmdbSeason.air_date || '' } : s;
+                });
+                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
+            }).catch(e => console.debug(`${logPrefix} Could not backfill air dates from TMDB:`, e));
+        }
 
         // Add Select All checkbox functionality
         if (partialRequestsEnabled) {
