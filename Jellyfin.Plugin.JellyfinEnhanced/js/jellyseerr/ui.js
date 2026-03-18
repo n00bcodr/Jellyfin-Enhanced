@@ -2013,17 +2013,32 @@
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
         modalInstance.show();
 
+        // Cached TMDB air dates — populated once, applied on every render (including polling refreshes)
+        let tmdbAirDateMap = null;
+
+        /** Merges cached TMDB air dates into a Seerr tvDetails object (mutates seasons in place). */
+        function applyAirDateBackfill(details) {
+            if (!tmdbAirDateMap || !details?.seasons) return;
+            details.seasons = details.seasons.map(s => {
+                if (!s.airDate && tmdbAirDateMap[s.seasonNumber]) {
+                    return { ...s, airDate: tmdbAirDateMap[s.seasonNumber] };
+                }
+                return s;
+            });
+        }
+
         // Async backfill: if seasons are missing air dates (TheTVDB), fetch from TMDB and re-render
         const hasMissingAirDates = tvDetails.seasons.some(s => s.episodeCount > 0 && !s.airDate);
         if (hasMissingAirDates && JE.pluginConfig?.TmdbEnabled) {
             fetchTmdbTvDetails(tmdbId).then(tmdbData => {
                 if (!tmdbData?.seasons) return;
-                const tmdbSeasonMap = {};
-                tmdbData.seasons.forEach(s => { tmdbSeasonMap[s.season_number] = s; });
-                tvDetails.seasons = tvDetails.seasons.map(s => {
-                    const tmdbSeason = tmdbSeasonMap[s.seasonNumber];
-                    return (!s.airDate && tmdbSeason) ? { ...s, airDate: tmdbSeason.air_date || '' } : s;
+                tmdbAirDateMap = {};
+                tmdbData.seasons.forEach(s => {
+                    const date = s.air_date || '';
+                    // Only store valid date strings (YYYY-MM-DD format), skip "None" or other junk
+                    tmdbAirDateMap[s.season_number] = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
                 });
+                applyAirDateBackfill(tvDetails);
                 updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
             }).catch(e => console.debug(`${logPrefix} Could not backfill air dates from TMDB:`, e));
         }
@@ -2070,6 +2085,7 @@
         refreshModalInterval = setInterval(async () => {
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
             if (freshTvDetails) {
+                applyAirDateBackfill(freshTvDetails);
                 updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes);
                 // Update Select All state after refresh
                 if (seasonList._updateSelectAllState) {
