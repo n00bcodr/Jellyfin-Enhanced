@@ -8,6 +8,105 @@
 
     let currentModal = null;
 
+    const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}/.test(d);
+
+/**
+ * Backfill missing season metadata (posterPath, overview, airDate) from TMDB and episode data.
+ * Updates the DOM season cards in-place after data arrives.
+ * @param {number} tmdbId
+ * @param {object} data - The Seerr TV show details
+ */
+async function backfillSeasonMetadata(tmdbId, data) {
+    if (!currentModal || !data?.seasons) return;
+
+    const api = JE.jellyseerrAPI;
+    const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath));
+    if (seasonsMissingData.length === 0) return;
+
+    // Fetch TMDB data + per-season episode data in parallel
+    const tmdbPromise = (JE.pluginConfig?.TmdbEnabled && api?.fetchTmdbTvDetails)
+        ? api.fetchTmdbTvDetails(tmdbId).catch(() => null)
+        : Promise.resolve(null);
+
+    const episodePromises = (api?.fetchTvSeasonDetails)
+        ? seasonsMissingData.map(s =>
+            api.fetchTvSeasonDetails(tmdbId, s.seasonNumber)
+                .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
+                .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '' }))
+        )
+        : [];
+
+    const [tmdbData, ...episodeResults] = await Promise.all([tmdbPromise, ...episodePromises]);
+
+    // Build TMDB season lookup
+    const tmdbMap = {};
+    if (tmdbData?.seasons) {
+        tmdbData.seasons.forEach(s => { tmdbMap[s.season_number] = s; });
+    }
+
+    // Build episode air date lookup
+    const epDateMap = {};
+    episodeResults.forEach(r => {
+        if (r.firstEpDate && isValidDate(r.firstEpDate)) {
+            epDateMap[r.seasonNumber] = r.firstEpDate;
+        }
+    });
+
+    // Bail if modal was closed/replaced
+    if (!currentModal || String(currentModal.dataset?.tmdbId) !== String(tmdbId)) return;
+
+    // Update each season card in the DOM
+    data.seasons.forEach(season => {
+        const sNum = season.seasonNumber;
+        const card = currentModal.querySelector(`.season-card[data-season-number="${sNum}"]`);
+        if (!card) return;
+
+        const tmdbSeason = tmdbMap[sNum];
+
+        // Backfill posterPath
+        if (!season.posterPath && tmdbSeason?.poster_path && tmdbSeason.poster_path !== 'None') {
+            season.posterPath = tmdbSeason.poster_path;
+            const posterEl = card.querySelector('.season-poster');
+            if (posterEl && !posterEl.querySelector('img')) {
+                const img = document.createElement('img');
+                img.src = `https://image.tmdb.org/t/p/w185${season.posterPath}`;
+                img.alt = card.querySelector('.season-name')?.textContent || '';
+                posterEl.appendChild(img);
+            }
+        }
+
+        // Backfill overview
+        if (!season.overview && tmdbSeason?.overview) {
+            season.overview = tmdbSeason.overview;
+            const infoEl = card.querySelector('.season-info');
+            if (infoEl && !infoEl.querySelector('.season-overview')) {
+                const overviewEl = document.createElement('div');
+                overviewEl.className = 'season-overview';
+                overviewEl.textContent = season.overview;
+                infoEl.appendChild(overviewEl);
+            }
+        }
+
+        // Backfill airDate (episode date first, then TMDB)
+        if (!season.airDate) {
+            const epDate = epDateMap[sNum];
+            const tmdbDate = tmdbSeason?.air_date || '';
+            const bestDate = epDate || (isValidDate(tmdbDate) ? tmdbDate : '');
+            if (bestDate) {
+                season.airDate = bestDate;
+                const metaEl = card.querySelector('.season-meta');
+                if (metaEl) {
+                    const year = new Date(bestDate).getFullYear();
+                    const currentText = metaEl.textContent || '';
+                    if (!currentText.includes(String(year))) {
+                        metaEl.textContent = `${season.episodeCount} Episodes • ${year}`;
+                    }
+                }
+            }
+        }
+    });
+}
+
 /**
  * Open the more info modal for a movie or TV show
  * @param {number} tmdbId - The TMDB ID
@@ -24,6 +123,11 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
 
         // Render modal immediately
         showModal(data, mediaType);
+
+        // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
+        if (mediaType === 'tv' && data.seasons?.some(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath))) {
+            backfillSeasonMetadata(tmdbId, data);
+        }
 
         // Fetch ratings in the background and populate when ready
         fetchRatings(tmdbId, mediaType)
