@@ -177,8 +177,6 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Collectiedetails laden mislukt",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Geen films gevonden in de collectie",
     "jellyseerr_select_all_seasons": "Alle seizoenen selecteren",
-    "jellyseerr_season_specials": "Specials",
-    "jellyseerr_season_name": "Season {number}",
     "jellyseerr_season_status_not_requested": "Niet aangevraagd",
     "jellyseerr_season_status_requested": "Aangevraagd",
     "jellyseerr_season_status_processing": "Verwerken",
