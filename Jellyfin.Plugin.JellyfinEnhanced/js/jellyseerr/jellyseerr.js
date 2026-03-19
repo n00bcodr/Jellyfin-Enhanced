@@ -353,6 +353,8 @@
             /**
              * Attempts to attach the search input listener if the search page is visible.
              * Called by the MutationObserver, navigation events, and on initial setup.
+             * Idempotent — sets data-jellyseerr-listener on the input to prevent
+             * duplicate attachment, and adds a permanent 'input' event handler.
              */
             function tryAttachSearchListener() {
                 updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
@@ -399,7 +401,9 @@
             if (JE.helpers?.onNavigate) {
                 JE.helpers.onNavigate(() => setTimeout(tryAttachSearchListener, 200));
             } else {
-                // Fallback if helpers.js hasn't loaded yet
+                // Fallback if helpers.js hasn't loaded yet — may double-fire with
+                // onNavigate if helpers loads later, but tryAttachSearchListener is
+                // idempotent (guarded by dataset.jellyseerrListener) so this is safe.
                 const onNav = () => setTimeout(tryAttachSearchListener, 200);
                 window.addEventListener('popstate', onNav);
                 window.addEventListener('hashchange', onNav);
