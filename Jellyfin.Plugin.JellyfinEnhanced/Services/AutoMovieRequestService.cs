@@ -464,7 +464,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (mode == "custom")
             {
                 var settings = new QualityProfileSettings();
-                if (config.AutoMovieRequestCustomServerId > 0)
+                if (config.AutoMovieRequestCustomServerId >= 0)
                 {
                     settings.ServerId = config.AutoMovieRequestCustomServerId;
                 }
@@ -542,7 +542,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (qualitySettings != null)
                     {
-                        if (qualitySettings.ServerId.HasValue && qualitySettings.ServerId.Value > 0)
+                        if (qualitySettings.ServerId.HasValue && qualitySettings.ServerId.Value >= 0)
                             requestBody["serverId"] = qualitySettings.ServerId.Value;
                         if (qualitySettings.ProfileId.HasValue && qualitySettings.ProfileId.Value > 0)
                             requestBody["profileId"] = qualitySettings.ProfileId.Value;

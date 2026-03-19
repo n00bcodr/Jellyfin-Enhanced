@@ -151,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoMovieRequestMinutesWatched = 20; // Minutes to watch before triggering request
             AutoMovieRequestCheckReleaseDate = true; // Only request if movie is already released
             AutoMovieRequestQualityMode = "default"; // "default", "original", or "custom"
-            AutoMovieRequestCustomServerId = 0; // Radarr server ID for "custom" mode
+            AutoMovieRequestCustomServerId = -1; // Radarr server ID for "custom" mode (-1 = not set)
             AutoMovieRequestCustomProfileId = 0; // Quality profile ID for "custom" mode
             AutoMovieRequestCustomRootFolder = ""; // Root folder path for "custom" mode
 

@@ -926,7 +926,7 @@
                                         <div style="margin-bottom: 1em;">
                                             <label for="autoMovieRequestServer" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Radarr Server:</label>
                                             <select id="autoMovieRequestServer" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
-                                                <option value="0">Select Server...</option>
+                                                <option value="-1">Select Server...</option>
                                             </select>
                                         </div>
                                         <div style="margin-bottom: 1em;">
@@ -2013,14 +2013,14 @@
             var folderSelect = document.querySelector('#autoMovieRequestRootFolder');
             if (!serverSelect) return;
 
-            resetSelectWithMessage(serverSelect, '0', 'Loading...');
+            resetSelectWithMessage(serverSelect, '-1', 'Loading...');
 
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/radarr'),
                 dataType: 'json'
             }).then(function(servers) {
-                resetSelectWithMessage(serverSelect, '0', 'Select Server...');
+                resetSelectWithMessage(serverSelect, '-1', 'Select Server...');
                 var serverList = Array.isArray(servers) ? servers : [servers];
                 serverList.forEach(function(server) {
                     if (server && typeof server.id === 'number') {
@@ -2028,13 +2028,13 @@
                     }
                 });
 
-                var savedServerId = (savedConfig && savedConfig.AutoMovieRequestCustomServerId) || 0;
-                if (savedServerId > 0) {
+                var savedServerId = savedConfig ? savedConfig.AutoMovieRequestCustomServerId : null;
+                if (savedServerId !== null && savedServerId !== undefined && savedServerId >= 0) {
                     serverSelect.value = savedServerId;
                     loadAutoMovieServerDetails(savedServerId, savedConfig);
                 }
             }).catch(function(err) {
-                resetSelectWithMessage(serverSelect, '0', 'Failed to load servers');
+                resetSelectWithMessage(serverSelect, '-1', 'Failed to load servers');
                 console.warn('[Auto-Movie-Request] Failed to load Radarr servers:', err);
             });
 
@@ -2042,7 +2042,7 @@
                 _autoMovieServerListenerAdded = true;
                 serverSelect.addEventListener('change', function() {
                     var serverId = parseInt(serverSelect.value);
-                    if (serverId > 0) {
+                    if (!isNaN(serverId) && serverId >= 0) {
                         loadAutoMovieServerDetails(serverId);
                     } else {
                         resetSelectWithMessage(profileSelect, '0', 'Select a server first...');
@@ -2405,8 +2405,10 @@
             config.AutoMovieRequestMinutesWatched = isNaN(minutesValue) || minutesValue < 1 ? 20 : Math.min(minutesValue, 180);
             config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
             config.AutoMovieRequestQualityMode = document.querySelector('#autoMovieRequestQualityMode').value || 'default';
-            config.AutoMovieRequestCustomServerId = parseInt(document.querySelector('#autoMovieRequestServer').value) || 0;
-            config.AutoMovieRequestCustomProfileId = parseInt(document.querySelector('#autoMovieRequestProfile').value) || 0;
+            var serverVal = parseInt(document.querySelector('#autoMovieRequestServer').value);
+            config.AutoMovieRequestCustomServerId = (!isNaN(serverVal) && serverVal >= 0) ? serverVal : -1;
+            var profileVal = parseInt(document.querySelector('#autoMovieRequestProfile').value);
+            config.AutoMovieRequestCustomProfileId = (!isNaN(profileVal) && profileVal > 0) ? profileVal : 0;
             config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
