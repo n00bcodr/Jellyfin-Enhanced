@@ -6,7 +6,7 @@
 
 ### What is Jellyfin Enhanced?
 
-Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Jellyseerr integration, custom pause screens, quality tags, and much more - all in one convenient package.
+Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Jellyseerr integration, custom pause screens, quality tags, and much more — all in one convenient package.
 
 ### Can I customize the keyboard shortcuts?
 
@@ -44,98 +44,21 @@ The userscript has been discontinued as the plugin functionality has grown signi
 
 ### Plugin not appearing after installation?
 
-**Check Installation:**
-1. Go to **Dashboard** → **Plugins** → **My Plugins**
-2. Verify "Jellyfin Enhanced" is listed and enabled
-3. Check version number matches latest release
+**See [this page in Installation Troubleshooting](../installation/troubleshooting.md/#plugin-not-appearing-after-installation)**
 
-**Run Startup Task:**
+### Scripts not loading after installation
 
-1. Go to **Dashboard** → **Scheduled Tasks**
-2. Find "Jellyfin Enhanced Startup" task
-3. Click **Run** to execute manually
-4. Refresh browser ++ctrl+f5++
-
-**Clear Browser Cache:**
-
-1. Open menu: 
-  * Windows/Linux: ++ctrl+shift+delete++
-  * MacOS: ++command+shift+delete++
-2. Select "Cached images and files" *(or similar)*
-3. Clear cache
-4. Refresh browser ++ctrl+f5++
-
-**Restart Server:**
-
-1. Go to **Dashboard** → **Advanced** → **Restart**
-2. Wait for full restart
-3. Refresh browser
-
-### I see "permission denied" errors in logs!!
-
-See [installation troubleshooting regarding permission issuses](../installation/troubleshooting.md#permission-errors-in-logs)
-
-
-**Solution 4 (Docker):**
-Follow the Docker installation workaround in the [Installation Guide](installation.md#docker-installation).
-
-### Scripts not loading after installation?
-
-**Check Scheduled Task:**
-
-1. **Dashboard** → **Scheduled Tasks**
-
-2. Look for "Jellyfin Enhanced Startup"
-
-3. Verify it has trigger "On application startup"
-
-4. If missing, add trigger manually
-
-5. Run task manually
-
-**Check Browser Console:**
-
-1. Press F12 to open developer tools
-
-2. Go to Console tab
-
-3. Filter by "Jellyfin Enhanced"
-
-4. Look for errors (red text)
-
-5. Report errors on GitHub if found
-
-**Force Reload:**
-
-1. Clear all browser cache
-
-2. Close all Jellyfin tabs
-
-3. Restart browser
-
-4. Open Jellyfin fresh
-
-5. Hard refresh (Ctrl+F5)
+**See [this page in Installation Troubleshooting](../installation/troubleshooting.md/#scripts-not-loading)**
 
 ### Update not working properly?
 
-**Clean Update Process:**
+**See this page in [Installation Troubleshooting](../installation/troubleshooting.md/#update-not-working)**
 
-1. **Dashboard** → **Plugins** → **My Plugins**
 
-2. Find Jellyfin Enhanced
+### I see "permission denied" errors in logs!!
 
-3. Click **Uninstall**
+**See this page in [Installation Troubleshooting, regarding permission issuses](../installation/troubleshooting.md#permission-errors-in-logs)**
 
-4. Restart server
-
-5. Clear browser cache
-
-6. Reinstall from Catalog
-
-7. Restart server again
-
-8. Hard refresh browser (Ctrl+F5)
 
 ---
 
@@ -268,27 +191,28 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 ### Bookmarks not syncing across devices?
 
-Bookmarks are stored server-side but settings are per-browser.
 
-**How Bookmarks Work:**
+!!!  "How it works"
+    
+    Bookmarks are stored server-side but settings are per-browser.
 
-- Bookmark data stored on Jellyfin server
+    - Bookmark data stored on Jellyfin server
 
-- Settings stored in browser localStorage
+    - Settings stored in browser `localStorage`
 
-- Each browser has independent settings
+    - Each browser has independent settings
 
-- Same user can access bookmarks from any device
+    - Same user can access bookmarks from any device
 
-**Sync Bookmarks:**
+**Syncing Bookmarks:**
 
-1. Bookmarks automatically sync via server
+- Bookmarks automatically sync via server
 
-2. Settings must be configured per browser
+- Settings must be configured per browser
 
-3. Use same Jellyfin user account
+- Use same Jellyfin user account
 
-4. Bookmarks appear on all devices
+- Bookmarks appear on all devices
 
 **Troubleshooting:**
 
@@ -412,6 +336,7 @@ See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS
 ### How do I upload custom branding?
 
 **Requirements:**
+
 - [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed
 - Admin access to Jellyfin
 
@@ -448,7 +373,7 @@ See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS
 
 Yes, via Enhanced panel settings:
 
-1. Open Enhanced panel (press `?`)
+1. Open Enhanced panel (press ++question-mark++)
 
 2. Go to Settings tab
 

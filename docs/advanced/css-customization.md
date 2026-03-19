@@ -29,6 +29,7 @@ Hide or customize pause screen elements.
 
 ## Tags
 
+<!-- todo: titles for code blocks -->
 ### Quality Tags
 
 Customize quality tag appearance.
