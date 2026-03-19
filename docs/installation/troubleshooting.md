@@ -86,10 +86,9 @@ System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/i
 You'll need to manually map the `index.html` file 
 
 1. Copy the index.html file from your container:
-
-```bash
-docker cp jellyfin:/jellyfin/jellyfin-web/index.html /path/to/your/jellyfin/config/index.html
-```
+  ```bash
+  docker cp jellyfin:/jellyfin/jellyfin-web/index.html /path/to/your/jellyfin/config/index.html
+  ```
 
 2. Add volume mapping to your Docker run command:
 
@@ -133,9 +132,7 @@ Known solution:
 
 Known solution:
 
-Bash:
-
-```bash
+```bash title"Bash"
 sudo chown -R jellyfin:jellyfin /usr/lib/jellyfin/
 sudo chmod -R 755 /usr/lib/jellyfin/
 ```
