@@ -132,7 +132,7 @@ Known solution:
 
 Known solution:
 
-```bash title"Bash"
+``` bash title"Bash"
 sudo chown -R jellyfin:jellyfin /usr/lib/jellyfin/
 sudo chmod -R 755 /usr/lib/jellyfin/
 ```
