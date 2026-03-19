@@ -910,34 +910,44 @@
 
                                     <div style="margin-bottom: 1.5em; margin-top: 1.5em;">
                                         <label for="autoMovieRequestQualityMode" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Quality Profile Mode:</label>
-                                        <select id="autoMovieRequestQualityMode" style="width: 300px; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
-                                            <option value="default">Default (Jellyseerr decides)</option>
+                                        <select id="autoMovieRequestQualityMode" is="emby-select" class="emby-select">
+                                            <option value="default">Default (Seerr decides)</option>
                                             <option value="original">Original (copy from watched movie)</option>
                                             <option value="custom">Custom (select specific profile)</option>
                                         </select>
                                         <div class="fieldDescription" style="margin-top: 0.5em;">
-                                            <strong>Default:</strong> Jellyseerr uses its default Radarr server and quality profile.<br>
+                                            <strong>Default:</strong> Seerr uses its default Radarr server and quality profile.<br>
                                             <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br>
                                             <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.
+                                        </div>
+                                    </div>
+
+                                    <div class="checkboxContainer" style="margin-bottom: 1.5em;">
+                                        <label>
+                                            <input id="autoMovieRequestFallbackOn4k" is="emby-checkbox" type="checkbox" checked/>
+                                            <span>Use default profile instead of 4K for users without 4K request access</span>
+                                        </label>
+                                        <div class="fieldDescription" style="margin-top: 0.5em;">
+                                            Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
                                         </div>
                                     </div>
 
                                     <div id="autoMovieRequestCustomSettings" style="margin-bottom: 1.5em; display: none; padding: 1em; background-color: rgba(255,255,255,0.03); border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);">
                                         <div style="margin-bottom: 1em;">
                                             <label for="autoMovieRequestServer" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Radarr Server:</label>
-                                            <select id="autoMovieRequestServer" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                            <select id="autoMovieRequestServer" is="emby-select" class="emby-select">
                                                 <option value="-1">Select Server...</option>
                                             </select>
                                         </div>
                                         <div style="margin-bottom: 1em;">
                                             <label for="autoMovieRequestProfile" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Quality Profile:</label>
-                                            <select id="autoMovieRequestProfile" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                            <select id="autoMovieRequestProfile" is="emby-select" class="emby-select">
                                                 <option value="0">Select a server first...</option>
                                             </select>
                                         </div>
                                         <div style="margin-bottom: 0.5em;">
                                             <label for="autoMovieRequestRootFolder" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Root Folder:</label>
-                                            <select id="autoMovieRequestRootFolder" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                            <select id="autoMovieRequestRootFolder" is="emby-select" class="emby-select">
                                                 <option value="">Select a server first...</option>
                                             </select>
                                         </div>
@@ -2207,6 +2217,7 @@
                 document.querySelector('#autoMovieRequestMinutesWatched').value = config.AutoMovieRequestMinutesWatched || 20;
                 document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
                 document.querySelector('#autoMovieRequestQualityMode').value = config.AutoMovieRequestQualityMode || 'default';
+                document.querySelector('#autoMovieRequestFallbackOn4k').checked = config.AutoMovieRequestFallbackOn4k !== false;
                 if ((config.AutoMovieRequestQualityMode || 'default') === 'custom') {
                     document.querySelector('#autoMovieRequestCustomSettings').style.display = 'block';
                     loadAutoMovieRadarrServers(config);
@@ -2405,6 +2416,7 @@
             config.AutoMovieRequestMinutesWatched = isNaN(minutesValue) || minutesValue < 1 ? 20 : Math.min(minutesValue, 180);
             config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
             config.AutoMovieRequestQualityMode = document.querySelector('#autoMovieRequestQualityMode').value || 'default';
+            config.AutoMovieRequestFallbackOn4k = document.querySelector('#autoMovieRequestFallbackOn4k').checked;
             var serverVal = parseInt(document.querySelector('#autoMovieRequestServer').value);
             config.AutoMovieRequestCustomServerId = (!isNaN(serverVal) && serverVal >= 0) ? serverVal : -1;
             var profileVal = parseInt(document.querySelector('#autoMovieRequestProfile').value);

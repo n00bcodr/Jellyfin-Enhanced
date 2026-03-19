@@ -196,6 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public int? ServerId { get; set; }
             public int? ProfileId { get; set; }
             public string? RootFolder { get; set; }
+            public bool Is4k { get; set; }
         }
 
         // Gets TMDB collection ID and name for a movie
@@ -418,10 +419,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             {
                                 settings.RootFolder = rootFolder.GetString();
                             }
+                            if (firstRequest.TryGetProperty("is4k", out var is4k) &&
+                                is4k.ValueKind == JsonValueKind.True)
+                            {
+                                settings.Is4k = true;
+                            }
 
                             if (settings.ProfileId.HasValue || settings.ServerId.HasValue)
                             {
-                                _logger.Debug($"[Auto-Movie-Request] Found quality profile for TMDB {tmdbId}: profileId={settings.ProfileId}, serverId={settings.ServerId}, rootFolder={settings.RootFolder}");
+                                _logger.Debug($"[Auto-Movie-Request] Found quality profile for TMDB {tmdbId}: profileId={settings.ProfileId}, serverId={settings.ServerId}, rootFolder={settings.RootFolder}, is4k={settings.Is4k}");
                                 return settings;
                             }
                         }
@@ -457,7 +463,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (settings == null)
                 {
                     _logger.Warning($"[Auto-Movie-Request] Could not determine quality profile for watched movie TMDB {watchedTmdbId}, falling back to default");
+                    return null;
                 }
+
+                if (settings.Is4k && config.AutoMovieRequestFallbackOn4k)
+                {
+                    _logger.Info($"[Auto-Movie-Request] Original movie used a 4K quality profile, falling back to default (AutoMovieRequestFallbackOn4k is enabled)");
+                    return null;
+                }
+
                 return settings;
             }
 
@@ -548,6 +562,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             requestBody["profileId"] = qualitySettings.ProfileId.Value;
                         if (!string.IsNullOrEmpty(qualitySettings.RootFolder))
                             requestBody["rootFolder"] = qualitySettings.RootFolder;
+                        if (qualitySettings.Is4k)
+                            requestBody["is4k"] = true;
                     }
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
