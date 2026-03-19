@@ -22,13 +22,13 @@
   * MacOS: ++command+shift+delete++
 2. Select "Cached images and files" *(or similar)*
 3. Clear cache
-4. Refresh browser
+4. Refresh browser ++ctrl+f5++
 
 **Restart Server:**
 
 1. In Jellyfin, go to: `Dashboard` → `Restart`
 2. Wait for server to fully restart
-3. Refresh browser
+3. Refresh browser ++ctrl+f5++
 
 ### Permission Errors in Logs
 
