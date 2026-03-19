@@ -99,14 +99,14 @@ If you are **^^not^^ using the [file-transformation](https://github.com/IAmParad
 
   or...
 
-  ```yaml title="Docker Compose"
-  services:
-    jellyfin:
-      volumes:
-        # volume mapping
-        - /path/to/your/jellyfin/config:/config
-        - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
-  ```
+    ```yaml title="Docker Compose"
+    services:
+      jellyfin:
+        volumes:
+          # volume mapping
+          - /path/to/your/jellyfin/config:/config
+          - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
+    ```
 
 <!-- use a custom title -->
 !!! warning "Warning"
