@@ -907,6 +907,44 @@
                                     <div class="fieldDescription" style="margin-top: 0.5em;">
                                         When enabled, future releases will be skipped. Only movies that have already been released will be requested.
                                     </div>
+
+                                    <div style="margin-bottom: 1.5em; margin-top: 1.5em;">
+                                        <label for="autoMovieRequestQualityMode" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Quality Profile Mode:</label>
+                                        <select id="autoMovieRequestQualityMode" style="width: 300px; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                            <option value="default">Default (Jellyseerr decides)</option>
+                                            <option value="original">Original (copy from watched movie)</option>
+                                            <option value="custom">Custom (select specific profile)</option>
+                                        </select>
+                                        <div class="fieldDescription" style="margin-top: 0.5em;">
+                                            <strong>Default:</strong> Jellyseerr uses its default Radarr server and quality profile.<br>
+                                            <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br>
+                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.
+                                        </div>
+                                    </div>
+
+                                    <div id="autoMovieRequestCustomSettings" style="margin-bottom: 1.5em; display: none; padding: 1em; background-color: rgba(255,255,255,0.03); border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);">
+                                        <div style="margin-bottom: 1em;">
+                                            <label for="autoMovieRequestServer" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Radarr Server:</label>
+                                            <select id="autoMovieRequestServer" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                                <option value="0">Select Server...</option>
+                                            </select>
+                                        </div>
+                                        <div style="margin-bottom: 1em;">
+                                            <label for="autoMovieRequestProfile" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Quality Profile:</label>
+                                            <select id="autoMovieRequestProfile" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                                <option value="0">Select a server first...</option>
+                                            </select>
+                                        </div>
+                                        <div style="margin-bottom: 0.5em;">
+                                            <label for="autoMovieRequestRootFolder" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Root Folder:</label>
+                                            <select id="autoMovieRequestRootFolder" style="width: 100%; padding: 0.5em; border: 1px solid #555; border-radius: 4px; background-color: rgba(0,0,0,0.3); color: inherit;">
+                                                <option value="">Select a server first...</option>
+                                            </select>
+                                        </div>
+                                        <div class="fieldDescription" style="margin-top: 0.5em;">
+                                            These settings are only used when Quality Profile Mode is set to "Custom".
+                                        </div>
+                                    </div>
                                     <div
                                         style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: flex-start; gap: 1em;">
                                         <i class="material-icons" style="color: #00a4dc; font-size: 18px; margin-top: 2px;">info</i>
@@ -1936,6 +1974,118 @@
             }
         }
 
+        // Auto Movie Request - Quality Profile Mode helpers
+        function clearSelectOptions(selectEl) {
+            while (selectEl.options.length > 0) {
+                selectEl.remove(0);
+            }
+        }
+
+        function addSelectOption(selectEl, value, text) {
+            var opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = text;
+            selectEl.appendChild(opt);
+        }
+
+        function resetSelectWithMessage(selectEl, value, message) {
+            clearSelectOptions(selectEl);
+            addSelectOption(selectEl, value, message);
+        }
+
+        function initAutoMovieQualityMode() {
+            var qualityModeSelect = document.querySelector('#autoMovieRequestQualityMode');
+            var customSettingsDiv = document.querySelector('#autoMovieRequestCustomSettings');
+            if (!qualityModeSelect || !customSettingsDiv) return;
+
+            qualityModeSelect.addEventListener('change', function() {
+                customSettingsDiv.style.display = (qualityModeSelect.value === 'custom') ? 'block' : 'none';
+                if (qualityModeSelect.value === 'custom') {
+                    loadAutoMovieRadarrServers();
+                }
+            });
+        }
+
+        var _autoMovieServerListenerAdded = false;
+        function loadAutoMovieRadarrServers(savedConfig) {
+            var serverSelect = document.querySelector('#autoMovieRequestServer');
+            var profileSelect = document.querySelector('#autoMovieRequestProfile');
+            var folderSelect = document.querySelector('#autoMovieRequestRootFolder');
+            if (!serverSelect) return;
+
+            resetSelectWithMessage(serverSelect, '0', 'Loading...');
+
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/radarr'),
+                dataType: 'json'
+            }).then(function(servers) {
+                resetSelectWithMessage(serverSelect, '0', 'Select Server...');
+                var serverList = Array.isArray(servers) ? servers : [servers];
+                serverList.forEach(function(server) {
+                    if (server && typeof server.id === 'number') {
+                        addSelectOption(serverSelect, server.id, server.name || ('Server ' + server.id));
+                    }
+                });
+
+                var savedServerId = (savedConfig && savedConfig.AutoMovieRequestCustomServerId) || 0;
+                if (savedServerId > 0) {
+                    serverSelect.value = savedServerId;
+                    loadAutoMovieServerDetails(savedServerId, savedConfig);
+                }
+            }).catch(function(err) {
+                resetSelectWithMessage(serverSelect, '0', 'Failed to load servers');
+                console.warn('[Auto-Movie-Request] Failed to load Radarr servers:', err);
+            });
+
+            if (!_autoMovieServerListenerAdded) {
+                _autoMovieServerListenerAdded = true;
+                serverSelect.addEventListener('change', function() {
+                    var serverId = parseInt(serverSelect.value);
+                    if (serverId > 0) {
+                        loadAutoMovieServerDetails(serverId);
+                    } else {
+                        resetSelectWithMessage(profileSelect, '0', 'Select a server first...');
+                        resetSelectWithMessage(folderSelect, '', 'Select a server first...');
+                    }
+                });
+            }
+        }
+
+        function loadAutoMovieServerDetails(serverId, savedConfig) {
+            var profileSelect = document.querySelector('#autoMovieRequestProfile');
+            var folderSelect = document.querySelector('#autoMovieRequestRootFolder');
+            if (!profileSelect || !folderSelect) return;
+
+            resetSelectWithMessage(profileSelect, '0', 'Loading...');
+            resetSelectWithMessage(folderSelect, '', 'Loading...');
+
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/radarr/' + serverId),
+                dataType: 'json'
+            }).then(function(details) {
+                resetSelectWithMessage(profileSelect, '0', 'Select Profile...');
+                (details.profiles || []).forEach(function(profile) {
+                    addSelectOption(profileSelect, profile.id, profile.name || ('Profile ' + profile.id));
+                });
+
+                resetSelectWithMessage(folderSelect, '', 'Select Folder...');
+                (details.rootFolders || []).forEach(function(folder) {
+                    addSelectOption(folderSelect, folder.path, folder.path);
+                });
+
+                var savedProfileId = (savedConfig && savedConfig.AutoMovieRequestCustomProfileId) || 0;
+                if (savedProfileId > 0) profileSelect.value = savedProfileId;
+                var savedRootFolder = (savedConfig && savedConfig.AutoMovieRequestCustomRootFolder) || '';
+                if (savedRootFolder) folderSelect.value = savedRootFolder;
+            }).catch(function(err) {
+                resetSelectWithMessage(profileSelect, '0', 'Failed to load');
+                resetSelectWithMessage(folderSelect, '', 'Failed to load');
+                console.warn('[Auto-Movie-Request] Failed to load server details:', err);
+            });
+        }
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkFileTransformationPlugin();
@@ -2056,6 +2206,11 @@
                 document.querySelector('#autoMovieRequestTriggerOnMinutesWatched').checked = (triggerType === 'OnMinutesWatched' || triggerType === 'Both');
                 document.querySelector('#autoMovieRequestMinutesWatched').value = config.AutoMovieRequestMinutesWatched || 20;
                 document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
+                document.querySelector('#autoMovieRequestQualityMode').value = config.AutoMovieRequestQualityMode || 'default';
+                if ((config.AutoMovieRequestQualityMode || 'default') === 'custom') {
+                    document.querySelector('#autoMovieRequestCustomSettings').style.display = 'block';
+                    loadAutoMovieRadarrServers(config);
+                }
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
@@ -2249,6 +2404,10 @@
             const minutesValue = parseInt(document.querySelector('#autoMovieRequestMinutesWatched').value, 10);
             config.AutoMovieRequestMinutesWatched = isNaN(minutesValue) || minutesValue < 1 ? 20 : Math.min(minutesValue, 180);
             config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
+            config.AutoMovieRequestQualityMode = document.querySelector('#autoMovieRequestQualityMode').value || 'default';
+            config.AutoMovieRequestCustomServerId = parseInt(document.querySelector('#autoMovieRequestServer').value) || 0;
+            config.AutoMovieRequestCustomProfileId = parseInt(document.querySelector('#autoMovieRequestProfile').value) || 0;
+            config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
             config.PreventWatchlistReAddition = document.querySelector('#preventWatchlistReAddition').checked;
@@ -2728,6 +2887,7 @@
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);
         resetAllUserSettingsBtn.addEventListener('click', resetAllUserSettings);
+        initAutoMovieQualityMode();
 
         // ================================
         // TMDB API KEY VALIDATION
