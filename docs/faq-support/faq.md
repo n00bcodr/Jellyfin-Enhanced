@@ -22,11 +22,11 @@ No, the plugin does not work on Android TV or other native TV apps. It only func
 
 ### Is this plugin affiliated with Jellyseerr?
 
-No, this plugin is not affiliated with Jellyseerr/Seerr. Jellyseerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. Please report plugin issues to this repository, not to the Jellyseerr team.
+No, this plugin is not affiliated with Jellyseerr/Seerr. Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. **Please report plugin issues to this repository, not to the Seerr team**.
 
 ### How do I change the plugin's language?
 
-The plugin automatically uses the language set in your Jellyfin user profile. If your language isn't available, it defaults to English. See the [Contributing Translations](#contributing-translations) section to help add your language!
+The plugin automatically uses the language set in your Jellyfin user profile. If your language isn't available, it defaults to English. See the [Contributing Translations]((../faq-support/contributing-translations.md)) section to help add your language!
 
 ### Where is the userscript version?
 
@@ -50,40 +50,31 @@ The userscript has been discontinued as the plugin functionality has grown signi
 3. Check version number matches latest release
 
 **Run Startup Task:**
+
 1. Go to **Dashboard** → **Scheduled Tasks**
 2. Find "Jellyfin Enhanced Startup" task
 3. Click **Run** to execute manually
-4. Refresh browser (Ctrl+F5)
+4. Refresh browser ++ctrl+f5++
 
 **Clear Browser Cache:**
-1. Press Ctrl+Shift+Delete (Windows/Linux) or Cmd+Shift+Delete (Mac)
-2. Select "Cached images and files"
-3. Clear cache and refresh
+
+1. Open menu: 
+  * Windows/Linux: ++ctrl+shift+delete++
+  * MacOS: ++command+shift+delete++
+2. Select "Cached images and files" *(or similar)*
+3. Clear cache
+4. Refresh browser ++ctrl+f5++
 
 **Restart Server:**
+
 1. Go to **Dashboard** → **Advanced** → **Restart**
 2. Wait for full restart
 3. Refresh browser
 
-### I see permission denied errors in logs
+### I see "permission denied" errors in logs!!
 
-This is common with Docker installations or restrictive file permissions.
+See [installation troubleshooting regarding permission issuses](../installation/troubleshooting.md#permission-errors-in-logs)
 
-**Solution 1 (Recommended):**
-Install the [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) to handle file modifications safely.
-
-**Solution 2 (Windows):**
-1. Navigate to Jellyfin installation folder
-2. Right-click → Properties → Security
-3. Grant "NETWORK SERVICE" Read and Write permissions
-4. Apply to all subfolders
-5. Restart Jellyfin service
-
-**Solution 3 (Linux):**
-```bash
-sudo chown -R jellyfin:jellyfin /usr/lib/jellyfin/
-sudo chmod -R 755 /usr/lib/jellyfin/
-```
 
 **Solution 4 (Docker):**
 Follow the Docker installation workaround in the [Installation Guide](installation.md#docker-installation).
@@ -91,36 +82,59 @@ Follow the Docker installation workaround in the [Installation Guide](installati
 ### Scripts not loading after installation?
 
 **Check Scheduled Task:**
+
 1. **Dashboard** → **Scheduled Tasks**
+
 2. Look for "Jellyfin Enhanced Startup"
+
 3. Verify it has trigger "On application startup"
+
 4. If missing, add trigger manually
+
 5. Run task manually
 
 **Check Browser Console:**
+
 1. Press F12 to open developer tools
+
 2. Go to Console tab
+
 3. Filter by "Jellyfin Enhanced"
+
 4. Look for errors (red text)
+
 5. Report errors on GitHub if found
 
 **Force Reload:**
+
 1. Clear all browser cache
+
 2. Close all Jellyfin tabs
+
 3. Restart browser
+
 4. Open Jellyfin fresh
+
 5. Hard refresh (Ctrl+F5)
 
 ### Update not working properly?
 
 **Clean Update Process:**
+
 1. **Dashboard** → **Plugins** → **My Plugins**
+
 2. Find Jellyfin Enhanced
+
 3. Click **Uninstall**
+
 4. Restart server
+
 5. Clear browser cache
+
 6. Reinstall from Catalog
+
 7. Restart server again
+
 8. Hard refresh browser (Ctrl+F5)
 
 ---
@@ -132,79 +146,124 @@ Follow the Docker installation workaround in the [Installation Guide](installati
 Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/intro-skipper) to be installed and configured.
 
 **Requirements:**
+
 1. Install Intro Skipper plugin
+
 2. Enable intro detection in Intro Skipper settings
+
 3. Run intro detection on your library
+
 4. Enable auto-skip in Jellyfin Enhanced settings
+
 5. Intro segments must be detected for your media
 
 **Check Detection:**
-- Play a video with known intro
-- Look for "Skip Intro" button
-- If button appears, detection works
-- If no button, run intro detection again
+
+- [x] Play a video with known intro
+
+- [x] Look for "Skip Intro" button
+
+- [x] If button appears, detection works
+
+- [x] If no button, run intro detection again
+
 
 ### Jellyseerr integration not connecting?
 
-![Jellyseerr Settings](images/jellyseerr.png)
+<!-- todo -->
+<!-- ![Jellyseerr Settings](images/jellyseerr.png) -->
 
 **Check Configuration:**
+
 1. Verify Jellyseerr URL is correct and accessible
+
 2. Verify API key is correct (from Jellyseerr Settings → General)
+
 3. Click "Test Connection" in plugin settings
+
 4. Check icon status on search page:
+
    - 🟢 Active = Working
    - 🔴 No Access = User not imported
    - ⚫ Offline = Cannot connect
 
 **Enable Jellyfin Sign-In:**
+
 1. In Jellyseerr, go to Settings → Users
+
 2. Enable "Enable Jellyfin Sign-In"
+
 3. Import your Jellyfin users
 
-![Jellyfin Sign-In](images/jellyfin-signin.png)
+<!-- todo -->
+<!-- ![Jellyfin Sign-In](images/jellyfin-signin.png) -->
 
 **Import Users:**
+
 1. In Jellyseerr, go to Users page
+
 2. Click "Import Jellyfin Users"
+
 3. Select users to import
+
 4. Save changes
 
 **User Access:**
+
 - Users WITH access: ![Users with access](images/users-with-access.png)
+
 - Users WITHOUT access: ![Users without access](images/users-no-access.png)
+<!-- todo -->
 
 **Check Logs:**
+
 1. Browser console (F12) for client errors
+
 2. Jellyfin server logs for proxy errors
+
 3. Jellyseerr logs for API errors
 
 ### Tags not showing on posters?
 
 **Enable Feature:**
+
 1. Open Enhanced panel (press `?`)
+
 2. Go to Settings tab
+
 3. Enable desired tags:
+
    - Quality Tags
    - Genre Tags
    - Language Tags
    - Rating Tags
+
 4. Adjust position if needed
 
 **Clear Cache:**
+
 1. Hard refresh browser (Ctrl+F5)
+
 2. Clear all browser cache
+
 3. Restart browser
 
 **Check Metadata:**
+
 - Quality tags require media file metadata
+
 - Genre tags require genre information
+
 - Language tags require audio track data
+
 - Rating tags require TMDB/RT ratings
 
 **Check Console:**
+
 1. Press F12 → Console
+
 2. Look for tag-related errors
+
 3. Report issues on GitHub
 
 ### Bookmarks not syncing across devices?
@@ -212,37 +271,59 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 Bookmarks are stored server-side but settings are per-browser.
 
 **How Bookmarks Work:**
+
 - Bookmark data stored on Jellyfin server
+
 - Settings stored in browser localStorage
+
 - Each browser has independent settings
+
 - Same user can access bookmarks from any device
 
 **Sync Bookmarks:**
+
 1. Bookmarks automatically sync via server
+
 2. Settings must be configured per browser
+
 3. Use same Jellyfin user account
+
 4. Bookmarks appear on all devices
 
 **Troubleshooting:**
+
 - Verify same user account
+
 - Check bookmark file exists on server
+
 - Look in `/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json`
+
 - Check browser console for errors
 
 ### Pause screen not appearing?
 
+
 **Enable Feature:**
+
 1. Open Enhanced panel
+
 2. Go to Settings tab
+
 3. Enable "Custom Pause Screen"
+
 4. Adjust settings as desired
 
 **Check Playback:**
-- Must be in fullscreen or theater mode
-- Pause video (press Space)
-- Screen should appear after brief delay
+
+- [x] Must be in fullscreen or theater mode
+
+- [ ] Pause video (press Space)
+
+- [ ] Screen should appear after brief delay
 
 **Customize Elements:**
+
+<!-- * EXAMPLE OF A LINK! -->
 See [Pause Screen CSS](../advanced/css-customization.md#pause-screen) for hiding/styling elements.
 
 ### Reviews, Elsewhere, or Jellyseerr icons not working?
@@ -250,15 +331,23 @@ See [Pause Screen CSS](../advanced/css-customization.md#pause-screen) for hiding
 This is usually due to TMDB API access issues.
 
 **TMDB API Blocked:**
+
 - TMDB API may be blocked in your region
+
 - Check Jellyseerr troubleshooting: [TMDB Access](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx)
+
 - Use VPN or proxy if needed
+
 - Contact your ISP about API access
 
 **Check Connection:**
-1. Open browser console (F12)
+
+1. Open browser console ++f12++
+
 2. Look for TMDB-related errors
+
 3. Check network tab for failed requests
+
 4. Verify Jellyseerr can access TMDB
 
 ### "Remove from Continue Watching" is destructive?
@@ -266,17 +355,20 @@ This is usually due to TMDB API access issues.
 Yes, this feature resets playback progress to zero.
 
 **How It Works:**
+
 - Removes item from Continue Watching list
 - Resets watch progress to 0%
 - Marks item as unwatched
 - Cannot be undone
 
 **Use Cases:**
+
 - Remove items you don't want to continue
 - Clean up Continue Watching section
 - Reset progress for rewatching
 
 **Alternative:**
+
 - Mark as played to remove from list
 - Keep progress intact
 - Use Jellyfin's built-in "Mark Played" feature
@@ -296,22 +388,19 @@ Use Custom CSS in Jellyfin settings:
 
 **Examples:**
 
-**Hide Quality Tag:**
-```css
+```css title="Hide Quality Tag"
 .quality-overlay-label[data-quality="H264"] {
     display: none !important;
 }
 ```
 
-**Change Tag Color:**
-```css
+```css title="Change Tag Color"
 .quality-overlay-label[data-quality="4K"] {
     background-color: purple !important;
 }
 ```
 
-**Adjust Tag Size:**
-```css
+```css title="Adjust Tag Size"
 .quality-overlay-label {
     font-size: 0.9rem !important;
     padding: 4px 8px !important;
@@ -327,37 +416,51 @@ See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS
 - Admin access to Jellyfin
 
 **Steps:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+
 2. Navigate to **Other Settings** tab
+
 3. Find **Custom Branding** section
+
 4. Upload your images:
+
    - Icon Transparent (header logo)
    - Banner Light (dark theme splash)
    - Banner Dark (light theme splash)
    - Favicon (browser icon)
-5. Click **Save**
-6. Force refresh (Ctrl+F5)
+
+5. Click `Save`
+
+6. Force refresh ++ctrl+f5++
 
 **Image Requirements:**
-- PNG or SVG format recommended
-- Transparent backgrounds for logos
-- Appropriate dimensions for each type
-- Files stored in plugin config folder
+
+- [x] PNG or SVG format recommended
+
+- [x] Transparent backgrounds for logos
+
+- [x] Appropriate dimensions for each type
+
+- [x] Files stored in plugin config folder
 
 ### Can I change tag positions?
 
 Yes, via Enhanced panel settings:
 
 1. Open Enhanced panel (press `?`)
+
 2. Go to Settings tab
+
 3. Find tag position options
+
 4. Select position (top-left, top-right, bottom-left, bottom-right)
+
 5. Changes apply immediately
 
 **Advanced Positioning:**
-Use Custom CSS for precise control:
 
-```css
+```css title="Change tag positions"
 .quality-overlay-container {
     top: 10px !important;
     right: 10px !important;
@@ -371,35 +474,59 @@ Use Custom CSS for precise control:
 ### How do I gather logs for bug reports?
 
 **Browser Console Logs:**
-1. Press F12 to open developer tools
+
+1. Press ++f12++ to open developer tools
+
 2. Go to Console tab
-3. Filter by "🪼Jellyfin Enhanced"
+
+3. Filter by `🪼Jellyfin Enhanced`
+
 4. Look for errors (red text)
+
 5. Copy error messages
+
 6. Include in bug report
 
 **Network Logs:**
-1. Press F12 → Network tab
-2. Filter by "JellyfinEnhanced"
+
+1. Press ++f12++ → `Network` tab
+
+2. Filter by `JellyfinEnhanced`
+
 3. Look for failed requests (red)
+
 4. Check status codes
+
 5. Include in bug report
 
 **Server Logs:**
+
 1. Go to **Dashboard** → **Logs**
+
 2. Look for "JellyfinEnhanced" entries
+
 3. Check log files: `JellyfinEnhanced_yyyy-mm-dd.log`
+
 4. Copy relevant errors
+
 5. Include in bug report
 
 **What to Include:**
+
 - Plugin version
+
 - Jellyfin version
+
 - Browser and version
+
 - Operating system
+
 - Steps to reproduce
+
 - Console errors
+
 - Server log errors
+
 - Screenshots if applicable
 
 ### Common error messages and solutions
@@ -417,39 +544,62 @@ Use Custom CSS for precise control:
 ### Plugin conflicts?
 
 **Known Conflicts:**
+
 - None currently documented
 
 **Potential Issues:**
+
 - Multiple JavaScript injection plugins
+
 - Custom CSS overriding plugin styles
+
 - Browser extensions blocking scripts
 
+
 **Troubleshooting:**
+
 1. Disable other plugins temporarily
+
 2. Test with clean browser profile
+
 3. Check for CSS conflicts
+
 4. Disable browser extensions
+
 5. Report conflicts on GitHub
 
 ### Performance issues?
 
 **Optimization Tips:**
+
 1. Disable unused features in settings
+
 2. Reduce number of visible tags
+
 3. Clear browser cache regularly
+
 4. Use modern browser version
+
 5. Check server resources
 
 **Heavy Features:**
+
 - Jellyseerr discovery pages (many API calls)
+
 - People tags (age calculations)
+
 - Multiple tag types enabled
+
 - Large bookmark collections
 
 **Improve Performance:**
+
 - Enable only needed features
+
 - Use tag filters to reduce display
+
 - Clear old bookmarks
+
 - Limit Jellyseerr results
 
 ---

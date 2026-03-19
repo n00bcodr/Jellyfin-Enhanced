@@ -1,6 +1,4 @@
-## Installation troubleshooting
-
-### Plugin Not Appearing After Installation
+## Plugin Not Appearing After Installation
 
 **Check Installation Status:**
 
@@ -18,11 +16,16 @@
 **Clear Browser Cache:**
 
 1. Open menu: 
-  * Windows/Linux: ++ctrl+shift+delete++
-  * MacOS: ++command+shift+delete++
-2. Select "Cached images and files" *(or similar)*
-3. Clear cache
-4. Refresh browser ++ctrl+f5++
+  
+  Windows/Linux: ++ctrl+shift+delete++
+  
+  MacOS: ++command+shift+delete++
+  
+1. Select "Cached images and files" *(or similar)*
+
+2. Clear cache
+
+3. Refresh browser ++ctrl+f5++
 
 **Restart Server:**
 
@@ -30,21 +33,7 @@
 2. Wait for server to fully restart
 3. Refresh browser ++ctrl+f5++
 
-### Permission Errors in Logs
-
-If you see errors like this:
-
-```text
-Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
-```
-
-**Solution:**
-
-- Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) *(recommended)*
-
-- Or, try [platform-specific permission fixes](#platform-specific-issues)
-
-### Scripts Not Loading
+## Scripts Not Loading
 
 **Check Scheduled Task:**
 
@@ -60,7 +49,8 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 3. Look for errors mentioning "Jellyfin Enhanced"
 4. Report errors on GitHub if found
 
-### Update Not Working
+
+## Update Not Working
 
 **Clean Update Process:**
 
@@ -73,11 +63,26 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 7. Clear browser cache ++ctrl+f5++
 
 
-## Platform-Specific Issues
+## Permission Issues
 
-### Docker
+If you see errors like this in a log file:
 
-#### Permission issues 
+```text
+Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
+```
+
+**Common Solution:**
+
+- Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) *(recommended)*
+
+- Or, try [platform-specific permission fixes](#platform-specific-issues)
+
+
+### Platform-Specific Permission Issues
+
+
+
+#### Docker
 
 Example of a common error:
 
@@ -92,7 +97,7 @@ If you are **^^not^^ using the [file-transformation](https://github.com/IAmParad
   docker cp jellyfin:/jellyfin/jellyfin-web/index.html /path/to/your/jellyfin/config/index.html
   ```
 
-2. Add volume mapping:
+1. Add volume mapping:
   ```bash title="Docker Run"
   -v /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
   ```
@@ -114,9 +119,7 @@ If you are **^^not^^ using the [file-transformation](https://github.com/IAmParad
     1. Install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
     2. Follow the standard installation process
 
-### Windows
-
-**Permission denied errors / permission issues**
+#### Windows
 
 Known solution: 
 
@@ -126,9 +129,7 @@ Known solution:
 4. Apply to all subfolders and files
 5. Restart Jellyfin service
 
-### Linux
-
-**Permission issues**
+#### Linux
 
 Known solution:
 
