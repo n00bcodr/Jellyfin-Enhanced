@@ -13,13 +13,13 @@
 1. Go to `Dashboard` → `Scheduled Tasks`
 2. Under `Jellyfin Enhanced`, find the task: `Jellyfin Enhanced Startup`
 3. Execute the task manually *(click the button: `▶︎`)*
-4. Refresh your browser *(`Ctrl + F5`)*
+4. Refresh your browser ++ctrl+f5++
 
 **Clear Browser Cache:**
 
 1. Open menu: 
-  * Windows/Linux: `Ctrl+Shift+Delete`
-  * MacOS: `Cmd+Shift+Delete`
+  * Windows/Linux: ++ctrl+shift+delete++
+  * MacOS: ++command+shift+delete++
 2. Select "Cached images and files" *(or similar)*
 3. Clear cache
 4. Refresh browser
@@ -32,7 +32,7 @@
 
 ### Permission Errors in Logs
 
-If you see errors like:
+If you see errors like this:
 
 ```text
 Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
@@ -70,41 +70,43 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 4. Restart server
 5. Reinstall from Catalog
 6. Restart server again
-7. Clear browser cache (Ctrl+F5)
+7. Clear browser cache ++ctrl+f5++
 
 
 ## Platform-Specific Issues
 
 ### Docker
 
-If you are not using file-transformation and see permission errors like:
+#### Permission issues 
 
-```text
+Example of a common error:
+
+```text title="Bash"
 System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 ```
 
-You'll need to manually map the `index.html` file 
+If you are **^^not^^ using the [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin**, you'll need to manually map the `index.html` file 
 
-1. Copy the index.html file from your container:
-  ```bash
+1. Copy the `index.html` file from your container:
+  ```bash title="Bash"
   docker cp jellyfin:/jellyfin/jellyfin-web/index.html /path/to/your/jellyfin/config/index.html
   ```
 
-2. Add volume mapping to your Docker run command:
+2. Add volume mapping:
+  ```bash title="Docker Run"
+  -v /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
+  ```
 
-```bash
--v /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
-```
+  or...
 
-3. Or for Docker Compose, add to volumes section:
-
-```yaml
-services:
-  jellyfin:
-    volumes:
-      - /path/to/your/jellyfin/config:/config
-      - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
-```
+  ```yaml title="Docker Compose"
+  services:
+    jellyfin:
+      volumes:
+        # volume mapping
+        - /path/to/your/jellyfin/config:/config
+        - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
+  ```
 
 <!-- use a custom title -->
 !!! warning "Warning"
