@@ -428,7 +428,7 @@ Yes, via Enhanced panel settings:
 
 1. Go to **Dashboard** → **Logs**
 
-2. Look for "JellyfinEnhanced" entries
+2. Look for `JellyfinEnhanced` entries
 
 3. Check log files: `JellyfinEnhanced_yyyy-mm-dd.log`
 
