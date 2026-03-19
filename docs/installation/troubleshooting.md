@@ -55,8 +55,8 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 
 **Check Browser Console:**
 
-1. Press F12 to open developer tools
-2. Go to Console tab
+1. Press ++f12++ to open developer tools
+2. Go to `Console` tab
 3. Look for errors mentioning "Jellyfin Enhanced"
 4. Report errors on GitHub if found
 
@@ -96,17 +96,15 @@ If you are **^^not^^ using the [file-transformation](https://github.com/IAmParad
   ```bash title="Docker Run"
   -v /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
   ```
-
   or...
-
-    ```yaml title="Docker Compose"
-    services:
-      jellyfin:
-        volumes:
-          # volume mapping
-          - /path/to/your/jellyfin/config:/config
-          - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
-    ```
+  ```yaml title="Docker Compose"
+  services:
+    jellyfin:
+      volumes:
+        # volume mapping
+        - /path/to/your/jellyfin/config:/config
+        - /path/to/your/jellyfin/config/index.html:/jellyfin/jellyfin-web/index.html
+  ```
 
 <!-- use a custom title -->
 !!! warning "Warning"
