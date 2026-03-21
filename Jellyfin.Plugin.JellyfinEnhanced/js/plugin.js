@@ -554,20 +554,20 @@
 
             if (userId) {
                 const languageKey = `${userId}-language`;
-                const storedLanguage = localStorage.getItem(languageKey) || '';
-                const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
-                const normalizeLangCode = (code) => {
-                    if (!code) return '';
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-                // Use the language code as-is, no special mapping
-                const desiredStorageLanguage = desiredLanguage ? normalizeLangCode(desiredLanguage) : '';
-
-                if (storedLanguage !== desiredStorageLanguage) {
-                    localStorage.setItem(languageKey, desiredStorageLanguage);
+                // Only seed the admin's default language if the user has no language set yet.
+                // This prevents overwriting the user's own language choice on every page load.
+                if (localStorage.getItem(languageKey) === null) {
+                    const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
+                    if (desiredLanguage) {
+                        const normalizeLangCode = (code) => {
+                            if (!code) return '';
+                            const parts = code.split('-');
+                            if (parts.length === 1) return parts[0].toLowerCase();
+                            if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+                            return code;
+                        };
+                        localStorage.setItem(languageKey, normalizeLangCode(desiredLanguage));
+                    }
                 }
             }
 
