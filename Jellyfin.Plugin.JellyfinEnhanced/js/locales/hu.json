@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Nem sikerült betölteni a gyűjtemény adatait",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Nincs film a gyűjteményben",
     "jellyseerr_select_all_seasons": "Összes évad kiválasztása",
+    "jellyseerr_season_specials": "Különkiadások",
+    "jellyseerr_season_name": "{number}. évad",
     "jellyseerr_season_status_not_requested": "Nincs kérve",
     "jellyseerr_season_status_requested": "Kérve",
     "jellyseerr_season_status_processing": "Feldolgozás",

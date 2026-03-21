@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Kunde inte ladda samlingsinformation",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Inga filmer hittades i samlingen",
     "jellyseerr_select_all_seasons": "Välj alla säsonger",
+    "jellyseerr_season_specials": "Specialavsnitt",
+    "jellyseerr_season_name": "Säsong {number}",
     "jellyseerr_season_status_not_requested": "Inte begärd",
     "jellyseerr_season_status_requested": "Begärd",
     "jellyseerr_season_status_processing": "Bearbetar",

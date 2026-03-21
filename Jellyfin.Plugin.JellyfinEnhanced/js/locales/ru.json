@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Не удалось загрузить информацию о коллекции",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} В коллекции не найдено фильмов",
     "jellyseerr_select_all_seasons": "Выбрать все сезоны",
+    "jellyseerr_season_specials": "Спецвыпуски",
+    "jellyseerr_season_name": "Сезон {number}",
     "jellyseerr_season_status_not_requested": "Не запрошено",
     "jellyseerr_season_status_requested": "Запрошено",
     "jellyseerr_season_status_processing": "Обработка",

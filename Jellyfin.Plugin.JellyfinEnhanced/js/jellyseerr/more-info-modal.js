@@ -29,7 +29,7 @@ async function backfillSeasonMetadata(tmdbId, data) {
         if (!currentModal || !data?.seasons) return;
 
         const api = JE.jellyseerrAPI;
-        const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath));
+        const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath || !s.overview));
         if (seasonsMissingData.length === 0) return;
 
         // Fetch TMDB data + per-season episode data in parallel
