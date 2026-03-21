@@ -17,10 +17,6 @@
         const normalizedLang = normalizeLangCode(primaryLang);
         const langCodes = [];
 
-        if (normalizedLang) {
-            langCodes.push(normalizedLang);
-        }
-
         if (normalizedLang && normalizedLang.includes('-')) {
             const baseLang = normalizedLang.split('-')[0];
             if (!langCodes.includes(baseLang)) {
