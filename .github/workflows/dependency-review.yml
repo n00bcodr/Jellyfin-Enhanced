@@ -24,3 +24,5 @@ jobs:
           comment-summary-in-pr: always
           # Deny licenses that are not compatible with Jellyfin
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.0, LGPL-2.1, LGPL-3.0
+          # Allow the CI-only TruffleHog GitHub Action despite its AGPL license classification.
+          allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog
