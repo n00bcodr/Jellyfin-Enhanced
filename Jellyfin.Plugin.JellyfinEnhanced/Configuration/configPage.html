@@ -599,6 +599,13 @@
                                     <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, movie request buttons include a dropdown to request a 4K version.</div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
+                                            <input id="jellyseerrEnable4kTvRequests" is="emby-checkbox" type="checkbox"/>
+                                            <span>Enable 4K TV Requests</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, TV request buttons include a dropdown that opens the season request modal in 4K mode.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
                                             <input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/>
                                             <span>Show advanced request options</span>
                                         </label>
@@ -2547,6 +2554,7 @@
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
                 document.querySelector('#jellyseerrShowSearchResults').checked = config.JellyseerrShowSearchResults !== false;
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
+                document.querySelector('#jellyseerrEnable4kTvRequests').checked = !!config.JellyseerrEnable4KTvRequests;
                 document.querySelector('#jellyseerrUseMoreInfoModal').checked = !!config.JellyseerrUseMoreInfoModal;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
@@ -2741,6 +2749,7 @@
             config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;
             config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
+            config.JellyseerrEnable4KTvRequests = document.querySelector('#jellyseerrEnable4kTvRequests').checked;
             config.JellyseerrUseMoreInfoModal = document.querySelector('#jellyseerrUseMoreInfoModal').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;

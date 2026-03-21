@@ -482,6 +482,7 @@
                 const item = event.target.closest('.jellyseerr-4k-popup-item');
                 const action = item.dataset.action;
                 const tmdbId = item.dataset.tmdbId;
+                const mediaType = String(item.dataset.mediaType || 'movie').toLowerCase();
 
                 if (action === 'request4k' && tmdbId) {
                     const popup = item.closest('.jellyseerr-4k-popup');
@@ -495,6 +496,12 @@
                     const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
 
                     try {
+                        if (mediaType === 'tv') {
+                            if (popup) popup.remove();
+                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true);
+                            return;
+                        }
+
                         if (JE.pluginConfig.JellyseerrShowAdvanced) {
                             // Close popup and show advanced modal
                             if (popup) popup.remove();

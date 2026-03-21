@@ -1859,6 +1859,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowReportButton,
                 config.JellyseerrShowIssueIndicator,
                 config.JellyseerrEnable4KRequests,
+                config.JellyseerrEnable4KTvRequests,
                 config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
                 config.ShowElsewhereOnJellyseerr,

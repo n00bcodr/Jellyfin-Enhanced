@@ -298,12 +298,14 @@
             // 4K was deleted and can be requested again
             request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
             request4KBtn.dataset.tmdbId = item.id;
+            request4KBtn.dataset.mediaType = item.mediaType || 'movie';
             request4KBtn.dataset.action = 'request4k';
             request4KBtn.classList.add('chip-requested');
         } else {
             // 4K can be requested
             request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
             request4KBtn.dataset.tmdbId = item.id;
+            request4KBtn.dataset.mediaType = item.mediaType || 'movie';
             request4KBtn.dataset.action = 'request4k';
             request4KBtn.classList.add('chip-requested');
         }
@@ -1515,6 +1517,50 @@
             case 6: setButton(JE.t('jellyseerr_btn_blocklisted'), icons.cancel, 'jellyseerr-button-blocklisted', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request', false, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_seasons_available', {count: seasonAnalysis.total}) : null); break;
         }
+
+        const show4KOption = !!JE.pluginConfig.JellyseerrEnable4KTvRequests;
+        const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
+
+        if (show4KOption && !button.closest('.jellyseerr-button-group')) {
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'jellyseerr-button-group';
+
+            const mainButton = button.cloneNode(true);
+            mainButton.classList.add('jellyseerr-split-main');
+            mainButton.dataset.tmdbId = item.id;
+            mainButton.dataset.mediaType = 'tv';
+            mainButton.dataset.searchResultItem = JSON.stringify(item);
+
+            const arrowButton = document.createElement('button');
+            arrowButton.className = 'jellyseerr-split-arrow';
+            arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
+            arrowButton.dataset.tmdbId = item.id;
+            arrowButton.dataset.toggle4k = 'true';
+
+            if (status4k === 5) {
+                arrowButton.disabled = true;
+                arrowButton.classList.add('jellyseerr-split-arrow-disabled', 'jellyseerr-4k-available');
+                arrowButton.title = '4K Available';
+            } else if (status4k === 2 || status4k === 3) {
+                arrowButton.classList.add('jellyseerr-4k-pending');
+                arrowButton.title = '4K Requested';
+            } else {
+                arrowButton.title = JE.t('jellyseerr_btn_request_4k');
+            }
+
+            buttonGroup.appendChild(mainButton);
+            buttonGroup.appendChild(arrowButton);
+            button.replaceWith(buttonGroup);
+
+            arrowButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (active4KPopup && active4KPopup.parentElement === buttonGroup) {
+                    hide4KPopup();
+                } else {
+                    show4KPopup(buttonGroup, item);
+                }
+            });
+        }
     }
 
     /**
@@ -1900,7 +1946,7 @@
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
      */
-    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null) {
+    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false) {
         if (mediaType !== 'tv') return;
         if (refreshModalInterval) {
             clearInterval(refreshModalInterval);
@@ -1974,7 +2020,7 @@
                             requestBtn.textContent = JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
-                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem);
+                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k);
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -1983,19 +2029,19 @@
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
                         if (allSeasons.length > 0) {
-                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem);
+                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k);
                         } else {
-                            await requestMedia(tmdbId, 'tv', settings, false, searchResultItem);
+                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem);
                         }
 
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: showTitle }), 4000);
                     }
                     // Notify any listening modals that TV was requested
-                    document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv' } }));
-                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv' } }));
+                    document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
+                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
 
                     // Update original card button to pending state
-                    markCardRequested(tmdbId, 'tv');
+                    markCardRequested(tmdbId, 'tv', is4k);
 
                     closeFn();
                     setTimeout(() => {

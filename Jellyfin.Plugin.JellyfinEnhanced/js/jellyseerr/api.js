@@ -552,25 +552,32 @@
      * @param {number[]} seasonNumbers - An array of season numbers to request.
      * @param {object} [advancedSettings={}] - Optional advanced settings (server, quality, folder).
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
+     * @param {boolean} [is4k=false] - Whether this is a 4K request.
      * @returns {Promise<any>}
      */
-    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null) {
+    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false) {
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
-            const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', false);
+            const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
             if (overrideSettings) {
                 console.debug(`${logPrefix} Applying override rule settings for TV seasons:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
             }
         }
 
-        const body = { mediaType: 'tv', mediaId: parseInt(tmdbId), seasons: seasonNumbers, ...advancedSettings };
+        const body = {
+            mediaType: 'tv',
+            mediaId: parseInt(tmdbId),
+            seasons: seasonNumbers,
+            ...advancedSettings,
+            ...(is4k ? { is4k: true } : {})
+        };
         const result = await post('/request', body);
 
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, 'tv');
-            emitMediaRequested(tmdbId, 'tv', false);
+            emitMediaRequested(tmdbId, 'tv', is4k);
             try {
                 await api.addToWatchlist(tmdbId, 'tv');
             } catch (error) {
