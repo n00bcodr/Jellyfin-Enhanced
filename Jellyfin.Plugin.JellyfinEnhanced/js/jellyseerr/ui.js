@@ -1909,14 +1909,18 @@
 
 
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { fetchTvShowDetails, requestTvSeasons, fetchAdvancedRequestData, isPartialRequestsEnabled, requestMedia } = JE.jellyseerrAPI;
+        const { fetchTvShowDetails, fetchTvSeasonDetails, fetchTmdbTvDetails, requestTvSeasons, fetchAdvancedRequestData, fetchRequestSettings, requestMedia } = JE.jellyseerrAPI;
 
-        // Check if partial requests are enabled
+        // Fetch Seerr request settings (partial requests + special episodes)
         let partialRequestsEnabled = false;
+        let enableSpecialEpisodes = false;
         try {
-            partialRequestsEnabled = await isPartialRequestsEnabled();
+            const settings = await fetchRequestSettings();
+            partialRequestsEnabled = settings.partialRequestsEnabled;
+            enableSpecialEpisodes = settings.enableSpecialEpisodes;
         } catch (e) {
             partialRequestsEnabled = false;
+            enableSpecialEpisodes = false;
         }
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
@@ -2011,26 +2015,87 @@
             }
         });
 
-        // Populate season list inside the modal
+        // Populate season list inside the modal (shows immediately, air dates may be empty)
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
-        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled);
+        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
         modalInstance.show();
+
+        // Cached air dates — populated once, applied on every render (including polling refreshes)
+        const airDateCache = {};
+
+        /**
+         * Validates that a string starts with an ISO date format (YYYY-MM-DD).
+         * @param {string} d - The date string to validate.
+         * @returns {boolean} True if the string matches the date pattern.
+         */
+        const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}/.test(d);
+
+        /**
+         * Merges cached air dates into a Seerr tvDetails object.
+         * Seasons without an airDate are backfilled from the cache (immutable per-season).
+         * @param {object} details - The Seerr TV show details object.
+         */
+        function applyAirDateBackfill(details) {
+            if (!details?.seasons || Object.keys(airDateCache).length === 0) return;
+            details.seasons = details.seasons.map(s => {
+                if (!s.airDate && airDateCache[s.seasonNumber]) {
+                    return { ...s, airDate: airDateCache[s.seasonNumber] };
+                }
+                return s;
+            });
+        }
+
+        // Async backfill: fetch air dates from per-season episode data, with TMDB as fallback
+        const seasonsNeedingDates = tvDetails.seasons.filter(s => s.episodeCount > 0 && !s.airDate);
+        if (seasonsNeedingDates.length > 0) {
+            // Primary: fetch first episode air date from each season (Seerr/TheTVDB has these)
+            const seasonFetches = seasonsNeedingDates.map(s =>
+                fetchTvSeasonDetails(tmdbId, s.seasonNumber).then(detail => {
+                    const firstEp = detail?.episodes?.[0];
+                    if (firstEp?.airDate && isValidDate(firstEp.airDate)) {
+                        airDateCache[s.seasonNumber] = firstEp.airDate;
+                    }
+                }).catch(() => {})
+            );
+
+            // Fallback: also try TMDB for any gaps (runs in parallel)
+            const tmdbFetch = JE.pluginConfig?.TmdbEnabled
+                ? fetchTmdbTvDetails(tmdbId).then(tmdbData => {
+                    if (!tmdbData?.seasons) return;
+                    tmdbData.seasons.forEach(s => {
+                        const date = s.air_date || '';
+                        if (isValidDate(date) && !airDateCache[s.season_number]) {
+                            airDateCache[s.season_number] = date;
+                        }
+                    });
+                }).catch(() => {})
+                : Promise.resolve();
+
+            // When all fetches complete, re-render with backfilled dates
+            Promise.all([...seasonFetches, tmdbFetch]).then(() => {
+                applyAirDateBackfill(tvDetails);
+                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
+            });
+        }
 
         // Add Select All checkbox functionality
         if (partialRequestsEnabled) {
             const selectAllCheckbox = modalInstance.modalElement.querySelector('#jellyseerr-select-all-seasons');
             if (selectAllCheckbox) {
+                // Selector for regular season checkboxes (excludes Season 0 / Specials)
+                const regularSeasonSelector = '.jellyseerr-season-item:not([data-season-number="0"]) .jellyseerr-season-checkbox:not(:disabled)';
+
                 // Update Select All checkbox state when individual checkboxes change
                 const updateSelectAllState = () => {
-                    const allSeasonCheckboxes = seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled)');
-                    const checkedCount = seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled):checked').length;
+                    const allSeasonCheckboxes = seasonList.querySelectorAll(regularSeasonSelector);
+                    const checkedCount = seasonList.querySelectorAll(`${regularSeasonSelector}:checked`).length;
                     selectAllCheckbox.checked = checkedCount > 0 && checkedCount === allSeasonCheckboxes.length;
                     selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < allSeasonCheckboxes.length;
                 };
 
-                // Handle Select All checkbox click
+                // Handle Select All checkbox click — only toggles regular seasons, not Specials
                 selectAllCheckbox.addEventListener('change', () => {
-                    const allSeasonCheckboxes = seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled)');
+                    const allSeasonCheckboxes = seasonList.querySelectorAll(regularSeasonSelector);
                     allSeasonCheckboxes.forEach(checkbox => {
                         checkbox.checked = selectAllCheckbox.checked;
                     });
@@ -2055,7 +2120,8 @@
         refreshModalInterval = setInterval(async () => {
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
             if (freshTvDetails) {
-                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled);
+                applyAirDateBackfill(freshTvDetails);
+                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes);
                 // Update Select All state after refresh
                 if (seasonList._updateSelectAllState) {
                     seasonList._updateSelectAllState();
@@ -2074,16 +2140,17 @@
         }
     };
 
-    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true) {
+    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false) {
         if (!seasonListElement || !tvDetails) return;
 
         const seasonStatusMap = {};
         tvDetails.mediaInfo?.seasons?.forEach(s => { seasonStatusMap[s.seasonNumber] = s.status; });
         tvDetails.mediaInfo?.requests?.forEach(r => r.seasons?.forEach(sr => { seasonStatusMap[sr.seasonNumber] = sr.status; }));
 
-        // Filter out seasons with no episodes, except for Season 0 (Specials)
+        // Filter out seasons with no episodes, and hide Season 0 (Specials) unless enabled in Seerr
         const seasons = (tvDetails.seasons || [])
-            .filter(s => s.seasonNumber === 0 || (s.episodeCount && s.episodeCount > 0))
+            .filter(s => s.episodeCount && s.episodeCount > 0)
+            .filter(s => s.seasonNumber !== 0 || enableSpecialEpisodes)
             .slice()
             .sort((a, b) => (a.seasonNumber || 0) - (b.seasonNumber || 0));
         seasons.forEach(season => {
@@ -2120,10 +2187,20 @@
             // Disable checkbox if partial requests are disabled OR if the season can't be requested
             const checkboxDisabled = !partialRequestsEnabled || !canRequest;
 
+            // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label.
+            // The numeric regex catches bare numbers and zero-padded variants (e.g., "01");
+            // this may also match year-named seasons, which is an acceptable tradeoff.
+            const trimmedName = (season.name || '').trim();
+            const isNumericOnly = trimmedName === String(seasonNumber) || /^0*\d+$/.test(trimmedName);
+            const displayName = (trimmedName && !isNumericOnly)
+                ? trimmedName
+                : (seasonNumber === 0 ? JE.t('jellyseerr_season_specials') : JE.t('jellyseerr_season_name', { number: seasonNumber }));
+
+            // All interpolated values are escaped via escapeHtml() to prevent XSS
             seasonItem.innerHTML = `
                 <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${escapeHtml(seasonNumber)}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
                 <div class="jellyseerr-season-info">
-                    <div class="jellyseerr-season-name">${escapeHtml(season.name || `Season ${seasonNumber}`)}</div>
+                    <div class="jellyseerr-season-name">${escapeHtml(displayName)}</div>
                     <div class="jellyseerr-season-meta">${escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}</div>
                 </div>
                 <div class="jellyseerr-season-episodes">${escapeHtml(season.episodeCount || 0)} ep</div>

@@ -554,6 +554,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}", HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/tv/{tmdbId}/season/{seasonNumber}")]
+        [Authorize]
+        public Task<IActionResult> GetTvSeason(int tmdbId, int seasonNumber)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/season/{seasonNumber}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/movie/{tmdbId}")]
         [Authorize]
         public Task<IActionResult> GetMovie(int tmdbId)
@@ -1401,7 +1408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
                 _logger.Warning("Seerr integration is not configured or enabled.");
-                return Ok(new { partialRequestsEnabled = false });
+                return Ok(new { partialRequestsEnabled = false, enableSpecialEpisodes = false });
             }
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1421,16 +1428,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     if (response.IsSuccessStatusCode)
                     {
-                        // Parse the full settings response but only extract the partialRequestsEnabled field
-                        var settings = JsonDocument.Parse(responseContent);
+                        using var settings = JsonDocument.Parse(responseContent);
                         var partialRequestsEnabled = false;
                         if (settings.RootElement.TryGetProperty("partialRequestsEnabled", out var prop))
                         {
                             partialRequestsEnabled = prop.GetBoolean();
                         }
 
-                        _logger.Info($"Seerr partial requests setting: {partialRequestsEnabled}");
-                        return Ok(new { partialRequestsEnabled });
+                        var enableSpecialEpisodes = false;
+                        if (settings.RootElement.TryGetProperty("enableSpecialEpisodes", out var specialProp))
+                        {
+                            enableSpecialEpisodes = specialProp.GetBoolean();
+                        }
+
+                        _logger.Info($"Seerr settings — partialRequests: {partialRequestsEnabled}, specialEpisodes: {enableSpecialEpisodes}");
+                        return Ok(new { partialRequestsEnabled, enableSpecialEpisodes });
                     }
 
                     _logger.Warning($"Failed to fetch Seerr settings. URL: {trimmedUrl}, Status: {response.StatusCode}");
@@ -1441,8 +1453,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            _logger.Warning("Could not fetch Seerr settings from any URL, defaulting partialRequestsEnabled to false");
-            return Ok(new { partialRequestsEnabled = false });
+            _logger.Warning("Could not fetch Seerr settings from any URL, defaulting to false");
+            return Ok(new { partialRequestsEnabled = false, enableSpecialEpisodes = false });
         }
 
         [HttpGet("tmdb/validate")]

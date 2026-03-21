@@ -317,6 +317,36 @@
     };
 
     /**
+     * Fetches season detail with episodes from Seerr.
+     * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @param {number} seasonNumber - The season number.
+     * @returns {Promise<object|null>}
+     */
+    api.fetchTvSeasonDetails = async function(tmdbId, seasonNumber) {
+        try {
+            return await get(`/tv/${tmdbId}/season/${seasonNumber}`);
+        } catch (error) {
+            console.debug(`${logPrefix} Failed to fetch season ${seasonNumber} for TMDB ID ${tmdbId}:`, error);
+            return null;
+        }
+    };
+
+    /**
+     * Fetches TV show details from TMDB directly (bypasses Seerr metadata provider).
+     * Useful for getting season air dates when Seerr uses TheTVDB (which omits them).
+     * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @returns {Promise<object|null>}
+     */
+    api.fetchTmdbTvDetails = async function(tmdbId) {
+        try {
+            return await tmdbGet(`/tv/${tmdbId}`);
+        } catch (error) {
+            console.debug(`${logPrefix} Failed to fetch TMDB TV details for ID ${tmdbId}:`, error);
+            return null;
+        }
+    };
+
+    /**
      * Fetches override rules from Seerr.
      * @returns {Promise<Array>}
      */
@@ -641,16 +671,19 @@
 
 
     /**
-     * Checks if partial series requests are enabled in Seerr settings.
-     * @returns {Promise<boolean>} - True if partial requests are enabled, false otherwise.
+     * Fetches Seerr request settings (partial requests + special episodes).
+     * @returns {Promise<{partialRequestsEnabled: boolean, enableSpecialEpisodes: boolean}>}
      */
-    api.isPartialRequestsEnabled = async function() {
+    api.fetchRequestSettings = async function() {
         try {
             const result = await get('/settings/partial-requests');
-            return !!(result && result.partialRequestsEnabled);
+            return {
+                partialRequestsEnabled: !!(result && result.partialRequestsEnabled),
+                enableSpecialEpisodes: !!(result && result.enableSpecialEpisodes)
+            };
         } catch (error) {
-            console.warn(`${logPrefix} Failed to fetch partial requests setting:`, error);
-            return false;
+            console.warn(`${logPrefix} Failed to fetch request settings:`, error);
+            return { partialRequestsEnabled: false, enableSpecialEpisodes: false };
         }
     };
 

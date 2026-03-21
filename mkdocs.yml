@@ -63,6 +63,8 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.tabbed:
@@ -70,6 +72,16 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  # lists
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  # keyboard shortcuts
+  - pymdownx.keys
+  # simple text formatting
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
 
 
 # main tabs/headers
@@ -85,7 +97,7 @@ nav:
   # ——————————————
   - Installation:
     - Installation: installation/installation.md
-    - Troubleshooting: installation/troubleshooting.md
+    - Troubleshooting installation: installation/troubleshooting.md
 
 
   # ——————————————

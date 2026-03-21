@@ -505,7 +505,7 @@ Upload your own logos, banners, and favicon.
    - Banner Dark (light theme splash)
    - Favicon (browser icon)
 5. Click **Save**
-6. Force refresh browser (Ctrl+F5)
+6. Force refresh browser ++ctrl+f5++
 
 **Requirements:**
 - Requires [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
