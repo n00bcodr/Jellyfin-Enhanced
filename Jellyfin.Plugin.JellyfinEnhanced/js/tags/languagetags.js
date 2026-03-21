@@ -100,7 +100,9 @@
             Lithuanian: 'lt', lit: 'lt', Icelandic: 'is', isl: 'is', Georgian: 'ge', kat: 'ge', Armenian: 'am',
             hye: 'am', Mongolian: 'mn', mon: 'mn', Kazakh: 'kz', kaz: 'kz', Uzbek: 'uz', uzb: 'uz', Azerbaijani: 'az',
             aze: 'az', Belarusian: 'by', bel: 'by', Amharic: 'et', amh: 'et', Zulu: 'za', zul: 'za', Afrikaans: 'za',
-            afr: 'za', Hausa: 'ng', hau: 'ng', Yoruba: 'ng', yor: 'ng', Igbo: 'ng', ibo: 'ng', Brazilian: 'br', bra: 'br'
+            afr: 'za', Hausa: 'ng', hau: 'ng', Yoruba: 'ng', yor: 'ng', Igbo: 'ng', ibo: 'ng', Brazilian: 'br', bra: 'br',
+            Catalan: 'es-ct', cat: 'es-ct', ca: 'es-ct', Galician: 'es-ga', glg: 'es-ga', gl: 'es-ga', Basque: 'es-pv',
+            baq: 'es-pv', eus: 'es-pv'
         };
 
         async function fetchFirstEpisode(userId, seriesId) {
@@ -283,7 +285,7 @@
 
             uniqueFlags.slice(0, maxToShow).forEach(flagInfo => {
                 const img = document.createElement('img');
-                img.src = `https://flagcdn.com/w160/${flagInfo.countryCode.toLowerCase()}.png`;
+                img.src = `https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.1/flags/4x3/${flagInfo.countryCode.toLowerCase()}.svg`;
                 img.className = flagClass;
                 img.alt = flagInfo.allLanguages.join(', ');
                 img.title = flagInfo.allLanguages.join(', ');
