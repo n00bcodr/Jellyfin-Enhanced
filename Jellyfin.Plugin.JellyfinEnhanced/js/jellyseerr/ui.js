@@ -799,59 +799,66 @@
 
         const primarySectionKeywords = ['movies', 'shows', 'film', 'serier', 'filme', 'serien', 'películas', 'series', 'films', 'séries', 'serie tv'];
 
-        function injectSection() {
-            const noResultsMessage = searchPage.querySelector('.noItemsMessage');
+        /**
+         * Finds the last Movies/Shows section in the search results.
+         * @returns {HTMLElement|null}
+         */
+        function findLastPrimarySection() {
             const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
+            for (let i = allSections.length - 1; i >= 0; i--) {
+                const title = allSections[i].querySelector('.sectionTitle')?.textContent.trim().toLowerCase();
+                if (title && primarySectionKeywords.some(keyword => title.includes(keyword))) {
+                    return allSections[i];
+                }
+            }
+            return null;
+        }
 
+        /**
+         * Places the section after Movies/Shows if found, otherwise appends
+         * to the results container or search page.
+         * @returns {boolean} True if positioned after a primary section or
+         *   no-results message; false if using fallback placement.
+         */
+        function positionSection() {
+            const noResultsMessage = searchPage.querySelector('.noItemsMessage');
             if (noResultsMessage) {
                 noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
                 noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
                 return true;
             }
 
-            if (allSections.length > 0) {
-                let lastPrimarySection = null;
-                for (let i = allSections.length - 1; i >= 0; i--) {
-                    const section = allSections[i];
-                    const title = section.querySelector('.sectionTitle')?.textContent.trim().toLowerCase();
-                    if (title && primarySectionKeywords.some(keyword => title.includes(keyword))) {
-                        lastPrimarySection = section;
-                        break;
-                    }
-                }
-
-                if (lastPrimarySection) {
-                    lastPrimarySection.after(sectionToInject);
-                } else {
-                    const resultsContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
-                    if (resultsContainer) {
-                        resultsContainer.prepend(sectionToInject);
-                    } else {
-                        searchPage.appendChild(sectionToInject);
-                    }
-                }
+            const lastPrimary = findLastPrimarySection();
+            if (lastPrimary) {
+                lastPrimary.after(sectionToInject);
                 return true;
             }
 
+            const resultsContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
+            if (resultsContainer) {
+                resultsContainer.appendChild(sectionToInject);
+            } else {
+                searchPage.appendChild(sectionToInject);
+            }
             return false;
         }
 
-        // Try immediate injection first
-        if (!injectSection()) {
-            // Use MutationObserver for faster detection than polling
-            let observer = null;
-            const timeoutId = setTimeout(() => {
-                if (observer) observer.disconnect();
-                injectSection(); // Force inject after timeout
-            }, 3000);
+        // Inject immediately — don't wait for Movies/Shows sections to load
+        const isAfterPrimary = positionSection();
 
-            observer = new MutationObserver(() => {
-                if (injectSection()) {
+        // If not yet positioned after Movies/Shows, watch for them to appear
+        // and reposition once they do
+        if (!isAfterPrimary) {
+            const observer = new MutationObserver(() => {
+                if (findLastPrimarySection()) {
                     observer.disconnect();
-                    clearTimeout(timeoutId);
+                    clearTimeout(fallbackTimeout);
+                    positionSection();
                 }
             });
             observer.observe(searchPage, { childList: true, subtree: true });
+            // Safety timeout — disconnect if primary sections never appear
+            const fallbackTimeout = setTimeout(() => observer.disconnect(), 5000);
         }
     };
 

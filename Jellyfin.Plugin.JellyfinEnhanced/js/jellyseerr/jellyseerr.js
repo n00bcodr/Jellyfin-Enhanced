@@ -350,18 +350,18 @@
                 }
             };
 
-            // Listen for manual refresh events from the UI
-            document.addEventListener('jellyseerr-manual-refresh', function(e) {
-                const searchInput = document.querySelector('#searchPage #searchTextInput');
-                const query = searchInput ? searchInput.value : null;
-                manualRefreshJellyseerrData(query);
-            });
-
-            const observer = new MutationObserver(() => {
+            /**
+             * Attempts to attach the search input listener if the search page is visible.
+             * Called by the MutationObserver, navigation events, and on initial setup.
+             * Idempotent — sets data-jellyseerr-listener on the input to prevent
+             * duplicate attachment, and adds a permanent 'input' event handler.
+             */
+            function tryAttachSearchListener() {
                 updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
 
                 const searchInput = document.querySelector('#searchPage #searchTextInput');
                 if (searchInput && !searchInput.dataset.jellyseerrListener) {
+                    console.debug(`${logPrefix} Search input found, attaching listener.`);
                     searchInput.addEventListener('input', handleSearch);
                     searchInput.dataset.jellyseerrListener = 'true';
 
@@ -377,8 +377,37 @@
                     // Also handle the case where the page loads with a query already in the box
                     handleSearch();
                 }
+            }
+
+            // Listen for manual refresh events from the UI
+            document.addEventListener('jellyseerr-manual-refresh', function(e) {
+                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                const query = searchInput ? searchInput.value : null;
+                manualRefreshJellyseerrData(query);
             });
+
+            const observer = new MutationObserver(tryAttachSearchListener);
             observer.observe(document.body, { childList: true, subtree: true });
+
+            // Immediately check if the search page is already rendered (handles the
+            // case where the observer was set up after the search page loaded, e.g.
+            // when the user navigates directly to /search before plugin init completes).
+            tryAttachSearchListener();
+
+            // Listen for SPA navigation events as a backup — MutationObserver may
+            // miss the search page if no further DOM mutations occur after render.
+            // Uses the shared je:navigate event (from helpers.js) which already
+            // patches pushState/replaceState, plus popstate and hashchange.
+            if (JE.helpers?.onNavigate) {
+                JE.helpers.onNavigate(() => setTimeout(tryAttachSearchListener, 200));
+            } else {
+                // Fallback if helpers.js hasn't loaded yet — may double-fire with
+                // onNavigate if helpers loads later, but tryAttachSearchListener is
+                // idempotent (guarded by dataset.jellyseerrListener) so this is safe.
+                const onNav = () => setTimeout(tryAttachSearchListener, 200);
+                window.addEventListener('popstate', onNav);
+                window.addEventListener('hashchange', onNav);
+            }
         }
 
         /**
@@ -394,6 +423,7 @@
                     const status = await checkUserStatus();
                     isJellyseerrActive = status.active;
                     jellyseerrUserFound = status.userFound;
+                    console.debug(`${logPrefix} Status: active=${isJellyseerrActive}, userFound=${jellyseerrUserFound}`);
                     initializePageObserver();
 
                     // Prefetch TMDB genres in the background for instant discovery
