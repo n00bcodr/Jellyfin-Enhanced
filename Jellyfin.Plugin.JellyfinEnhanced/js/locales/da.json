@@ -177,6 +177,8 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Kunne ikke indlæse kollektionsoplysninger",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Ingen film fundet i kollektion",
     "jellyseerr_select_all_seasons": "Vælg alle sæsoner",
+    "jellyseerr_season_specials": "Specialafsnit",
+    "jellyseerr_season_name": "Sæson {number}",
     "jellyseerr_season_status_not_requested": "Ikke anmodet",
     "jellyseerr_season_status_requested": "Anmodet",
     "jellyseerr_season_status_processing": "Behandler",

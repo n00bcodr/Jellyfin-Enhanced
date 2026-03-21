@@ -177,6 +177,8 @@
   "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} 载入合集详情失败",
   "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} 合集内找不到电影",
   "jellyseerr_select_all_seasons": "全选所有季",
+  "jellyseerr_season_specials": "特别篇",
+  "jellyseerr_season_name": "第 {number} 季",
   "jellyseerr_season_status_not_requested": "未申请",
   "jellyseerr_season_status_requested": "已申请",
   "jellyseerr_season_status_processing": "处理中",
