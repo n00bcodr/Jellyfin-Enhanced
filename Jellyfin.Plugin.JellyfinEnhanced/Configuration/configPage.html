@@ -2606,7 +2606,15 @@
             const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
             const AVAILABLE_LANGUAGES_CACHE_KEY = 'JE_available_languages_config';
             const AVAILABLE_LANGUAGES_CACHE_TS_KEY = 'JE_available_languages_config_ts';
+            const AVAILABLE_LANGUAGES_CACHE_VER_KEY = 'JE_available_languages_config_ver';
             const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+            // Fetch plugin version to bust cache on server update/restart
+            let pluginVersion = null;
+            try {
+                const verResp = await fetch(ApiClient.getUrl('/JellyfinEnhanced/version'));
+                if (verResp.ok) pluginVersion = await verResp.text();
+            } catch (_) { /* non-fatal */ }
 
             const CUSTOM_LANGUAGES = {
                 'pr': { Name: 'Pirate', DisplayName: 'Pirate', TwoLetterISOLanguageName: 'pr', LocaleCode: 'pr' },
@@ -2620,8 +2628,10 @@
                 // Check cache first
                 const cachedLanguages = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_KEY);
                 const cachedTimestamp = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY);
+                const cachedVersion = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_VER_KEY);
+                const versionMatch = !pluginVersion || cachedVersion === pluginVersion;
 
-                if (cachedLanguages && cachedTimestamp) {
+                if (cachedLanguages && cachedTimestamp && versionMatch) {
                     const age = Date.now() - parseInt(cachedTimestamp, 10);
                     if (age < CACHE_DURATION) {
                         supportedLanguages = JSON.parse(cachedLanguages);
@@ -2707,6 +2717,7 @@
                     try {
                         localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_KEY, JSON.stringify(supportedLanguages));
                         localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY, Date.now().toString());
+                        if (pluginVersion) localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_VER_KEY, pluginVersion);
                     } catch (err) {
                         // Ignore cache errors
                     }
