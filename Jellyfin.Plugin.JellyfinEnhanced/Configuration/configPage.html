@@ -612,6 +612,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, a small report icon will be added to item action icons allowing users to report playback/content issues to Seerr.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="jellyseerrShowIssueIndicator" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show open issue indicator on the report button</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, the report issue button turns orange and shows a count badge if the item has open issues in Seerr.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="jellyseerrExcludeBlocklistedItems" is="emby-checkbox" type="checkbox"/>
                                     <span>Exclude blocklisted movies/series from suggestions</span>
                                 </label>
@@ -2038,6 +2045,7 @@
                 document.querySelector('#jellyseerrShowPersonDiscovery').checked = config.JellyseerrShowPersonDiscovery !== false;
                 document.querySelector('#jellyseerrShowCollectionDiscovery').checked = config.JellyseerrShowCollectionDiscovery !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
+                document.querySelector('#jellyseerrShowIssueIndicator').checked = !!config.JellyseerrShowIssueIndicator;
                 document.querySelector('#jellyseerrExcludeBlocklistedItems').checked = !!config.JellyseerrExcludeBlocklistedItems;
                 document.querySelector('#jellyseerrDisableCache').checked = !!config.JellyseerrDisableCache;
                 document.querySelector('#jellyseerrResponseCacheTtlMinutes').value = config.JellyseerrResponseCacheTtlMinutes || 10;
@@ -2226,6 +2234,7 @@
             config.JellyseerrShowPersonDiscovery = document.querySelector('#jellyseerrShowPersonDiscovery').checked;
             config.JellyseerrShowCollectionDiscovery = document.querySelector('#jellyseerrShowCollectionDiscovery').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
+            config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();

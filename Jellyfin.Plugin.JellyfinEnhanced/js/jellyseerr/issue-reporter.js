@@ -744,6 +744,55 @@
     };
 
     /**
+     * Fetches open issues for the item and applies an orange indicator + count badge
+     * to the report button. No-op if JellyseerrShowIssueIndicator is off.
+     */
+    issueReporter.applyIssueIndicator = async function (button, tmdbId, mediaType) {
+        if (!JE.pluginConfig?.JellyseerrShowIssueIndicator) return;
+        try {
+            const result = await JE.jellyseerrAPI.fetchIssuesForMedia(tmdbId, mediaType, { take: 50, filter: 'open' });
+            const openIssues = result?.results || [];
+            if (openIssues.length === 0) return;
+
+            // Inject CSS once per page load
+            if (!document.getElementById('je-issue-indicator-style')) {
+                const style = document.createElement('style');
+                style.id = 'je-issue-indicator-style';
+                style.textContent = `
+                    .jellyseerr-report-issue-icon.has-open-issues .detailButton-icon { color: #f97316 !important; }
+                    .jellyseerr-report-issue-icon { position: relative; }
+                    .jellyseerr-issue-count-badge {
+                        position: absolute; top: 2px; right: 2px;
+                        background: #f97316; color: #fff;
+                        font-size: 10px; font-weight: 700;
+                        border-radius: 999px; min-width: 16px; height: 16px;
+                        display: flex; align-items: center; justify-content: center;
+                        padding: 0 3px; pointer-events: none; line-height: 1;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.5); z-index: 10;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            button.classList.add('has-open-issues');
+
+            const badge = document.createElement('span');
+            badge.className = 'jellyseerr-issue-count-badge';
+            badge.textContent = openIssues.length > 9 ? '9+' : String(openIssues.length);
+            button.appendChild(badge);
+
+            const issuesLabel = JE.t('jellyseerr_existing_issues') || 'Issues';
+            const openLabel = JE.t('jellyseerr_issue_open') || 'Open';
+            const reportLabel = JE.t('jellyseerr_report_issue_button') || 'Report issue';
+            const tooltipText = `${openIssues.length} ${openLabel} ${issuesLabel} - ${reportLabel}`;
+            button.title = tooltipText;
+            button.setAttribute('aria-label', tooltipText);
+        } catch (e) {
+            console.debug(`${logPrefix} applyIssueIndicator failed:`, e);
+        }
+    };
+
+    /**
      * Attempts to add the report issue button to the current detail page
      */
     issueReporter.tryAddButton = async function () {
@@ -1027,6 +1076,8 @@
                     buttonContainer.appendChild(button);
                 }
                 console.log(`${logPrefix} ✓ Report issue button added to ${item.Name} (${mediaType}, TMDB: ${tmdbId})`);
+                // Fire-and-forget: colour button orange + count badge when open issues exist
+                issueReporter.applyIssueIndicator(button, tmdbId, mediaType);
                 return true;
             }
         } catch (error) {

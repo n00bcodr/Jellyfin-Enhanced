@@ -93,6 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrEnabled = false;
             JellyseerrShowSearchResults = true;
             JellyseerrShowReportButton = false;
+            JellyseerrShowIssueIndicator = false;
             JellyseerrEnable4KRequests = false;
             JellyseerrShowAdvanced = false;
             JellyseerrShowSimilar = true;
@@ -262,6 +263,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrEnabled { get; set; }
         public bool JellyseerrShowSearchResults { get; set; }
         public bool JellyseerrShowReportButton { get; set; }
+        public bool JellyseerrShowIssueIndicator { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }
         public bool JellyseerrShowSimilar { get; set; }
