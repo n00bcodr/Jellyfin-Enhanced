@@ -474,51 +474,49 @@
           this.checkForVideoChanges();
         }
 
+        resetPauseScreenTimer() {
+          this.lastUserInteractionAt = Date.now();
+          this.schedulePauseOverlayDelay();
+        }
+
+        schedulePauseOverlayDelay() {
+          if (this.pauseScreenTimer) {
+            clearTimeout(this.pauseScreenTimer);
+            this.pauseScreenTimer = null;
+          }
+
+          if (!this.currentVideo || !this.currentVideo.paused || this.currentVideo.ended) {
+            return;
+          }
+
+          const tryShowWhenIdle = () => {
+            const video = this.currentVideo;
+            if (!video || !video.paused || video.ended) {
+              this.pauseScreenTimer = null;
+              return;
+            }
+
+            const idleFor = Date.now() - this.lastUserInteractionAt;
+            if (idleFor >= this.pauseScreenDelayMs) {
+              this.showOverlay();
+              this.pauseScreenTimer = null;
+              return;
+            }
+
+            const remainingDelay = Math.max(100, this.pauseScreenDelayMs - idleFor);
+            this.pauseScreenTimer = setTimeout(tryShowWhenIdle, remainingDelay);
+          };
+
+          this.pauseScreenTimer = setTimeout(tryShowWhenIdle, this.pauseScreenDelayMs);
+        }
+
         setupInteractionListeners() {
           // Track last mouse position for movement threshold
           let lastMouseX = null;
           let lastMouseY = null;
           const MOUSE_MOVE_THRESHOLD = 15; // pixels - only reset if moved more than this
 
-          const markInteraction = () => {
-            this.lastUserInteractionAt = Date.now();
-          };
-
-          const schedulePauseOverlay = () => {
-            if (this.pauseScreenTimer) {
-              clearTimeout(this.pauseScreenTimer);
-              this.pauseScreenTimer = null;
-            }
-
-            if (!this.currentVideo || !this.currentVideo.paused || this.currentVideo.ended) {
-              return;
-            }
-
-            const tryShowWhenIdle = () => {
-              const video = this.currentVideo;
-              if (!video || !video.paused || video.ended) {
-                this.pauseScreenTimer = null;
-                return;
-              }
-
-              const idleFor = Date.now() - this.lastUserInteractionAt;
-              if (idleFor >= this.pauseScreenDelayMs) {
-                this.showOverlay();
-                this.pauseScreenTimer = null;
-                return;
-              }
-
-              const remainingDelay = Math.max(100, this.pauseScreenDelayMs - idleFor);
-              this.pauseScreenTimer = setTimeout(tryShowWhenIdle, remainingDelay);
-            };
-
-            this.pauseScreenTimer = setTimeout(tryShowWhenIdle, this.pauseScreenDelayMs);
-          };
-
-          const resetTimer = () => {
-            markInteraction();
-            schedulePauseOverlay();
-          };
+          const resetTimer = () => this.resetPauseScreenTimer();
 
           // Events that always reset the timer
           const resetEvents = ['mousedown', 'click', 'touchstart', 'touchmove', 'keydown', 'wheel'];

@@ -216,6 +216,8 @@
                                 slugCache.set(tvdbId, slugData.titleSlug);
                                 return slugData.titleSlug;
                             }
+                        } else {
+                            console.warn(`${logPrefix} Failed to fetch Sonarr slug (HTTP ${slugResp.status}), using fallback`);
                         }
                     } catch (e) {
                         console.warn(`${logPrefix} Failed to fetch Sonarr slug, using fallback`, e);

@@ -973,13 +973,13 @@
                 return;
             }
 
-            if (JE.currentSettings.showWatchProgress) {
+            if (JE?.currentSettings?.showWatchProgress) {
                 displayWatchProgress(itemId, container);
             }
-            if (JE.currentSettings.showFileSizes) {
+            if (JE?.currentSettings?.showFileSizes) {
                 displayItemSize(itemId, container);
             }
-            if (JE.currentSettings.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
+            if (JE?.currentSettings?.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 displayAudioLanguages(itemId, container);
             }
         } catch (e) {
