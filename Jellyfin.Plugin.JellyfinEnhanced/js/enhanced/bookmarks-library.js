@@ -877,7 +877,7 @@
       color: #ff9800;
     }
 
-    .material-icons {
+    .je-bookmarks-wrapper .material-icons {
       font-size: 18px;
     }
   `;
