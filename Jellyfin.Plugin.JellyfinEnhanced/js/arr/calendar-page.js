@@ -1394,7 +1394,7 @@
    * Uses POST endpoint to only check specific calendar events, not entire library
    */
   async function fetchUserData() {
-    if (!state.settings.highlightFavorites && !state.settings.highlightWatchedSeries) {
+    if (!state.settings.highlightFavorites && !state.settings.highlightWatchedSeries && !state.settings.filterByLibraryAccess) {
       state.userDataMap = new Map();
       return;
     }
@@ -1582,8 +1582,9 @@
     }
 
     // Defense-in-depth: hide events the user cannot access.
-    // If user-data was fetched, events with an itemId but no user-data
-    // entry are from inaccessible libraries. (Primary filtering is server-side.)
+    // The user-data endpoint skips events for items the user cannot access,
+    // so events with an itemId but no user-data entry are from inaccessible libraries.
+    // Primary filtering is server-side; this is a secondary client-side check.
     if (state.settings.filterByLibraryAccess && state.userDataMap && state.userDataMap.size > 0) {
       const checkedEventIds = new Set(state.userDataMap.keys());
       filteredEvents = filteredEvents.filter(

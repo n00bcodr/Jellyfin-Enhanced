@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Jellyfin.Data.Enums;
@@ -53,8 +54,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
         private static readonly object _userIdCacheLock = new();
 
-        // Cache for tag-based request matching (per-user, 5-minute TTL)
-        private static readonly Dictionary<string, (List<string> Keys, DateTime CachedAt)> _tagRequestCache = new();
+        // Global cache for Sonarr/Radarr tag+item data (shared across all users, 5-minute TTL)
+        private static (List<Services.SonarrTag> Tags, List<Services.SonarrSeries> Series, DateTime CachedAt)? _sonarrDataCache;
+        private static (List<Services.RadarrTag> Tags, List<Services.RadarrMovie> Movies, DateTime CachedAt)? _radarrDataCache;
+        private static readonly SemaphoreSlim _sonarrDataSemaphore = new(1, 1);
+        private static readonly SemaphoreSlim _radarrDataSemaphore = new(1, 1);
+        private static readonly TimeSpan _arrDataCacheTtl = TimeSpan.FromMinutes(5);
+
+        // Per-user cache for tag-request results (lightweight, just tmdbId keys)
+        private static readonly Dictionary<string, (IReadOnlyList<string> Keys, DateTime CachedAt)> _tagRequestCache = new();
         private static readonly object _tagRequestCacheLock = new();
         private static readonly TimeSpan _tagRequestCacheTtl = TimeSpan.FromMinutes(5);
 
@@ -3252,7 +3260,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
                             {
                                 var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
-                                if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
+                                if (!rootFolderAccessMap.TryGetValue(evt.RootFolderPath!, out var currentAccess) || !currentAccess)
                                 {
                                     rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
                                 }
@@ -3359,7 +3367,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (matchPatterns.Count == 0)
                 return Ok(new { tagRequestKeys = new List<string>() });
 
-            // Check cache first
+            // Check per-user cache first
             lock (_tagRequestCacheLock)
             {
                 if (_tagRequestCache.TryGetValue(jellyfinUserId, out var cached) &&
@@ -3369,112 +3377,174 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var tagRequestKeys = new List<string>();
-
-            // Process Sonarr and Radarr in parallel with independent error handling
-            async Task<List<string>> FetchSonarrTagKeys()
-            {
-                var keys = new List<string>();
-                try
-                {
-                    var sonarrUrl = config.SonarrUrl.TrimEnd('/');
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
-                    client.Timeout = TimeSpan.FromSeconds(15);
-
-                    var tagsResponse = await client.GetAsync($"{sonarrUrl}/api/v3/tag");
-                    if (!tagsResponse.IsSuccessStatusCode) return keys;
-
-                    var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
-                    var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrTag>>(tagsJson) ?? new List<Services.SonarrTag>();
-                    var matchingTagIds = tags.Where(t => matchPatterns.Contains(t.Label)).Select(t => t.Id).ToHashSet();
-
-                    if (matchingTagIds.Count == 0) return keys;
-
-                    var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
-                    if (!seriesResponse.IsSuccessStatusCode) return keys;
-
-                    var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
-                    var allSeries = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrSeries>>(seriesJson) ?? new List<Services.SonarrSeries>();
-
-                    foreach (var series in allSeries)
-                    {
-                        if (series.TmdbId > 0 && series.Tags.Any(t => matchingTagIds.Contains(t)))
-                            keys.Add($"tv:{series.TmdbId}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to fetch Sonarr tag requests: {ex.Message}");
-                }
-                return keys;
-            }
-
-            async Task<List<string>> FetchRadarrTagKeys()
-            {
-                var keys = new List<string>();
-                try
-                {
-                    var radarrUrl = config.RadarrUrl.TrimEnd('/');
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
-                    client.Timeout = TimeSpan.FromSeconds(15);
-
-                    var tagsResponse = await client.GetAsync($"{radarrUrl}/api/v3/tag");
-                    if (!tagsResponse.IsSuccessStatusCode) return keys;
-
-                    var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
-                    var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrTag>>(tagsJson) ?? new List<Services.RadarrTag>();
-                    var matchingTagIds = tags.Where(t => matchPatterns.Contains(t.Label)).Select(t => t.Id).ToHashSet();
-
-                    if (matchingTagIds.Count == 0) return keys;
-
-                    var moviesResponse = await client.GetAsync($"{radarrUrl}/api/v3/movie");
-                    if (!moviesResponse.IsSuccessStatusCode) return keys;
-
-                    var moviesJson = await moviesResponse.Content.ReadAsStringAsync();
-                    var allMovies = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrMovie>>(moviesJson) ?? new List<Services.RadarrMovie>();
-
-                    foreach (var movie in allMovies)
-                    {
-                        if (movie.TmdbId > 0 && movie.Tags.Any(t => matchingTagIds.Contains(t)))
-                            keys.Add($"movie:{movie.TmdbId}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to fetch Radarr tag requests: {ex.Message}");
-                }
-                return keys;
-            }
-
-            var sonarrTask = hasSonarr ? FetchSonarrTagKeys() : Task.FromResult(new List<string>());
-            var radarrTask = hasRadarr ? FetchRadarrTagKeys() : Task.FromResult(new List<string>());
+            // Fetch global Sonarr/Radarr data in parallel (shared across all users)
+            var sonarrTask = hasSonarr ? GetSonarrDataCached(config) : Task.FromResult<(List<Services.SonarrTag>?, List<Services.SonarrSeries>?)>((null, null));
+            var radarrTask = hasRadarr ? GetRadarrDataCached(config) : Task.FromResult<(List<Services.RadarrTag>?, List<Services.RadarrMovie>?)>((null, null));
             await Task.WhenAll(sonarrTask, radarrTask);
 
-            tagRequestKeys.AddRange(sonarrTask.Result);
-            tagRequestKeys.AddRange(radarrTask.Result);
+            var (sonarrTags, sonarrSeries) = sonarrTask.Result;
+            var (radarrTags, radarrMovies) = radarrTask.Result;
 
-            // Cache the result
-            lock (_tagRequestCacheLock)
+            // Per-user pattern matching against cached global data
+            var tagRequestKeys = new List<string>();
+
+            if (sonarrTags != null && sonarrSeries != null)
             {
-                _tagRequestCache[jellyfinUserId] = (tagRequestKeys, DateTime.UtcNow);
+                var matchingTagIds = sonarrTags.Where(t => matchPatterns.Contains(t.Label)).Select(t => t.Id).ToHashSet();
+                if (matchingTagIds.Count > 0)
+                {
+                    foreach (var series in sonarrSeries)
+                    {
+                        if (series.TmdbId > 0 && series.Tags.Any(t => matchingTagIds.Contains(t)))
+                            tagRequestKeys.Add($"tv:{series.TmdbId}");
+                    }
+                }
             }
 
-            return Ok(new { tagRequestKeys });
+            if (radarrTags != null && radarrMovies != null)
+            {
+                var matchingTagIds = radarrTags.Where(t => matchPatterns.Contains(t.Label)).Select(t => t.Id).ToHashSet();
+                if (matchingTagIds.Count > 0)
+                {
+                    foreach (var movie in radarrMovies)
+                    {
+                        if (movie.TmdbId > 0 && movie.Tags.Any(t => matchingTagIds.Contains(t)))
+                            tagRequestKeys.Add($"movie:{movie.TmdbId}");
+                    }
+                }
+            }
+
+            // Cache the per-user result as an immutable copy, with eviction of stale entries
+            IReadOnlyList<string> cachedKeys = tagRequestKeys.AsReadOnly();
+            lock (_tagRequestCacheLock)
+            {
+                _tagRequestCache[jellyfinUserId] = (cachedKeys, DateTime.UtcNow);
+
+                // Evict stale entries periodically
+                if (_tagRequestCache.Count > 100 || _tagRequestCache.Count % 20 == 0)
+                {
+                    var staleKeys = _tagRequestCache
+                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _tagRequestCacheTtl)
+                        .Select(kv => kv.Key)
+                        .ToList();
+                    foreach (var key in staleKeys)
+                        _tagRequestCache.Remove(key);
+                }
+            }
+
+            return Ok(new { tagRequestKeys = cachedKeys });
+        }
+
+        /// <summary>
+        /// Fetch Sonarr tag and series data with a global shared cache and stampede protection.
+        /// </summary>
+        private async Task<(List<Services.SonarrTag>?, List<Services.SonarrSeries>?)> GetSonarrDataCached(PluginConfiguration config)
+        {
+            // Quick check before acquiring semaphore
+            var cached = _sonarrDataCache;
+            if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
+                return (cached.Value.Tags, cached.Value.Series);
+
+            await _sonarrDataSemaphore.WaitAsync();
+            try
+            {
+                // Double-check after acquiring semaphore (another request may have refreshed)
+                cached = _sonarrDataCache;
+                if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
+                    return (cached.Value.Tags, cached.Value.Series);
+
+                var sonarrUrl = config.SonarrUrl!.TrimEnd('/');
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
+                client.Timeout = TimeSpan.FromSeconds(15);
+
+                using var tagsResponse = await client.GetAsync($"{sonarrUrl}/api/v3/tag");
+                if (!tagsResponse.IsSuccessStatusCode) return (null, null);
+
+                var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrTag>>(tagsJson) ?? new List<Services.SonarrTag>();
+
+                using var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
+                if (!seriesResponse.IsSuccessStatusCode) return (null, null);
+
+                var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
+                var series = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrSeries>>(seriesJson) ?? new List<Services.SonarrSeries>();
+
+                _sonarrDataCache = (tags, series, DateTime.UtcNow);
+                return (tags, series);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to fetch Sonarr data for tag matching: {ex.Message}");
+                return (null, null);
+            }
+            finally
+            {
+                _sonarrDataSemaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// Fetch Radarr tag and movie data with a global shared cache and stampede protection.
+        /// </summary>
+        private async Task<(List<Services.RadarrTag>?, List<Services.RadarrMovie>?)> GetRadarrDataCached(PluginConfiguration config)
+        {
+            // Quick check before acquiring semaphore
+            var cached = _radarrDataCache;
+            if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
+                return (cached.Value.Tags, cached.Value.Movies);
+
+            await _radarrDataSemaphore.WaitAsync();
+            try
+            {
+                // Double-check after acquiring semaphore (another request may have refreshed)
+                cached = _radarrDataCache;
+                if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
+                    return (cached.Value.Tags, cached.Value.Movies);
+
+                var radarrUrl = config.RadarrUrl!.TrimEnd('/');
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
+                client.Timeout = TimeSpan.FromSeconds(15);
+
+                using var tagsResponse = await client.GetAsync($"{radarrUrl}/api/v3/tag");
+                if (!tagsResponse.IsSuccessStatusCode) return (null, null);
+
+                var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
+                var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrTag>>(tagsJson) ?? new List<Services.RadarrTag>();
+
+                using var moviesResponse = await client.GetAsync($"{radarrUrl}/api/v3/movie");
+                if (!moviesResponse.IsSuccessStatusCode) return (null, null);
+
+                var moviesJson = await moviesResponse.Content.ReadAsStringAsync();
+                var movies = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrMovie>>(moviesJson) ?? new List<Services.RadarrMovie>();
+
+                _radarrDataCache = (tags, movies, DateTime.UtcNow);
+                return (tags, movies);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to fetch Radarr data for tag matching: {ex.Message}");
+                return (null, null);
+            }
+            finally
+            {
+                _radarrDataSemaphore.Release();
+            }
         }
 
         /// <summary>
         /// Extracts the parent folder from a full item path.
         /// e.g., "/tv/Scrubs (2026) {tvdb-465690}" → "/tv"
+        /// Handles both Unix and Windows path separators.
         /// </summary>
         private static string? GetRootFolderFromPath(string? path)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return null;
 
-            var trimmed = path.TrimEnd('/');
-            var lastSlash = trimmed.LastIndexOf('/');
+            var trimmed = path.TrimEnd('/', '\\');
+            var lastSlash = trimmed.LastIndexOfAny(new[] { '/', '\\' });
             if (lastSlash <= 0)
                 return trimmed;
 
@@ -3513,17 +3583,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var itemsById = new Dictionary<Guid, BaseItem>();
                 if (ids.Count > 0)
                 {
-                    var items = _libraryManager.GetItemList(new InternalItemsQuery
+                    foreach (var id in ids)
                     {
-                        User = user,
-                        ItemIds = ids.ToArray(),
-                        Recursive = true
-                    });
-
-                    foreach (var item in items)
-                    {
-                        if (!itemsById.ContainsKey(item.Id))
-                            itemsById[item.Id] = item;
+                        var item = _libraryManager.GetItemById<BaseItem>(id, user);
+                        if (item != null)
+                            itemsById[id] = item;
                     }
                 }
 
@@ -3540,6 +3604,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         itemsById.TryGetValue(evt.ItemId.Value, out item);
                     if (evt.ItemEpisodeId.HasValue)
                         itemsById.TryGetValue(evt.ItemEpisodeId.Value, out episodeItem);
+
+                    // GetItemById with user returns null for inaccessible items; skip them for client-side defense-in-depth
+                    if (evt.ItemId.HasValue && item == null)
+                        continue;
 
                     if (item != null)
                     {
