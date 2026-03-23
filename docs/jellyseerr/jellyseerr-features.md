@@ -22,7 +22,7 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
     - **View request status** - pending, approved, available
 - **Recommendations + Discovery** - Recommendations and similar items on detail pages
 - **Issue Reporting** - Report problems directly to Jellyseerr
-- **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *[requires the KefinTweaks glugin](https://github.com/ranaldsgift/KefinTweaks)*
+- **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *([requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks)*)
 
 
 <!-- use a custom title -->
@@ -33,14 +33,14 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 
 ### Search Integration
 
-**Requesting:**
+#### Requesting:
 
 1. Type search query in Jellyfin search bar
 2. Results from both Jellyfin and Jellyseerr appear
 3. Jellyseerr results show request status
 4. Click to request or view details
 
-**Request Status Indicators:**
+#### Request Status Indicators:
 
 - **Available** - Already in your library
 - **Pending** - Request submitted, awaiting approval
@@ -66,19 +66,22 @@ View Jellyseerr recommendations and similar items on detail pages.
 
 Browse and discover content by various criteria.
 
-**Available Discovery Types:**
+#### Available Discovery Types
+
 - **Genre Discovery** - Browse by genre (Action, Comedy, etc.)
 - **Network Discovery** - Browse by network (Netflix, HBO, etc.)
 - **Person Discovery** - Browse by actor, director, crew
 - **Tag Discovery** - Browse by custom tags
 
 #### Features
+
 - Filter by TV/Movies/All
 - Infinite scroll with pagination
 - Request directly from discovery
 - Library awareness (hide owned items)
 
 #### Configure
+
 1. Check respective discovery options in settings
 2. Access via custom navigation or direct URLs
 
@@ -86,14 +89,14 @@ Browse and discover content by various criteria.
 
 Report problems with media directly to Jellyseerr.
 
-**Issue Types:**
+#### Issue Types
 
 - Video (quality, corruption, wrong file)
 - Audio (sync, missing tracks, quality)
 - Subtitles (sync, missing, incorrect)
 - Other (metadata, artwork, etc.)
 
-**How to Report:**
+#### How to Report
 
 1. Open movie or TV show detail page
 2. Click report icon in action buttons
@@ -102,7 +105,12 @@ Report problems with media directly to Jellyseerr.
 5. Enter description
 6. Submit report
 
-**Note:** Button hidden when Jellyseerr unreachable or user not linked.
+!!! note
+
+    Issue reporting button will be hidden, if these are true:
+
+    * Jellyseerr is not reachable
+    * User is not linked
 
 ## Requests Page
 
@@ -124,23 +132,27 @@ Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and i
 
 ### Polling Settings
 
-**Enable Polling:**
+#### Enable Polling
+
 - Auto-refresh download status
 - Recommended: Enabled
 
-**Poll Interval:**
+#### Poll Interval:
+
 - Default: 30 seconds
 - Range: 30-300 seconds
 - Lower = more frequent updates, higher server load
 
 ### Usage
 
-**Access Requests Page:**
+#### Access Requests Page
+
 - Click "Requests" in sidebar (Plugin Pages)
 - Navigate to custom tab (Custom Tabs)
 - Direct URL: `/web/index.html#!/jellyfinenhanced/requests`
 
-**Features:**
+#### Features
+
 - View active downloads (if enabled)
 - View Jellyseerr requests with status
 - View reported issues (if enabled)
@@ -153,7 +165,8 @@ Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and i
 
 View and manage Jellyseerr issues directly from the Requests page.
 
-**Features:**
+#### Features
+
 - View all reported issues
 - Filter issues by status
 - Pagination support
@@ -161,13 +174,15 @@ View and manage Jellyseerr issues directly from the Requests page.
 - Issue card rendering with styling
 - Open issue reporter modal from issues list
 
-**Configuration:**
+#### Configuration
+
 1. Go to plugin settings → Seerr Settings tab
 2. Check **"Enable Requests Page"**
 3. Check **"Show Seerr Issues Section"**
 4. Click **Save**
 
-**Usage:**
+#### How to use
+
 - Navigate to Requests page
 - Issues appear in dedicated section
 - Click issue to view details
@@ -177,14 +192,18 @@ View and manage Jellyseerr issues directly from the Requests page.
 
 Automatically sync requested media to Jellyfin watchlist.
 
-**Features:**
+!!! note
+
+    [Requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) to provide watchlist functionality
+
+#### Features:
 
 - Add requested items to watchlist when available
 - Sync Jellyseerr watchlist to Jellyfin
 - Prevent re-addition of removed items
 - Configurable memory retention
 
-**Configuration:**
+#### Configuration:
 
 - **Add Requested Media to Watchlist** - Auto-add when available
 - **Sync Jellyseerr Watchlist** - Sync watchlist items
@@ -266,35 +285,52 @@ If reviews, elsewhere, or Jellyseerr icons not working:
 
 ### URL Mappings
 
-Map internal and external URLs for different network contexts.
+Jellyfin and Seerr URLs can be mapped. This changes the Seerr URLs displayed to users, depending on which URL that access Jellyfin
+    
+Useful for mapping Seerr URLs to Jellyfin URls, for **local access** (LAN) and **remote access**
 
-**Format:**
-
-```text
-internal_url|external_url
+```text title="Formatting"
+jellyfin_url|seerr_url
 ```
 
-**Example:**
+!!! example "Examples"
 
-```text
-http://jellyseerr:5055|https://jellyseerr.example.com
-```
+    === "Remote access"
 
-**Use Case:**
+        ```text
+        https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com
+        ```
 
-Different URLs for local network vs remote access.
+    === "Local access"
+        
+        ```text
+        http://192.168.1.10:8096|http://192.168.1.10:5055
+        ```
+
+    === "Remote access + Local access"
+
+        ```text
+        https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com
+        http://192.168.1.10:8096|http://192.168.1.10:5055
+        ```
+    
+    === "Using base URLs + paths"
+
+        ```text
+        https://example.com/jellyfin|https://example.com/jellyseerr
+        ```
 
 ### Auto-Request Settings
 
 Automatically request media based on viewing behavior.
 
-**Auto Season Request:**
+#### Auto Season Request:
 
 - Trigger when X episodes remaining in season
 - Require all episodes watched (optional)
 - Configurable threshold
 
-**Auto Movie Request:**
+#### Auto Movie Request:
 
 - Trigger on playback start
 - Trigger after X minutes watched
