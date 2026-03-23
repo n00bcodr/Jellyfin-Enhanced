@@ -64,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private sealed record SonarrDataCache(List<Services.SonarrTag> Tags, List<Services.SonarrSeries> Series, DateTime CachedAt);
         private sealed record RadarrDataCache(List<Services.RadarrTag> Tags, List<Services.RadarrMovie> Movies, DateTime CachedAt);
         private static volatile SonarrDataCache? _sonarrDataCache;
-        private static volatile RadarrDataCache? _radarrDataCache; df3ddff (refactor: address review findings — thread-safe cache, config-aware invalidation, parallel fetches)
+        private static volatile RadarrDataCache? _radarrDataCache;
         private static readonly SemaphoreSlim _sonarrDataSemaphore = new(1, 1);
         private static readonly SemaphoreSlim _radarrDataSemaphore = new(1, 1);
         private static readonly TimeSpan _arrDataCacheTtl = TimeSpan.FromMinutes(5);
@@ -3425,7 +3425,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 matchPatterns.Add($"{seerrId} - {jellyfinUsername}");
             }
 
-            // Custom user mappings from config (format: "tagName=jellyfinUsername" per line)
+            // Custom user mappings from config (format: "tagName|jellyfinUsername" per line)
             if (!string.IsNullOrWhiteSpace(config.CalendarTagUserMappings) && Guid.TryParse(jellyfinUserId, out var parsedUserId))
             {
                 var jellyfinUser = _userManager.GetUserById(parsedUserId);
@@ -3434,7 +3434,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var mappings = config.CalendarTagUserMappings.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var mapping in mappings)
                     {
-                        var parts = mapping.Split('=', 2);
+                        var parts = mapping.Split('|', 2);
                         if (parts.Length == 2)
                         {
                             var tagName = parts[0].Trim();
