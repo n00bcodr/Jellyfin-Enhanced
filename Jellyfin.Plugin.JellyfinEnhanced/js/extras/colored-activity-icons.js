@@ -15,7 +15,7 @@
         a[href^="#/dashboard/activity"] .MuiAvatar-root > svg {
           display: none !important;
         }
-        .material-icons {
+        a[href^="#/dashboard/activity"] .MuiAvatar-root .material-icons {
           font-family: 'Material Icons';
           font-size: 18px;
           line-height: 1;
