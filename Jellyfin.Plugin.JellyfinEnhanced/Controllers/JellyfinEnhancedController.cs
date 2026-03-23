@@ -3343,7 +3343,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 matchPatterns.Add($"{seerrId} - {jellyfinUsername}");
             }
 
-            // Custom user mappings from config (format: "tagName=jellyfinUsername" per line)
+            // Custom user mappings from config (format: "tagName|jellyfinUsername" per line)
             if (!string.IsNullOrWhiteSpace(config.CalendarTagUserMappings) && Guid.TryParse(jellyfinUserId, out var parsedUserId))
             {
                 var jellyfinUser = _userManager.GetUserById(parsedUserId);
@@ -3352,7 +3352,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var mappings = config.CalendarTagUserMappings.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var mapping in mappings)
                     {
-                        var parts = mapping.Split('=', 2);
+                        var parts = mapping.Split('|', 2);
                         if (parts.Length == 2)
                         {
                             var tagName = parts[0].Trim();
