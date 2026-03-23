@@ -54,15 +54,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
         private static readonly object _userIdCacheLock = new();
 
-        // Global cache for Sonarr/Radarr tag+item data (shared across all users, 5-minute TTL)
-        private static (List<Services.SonarrTag> Tags, List<Services.SonarrSeries> Series, DateTime CachedAt)? _sonarrDataCache;
-        private static (List<Services.RadarrTag> Tags, List<Services.RadarrMovie> Movies, DateTime CachedAt)? _radarrDataCache;
+        // Global cache for Sonarr/Radarr tag+item data (shared across all users, 5-minute TTL).
+        // Sealed record classes ensure atomic reference assignment for lock-free reads.
+        private sealed record SonarrDataCache(List<Services.SonarrTag> Tags, List<Services.SonarrSeries> Series, DateTime CachedAt);
+        private sealed record RadarrDataCache(List<Services.RadarrTag> Tags, List<Services.RadarrMovie> Movies, DateTime CachedAt);
+        private static volatile SonarrDataCache? _sonarrDataCache;
+        private static volatile RadarrDataCache? _radarrDataCache;
         private static readonly SemaphoreSlim _sonarrDataSemaphore = new(1, 1);
         private static readonly SemaphoreSlim _radarrDataSemaphore = new(1, 1);
         private static readonly TimeSpan _arrDataCacheTtl = TimeSpan.FromMinutes(5);
 
-        // Per-user cache for tag-request results (lightweight, just tmdbId keys)
-        private static readonly Dictionary<string, (IReadOnlyList<string> Keys, DateTime CachedAt)> _tagRequestCache = new();
+        // Per-user cache for tag-request results (lightweight, just tmdbId keys).
+        // Cache key includes a config hash so changes to CalendarTagUserMappings invalidate immediately.
+        private sealed record TagRequestCacheEntry(IReadOnlyList<string> Keys, DateTime CachedAt, int ConfigHash);
+        private static readonly Dictionary<string, TagRequestCacheEntry> _tagRequestCache = new();
         private static readonly object _tagRequestCacheLock = new();
         private static readonly TimeSpan _tagRequestCacheTtl = TimeSpan.FromMinutes(5);
 
@@ -3367,11 +3372,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (matchPatterns.Count == 0)
                 return Ok(new { tagRequestKeys = new List<string>() });
 
+            // Config hash ensures cache invalidates when CalendarTagUserMappings changes
+            var configHash = (config.CalendarTagUserMappings ?? "").GetHashCode();
+
             // Check per-user cache first
             lock (_tagRequestCacheLock)
             {
                 if (_tagRequestCache.TryGetValue(jellyfinUserId, out var cached) &&
-                    DateTime.UtcNow - cached.CachedAt < _tagRequestCacheTtl)
+                    DateTime.UtcNow - cached.CachedAt < _tagRequestCacheTtl &&
+                    cached.ConfigHash == configHash)
                 {
                     return Ok(new { tagRequestKeys = cached.Keys });
                 }
@@ -3414,22 +3423,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // Cache the per-user result as an immutable copy, with eviction of stale entries
+            // Cache the per-user result as an immutable copy, evicting stale entries on every write
             IReadOnlyList<string> cachedKeys = tagRequestKeys.AsReadOnly();
             lock (_tagRequestCacheLock)
             {
-                _tagRequestCache[jellyfinUserId] = (cachedKeys, DateTime.UtcNow);
+                _tagRequestCache[jellyfinUserId] = new TagRequestCacheEntry(cachedKeys, DateTime.UtcNow, configHash);
 
-                // Evict stale entries periodically
-                if (_tagRequestCache.Count > 100 || _tagRequestCache.Count % 20 == 0)
-                {
-                    var staleKeys = _tagRequestCache
-                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _tagRequestCacheTtl)
-                        .Select(kv => kv.Key)
-                        .ToList();
-                    foreach (var key in staleKeys)
-                        _tagRequestCache.Remove(key);
-                }
+                // Evict stale entries on every write (lock is already held, dictionary is small)
+                var staleKeys = _tagRequestCache
+                    .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _tagRequestCacheTtl)
+                    .Select(kv => kv.Key)
+                    .ToList();
+                foreach (var key in staleKeys)
+                    _tagRequestCache.Remove(key);
             }
 
             return Ok(new { tagRequestKeys = cachedKeys });
@@ -3440,37 +3446,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private async Task<(List<Services.SonarrTag>?, List<Services.SonarrSeries>?)> GetSonarrDataCached(PluginConfiguration config)
         {
-            // Quick check before acquiring semaphore
+            // Lock-free read is safe: _sonarrDataCache is a volatile reference to an immutable record
             var cached = _sonarrDataCache;
-            if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
-                return (cached.Value.Tags, cached.Value.Series);
+            if (cached != null && DateTime.UtcNow - cached.CachedAt < _arrDataCacheTtl)
+                return (cached.Tags, cached.Series);
 
             await _sonarrDataSemaphore.WaitAsync();
             try
             {
                 // Double-check after acquiring semaphore (another request may have refreshed)
                 cached = _sonarrDataCache;
-                if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
-                    return (cached.Value.Tags, cached.Value.Series);
+                if (cached != null && DateTime.UtcNow - cached.CachedAt < _arrDataCacheTtl)
+                    return (cached.Tags, cached.Series);
 
                 var sonarrUrl = config.SonarrUrl!.TrimEnd('/');
                 var client = _httpClientFactory.CreateClient();
                 client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
                 client.Timeout = TimeSpan.FromSeconds(15);
 
-                using var tagsResponse = await client.GetAsync($"{sonarrUrl}/api/v3/tag");
-                if (!tagsResponse.IsSuccessStatusCode) return (null, null);
+                // Fetch tags and series in parallel (independent API calls)
+                var tagsTask = client.GetAsync($"{sonarrUrl}/api/v3/tag");
+                var seriesTask = client.GetAsync($"{sonarrUrl}/api/v3/series");
+                await Task.WhenAll(tagsTask, seriesTask);
+
+                using var tagsResponse = tagsTask.Result;
+                using var seriesResponse = seriesTask.Result;
+                if (!tagsResponse.IsSuccessStatusCode || !seriesResponse.IsSuccessStatusCode) return (null, null);
 
                 var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
                 var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrTag>>(tagsJson) ?? new List<Services.SonarrTag>();
 
-                using var seriesResponse = await client.GetAsync($"{sonarrUrl}/api/v3/series");
-                if (!seriesResponse.IsSuccessStatusCode) return (null, null);
-
                 var seriesJson = await seriesResponse.Content.ReadAsStringAsync();
                 var series = System.Text.Json.JsonSerializer.Deserialize<List<Services.SonarrSeries>>(seriesJson) ?? new List<Services.SonarrSeries>();
 
-                _sonarrDataCache = (tags, series, DateTime.UtcNow);
+                _sonarrDataCache = new SonarrDataCache(tags, series, DateTime.UtcNow);
                 return (tags, series);
             }
             catch (Exception ex)
@@ -3489,37 +3498,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private async Task<(List<Services.RadarrTag>?, List<Services.RadarrMovie>?)> GetRadarrDataCached(PluginConfiguration config)
         {
-            // Quick check before acquiring semaphore
+            // Lock-free read is safe: _radarrDataCache is a volatile reference to an immutable record
             var cached = _radarrDataCache;
-            if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
-                return (cached.Value.Tags, cached.Value.Movies);
+            if (cached != null && DateTime.UtcNow - cached.CachedAt < _arrDataCacheTtl)
+                return (cached.Tags, cached.Movies);
 
             await _radarrDataSemaphore.WaitAsync();
             try
             {
                 // Double-check after acquiring semaphore (another request may have refreshed)
                 cached = _radarrDataCache;
-                if (cached.HasValue && DateTime.UtcNow - cached.Value.CachedAt < _arrDataCacheTtl)
-                    return (cached.Value.Tags, cached.Value.Movies);
+                if (cached != null && DateTime.UtcNow - cached.CachedAt < _arrDataCacheTtl)
+                    return (cached.Tags, cached.Movies);
 
                 var radarrUrl = config.RadarrUrl!.TrimEnd('/');
                 var client = _httpClientFactory.CreateClient();
                 client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
                 client.Timeout = TimeSpan.FromSeconds(15);
 
-                using var tagsResponse = await client.GetAsync($"{radarrUrl}/api/v3/tag");
-                if (!tagsResponse.IsSuccessStatusCode) return (null, null);
+                // Fetch tags and movies in parallel (independent API calls)
+                var tagsTask = client.GetAsync($"{radarrUrl}/api/v3/tag");
+                var moviesTask = client.GetAsync($"{radarrUrl}/api/v3/movie");
+                await Task.WhenAll(tagsTask, moviesTask);
+
+                using var tagsResponse = tagsTask.Result;
+                using var moviesResponse = moviesTask.Result;
+                if (!tagsResponse.IsSuccessStatusCode || !moviesResponse.IsSuccessStatusCode) return (null, null);
 
                 var tagsJson = await tagsResponse.Content.ReadAsStringAsync();
                 var tags = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrTag>>(tagsJson) ?? new List<Services.RadarrTag>();
 
-                using var moviesResponse = await client.GetAsync($"{radarrUrl}/api/v3/movie");
-                if (!moviesResponse.IsSuccessStatusCode) return (null, null);
-
                 var moviesJson = await moviesResponse.Content.ReadAsStringAsync();
                 var movies = System.Text.Json.JsonSerializer.Deserialize<List<Services.RadarrMovie>>(moviesJson) ?? new List<Services.RadarrMovie>();
 
-                _radarrDataCache = (tags, movies, DateTime.UtcNow);
+                _radarrDataCache = new RadarrDataCache(tags, movies, DateTime.UtcNow);
                 return (tags, movies);
             }
             catch (Exception ex)
