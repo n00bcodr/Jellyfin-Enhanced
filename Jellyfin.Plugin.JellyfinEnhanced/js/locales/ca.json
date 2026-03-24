@@ -144,7 +144,7 @@
     "jellyseerr_modal_request": "Sol·licitar",
     "jellyseerr_modal_toast_select_season": "{{icon:warning}} Selecciona almenys una temporada",
     "jellyseerr_modal_requesting": "Sol·licitant...",
-    "jellyseerr_modal_toast_request_success": "{{icon:tv}} Sol·licitud enviada per a \"{title}\"",
+    "jellyseerr_modal_toast_request_success": "{{icon:tv}} Sol·licitud enviada: {count} temporades de \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Error en sol·licitar les temporades",
     "jellyseerr_modal_title_movie": "Sol·licitar pel·lícula",
     "jellyseerr_modal_overview": "Sinopsi",
