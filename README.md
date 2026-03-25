@@ -170,7 +170,7 @@ Translations are available immediately after merge!
 
 - [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 - [Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/8wk3q74s)
+- [Discord Community](https://discord.gg/EYNFf7y4CG)
 
 <br>
 
@@ -181,7 +181,7 @@ Need help? Check these resources:
 - [FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
 - [Troubleshooting Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/)
 - [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/8wk3q74s)
+- [Discord Community](https://discord.gg/EYNFf7y4CG)
 
 <br>
 
@@ -227,7 +227,7 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 ### Enjoying Jellyfin Enhanced?
 
 If this plugin has enhanced your Jellyfin experience, consider:
-⭐ Starring the repository ⦁ 🐛 Reporting bugs or suggesting features ⦁ 🌍 Contributing translations ⦁ 💬 Joining <a href="https://discord.gg/8wk3q74s">Discord community</a> ⦁ ☕ Supporting me on <a href="https://ko-fi.com/n00bcodr">Ko-Fi</a>
+⭐ Starring the repository ⦁ 🐛 Reporting bugs or suggesting features ⦁ 🌍 Contributing translations ⦁ 💬 Joining <a href="https://discord.gg/EYNFf7y4CG">Discord community</a> ⦁ ☕ Supporting me on <a href="https://ko-fi.com/n00bcodr">Ko-Fi</a>
 
 Made with 💜 for Jellyfin and the community
 

@@ -87,7 +87,7 @@ We welcome contributions from the community!
 - [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 - [Contributing Translations](faq-support/contributing-translations.md)
 - [Troubleshooting Guide](installation/troubleshooting.md)
-- [Discord Community](https://discord.gg/8wk3q74s)
+- [Discord Community](https://discord.gg/EYNFf7y4CG)
 
 ## Support Me
 
