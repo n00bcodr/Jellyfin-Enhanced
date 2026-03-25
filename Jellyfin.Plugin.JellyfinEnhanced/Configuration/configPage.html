@@ -3063,6 +3063,9 @@
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
 
+        /**
+         * Updates the blocked users count badge in the collapsible summary.
+         */
         function updateBlockedUsersCount() {
             const total = document.querySelectorAll('.blockedUserCheckbox:checked').length;
             const countEl = document.getElementById('blockedUsersCount');
@@ -3071,6 +3074,11 @@
             }
         }
 
+        /**
+         * Loads all Jellyfin users and renders a checkbox list for the blocklist.
+         * Pre-checks users whose IDs appear in the saved blocklist config.
+         * @param {string} blockedIdsString - Comma-separated dashless user IDs to pre-select.
+         */
         async function loadBlockedUsersList(blockedIdsString) {
             const container = document.getElementById('blockedUsersContainer');
             const blockedSet = new Set(
@@ -3111,6 +3119,9 @@
             }
         }
 
+        /**
+         * Syncs checked blocked-user checkboxes into the hidden input for config save.
+         */
         function syncBlockedUsersToHiddenInput() {
             const checkboxes = document.querySelectorAll('.blockedUserCheckbox:checked');
             const ids = Array.from(checkboxes).map(cb => cb.dataset.userid);

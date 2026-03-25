@@ -257,7 +257,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
         {
+            // Jellyseerr requires dashless UUIDs — dashed format causes empty email and UNIQUE constraint errors
             var normalizedUserId = jellyfinUserId.Replace("-", "");
+
+            // Track whether we got any HTTP response from Jellyseerr (vs network failures).
+            // This determines whether a null result should be negative-cached or retried.
             var reachedJellyseerr = false;
 
             foreach (var url in urls)
@@ -274,10 +278,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (!importResponse.IsSuccessStatusCode)
                     {
                         var errorContent = await importResponse.Content.ReadAsStringAsync();
+
+                        // Email collision is a definite failure — a renamed/deleted Jellyfin user left
+                        // an orphaned Jellyseerr account with the same email. Won't resolve on retry.
                         if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
-                            // Definite failure — this won't resolve on retry
                             return (null, true);
                         }
 
@@ -285,7 +291,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         continue;
                     }
 
-                    // Parse the newly created user directly from the import response
+                    // The import endpoint returns an array of newly created users.
+                    // Parse it directly to avoid a second API call.
                     var responseContent = await importResponse.Content.ReadAsStringAsync();
                     var importedUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
                     var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
@@ -295,7 +302,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return (user, true);
                     }
 
-                    // Import succeeded but user not in response — do a fresh lookup before giving up
+                    // Some Jellyseerr versions return an empty array even on success (user already existed
+                    // but wasn't in the import response). Fall back to a full user list query to find them.
                     _logger.Info($"Import succeeded at {url.Trim()} but user not in response. Doing fresh lookup...");
                     var lookupUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
                     var lookupResponse = await httpClient.GetAsync(lookupUri);
@@ -315,16 +323,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                     }
 
-                    // Import succeeded, fresh lookup failed — definite, user is not importable
+                    // Import succeeded and fresh lookup found nothing — user is genuinely not importable
                     return (null, true);
                 }
                 catch (Exception ex)
                 {
+                    // Network errors, timeouts, etc. are transient — try the next URL
                     _logger.Error($"Exception during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex}");
                 }
             }
 
-            // Only definite if we actually reached Jellyseerr on at least one URL
+            // Definite only if we actually got an HTTP response from at least one URL.
+            // If all URLs failed with exceptions (network down), this is transient and should not be cached.
             return (null, reachedJellyseerr);
         }
 
@@ -1342,12 +1352,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest(new { error = "Jellyseerr URL or API key not configured" });
                 }
 
+                // Claim the throttle slot atomically to prevent concurrent imports
                 lock (_importThrottleLock)
                 {
                     if ((DateTime.UtcNow - _lastManualImport).TotalSeconds < 30)
                     {
                         return StatusCode(429, new { error = "Import was run recently. Please wait before retrying." });
                     }
+
+                    _lastManualImport = DateTime.UtcNow;
                 }
 
                 _logger.Info("[Manual User Import] Starting manual Jellyseerr user import...");
@@ -1364,7 +1377,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     userIds, urls, config.JellyseerrApiKey, _httpClientFactory, _logger);
                 if (importedCount >= 0)
                 {
-                    lock (_importThrottleLock) { _lastManualImport = DateTime.UtcNow; }
                     ClearUserCaches();
                     _logger.Info($"[Manual User Import] Completed. {importedCount} new user(s) imported.");
                     return Ok(new
@@ -1840,7 +1852,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrAutoImportUsers,
-                config.JellyseerrImportBlockedUsers,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowNetworkDiscovery,
