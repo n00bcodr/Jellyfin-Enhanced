@@ -214,10 +214,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             // User not found — attempt just-in-time import into Jellyseerr
+            var importDefinite = false;
             if (config.JellyseerrAutoImportUsers)
             {
                 _logger.Info($"User not found in Jellyseerr. Attempting just-in-time import for Jellyfin User ID {jellyfinUserId}...");
-                var importedUser = await TryAutoImportJellyseerrUser(jellyfinUserId, urls, httpClient);
+                var (importedUser, definite) = await TryAutoImportJellyseerrUser(jellyfinUserId, urls, httpClient);
+                importDefinite = definite;
                 if (importedUser != null)
                 {
                     if (cacheEnabled)
@@ -232,9 +234,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // Only cache negative results when JIT import was attempted — if it was disabled,
-            // don't cache so the next lookup can try after the admin enables it
-            if (cacheEnabled && config.JellyseerrAutoImportUsers)
+            // Only negative-cache when the import gave a definite "not importable" answer.
+            // Transient failures (network errors, exceptions) should not be cached so the
+            // next request can retry immediately.
+            if (cacheEnabled && importDefinite)
             {
                 lock (_userCacheLock)
                 {
@@ -246,9 +249,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return null;
         }
 
-        private async Task<JellyseerrUser?> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
+        /// <summary>
+        /// Attempt to import a single user into Jellyseerr via JIT import.
+        /// Returns (user, definite): user is non-null on success; definite indicates whether
+        /// the result is authoritative (true = Jellyseerr gave a clear answer, safe to negative-cache)
+        /// or transient (false = network error / exception, do not cache).
+        /// </summary>
+        private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
         {
             var normalizedUserId = jellyfinUserId.Replace("-", "");
+            var reachedJellyseerr = false;
 
             foreach (var url in urls)
             {
@@ -259,18 +269,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     using var importContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
                     var importResponse = await httpClient.PostAsync(importUri, importContent);
+                    reachedJellyseerr = true;
+
                     if (!importResponse.IsSuccessStatusCode)
                     {
                         var errorContent = await importResponse.Content.ReadAsStringAsync();
                         if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
-                        }
-                        else
-                        {
-                            _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
+                            // Definite failure — this won't resolve on retry
+                            return (null, true);
                         }
 
+                        _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
                         continue;
                     }
 
@@ -281,7 +292,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (user != null)
                     {
                         _logger.Info($"Auto-imported Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
-                        return user;
+                        return (user, true);
                     }
 
                     // Import succeeded but user not in response — do a fresh lookup before giving up
@@ -299,10 +310,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             if (found != null)
                             {
                                 _logger.Info($"Found Seerr user ID {found.Id} for Jellyfin User ID {jellyfinUserId} via fresh lookup");
-                                return found;
+                                return (found, true);
                             }
                         }
                     }
+
+                    // Import succeeded, fresh lookup failed — definite, user is not importable
+                    return (null, true);
                 }
                 catch (Exception ex)
                 {
@@ -310,7 +324,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return null;
+            // Only definite if we actually reached Jellyseerr on at least one URL
+            return (null, reachedJellyseerr);
         }
 
         private static bool IsJellyseerrImportBlocked(string jellyfinUserId, Configuration.PluginConfiguration config)
