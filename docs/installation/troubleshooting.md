@@ -15,12 +15,12 @@
 
 **Clear Browser Cache:**
 
-1. Open menu: 
-  
+1. Open menu:
+
   Windows/Linux: ++ctrl+shift+delete++
-  
+
   MacOS: ++command+shift+delete++
-  
+
 1. Select "Cached images and files" *(or similar)*
 
 2. Clear cache
@@ -90,7 +90,7 @@ Example of a common error:
 System.UnauthorizedAccessException: Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 ```
 
-If you are **^^not^^ using the [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin**, you'll need to manually map the `index.html` file 
+If you are **^^not^^ using the [file-transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin**, you'll need to manually map the `index.html` file
 
 1. Copy the `index.html` file from your container:
   ```bash title="Bash"
@@ -121,7 +121,7 @@ If you are **^^not^^ using the [file-transformation](https://github.com/IAmParad
 
 #### Windows
 
-Known solution: 
+Known solution:
 
 1. Navigate to your Jellyfin installation folder (usually `C:\Program Files\Jellyfin\Server`)
 2. Right-click the folder → `Properties` → `Security`
@@ -147,4 +147,4 @@ If you encounter issues:
 2. [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
     - Search existing issues
     - Create a new issue *(please include log and details)*
-3. Join the [Discord Community](https://discord.gg/8wk3q74s)
+3. Join the [Discord Community](https://discord.gg/EYNFf7y4CG)

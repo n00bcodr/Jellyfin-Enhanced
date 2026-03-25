@@ -6,7 +6,7 @@
   <br><br>
   <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20Downloads%40Latest&labelColor=black&color=AA5CC3&cacheSeconds=60">
   <br><br>
-  <a href="https://discord.gg/8wk3q74s"><img alt="Discord" src="https://img.shields.io/badge/Jellyfin%20Enhanced%20-%20Jellyfin%20Community?&logo=discord&logoColor=white&style=for-the-badge&label=Jellyfin%20Community&labelColor=5865F2&color=black"></a>
+  <a href="https://discord.gg/EYNFf7y4CG"><img alt="Discord" src="https://img.shields.io/badge/Jellyfin%20Enhanced%20-%20Jellyfin%20Community?&logo=discord&logoColor=white&style=for-the-badge&label=Jellyfin%20Community&labelColor=5865F2&color=black"></a>
   <br><br>
   <a href='https://ko-fi.com/G2G51TIZF0' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi1.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
   <a href='https://www.buymeacoffee.com/n00bcodr' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' border='0' alt='Buy Me a Coffee' /></a>
@@ -170,7 +170,7 @@ Translations are available immediately after merge!
 
 - [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 - [Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/8wk3q74s)
+- [Discord Community](https://discord.gg/EYNFf7y4CG)
 
 <br>
 
@@ -181,7 +181,7 @@ Need help? Check these resources:
 - [FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
 - [Troubleshooting Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/)
 - [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/8wk3q74s)
+- [Discord Community](https://discord.gg/EYNFf7y4CG)
 
 <br>
 
@@ -227,7 +227,7 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 ### Enjoying Jellyfin Enhanced?
 
 If this plugin has enhanced your Jellyfin experience, consider:
-⭐ Starring the repository ⦁ 🐛 Reporting bugs or suggesting features ⦁ 🌍 Contributing translations ⦁ 💬 Joining <a href="https://discord.gg/8wk3q74s">Discord community</a> ⦁ ☕ Supporting me on <a href="https://ko-fi.com/n00bcodr">Ko-Fi</a>
+⭐ Starring the repository ⦁ 🐛 Reporting bugs or suggesting features ⦁ 🌍 Contributing translations ⦁ 💬 Joining <a href="https://discord.gg/EYNFf7y4CG">Discord community</a> ⦁ ☕ Supporting me on <a href="https://ko-fi.com/n00bcodr">Ko-Fi</a>
 
 Made with 💜 for Jellyfin and the community
 
