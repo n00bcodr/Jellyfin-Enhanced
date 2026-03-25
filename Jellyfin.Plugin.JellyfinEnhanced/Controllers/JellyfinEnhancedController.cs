@@ -257,27 +257,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         continue;
                     }
 
-                    _logger.Info($"Successfully triggered import for Jellyfin User ID {jellyfinUserId} at {url.Trim()}. Looking up newly created user...");
-
-                    // Re-query to find the newly imported user
-                    var lookupUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
-                    var lookupResponse = await httpClient.GetAsync(lookupUri);
-                    if (lookupResponse.IsSuccessStatusCode)
+                    // Parse the newly created user directly from the import response
+                    var responseContent = await importResponse.Content.ReadAsStringAsync();
+                    var importedUsers = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
+                    var normalizedId = jellyfinUserId.Replace("-", "");
+                    var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedId, StringComparison.OrdinalIgnoreCase));
+                    if (user != null)
                     {
-                        var content = await lookupResponse.Content.ReadAsStringAsync();
-                        var usersResponse = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(content);
-                        if (usersResponse.TryGetProperty("results", out var usersArray))
-                        {
-                            var users = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
-                            var normalizedId = jellyfinUserId.Replace("-", "");
-                            var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedId, StringComparison.OrdinalIgnoreCase));
-                            if (user != null)
-                            {
-                                _logger.Info($"Auto-imported and found Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
-                                return user;
-                            }
-                        }
+                        _logger.Info($"Auto-imported Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
+                        return user;
                     }
+
+                    _logger.Warning($"Import succeeded at {url.Trim()} but could not find user in response (user may already exist)");
                 }
                 catch (Exception ex)
                 {
