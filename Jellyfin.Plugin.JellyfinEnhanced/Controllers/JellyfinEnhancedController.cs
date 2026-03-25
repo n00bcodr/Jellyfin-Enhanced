@@ -226,8 +226,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // Cache the negative result to avoid repeated lookups/imports
-            if (cacheEnabled)
+            // Only cache negative results when JIT import was attempted — if it was disabled,
+            // don't cache so the next lookup can try after the admin enables it
+            if (cacheEnabled && config.JellyseerrAutoImportUsers)
             {
                 lock (_userCacheLock)
                 {
