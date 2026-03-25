@@ -32,48 +32,38 @@
         document.head.appendChild(style);
     }
 
-/*    Original English version, left comented for ease of future translations:
+    // Activity text is matched top-to-bottom; first match wins.
+    // when one phrase contains another order the longer phrase first (e.g., "uninstalled" before "installed").
+    const ICON_MAP = [
+        // English
+        { text: 'successfully authenticated', icon: 'key', color: '#2e4ed6' },
         { text: 'installation failed', icon: 'warning', color: '#ee3b3bff' },
         { text: 'failed login', icon: 'security_update_warning', color: '#f44336' },
-        { text: 'successfully authenticated', icon: 'key', color: '#2e4ed6' },
-        { text: 'has been changed', icon: 'key', color: '#ada130ff' },
-        { text: 'has been created', icon: 'plus', color: '#2ed62eff' },
         { text: 'finished playing', icon: 'check_circle', color: '#4caf50' },
         { text: 'is downloading', icon: 'download', color: '#607d8b' },
+        { text: 'has been changed', icon: 'key', color: '#ada130ff' },
+        { text: 'has been created', icon: 'plus', color: '#2ed62eff' },
+        { text: 'disconnected', icon: 'logout', color: '#be7404' },
+        { text: 'is playing', icon: 'play_arrow', color: '#2196f3' },
         { text: 'uninstalled', icon: 'delete', color: '#c3342a' },
         { text: 'installed', icon: 'inventory_2', color: '#c957ddff' },
-        { text: 'is playing', icon: 'play_arrow', color: '#2196f3' },
-        { text: 'disconnected', icon: 'logout', color: '#be7404' },
         { text: 'is online', icon: 'login', color: 'green' },
-        { text: 'updated', icon: 'update', color: '#00bcd4' }, */
-    // Add mappings in the order of decreasing length of text you want to match
-    const ICON_MAP = [
-        { text: 'successfully authenticated', icon: 'key', color: '#2e4ed6' }, // 26 chars
-        { text: 'intent de connexió fallit', icon: 'security_update_warning', color: '#f44336' }, // 25 chars
-        { text: 'ha començat a reproduir', icon: 'play_arrow', color: '#2196f3' }, // 23 chars
-        { text: 'ha parat de reproduir', icon: 'check_circle', color: '#4caf50' }, // 21 chars
-        { text: 'autenticació correcta', icon: 'key', color: '#2e4ed6' }, // 21 chars
-        { text: 'instal·lació fallida', icon: 'warning', color: '#ee3b3bff' }, // 20 chars
-        { text: 'installation failed', icon: 'warning', color: '#ee3b3bff' }, // 19 chars
-        { text: 'està descarregant', icon: 'download', color: '#607d8b' }, // 17 chars
-        { text: "s'ha desconnectat", icon: 'logout', color: '#be7404' }, // 17 chars
-        { text: 'finished playing', icon: 'check_circle', color: '#4caf50' }, // 16 chars
-        { text: 'has been changed', icon: 'key', color: '#ada130ff' }, // 16 chars
-        { text: 'has been created', icon: 'plus', color: '#2ed62eff' }, // 16 chars
-        { text: 'ha estat canviat', icon: 'key', color: '#ada130ff' }, // 16 chars
-        { text: "s'ha instal·lat", icon: 'inventory_2', color: '#c957ddff' }, // 15 chars
-        { text: 'is downloading', icon: 'download', color: '#607d8b' }, // 14 chars
-        { text: 'està connectat', icon: 'login', color: 'green' }, // 14 chars
-        { text: 'desinstal·lat', icon: 'delete', color: '#c3342a' }, // 13 chars
-        { text: 'failed login', icon: 'security_update_warning', color: '#f44336' }, // 12 chars
-        { text: 'disconnected', icon: 'logout', color: '#be7404' }, // 12 chars
-        { text: 'uninstalled', icon: 'delete', color: '#c3342a' }, // 11 chars
-        { text: 'actualitzat', icon: 'update', color: '#00bcd4' }, // 11 chars
-        { text: 'is playing', icon: 'play_arrow', color: '#2196f3' }, // 10 chars
-        { text: "s'ha creat", icon: 'plus', color: '#2ed62eff' }, // 10 chars
-        { text: 'installed', icon: 'inventory_2', color: '#c957ddff' }, // 9 chars
-        { text: 'is online', icon: 'login', color: 'green' }, // 9 chars
-        { text: 'updated', icon: 'update', color: '#00bcd4' } // 7 chars
+        { text: 'updated', icon: 'update', color: '#00bcd4' },
+
+        // Catalan
+        { text: 'intent de connexió fallit', icon: 'security_update_warning', color: '#f44336' },
+        { text: 'autenticació correcta', icon: 'key', color: '#2e4ed6' },
+        { text: 'instal·lació fallida', icon: 'warning', color: '#ee3b3bff' },
+        { text: 'ha començat a reproduir', icon: 'play_arrow', color: '#2196f3' },
+        { text: 'ha parat de reproduir', icon: 'check_circle', color: '#4caf50' },
+        { text: 'està descarregant', icon: 'download', color: '#607d8b' },
+        { text: "s'ha desconnectat", icon: 'logout', color: '#be7404' },
+        { text: 'està connectat', icon: 'login', color: 'green' },
+        { text: 'ha estat canviat', icon: 'key', color: '#ada130ff' },
+        { text: "s'ha creat", icon: 'plus', color: '#2ed62eff' },
+        { text: 'desinstal·lat', icon: 'delete', color: '#c3342a' },
+        { text: "s'ha instal·lat", icon: 'inventory_2', color: '#c957ddff' },
+        { text: 'actualitzat', icon: 'update', color: '#00bcd4' }
     ];
 
     let isProcessing = false;
