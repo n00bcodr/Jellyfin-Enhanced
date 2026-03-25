@@ -436,9 +436,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _logger.Debug($"[Auto-Movie-Request] No request records found for TMDB {tmdbId} in Jellyseerr");
                     return null;
                 }
+                catch (HttpRequestException ex)
+                {
+                    _logger.Debug($"[Auto-Movie-Request] Failed to connect to {url}: {ex.Message}");
+                    continue;
+                }
+                catch (JsonException ex)
+                {
+                    _logger.Warning($"[Auto-Movie-Request] Invalid response from {url}: {ex.Message}");
+                    continue;
+                }
                 catch (Exception ex)
                 {
-                    _logger.Debug($"[Auto-Movie-Request] Error fetching quality profile from {url}: {ex.Message}");
+                    _logger.Warning($"[Auto-Movie-Request] Unexpected error fetching quality profile from {url}: {ex.Message}");
                     continue;
                 }
             }
