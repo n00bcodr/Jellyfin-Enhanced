@@ -248,14 +248,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<JellyseerrUser?> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
         {
+            var normalizedUserId = jellyfinUserId.Replace("-", "");
+
             foreach (var url in urls)
             {
                 try
                 {
                     var importUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
-                    var normalizedUserId = jellyfinUserId.Replace("-", "");
                     var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = new[] { normalizedUserId } });
-                    using var importContent = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
+                    using var importContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
                     var importResponse = await httpClient.PostAsync(importUri, importContent);
                     if (!importResponse.IsSuccessStatusCode)
@@ -263,7 +264,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var errorContent = await importResponse.Content.ReadAsStringAsync();
                         if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
                         {
-                            _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: a Jellyseerr user with this username already exists (possibly from a previous user that was renamed or deleted). Remove the old user in Jellyseerr to resolve this.");
+                            _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
                         }
                         else
                         {
@@ -287,32 +288,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Exception during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                    _logger.Error($"Exception during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex}");
                 }
             }
 
             return null;
         }
 
+        /// <summary>
+        /// Bulk-import user IDs into Jellyseerr, trying each configured URL until one succeeds.
+        /// Returns the count of newly imported users, or -1 on failure.
+        /// </summary>
+        private async Task<int> BulkImportUsersToJellyseerr(List<string> userIds, string[] urls, string apiKey)
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(30);
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+            var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = userIds });
+
+            foreach (var url in urls)
+            {
+                try
+                {
+                    var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
+                    using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
+                    var response = await httpClient.PostAsync(requestUri, requestContent);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var content = await response.Content.ReadAsStringAsync();
+                        var importedUsers = JsonSerializer.Deserialize<JsonElement>(content);
+                        var importedCount = importedUsers.ValueKind == JsonValueKind.Array ? importedUsers.GetArrayLength() : 0;
+
+                        // Clear user lookup caches so JIT lookups pick up newly imported users
+                        ClearUserCaches();
+
+                        return importedCount;
+                    }
+
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.Warning($"Bulk import failed at {url}. Status: {response.StatusCode}. Response: {errorContent}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Exception during bulk import at {url}: {ex}");
+                }
+            }
+
+            return -1;
+        }
+
+        private static HashSet<string> GetBlockedUserIds(string? blockedUsersConfig)
+        {
+            if (string.IsNullOrEmpty(blockedUsersConfig))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            return blockedUsersConfig
+                .Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(id => id.Trim().Replace("-", ""))
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
         private static bool IsJellyseerrImportBlocked(string jellyfinUserId, Configuration.PluginConfiguration config)
         {
-            if (string.IsNullOrEmpty(config.JellyseerrImportBlockedUsers))
+            var blockedIds = GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
+            if (blockedIds.Count == 0)
             {
                 return false;
             }
 
             var normalizedId = jellyfinUserId.Replace("-", "");
-            var blockedIds = config.JellyseerrImportBlockedUsers.Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var blockedId in blockedIds)
+            return blockedIds.Contains(normalizedId);
+        }
+
+        internal static void ClearUserCaches()
+        {
+            lock (_userCacheLock)
             {
-                var trimmed = blockedId.Trim().Replace("-", "");
-                if (string.Equals(trimmed, normalizedId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                _userCache.Clear();
             }
 
-            return false;
+            lock (_userIdCacheLock)
+            {
+                _userIdCache.Clear();
+            }
         }
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
@@ -1317,41 +1380,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Info("[Manual User Import] Starting manual Jellyseerr user import...");
 
                 var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                var jellyseerrUrl = urls.FirstOrDefault()?.Trim();
-
-                if (string.IsNullOrEmpty(jellyseerrUrl))
-                {
-                    return BadRequest(new { error = "No valid Jellyseerr URL found" });
-                }
-
-                var blockedIds = (config.JellyseerrImportBlockedUsers ?? string.Empty)
-                    .Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(id => id.Trim().Replace("-", ""))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var blockedIds = GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
                 var userIds = _userManager.Users
                     .Select(u => u.Id.ToString().Replace("-", ""))
                     .Where(id => !blockedIds.Contains(id))
                     .ToList();
                 _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
 
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.Timeout = TimeSpan.FromSeconds(30);
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
-
-                var requestBody = System.Text.Json.JsonSerializer.Serialize(new { jellyfinUserIds = userIds });
-                using var requestContent = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
-
-                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/import-from-jellyfin";
-                var response = await httpClient.PostAsync(requestUri, requestContent);
-
-                if (response.IsSuccessStatusCode)
+                var importedCount = await BulkImportUsersToJellyseerr(userIds, urls, config.JellyseerrApiKey);
+                if (importedCount >= 0)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var importedUsers = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(content);
-                    var importedCount = importedUsers.ValueKind == JsonValueKind.Array ? importedUsers.GetArrayLength() : 0;
-
                     _logger.Info($"[Manual User Import] Completed. {importedCount} new user(s) imported.");
-
                     return Ok(new
                     {
                         success = true,
@@ -1361,9 +1400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 else
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.Warning($"[Manual User Import] Import failed. Status: {response.StatusCode}. Response: {errorContent}");
-                    return StatusCode((int)response.StatusCode, new { error = $"Jellyseerr returned {response.StatusCode}. Check server logs for details." });
+                    return StatusCode(502, new { error = "Import failed on all configured Jellyseerr URLs. Check server logs for details." });
                 }
             }
             catch (Exception ex)

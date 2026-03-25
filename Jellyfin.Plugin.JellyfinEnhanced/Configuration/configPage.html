@@ -3062,10 +3062,14 @@
             const btn = document.getElementById('btnImportJellyseerrUsers');
             const resultDiv = document.getElementById('importUsersResult');
             btn.disabled = true;
-            btn.textContent = 'Importing...';
+            btn.textContent = 'Saving config...';
             resultDiv.style.display = 'none';
 
             try {
+                // Save config first so the server uses the current blocklist
+                await saveConfig(new Event('submit'));
+
+                btn.textContent = 'Importing...';
                 const response = await ApiClient.fetch({
                     url: ApiClient.getUrl('JellyfinEnhanced/jellyseerr/import-users'),
                     type: 'POST',
