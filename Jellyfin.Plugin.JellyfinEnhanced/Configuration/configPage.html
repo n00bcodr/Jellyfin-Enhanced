@@ -1025,6 +1025,43 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>User Import</h3></legend>
+                        <div class="configSection">
+                            <div class="fieldDescription" style="margin-bottom: 1.5em;">
+                                Automatically import Jellyfin users into Seerr so they can use Seerr Search without needing to visit Seerr directly.
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrAutoImportUsers" is="emby-checkbox" type="checkbox"/>
+                                    <span>Auto import Jellyfin users to Seerr</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                When enabled, new Jellyfin users are automatically imported into Seerr the first time they use Seerr Search. A scheduled task also runs periodically to bulk import all users. Already imported users are automatically skipped.
+                                <br><br>
+                                Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Seerr".
+                            </div>
+                            <div style="margin-bottom: 2em;">
+                                <details id="blockedUsersDetails" style="background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                    <summary style="cursor: pointer; font-weight: bold;">Blocked users <span id="blockedUsersCount" style="opacity: 0.7; font-weight: normal;">(none)</span></summary>
+                                    <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 0.5em;">
+                                        Select users to exclude from Seerr import. Blocked users will never be looked up or imported. No API calls are made for them.
+                                    </div>
+                                    <div id="blockedUsersContainer" style="padding: 0.5em 0; max-height: 300px; overflow-y: auto;">
+                                        <span style="opacity: 0.5;">Loading users...</span>
+                                    </div>
+                                </details>
+                                <input id="jellyseerrImportBlockedUsers" type="hidden" value=""/>
+                            </div>
+                            <div style="margin-bottom: 1em;">
+                                <button id="btnImportJellyseerrUsers" is="emby-button" type="button" class="raised button-submit block" style="max-width: 300px;">
+                                    Import Users Now
+                                </button>
+                                <div id="importUsersResult" class="fieldDescription" style="margin-top: 0.5em; display: none;"></div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
                 <div id="arr-links" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
@@ -2232,6 +2269,9 @@
                 }
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
+                document.querySelector('#jellyseerrAutoImportUsers').checked = config.JellyseerrAutoImportUsers || false;
+                document.querySelector('#jellyseerrImportBlockedUsers').value = config.JellyseerrImportBlockedUsers || '';
+                loadBlockedUsersList(config.JellyseerrImportBlockedUsers || '');
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
@@ -2433,6 +2473,9 @@
             config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
+            config.JellyseerrAutoImportUsers = document.querySelector('#jellyseerrAutoImportUsers').checked;
+            syncBlockedUsersToHiddenInput();
+            config.JellyseerrImportBlockedUsers = document.querySelector('#jellyseerrImportBlockedUsers').value || '';
             config.PreventWatchlistReAddition = document.querySelector('#preventWatchlistReAddition').checked;
 
             const retentionDays = parseInt(document.querySelector('#watchlistMemoryRetentionDays').value);
@@ -3019,6 +3062,112 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+
+        /**
+         * Updates the blocked users count badge in the collapsible summary.
+         */
+        function updateBlockedUsersCount() {
+            const total = document.querySelectorAll('.blockedUserCheckbox:checked').length;
+            const countEl = document.getElementById('blockedUsersCount');
+            if (countEl) {
+                countEl.textContent = total > 0 ? '(' + total + ' blocked)' : '(none)';
+            }
+        }
+
+        /**
+         * Loads all Jellyfin users and renders a checkbox list for the blocklist.
+         * Pre-checks users whose IDs appear in the saved blocklist config.
+         * @param {string} blockedIdsString - Comma-separated dashless user IDs to pre-select.
+         */
+        async function loadBlockedUsersList(blockedIdsString) {
+            const container = document.getElementById('blockedUsersContainer');
+            const blockedSet = new Set(
+                (blockedIdsString || '').split(/[,\r\n]+/).map(id => id.trim().replace(/-/g, '').toLowerCase()).filter(Boolean)
+            );
+
+            try {
+                const users = await ApiClient.getUsers();
+                container.textContent = '';
+                users.sort((a, b) => a.Name.localeCompare(b.Name));
+                users.forEach(user => {
+                    const normalizedId = user.Id.replace(/-/g, '').toLowerCase();
+                    const div = document.createElement('div');
+                    div.className = 'checkboxContainer';
+                    div.style.marginBottom = '0.3em';
+
+                    const label = document.createElement('label');
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.setAttribute('is', 'emby-checkbox');
+                    checkbox.className = 'blockedUserCheckbox';
+                    checkbox.dataset.userid = normalizedId;
+                    checkbox.checked = blockedSet.has(normalizedId);
+                    checkbox.addEventListener('change', updateBlockedUsersCount);
+
+                    const span = document.createElement('span');
+                    span.textContent = user.Name;
+
+                    label.appendChild(checkbox);
+                    label.appendChild(span);
+                    div.appendChild(label);
+                    container.appendChild(div);
+                });
+                updateBlockedUsersCount();
+            } catch (e) {
+                container.textContent = 'Could not load users.';
+                console.error('Failed to load users for blocklist:', e);
+            }
+        }
+
+        /**
+         * Syncs checked blocked-user checkboxes into the hidden input for config save.
+         */
+        function syncBlockedUsersToHiddenInput() {
+            const checkboxes = document.querySelectorAll('.blockedUserCheckbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.dataset.userid);
+            document.querySelector('#jellyseerrImportBlockedUsers').value = ids.join(',');
+        }
+
+        document.getElementById('btnImportJellyseerrUsers').addEventListener('click', async () => {
+            const btn = document.getElementById('btnImportJellyseerrUsers');
+            const resultDiv = document.getElementById('importUsersResult');
+            btn.disabled = true;
+            btn.textContent = 'Saving config...';
+            resultDiv.style.display = 'none';
+
+            try {
+                // Save config first so the server uses the current blocklist
+                await saveConfig(new Event('submit'));
+            } catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Could not save config. Import was not attempted.';
+                resultDiv.style.color = '#f44336';
+                console.error('Config save failed before import:', e);
+                btn.disabled = false;
+                btn.textContent = 'Import Users Now';
+                return;
+            }
+
+            try {
+                btn.textContent = 'Importing...';
+                const response = await ApiClient.fetch({
+                    url: ApiClient.getUrl('JellyfinEnhanced/jellyseerr/import-users'),
+                    type: 'POST',
+                    dataType: 'json'
+                });
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = `Imported ${response.usersImported} new user(s) out of ${response.totalUsers} total.`;
+                resultDiv.style.color = '#4caf50';
+            } catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Import failed. Check Seerr configuration and API key permissions.';
+                resultDiv.style.color = '#f44336';
+                console.error('User import failed:', e);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Import Users Now';
+            }
+        });
 
         // Custom Plugin Links functionality
         const testCustomPluginLinksBtn = document.getElementById('testCustomPluginLinksBtn');

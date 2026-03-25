@@ -54,13 +54,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
         private static readonly object _userIdCacheLock = new();
 
-        // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload)
-        private static readonly Dictionary<string, (JellyseerrUser User, DateTime CachedAt)> _userCache = new();
+        // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload, null = negative cache)
+        private static readonly Dictionary<string, (JellyseerrUser? User, DateTime CachedAt)> _userCache = new();
         private static readonly object _userCacheLock = new();
 
         // Cache for Seerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
+
+        // Throttle for manual user import
+        private static DateTime _lastManualImport = DateTime.MinValue;
+        private static readonly object _importThrottleLock = new();
 
         // Cache for request-page TMDB enrichments (movie/tv detail lookups via Jellyseerr)
         private static readonly Dictionary<string, (TmdbEnrichmentResult Data, DateTime CachedAt)> _tmdbEnrichmentCache = new();
@@ -136,6 +140,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
 
+            // Skip blocked users entirely — no lookup, no import, no API calls
+            if (IsJellyseerrImportBlocked(jellyfinUserId, config))
+            {
+                return null;
+            }
+
             bool cacheEnabled = !config.JellyseerrDisableCache;
             if (cacheEnabled)
             {
@@ -203,8 +213,159 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            _logger.Warning($"Could not find a matching Seerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
+            // User not found — attempt just-in-time import into Jellyseerr
+            var importDefinite = false;
+            if (config.JellyseerrAutoImportUsers)
+            {
+                _logger.Info($"User not found in Jellyseerr. Attempting just-in-time import for Jellyfin User ID {jellyfinUserId}...");
+                var (importedUser, definite) = await TryAutoImportJellyseerrUser(jellyfinUserId, urls, httpClient);
+                importDefinite = definite;
+                if (importedUser != null)
+                {
+                    if (cacheEnabled)
+                    {
+                        lock (_userCacheLock)
+                        {
+                            _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
+                        }
+                    }
+
+                    return importedUser;
+                }
+            }
+
+            // Only negative-cache when the import gave a definite "not importable" answer.
+            // Transient failures (network errors, exceptions) should not be cached so the
+            // next request can retry immediately.
+            if (cacheEnabled && importDefinite)
+            {
+                lock (_userCacheLock)
+                {
+                    _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
+                }
+            }
+
+            _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
             return null;
+        }
+
+        /// <summary>
+        /// Attempt to import a single user into Jellyseerr via JIT import.
+        /// Returns (user, definite): user is non-null on success; definite indicates whether
+        /// the result is authoritative (true = Jellyseerr gave a clear answer, safe to negative-cache)
+        /// or transient (false = network error / exception, do not cache).
+        /// </summary>
+        private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
+        {
+            // Jellyseerr requires dashless UUIDs — dashed format causes empty email and UNIQUE constraint errors
+            var normalizedUserId = jellyfinUserId.Replace("-", "");
+
+            // Track whether we got any HTTP response from Jellyseerr (vs network failures).
+            // This determines whether a null result should be negative-cached or retried.
+            var reachedJellyseerr = false;
+
+            foreach (var url in urls)
+            {
+                try
+                {
+                    var importUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
+                    var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = new[] { normalizedUserId } });
+                    using var importContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
+
+                    var importResponse = await httpClient.PostAsync(importUri, importContent);
+                    reachedJellyseerr = true;
+
+                    if (!importResponse.IsSuccessStatusCode)
+                    {
+                        var errorContent = await importResponse.Content.ReadAsStringAsync();
+
+                        // Email collision is a definite failure — a renamed/deleted Jellyfin user left
+                        // an orphaned Jellyseerr account with the same email. Won't resolve on retry.
+                        if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
+                            return (null, true);
+                        }
+
+                        _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
+                        continue;
+                    }
+
+                    // The import endpoint returns an array of newly created users.
+                    // Parse it directly to avoid a second API call.
+                    var responseContent = await importResponse.Content.ReadAsStringAsync();
+                    var importedUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
+                    var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
+                    if (user != null)
+                    {
+                        _logger.Info($"Auto-imported Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
+                        return (user, true);
+                    }
+
+                    // Some Jellyseerr versions return an empty array even on success (user already existed
+                    // but wasn't in the import response). Fall back to a full user list query to find them.
+                    _logger.Info($"Import succeeded at {url.Trim()} but user not in response. Doing fresh lookup...");
+                    var lookupUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
+                    var lookupResponse = await httpClient.GetAsync(lookupUri);
+                    if (lookupResponse.IsSuccessStatusCode)
+                    {
+                        var lookupContent = await lookupResponse.Content.ReadAsStringAsync();
+                        var lookupJson = JsonSerializer.Deserialize<JsonElement>(lookupContent);
+                        if (lookupJson.TryGetProperty("results", out var usersArray))
+                        {
+                            var allUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
+                            var found = allUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
+                            if (found != null)
+                            {
+                                _logger.Info($"Found Seerr user ID {found.Id} for Jellyfin User ID {jellyfinUserId} via fresh lookup");
+                                return (found, true);
+                            }
+                        }
+                    }
+
+                    // Import succeeded and fresh lookup found nothing — user is genuinely not importable
+                    return (null, true);
+                }
+                catch (HttpRequestException ex)
+                {
+                    // Network errors, timeouts, etc. are transient — try the next URL
+                    _logger.Debug($"Connection error during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                }
+                catch (JsonException ex)
+                {
+                    // Invalid Jellyseerr response — log warning but try next URL
+                    _logger.Warning($"Invalid response from Jellyseerr during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                }
+            }
+
+            // Definite only if we actually got an HTTP response from at least one URL.
+            // If all URLs failed with exceptions (network down), this is transient and should not be cached.
+            return (null, reachedJellyseerr);
+        }
+
+        private static bool IsJellyseerrImportBlocked(string jellyfinUserId, Configuration.PluginConfiguration config)
+        {
+            var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
+            if (blockedIds.Count == 0)
+            {
+                return false;
+            }
+
+            var normalizedId = jellyfinUserId.Replace("-", "");
+            return blockedIds.Contains(normalizedId);
+        }
+
+        internal static void ClearUserCaches()
+        {
+            lock (_userCacheLock)
+            {
+                _userCache.Clear();
+            }
+
+            lock (_userIdCacheLock)
+            {
+                _userIdCache.Clear();
+            }
         }
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
@@ -1174,6 +1335,79 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpPost("jellyseerr/import-users")]
+        [Authorize]
+        public async Task<IActionResult> ImportJellyseerrUsers()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            try
+            {
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || !config.JellyseerrEnabled)
+                {
+                    return BadRequest(new { error = "Jellyseerr integration is not enabled" });
+                }
+
+                if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+                {
+                    return BadRequest(new { error = "Jellyseerr URL or API key not configured" });
+                }
+
+                // Claim the throttle slot atomically to prevent concurrent imports
+                lock (_importThrottleLock)
+                {
+                    if ((DateTime.UtcNow - _lastManualImport).TotalSeconds < 30)
+                    {
+                        return StatusCode(429, new { error = "Import was run recently. Please wait before retrying." });
+                    }
+
+                    _lastManualImport = DateTime.UtcNow;
+                }
+
+                _logger.Info("[Manual User Import] Starting manual Jellyseerr user import...");
+
+                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
+                var userIds = _userManager.Users
+                    .Select(u => u.Id.ToString().Replace("-", ""))
+                    .Where(id => !blockedIds.Contains(id))
+                    .ToList();
+                _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
+
+                var importedCount = await Helpers.Jellyseerr.JellyseerrUserImportHelper.BulkImportAsync(
+                    userIds, urls, config.JellyseerrApiKey, _httpClientFactory, _logger);
+                if (importedCount >= 0)
+                {
+                    ClearUserCaches();
+                    _logger.Info($"[Manual User Import] Completed. {importedCount} new user(s) imported.");
+                    return Ok(new
+                    {
+                        success = true,
+                        usersImported = importedCount,
+                        totalUsers = userIds.Count
+                    });
+                }
+                else
+                {
+                    return StatusCode(502, new { error = "Import failed on all configured Jellyseerr URLs. Check server logs for details." });
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.Error($"[Manual User Import] Connection error: {ex.Message}");
+                return StatusCode(502, new { error = "Failed to connect to Jellyseerr. Check server logs for details." });
+            }
+            catch (JsonException ex)
+            {
+                _logger.Error($"[Manual User Import] Invalid Jellyseerr response: {ex.Message}");
+                return StatusCode(502, new { error = "Invalid response from Jellyseerr. Check server logs for details." });
+            }
+        }
+
         private async Task<List<WatchlistItem>?> GetJellyseerrWatchlistForUser(string userId)
         {
             try
@@ -1627,6 +1861,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrUseMoreInfoModal,
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
+                config.JellyseerrAutoImportUsers,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowNetworkDiscovery,
