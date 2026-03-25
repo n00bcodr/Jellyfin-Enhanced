@@ -342,6 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // User Import Settings
         public bool JellyseerrAutoImportUsers { get; set; }
+        public string JellyseerrImportBlockedUsers { get; set; } = string.Empty;
 
         // Bookmarks Settings
         public bool BookmarksEnabled { get; set; }

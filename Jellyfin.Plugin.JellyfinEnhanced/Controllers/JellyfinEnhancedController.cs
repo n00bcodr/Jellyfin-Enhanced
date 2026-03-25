@@ -54,8 +54,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
         private static readonly object _userIdCacheLock = new();
 
-        // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload)
-        private static readonly Dictionary<string, (JellyseerrUser User, DateTime CachedAt)> _userCache = new();
+        // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload, null = negative cache)
+        private static readonly Dictionary<string, (JellyseerrUser? User, DateTime CachedAt)> _userCache = new();
         private static readonly object _userCacheLock = new();
 
         // Cache for Seerr proxy responses (discovery/search endpoints)
@@ -137,6 +137,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
                 _logger.Warning("Seerr configuration is missing. Cannot look up user ID.");
+                return null;
+            }
+
+            // Skip blocked users entirely — no lookup, no import, no API calls
+            if (IsJellyseerrImportBlocked(jellyfinUserId, config))
+            {
                 return null;
             }
 
@@ -232,7 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userCacheLock)
                 {
-                    _userCache[jellyfinUserId] = (null!, DateTime.UtcNow);
+                    _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
                 }
             }
 
@@ -248,8 +254,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var importUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
                     var normalizedUserId = jellyfinUserId.Replace("-", "");
-                    var requestBody = System.Text.Json.JsonSerializer.Serialize(new { jellyfinUserIds = new[] { normalizedUserId } });
-                    using var importContent = new System.Net.Http.StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
+                    var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = new[] { normalizedUserId } });
+                    using var importContent = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
 
                     var importResponse = await httpClient.PostAsync(importUri, importContent);
                     if (!importResponse.IsSuccessStatusCode)
@@ -269,7 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     // Parse the newly created user directly from the import response
                     var responseContent = await importResponse.Content.ReadAsStringAsync();
-                    var importedUsers = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
+                    var importedUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
                     var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
                     if (user != null)
                     {
@@ -286,6 +292,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return null;
+        }
+
+        private static bool IsJellyseerrImportBlocked(string jellyfinUserId, Configuration.PluginConfiguration config)
+        {
+            if (string.IsNullOrEmpty(config.JellyseerrImportBlockedUsers))
+            {
+                return false;
+            }
+
+            var normalizedId = jellyfinUserId.Replace("-", "");
+            var blockedIds = config.JellyseerrImportBlockedUsers.Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var blockedId in blockedIds)
+            {
+                var trimmed = blockedId.Trim().Replace("-", "");
+                if (string.Equals(trimmed, normalizedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
@@ -1297,7 +1324,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest(new { error = "No valid Jellyseerr URL found" });
                 }
 
-                var userIds = _userManager.Users.Select(u => u.Id.ToString().Replace("-", "")).ToList();
+                var blockedIds = (config.JellyseerrImportBlockedUsers ?? string.Empty)
+                    .Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(id => id.Trim().Replace("-", ""))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var userIds = _userManager.Users
+                    .Select(u => u.Id.ToString().Replace("-", ""))
+                    .Where(id => !blockedIds.Contains(id))
+                    .ToList();
                 _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
 
                 var httpClient = _httpClientFactory.CreateClient();
@@ -1793,6 +1827,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrAutoImportUsers,
+                config.JellyseerrImportBlockedUsers,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowNetworkDiscovery,

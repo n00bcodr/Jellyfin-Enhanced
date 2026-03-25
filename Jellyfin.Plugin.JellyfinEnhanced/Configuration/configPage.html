@@ -1042,6 +1042,15 @@
                                 <br><br>
                                 Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Jellyseerr".
                             </div>
+                            <div class="inputContainer" style="margin-bottom: 0.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrImportBlockedUsers">Blocked users (Jellyfin User IDs)</label>
+                                <input id="jellyseerrImportBlockedUsers" is="emby-input" type="text" placeholder="e.g., 02ff6642-4944-4346-b16d-1f8de0346650, ..."/>
+                                <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 2em;">
+                                    Comma-separated list of Jellyfin User IDs to exclude from Jellyseerr import. Blocked users will never be looked up or imported — no API calls are made for them. Use this for service accounts or users who should not access Seerr Search.
+                                    <br><br>
+                                    Find a user's ID in Jellyfin Dashboard &gt; Users &gt; click user &gt; the ID is in the URL.
+                                </div>
+                            </div>
                             <div style="margin-bottom: 1em;">
                                 <button id="btnImportJellyseerrUsers" is="emby-button" type="button" class="raised button-submit block" style="max-width: 300px;">
                                     Import Users Now
@@ -2258,6 +2267,7 @@
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
                 document.querySelector('#jellyseerrAutoImportUsers').checked = config.JellyseerrAutoImportUsers || false;
+                document.querySelector('#jellyseerrImportBlockedUsers').value = config.JellyseerrImportBlockedUsers || '';
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
@@ -2460,6 +2470,7 @@
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
             config.JellyseerrAutoImportUsers = document.querySelector('#jellyseerrAutoImportUsers').checked;
+            config.JellyseerrImportBlockedUsers = document.querySelector('#jellyseerrImportBlockedUsers').value || '';
             config.PreventWatchlistReAddition = document.querySelector('#preventWatchlistReAddition').checked;
 
             const retentionDays = parseInt(document.querySelector('#watchlistMemoryRetentionDays').value);

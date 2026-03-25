@@ -79,9 +79,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             var jellyfinUsers = _userManager.Users.ToList();
-            var userIds = jellyfinUsers.Select(u => u.Id.ToString().Replace("-", "")).ToList();
+            var blockedIds = (config.JellyseerrImportBlockedUsers ?? string.Empty)
+                .Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(id => id.Trim().Replace("-", ""))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var userIds = jellyfinUsers
+                .Select(u => u.Id.ToString().Replace("-", ""))
+                .Where(id => !blockedIds.Contains(id))
+                .ToList();
 
-            _logger.Info($"[Jellyseerr User Import] Found {userIds.Count} Jellyfin users to import.");
+            _logger.Info($"[Jellyseerr User Import] Found {jellyfinUsers.Count} Jellyfin users ({userIds.Count} after excluding {blockedIds.Count} blocked).");
             progress?.Report(25);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -106,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     var importedUsers = JsonSerializer.Deserialize<JsonElement>(content);
                     var importedCount = importedUsers.ValueKind == JsonValueKind.Array ? importedUsers.GetArrayLength() : 0;
 
-                    _logger.Info($"[Jellyseerr User Import] Completed. {importedCount} new user(s) imported, {userIds.Count - importedCount} already existed.");
+                    _logger.Info($"[Jellyseerr User Import] Completed. {importedCount} new user(s) imported out of {userIds.Count} sent.");
                 }
                 else
                 {
