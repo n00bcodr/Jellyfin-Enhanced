@@ -1042,14 +1042,15 @@
                                 <br><br>
                                 Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Jellyseerr".
                             </div>
-                            <div class="inputContainer" style="margin-bottom: 0.5em;">
-                                <label class="inputLabel inputLabelUnfocused" for="jellyseerrImportBlockedUsers">Blocked users (Jellyfin User IDs)</label>
-                                <input id="jellyseerrImportBlockedUsers" is="emby-input" type="text" placeholder="e.g., 027256c1c4e04e119f356bffe059ffea, ..."/>
-                                <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 2em;">
-                                    Comma-separated list of Jellyfin User IDs to exclude from Jellyseerr import. Blocked users will never be looked up or imported — no API calls are made for them. Use this for service accounts or users who should not access Seerr Search.
-                                    <br><br>
-                                    Find a user's ID in Jellyfin Dashboard &gt; Users &gt; click user &gt; the ID is in the URL.
+                            <div style="margin-bottom: 2em;">
+                                <label class="inputLabel inputLabelUnfocused">Blocked users</label>
+                                <div class="fieldDescription" style="margin-bottom: 0.5em;">
+                                    Select users to exclude from Jellyseerr import. Blocked users will never be looked up or imported — no API calls are made for them.
                                 </div>
+                                <div id="blockedUsersContainer" style="padding: 0.5em 0;">
+                                    <span style="opacity: 0.5;">Loading users...</span>
+                                </div>
+                                <input id="jellyseerrImportBlockedUsers" type="hidden" value=""/>
                             </div>
                             <div style="margin-bottom: 1em;">
                                 <button id="btnImportJellyseerrUsers" is="emby-button" type="button" class="raised button-submit block" style="max-width: 300px;">
@@ -2268,6 +2269,7 @@
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
                 document.querySelector('#jellyseerrAutoImportUsers').checked = config.JellyseerrAutoImportUsers || false;
                 document.querySelector('#jellyseerrImportBlockedUsers').value = config.JellyseerrImportBlockedUsers || '';
+                loadBlockedUsersList(config.JellyseerrImportBlockedUsers || '');
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
@@ -2470,6 +2472,7 @@
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
             config.JellyseerrAutoImportUsers = document.querySelector('#jellyseerrAutoImportUsers').checked;
+            syncBlockedUsersToHiddenInput();
             config.JellyseerrImportBlockedUsers = document.querySelector('#jellyseerrImportBlockedUsers').value || '';
             config.PreventWatchlistReAddition = document.querySelector('#preventWatchlistReAddition').checked;
 
@@ -3057,6 +3060,54 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+
+        async function loadBlockedUsersList(blockedIdsString) {
+            const container = document.getElementById('blockedUsersContainer');
+            const blockedSet = new Set(
+                (blockedIdsString || '').split(/[,\r\n]+/).map(id => id.trim().replace(/-/g, '').toLowerCase()).filter(Boolean)
+            );
+
+            try {
+                const users = await ApiClient.getUsers();
+                container.textContent = '';
+                users.sort((a, b) => a.Name.localeCompare(b.Name));
+                users.forEach(user => {
+                    const normalizedId = user.Id.replace(/-/g, '').toLowerCase();
+                    const div = document.createElement('div');
+                    div.className = 'checkboxContainer';
+                    div.style.marginBottom = '0.3em';
+
+                    const label = document.createElement('label');
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.setAttribute('is', 'emby-checkbox');
+                    checkbox.className = 'blockedUserCheckbox';
+                    checkbox.dataset.userid = normalizedId;
+                    checkbox.checked = blockedSet.has(normalizedId);
+
+                    const span = document.createElement('span');
+                    span.textContent = user.Name + ' ';
+                    const small = document.createElement('small');
+                    small.style.opacity = '0.5';
+                    small.textContent = '(' + normalizedId.substring(0, 8) + '...)';
+                    span.appendChild(small);
+
+                    label.appendChild(checkbox);
+                    label.appendChild(span);
+                    div.appendChild(label);
+                    container.appendChild(div);
+                });
+            } catch (e) {
+                container.textContent = 'Could not load users.';
+                console.error('Failed to load users for blocklist:', e);
+            }
+        }
+
+        function syncBlockedUsersToHiddenInput() {
+            const checkboxes = document.querySelectorAll('.blockedUserCheckbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.dataset.userid);
+            document.querySelector('#jellyseerrImportBlockedUsers').value = ids.join(',');
+        }
 
         document.getElementById('btnImportJellyseerrUsers').addEventListener('click', async () => {
             const btn = document.getElementById('btnImportJellyseerrUsers');
