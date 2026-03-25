@@ -1025,6 +1025,31 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>User Import</h3></legend>
+                        <div class="configSection">
+                            <div class="fieldDescription" style="margin-bottom: 1.5em;">
+                                Automatically import Jellyfin users into Jellyseerr so they can use Seerr Search without needing to visit Jellyseerr directly.
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="jellyseerrAutoImportUsers" is="emby-checkbox" type="checkbox"/>
+                                    <span>Auto-import Jellyfin users to Jellyseerr</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">
+                                When enabled, new Jellyfin users are automatically imported into Jellyseerr the first time they use Seerr Search (just-in-time). A scheduled task also runs periodically to bulk-import all users. Already-imported users are automatically skipped.
+                                <br><br>
+                                Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Jellyseerr".
+                            </div>
+                            <div style="margin-bottom: 1em;">
+                                <button id="btnImportJellyseerrUsers" is="emby-button" type="button" class="raised button-submit block" style="max-width: 300px;">
+                                    Import Users Now
+                                </button>
+                                <div id="importUsersResult" class="fieldDescription" style="margin-top: 0.5em; display: none;"></div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
                 <div id="arr-links" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
                     <fieldset class="verticalSection-extrabottompadding">
@@ -2232,6 +2257,7 @@
                 }
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
+                document.querySelector('#jellyseerrAutoImportUsers').checked = config.JellyseerrAutoImportUsers || false;
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
@@ -2433,6 +2459,7 @@
             config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
+            config.JellyseerrAutoImportUsers = document.querySelector('#jellyseerrAutoImportUsers').checked;
             config.PreventWatchlistReAddition = document.querySelector('#preventWatchlistReAddition').checked;
 
             const retentionDays = parseInt(document.querySelector('#watchlistMemoryRetentionDays').value);
@@ -3019,6 +3046,33 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+
+        document.getElementById('btnImportJellyseerrUsers').addEventListener('click', async () => {
+            const btn = document.getElementById('btnImportJellyseerrUsers');
+            const resultDiv = document.getElementById('importUsersResult');
+            btn.disabled = true;
+            btn.textContent = 'Importing...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const response = await ApiClient.fetch({
+                    url: ApiClient.getUrl('JellyfinEnhanced/jellyseerr/import-users'),
+                    type: 'POST',
+                    dataType: 'json'
+                });
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = `Imported ${response.usersImported} new user(s) out of ${response.totalUsers} total.`;
+                resultDiv.style.color = '#4caf50';
+            } catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Import failed. Check Jellyseerr configuration and API key permissions.';
+                resultDiv.style.color = '#f44336';
+                console.error('User import failed:', e);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Import Users Now';
+            }
+        });
 
         // Custom Plugin Links functionality
         const testCustomPluginLinksBtn = document.getElementById('testCustomPluginLinksBtn');

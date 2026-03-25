@@ -62,6 +62,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
 
+        // Throttle for manual user import
+        private static DateTime _lastManualImport = DateTime.MinValue;
+        private static readonly object _importThrottleLock = new();
+
         // Cache for request-page TMDB enrichments (movie/tv detail lookups via Jellyseerr)
         private static readonly Dictionary<string, (TmdbEnrichmentResult Data, DateTime CachedAt)> _tmdbEnrichmentCache = new();
         private static readonly object _tmdbEnrichmentCacheLock = new();
@@ -203,7 +207,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            _logger.Warning($"Could not find a matching Seerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
+            // User not found — attempt just-in-time import into Jellyseerr
+            if (config.JellyseerrAutoImportUsers)
+            {
+                _logger.Info($"User not found in Jellyseerr. Attempting just-in-time import for Jellyfin User ID {jellyfinUserId}...");
+                var importedUser = await TryAutoImportJellyseerrUser(jellyfinUserId, urls, httpClient);
+                if (importedUser != null)
+                {
+                    if (cacheEnabled)
+                    {
+                        lock (_userCacheLock)
+                        {
+                            _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
+                        }
+                    }
+
+                    return importedUser;
+                }
+            }
+
+            // Cache the negative result to avoid repeated lookups/imports
+            if (cacheEnabled)
+            {
+                lock (_userCacheLock)
+                {
+                    _userCache[jellyfinUserId] = (null!, DateTime.UtcNow);
+                }
+            }
+
+            _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
+            return null;
+        }
+
+        private async Task<JellyseerrUser?> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
+        {
+            foreach (var url in urls)
+            {
+                try
+                {
+                    var importUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
+                    var requestBody = System.Text.Json.JsonSerializer.Serialize(new { jellyfinUserIds = new[] { jellyfinUserId } });
+                    using var importContent = new System.Net.Http.StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
+
+                    var importResponse = await httpClient.PostAsync(importUri, importContent);
+                    if (!importResponse.IsSuccessStatusCode)
+                    {
+                        var errorContent = await importResponse.Content.ReadAsStringAsync();
+                        _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
+                        continue;
+                    }
+
+                    _logger.Info($"Successfully triggered import for Jellyfin User ID {jellyfinUserId} at {url.Trim()}. Looking up newly created user...");
+
+                    // Re-query to find the newly imported user
+                    var lookupUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
+                    var lookupResponse = await httpClient.GetAsync(lookupUri);
+                    if (lookupResponse.IsSuccessStatusCode)
+                    {
+                        var content = await lookupResponse.Content.ReadAsStringAsync();
+                        var usersResponse = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(content);
+                        if (usersResponse.TryGetProperty("results", out var usersArray))
+                        {
+                            var users = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
+                            var normalizedId = jellyfinUserId.Replace("-", "");
+                            var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedId, StringComparison.OrdinalIgnoreCase));
+                            if (user != null)
+                            {
+                                _logger.Info($"Auto-imported and found Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
+                                return user;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Exception during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                }
+            }
+
             return null;
         }
 
@@ -1174,6 +1255,90 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpPost("jellyseerr/import-users")]
+        [Authorize]
+        public async Task<IActionResult> ImportJellyseerrUsers()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            try
+            {
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || !config.JellyseerrEnabled)
+                {
+                    return BadRequest(new { error = "Jellyseerr integration is not enabled" });
+                }
+
+                if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+                {
+                    return BadRequest(new { error = "Jellyseerr URL or API key not configured" });
+                }
+
+                lock (_importThrottleLock)
+                {
+                    if ((DateTime.UtcNow - _lastManualImport).TotalSeconds < 30)
+                    {
+                        return StatusCode(429, new { error = "Import was run recently. Please wait before retrying." });
+                    }
+
+                    _lastManualImport = DateTime.UtcNow;
+                }
+
+                _logger.Info("[Manual User Import] Starting manual Jellyseerr user import...");
+
+                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var jellyseerrUrl = urls.FirstOrDefault()?.Trim();
+
+                if (string.IsNullOrEmpty(jellyseerrUrl))
+                {
+                    return BadRequest(new { error = "No valid Jellyseerr URL found" });
+                }
+
+                var userIds = _userManager.Users.Select(u => u.Id.ToString()).ToList();
+                _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
+
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(30);
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+
+                var requestBody = System.Text.Json.JsonSerializer.Serialize(new { jellyfinUserIds = userIds });
+                using var requestContent = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
+
+                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/import-from-jellyfin";
+                var response = await httpClient.PostAsync(requestUri, requestContent);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var importedUsers = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(content);
+                    var importedCount = importedUsers.ValueKind == JsonValueKind.Array ? importedUsers.GetArrayLength() : 0;
+
+                    _logger.Info($"[Manual User Import] Completed. {importedCount} new user(s) imported.");
+
+                    return Ok(new
+                    {
+                        success = true,
+                        usersImported = importedCount,
+                        totalUsers = userIds.Count
+                    });
+                }
+                else
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.Warning($"[Manual User Import] Import failed. Status: {response.StatusCode}. Response: {errorContent}");
+                    return StatusCode((int)response.StatusCode, new { error = $"Jellyseerr returned {response.StatusCode}. Check server logs for details." });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"[Manual User Import] Fatal error: {ex}");
+                return StatusCode(500, new { error = "An internal error occurred during user import." });
+            }
+        }
+
         private async Task<List<WatchlistItem>?> GetJellyseerrWatchlistForUser(string userId)
         {
             try
@@ -1627,6 +1792,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrUseMoreInfoModal,
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
+                config.JellyseerrAutoImportUsers,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowNetworkDiscovery,

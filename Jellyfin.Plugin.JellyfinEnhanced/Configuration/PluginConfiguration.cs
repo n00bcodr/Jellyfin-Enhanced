@@ -340,6 +340,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool PreventWatchlistReAddition { get; set; }
         public int WatchlistMemoryRetentionDays { get; set; }
 
+        // User Import Settings
+        public bool JellyseerrAutoImportUsers { get; set; }
+
         // Bookmarks Settings
         public bool BookmarksEnabled { get; set; }
         public bool BookmarksUsePluginPages { get; set; }
