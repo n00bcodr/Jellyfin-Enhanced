@@ -3068,7 +3068,17 @@
             try {
                 // Save config first so the server uses the current blocklist
                 await saveConfig(new Event('submit'));
+            } catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Could not save config. Import was not attempted.';
+                resultDiv.style.color = '#f44336';
+                console.error('Config save failed before import:', e);
+                btn.disabled = false;
+                btn.textContent = 'Import Users Now';
+                return;
+            }
 
+            try {
                 btn.textContent = 'Importing...';
                 const response = await ApiClient.fetch({
                     url: ApiClient.getUrl('JellyfinEnhanced/jellyseerr/import-users'),
