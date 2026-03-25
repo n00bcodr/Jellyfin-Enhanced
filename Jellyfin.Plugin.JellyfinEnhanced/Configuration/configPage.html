@@ -542,9 +542,10 @@
                                 style="background-color: rgba(100, 50, 150, 0.08); border-left: 4px solid #9b59b6; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0; display: flex; align-items: center; gap: 1em;">
                                 <i class="material-icons" style="color: #9b59b6; font-size: 18px;">favorite</i>
                                 <div>
-                                    <b>This plugin is not affiliated with Jellyseerr.</b><br><br>
-                                    Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience, huge thanks to their API<br><br>
-                                    <b>Please report any issues with this plugin to the plugin repository, not to the Seerr team.</b>
+                                    <b>Jellyfin Enhanced is not affiliated with Seerr.</b><br><br>
+                                    Seerr is an independent project. This plugin only uses Seerr's public API to integrate request and discovery features into Jellyfin.<br><br>
+                                    A huge thanks to the Seerr team for building and maintaining an excellent open-source project.<br><br>
+                                    <b>If you encounter issues related with this plugin, please report them to the <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/issues" target="_blank" class="sectionTitle">Jellyfin Enhanced issue tracker</a>, not the Seerr team!</b>
                                 </div>
                             </div>
                         </div>
@@ -812,7 +813,7 @@
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
                                     <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
                                     <div>
-                                        <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Jellyseerr.
+                                        <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Seerr.
                                         <br><br>
                                         <strong>Requirements:</strong> Configure Sonarr/Radarr and Seerr URLs and API keys.
                                     </div>
@@ -1925,7 +1926,7 @@
             if (validated) {
                 jellyseerrStatusIndicator.textContent = 'check_circle';
                 jellyseerrStatusIndicator.style.color = '#52b54b';
-                Dashboard.alert({ title: 'Success', message: 'Successfully connected to Jellyseerr!' });
+                Dashboard.alert({ title: 'Success', message: 'Successfully connected to Seerr!' });
             } else {
                 jellyseerrStatusIndicator.textContent = 'error';
                 jellyseerrStatusIndicator.style.color = '#dc3545';
