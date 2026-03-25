@@ -1043,13 +1043,15 @@
                                 Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Jellyseerr".
                             </div>
                             <div style="margin-bottom: 2em;">
-                                <label class="inputLabel inputLabelUnfocused">Blocked users</label>
-                                <div class="fieldDescription" style="margin-bottom: 0.5em;">
-                                    Select users to exclude from Jellyseerr import. Blocked users will never be looked up or imported — no API calls are made for them.
-                                </div>
-                                <div id="blockedUsersContainer" style="padding: 0.5em 0;">
-                                    <span style="opacity: 0.5;">Loading users...</span>
-                                </div>
+                                <details id="blockedUsersDetails" style="background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
+                                    <summary style="cursor: pointer; font-weight: bold;">Blocked users <span id="blockedUsersCount" style="opacity: 0.7; font-weight: normal;">(none)</span></summary>
+                                    <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 0.5em;">
+                                        Select users to exclude from Jellyseerr import. Blocked users will never be looked up or imported — no API calls are made for them.
+                                    </div>
+                                    <div id="blockedUsersContainer" style="padding: 0.5em 0; max-height: 300px; overflow-y: auto;">
+                                        <span style="opacity: 0.5;">Loading users...</span>
+                                    </div>
+                                </details>
                                 <input id="jellyseerrImportBlockedUsers" type="hidden" value=""/>
                             </div>
                             <div style="margin-bottom: 1em;">
@@ -3061,6 +3063,14 @@
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
 
+        function updateBlockedUsersCount() {
+            const total = document.querySelectorAll('.blockedUserCheckbox:checked').length;
+            const countEl = document.getElementById('blockedUsersCount');
+            if (countEl) {
+                countEl.textContent = total > 0 ? '(' + total + ' blocked)' : '(none)';
+            }
+        }
+
         async function loadBlockedUsersList(blockedIdsString) {
             const container = document.getElementById('blockedUsersContainer');
             const blockedSet = new Set(
@@ -3084,19 +3094,17 @@
                     checkbox.className = 'blockedUserCheckbox';
                     checkbox.dataset.userid = normalizedId;
                     checkbox.checked = blockedSet.has(normalizedId);
+                    checkbox.addEventListener('change', updateBlockedUsersCount);
 
                     const span = document.createElement('span');
-                    span.textContent = user.Name + ' ';
-                    const small = document.createElement('small');
-                    small.style.opacity = '0.5';
-                    small.textContent = '(' + normalizedId.substring(0, 8) + '...)';
-                    span.appendChild(small);
+                    span.textContent = user.Name;
 
                     label.appendChild(checkbox);
                     label.appendChild(span);
                     div.appendChild(label);
                     container.appendChild(div);
                 });
+                updateBlockedUsersCount();
             } catch (e) {
                 container.textContent = 'Could not load users.';
                 console.error('Failed to load users for blocklist:', e);
