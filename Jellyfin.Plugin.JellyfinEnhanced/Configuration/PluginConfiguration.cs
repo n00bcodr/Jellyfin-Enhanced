@@ -151,6 +151,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoMovieRequestTriggerType = "OnMinutesWatched"; // "OnStart", "OnMinutesWatched", or "Both"
             AutoMovieRequestMinutesWatched = 20; // Minutes to watch before triggering request
             AutoMovieRequestCheckReleaseDate = true; // Only request if movie is already released
+            AutoMovieRequestQualityMode = "default"; // "default", "original", or "custom"
+            AutoMovieRequestCustomServerId = -1; // Radarr server ID for "custom" mode (-1 = not set)
+            AutoMovieRequestCustomProfileId = 0; // Quality profile ID for "custom" mode
+            AutoMovieRequestCustomRootFolder = ""; // Root folder path for "custom" mode
+            AutoMovieRequestFallbackOn4k = true; // When original mode finds a 4K profile, fall back to default instead
 
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
@@ -323,6 +328,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string AutoMovieRequestTriggerType { get; set; } // "OnStart", "OnMinutesWatched", or "Both"
         public int AutoMovieRequestMinutesWatched { get; set; } // Minutes to watch before triggering request
         public bool AutoMovieRequestCheckReleaseDate { get; set; } // Only request if movie is already released
+        public string AutoMovieRequestQualityMode { get; set; } // "default", "original", or "custom"
+        public int AutoMovieRequestCustomServerId { get; set; } // Radarr server ID for "custom" mode
+        public int AutoMovieRequestCustomProfileId { get; set; } // Quality profile ID for "custom" mode
+        public string AutoMovieRequestCustomRootFolder { get; set; } // Root folder path for "custom" mode
+        public bool AutoMovieRequestFallbackOn4k { get; set; } // When original mode finds a 4K profile, fall back to default
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }
