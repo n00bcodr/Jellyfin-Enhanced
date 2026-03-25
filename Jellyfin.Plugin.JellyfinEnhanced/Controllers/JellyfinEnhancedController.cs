@@ -255,7 +255,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (!importResponse.IsSuccessStatusCode)
                     {
                         var errorContent = await importResponse.Content.ReadAsStringAsync();
-                        _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
+                        if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: a Jellyseerr user with this username already exists (possibly from a previous user that was renamed or deleted). Remove the old user in Jellyseerr to resolve this.");
+                        }
+                        else
+                        {
+                            _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
+                        }
+
                         continue;
                     }
 
