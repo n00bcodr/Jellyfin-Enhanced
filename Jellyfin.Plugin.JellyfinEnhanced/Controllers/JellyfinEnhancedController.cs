@@ -326,10 +326,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Import succeeded and fresh lookup found nothing — user is genuinely not importable
                     return (null, true);
                 }
-                catch (Exception ex)
+                catch (HttpRequestException ex)
                 {
                     // Network errors, timeouts, etc. are transient — try the next URL
-                    _logger.Error($"Exception during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex}");
+                    _logger.Debug($"Connection error during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                }
+                catch (JsonException ex)
+                {
+                    // Invalid Jellyseerr response — log warning but try next URL
+                    _logger.Warning($"Invalid response from Jellyseerr during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    // Unexpected errors — log as error and try next URL  
+                    _logger.Error($"Unexpected error during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex}");
                 }
             }
 
@@ -1390,6 +1400,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     return StatusCode(502, new { error = "Import failed on all configured Jellyseerr URLs. Check server logs for details." });
                 }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.Error($"[Manual User Import] Connection error: {ex.Message}");
+                return StatusCode(502, new { error = "Failed to connect to Jellyseerr. Check server logs for details." });
+            }
+            catch (JsonException ex)
+            {
+                _logger.Error($"[Manual User Import] Invalid Jellyseerr response: {ex.Message}");
+                return StatusCode(502, new { error = "Invalid response from Jellyseerr. Check server logs for details." });
             }
             catch (Exception ex)
             {

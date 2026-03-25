@@ -71,9 +71,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 {
                     throw;
                 }
+                catch (HttpRequestException ex)
+                {
+                    logger.Debug($"Connection error during bulk import at {url}: {ex.Message}");
+                }
+                catch (JsonException ex)
+                {
+                    logger.Warning($"Invalid response from Jellyseerr during bulk import at {url}: {ex.Message}");
+                }
                 catch (Exception ex)
                 {
-                    logger.Error($"Exception during bulk import at {url}: {ex}");
+                    logger.Error($"Unexpected error during bulk import at {url}: {ex}");
                 }
             }
 
