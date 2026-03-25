@@ -79,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             var jellyfinUsers = _userManager.Users.ToList();
-            var userIds = jellyfinUsers.Select(u => u.Id.ToString()).ToList();
+            var userIds = jellyfinUsers.Select(u => u.Id.ToString().Replace("-", "")).ToList();
 
             _logger.Info($"[Jellyseerr User Import] Found {userIds.Count} Jellyfin users to import.");
             progress?.Report(25);

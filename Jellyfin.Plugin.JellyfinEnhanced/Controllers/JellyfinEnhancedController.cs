@@ -247,7 +247,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var importUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
-                    var requestBody = System.Text.Json.JsonSerializer.Serialize(new { jellyfinUserIds = new[] { jellyfinUserId } });
+                    var normalizedUserId = jellyfinUserId.Replace("-", "");
+                    var requestBody = System.Text.Json.JsonSerializer.Serialize(new { jellyfinUserIds = new[] { normalizedUserId } });
                     using var importContent = new System.Net.Http.StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
 
                     var importResponse = await httpClient.PostAsync(importUri, importContent);
@@ -261,8 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Parse the newly created user directly from the import response
                     var responseContent = await importResponse.Content.ReadAsStringAsync();
                     var importedUsers = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
-                    var normalizedId = jellyfinUserId.Replace("-", "");
-                    var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedId, StringComparison.OrdinalIgnoreCase));
+                    var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
                     if (user != null)
                     {
                         _logger.Info($"Auto-imported Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
@@ -1289,7 +1289,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest(new { error = "No valid Jellyseerr URL found" });
                 }
 
-                var userIds = _userManager.Users.Select(u => u.Id.ToString()).ToList();
+                var userIds = _userManager.Users.Select(u => u.Id.ToString().Replace("-", "")).ToList();
                 _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
 
                 var httpClient = _httpClientFactory.CreateClient();
