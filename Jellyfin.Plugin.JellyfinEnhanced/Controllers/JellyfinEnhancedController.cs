@@ -336,11 +336,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Invalid Jellyseerr response — log warning but try next URL
                     _logger.Warning($"Invalid response from Jellyseerr during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
                 }
-                catch (Exception ex)
-                {
-                    // Unexpected errors — log as error and try next URL  
-                    _logger.Error($"Unexpected error during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex}");
-                }
             }
 
             // Definite only if we actually got an HTTP response from at least one URL.
@@ -1410,11 +1405,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"[Manual User Import] Invalid Jellyseerr response: {ex.Message}");
                 return StatusCode(502, new { error = "Invalid response from Jellyseerr. Check server logs for details." });
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"[Manual User Import] Fatal error: {ex}");
-                return StatusCode(500, new { error = "An internal error occurred during user import." });
             }
         }
 
