@@ -6,8 +6,8 @@
     **Prerequisites:**
 
     - Jellyseerr instance
-        - **API key**
-        - Jellyfin users **imported to Jellyseerr**
+      - **API key**
+      - Jellyfin Sign-In enabled
 
 ## Setup
 
@@ -21,6 +21,8 @@
 ![Jellyfin Sign-In](../images/jellyfin-signin.png)
 
 ### Step 2: Import Jellyfin Users
+
+This step is optional if you enable plugin-side auto import.
 
 1. In Jellyseerr, go to **Users** page
 2. Click **"Import Jellyfin Users"**
@@ -52,6 +54,24 @@
 7. Enable optional features (see below)
 8. Click **Save**
 
+### Step 4: Configure User Import (Optional)
+
+Enable automatic import in the plugin if you do not want to manually import users in Jellyseerr.
+
+When enabled, new Jellyfin users are automatically imported into Seerr the first time they use Seerr Search.
+
+1. Go to **Dashboard** -> **Plugins** -> **Jellyfin Enhanced**
+2. Navigate to **Jellyseerr Settings** tab
+3. In **User Import**, check **"Auto import Jellyfin users to Seerr"**
+4. Optional: expand **Blocked users** and select users to exclude
+5. Optional: click **Import Users Now** to run immediate bulk import
+6. Click **Save**
+
+!!! tip
+
+  The scheduled task **Import Jellyfin Users to Seerr** runs every 6 hours by default when auto import is enabled.
+  You can change the trigger in Jellyfin Dashboard -> Scheduled Tasks.
+
 ## Optional Features
 
 ### Add Requested Media to Watchlist
@@ -81,6 +101,13 @@
 ### Show Advanced Request Options
 - Display advanced options in request modal
 - Season selection, quality options, etc.
+
+### Auto Import Jellyfin Users to Seerr
+
+- Just-in-time import when a user first accesses Seerr search and is not linked yet
+- Scheduled bulk import via **Import Jellyfin Users to Seerr** task
+- Manual bulk import via **Import Users Now** button
+- Blocklist support to exclude selected Jellyfin users from lookup/import
 
 ## Requests Page Management
 

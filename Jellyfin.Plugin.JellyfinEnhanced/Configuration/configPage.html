@@ -1052,6 +1052,7 @@
                                     <div id="blockedUsersContainer" style="padding: 0.5em 0; max-height: 300px; overflow-y: auto;">
                                         <span style="opacity: 0.5;">Loading users...</span>
                                     </div>
+                                    <div id="blockedUsersScrollHint" style="display: none; text-align: center; font-size: 0.75em; opacity: 0.45; margin-top: 0.3em; pointer-events: none;">▼ scroll for more</div>
                                 </details>
                                 <input id="jellyseerrImportBlockedUsers" type="hidden" value=""/>
                             </div>
@@ -3114,6 +3115,18 @@
                     container.appendChild(div);
                 });
                 updateBlockedUsersCount();
+
+                // Show scroll hint if content overflows, hide it once user scrolls to bottom
+                const scrollHint = document.getElementById('blockedUsersScrollHint');
+                if (scrollHint) {
+                    const updateHint = () => {
+                        const atBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 4;
+                        scrollHint.style.display = (container.scrollHeight > container.clientHeight && !atBottom) ? 'block' : 'none';
+                    };
+                    // Check after render
+                    requestAnimationFrame(updateHint);
+                    container.addEventListener('scroll', updateHint);
+                }
             } catch (e) {
                 container.textContent = 'Could not load users.';
                 console.error('Failed to load users for blocklist:', e);
@@ -3156,8 +3169,27 @@
                     type: 'POST',
                     dataType: 'json'
                 });
+
+                // Handle different response shapes defensively (object, wrapped object, or JSON string)
+                let payload = response;
+                if (typeof payload === 'string') {
+                    try {
+                        payload = JSON.parse(payload);
+                    } catch (_) {
+                        payload = {};
+                    }
+                }
+                if (payload && payload.data && typeof payload.data === 'object') {
+                    payload = payload.data;
+                }
+
+                const usersImported = Number(payload && payload.usersImported);
+                const totalUsers = Number(payload && payload.totalUsers);
+                const importedCount = Number.isFinite(usersImported) ? usersImported : 0;
+                const totalCount = Number.isFinite(totalUsers) ? totalUsers : 0;
+
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = `Imported ${response.usersImported} new user(s) out of ${response.totalUsers} total.`;
+                resultDiv.textContent = 'Imported ' + importedCount + ' new user(s) out of ' + totalCount + ' total.';
                 resultDiv.style.color = '#4caf50';
             } catch (e) {
                 resultDiv.style.display = 'block';

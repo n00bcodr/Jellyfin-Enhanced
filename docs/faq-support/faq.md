@@ -123,6 +123,16 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 **Import Users:**
 
+Option A (automatic, recommended):
+
+1. In Jellyfin, go to Dashboard -> Plugins -> Jellyfin Enhanced -> Jellyseerr Settings
+
+2. Enable "Auto import Jellyfin users to Seerr"
+
+3. Optional: click "Import Users Now" to run bulk import immediately
+
+Option B (manual in Jellyseerr):
+
 1. In Jellyseerr, go to Users page
 
 2. Click "Import Jellyfin Users"
@@ -193,7 +203,7 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 
 !!!  "How it works"
-    
+
     Bookmarks are stored server-side but settings are per-browser.
 
     - Bookmark data stored on Jellyfin server
@@ -462,7 +472,7 @@ Yes, via Enhanced panel settings:
 | `Access to the path 'C:\Program Files\Jellyfin\Server\jellyfin-web\index.html' is denied.` | Grant "NETWORK SERVICE" Read/Write permissions to Jellyfin folder |
 | Plugin installed but scripts don't load | Run "Jellyfin Enhanced Startup" scheduled task, verify trigger exists |
 | Reviews/Elsewhere/Jellyseerr icons not working | TMDB API may be blocked in your region, see [Jellyseerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) |
-| Jellyseerr search not working | Enable "Jellyfin Sign-In" in Jellyseerr, import users |
+| Jellyseerr search not working | Enable "Jellyfin Sign-In" in Jellyseerr. Then either enable plugin auto import and run "Import Users Now", or import users manually in Jellyseerr. Also verify user is not in blocked users list. |
 | Tags not appearing | Enable in settings, clear cache, verify metadata exists |
 | Bookmarks not saving | Check server logs, verify user data folder permissions |
 
