@@ -27,11 +27,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             _logger = logger;
         }
 
-        public string Name => "Import Jellyfin Users to Jellyseerr";
+        public string Name => "Import Jellyfin Users to Seerr";
 
         public string Key => "JellyfinEnhancedJellyseerrUserImport";
 
-        public string Description => "Imports all Jellyfin users into Jellyseerr so they can use Seerr Search without needing to visit the Jellyseerr UI.\n\nAlready-imported users are automatically skipped. Configure the task triggers to run this task periodically.";
+        public string Description => "Imports all Jellyfin users into Seerr so they can use Seerr Search without needing to visit the Seerr UI.\n\nAlready imported users are automatically skipped. Configure the task triggers to run this task periodically.";
 
         public string Category => "Jellyfin Enhanced";
 

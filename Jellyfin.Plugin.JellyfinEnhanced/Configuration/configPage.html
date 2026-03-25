@@ -1029,24 +1029,24 @@
                         <legend class="sectionTitle"><h3>User Import</h3></legend>
                         <div class="configSection">
                             <div class="fieldDescription" style="margin-bottom: 1.5em;">
-                                Automatically import Jellyfin users into Jellyseerr so they can use Seerr Search without needing to visit Jellyseerr directly.
+                                Automatically import Jellyfin users into Seerr so they can use Seerr Search without needing to visit Seerr directly.
                             </div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="jellyseerrAutoImportUsers" is="emby-checkbox" type="checkbox"/>
-                                    <span>Auto-import Jellyfin users to Jellyseerr</span>
+                                    <span>Auto-import Jellyfin users to Seerr</span>
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">
-                                When enabled, new Jellyfin users are automatically imported into Jellyseerr the first time they use Seerr Search (just-in-time). A scheduled task also runs periodically to bulk-import all users. Already-imported users are automatically skipped.
+                                When enabled, new Jellyfin users are automatically imported into Seerr the first time they use Seerr Search (just-in-time). A scheduled task also runs periodically to bulk-import all users. Already imported users are automatically skipped.
                                 <br><br>
-                                Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Jellyseerr".
+                                Configure the bulk import frequency in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Import Jellyfin Users to Seerr".
                             </div>
                             <div style="margin-bottom: 2em;">
                                 <details id="blockedUsersDetails" style="background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
                                     <summary style="cursor: pointer; font-weight: bold;">Blocked users <span id="blockedUsersCount" style="opacity: 0.7; font-weight: normal;">(none)</span></summary>
                                     <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 0.5em;">
-                                        Select users to exclude from Jellyseerr import. Blocked users will never be looked up or imported — no API calls are made for them.
+                                        Select users to exclude from Seerr import. Blocked users will never be looked up or imported — no API calls are made for them.
                                     </div>
                                     <div id="blockedUsersContainer" style="padding: 0.5em 0; max-height: 300px; overflow-y: auto;">
                                         <span style="opacity: 0.5;">Loading users...</span>
@@ -3160,7 +3160,7 @@
                 resultDiv.style.color = '#4caf50';
             } catch (e) {
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = 'Import failed. Check Jellyseerr configuration and API key permissions.';
+                resultDiv.textContent = 'Import failed. Check Seerr configuration and API key permissions.';
                 resultDiv.style.color = '#f44336';
                 console.error('User import failed:', e);
             } finally {
