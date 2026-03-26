@@ -3830,7 +3830,7 @@
                     good++;
                 } else {
                     // Reachable but unknown service — could be anything (SABnzbd, nginx, etc.)
-                    warnings.push(p.label + ': Right side (' + p.right + ') is reachable but could not confirm it is ' + p.service + '. Make sure this is the correct URL.');
+                    warnings.push(p.label + ': Right side (' + p.right + ') is reachable but JE could not verify it is ' + p.service + '. This may still work correctly — JE just cannot confirm the service automatically.');
                 }
             });
 
