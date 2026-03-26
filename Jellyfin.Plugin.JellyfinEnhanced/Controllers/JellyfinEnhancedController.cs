@@ -2678,6 +2678,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // ==================== Arr Links ====================
 
         /// <summary>
+        /// Validates connectivity to a Sonarr instance using the system status endpoint.
+        /// </summary>
+        [HttpGet("arr/validate/sonarr")]
+        [Authorize]
+        public async Task<IActionResult> ValidateSonarr([FromQuery] string url, [FromQuery] string apiKey)
+        {
+            return await ValidateArrService("Sonarr", url, apiKey);
+        }
+
+        /// <summary>
+        /// Validates connectivity to a Radarr instance using the system status endpoint.
+        /// </summary>
+        [HttpGet("arr/validate/radarr")]
+        [Authorize]
+        public async Task<IActionResult> ValidateRadarr([FromQuery] string url, [FromQuery] string apiKey)
+        {
+            return await ValidateArrService("Radarr", url, apiKey);
+        }
+
+        private async Task<IActionResult> ValidateArrService(string serviceName, string url, string apiKey)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
+                return BadRequest(new { ok = false, message = $"Missing {serviceName} URL or API key" });
+
+            var http = _httpClientFactory.CreateClient();
+            http.DefaultRequestHeaders.Clear();
+            http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+            http.Timeout = TimeSpan.FromSeconds(10);
+
+            try
+            {
+                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v3/system/status");
+                if (resp.IsSuccessStatusCode)
+                    return Ok(new { ok = true });
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                    resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    return StatusCode(401, new { ok = false, message = $"API key is invalid or unauthorized for {serviceName}" });
+
+                return StatusCode((int)resp.StatusCode, new { ok = false, message = $"{serviceName} returned an error (status {(int)resp.StatusCode})" });
+            }
+            catch (TaskCanceledException)
+            {
+                return StatusCode(504, new { ok = false, message = $"Connection to {serviceName} timed out. Check the URL is correct." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"{serviceName} validate failed for {url}: {ex.Message}");
+                return StatusCode(502, new { ok = false, message = $"Could not reach {serviceName}. Check the URL is correct and the server is running." });
+            }
+        }
+
+        /// <summary>
         /// Look up a series' titleSlug in Sonarr by its TVDB ID.
         /// Used by the frontend to generate accurate Sonarr series links,
         /// avoiding slug mismatches caused by translated titles.

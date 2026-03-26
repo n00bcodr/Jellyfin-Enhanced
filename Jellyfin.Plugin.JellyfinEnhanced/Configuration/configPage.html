@@ -1086,23 +1086,37 @@
                                 <input id="sonarrUrl" is="emby-input" name="sonarrUrl" type="text" placeholder="e.g., http://192.168.100.100:8989"/>
                             </div>
                             <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key" style="flex-grow: 1;"/>
+                                    <span id="sonarrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testSonarrBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5em 0;">
+                            <div class="inputContainer" style="margin-top: 1em;">
                                 <label class="inputLabel inputLabelUnfocused" for="radarrUrl">Radarr URL</label>
                                 <input id="radarrUrl" is="emby-input" name="radarrUrl" type="text" placeholder="e.g., http://192.168.100.100:7878"/>
                             </div>
                             <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key" style="flex-grow: 1;"/>
+                                    <span id="radarrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testRadarrBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5em 0;">
+                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label class="inputLabel inputLabelUnfocused" for="bazarrUrl">Bazarr URL</label>
                                 <input id="bazarrUrl" is="emby-input" name="bazarrUrl" type="text" placeholder="e.g., http://192.168.100.100:6767"/>
                                 <div class="fieldDescription">Note: This links to the main movies/series page as Bazarr does not support direct links.</div>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
-                                <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key"/>
-                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
-                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
-                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
                             </div>
                         </div>
                     </fieldset>
@@ -1131,6 +1145,12 @@
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="bazarrUrlMappings">Bazarr URL Mappings</label>
                                 <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="bazarrUrlMappings" name="bazarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:6767&#10;https://jellyfin.example.com|https://bazarr.example.com"></textarea>
                                 <div class="fieldDescription">Map Jellyfin access URLs to Bazarr URLs. Format: <code>jellyfin_url|bazarr_url</code> (one per line).<br>These mappings are useful when accessing Jellyfin via different URLs (e.g., internal network vs. public domain) and you need *arr links to use the appropriate corresponding URL.</div>
+                            </div>
+                            <div style="margin-top: 1em;">
+                                <button is="emby-button" type="button" id="validateArrMappingsBtn" class="raised button-submit emby-button">
+                                    <span>Validate Mappings</span>
+                                </button>
+                                <div id="arrMappingsValidationResult" style="display: none; margin-top: 0.8em; padding: 0.8em 1em; border-radius: 4px; font-size: 0.9em; line-height: 1.5;"></div>
                             </div>
                             <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label>
@@ -3535,6 +3555,165 @@
             await originalTestTmdb(event);
             updateAllDependencies();
         };
+
+        // === Arr Service Test Buttons ===
+        async function testArrConnection(serviceName, endpoint, urlInputId, apiKeyInputId, statusId, btnId) {
+            var urlVal = (document.querySelector('#' + urlInputId).value || '').trim();
+            var apiKeyVal = (document.querySelector('#' + apiKeyInputId).value || '').trim();
+
+            if (!urlVal || !apiKeyVal) {
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide both a ' + serviceName + ' URL and API key to test the connection.' });
+                return;
+            }
+
+            var btn = document.getElementById(btnId);
+            var indicator = document.getElementById(statusId);
+            btn.disabled = true;
+            indicator.textContent = 'sync';
+            indicator.className = 'material-icons status-check';
+            indicator.style.color = '#00a4dc';
+
+            try {
+                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal, apiKey: apiKeyVal });
+                await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json' });
+
+                indicator.textContent = 'check_circle';
+                indicator.style.color = '#52b54b';
+                indicator.classList.remove('status-check');
+                Dashboard.alert({ title: 'Success', message: 'Successfully connected to ' + serviceName + '!' });
+            } catch (e) {
+                indicator.classList.remove('status-check');
+                indicator.textContent = 'error';
+                indicator.style.color = '#dc3545';
+
+                var msg;
+                if (e.status === 502) {
+                    msg = 'Could not reach the server. Check the URL is correct and ' + serviceName + ' is running.';
+                } else if (e.status === 504) {
+                    msg = 'Connection timed out. The server may be unreachable.';
+                } else if (e.status === 401 || e.status === 403) {
+                    msg = 'The API key was rejected by ' + serviceName + '. Check the key is correct.';
+                } else {
+                    msg = 'Connection to ' + serviceName + ' failed (error ' + (e.status || 'unknown') + ').';
+                }
+                Dashboard.alert({ title: 'Connection Failed', message: msg });
+            } finally {
+                btn.disabled = false;
+            }
+
+            updateAllDependencies();
+        }
+
+        document.getElementById('testSonarrBtn').addEventListener('click', function() {
+            testArrConnection('Sonarr', 'sonarr', 'sonarrUrl', 'sonarrApiKey', 'sonarrStatusIndicator', 'testSonarrBtn');
+        });
+        document.getElementById('testRadarrBtn').addEventListener('click', function() {
+            testArrConnection('Radarr', 'radarr', 'radarrUrl', 'radarrApiKey', 'radarrStatusIndicator', 'testRadarrBtn');
+        });
+
+        // === URL Mapping Validation ===
+        var ARR_PORTS = { '8989': 'Sonarr', '7878': 'Radarr', '6767': 'Bazarr' };
+        var JELLYFIN_PORTS = { '8096': true, '8920': true };
+
+        function addIssue(container, text) {
+            var div = document.createElement('div');
+            div.style.cssText = 'margin-bottom: 0.5em;';
+            div.textContent = text;
+            container.appendChild(div);
+        }
+
+        function validateUrlMappings() {
+            var mappingDefs = [
+                { id: 'sonarrUrlMappings', service: 'Sonarr', port: '8989' },
+                { id: 'radarrUrlMappings', service: 'Radarr', port: '7878' },
+                { id: 'bazarrUrlMappings', service: 'Bazarr', port: '6767' }
+            ];
+            var issues = [];
+            var good = 0;
+
+            mappingDefs.forEach(function(m) {
+                var textarea = document.getElementById(m.id);
+                if (!textarea) return;
+                var lines = textarea.value.split('\n');
+
+                lines.forEach(function(line, idx) {
+                    var trimmed = line.trim();
+                    if (!trimmed) return;
+                    var lineLabel = m.service + ' line ' + (idx + 1);
+
+                    var parts = trimmed.split('|');
+                    if (parts.length !== 2) {
+                        issues.push(lineLabel + ': Invalid format. Use jellyfin_url|' + m.service.toLowerCase() + '_url separated by a pipe (|).');
+                        return;
+                    }
+
+                    var left = parts[0].trim();
+                    var right = parts[1].trim();
+
+                    if (!left || !right) {
+                        issues.push(lineLabel + ': Both sides of the pipe must have a URL.');
+                        return;
+                    }
+
+                    if (!left.match(/^https?:\/\//i)) {
+                        issues.push(lineLabel + ': Left side (' + left + ') should start with http:// or https://.');
+                        return;
+                    }
+                    if (!right.match(/^https?:\/\//i)) {
+                        issues.push(lineLabel + ': Right side (' + right + ') should start with http:// or https://.');
+                        return;
+                    }
+
+                    var leftLower = left.toLowerCase().replace(/\/+$/, '');
+                    var rightLower = right.toLowerCase().replace(/\/+$/, '');
+
+                    if (leftLower === rightLower) {
+                        issues.push(lineLabel + ': Both sides are the same URL (' + left + '). Left = your Jellyfin URL, right = ' + m.service + ' URL.');
+                        return;
+                    }
+
+                    var leftPort = (left.match(/:(\d+)/) || [])[1];
+                    if (leftPort && ARR_PORTS[leftPort]) {
+                        issues.push(lineLabel + ': Left side uses port ' + leftPort + ' (' + ARR_PORTS[leftPort] + ' default). Left should be your Jellyfin URL (e.g., http://your-server:8096), right should be the ' + m.service + ' URL.');
+                        return;
+                    }
+
+                    var rightPort = (right.match(/:(\d+)/) || [])[1];
+                    if (rightPort && JELLYFIN_PORTS[rightPort]) {
+                        issues.push(lineLabel + ': Right side uses port ' + rightPort + ' (Jellyfin default). Right should be the ' + m.service + ' URL, not Jellyfin.');
+                        return;
+                    }
+
+                    good++;
+                });
+            });
+
+            var resultDiv = document.getElementById('arrMappingsValidationResult');
+            resultDiv.textContent = '';
+
+            if (issues.length === 0 && good === 0) {
+                resultDiv.style.display = 'none';
+                return;
+            }
+
+            resultDiv.style.display = 'block';
+            if (issues.length === 0) {
+                resultDiv.style.backgroundColor = 'rgba(82, 181, 75, 0.15)';
+                resultDiv.style.borderLeft = '4px solid #52b54b';
+                var icon = document.createElement('i');
+                icon.className = 'material-icons';
+                icon.style.cssText = 'vertical-align: middle; color: #52b54b; margin-right: 0.5em;';
+                icon.textContent = 'check_circle';
+                resultDiv.appendChild(icon);
+                resultDiv.appendChild(document.createTextNode(good + ' mapping' + (good !== 1 ? 's' : '') + ' look correct.'));
+            } else {
+                resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
+                resultDiv.style.borderLeft = '4px solid #dc3545';
+                issues.forEach(function(issue) { addIssue(resultDiv, issue); });
+            }
+        }
+
+        document.getElementById('validateArrMappingsBtn').addEventListener('click', validateUrlMappings);
 
         clearTagsCacheBtn.addEventListener('click', async () => {
             if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
