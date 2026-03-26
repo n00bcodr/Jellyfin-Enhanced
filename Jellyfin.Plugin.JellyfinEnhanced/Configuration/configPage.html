@@ -21,10 +21,6 @@
                                 <span id="settingsSearchCount" style="display: none; position: absolute; right: 2.4em; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.4); font-size: 0.75em; white-space: nowrap;"></span>
                                 <button id="settingsSearchClear" type="button" style="display: none; position: absolute; right: 0.4em; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; padding: 0.2em; font-size: 1em; line-height: 1;">&#x2715;</button>
                             </div>
-                            <label style="display: flex; align-items: center; gap: 0.3em; margin-top: 0.25em; font-size: 0.7em; color: rgba(255,255,255,0.45); cursor: pointer; justify-content: flex-end;">
-                                <input id="settingsSearchAdvanced" type="checkbox" style="margin: 0; width: 12px; height: 12px;" />
-                                <span>Advanced (IDs &amp; attributes)</span>
-                            </label>
                         </div>
                 </div>
             </div>
@@ -1816,7 +1812,7 @@
             const searchInput = document.getElementById('settingsSearchInput');
             const searchClear = document.getElementById('settingsSearchClear');
             const searchCount = document.getElementById('settingsSearchCount');
-            const searchAdvanced = document.getElementById('settingsSearchAdvanced');
+
             const tabButtonsContainer = tabs[0] ? tabs[0].parentElement : null;
             let isSearchMode = false;
             const savedDetailsStates = new Map();
@@ -1849,9 +1845,6 @@
                 searchInput.focus();
             });
 
-            searchAdvanced.addEventListener('change', () => {
-                if (searchInput.value.trim()) performSearch(searchInput.value);
-            });
 
             searchInput.addEventListener('focus', () => {
                 searchInput.style.borderColor = 'var(--primary-accent-color, #00a4dc)';
@@ -1983,7 +1976,7 @@
                 if (!isSearchMode) enterSearchMode();
 
                 clearHighlights();
-                const advanced = searchAdvanced.checked;
+                const advanced = true;
                 let sectionCount = 0;
 
                 tabContents.forEach(tabContent => {
