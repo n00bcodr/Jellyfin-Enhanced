@@ -2779,21 +2779,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* continue */ }
 
-            // Try Jellyfin (/System/Info/Public — public endpoint, no auth)
+            // Try Jellyfin (/System/Info/Public — public endpoint, returns JSON)
             try
             {
                 var resp = await http.GetAsync($"{cleanUrl}/System/Info/Public");
                 if (resp.IsSuccessStatusCode)
-                    return Ok(new { reachable = true, service = "Jellyfin" });
+                {
+                    var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (ct.Contains("json"))
+                    {
+                        var body = await resp.Content.ReadAsStringAsync();
+                        if (body.Contains("ServerName", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Jellyfin" });
+                    }
+                    // 200 but HTML (SPA fallback from Sonarr/Radarr/etc) — not Jellyfin
+                }
             }
             catch { /* continue */ }
 
-            // Try Jellyseerr (/api/v1/status)
+            // Try Jellyseerr (/api/v1/status — returns JSON)
             try
             {
                 var resp = await http.GetAsync($"{cleanUrl}/api/v1/status");
                 if (resp.IsSuccessStatusCode)
-                    return Ok(new { reachable = true, service = "Jellyseerr" });
+                {
+                    var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (ct.Contains("json"))
+                        return Ok(new { reachable = true, service = "Jellyseerr" });
+                    // 200 but HTML — not Jellyseerr
+                }
             }
             catch { /* continue */ }
 
