@@ -2734,6 +2734,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// Identifies what service is running at a given URL by probing known API endpoints.
+        /// Returns reachability status and service name (Sonarr, Radarr, Jellyfin, Bazarr, or unknown).
+        /// </summary>
+        [HttpGet("arr/identify-url")]
+        [Authorize]
+        public async Task<IActionResult> IdentifyUrl([FromQuery] string url)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(url))
+                return BadRequest(new { reachable = false, service = "unknown" });
+
+            var http = _httpClientFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(5);
+            var cleanUrl = url.TrimEnd('/');
+
+            // Try Sonarr/Radarr (/api/v3/system/status — no auth needed for identification)
+            try
+            {
+                var resp = await http.GetAsync($"{cleanUrl}/api/v3/system/status");
+                if (resp.IsSuccessStatusCode)
+                {
+                    var json = await resp.Content.ReadAsStringAsync();
+                    if (json.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
+                        return Ok(new { reachable = true, service = "Sonarr" });
+                    if (json.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
+                        return Ok(new { reachable = true, service = "Radarr" });
+                    return Ok(new { reachable = true, service = "arr" });
+                }
+                // 401/403 means something is there but needs auth — still identifiable
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                    resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    return Ok(new { reachable = true, service = "arr" });
+                }
+            }
+            catch { /* continue */ }
+
+            // Try Jellyfin (/System/Info/Public — public endpoint, no auth)
+            try
+            {
+                var resp = await http.GetAsync($"{cleanUrl}/System/Info/Public");
+                if (resp.IsSuccessStatusCode)
+                    return Ok(new { reachable = true, service = "Jellyfin" });
+            }
+            catch { /* continue */ }
+
+            // Try generic reachability
+            try
+            {
+                var resp = await http.GetAsync(cleanUrl);
+                return Ok(new { reachable = true, service = "unknown" });
+            }
+            catch
+            {
+                return Ok(new { reachable = false, service = "unknown" });
+            }
+        }
+
+        /// <summary>
         /// Look up a series' titleSlug in Sonarr by its TVDB ID.
         /// Used by the frontend to generate accurate Sonarr series links,
         /// avoiding slug mismatches caused by translated titles.

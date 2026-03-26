@@ -3612,9 +3612,6 @@
         });
 
         // === URL Mapping Validation ===
-        var ARR_PORTS = { '8989': 'Sonarr', '7878': 'Radarr', '6767': 'Bazarr' };
-        var JELLYFIN_PORTS = { '8096': true, '8920': true };
-
         function addIssue(container, text) {
             var div = document.createElement('div');
             div.style.cssText = 'margin-bottom: 0.5em;';
@@ -3622,81 +3619,151 @@
             container.appendChild(div);
         }
 
-        function validateUrlMappings() {
+        async function identifyUrl(url) {
+            try {
+                var apiUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/identify-url', { url: url });
+                return await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
+            } catch (e) {
+                return { reachable: false, service: 'unknown' };
+            }
+        }
+
+        async function validateUrlMappings() {
+            var btn = document.getElementById('validateArrMappingsBtn');
+            var resultDiv = document.getElementById('arrMappingsValidationResult');
+            btn.disabled = true;
+            btn.querySelector('span').textContent = 'Validating...';
+            resultDiv.textContent = '';
+            resultDiv.style.display = 'block';
+            resultDiv.style.backgroundColor = 'rgba(0, 164, 220, 0.1)';
+            resultDiv.style.borderLeft = '4px solid #00a4dc';
+            resultDiv.textContent = 'Testing URLs...';
+
             var mappingDefs = [
-                { id: 'sonarrUrlMappings', service: 'Sonarr', port: '8989' },
-                { id: 'radarrUrlMappings', service: 'Radarr', port: '7878' },
-                { id: 'bazarrUrlMappings', service: 'Bazarr', port: '6767' }
+                { id: 'sonarrUrlMappings', service: 'Sonarr' },
+                { id: 'radarrUrlMappings', service: 'Radarr' },
+                { id: 'bazarrUrlMappings', service: 'Bazarr' }
             ];
-            var issues = [];
-            var good = 0;
+
+            // Collect all pairs with basic format validation first
+            var pairs = [];
+            var formatIssues = [];
 
             mappingDefs.forEach(function(m) {
                 var textarea = document.getElementById(m.id);
                 if (!textarea) return;
-                var lines = textarea.value.split('\n');
-
-                lines.forEach(function(line, idx) {
+                textarea.value.split('\n').forEach(function(line, idx) {
                     var trimmed = line.trim();
                     if (!trimmed) return;
                     var lineLabel = m.service + ' line ' + (idx + 1);
-
                     var parts = trimmed.split('|');
                     if (parts.length !== 2) {
-                        issues.push(lineLabel + ': Invalid format. Use jellyfin_url|' + m.service.toLowerCase() + '_url separated by a pipe (|).');
+                        formatIssues.push(lineLabel + ': Invalid format. Use jellyfin_url|' + m.service.toLowerCase() + '_url separated by a pipe (|).');
                         return;
                     }
-
                     var left = parts[0].trim();
                     var right = parts[1].trim();
-
                     if (!left || !right) {
-                        issues.push(lineLabel + ': Both sides of the pipe must have a URL.');
+                        formatIssues.push(lineLabel + ': Both sides of the pipe must have a URL.');
                         return;
                     }
-
                     if (!left.match(/^https?:\/\//i)) {
-                        issues.push(lineLabel + ': Left side (' + left + ') should start with http:// or https://.');
+                        formatIssues.push(lineLabel + ': Left side (' + left + ') should start with http:// or https://.');
                         return;
                     }
                     if (!right.match(/^https?:\/\//i)) {
-                        issues.push(lineLabel + ': Right side (' + right + ') should start with http:// or https://.');
+                        formatIssues.push(lineLabel + ': Right side (' + right + ') should start with http:// or https://.');
                         return;
                     }
-
-                    var leftLower = left.toLowerCase().replace(/\/+$/, '');
-                    var rightLower = right.toLowerCase().replace(/\/+$/, '');
-
-                    if (leftLower === rightLower) {
-                        issues.push(lineLabel + ': Both sides are the same URL (' + left + '). Left = your Jellyfin URL, right = ' + m.service + ' URL.');
-                        return;
-                    }
-
-                    var leftPort = (left.match(/:(\d+)/) || [])[1];
-                    if (leftPort && ARR_PORTS[leftPort]) {
-                        issues.push(lineLabel + ': Left side uses port ' + leftPort + ' (' + ARR_PORTS[leftPort] + ' default). Left should be your Jellyfin URL (e.g., http://your-server:8096), right should be the ' + m.service + ' URL.');
-                        return;
-                    }
-
-                    var rightPort = (right.match(/:(\d+)/) || [])[1];
-                    if (rightPort && JELLYFIN_PORTS[rightPort]) {
-                        issues.push(lineLabel + ': Right side uses port ' + rightPort + ' (Jellyfin default). Right should be the ' + m.service + ' URL, not Jellyfin.');
-                        return;
-                    }
-
-                    good++;
+                    pairs.push({ left: left, right: right, service: m.service, label: lineLabel });
                 });
             });
 
-            var resultDiv = document.getElementById('arrMappingsValidationResult');
-            resultDiv.textContent = '';
-
-            if (issues.length === 0 && good === 0) {
-                resultDiv.style.display = 'none';
+            if (formatIssues.length > 0 && pairs.length === 0) {
+                resultDiv.textContent = '';
+                resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
+                resultDiv.style.borderLeft = '4px solid #dc3545';
+                formatIssues.forEach(function(i) { addIssue(resultDiv, i); });
+                btn.disabled = false;
+                btn.querySelector('span').textContent = 'Validate Mappings';
                 return;
             }
 
-            resultDiv.style.display = 'block';
+            if (pairs.length === 0 && formatIssues.length === 0) {
+                resultDiv.style.display = 'none';
+                btn.disabled = false;
+                btn.querySelector('span').textContent = 'Validate Mappings';
+                return;
+            }
+
+            // Identify all unique URLs
+            var uniqueUrls = {};
+            pairs.forEach(function(p) {
+                uniqueUrls[p.left.replace(/\/+$/, '')] = null;
+                uniqueUrls[p.right.replace(/\/+$/, '')] = null;
+            });
+
+            var urlKeys = Object.keys(uniqueUrls);
+            var results = await Promise.all(urlKeys.map(function(u) { return identifyUrl(u); }));
+            urlKeys.forEach(function(u, i) { uniqueUrls[u] = results[i]; });
+
+            // Analyze each pair
+            var issues = formatIssues.slice();
+            var good = 0;
+
+            pairs.forEach(function(p) {
+                var leftInfo = uniqueUrls[p.left.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
+                var rightInfo = uniqueUrls[p.right.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
+
+                if (!leftInfo.reachable) {
+                    issues.push(p.label + ': Left URL (' + p.left + ') is unreachable. Check for typos or that the server is running.');
+                    return;
+                }
+                if (!rightInfo.reachable) {
+                    issues.push(p.label + ': Right URL (' + p.right + ') is unreachable. Check for typos or that the server is running.');
+                    return;
+                }
+
+                var leftLower = p.left.toLowerCase().replace(/\/+$/, '');
+                var rightLower = p.right.toLowerCase().replace(/\/+$/, '');
+                if (leftLower === rightLower) {
+                    issues.push(p.label + ': Both sides are the same URL. Left should be Jellyfin, right should be ' + p.service + '.');
+                    return;
+                }
+
+                // Check if URLs are the right way around
+                var leftIsArr = (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr');
+                var rightIsJellyfin = (rightInfo.service === 'Jellyfin');
+
+                if (leftIsArr && rightIsJellyfin) {
+                    var detected = leftInfo.service === 'arr' ? 'an *arr service' : leftInfo.service;
+                    issues.push(p.label + ': URLs are reversed. Left side is ' + detected + ' and right side is Jellyfin. Swap them: Jellyfin URL goes on the left, ' + p.service + ' URL on the right.');
+                    return;
+                }
+
+                if (leftIsArr) {
+                    var detected = leftInfo.service === 'arr' ? 'an *arr service' : leftInfo.service;
+                    issues.push(p.label + ': Left side (' + p.left + ') is running ' + detected + ', not Jellyfin. Left should be your Jellyfin URL.');
+                    return;
+                }
+
+                if (rightIsJellyfin) {
+                    issues.push(p.label + ': Right side (' + p.right + ') is running Jellyfin, not ' + p.service + '. Right should be the ' + p.service + ' URL.');
+                    return;
+                }
+
+                // Check service mismatch (e.g., Sonarr mapping pointing to Radarr)
+                if (rightInfo.service !== 'unknown' && rightInfo.service !== p.service && rightInfo.service !== 'arr') {
+                    issues.push(p.label + ': Right side (' + p.right + ') is running ' + rightInfo.service + ', but this is the ' + p.service + ' mapping section.');
+                    return;
+                }
+
+                // Looks good
+                good++;
+            });
+
+            // Display results
+            resultDiv.textContent = '';
             if (issues.length === 0) {
                 resultDiv.style.backgroundColor = 'rgba(82, 181, 75, 0.15)';
                 resultDiv.style.borderLeft = '4px solid #52b54b';
@@ -3705,12 +3772,18 @@
                 icon.style.cssText = 'vertical-align: middle; color: #52b54b; margin-right: 0.5em;';
                 icon.textContent = 'check_circle';
                 resultDiv.appendChild(icon);
-                resultDiv.appendChild(document.createTextNode(good + ' mapping' + (good !== 1 ? 's' : '') + ' look correct.'));
+                resultDiv.appendChild(document.createTextNode(good + ' mapping' + (good !== 1 ? 's' : '') + ' verified.'));
             } else {
                 resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
                 resultDiv.style.borderLeft = '4px solid #dc3545';
-                issues.forEach(function(issue) { addIssue(resultDiv, issue); });
+                issues.forEach(function(i) { addIssue(resultDiv, i); });
+                if (good > 0) {
+                    addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' look correct.');
+                }
             }
+
+            btn.disabled = false;
+            btn.querySelector('span').textContent = 'Validate Mappings';
         }
 
         document.getElementById('validateArrMappingsBtn').addEventListener('click', validateUrlMappings);
