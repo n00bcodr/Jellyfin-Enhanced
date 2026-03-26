@@ -98,6 +98,21 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
     - Jellyseerr instance with **4K configuration**
     - Permissions for users to request 4K quality
 
+  ### Enable 4K TV Requests
+  !!! note "Requirements"
+
+    **Requirements:**
+
+    - Jellyseerr instance with **4K Sonarr configured**
+    - Permissions for users to request **4K Sonarr** quality
+
+  When enabled:
+
+  - TV request buttons include a 4K dropdown action.
+  - Choosing **Request in 4K** opens the season modal in 4K mode.
+  - The season modal title shows **Request Series - 4K**.
+  - The primary season modal button label becomes **Request in 4K**.
+
 ### Show Advanced Request Options
 - Display advanced options in request modal
 - Season selection, quality options, etc.
