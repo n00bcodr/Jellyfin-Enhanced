@@ -611,10 +611,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var http = _httpClientFactory.CreateClient();
             http.DefaultRequestHeaders.Clear();
             http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+            http.Timeout = TimeSpan.FromSeconds(10);
 
             try
             {
-                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/user");
+                using var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/user");
                 if (resp.IsSuccessStatusCode)
                     return Ok(new { ok = true });
 
@@ -2051,6 +2052,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// IPs are intentionally allowed since arr services run on the local network.
         /// All endpoints using this are admin-only.
         /// </summary>
+        /// <summary>
+        /// Cloud metadata and loopback hosts blocked from outbound requests.
+        /// </summary>
+        private static readonly HashSet<string> _blockedHosts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "169.254.169.254", "metadata.google.internal", "metadata.goog",
+            "100.100.100.200", "169.254.170.2", "fd00:ec2::254",
+            "0.0.0.0", "::1", "::"
+        };
+
+        /// <summary>
+        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes
+        /// and known cloud metadata endpoints. Not a full SSRF control — private/LAN
+        /// IPs are intentionally allowed since arr services run on the local network.
+        /// All endpoints using this are admin-only.
+        /// </summary>
         private bool IsAllowedUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -2061,29 +2078,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return false;
 
             var host = uri.Host.TrimEnd('.').ToLowerInvariant();
-
-            // Block cloud metadata services (AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean)
-            var blockedHosts = new[]
-            {
-                "169.254.169.254",
-                "metadata.google.internal",
-                "metadata.goog",
-                "100.100.100.200",
-                "169.254.170.2",
-                "fd00:ec2::254",
-                "[fd00:ec2::254]"
-            };
-            foreach (var blocked in blockedHosts)
-            {
-                if (host == blocked)
-                    return false;
-            }
-
-            // Block link-local and zero addresses
-            if (host == "0.0.0.0" || host == "[::1]" || host == "[::]")
-                return false;
-
-            return true;
+            return !_blockedHosts.Contains(host);
         }
 
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
@@ -2741,6 +2736,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return await ValidateArrService("Radarr", url, apiKey);
         }
 
+        /// <summary>
+        /// Validates connectivity and API key for a Sonarr or Radarr instance
+        /// by probing the /api/v3/system/status endpoint.
+        /// </summary>
+        /// <param name="serviceName">Display name for error messages (e.g., "Sonarr").</param>
+        /// <param name="url">The base URL of the arr service.</param>
+        /// <param name="apiKey">The API key to authenticate with.</param>
         private async Task<IActionResult> ValidateArrService(string serviceName, string url, string apiKey)
         {
             if (!IsAdminUser())

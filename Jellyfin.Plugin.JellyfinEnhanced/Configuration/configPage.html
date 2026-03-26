@@ -1858,19 +1858,25 @@
                 }
             });
 
-            function getSearchableText(element, advanced) {
-                let text = element.textContent.toLowerCase();
-                if (advanced) {
-                    element.querySelectorAll('[id], [name], [data-text], [data-icon]').forEach(el => {
-                        if (el.id) text += ' ' + el.id.toLowerCase();
-                        if (el.name) text += ' ' + el.name.toLowerCase();
-                        if (el.dataset.text) text += ' ' + el.dataset.text.toLowerCase();
-                        if (el.dataset.icon) text += ' ' + el.dataset.icon.toLowerCase();
-                    });
-                }
+            /**
+             * Collects searchable text from an element, including IDs, names, and data attributes.
+             * @param {HTMLElement} element - The DOM element to extract text from
+             * @returns {string} Lowercase concatenation of text content and attribute values
+             */
+            function getSearchableText(element) {
+                var text = element.textContent.toLowerCase();
+                element.querySelectorAll('[id], [name], [data-text], [data-icon]').forEach(function(el) {
+                    if (el.id) text += ' ' + el.id.toLowerCase();
+                    if (el.name) text += ' ' + el.name.toLowerCase();
+                    if (el.dataset.text) text += ' ' + el.dataset.text.toLowerCase();
+                    if (el.dataset.icon) text += ' ' + el.dataset.icon.toLowerCase();
+                });
                 return text;
             }
 
+            /**
+             * Removes all search highlight marks and restores original text nodes.
+             */
             function clearHighlights() {
                 form.querySelectorAll('.je-search-match').forEach(mark => {
                     const parent = mark.parentNode;
@@ -1881,6 +1887,11 @@
                 currentMatchIdx = -1;
             }
 
+            /**
+             * Walks text nodes in an element and wraps query matches in highlight mark elements.
+             * @param {HTMLElement} element - The container to search within
+             * @param {string} query - Lowercase search term to highlight
+             */
             function highlightTextIn(element, query) {
                 const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
                     acceptNode: function(node) {
@@ -1914,6 +1925,10 @@
                 });
             }
 
+            /**
+             * Navigates to a specific search match by index and scrolls it into view.
+             * @param {number} index - Zero-based index of the match to navigate to
+             */
             function goToMatch(index) {
                 if (allMatches.length === 0) return;
                 if (currentMatchIdx >= 0 && currentMatchIdx < allMatches.length) {
@@ -1927,6 +1942,9 @@
                 searchCount.textContent = (currentMatchIdx + 1) + ' of ' + allMatches.length;
             }
 
+            /**
+             * Enters search mode: saves detail open/closed states, hides tab buttons, and adds tab labels.
+             */
             function enterSearchMode() {
                 if (isSearchMode) return;
                 isSearchMode = true;
@@ -1944,6 +1962,9 @@
                 });
             }
 
+            /**
+             * Exits search mode: restores tab visibility, detail states, and clears highlights.
+             */
             function exitSearchMode() {
                 isSearchMode = false;
                 clearHighlights();
@@ -1965,6 +1986,10 @@
                 searchClear.style.display = 'none';
             }
 
+            /**
+             * Filters visible sections by query, highlights matches, and updates the match counter.
+             * @param {string} query - The search term entered by the user
+             */
             function performSearch(query) {
                 query = query.toLowerCase().trim();
 
@@ -1976,7 +2001,6 @@
                 if (!isSearchMode) enterSearchMode();
 
                 clearHighlights();
-                const advanced = true;
                 let sectionCount = 0;
 
                 tabContents.forEach(tabContent => {
@@ -1984,7 +2008,7 @@
                     const fieldsets = tabContent.querySelectorAll(':scope > fieldset');
 
                     fieldsets.forEach(fieldset => {
-                        const fullText = getSearchableText(fieldset, advanced);
+                        const fullText = getSearchableText(fieldset);
 
                         if (!fullText.includes(query)) {
                             fieldset.classList.add('je-search-hidden');
@@ -1997,7 +2021,7 @@
 
                         const detailsEls = fieldset.querySelectorAll('details');
                         detailsEls.forEach(detail => {
-                            if (getSearchableText(detail, advanced).includes(query)) {
+                            if (getSearchableText(detail).includes(query)) {
                                 detail.classList.remove('je-search-hidden');
                                 detail.open = true;
                             } else {
@@ -2197,15 +2221,7 @@
                     }
                 } catch (e) {
                     console.error(`Seerr validation failed for ${url}:`, e);
-                    if (e.status === 502) {
-                        lastError = 'Could not reach ' + url + '. Check the URL is correct and the server is running.';
-                    } else if (e.status === 401 || e.status === 403) {
-                        lastError = 'The API key was rejected by ' + url + '. Check the key is correct.';
-                    } else if (e.status === 400) {
-                        lastError = 'Missing URL or API key.';
-                    } else {
-                        lastError = 'Connection to ' + url + ' failed (error ' + (e.status || 'unknown') + ').';
-                    }
+                    lastError = connectionErrorMessage(e, 'Jellyseerr', url);
                 }
             }
 
@@ -3270,17 +3286,29 @@
         // SETTING DEPENDENCY SYSTEM
         // ================================
 
+        /**
+         * Checks whether a TMDB API key is configured in either input field.
+         * @returns {boolean} True if a non-empty TMDB key exists
+         */
         function hasTmdbKey() {
             return document.querySelector('#TMDB_API_KEY').value.trim().length > 0
                 || document.querySelector('#jellyseerr_TMDB_API_KEY').value.trim().length > 0;
         }
 
+        /**
+         * Checks whether Jellyseerr is enabled with both a URL and API key configured.
+         * @returns {boolean} True if Jellyseerr is fully configured
+         */
         function hasJellyseerrConfigured() {
             return document.querySelector('#jellyseerrEnabled').checked
                 && document.querySelector('#jellyseerrUrls').value.trim().length > 0
                 && document.querySelector('#JellyseerrApiKey').value.trim().length > 0;
         }
 
+        /**
+         * Checks whether at least one arr service (Sonarr or Radarr) has a URL and API key.
+         * @returns {boolean} True if any arr service is configured
+         */
         function hasAnyArrService() {
             var sonarrUrl = document.querySelector('#sonarrUrl').value.trim();
             var sonarrKey = document.querySelector('#sonarrApiKey').value.trim();
@@ -3328,12 +3356,23 @@
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
         ];
 
+        /**
+         * Adds a dependency tag to an element's comma-separated data-dep-disabled attribute.
+         * @param {HTMLElement} el - The element to tag
+         * @param {string} tag - The dependency tag to add
+         */
         function addDepTag(el, tag) {
             var existing = (el.getAttribute('data-dep-disabled') || '').split(',').filter(Boolean);
             if (existing.indexOf(tag) === -1) existing.push(tag);
             el.setAttribute('data-dep-disabled', existing.join(','));
         }
 
+        /**
+         * Removes a dependency tag from an element; returns true if all tags are cleared.
+         * @param {HTMLElement} el - The element to update
+         * @param {string} tag - The dependency tag to remove
+         * @returns {boolean} True if no dependency tags remain on the element
+         */
         function removeDepTag(el, tag) {
             var existing = (el.getAttribute('data-dep-disabled') || '').split(',').filter(Boolean);
             var filtered = existing.filter(function(t) { return t !== tag; });
@@ -3345,6 +3384,11 @@
             return true;
         }
 
+        /**
+         * Creates an orange warning banner DOM element for a missing section dependency.
+         * @param {Object} dep - Dependency rule with bannerIcon, bannerTitle, and bannerHint
+         * @returns {HTMLElement} The constructed banner element
+         */
         function createDepBanner(dep) {
             var banner = document.createElement('div');
             banner.id = dep.bannerId;
@@ -3370,6 +3414,10 @@
             return banner;
         }
 
+        /**
+         * Evaluates one section-level dependency rule, showing/hiding banners and disabling inputs.
+         * @param {Object} dep - Section dependency rule with checkFn, tabSelector, and banner config
+         */
         function updateSectionDep(dep) {
             var isMet = dep.checkFn();
             var tab = document.querySelector(dep.tabSelector);
@@ -3423,6 +3471,10 @@
             });
         }
 
+        /**
+         * Evaluates one individual setting dependency, disabling checkbox and showing hint when unmet.
+         * @param {Object} dep - Individual dependency rule with id, checkFn, hint, and icon
+         */
         function updateIndividualDep(dep) {
             var checkbox = document.getElementById(dep.id);
             if (!checkbox) return;
@@ -3496,6 +3548,10 @@
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
         ];
 
+        /**
+         * Evaluates one parent-child dependency, disabling children when the parent is unchecked.
+         * @param {Object} dep - Parent dependency rule with parent id, label, and children ids
+         */
         function updateParentDep(dep) {
             var parent = document.getElementById(dep.parent);
             if (!parent) return;
@@ -3538,6 +3594,9 @@
             });
         }
 
+        /**
+         * Orchestrator: evaluates all section, individual, and parent dependency rules.
+         */
         function updateAllDependencies() {
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
@@ -3546,6 +3605,7 @@
 
         // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)
         var depDebounce;
+        /** Debounced wrapper that delays updateAllDependencies by 150ms. */
         function debouncedUpdateDeps() {
             clearTimeout(depDebounce);
             depDebounce = setTimeout(updateAllDependencies, 150);
@@ -3573,6 +3633,31 @@
         };
 
         // === Arr Service Test Buttons ===
+
+        /**
+         * Produces a user-friendly error message from a connection test failure.
+         * @param {Object} error - The ajax error object with a status property
+         * @param {string} serviceName - Display name of the service
+         * @param {string} url - The URL that was tested
+         * @returns {string} Human-readable error message
+         */
+        function connectionErrorMessage(error, serviceName, url) {
+            if (error.status === 502) return 'Could not reach ' + url + '. Check the URL is correct and ' + serviceName + ' is running.';
+            if (error.status === 504) return 'Connection timed out. The server may be unreachable.';
+            if (error.status === 401 || error.status === 403) return 'The API key was rejected. Check the key is correct.';
+            if (error.status === 400) return 'Missing URL or API key.';
+            return 'Connection to ' + serviceName + ' failed (error ' + (error.status || 'unknown') + ').';
+        }
+
+        /**
+         * Tests connectivity to a Sonarr/Radarr instance via the backend validation endpoint.
+         * @param {string} serviceName - Display name (e.g. 'Sonarr')
+         * @param {string} endpoint - Backend route segment (e.g. 'sonarr')
+         * @param {string} urlInputId - DOM id of the URL input
+         * @param {string} apiKeyInputId - DOM id of the API key input
+         * @param {string} statusId - DOM id of the status indicator icon
+         * @param {string} btnId - DOM id of the test button
+         */
         async function testArrConnection(serviceName, endpoint, urlInputId, apiKeyInputId, statusId, btnId) {
             var urlVal = (document.querySelector('#' + urlInputId).value || '').trim();
             var apiKeyVal = (document.querySelector('#' + apiKeyInputId).value || '').trim();
@@ -3602,16 +3687,7 @@
                 indicator.textContent = 'error';
                 indicator.style.color = '#dc3545';
 
-                var msg;
-                if (e.status === 502) {
-                    msg = 'Could not reach the server. Check the URL is correct and ' + serviceName + ' is running.';
-                } else if (e.status === 504) {
-                    msg = 'Connection timed out. The server may be unreachable.';
-                } else if (e.status === 401 || e.status === 403) {
-                    msg = 'The API key was rejected by ' + serviceName + '. Check the key is correct.';
-                } else {
-                    msg = 'Connection to ' + serviceName + ' failed (error ' + (e.status || 'unknown') + ').';
-                }
+                var msg = connectionErrorMessage(e, serviceName, urlVal);
                 Dashboard.alert({ title: 'Connection Failed', message: msg });
             } finally {
                 btn.disabled = false;
@@ -3628,6 +3704,11 @@
         });
 
         // === URL Mapping Validation ===
+        /**
+         * Appends an issue message div to a validation result container.
+         * @param {HTMLElement} container - The container element to append to
+         * @param {string} text - The issue message text
+         */
         function addIssue(container, text) {
             var div = document.createElement('div');
             div.style.cssText = 'margin-bottom: 0.5em;';
@@ -3635,6 +3716,11 @@
             container.appendChild(div);
         }
 
+        /**
+         * Probes a URL via the backend to identify what service is running at that address.
+         * @param {string} url - The URL to probe
+         * @returns {Promise<Object>} Result with reachable and service properties
+         */
         async function identifyUrl(url) {
             try {
                 var apiUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/identify-url', { url: url });
@@ -3644,6 +3730,11 @@
             }
         }
 
+        /**
+         * Client-side fallback to check URL reachability via a no-cors fetch with timeout.
+         * @param {string} url - The URL to check
+         * @returns {Promise<boolean>} True if the URL responds within 5 seconds
+         */
         async function isReachableFromBrowser(url) {
             try {
                 var controller = new AbortController();
@@ -3656,6 +3747,12 @@
             }
         }
 
+        /**
+         * Validates URL mapping entries by probing each URL and checking for mismatches.
+         * @param {Array<Object>} mappingDefs - Array of mapping definitions with inputId and expectedService
+         * @param {string} btnId - DOM id of the validate button
+         * @param {string} resultDivId - DOM id of the results container
+         */
         async function validateMappingSet(mappingDefs, btnId, resultDivId) {
             var btn = document.getElementById(btnId);
             var resultDiv = document.getElementById(resultDivId);
