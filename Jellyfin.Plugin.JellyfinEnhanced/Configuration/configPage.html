@@ -3818,7 +3818,12 @@
                         var configUrl = (document.getElementById(configUrlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
                         var configInfo = configUrl ? uniqueUrls[configUrl] : null;
                         if (configInfo && (configInfo.service === p.service || (configInfo.service === 'arr' && p.service !== 'Bazarr'))) {
-                            rightConfirmed = true;
+                            // Only cross-reference if the port matches the configured URL
+                            var mappingPort = (p.right.match(/:(\d+)/) || [])[1] || '';
+                            var configPort = (configUrl.match(/:(\d+)/) || [])[1] || '';
+                            if (mappingPort && configPort && mappingPort === configPort) {
+                                rightConfirmed = true;
+                            }
                         }
                     }
                 }
