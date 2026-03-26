@@ -63,7 +63,22 @@
         { text: "s'ha creat", icon: 'plus', color: '#2ed62eff' },
         { text: 'desinstal·lat', icon: 'delete', color: '#c3342a' },
         { text: "s'ha instal·lat", icon: 'inventory_2', color: '#c957ddff' },
-        { text: 'actualitzat', icon: 'update', color: '#00bcd4' }
+        { text: 'actualitzat', icon: 'update', color: '#00bcd4' },
+
+        // Polish
+        { text: 'został pomyślnie uwierzytelniony', icon: 'key', color: '#2e4ed6' },
+        { text: 'Nieudana próba logowania', icon: 'security_update_warning', color: '#f44336' },
+        { text: 'nieudana', icon: 'warning', color: '#ee3b3bff' },
+        { text: 'zakończył odtwarzanie', icon: 'check_circle', color: '#4caf50' },
+        { text: 'pobiera', icon: 'download', color: '#607d8b' },
+        { text: 'zostało zmienione', icon: 'key', color: '#ada130ff' },
+        { text: 'został utworzony', icon: 'plus', color: '#2ed62eff' },
+        { text: 'został rozłączony', icon: 'logout', color: '#be7404' },
+        { text: 'odtwarza', icon: 'play_arrow', color: '#2196f3' },
+        { text: 'odinstalowane', icon: 'delete', color: '#c3342a' },
+        { text: 'zostało zainstalowane', icon: 'inventory_2', color: '#c957ddff' },
+        { text: 'połączył się z', icon: 'login', color: 'green' },
+        { text: 'zaktualizowane', icon: 'update', color: '#00bcd4' }
     ];
 
     let isProcessing = false;
