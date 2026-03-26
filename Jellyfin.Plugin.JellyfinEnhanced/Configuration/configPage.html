@@ -3715,12 +3715,9 @@
                 var leftInfo = uniqueUrls[p.left.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
                 var rightInfo = uniqueUrls[p.right.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
 
-                if (!leftInfo.reachable) {
-                    issues.push(p.label + ': Left URL (' + p.left + ') is unreachable. Check for typos or that the server is running.');
-                    return;
-                }
+                // Right side (service URL) must be reachable from the server
                 if (!rightInfo.reachable) {
-                    issues.push(p.label + ': Right URL (' + p.right + ') is unreachable. Check for typos or that the server is running.');
+                    issues.push(p.label + ': Right URL (' + p.right + ') is unreachable. Check for typos or that ' + p.service + ' is running.');
                     return;
                 }
 
@@ -3731,8 +3728,8 @@
                     return;
                 }
 
-                // Check if URLs are the right way around
-                var leftIsArr = (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr');
+                // Check if left side is actually an arr service (detectable = definitely wrong)
+                var leftIsArr = leftInfo.reachable && (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr' || leftInfo.service === 'Jellyseerr');
                 var rightIsJellyfin = (rightInfo.service === 'Jellyfin');
 
                 if (leftIsArr && rightIsJellyfin) {
@@ -3758,6 +3755,7 @@
                     return;
                 }
 
+                // Left side unreachable from server is OK — it's a client URL (e.g., localhost)
                 // Looks good
                 good++;
             });
