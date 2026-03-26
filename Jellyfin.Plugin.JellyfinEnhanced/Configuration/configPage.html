@@ -3827,10 +3827,13 @@
             pairs.forEach(function(p) {
                 var urlId = serviceUrlIds[p.service];
                 if (!urlId) return;
-                var configUrl = (document.getElementById(urlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
-                if (configUrl && !uniqueUrls.hasOwnProperty(configUrl)) {
-                    uniqueUrls[configUrl] = null;
-                }
+                var configLines = (document.getElementById(urlId)?.value || '').split('\n');
+                configLines.forEach(function(line) {
+                    var configUrl = line.trim().replace(/\/+$/, '');
+                    if (configUrl && !uniqueUrls.hasOwnProperty(configUrl)) {
+                        uniqueUrls[configUrl] = null;
+                    }
+                });
             });
 
             var urlKeys = Object.keys(uniqueUrls);
@@ -3909,14 +3912,17 @@
                 if (!rightConfirmed && rightInfo.clientOnly) {
                     var configUrlId = serviceUrlIds[p.service];
                     if (configUrlId) {
-                        var configUrl = (document.getElementById(configUrlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
-                        var configInfo = configUrl ? uniqueUrls[configUrl] : null;
-                        if (configInfo && (configInfo.service === p.service || (configInfo.service === 'arr' && p.service !== 'Bazarr'))) {
-                            // Only cross-reference if the port matches the configured URL
-                            var mappingPort = (p.right.match(/:(\d+)/) || [])[1] || '';
-                            var configPort = (configUrl.match(/:(\d+)/) || [])[1] || '';
-                            if (mappingPort && configPort && mappingPort === configPort) {
-                                rightConfirmed = true;
+                        var configLines = (document.getElementById(configUrlId)?.value || '').split('\n');
+                        var mappingPort = (p.right.match(/:(\d+)/) || [])[1] || '';
+                        for (var ci = 0; ci < configLines.length && !rightConfirmed; ci++) {
+                            var configUrl = configLines[ci].trim().replace(/\/+$/, '');
+                            if (!configUrl) continue;
+                            var configInfo = uniqueUrls[configUrl];
+                            if (configInfo && (configInfo.service === p.service || (configInfo.service === 'arr' && p.service !== 'Bazarr'))) {
+                                var configPort = (configUrl.match(/:(\d+)/) || [])[1] || '';
+                                if (mappingPort && configPort && mappingPort === configPort) {
+                                    rightConfirmed = true;
+                                }
                             }
                         }
                     }

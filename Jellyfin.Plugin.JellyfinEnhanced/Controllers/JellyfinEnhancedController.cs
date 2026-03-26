@@ -2053,19 +2053,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// All endpoints using this are admin-only.
         /// </summary>
         /// <summary>
-        /// Cloud metadata and loopback hosts blocked from outbound requests.
+        /// Hostname blocklist for cloud metadata services.
         /// </summary>
         private static readonly HashSet<string> _blockedHosts = new(StringComparer.OrdinalIgnoreCase)
         {
-            "169.254.169.254", "metadata.google.internal", "metadata.goog",
-            "100.100.100.200", "169.254.170.2", "fd00:ec2::254",
-            "0.0.0.0", "::1", "::"
+            "metadata.google.internal", "metadata.goog"
         };
 
         /// <summary>
-        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes
-        /// and known cloud metadata endpoints. Not a full SSRF control — private/LAN
-        /// IPs are intentionally allowed since arr services run on the local network.
+        /// IP blocklist for cloud metadata, loopback, and unspecified addresses.
+        /// Parsed once and compared by value, not string, to handle all representations.
+        /// </summary>
+        private static readonly HashSet<System.Net.IPAddress> _blockedIPs = new()
+        {
+            System.Net.IPAddress.Parse("169.254.169.254"),  // AWS/Azure metadata
+            System.Net.IPAddress.Parse("100.100.100.200"),  // Alibaba metadata
+            System.Net.IPAddress.Parse("169.254.170.2"),    // AWS ECS metadata
+            System.Net.IPAddress.Parse("fd00:ec2::254"),    // AWS IPv6 metadata
+            System.Net.IPAddress.Loopback,                  // 127.0.0.1
+            System.Net.IPAddress.IPv6Loopback,              // ::1
+            System.Net.IPAddress.Any,                       // 0.0.0.0
+            System.Net.IPAddress.IPv6Any                    // ::
+        };
+
+        /// <summary>
+        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes,
+        /// known cloud metadata endpoints, and loopback/unspecified addresses using
+        /// parsed IP comparison. Not a full SSRF control — private/LAN IPs are
+        /// intentionally allowed since arr services run on the local network.
         /// All endpoints using this are admin-only.
         /// </summary>
         private bool IsAllowedUrl(string url)
@@ -2078,7 +2093,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return false;
 
             var host = uri.Host.TrimEnd('.').ToLowerInvariant();
-            return !_blockedHosts.Contains(host);
+
+            // Check hostname blocklist (metadata DNS names)
+            if (_blockedHosts.Contains(host))
+                return false;
+
+            // Parse and check IP blocklist (handles all representations: bracketed, decimal, etc.)
+            if (System.Net.IPAddress.TryParse(host, out var ip) && _blockedIPs.Contains(ip))
+                return false;
+
+            return true;
         }
 
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
