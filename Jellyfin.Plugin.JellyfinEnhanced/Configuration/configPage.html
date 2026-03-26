@@ -2277,9 +2277,9 @@
 
         /** @type {boolean} Tracks whether the File Transformation warning has been dismissed this session */
         var ftWarningDismissedSession = false;
-        var hasPluginPages = false;
-        var hasCustomTabs = false;
-        var hasIntroSkipper = false;
+        var hasPluginPages = null;
+        var hasCustomTabs = null;
+        var hasIntroSkipper = null;
 
         /**
          * Checks installed plugins (File Transformation, Plugin Pages, Custom Tabs).
@@ -3318,15 +3318,15 @@
             { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
-            { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
-            { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
-            { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
-            { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
-            { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
-            { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
-            { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
-            { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
-            { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
+            { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
         ];
 
         function addDepTag(el, tag) {
@@ -3591,8 +3591,8 @@
             indicator.style.color = '#00a4dc';
 
             try {
-                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal, apiKey: apiKeyVal });
-                await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json' });
+                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal });
+                await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKeyVal } });
 
                 indicator.textContent = 'check_circle';
                 indicator.style.color = '#52b54b';

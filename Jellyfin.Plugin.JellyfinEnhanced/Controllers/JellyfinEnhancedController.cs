@@ -2045,6 +2045,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private bool IsAdminUser() => User.IsInRole("Administrator");
 
+        /// <summary>
+        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes
+        /// and known cloud metadata endpoints. Not a full SSRF control — private/LAN
+        /// IPs are intentionally allowed since arr services run on the local network.
+        /// All endpoints using this are admin-only.
+        /// </summary>
         private bool IsAllowedUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -2053,10 +2059,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return false;
             if (uri.Scheme != "http" && uri.Scheme != "https")
                 return false;
-            var host = uri.Host;
-            if (host == "169.254.169.254" || host == "metadata.google.internal"
-                || host == "metadata.google.internal." || host == "100.100.100.200")
+
+            var host = uri.Host.TrimEnd('.').ToLowerInvariant();
+
+            // Block cloud metadata services (AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean)
+            var blockedHosts = new[]
+            {
+                "169.254.169.254",
+                "metadata.google.internal",
+                "metadata.goog",
+                "100.100.100.200",
+                "169.254.170.2",
+                "fd00:ec2::254",
+                "[fd00:ec2::254]"
+            };
+            foreach (var blocked in blockedHosts)
+            {
+                if (host == blocked)
+                    return false;
+            }
+
+            // Block link-local and zero addresses
+            if (host == "0.0.0.0" || host == "[::1]" || host == "[::]")
                 return false;
+
             return true;
         }
 
@@ -2700,7 +2726,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("arr/validate/sonarr")]
         [Authorize]
-        public async Task<IActionResult> ValidateSonarr([FromQuery] string url, [FromQuery] string apiKey)
+        public async Task<IActionResult> ValidateSonarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
         {
             return await ValidateArrService("Sonarr", url, apiKey);
         }
@@ -2710,7 +2736,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("arr/validate/radarr")]
         [Authorize]
-        public async Task<IActionResult> ValidateRadarr([FromQuery] string url, [FromQuery] string apiKey)
+        public async Task<IActionResult> ValidateRadarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
         {
             return await ValidateArrService("Radarr", url, apiKey);
         }
