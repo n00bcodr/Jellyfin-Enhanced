@@ -2221,7 +2221,7 @@
                     }
                 } catch (e) {
                     console.error(`Seerr validation failed for ${url}:`, e);
-                    lastError = connectionErrorMessage(e, 'Jellyseerr', url);
+                    lastError = connectionErrorMessage(e, 'Seerr', url);
                 }
             }
 
@@ -3823,7 +3823,7 @@
             });
 
             // Also probe configured service URLs so we can cross-reference client-only mappings
-            var serviceUrlIds = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Jellyseerr': 'jellyseerrUrls' };
+            var serviceUrlIds = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Seerr': 'jellyseerrUrls' };
             pairs.forEach(function(p) {
                 var urlId = serviceUrlIds[p.service];
                 if (!urlId) return;
@@ -3879,7 +3879,7 @@
                 }
 
                 // Check if left side is actually an arr service (detectable = definitely wrong)
-                var leftIsArr = leftInfo.reachable && (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr' || leftInfo.service === 'Jellyseerr');
+                var leftIsArr = leftInfo.reachable && (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr' || leftInfo.service === 'Seerr');
                 var rightIsJellyfin = (rightInfo.service === 'Jellyfin');
 
                 if (leftIsArr) {
@@ -3979,7 +3979,7 @@
 
         document.getElementById('validateSeerrMappingsBtn').addEventListener('click', function() {
             validateMappingSet(
-                [{ id: 'jellyseerrUrlMappings', service: 'Jellyseerr' }],
+                [{ id: 'jellyseerrUrlMappings', service: 'Seerr' }],
                 'validateSeerrMappingsBtn', 'seerrMappingsValidationResult'
             );
         });

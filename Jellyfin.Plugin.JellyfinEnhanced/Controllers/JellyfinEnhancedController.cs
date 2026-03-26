@@ -2881,7 +2881,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
                     if (ct.Contains("json"))
-                        return Ok(new { reachable = true, service = "Jellyseerr" });
+                        return Ok(new { reachable = true, service = "Seerr" });
                 }
             }
             catch { /* continue */ }
@@ -2911,7 +2911,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             return Ok(new { reachable = true, service = "Bazarr" });
                         if (title.Contains("Jellyseerr", StringComparison.OrdinalIgnoreCase)
                             || title.Contains("Overseerr", StringComparison.OrdinalIgnoreCase))
-                            return Ok(new { reachable = true, service = "Jellyseerr" });
+                            return Ok(new { reachable = true, service = "Seerr" });
                         if (title.Contains("Jellyfin", StringComparison.OrdinalIgnoreCase))
                             return Ok(new { reachable = true, service = "Jellyfin" });
                     }
