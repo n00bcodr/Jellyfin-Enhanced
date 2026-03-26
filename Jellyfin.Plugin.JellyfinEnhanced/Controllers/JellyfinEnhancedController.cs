@@ -2760,14 +2760,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var resp = await http.SendAsync(request);
                 if (resp.IsSuccessStatusCode)
                 {
-                    var json = await resp.Content.ReadAsStringAsync();
-                    // Only confirm if response explicitly identifies the service
-                    if (json.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
-                        return Ok(new { reachable = true, service = "Sonarr" });
-                    if (json.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
-                        return Ok(new { reachable = true, service = "Radarr" });
-                    // 200 but no Sonarr/Radarr in response — could be any service
-                    // serving this path (e.g., SABnzbd web UI). Fall through.
+                    var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    // Only check body if response is JSON (not HTML from an SPA)
+                    // SPAs like Jellyseerr serve HTML that mentions "Sonarr"/"Radarr"
+                    if (ct.Contains("json"))
+                    {
+                        var json = await resp.Content.ReadAsStringAsync();
+                        // Verify it's a real system status response with appName field
+                        if (json.Contains("appName", StringComparison.Ordinal))
+                        {
+                            if (json.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
+                                return Ok(new { reachable = true, service = "Sonarr" });
+                            if (json.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
+                                return Ok(new { reachable = true, service = "Radarr" });
+                        }
+                    }
+                    // 200 but HTML or no appName — not an arr service. Fall through.
                 }
                 else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
                          resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
