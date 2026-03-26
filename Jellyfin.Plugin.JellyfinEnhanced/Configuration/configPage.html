@@ -3634,6 +3634,18 @@
             }
         }
 
+        async function isReachableFromBrowser(url) {
+            try {
+                var controller = new AbortController();
+                var timer = setTimeout(function() { controller.abort(); }, 5000);
+                await fetch(url, { mode: 'no-cors', signal: controller.signal });
+                clearTimeout(timer);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
         async function validateMappingSet(mappingDefs, btnId, resultDivId) {
             var btn = document.getElementById(btnId);
             var resultDiv = document.getElementById(resultDivId);
@@ -3707,6 +3719,18 @@
             var results = await Promise.all(urlKeys.map(function(u) { return identifyUrl(u); }));
             urlKeys.forEach(function(u, i) { uniqueUrls[u] = results[i]; });
 
+            // For unreachable URLs, try client-side probe as fallback
+            // (server may not reach localhost/VPN URLs that the browser can)
+            var unreachable = urlKeys.filter(function(u) { return !uniqueUrls[u].reachable; });
+            if (unreachable.length > 0) {
+                var clientResults = await Promise.all(unreachable.map(function(u) { return isReachableFromBrowser(u); }));
+                unreachable.forEach(function(u, i) {
+                    if (clientResults[i]) {
+                        uniqueUrls[u] = { reachable: true, service: 'unknown', clientOnly: true };
+                    }
+                });
+            }
+
             // Analyze each pair
             var issues = formatIssues.slice();
             var good = 0;
@@ -3715,7 +3739,11 @@
                 var leftInfo = uniqueUrls[p.left.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
                 var rightInfo = uniqueUrls[p.right.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
 
-                // Right side (service URL) must be reachable from the server
+                // Both sides must be reachable from server or browser
+                if (!leftInfo.reachable) {
+                    issues.push(p.label + ': Left URL (' + p.left + ') is unreachable from both the server and your browser. Check for typos.');
+                    return;
+                }
                 if (!rightInfo.reachable) {
                     issues.push(p.label + ': Right URL (' + p.right + ') is unreachable. Check for typos or that ' + p.service + ' is running.');
                     return;
