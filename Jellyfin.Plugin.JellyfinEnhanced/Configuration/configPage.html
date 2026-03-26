@@ -3733,6 +3733,7 @@
 
             // Analyze each pair
             var issues = formatIssues.slice();
+            var warnings = [];
             var good = 0;
 
             pairs.forEach(function(p) {
@@ -3783,14 +3784,21 @@
                     return;
                 }
 
-                // Left side unreachable from server is OK — it's a client URL (e.g., localhost)
-                // Looks good
-                good++;
+                // Right side confirmed as correct service?
+                var rightConfirmed = (rightInfo.service === p.service) ||
+                    (rightInfo.service === 'arr' && (p.service === 'Sonarr' || p.service === 'Radarr' || p.service === 'Bazarr'));
+
+                if (rightConfirmed) {
+                    good++;
+                } else {
+                    // Reachable but unknown service — could be anything (SABnzbd, nginx, etc.)
+                    warnings.push(p.label + ': Right side (' + p.right + ') is reachable but could not confirm it is ' + p.service + '. Make sure this is the correct URL.');
+                }
             });
 
             // Display results
             resultDiv.textContent = '';
-            if (issues.length === 0) {
+            if (issues.length === 0 && warnings.length === 0) {
                 resultDiv.style.backgroundColor = 'rgba(82, 181, 75, 0.15)';
                 resultDiv.style.borderLeft = '4px solid #52b54b';
                 var icon = document.createElement('i');
@@ -3799,12 +3807,20 @@
                 icon.textContent = 'check_circle';
                 resultDiv.appendChild(icon);
                 resultDiv.appendChild(document.createTextNode(good + ' mapping' + (good !== 1 ? 's' : '') + ' verified.'));
+            } else if (issues.length === 0 && warnings.length > 0) {
+                resultDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.15)';
+                resultDiv.style.borderLeft = '4px solid #ffc107';
+                warnings.forEach(function(w) { addIssue(resultDiv, w); });
+                if (good > 0) {
+                    addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' verified.');
+                }
             } else {
                 resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
                 resultDiv.style.borderLeft = '4px solid #dc3545';
                 issues.forEach(function(i) { addIssue(resultDiv, i); });
+                warnings.forEach(function(w) { addIssue(resultDiv, w); });
                 if (good > 0) {
-                    addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' look correct.');
+                    addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' verified.');
                 }
             }
 
