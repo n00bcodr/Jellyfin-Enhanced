@@ -3297,8 +3297,8 @@
                 skipFirst: true,
                 checkFn: hasJellyseerrConfigured,
                 bannerIcon: 'link_off',
-                bannerTitle: 'Jellyseerr not configured',
-                bannerHint: 'Enable Seerr integration and provide a URL and API key in the Setup section above.',
+                bannerTitle: 'Enable "Seerr integration" to configure',
+                bannerHint: 'Provide a Seerr URL and API key in the Setup section above, then enable the integration.',
                 bannerId: 'dep-banner-jellyseerr'
             },
             {
@@ -3306,27 +3306,27 @@
                 skipFirst: true,
                 checkFn: hasAnyArrService,
                 bannerIcon: 'link_off',
-                bannerTitle: 'No *arr service configured',
+                bannerTitle: 'Enable a *arr service to configure',
                 bannerHint: 'Add a URL and API key for Sonarr or Radarr in the Configuration section above.',
                 bannerId: 'dep-banner-arr'
             }
         ];
 
         var INDIVIDUAL_DEPS = [
-            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
-            { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
-            { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
-            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
-            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
-            { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Requires Intro Skipper plugin', icon: 'extension' },
-            { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Requires Intro Skipper plugin', icon: 'extension' },
-            { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
-            { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
-            { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
-            { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
-            { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs; }, hint: 'Requires Custom Tabs plugin', icon: 'extension' },
-            { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs; }, hint: 'Requires Custom Tabs plugin', icon: 'extension' },
-            { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs; }, hint: 'Requires Custom Tabs plugin', icon: 'extension' }
+            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
         ];
 
         function addDepTag(el, tag) {
