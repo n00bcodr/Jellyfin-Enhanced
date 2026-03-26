@@ -2751,24 +2751,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             http.Timeout = TimeSpan.FromSeconds(5);
             var cleanUrl = url.TrimEnd('/');
 
-            // Try Sonarr/Radarr (/api/v3/system/status — no auth needed for identification)
+            // Try Sonarr/Radarr (/api/v3/system/status)
             try
             {
                 var resp = await http.GetAsync($"{cleanUrl}/api/v3/system/status");
                 if (resp.IsSuccessStatusCode)
                 {
                     var json = await resp.Content.ReadAsStringAsync();
+                    // Only confirm if response explicitly identifies the service
                     if (json.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
                         return Ok(new { reachable = true, service = "Sonarr" });
                     if (json.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
                         return Ok(new { reachable = true, service = "Radarr" });
-                    return Ok(new { reachable = true, service = "arr" });
+                    // 200 but no Sonarr/Radarr in response — could be any service
+                    // serving this path (e.g., SABnzbd web UI). Fall through.
                 }
-                // 401/403 means something is there but needs auth — still identifiable
-                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
-                    resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                         resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
-                    return Ok(new { reachable = true, service = "arr" });
+                    // 401/403 at this specific API path could be Sonarr/Radarr with auth required.
+                    // Check if response looks like an arr API response (JSON content type)
+                    var contentType = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (contentType.Contains("json"))
+                        return Ok(new { reachable = true, service = "arr" });
+                    // Otherwise could be any service returning 401 — fall through
                 }
             }
             catch { /* continue */ }
