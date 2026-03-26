@@ -2778,16 +2778,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{cleanUrl}/api/v3/system/status");
                 if (!string.IsNullOrWhiteSpace(apiKey))
                     request.Headers.Add("X-Api-Key", apiKey);
-                var resp = await http.SendAsync(request);
+                using var resp = await http.SendAsync(request);
                 if (resp.IsSuccessStatusCode)
                 {
                     var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
-                    // Only check body if response is JSON (not HTML from an SPA)
-                    // SPAs like Jellyseerr serve HTML that mentions "Sonarr"/"Radarr"
                     if (ct.Contains("json"))
                     {
                         var json = await resp.Content.ReadAsStringAsync();
-                        // Verify it's a real system status response with appName field
                         if (json.Contains("appName", StringComparison.Ordinal))
                         {
                             if (json.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
@@ -2796,17 +2793,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 return Ok(new { reachable = true, service = "Radarr" });
                         }
                     }
-                    // 200 but HTML or no appName — not an arr service. Fall through.
                 }
                 else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
                          resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
-                    // 401/403 at this specific API path could be Sonarr/Radarr with auth required.
-                    // Check if response looks like an arr API response (JSON content type)
                     var contentType = resp.Content.Headers.ContentType?.MediaType ?? "";
                     if (contentType.Contains("json"))
                         return Ok(new { reachable = true, service = "arr" });
-                    // Otherwise could be any service returning 401 — fall through
                 }
             }
             catch { /* continue */ }
@@ -2814,7 +2807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Try Jellyfin (/System/Info/Public — public endpoint, returns JSON)
             try
             {
-                var resp = await http.GetAsync($"{cleanUrl}/System/Info/Public");
+                using var resp = await http.GetAsync($"{cleanUrl}/System/Info/Public");
                 if (resp.IsSuccessStatusCode)
                 {
                     var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
@@ -2824,7 +2817,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         if (body.Contains("ServerName", StringComparison.OrdinalIgnoreCase))
                             return Ok(new { reachable = true, service = "Jellyfin" });
                     }
-                    // 200 but HTML (SPA fallback from Sonarr/Radarr/etc) — not Jellyfin
                 }
             }
             catch { /* continue */ }
@@ -2832,13 +2824,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Try Jellyseerr (/api/v1/status — returns JSON)
             try
             {
-                var resp = await http.GetAsync($"{cleanUrl}/api/v1/status");
+                using var resp = await http.GetAsync($"{cleanUrl}/api/v1/status");
                 if (resp.IsSuccessStatusCode)
                 {
                     var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
                     if (ct.Contains("json"))
                         return Ok(new { reachable = true, service = "Jellyseerr" });
-                    // 200 but HTML — not Jellyseerr
                 }
             }
             catch { /* continue */ }
@@ -2846,7 +2837,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Try generic reachability
             try
             {
-                var resp = await http.GetAsync(cleanUrl);
+                using var resp = await http.GetAsync(cleanUrl);
                 return Ok(new { reachable = true, service = "unknown" });
             }
             catch

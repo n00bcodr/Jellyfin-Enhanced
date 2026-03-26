@@ -1892,7 +1892,7 @@
                 const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
                     acceptNode: function(node) {
                         if (SKIP_TAGS.has(node.parentElement.tagName)) return NodeFilter.FILTER_REJECT;
-                        if (node.parentElement.closest('.je-search-match, .je-search-tab-label'))
+                        if (node.parentElement.closest('.je-search-match, .je-search-tab-label, .dep-hint-text, .dep-required-icon, .je-dep-banner'))
                             return NodeFilter.FILTER_REJECT;
                         return NodeFilter.FILTER_ACCEPT;
                     }
@@ -3441,7 +3441,6 @@
 
             if (!isMet) {
                 checkbox.disabled = true;
-                checkbox.checked = false;
                 addDepTag(checkbox, tag);
                 label.style.opacity = '0.5';
                 label.style.cursor = 'not-allowed';
@@ -3539,13 +3538,18 @@
             PARENT_DEPS.forEach(updateParentDep);
         }
 
-        // Reactive dependency updates
+        // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)
+        var depDebounce;
+        function debouncedUpdateDeps() {
+            clearTimeout(depDebounce);
+            depDebounce = setTimeout(updateAllDependencies, 150);
+        }
         ['#TMDB_API_KEY', '#jellyseerr_TMDB_API_KEY'].forEach(function(sel) {
-            document.querySelector(sel).addEventListener('input', updateAllDependencies);
+            document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey', '#sonarrUrl', '#sonarrApiKey', '#radarrUrl', '#radarrApiKey'].forEach(function(sel) {
-            document.querySelector(sel).addEventListener('input', updateAllDependencies);
+            document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
 
         // Parent checkbox change listeners
