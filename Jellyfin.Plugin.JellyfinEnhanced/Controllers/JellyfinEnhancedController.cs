@@ -595,7 +595,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("jellyseerr/validate")]
         [Authorize]
-        public async Task<IActionResult> ValidateJellyseerr([FromQuery] string url, [FromQuery] string apiKey)
+        public async Task<IActionResult> ValidateJellyseerr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
         {
             if (!IsAdminUser())
             {
@@ -605,13 +605,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = "Missing url or apiKey" });
 
+            if (!IsAllowedUrl(url))
+                return BadRequest(new { ok = false, message = "Invalid URL" });
+
             var http = _httpClientFactory.CreateClient();
             http.DefaultRequestHeaders.Clear();
             http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+            http.Timeout = TimeSpan.FromSeconds(10);
 
             try
             {
-                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/user");
+                using var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v1/user");
                 if (resp.IsSuccessStatusCode)
                     return Ok(new { ok = true });
 
@@ -2042,6 +2046,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private bool IsAdminUser() => User.IsInRole("Administrator");
 
+        /// <summary>
+        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes
+        /// and known cloud metadata endpoints. Not a full SSRF control — private/LAN
+        /// IPs are intentionally allowed since arr services run on the local network.
+        /// All endpoints using this are admin-only.
+        /// </summary>
+        /// <summary>
+        /// Hostname blocklist for cloud metadata services.
+        /// </summary>
+        private static readonly HashSet<string> _blockedHosts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "metadata.google.internal", "metadata.goog"
+        };
+
+        /// <summary>
+        /// IP blocklist for cloud metadata, loopback, and unspecified addresses.
+        /// Parsed once and compared by value, not string, to handle all representations.
+        /// </summary>
+        private static readonly HashSet<System.Net.IPAddress> _blockedIPs = new()
+        {
+            System.Net.IPAddress.Parse("169.254.169.254"),  // AWS/Azure metadata
+            System.Net.IPAddress.Parse("100.100.100.200"),  // Alibaba metadata
+            System.Net.IPAddress.Parse("169.254.170.2"),    // AWS ECS metadata
+            System.Net.IPAddress.Parse("fd00:ec2::254"),    // AWS IPv6 metadata
+            System.Net.IPAddress.Loopback,                  // 127.0.0.1
+            System.Net.IPAddress.IPv6Loopback,              // ::1
+            System.Net.IPAddress.Any,                       // 0.0.0.0
+            System.Net.IPAddress.IPv6Any                    // ::
+        };
+
+        /// <summary>
+        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes,
+        /// known cloud metadata endpoints, and loopback/unspecified addresses using
+        /// parsed IP comparison. Not a full SSRF control — private/LAN IPs are
+        /// intentionally allowed since arr services run on the local network.
+        /// All endpoints using this are admin-only.
+        /// </summary>
+        private bool IsAllowedUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return false;
+            if (uri.Scheme != "http" && uri.Scheme != "https")
+                return false;
+
+            var host = uri.Host.TrimEnd('.').ToLowerInvariant();
+
+            // Check hostname blocklist (metadata DNS names)
+            if (_blockedHosts.Contains(host))
+                return false;
+
+            // Parse and check IP blocklist (handles all representations: bracketed, decimal, etc.)
+            if (System.Net.IPAddress.TryParse(host, out var ip) && _blockedIPs.Contains(ip))
+                return false;
+
+            return true;
+        }
+
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
         {
             normalizedFileName = Path.GetFileName(requestedFileName ?? string.Empty);
@@ -2676,6 +2739,197 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         // ==================== Arr Links ====================
+
+        /// <summary>
+        /// Validates connectivity to a Sonarr instance using the system status endpoint.
+        /// </summary>
+        [HttpGet("arr/validate/sonarr")]
+        [Authorize]
+        public async Task<IActionResult> ValidateSonarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
+        {
+            return await ValidateArrService("Sonarr", url, apiKey);
+        }
+
+        /// <summary>
+        /// Validates connectivity to a Radarr instance using the system status endpoint.
+        /// </summary>
+        [HttpGet("arr/validate/radarr")]
+        [Authorize]
+        public async Task<IActionResult> ValidateRadarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
+        {
+            return await ValidateArrService("Radarr", url, apiKey);
+        }
+
+        /// <summary>
+        /// Validates connectivity and API key for a Sonarr or Radarr instance
+        /// by probing the /api/v3/system/status endpoint.
+        /// </summary>
+        /// <param name="serviceName">Display name for error messages (e.g., "Sonarr").</param>
+        /// <param name="url">The base URL of the arr service.</param>
+        /// <param name="apiKey">The API key to authenticate with.</param>
+        private async Task<IActionResult> ValidateArrService(string serviceName, string url, string apiKey)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
+                return BadRequest(new { ok = false, message = $"Missing {serviceName} URL or API key" });
+
+            if (!IsAllowedUrl(url))
+                return BadRequest(new { ok = false, message = "Invalid URL" });
+
+            var http = _httpClientFactory.CreateClient();
+            http.DefaultRequestHeaders.Clear();
+            http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+            http.Timeout = TimeSpan.FromSeconds(10);
+
+            try
+            {
+                using var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v3/system/status");
+                if (resp.IsSuccessStatusCode)
+                    return Ok(new { ok = true });
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                    resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    return StatusCode(401, new { ok = false, message = $"API key is invalid or unauthorized for {serviceName}" });
+
+                return StatusCode((int)resp.StatusCode, new { ok = false, message = $"{serviceName} returned an error (status {(int)resp.StatusCode})" });
+            }
+            catch (TaskCanceledException)
+            {
+                return StatusCode(504, new { ok = false, message = $"Connection to {serviceName} timed out. Check the URL is correct." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"{serviceName} validate failed for {url}: {ex.Message}");
+                return StatusCode(502, new { ok = false, message = $"Could not reach {serviceName}. Check the URL is correct and the server is running." });
+            }
+        }
+
+        /// <summary>
+        /// Identifies what service is running at a given URL by probing known API endpoints.
+        /// Returns reachability status and service name (Sonarr, Radarr, Jellyfin, Bazarr, or unknown).
+        /// </summary>
+        [HttpGet("arr/identify-url")]
+        [Authorize]
+        public async Task<IActionResult> IdentifyUrl([FromQuery] string url)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(url))
+                return BadRequest(new { reachable = false, service = "unknown" });
+
+            if (!IsAllowedUrl(url))
+                return BadRequest(new { reachable = false, service = "unknown" });
+
+            var http = _httpClientFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(5);
+            var cleanUrl = url.TrimEnd('/');
+
+            // Try Sonarr/Radarr (/api/v3/system/status)
+            try
+            {
+                using var resp = await http.GetAsync($"{cleanUrl}/api/v3/system/status");
+                if (resp.IsSuccessStatusCode)
+                {
+                    var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (ct.Contains("json"))
+                    {
+                        var json = await resp.Content.ReadAsStringAsync();
+                        if (json.Contains("appName", StringComparison.Ordinal))
+                        {
+                            if (json.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
+                                return Ok(new { reachable = true, service = "Sonarr" });
+                            if (json.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
+                                return Ok(new { reachable = true, service = "Radarr" });
+                        }
+                    }
+                }
+                else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                         resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    var contentType = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (contentType.Contains("json"))
+                        return Ok(new { reachable = true, service = "arr" });
+                }
+            }
+            catch (HttpRequestException) { /* continue to next service probe */ }
+            catch (TaskCanceledException) { /* continue to next service probe */ }
+
+            // Try Jellyfin (/System/Info/Public — public endpoint, returns JSON)
+            try
+            {
+                using var resp = await http.GetAsync($"{cleanUrl}/System/Info/Public");
+                if (resp.IsSuccessStatusCode)
+                {
+                    var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (ct.Contains("json"))
+                    {
+                        var body = await resp.Content.ReadAsStringAsync();
+                        if (body.Contains("ServerName", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Jellyfin" });
+                    }
+                }
+            }
+            catch (HttpRequestException) { /* continue to next service probe */ }
+            catch (TaskCanceledException) { /* continue to next service probe */ }
+
+            // Try Jellyseerr (/api/v1/status — returns JSON)
+            try
+            {
+                using var resp = await http.GetAsync($"{cleanUrl}/api/v1/status");
+                if (resp.IsSuccessStatusCode)
+                {
+                    var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
+                    if (ct.Contains("json"))
+                        return Ok(new { reachable = true, service = "Seerr" });
+                }
+            }
+            catch (HttpRequestException) { /* continue to next service probe */ }
+            catch (TaskCanceledException) { /* continue to next service probe */ }
+
+            // Try generic reachability — also check HTML title for service name
+            try
+            {
+                using var resp = await http.GetAsync(cleanUrl, HttpCompletionOption.ResponseHeadersRead);
+                if (resp.IsSuccessStatusCode)
+                {
+                    // Only read first 64KB — title tag is near the top of the HTML
+                    var buffer = new byte[65536];
+                    using var stream = await resp.Content.ReadAsStreamAsync();
+                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    var body = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    // Check <title> tag for known service names (SPA root pages)
+                    var titleMatch = System.Text.RegularExpressions.Regex.Match(
+                        body, @"<title[^>]*>([^<]*)</title>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (titleMatch.Success)
+                    {
+                        var title = titleMatch.Groups[1].Value;
+                        if (title.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Sonarr" });
+                        if (title.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Radarr" });
+                        if (title.Contains("Bazarr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Bazarr" });
+                        if (title.Contains("Jellyseerr", StringComparison.OrdinalIgnoreCase)
+                            || title.Contains("Overseerr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Seerr" });
+                        if (title.Contains("Jellyfin", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Jellyfin" });
+                    }
+                }
+                return Ok(new { reachable = true, service = "unknown" });
+            }
+            catch (HttpRequestException)
+            {
+                return Ok(new { reachable = false, service = "unknown" });
+            }
+            catch (TaskCanceledException)
+            {
+                return Ok(new { reachable = false, service = "unknown" });
+            }
+        }
 
         /// <summary>
         /// Look up a series' titleSlug in Sonarr by its TVDB ID.

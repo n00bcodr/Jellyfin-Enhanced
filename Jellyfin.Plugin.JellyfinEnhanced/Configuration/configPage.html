@@ -8,12 +8,20 @@
     <div data-role="content">
         <div class="content-primary">
             <div class="verticalSection">
-                <div class="sectionTitleContainer">
+                <div class="sectionTitleContainer" style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em;">
                      <h2 class="sectionTitle">Jellyfin Enhanced</h2>
                         <a is="emby-linkbutton" class="raised raised-mini emby-button" style="margin-left: 2em;" target="_blank" href="https://github.com/n00bcodr/Jellyfin-Enhanced">
                             <i class="md-icon button-icon button-icon-left secondaryText"></i>
                             <span>Help</span>
                         </a>
+                        <div id="settingsSearchContainer" style="margin-left: auto; min-width: 200px; max-width: 320px; flex: 1;">
+                            <div style="position: relative;">
+                                <i class="material-icons" style="position: absolute; left: 0.6em; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.4); pointer-events: none; font-size: 1.1em;">search</i>
+                                <input id="settingsSearchInput" type="text" placeholder="Search settings..." style="width: 100%; padding: 0.45em 2.2em 0.45em 2.2em; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #eee; font-size: 0.85em; outline: none; box-sizing: border-box;" />
+                                <span id="settingsSearchCount" style="display: none; position: absolute; right: 2.4em; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.4); font-size: 0.75em; white-space: nowrap;"></span>
+                                <button id="settingsSearchClear" type="button" style="display: none; position: absolute; right: 0.4em; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; padding: 0.2em; font-size: 1em; line-height: 1;">&#x2715;</button>
+                            </div>
+                        </div>
                 </div>
             </div>
             <hr>
@@ -509,6 +517,12 @@
                                         <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Seerr URL Mappings</label>
                                         <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
                                         <div class="fieldDescription">Map your Jellyfin URLs to specific Seerr URLs for displaying links to users. Users will get the appropriate Seerr link when using "Link result titles to Seerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|SeerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
+                                        <div style="margin-top: 0.8em;">
+                                            <button is="emby-button" type="button" id="validateSeerrMappingsBtn" class="raised button-submit emby-button">
+                                                <span>Validate Mappings</span>
+                                            </button>
+                                            <div id="seerrMappingsValidationResult" style="display: none; margin-top: 0.8em; padding: 0.8em 1em; border-radius: 4px; font-size: 0.9em; line-height: 1.5;"></div>
+                                        </div>
                                     </div>
                                     <div
                                         style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
@@ -1074,23 +1088,37 @@
                                 <input id="sonarrUrl" is="emby-input" name="sonarrUrl" type="text" placeholder="e.g., http://192.168.100.100:8989"/>
                             </div>
                             <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key" style="flex-grow: 1;"/>
+                                    <span id="sonarrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testSonarrBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5em 0;">
+                            <div class="inputContainer" style="margin-top: 1em;">
                                 <label class="inputLabel inputLabelUnfocused" for="radarrUrl">Radarr URL</label>
                                 <input id="radarrUrl" is="emby-input" name="radarrUrl" type="text" placeholder="e.g., http://192.168.100.100:7878"/>
                             </div>
                             <div class="inputContainer" style="margin-top: 1em;">
+                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
+                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
+                                    <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key" style="flex-grow: 1;"/>
+                                    <span id="radarrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
+                                    <button is="emby-button" type="button" id="testRadarrBtn" class="raised button-submit">
+                                        <span>Test</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
+                            </div>
+                            <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5em 0;">
+                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label class="inputLabel inputLabelUnfocused" for="bazarrUrl">Bazarr URL</label>
                                 <input id="bazarrUrl" is="emby-input" name="bazarrUrl" type="text" placeholder="e.g., http://192.168.100.100:6767"/>
                                 <div class="fieldDescription">Note: This links to the main movies/series page as Bazarr does not support direct links.</div>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
-                                <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key"/>
-                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
-                                <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key"/>
-                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
                             </div>
                         </div>
                     </fieldset>
@@ -1119,6 +1147,12 @@
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="bazarrUrlMappings">Bazarr URL Mappings</label>
                                 <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="bazarrUrlMappings" name="bazarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:6767&#10;https://jellyfin.example.com|https://bazarr.example.com"></textarea>
                                 <div class="fieldDescription">Map Jellyfin access URLs to Bazarr URLs. Format: <code>jellyfin_url|bazarr_url</code> (one per line).<br>These mappings are useful when accessing Jellyfin via different URLs (e.g., internal network vs. public domain) and you need *arr links to use the appropriate corresponding URL.</div>
+                            </div>
+                            <div style="margin-top: 1em;">
+                                <button is="emby-button" type="button" id="validateArrMappingsBtn" class="raised button-submit emby-button">
+                                    <span>Validate Mappings</span>
+                                </button>
+                                <div id="arrMappingsValidationResult" style="display: none; margin-top: 0.8em; padding: 0.8em 1em; border-radius: 4px; font-size: 0.9em; line-height: 1.5;"></div>
                             </div>
                             <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label>
@@ -1689,6 +1723,35 @@
                 .jellyfin-tab-button img {
                     pointer-events: none;
                 }
+                .je-search-hidden {
+                    display: none !important;
+                }
+                .je-search-match {
+                    background-color: rgba(255, 200, 0, 0.35);
+                    color: #fff;
+                    border-radius: 2px;
+                    padding: 0 1px;
+                    box-shadow: 0 0 0 1px rgba(255, 200, 0, 0.25);
+                }
+                .je-search-match-active {
+                    background-color: rgba(255, 165, 0, 0.75);
+                    box-shadow: 0 0 0 2px rgba(255, 165, 0, 0.5);
+                }
+                .dep-hint-text {
+                    display: block;
+                    font-size: 0.8em;
+                    color: #ff9800;
+                    margin-top: 2px;
+                    font-weight: normal;
+                }
+                .je-search-tab-label {
+                    font-size: 1.15em;
+                    font-weight: bold;
+                    color: var(--primary-accent-color, #00a4dc);
+                    margin-bottom: 0.5em;
+                    padding: 0.4em 0;
+                    border-bottom: 1px solid rgba(255,255,255,0.1);
+                }
             `;
             document.head.appendChild(style);
 
@@ -1743,6 +1806,247 @@
                 }
             } catch (e) {
                 // Ignore if sessionStorage is not available
+            }
+
+            // === Settings Search ===
+            const searchInput = document.getElementById('settingsSearchInput');
+            const searchClear = document.getElementById('settingsSearchClear');
+            const searchCount = document.getElementById('settingsSearchCount');
+
+            const tabButtonsContainer = tabs[0] ? tabs[0].parentElement : null;
+            let isSearchMode = false;
+            const savedDetailsStates = new Map();
+            const SKIP_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'SCRIPT', 'STYLE']);
+            let currentMatchIdx = -1;
+            let allMatches = [];
+
+            let searchDebounce;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchDebounce);
+                searchDebounce = setTimeout(() => performSearch(searchInput.value), 150);
+            });
+
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    searchInput.value = '';
+                    performSearch('');
+                    searchInput.blur();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (allMatches.length > 0) {
+                        goToMatch(currentMatchIdx + (e.shiftKey ? -1 : 1));
+                    }
+                }
+            });
+
+            searchClear.addEventListener('click', () => {
+                searchInput.value = '';
+                performSearch('');
+                searchInput.focus();
+            });
+
+
+            searchInput.addEventListener('focus', () => {
+                searchInput.style.borderColor = 'var(--primary-accent-color, #00a4dc)';
+                searchInput.style.background = 'rgba(255,255,255,0.12)';
+            });
+
+            searchInput.addEventListener('blur', () => {
+                if (!searchInput.value) {
+                    searchInput.style.borderColor = 'rgba(255,255,255,0.15)';
+                    searchInput.style.background = 'rgba(255,255,255,0.08)';
+                }
+            });
+
+            /**
+             * Collects searchable text from an element, including IDs, names, and data attributes.
+             * @param {HTMLElement} element - The DOM element to extract text from
+             * @returns {string} Lowercase concatenation of text content and attribute values
+             */
+            function getSearchableText(element) {
+                var text = element.textContent.toLowerCase();
+                element.querySelectorAll('[id], [name], [data-text], [data-icon]').forEach(function(el) {
+                    if (el.id) text += ' ' + el.id.toLowerCase();
+                    if (el.name) text += ' ' + el.name.toLowerCase();
+                    if (el.dataset.text) text += ' ' + el.dataset.text.toLowerCase();
+                    if (el.dataset.icon) text += ' ' + el.dataset.icon.toLowerCase();
+                });
+                return text;
+            }
+
+            /**
+             * Removes all search highlight marks and restores original text nodes.
+             */
+            function clearHighlights() {
+                form.querySelectorAll('.je-search-match').forEach(mark => {
+                    const parent = mark.parentNode;
+                    parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                    parent.normalize();
+                });
+                allMatches = [];
+                currentMatchIdx = -1;
+            }
+
+            /**
+             * Walks text nodes in an element and wraps query matches in highlight mark elements.
+             * @param {HTMLElement} element - The container to search within
+             * @param {string} query - Lowercase search term to highlight
+             */
+            function highlightTextIn(element, query) {
+                const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+                    acceptNode: function(node) {
+                        if (SKIP_TAGS.has(node.parentElement.tagName)) return NodeFilter.FILTER_REJECT;
+                        if (node.parentElement.closest('.je-search-match, .je-search-tab-label, .dep-hint-text, .dep-required-icon, .je-dep-banner, [class*="parent-hint-"]'))
+                            return NodeFilter.FILTER_REJECT;
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                });
+                var textNodes = [];
+                while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+                textNodes.forEach(function(node) {
+                    var text = node.textContent;
+                    var lower = text.toLowerCase();
+                    if (!lower.includes(query)) return;
+
+                    var frag = document.createDocumentFragment();
+                    var last = 0;
+                    var idx;
+                    while ((idx = lower.indexOf(query, last)) !== -1) {
+                        if (idx > last) frag.appendChild(document.createTextNode(text.substring(last, idx)));
+                        var mark = document.createElement('mark');
+                        mark.className = 'je-search-match';
+                        mark.textContent = text.substring(idx, idx + query.length);
+                        frag.appendChild(mark);
+                        last = idx + query.length;
+                    }
+                    if (last < text.length) frag.appendChild(document.createTextNode(text.substring(last)));
+                    node.parentNode.replaceChild(frag, node);
+                });
+            }
+
+            /**
+             * Navigates to a specific search match by index and scrolls it into view.
+             * @param {number} index - Zero-based index of the match to navigate to
+             */
+            function goToMatch(index) {
+                if (allMatches.length === 0) return;
+                if (currentMatchIdx >= 0 && currentMatchIdx < allMatches.length) {
+                    allMatches[currentMatchIdx].classList.remove('je-search-match-active');
+                }
+                if (index >= allMatches.length) index = 0;
+                if (index < 0) index = allMatches.length - 1;
+                currentMatchIdx = index;
+                allMatches[currentMatchIdx].classList.add('je-search-match-active');
+                allMatches[currentMatchIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                searchCount.textContent = (currentMatchIdx + 1) + ' of ' + allMatches.length;
+            }
+
+            /**
+             * Enters search mode: saves detail open/closed states, hides tab buttons, and adds tab labels.
+             */
+            function enterSearchMode() {
+                if (isSearchMode) return;
+                isSearchMode = true;
+                form.querySelectorAll('details').forEach(d => {
+                    savedDetailsStates.set(d, d.open);
+                });
+                if (tabButtonsContainer) tabButtonsContainer.style.display = 'none';
+                tabContents.forEach(tc => {
+                    const btn = document.querySelector('.jellyfin-tab-button[data-tab="' + tc.id + '"]');
+                    const label = btn ? btn.textContent.trim() : tc.id;
+                    const labelEl = document.createElement('div');
+                    labelEl.className = 'je-search-tab-label';
+                    labelEl.textContent = label;
+                    tc.insertBefore(labelEl, tc.firstChild);
+                });
+            }
+
+            /**
+             * Exits search mode: restores tab visibility, detail states, and clears highlights.
+             */
+            function exitSearchMode() {
+                isSearchMode = false;
+                clearHighlights();
+                form.querySelectorAll('.je-search-tab-label').forEach(el => el.remove());
+                if (tabButtonsContainer) tabButtonsContainer.style.display = '';
+                form.querySelectorAll('.je-search-hidden').forEach(el => el.classList.remove('je-search-hidden'));
+                form.querySelectorAll('details').forEach(d => {
+                    if (savedDetailsStates.has(d)) d.open = savedDetailsStates.get(d);
+                });
+                savedDetailsStates.clear();
+                let savedTab = 'enhanced';
+                try {
+                    savedTab = sessionStorage.getItem('jellyfinEnhancedActiveTab') || 'enhanced';
+                } catch (e) {
+                    // Ignore if sessionStorage is not available
+                }
+                activateTab(savedTab);
+                searchCount.style.display = 'none';
+                searchClear.style.display = 'none';
+            }
+
+            /**
+             * Filters visible sections by query, highlights matches, and updates the match counter.
+             * @param {string} query - The search term entered by the user
+             */
+            function performSearch(query) {
+                query = query.toLowerCase().trim();
+
+                if (!query) {
+                    if (isSearchMode) exitSearchMode();
+                    return;
+                }
+
+                if (!isSearchMode) enterSearchMode();
+
+                clearHighlights();
+                let sectionCount = 0;
+
+                tabContents.forEach(tabContent => {
+                    let tabHasMatch = false;
+                    const fieldsets = tabContent.querySelectorAll(':scope > fieldset');
+
+                    fieldsets.forEach(fieldset => {
+                        const fullText = getSearchableText(fieldset);
+
+                        if (!fullText.includes(query)) {
+                            fieldset.classList.add('je-search-hidden');
+                            return;
+                        }
+
+                        fieldset.classList.remove('je-search-hidden');
+                        tabHasMatch = true;
+                        sectionCount++;
+
+                        const detailsEls = fieldset.querySelectorAll('details');
+                        detailsEls.forEach(detail => {
+                            if (getSearchableText(detail).includes(query)) {
+                                detail.classList.remove('je-search-hidden');
+                                detail.open = true;
+                            } else {
+                                detail.classList.add('je-search-hidden');
+                            }
+                        });
+
+                        highlightTextIn(fieldset, query);
+                    });
+
+                    tabContent.style.display = tabHasMatch ? 'block' : 'none';
+                });
+
+                allMatches = Array.from(form.querySelectorAll('.je-search-match'));
+                currentMatchIdx = -1;
+
+                if (allMatches.length > 0) {
+                    searchCount.textContent = '0 of ' + allMatches.length;
+                } else {
+                    searchCount.textContent = sectionCount > 0
+                        ? sectionCount + ' section' + (sectionCount !== 1 ? 's' : '') + ' found'
+                        : 'No results';
+                }
+                searchCount.style.display = 'block';
+                searchClear.style.display = 'block';
             }
 
         const defaultShortcuts = [
@@ -1902,15 +2206,14 @@
             jellyseerrStatusIndicator.style.color = '#00a4dc';
 
             let validated = false;
+            let lastError = '';
             for (const url of urls) {
                 try {
                     const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/validate`, {
-                        url: url,
-                        apiKey: apiKey
+                        url: url
                     });
-                    console.debug("Attempting to validate with URL:", validationUrl);
 
-                    const res = await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json' });
+                    const res = await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKey } });
 
                     if (res && res.ok) {
                         validated = true;
@@ -1918,6 +2221,7 @@
                     }
                 } catch (e) {
                     console.error(`Seerr validation failed for ${url}:`, e);
+                    lastError = connectionErrorMessage(e, 'Seerr', url);
                 }
             }
 
@@ -1931,7 +2235,7 @@
             } else {
                 jellyseerrStatusIndicator.textContent = 'error';
                 jellyseerrStatusIndicator.style.color = '#dc3545';
-                Dashboard.alert({ title: 'Connection Failed', message: 'Could not validate the API key against any provided URL.<br><br>Please check the details.' });
+                Dashboard.alert({ title: 'Connection Failed', message: lastError || 'Could not connect to any provided URL.' });
             }
         }
 
@@ -1965,9 +2269,14 @@
 
             } catch (e) {
                 console.error('TMDB validation failed:', e);
-                const errorMessage = (e.status === 401)
-                    ? 'The API Key is invalid.'
-                    : 'Could not connect to TMDB. Please check the key and your network.';
+                var errorMessage;
+                if (e.status === 401) {
+                    errorMessage = 'The API key is invalid. Check that you copied it correctly.';
+                } else if (e.status === 500 || e.status === 0 || !e.status) {
+                    errorMessage = 'Could not reach TMDB servers. Check your network connection.';
+                } else {
+                    errorMessage = 'Connection failed (error ' + e.status + '). Check the key and your network.';
+                }
 
                 statusIndicator.textContent = 'error';
                 statusIndicator.style.color = '#dc3545';
@@ -1983,32 +2292,37 @@
 
         /** @type {boolean} Tracks whether the File Transformation warning has been dismissed this session */
         var ftWarningDismissedSession = false;
+        var hasPluginPages = null;
+        var hasCustomTabs = null;
+        var hasIntroSkipper = null;
 
         /**
-         * Checks if the File Transformation plugin is installed and shows a warning banner if not.
-         * The warning can be dismissed per-session (resets on page reload) or permanently via localStorage.
+         * Checks installed plugins (File Transformation, Plugin Pages, Custom Tabs).
+         * Shows a warning if File Transformation is missing. Updates dependency state
+         * for Plugin Pages / Custom Tabs dependent settings.
          * Called during loadConfig() on page load.
-         * @see https://github.com/IAmParadox27/jellyfin-plugin-file-transformation
          */
-        function checkFileTransformationPlugin() {
-            // Skip check if user has already dismissed the warning
-            if (ftWarningDismissedSession || localStorage.getItem('je_ft_warning_dismissed') === 'true') {
-                return;
-            }
-
-            // Query the Plugins API to check if File Transformation is installed
+        function checkInstalledPlugins() {
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/Plugins'),
                 dataType: 'json'
             }).then(function(plugins) {
-                var hasFileTransformation = plugins.some(function(p) {
-                    return p.Name === 'File Transformation';
-                });
-                var warning = document.getElementById('fileTransformationWarning');
-                if (warning) {
-                    warning.style.display = hasFileTransformation ? 'none' : 'block';
+                var hasFileTransformation = plugins.some(function(p) { return p.Name === 'File Transformation'; });
+                hasPluginPages = plugins.some(function(p) { return p.Name === 'Plugin Pages'; });
+                hasCustomTabs = plugins.some(function(p) { return p.Name === 'Custom Tabs'; });
+                hasIntroSkipper = plugins.some(function(p) { return p.Name === 'Intro Skipper' || p.Name === 'SkipIntro'; });
+
+                // File Transformation warning
+                if (!ftWarningDismissedSession && localStorage.getItem('je_ft_warning_dismissed') !== 'true') {
+                    var warning = document.getElementById('fileTransformationWarning');
+                    if (warning) {
+                        warning.style.display = hasFileTransformation ? 'none' : 'block';
+                    }
                 }
+
+                // Re-run dependencies now that plugin info is available
+                updateAllDependencies();
             }).catch(function() {
                 // If we can't check, don't show the warning
             });
@@ -2144,7 +2458,7 @@
 
         function loadConfig() {
             Dashboard.showLoadingMsg();
-            checkFileTransformationPlugin();
+            checkInstalledPlugins();
             ApiClient.getPluginConfiguration(pluginId).then((config) => {
                 const savedShortcuts = (config.Shortcuts && config.Shortcuts.length > 0) ? config.Shortcuts : defaultShortcuts;
                 shortcutOverrides = savedShortcuts.filter(saved => {
@@ -2366,7 +2680,7 @@
                 document.querySelector('#preventWatchlistReAddition').addEventListener('change', toggleWatchlistRetentionVisibility);
 
                 // Update TMDB-dependent settings after config is loaded
-                updateTmdbDependentSettings();
+                updateAllDependencies();
 
                 Dashboard.hideLoadingMsg();
             });
@@ -2969,77 +3283,706 @@
         initAutoMovieQualityMode();
 
         // ================================
-        // TMDB API KEY VALIDATION
+        // SETTING DEPENDENCY SYSTEM
         // ================================
 
         /**
-         * Updates the state of TMDB-dependent settings based on whether a TMDB API key is present.
-         * Disables checkboxes and adds tooltips when no key is configured.
+         * Checks whether a TMDB API key is configured in either input field.
+         * @returns {boolean} True if a non-empty TMDB key exists
          */
-        function updateTmdbDependentSettings() {
-            const tmdbKey = document.querySelector('#TMDB_API_KEY').value.trim();
-            const jellyseerrTmdbKey = document.querySelector('#jellyseerr_TMDB_API_KEY').value.trim();
-            const hasTmdbKey = tmdbKey.length > 0 || jellyseerrTmdbKey.length > 0;
+        function hasTmdbKey() {
+            return document.querySelector('#TMDB_API_KEY').value.trim().length > 0
+                || document.querySelector('#jellyseerr_TMDB_API_KEY').value.trim().length > 0;
+        }
 
-            // List of TMDB-dependent setting IDs
-            const tmdbDependentSettings = [
-                { id: 'elsewhereEnabled', tooltip: 'Requires TMDB API Key to be configured' },
-                { id: 'showReviews', tooltip: 'Requires TMDB API Key to be configured' },
-                { id: 'showCollectionsInSearch', tooltip: 'Requires TMDB API Key to be configured' },
-                { id: 'showElsewhereOnJellyseerr', tooltip: 'Requires TMDB API Key to be configured' },
-                { id: 'autoMovieRequestEnabled', tooltip: 'Requires TMDB API Key to be configured' }
-            ];
+        /**
+         * Checks whether Jellyseerr is enabled with both a URL and API key configured.
+         * @returns {boolean} True if Jellyseerr is fully configured
+         */
+        function hasJellyseerrConfigured() {
+            return document.querySelector('#jellyseerrEnabled').checked
+                && document.querySelector('#jellyseerrUrls').value.trim().length > 0
+                && document.querySelector('#JellyseerrApiKey').value.trim().length > 0;
+        }
 
-            tmdbDependentSettings.forEach(setting => {
-                const checkbox = document.getElementById(setting.id);
-                if (!checkbox) return;
+        /**
+         * Checks whether at least one arr service (Sonarr or Radarr) has a URL and API key.
+         * @returns {boolean} True if any arr service is configured
+         */
+        function hasAnyArrService() {
+            var sonarrUrl = document.querySelector('#sonarrUrl').value.trim();
+            var sonarrKey = document.querySelector('#sonarrApiKey').value.trim();
+            var radarrUrl = document.querySelector('#radarrUrl').value.trim();
+            var radarrKey = document.querySelector('#radarrApiKey').value.trim();
+            return (sonarrUrl.length > 0 && sonarrKey.length > 0)
+                || (radarrUrl.length > 0 && radarrKey.length > 0);
+        }
 
-                const label = checkbox.closest('label');
-                if (!label) return;
+        var SECTION_DEPS = [
+            {
+                tabSelector: '#jellyseerr',
+                skipFirst: true,
+                checkFn: hasJellyseerrConfigured,
+                bannerIcon: 'link_off',
+                bannerTitle: 'Enable "Seerr integration" to configure',
+                bannerHint: 'Provide a Seerr URL and API key in the Setup section above, then enable the integration.',
+                bannerId: 'dep-banner-jellyseerr'
+            },
+            {
+                tabSelector: '#arr-links',
+                skipFirst: true,
+                checkFn: hasAnyArrService,
+                bannerIcon: 'link_off',
+                bannerTitle: 'Enable a *arr service to configure',
+                bannerHint: 'Add a URL and API key for Sonarr or Radarr in the Configuration section above.',
+                bannerId: 'dep-banner-arr'
+            }
+        ];
 
-                if (!hasTmdbKey) {
-                    // Disable the checkbox and add visual indication
-                    checkbox.disabled = true;
-                    checkbox.checked = false;
-                    label.style.opacity = '0.5';
-                    label.style.cursor = 'not-allowed';
-                    label.title = setting.tooltip;
+        var INDIVIDUAL_DEPS = [
+            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
+        ];
 
-                    // Add a visual indicator icon if not already present
-                    if (!label.querySelector('.tmdb-required-icon')) {
-                        const icon = document.createElement('i');
-                        icon.className = 'material-icons tmdb-required-icon';
-                        icon.textContent = 'key';
-                        icon.style.cssText = 'font-size: 16px; vertical-align: middle; margin-left: 8px; color: #ff9800;';
-                        icon.title = setting.tooltip;
-                        label.querySelector('span').appendChild(icon);
+        /**
+         * Adds a dependency tag to an element's comma-separated data-dep-disabled attribute.
+         * @param {HTMLElement} el - The element to tag
+         * @param {string} tag - The dependency tag to add
+         */
+        function addDepTag(el, tag) {
+            var existing = (el.getAttribute('data-dep-disabled') || '').split(',').filter(Boolean);
+            if (existing.indexOf(tag) === -1) existing.push(tag);
+            el.setAttribute('data-dep-disabled', existing.join(','));
+        }
+
+        /**
+         * Removes a dependency tag from an element; returns true if all tags are cleared.
+         * @param {HTMLElement} el - The element to update
+         * @param {string} tag - The dependency tag to remove
+         * @returns {boolean} True if no dependency tags remain on the element
+         */
+        function removeDepTag(el, tag) {
+            var existing = (el.getAttribute('data-dep-disabled') || '').split(',').filter(Boolean);
+            var filtered = existing.filter(function(t) { return t !== tag; });
+            if (filtered.length) {
+                el.setAttribute('data-dep-disabled', filtered.join(','));
+                return false;
+            }
+            el.removeAttribute('data-dep-disabled');
+            return true;
+        }
+
+        /**
+         * Creates an orange warning banner DOM element for a missing section dependency.
+         * @param {Object} dep - Dependency rule with bannerIcon, bannerTitle, and bannerHint
+         * @returns {HTMLElement} The constructed banner element
+         */
+        function createDepBanner(dep) {
+            var banner = document.createElement('div');
+            banner.id = dep.bannerId;
+            banner.className = 'je-dep-banner';
+            banner.style.cssText = 'background-color: rgba(255, 165, 0, 0.15); border-left: 4px solid #ff9800; border-radius: 4px; padding: 0.8em 1.2em; margin: 0.5em 0 1.5em 0; display: flex; align-items: center; gap: 0.8em;';
+            var icon = document.createElement('i');
+            icon.className = 'material-icons';
+            icon.style.cssText = 'color: #ff9800; font-size: 22px; flex-shrink: 0;';
+            icon.textContent = dep.bannerIcon;
+            var textDiv = document.createElement('div');
+            textDiv.style.cssText = 'font-size: 0.9em;';
+            var strong = document.createElement('strong');
+            strong.textContent = dep.bannerTitle;
+            var br = document.createElement('br');
+            var span = document.createElement('span');
+            span.style.cssText = 'opacity: 0.8; font-size: 0.9em;';
+            span.textContent = dep.bannerHint;
+            textDiv.appendChild(strong);
+            textDiv.appendChild(br);
+            textDiv.appendChild(span);
+            banner.appendChild(icon);
+            banner.appendChild(textDiv);
+            return banner;
+        }
+
+        /**
+         * Evaluates one section-level dependency rule, showing/hiding banners and disabling inputs.
+         * @param {Object} dep - Section dependency rule with checkFn, tabSelector, and banner config
+         */
+        function updateSectionDep(dep) {
+            var isMet = dep.checkFn();
+            var tab = document.querySelector(dep.tabSelector);
+            if (!tab) return;
+            var fieldsets = tab.querySelectorAll(':scope > fieldset');
+            var targets = [];
+            for (var i = 0; i < fieldsets.length; i++) {
+                if (dep.skipFirst && i === 0) continue;
+                targets.push(fieldsets[i]);
+            }
+
+            targets.forEach(function(fieldset) {
+                var bannerId = dep.bannerId + '-' + Array.prototype.indexOf.call(fieldsets, fieldset);
+                var banner = document.getElementById(bannerId);
+                if (!isMet) {
+                    if (!banner) {
+                        var b = createDepBanner(dep);
+                        b.id = bannerId;
+                        var legend = fieldset.querySelector('legend');
+                        if (legend) { legend.after(b); } else { fieldset.prepend(b); }
+                        banner = b;
+                    }
+                    banner.style.display = 'flex';
+                    fieldset.querySelectorAll('input, select, textarea, button').forEach(function(el) {
+                        if (banner.contains(el)) return;
+                        el.disabled = true;
+                        addDepTag(el, dep.bannerId);
+                    });
+                    fieldset.querySelectorAll('label, .inputLabel, .selectLabel').forEach(function(el) {
+                        el.style.opacity = '0.5';
+                        el.style.cursor = 'not-allowed';
+                        addDepTag(el, dep.bannerId);
+                    });
+                    fieldset.querySelectorAll('.fieldDescription').forEach(function(el) {
+                        el.style.opacity = '0.5';
+                        addDepTag(el, dep.bannerId);
+                    });
+                } else {
+                    if (banner) banner.style.display = 'none';
+                    fieldset.querySelectorAll('[data-dep-disabled]').forEach(function(el) {
+                        var allClear = removeDepTag(el, dep.bannerId);
+                        if (allClear) {
+                            if (typeof el.disabled !== 'undefined' && el.tagName !== 'LABEL' && el.tagName !== 'DIV') {
+                                el.disabled = false;
+                            }
+                            el.style.opacity = '';
+                            el.style.cursor = '';
+                        }
+                    });
+                }
+            });
+        }
+
+        /**
+         * Evaluates one individual setting dependency, disabling checkbox and showing hint when unmet.
+         * @param {Object} dep - Individual dependency rule with id, checkFn, hint, and icon
+         */
+        function updateIndividualDep(dep) {
+            var checkbox = document.getElementById(dep.id);
+            if (!checkbox) return;
+            var label = checkbox.closest('label');
+            if (!label) return;
+            var isMet = dep.checkFn();
+            var tag = 'ind-' + dep.id;
+
+            if (!isMet) {
+                checkbox.disabled = true;
+                addDepTag(checkbox, tag);
+                label.style.opacity = '0.5';
+                label.style.cursor = 'not-allowed';
+                label.title = dep.hint;
+                addDepTag(label, tag);
+                var span = label.querySelector('span');
+                if (span && !label.querySelector('.dep-required-icon')) {
+                    var icon = document.createElement('i');
+                    icon.className = 'material-icons dep-required-icon';
+                    icon.textContent = dep.icon || 'key';
+                    icon.style.cssText = 'font-size: 16px; vertical-align: middle; margin-left: 8px; color: #ff9800;';
+                    icon.title = dep.hint;
+                    span.appendChild(icon);
+                }
+                if (span && !label.querySelector('.dep-hint-text')) {
+                    var hintEl = document.createElement('span');
+                    hintEl.className = 'dep-hint-text';
+                    hintEl.textContent = dep.hint;
+                    span.appendChild(hintEl);
+                }
+            } else {
+                var allClear = removeDepTag(checkbox, tag);
+                if (allClear) checkbox.disabled = false;
+                var labelClear = removeDepTag(label, tag);
+                if (labelClear) {
+                    label.style.opacity = '';
+                    label.style.cursor = '';
+                    label.title = '';
+                }
+                var reqIcon = label.querySelector('.dep-required-icon');
+                if (reqIcon) reqIcon.remove();
+                var hintText = label.querySelector('.dep-hint-text');
+                if (hintText) hintText.remove();
+            }
+        }
+
+        var PARENT_DEPS = [
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
+            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition'] },
+            { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'] },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition'] },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'] },
+            { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
+            { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
+            { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
+            { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
+            { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
+            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
+            { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
+            { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
+            { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
+            { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
+            { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
+            { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
+            { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
+            { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
+            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages'] },
+            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
+        ];
+
+        /**
+         * Evaluates one parent-child dependency, disabling children when the parent is unchecked.
+         * @param {Object} dep - Parent dependency rule with parent id, label, and children ids
+         */
+        function updateParentDep(dep) {
+            var parent = document.getElementById(dep.parent);
+            if (!parent) return;
+            var isEnabled = parent.checked;
+            var tag = 'parent-' + dep.parent;
+            var hintClass = 'parent-hint-' + dep.parent;
+
+            dep.children.forEach(function(childId) {
+                var child = document.getElementById(childId);
+                if (!child) return;
+                var container = child.closest('.checkboxContainer, .inputContainer, .selectContainer')
+                             || child.closest('label');
+
+                if (!isEnabled) {
+                    child.disabled = true;
+                    addDepTag(child, tag);
+                    if (container) {
+                        container.style.opacity = '0.5';
+                        container.style.cursor = 'not-allowed';
+                        addDepTag(container, tag);
+                        // Add hint if not present
+                        if (!container.querySelector('.' + hintClass)) {
+                            var hint = document.createElement('div');
+                            hint.className = 'dep-hint-text ' + hintClass;
+                            hint.textContent = 'Enable "' + dep.label + '" to configure';
+                            container.appendChild(hint);
+                        }
                     }
                 } else {
-                    // Enable the checkbox and remove visual indication
-                    checkbox.disabled = false;
-                    label.style.opacity = '1';
-                    label.style.cursor = 'pointer';
-                    label.title = '';
-
-                    // Remove the visual indicator icon
-                    const icon = label.querySelector('.tmdb-required-icon');
-                    if (icon) {
-                        icon.remove();
+                    var allClear = removeDepTag(child, tag);
+                    if (allClear) child.disabled = false;
+                    if (container) {
+                        var cc = removeDepTag(container, tag);
+                        if (cc) { container.style.opacity = ''; container.style.cursor = ''; }
+                        // Remove hint
+                        var hint = container.querySelector('.' + hintClass);
+                        if (hint) hint.remove();
                     }
                 }
             });
         }
 
-        // Update when TMDB keys change
-        document.querySelector('#TMDB_API_KEY').addEventListener('input', updateTmdbDependentSettings);
-        document.querySelector('#jellyseerr_TMDB_API_KEY').addEventListener('input', updateTmdbDependentSettings);
+        /**
+         * Orchestrator: evaluates all section, individual, and parent dependency rules.
+         */
+        function updateAllDependencies() {
+            SECTION_DEPS.forEach(updateSectionDep);
+            INDIVIDUAL_DEPS.forEach(updateIndividualDep);
+            PARENT_DEPS.forEach(updateParentDep);
+        }
 
-        // Update after successful TMDB test
-        const originalTestTmdb = testTmdbConnection;
+        // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)
+        var depDebounce;
+        /** Debounced wrapper that delays updateAllDependencies by 150ms. */
+        function debouncedUpdateDeps() {
+            clearTimeout(depDebounce);
+            depDebounce = setTimeout(updateAllDependencies, 150);
+        }
+        ['#TMDB_API_KEY', '#jellyseerr_TMDB_API_KEY'].forEach(function(sel) {
+            document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
+        });
+        document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
+        ['#jellyseerrUrls', '#JellyseerrApiKey', '#sonarrUrl', '#sonarrApiKey', '#radarrUrl', '#radarrApiKey'].forEach(function(sel) {
+            document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
+        });
+
+        // Parent checkbox change listeners
+        var parentIds = {};
+        PARENT_DEPS.forEach(function(dep) { parentIds[dep.parent] = true; });
+        Object.keys(parentIds).forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', updateAllDependencies);
+        });
+
+        var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {
             await originalTestTmdb(event);
-            updateTmdbDependentSettings();
+            updateAllDependencies();
         };
+
+        // === Arr Service Test Buttons ===
+
+        /**
+         * Produces a user-friendly error message from a connection test failure.
+         * @param {Object} error - The ajax error object with a status property
+         * @param {string} serviceName - Display name of the service
+         * @param {string} url - The URL that was tested
+         * @returns {string} Human-readable error message
+         */
+        function connectionErrorMessage(error, serviceName, url) {
+            if (error.status === 502) return 'Could not reach ' + url + '. Check the URL is correct and ' + serviceName + ' is running.';
+            if (error.status === 504) return 'Connection timed out. The server may be unreachable.';
+            if (error.status === 401 || error.status === 403) return 'The API key was rejected. Check the key is correct.';
+            if (error.status === 400) return 'Missing URL or API key.';
+            return 'Connection to ' + serviceName + ' failed (error ' + (error.status || 'unknown') + ').';
+        }
+
+        /**
+         * Tests connectivity to a Sonarr/Radarr instance via the backend validation endpoint.
+         * @param {string} serviceName - Display name (e.g. 'Sonarr')
+         * @param {string} endpoint - Backend route segment (e.g. 'sonarr')
+         * @param {string} urlInputId - DOM id of the URL input
+         * @param {string} apiKeyInputId - DOM id of the API key input
+         * @param {string} statusId - DOM id of the status indicator icon
+         * @param {string} btnId - DOM id of the test button
+         */
+        async function testArrConnection(serviceName, endpoint, urlInputId, apiKeyInputId, statusId, btnId) {
+            var urlVal = (document.querySelector('#' + urlInputId).value || '').trim();
+            var apiKeyVal = (document.querySelector('#' + apiKeyInputId).value || '').trim();
+
+            if (!urlVal || !apiKeyVal) {
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide both a ' + serviceName + ' URL and API key to test the connection.' });
+                return;
+            }
+
+            var btn = document.getElementById(btnId);
+            var indicator = document.getElementById(statusId);
+            btn.disabled = true;
+            indicator.textContent = 'sync';
+            indicator.className = 'material-icons status-check';
+            indicator.style.color = '#00a4dc';
+
+            try {
+                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal });
+                await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKeyVal } });
+
+                indicator.textContent = 'check_circle';
+                indicator.style.color = '#52b54b';
+                indicator.classList.remove('status-check');
+                Dashboard.alert({ title: 'Success', message: 'Successfully connected to ' + serviceName + '!' });
+            } catch (e) {
+                indicator.classList.remove('status-check');
+                indicator.textContent = 'error';
+                indicator.style.color = '#dc3545';
+
+                var msg = connectionErrorMessage(e, serviceName, urlVal);
+                Dashboard.alert({ title: 'Connection Failed', message: msg });
+            } finally {
+                btn.disabled = false;
+            }
+
+            updateAllDependencies();
+        }
+
+        document.getElementById('testSonarrBtn').addEventListener('click', function() {
+            testArrConnection('Sonarr', 'sonarr', 'sonarrUrl', 'sonarrApiKey', 'sonarrStatusIndicator', 'testSonarrBtn');
+        });
+        document.getElementById('testRadarrBtn').addEventListener('click', function() {
+            testArrConnection('Radarr', 'radarr', 'radarrUrl', 'radarrApiKey', 'radarrStatusIndicator', 'testRadarrBtn');
+        });
+
+        // === URL Mapping Validation ===
+        /**
+         * Appends an issue message div to a validation result container.
+         * @param {HTMLElement} container - The container element to append to
+         * @param {string} text - The issue message text
+         */
+        function addIssue(container, text) {
+            var div = document.createElement('div');
+            div.style.cssText = 'margin-bottom: 0.5em;';
+            div.textContent = text;
+            container.appendChild(div);
+        }
+
+        /**
+         * Probes a URL via the backend to identify what service is running at that address.
+         * @param {string} url - The URL to probe
+         * @returns {Promise<Object>} Result with reachable and service properties
+         */
+        async function identifyUrl(url) {
+            try {
+                var apiUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/identify-url', { url: url });
+                return await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
+            } catch (e) {
+                return { reachable: false, service: 'unknown' };
+            }
+        }
+
+        /**
+         * Client-side fallback to check URL reachability via a no-cors fetch with timeout.
+         * @param {string} url - The URL to check
+         * @returns {Promise<boolean>} True if the URL responds within 5 seconds
+         */
+        async function isReachableFromBrowser(url) {
+            try {
+                var controller = new AbortController();
+                var timer = setTimeout(function() { controller.abort(); }, 5000);
+                await fetch(url, { mode: 'no-cors', signal: controller.signal });
+                clearTimeout(timer);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        /**
+         * Validates URL mapping entries by probing each URL and checking for mismatches.
+         * @param {Array<Object>} mappingDefs - Array of mapping definitions with inputId and expectedService
+         * @param {string} btnId - DOM id of the validate button
+         * @param {string} resultDivId - DOM id of the results container
+         */
+        async function validateMappingSet(mappingDefs, btnId, resultDivId) {
+            var btn = document.getElementById(btnId);
+            var resultDiv = document.getElementById(resultDivId);
+            btn.disabled = true;
+            btn.querySelector('span').textContent = 'Validating...';
+            resultDiv.textContent = '';
+            resultDiv.style.display = 'block';
+            resultDiv.style.backgroundColor = 'rgba(0, 164, 220, 0.1)';
+            resultDiv.style.borderLeft = '4px solid #00a4dc';
+            resultDiv.textContent = 'Testing URLs...';
+
+            // Collect all pairs with basic format validation first
+            var pairs = [];
+            var formatIssues = [];
+
+            mappingDefs.forEach(function(m) {
+                var textarea = document.getElementById(m.id);
+                if (!textarea) return;
+                textarea.value.split('\n').forEach(function(line, idx) {
+                    var trimmed = line.trim();
+                    if (!trimmed) return;
+                    var lineLabel = m.service + ' line ' + (idx + 1);
+                    var parts = trimmed.split('|');
+                    if (parts.length !== 2) {
+                        formatIssues.push(lineLabel + ': Invalid format. Use jellyfin_url|' + m.service.toLowerCase() + '_url separated by a pipe (|).');
+                        return;
+                    }
+                    var left = parts[0].trim();
+                    var right = parts[1].trim();
+                    if (!left || !right) {
+                        formatIssues.push(lineLabel + ': Both sides of the pipe must have a URL.');
+                        return;
+                    }
+                    if (!left.match(/^https?:\/\//i)) {
+                        formatIssues.push(lineLabel + ': Left side (' + left + ') should start with http:// or https://.');
+                        return;
+                    }
+                    if (!right.match(/^https?:\/\//i)) {
+                        formatIssues.push(lineLabel + ': Right side (' + right + ') should start with http:// or https://.');
+                        return;
+                    }
+                    pairs.push({ left: left, right: right, service: m.service, label: lineLabel });
+                });
+            });
+
+            if (formatIssues.length > 0 && pairs.length === 0) {
+                resultDiv.textContent = '';
+                resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
+                resultDiv.style.borderLeft = '4px solid #dc3545';
+                formatIssues.forEach(function(i) { addIssue(resultDiv, i); });
+                btn.disabled = false;
+                btn.querySelector('span').textContent = 'Validate Mappings';
+                return;
+            }
+
+            if (pairs.length === 0 && formatIssues.length === 0) {
+                resultDiv.style.display = 'none';
+                btn.disabled = false;
+                btn.querySelector('span').textContent = 'Validate Mappings';
+                return;
+            }
+
+            // Identify all unique URLs
+            var uniqueUrls = {};
+            pairs.forEach(function(p) {
+                uniqueUrls[p.left.replace(/\/+$/, '')] = null;
+                uniqueUrls[p.right.replace(/\/+$/, '')] = null;
+            });
+
+            // Also probe configured service URLs so we can cross-reference client-only mappings
+            var serviceUrlIds = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Seerr': 'jellyseerrUrls' };
+            pairs.forEach(function(p) {
+                var urlId = serviceUrlIds[p.service];
+                if (!urlId) return;
+                var configLines = (document.getElementById(urlId)?.value || '').split('\n');
+                configLines.forEach(function(line) {
+                    var configUrl = line.trim().replace(/\/+$/, '');
+                    if (configUrl && !uniqueUrls.hasOwnProperty(configUrl)) {
+                        uniqueUrls[configUrl] = null;
+                    }
+                });
+            });
+
+            var urlKeys = Object.keys(uniqueUrls);
+            var results = await Promise.all(urlKeys.map(function(u) { return identifyUrl(u); }));
+            urlKeys.forEach(function(u, i) { uniqueUrls[u] = results[i]; });
+
+            // For unreachable URLs, try client-side probe as fallback
+            // (server may not reach localhost/VPN URLs that the browser can)
+            var unreachable = urlKeys.filter(function(u) { return !uniqueUrls[u].reachable; });
+            if (unreachable.length > 0) {
+                var clientResults = await Promise.all(unreachable.map(function(u) { return isReachableFromBrowser(u); }));
+                unreachable.forEach(function(u, i) {
+                    if (clientResults[i]) {
+                        uniqueUrls[u] = { reachable: true, service: 'unknown', clientOnly: true };
+                    }
+                });
+            }
+
+            // Analyze each pair
+            var issues = formatIssues.slice();
+            var warnings = [];
+            var good = 0;
+
+            pairs.forEach(function(p) {
+                var leftInfo = uniqueUrls[p.left.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
+                var rightInfo = uniqueUrls[p.right.replace(/\/+$/, '')] || { reachable: false, service: 'unknown' };
+
+                // Both sides must be reachable from server or browser
+                if (!leftInfo.reachable) {
+                    issues.push(p.label + ': Left URL (' + p.left + ') is unreachable from both the server and your browser. Check for typos.');
+                    return;
+                }
+                if (!rightInfo.reachable) {
+                    issues.push(p.label + ': Right URL (' + p.right + ') is unreachable. Check for typos or that ' + p.service + ' is running.');
+                    return;
+                }
+
+                var leftLower = p.left.toLowerCase().replace(/\/+$/, '');
+                var rightLower = p.right.toLowerCase().replace(/\/+$/, '');
+                if (leftLower === rightLower) {
+                    issues.push(p.label + ': Both sides are the same URL. Left should be Jellyfin, right should be ' + p.service + '.');
+                    return;
+                }
+
+                // Check if left side is actually an arr service (detectable = definitely wrong)
+                var leftIsArr = leftInfo.reachable && (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr' || leftInfo.service === 'Seerr');
+                var rightIsJellyfin = (rightInfo.service === 'Jellyfin');
+
+                if (leftIsArr) {
+                    var detected = leftInfo.service === 'arr' ? 'an *arr service' : leftInfo.service;
+                    if (rightIsJellyfin) {
+                        issues.push(p.label + ': URLs are reversed. Left side is ' + detected + ' and right side is Jellyfin. Swap them: Jellyfin URL goes on the left, ' + p.service + ' URL on the right.');
+                    } else {
+                        issues.push(p.label + ': Left side (' + p.left + ') is running ' + detected + ', not Jellyfin. Left should be your Jellyfin URL.');
+                    }
+                    return;
+                }
+
+                if (rightIsJellyfin) {
+                    issues.push(p.label + ': Right side (' + p.right + ') is running Jellyfin, not ' + p.service + '. Right should be the ' + p.service + ' URL.');
+                    return;
+                }
+
+                // Check service mismatch (e.g., Sonarr mapping pointing to Radarr)
+                if (rightInfo.service !== 'unknown' && rightInfo.service !== p.service && rightInfo.service !== 'arr') {
+                    issues.push(p.label + ': Right side (' + p.right + ') is running ' + rightInfo.service + ', but this is the ' + p.service + ' mapping section.');
+                    return;
+                }
+
+                // Right side confirmed as correct service?
+                var rightConfirmed = (rightInfo.service === p.service) ||
+                    (rightInfo.service === 'arr' && (p.service === 'Sonarr' || p.service === 'Radarr'));
+
+                // If right side is only browser-reachable (server can't reach localhost etc.),
+                // check if the configured service URL confirms the service identity
+                if (!rightConfirmed && rightInfo.clientOnly) {
+                    var configUrlId = serviceUrlIds[p.service];
+                    if (configUrlId) {
+                        var configLines = (document.getElementById(configUrlId)?.value || '').split('\n');
+                        var mappingPort = (p.right.match(/:(\d+)/) || [])[1] || '';
+                        for (var ci = 0; ci < configLines.length && !rightConfirmed; ci++) {
+                            var configUrl = configLines[ci].trim().replace(/\/+$/, '');
+                            if (!configUrl) continue;
+                            var configInfo = uniqueUrls[configUrl];
+                            if (configInfo && (configInfo.service === p.service || (configInfo.service === 'arr' && p.service !== 'Bazarr'))) {
+                                var configPort = (configUrl.match(/:(\d+)/) || [])[1] || '';
+                                if (mappingPort && configPort && mappingPort === configPort) {
+                                    rightConfirmed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (rightConfirmed) {
+                    good++;
+                } else {
+                    // Reachable but unknown service — could be anything (SABnzbd, nginx, etc.)
+                    warnings.push(p.label + ': Right side (' + p.right + ') is reachable but JE could not verify it is ' + p.service + '. This may still work correctly — JE just cannot confirm the service automatically.');
+                }
+            });
+
+            // Display results
+            resultDiv.textContent = '';
+            if (issues.length === 0 && warnings.length === 0) {
+                resultDiv.style.backgroundColor = 'rgba(82, 181, 75, 0.15)';
+                resultDiv.style.borderLeft = '4px solid #52b54b';
+                var icon = document.createElement('i');
+                icon.className = 'material-icons';
+                icon.style.cssText = 'vertical-align: middle; color: #52b54b; margin-right: 0.5em;';
+                icon.textContent = 'check_circle';
+                resultDiv.appendChild(icon);
+                resultDiv.appendChild(document.createTextNode(good + ' mapping' + (good !== 1 ? 's' : '') + ' verified.'));
+            } else {
+                if (issues.length > 0) {
+                    resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
+                    resultDiv.style.borderLeft = '4px solid #dc3545';
+                    issues.forEach(function(i) { addIssue(resultDiv, i); });
+                } else {
+                    resultDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.15)';
+                    resultDiv.style.borderLeft = '4px solid #ffc107';
+                }
+                warnings.forEach(function(w) { addIssue(resultDiv, w); });
+                if (good > 0) {
+                    addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' verified.');
+                }
+            }
+
+            btn.disabled = false;
+            btn.querySelector('span').textContent = 'Validate Mappings';
+        }
+
+        document.getElementById('validateArrMappingsBtn').addEventListener('click', function() {
+            validateMappingSet(
+                [
+                    { id: 'sonarrUrlMappings', service: 'Sonarr' },
+                    { id: 'radarrUrlMappings', service: 'Radarr' },
+                    { id: 'bazarrUrlMappings', service: 'Bazarr' }
+                ],
+                'validateArrMappingsBtn', 'arrMappingsValidationResult'
+            );
+        });
+
+        document.getElementById('validateSeerrMappingsBtn').addEventListener('click', function() {
+            validateMappingSet(
+                [{ id: 'jellyseerrUrlMappings', service: 'Seerr' }],
+                'validateSeerrMappingsBtn', 'seerrMappingsValidationResult'
+            );
+        });
 
         clearTagsCacheBtn.addEventListener('click', async () => {
             if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
