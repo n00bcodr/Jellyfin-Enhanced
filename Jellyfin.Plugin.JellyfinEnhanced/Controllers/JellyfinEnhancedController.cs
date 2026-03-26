@@ -605,6 +605,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = "Missing url or apiKey" });
 
+            if (!IsAllowedUrl(url))
+                return BadRequest(new { ok = false, message = "Invalid URL" });
+
             var http = _httpClientFactory.CreateClient();
             http.DefaultRequestHeaders.Clear();
             http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
@@ -2730,7 +2733,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v3/system/status");
+                using var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v3/system/status");
                 if (resp.IsSuccessStatusCode)
                     return Ok(new { ok = true });
 
@@ -2834,10 +2837,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Try generic reachability — also check HTML title for service name
             try
             {
-                using var resp = await http.GetAsync(cleanUrl);
+                using var resp = await http.GetAsync(cleanUrl, HttpCompletionOption.ResponseHeadersRead);
                 if (resp.IsSuccessStatusCode)
                 {
-                    var body = await resp.Content.ReadAsStringAsync();
+                    // Only read first 64KB — title tag is near the top of the HTML
+                    var buffer = new byte[65536];
+                    using var stream = await resp.Content.ReadAsStreamAsync();
+                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    var body = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     // Check <title> tag for known service names (SPA root pages)
                     var titleMatch = System.Text.RegularExpressions.Regex.Match(
                         body, @"<title[^>]*>([^<]*)</title>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
