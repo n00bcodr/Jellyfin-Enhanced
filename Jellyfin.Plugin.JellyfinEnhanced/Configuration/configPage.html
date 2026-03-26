@@ -1885,7 +1885,7 @@
                 const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
                     acceptNode: function(node) {
                         if (SKIP_TAGS.has(node.parentElement.tagName)) return NodeFilter.FILTER_REJECT;
-                        if (node.parentElement.closest('.je-search-match, .je-search-tab-label, .dep-hint-text, .dep-required-icon, .je-dep-banner'))
+                        if (node.parentElement.closest('.je-search-match, .je-search-tab-label, .dep-hint-text, .dep-required-icon, .je-dep-banner, [class*="parent-hint-"]'))
                             return NodeFilter.FILTER_REJECT;
                         return NodeFilter.FILTER_ACCEPT;
                     }
@@ -3471,27 +3471,27 @@
         }
 
         var PARENT_DEPS = [
-            { parent: 'elsewhereEnabled', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
-            { parent: 'showReviews', children: ['reviewsExpandedByDefault'] },
-            { parent: 'randomButtonEnabled', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
-            { parent: 'showWatchProgress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', children: ['qualityTagsPosition'] },
-            { parent: 'genreTagsEnabled', children: ['genreTagsPosition'] },
-            { parent: 'languageTagsEnabled', children: ['languageTagsPosition'] },
-            { parent: 'ratingTagsEnabled', children: ['ratingTagsPosition'] },
-            { parent: 'useIcons', children: ['iconStyle'] },
-            { parent: 'letterboxdEnabled', children: ['showLetterboxdLinkAsText'] },
-            { parent: 'enableCustomSplashScreen', children: ['splashScreenImageUrl'] },
-            { parent: 'jellyseerrShowReportButton', children: ['jellyseerrShowIssueIndicator'] },
-            { parent: 'downloadsPageEnabled', children: ['downloadsPageShowIssues', 'downloadsPagePollingEnabled'] },
-            { parent: 'downloadsPagePollingEnabled', children: ['downloadsPollIntervalSeconds'] },
-            { parent: 'arrLinksEnabled', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
-            { parent: 'arrTagsSyncEnabled', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
-            { parent: 'arrTagsShowAsLinks', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
-            { parent: 'calendarPageEnabled', children: ['calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
-            { parent: 'autoSeasonRequestEnabled', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
-            { parent: 'bookmarksEnabled', children: ['bookmarksUsePluginPages'] },
-            { parent: 'hiddenContentEnabled', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
+            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition'] },
+            { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'] },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition'] },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'] },
+            { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
+            { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
+            { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
+            { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
+            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['downloadsPageShowIssues', 'downloadsPagePollingEnabled'] },
+            { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
+            { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
+            { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
+            { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
+            { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
+            { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
+            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages'] },
+            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
         ];
 
         function updateParentDep(dep) {
@@ -3499,6 +3499,7 @@
             if (!parent) return;
             var isEnabled = parent.checked;
             var tag = 'parent-' + dep.parent;
+            var hintClass = 'parent-hint-' + dep.parent;
 
             dep.children.forEach(function(childId) {
                 var child = document.getElementById(childId);
@@ -3513,6 +3514,13 @@
                         container.style.opacity = '0.5';
                         container.style.cursor = 'not-allowed';
                         addDepTag(container, tag);
+                        // Add hint if not present
+                        if (!container.querySelector('.' + hintClass)) {
+                            var hint = document.createElement('div');
+                            hint.className = 'dep-hint-text ' + hintClass;
+                            hint.textContent = 'Enable "' + dep.label + '" to configure';
+                            container.appendChild(hint);
+                        }
                     }
                 } else {
                     var allClear = removeDepTag(child, tag);
@@ -3520,6 +3528,9 @@
                     if (container) {
                         var cc = removeDepTag(container, tag);
                         if (cc) { container.style.opacity = ''; container.style.cursor = ''; }
+                        // Remove hint
+                        var hint = container.querySelector('.' + hintClass);
+                        if (hint) hint.remove();
                     }
                 }
             });
