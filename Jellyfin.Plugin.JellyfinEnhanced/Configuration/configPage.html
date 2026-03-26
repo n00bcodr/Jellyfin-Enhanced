@@ -3629,11 +3629,9 @@
             container.appendChild(div);
         }
 
-        async function identifyUrl(url, apiKey) {
+        async function identifyUrl(url) {
             try {
-                var params = { url: url };
-                if (apiKey) params.apiKey = apiKey;
-                var apiUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/identify-url', params);
+                var apiUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/identify-url', { url: url });
                 return await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
             } catch (e) {
                 return { reachable: false, service: 'unknown' };
@@ -3693,8 +3691,7 @@
                         formatIssues.push(lineLabel + ': Right side (' + right + ') should start with http:// or https://.');
                         return;
                     }
-                    var key = m.apiKeyId ? (document.getElementById(m.apiKeyId)?.value || '').trim() : '';
-                    pairs.push({ left: left, right: right, service: m.service, label: lineLabel, apiKey: key });
+                    pairs.push({ left: left, right: right, service: m.service, label: lineLabel });
                 });
             });
 
@@ -3722,13 +3719,6 @@
                 uniqueUrls[p.right.replace(/\/+$/, '')] = null;
             });
 
-            // Build a map of URL → API key (use the key from any pair that references this URL)
-            var urlApiKeys = {};
-            pairs.forEach(function(p) {
-                var rKey = p.right.replace(/\/+$/, '');
-                if (p.apiKey && !urlApiKeys[rKey]) urlApiKeys[rKey] = p.apiKey;
-            });
-
             // Also probe configured service URLs so we can cross-reference client-only mappings
             var serviceUrlIds = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Jellyseerr': 'jellyseerrUrls' };
             pairs.forEach(function(p) {
@@ -3737,12 +3727,11 @@
                 var configUrl = (document.getElementById(urlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
                 if (configUrl && !uniqueUrls.hasOwnProperty(configUrl)) {
                     uniqueUrls[configUrl] = null;
-                    if (p.apiKey) urlApiKeys[configUrl] = p.apiKey;
                 }
             });
 
             var urlKeys = Object.keys(uniqueUrls);
-            var results = await Promise.all(urlKeys.map(function(u) { return identifyUrl(u, urlApiKeys[u] || ''); }));
+            var results = await Promise.all(urlKeys.map(function(u) { return identifyUrl(u); }));
             urlKeys.forEach(function(u, i) { uniqueUrls[u] = results[i]; });
 
             // For unreachable URLs, try client-side probe as fallback
@@ -3875,8 +3864,8 @@
         document.getElementById('validateArrMappingsBtn').addEventListener('click', function() {
             validateMappingSet(
                 [
-                    { id: 'sonarrUrlMappings', service: 'Sonarr', apiKeyId: 'sonarrApiKey' },
-                    { id: 'radarrUrlMappings', service: 'Radarr', apiKeyId: 'radarrApiKey' },
+                    { id: 'sonarrUrlMappings', service: 'Sonarr' },
+                    { id: 'radarrUrlMappings', service: 'Radarr' },
                     { id: 'bazarrUrlMappings', service: 'Bazarr' }
                 ],
                 'validateArrMappingsBtn', 'arrMappingsValidationResult'
@@ -3885,7 +3874,7 @@
 
         document.getElementById('validateSeerrMappingsBtn').addEventListener('click', function() {
             validateMappingSet(
-                [{ id: 'jellyseerrUrlMappings', service: 'Jellyseerr', apiKeyId: 'JellyseerrApiKey' }],
+                [{ id: 'jellyseerrUrlMappings', service: 'Jellyseerr' }],
                 'validateSeerrMappingsBtn', 'seerrMappingsValidationResult'
             );
         });

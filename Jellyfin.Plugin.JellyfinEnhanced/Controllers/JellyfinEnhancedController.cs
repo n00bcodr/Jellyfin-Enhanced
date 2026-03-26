@@ -2757,7 +2757,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("arr/identify-url")]
         [Authorize]
-        public async Task<IActionResult> IdentifyUrl([FromQuery] string url, [FromQuery] string apiKey = "")
+        public async Task<IActionResult> IdentifyUrl([FromQuery] string url)
         {
             if (!IsAdminUser())
                 return Forbid();
@@ -2775,10 +2775,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Try Sonarr/Radarr (/api/v3/system/status)
             try
             {
-                var request = new HttpRequestMessage(HttpMethod.Get, $"{cleanUrl}/api/v3/system/status");
-                if (!string.IsNullOrWhiteSpace(apiKey))
-                    request.Headers.Add("X-Api-Key", apiKey);
-                using var resp = await http.SendAsync(request);
+                using var resp = await http.GetAsync($"{cleanUrl}/api/v3/system/status");
                 if (resp.IsSuccessStatusCode)
                 {
                     var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
