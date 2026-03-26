@@ -2042,6 +2042,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private bool IsAdminUser() => User.IsInRole("Administrator");
 
+        private bool IsAllowedUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return false;
+            if (uri.Scheme != "http" && uri.Scheme != "https")
+                return false;
+            var host = uri.Host;
+            if (host == "169.254.169.254" || host == "metadata.google.internal"
+                || host == "metadata.google.internal." || host == "100.100.100.200")
+                return false;
+            return true;
+        }
+
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
         {
             normalizedFileName = Path.GetFileName(requestedFileName ?? string.Empty);
@@ -2705,6 +2720,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = $"Missing {serviceName} URL or API key" });
 
+            if (!IsAllowedUrl(url))
+                return BadRequest(new { ok = false, message = "Invalid URL" });
+
             var http = _httpClientFactory.CreateClient();
             http.DefaultRequestHeaders.Clear();
             http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
@@ -2739,12 +2757,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("arr/identify-url")]
         [Authorize]
-        public async Task<IActionResult> IdentifyUrl([FromQuery] string url, [FromQuery] string apiKey = null)
+        public async Task<IActionResult> IdentifyUrl([FromQuery] string url, [FromQuery] string apiKey = "")
         {
             if (!IsAdminUser())
                 return Forbid();
 
             if (string.IsNullOrWhiteSpace(url))
+                return BadRequest(new { reachable = false, service = "unknown" });
+
+            if (!IsAllowedUrl(url))
                 return BadRequest(new { reachable = false, service = "unknown" });
 
             var http = _httpClientFactory.CreateClient();

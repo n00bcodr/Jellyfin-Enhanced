@@ -2207,13 +2207,13 @@
                 } catch (e) {
                     console.error(`Seerr validation failed for ${url}:`, e);
                     if (e.status === 502) {
-                        lastError = 'Could not reach <strong>' + url + '</strong>. Check the URL is correct and the server is running.';
+                        lastError = 'Could not reach ' + url + '. Check the URL is correct and the server is running.';
                     } else if (e.status === 401 || e.status === 403) {
-                        lastError = 'The API key was rejected by <strong>' + url + '</strong>. Check the key is correct.';
+                        lastError = 'The API key was rejected by ' + url + '. Check the key is correct.';
                     } else if (e.status === 400) {
                         lastError = 'Missing URL or API key.';
                     } else {
-                        lastError = 'Connection to <strong>' + url + '</strong> failed (error ' + (e.status || 'unknown') + ').';
+                        lastError = 'Connection to ' + url + ' failed (error ' + (e.status || 'unknown') + ').';
                     }
                 }
             }
