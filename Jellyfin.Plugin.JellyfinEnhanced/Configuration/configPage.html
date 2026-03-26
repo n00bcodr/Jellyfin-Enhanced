@@ -2163,6 +2163,7 @@
             jellyseerrStatusIndicator.style.color = '#00a4dc';
 
             let validated = false;
+            let lastError = '';
             for (const url of urls) {
                 try {
                     const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/validate`, {
@@ -2179,6 +2180,15 @@
                     }
                 } catch (e) {
                     console.error(`Seerr validation failed for ${url}:`, e);
+                    if (e.status === 502) {
+                        lastError = 'Could not reach <strong>' + url + '</strong>. Check the URL is correct and the server is running.';
+                    } else if (e.status === 401 || e.status === 403) {
+                        lastError = 'The API key was rejected by <strong>' + url + '</strong>. Check the key is correct.';
+                    } else if (e.status === 400) {
+                        lastError = 'Missing URL or API key.';
+                    } else {
+                        lastError = 'Connection to <strong>' + url + '</strong> failed (error ' + (e.status || 'unknown') + ').';
+                    }
                 }
             }
 
@@ -2192,7 +2202,7 @@
             } else {
                 jellyseerrStatusIndicator.textContent = 'error';
                 jellyseerrStatusIndicator.style.color = '#dc3545';
-                Dashboard.alert({ title: 'Connection Failed', message: 'Could not validate the API key against any provided URL.<br><br>Please check the details.' });
+                Dashboard.alert({ title: 'Connection Failed', message: lastError || 'Could not connect to any provided URL.' });
             }
         }
 
@@ -2226,9 +2236,14 @@
 
             } catch (e) {
                 console.error('TMDB validation failed:', e);
-                const errorMessage = (e.status === 401)
-                    ? 'The API Key is invalid.'
-                    : 'Could not connect to TMDB. Please check the key and your network.';
+                var errorMessage;
+                if (e.status === 401) {
+                    errorMessage = 'The API key is invalid. Check that you copied it correctly.';
+                } else if (e.status === 500 || e.status === 0 || !e.status) {
+                    errorMessage = 'Could not reach TMDB servers. Check your network connection.';
+                } else {
+                    errorMessage = 'Connection failed (error ' + e.status + '). Check the key and your network.';
+                }
 
                 statusIndicator.textContent = 'error';
                 statusIndicator.style.color = '#dc3545';
@@ -2244,32 +2259,35 @@
 
         /** @type {boolean} Tracks whether the File Transformation warning has been dismissed this session */
         var ftWarningDismissedSession = false;
+        var hasPluginPages = false;
+        var hasCustomTabs = false;
 
         /**
-         * Checks if the File Transformation plugin is installed and shows a warning banner if not.
-         * The warning can be dismissed per-session (resets on page reload) or permanently via localStorage.
+         * Checks installed plugins (File Transformation, Plugin Pages, Custom Tabs).
+         * Shows a warning if File Transformation is missing. Updates dependency state
+         * for Plugin Pages / Custom Tabs dependent settings.
          * Called during loadConfig() on page load.
-         * @see https://github.com/IAmParadox27/jellyfin-plugin-file-transformation
          */
-        function checkFileTransformationPlugin() {
-            // Skip check if user has already dismissed the warning
-            if (ftWarningDismissedSession || localStorage.getItem('je_ft_warning_dismissed') === 'true') {
-                return;
-            }
-
-            // Query the Plugins API to check if File Transformation is installed
+        function checkInstalledPlugins() {
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/Plugins'),
                 dataType: 'json'
             }).then(function(plugins) {
-                var hasFileTransformation = plugins.some(function(p) {
-                    return p.Name === 'File Transformation';
-                });
-                var warning = document.getElementById('fileTransformationWarning');
-                if (warning) {
-                    warning.style.display = hasFileTransformation ? 'none' : 'block';
+                var hasFileTransformation = plugins.some(function(p) { return p.Name === 'File Transformation'; });
+                hasPluginPages = plugins.some(function(p) { return p.Name === 'Plugin Pages'; });
+                hasCustomTabs = plugins.some(function(p) { return p.Name === 'Custom Tabs'; });
+
+                // File Transformation warning
+                if (!ftWarningDismissedSession && localStorage.getItem('je_ft_warning_dismissed') !== 'true') {
+                    var warning = document.getElementById('fileTransformationWarning');
+                    if (warning) {
+                        warning.style.display = hasFileTransformation ? 'none' : 'block';
+                    }
                 }
+
+                // Re-run dependencies now that plugin info is available
+                updateAllDependencies();
             }).catch(function() {
                 // If we can't check, don't show the warning
             });
@@ -2405,7 +2423,7 @@
 
         function loadConfig() {
             Dashboard.showLoadingMsg();
-            checkFileTransformationPlugin();
+            checkInstalledPlugins();
             ApiClient.getPluginConfiguration(pluginId).then((config) => {
                 const savedShortcuts = (config.Shortcuts && config.Shortcuts.length > 0) ? config.Shortcuts : defaultShortcuts;
                 shortcutOverrides = savedShortcuts.filter(saved => {
@@ -3275,11 +3293,18 @@
         ];
 
         var INDIVIDUAL_DEPS = [
-            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Requires TMDB API Key' },
-            { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Requires TMDB API Key' },
-            { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key' },
-            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Requires TMDB API Key' },
-            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key' }
+            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
+            { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
+            { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
+            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
+            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
+            { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
+            { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
+            { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
+            { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
+            { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs; }, hint: 'Requires Custom Tabs plugin', icon: 'extension' },
+            { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs; }, hint: 'Requires Custom Tabs plugin', icon: 'extension' },
+            { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs; }, hint: 'Requires Custom Tabs plugin', icon: 'extension' }
         ];
 
         function addDepTag(el, tag) {
@@ -3396,7 +3421,7 @@
                 if (span && !label.querySelector('.dep-required-icon')) {
                     var icon = document.createElement('i');
                     icon.className = 'material-icons dep-required-icon';
-                    icon.textContent = 'key';
+                    icon.textContent = dep.icon || 'key';
                     icon.style.cssText = 'font-size: 16px; vertical-align: middle; margin-left: 8px; color: #ff9800;';
                     icon.title = dep.hint;
                     span.appendChild(icon);
