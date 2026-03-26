@@ -2261,6 +2261,7 @@
         var ftWarningDismissedSession = false;
         var hasPluginPages = false;
         var hasCustomTabs = false;
+        var hasIntroSkipper = false;
 
         /**
          * Checks installed plugins (File Transformation, Plugin Pages, Custom Tabs).
@@ -2277,6 +2278,7 @@
                 var hasFileTransformation = plugins.some(function(p) { return p.Name === 'File Transformation'; });
                 hasPluginPages = plugins.some(function(p) { return p.Name === 'Plugin Pages'; });
                 hasCustomTabs = plugins.some(function(p) { return p.Name === 'Custom Tabs'; });
+                hasIntroSkipper = plugins.some(function(p) { return p.Name === 'Intro Skipper' || p.Name === 'SkipIntro'; });
 
                 // File Transformation warning
                 if (!ftWarningDismissedSession && localStorage.getItem('je_ft_warning_dismissed') !== 'true') {
@@ -3298,6 +3300,8 @@
             { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
             { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Requires TMDB API Key', icon: 'key' },
+            { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Requires Intro Skipper plugin', icon: 'extension' },
+            { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper; }, hint: 'Requires Intro Skipper plugin', icon: 'extension' },
             { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
             { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
             { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages; }, hint: 'Requires Plugin Pages plugin', icon: 'extension' },
@@ -3448,9 +3452,65 @@
             }
         }
 
+        var PARENT_DEPS = [
+            { parent: 'elsewhereEnabled', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'showReviews', children: ['reviewsExpandedByDefault'] },
+            { parent: 'randomButtonEnabled', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'showWatchProgress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
+            { parent: 'qualityTagsEnabled', children: ['qualityTagsPosition'] },
+            { parent: 'genreTagsEnabled', children: ['genreTagsPosition'] },
+            { parent: 'languageTagsEnabled', children: ['languageTagsPosition'] },
+            { parent: 'ratingTagsEnabled', children: ['ratingTagsPosition'] },
+            { parent: 'useIcons', children: ['iconStyle'] },
+            { parent: 'letterboxdEnabled', children: ['showLetterboxdLinkAsText'] },
+            { parent: 'enableCustomSplashScreen', children: ['splashScreenImageUrl'] },
+            { parent: 'jellyseerrShowReportButton', children: ['jellyseerrShowIssueIndicator'] },
+            { parent: 'downloadsPageEnabled', children: ['downloadsPageShowIssues', 'downloadsPagePollingEnabled'] },
+            { parent: 'downloadsPagePollingEnabled', children: ['downloadsPollIntervalSeconds'] },
+            { parent: 'arrLinksEnabled', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
+            { parent: 'arrTagsSyncEnabled', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
+            { parent: 'arrTagsShowAsLinks', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
+            { parent: 'calendarPageEnabled', children: ['calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
+            { parent: 'autoSeasonRequestEnabled', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
+            { parent: 'bookmarksEnabled', children: ['bookmarksUsePluginPages'] },
+            { parent: 'hiddenContentEnabled', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
+        ];
+
+        function updateParentDep(dep) {
+            var parent = document.getElementById(dep.parent);
+            if (!parent) return;
+            var isEnabled = parent.checked;
+            var tag = 'parent-' + dep.parent;
+
+            dep.children.forEach(function(childId) {
+                var child = document.getElementById(childId);
+                if (!child) return;
+                var container = child.closest('.checkboxContainer, .inputContainer, .selectContainer')
+                             || child.closest('label');
+
+                if (!isEnabled) {
+                    child.disabled = true;
+                    addDepTag(child, tag);
+                    if (container) {
+                        container.style.opacity = '0.5';
+                        container.style.cursor = 'not-allowed';
+                        addDepTag(container, tag);
+                    }
+                } else {
+                    var allClear = removeDepTag(child, tag);
+                    if (allClear) child.disabled = false;
+                    if (container) {
+                        var cc = removeDepTag(container, tag);
+                        if (cc) { container.style.opacity = ''; container.style.cursor = ''; }
+                    }
+                }
+            });
+        }
+
         function updateAllDependencies() {
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
+            PARENT_DEPS.forEach(updateParentDep);
         }
 
         // Reactive dependency updates
@@ -3460,6 +3520,14 @@
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey', '#sonarrUrl', '#sonarrApiKey', '#radarrUrl', '#radarrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', updateAllDependencies);
+        });
+
+        // Parent checkbox change listeners
+        var parentIds = {};
+        PARENT_DEPS.forEach(function(dep) { parentIds[dep.parent] = true; });
+        Object.keys(parentIds).forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', updateAllDependencies);
         });
 
         var originalTestTmdb = testTmdbConnection;
