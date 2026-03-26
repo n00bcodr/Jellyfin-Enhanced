@@ -3725,6 +3725,18 @@
                 if (p.apiKey && !urlApiKeys[rKey]) urlApiKeys[rKey] = p.apiKey;
             });
 
+            // Also probe configured service URLs so we can cross-reference client-only mappings
+            var serviceUrlIds = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Jellyseerr': 'jellyseerrUrls' };
+            pairs.forEach(function(p) {
+                var urlId = serviceUrlIds[p.service];
+                if (!urlId) return;
+                var configUrl = (document.getElementById(urlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
+                if (configUrl && !uniqueUrls.hasOwnProperty(configUrl)) {
+                    uniqueUrls[configUrl] = null;
+                    if (p.apiKey) urlApiKeys[configUrl] = p.apiKey;
+                }
+            });
+
             var urlKeys = Object.keys(uniqueUrls);
             var results = await Promise.all(urlKeys.map(function(u) { return identifyUrl(u, urlApiKeys[u] || ''); }));
             urlKeys.forEach(function(u, i) { uniqueUrls[u] = results[i]; });
@@ -3797,6 +3809,19 @@
                 // Right side confirmed as correct service?
                 var rightConfirmed = (rightInfo.service === p.service) ||
                     (rightInfo.service === 'arr' && (p.service === 'Sonarr' || p.service === 'Radarr' || p.service === 'Bazarr'));
+
+                // If right side is only browser-reachable (server can't reach localhost etc.),
+                // check if the configured service URL confirms the service identity
+                if (!rightConfirmed && rightInfo.clientOnly) {
+                    var configUrlId = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Jellyseerr': 'jellyseerrUrls' }[p.service];
+                    if (configUrlId) {
+                        var configUrl = (document.getElementById(configUrlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
+                        var configInfo = configUrl ? uniqueUrls[configUrl] : null;
+                        if (configInfo && (configInfo.service === p.service || (configInfo.service === 'arr' && p.service !== 'Bazarr'))) {
+                            rightConfirmed = true;
+                        }
+                    }
+                }
 
                 if (rightConfirmed) {
                     good++;
