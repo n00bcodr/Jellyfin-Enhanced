@@ -2831,10 +2831,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* continue */ }
 
-            // Try generic reachability
+            // Try generic reachability — also check HTML title for service name
             try
             {
                 using var resp = await http.GetAsync(cleanUrl);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync();
+                    // Check <title> tag for known service names (SPA root pages)
+                    var titleMatch = System.Text.RegularExpressions.Regex.Match(
+                        body, @"<title[^>]*>([^<]*)</title>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (titleMatch.Success)
+                    {
+                        var title = titleMatch.Groups[1].Value;
+                        if (title.Contains("Sonarr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Sonarr" });
+                        if (title.Contains("Radarr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Radarr" });
+                        if (title.Contains("Bazarr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Bazarr" });
+                        if (title.Contains("Jellyseerr", StringComparison.OrdinalIgnoreCase)
+                            || title.Contains("Overseerr", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Jellyseerr" });
+                        if (title.Contains("Jellyfin", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "Jellyfin" });
+                        if (title.Contains("SABnzbd", StringComparison.OrdinalIgnoreCase))
+                            return Ok(new { reachable = true, service = "SABnzbd" });
+                    }
+                }
                 return Ok(new { reachable = true, service = "unknown" });
             }
             catch
