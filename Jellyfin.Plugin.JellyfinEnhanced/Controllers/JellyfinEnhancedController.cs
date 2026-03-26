@@ -2855,8 +2855,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             return Ok(new { reachable = true, service = "Jellyseerr" });
                         if (title.Contains("Jellyfin", StringComparison.OrdinalIgnoreCase))
                             return Ok(new { reachable = true, service = "Jellyfin" });
-                        if (title.Contains("SABnzbd", StringComparison.OrdinalIgnoreCase))
-                            return Ok(new { reachable = true, service = "SABnzbd" });
+
                     }
                 }
                 return Ok(new { reachable = true, service = "unknown" });
