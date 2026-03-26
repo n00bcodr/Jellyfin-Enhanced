@@ -1975,6 +1975,18 @@
             return;
         }
 
+        const normalizedTitle = String(showTitle || '').trim();
+        const isGenericFallbackTitle = ['this show', 'this movie', 'this collection'].includes(normalizedTitle.toLowerCase());
+        const resolvedShowTitle = (!isGenericFallbackTitle && normalizedTitle)
+            || tvDetails?.name
+            || tvDetails?.title
+            || searchResultItem?.name
+            || searchResultItem?.title
+            || searchResultItem?.originalName
+            || searchResultItem?.originalTitle
+            || normalizedTitle
+            || 'Unknown Show';
+
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
 
         // Show season selection UI with Select All checkbox header
@@ -1982,10 +1994,11 @@
             ${partialRequestsEnabled ? '<div class="jellyseerr-season-header-row"><input type="checkbox" class="jellyseerr-season-checkbox" id="jellyseerr-select-all-seasons"><label class="jellyseerr-season-header-label" for="jellyseerr-select-all-seasons">' + JE.t('jellyseerr_select_all_seasons') + '</label><div></div><div></div></div>' : ''}
         </div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
         const modalInstance = create({
-            title: JE.t('jellyseerr_modal_title'),
-            subtitle: showTitle,
+            title: is4k ? `${JE.t('jellyseerr_modal_title')} - 4K` : JE.t('jellyseerr_modal_title'),
+            subtitle: resolvedShowTitle,
             bodyHtml,
             backdropPath: tvDetails.backdropPath,
+            buttonText: is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : undefined,
             onClose: () => {
                 if (refreshModalInterval) {
                     clearInterval(refreshModalInterval);
@@ -2004,7 +2017,7 @@
                     if (!server || !quality || !folder) {
                         JE.toast(JE.t('jellyseerr_modal_toast_options_missing'), 3000);
                         requestBtn.disabled = false;
-                        requestBtn.textContent = partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request');
+                        requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
                         return;
                     }
                     settings = { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] };
@@ -2017,11 +2030,11 @@
                         if (selectedSeasons.length === 0) {
                             JE.toast(JE.t('jellyseerr_modal_toast_select_season'), 3000);
                             requestBtn.disabled = false;
-                            requestBtn.textContent = JE.t('jellyseerr_modal_request_selected');
+                            requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
                         await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k);
-                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: showTitle }), 4000);
+                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
                         const allSeasons = (tvDetails?.seasons || [])
@@ -2034,7 +2047,7 @@
                             await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem);
                         }
 
-                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: showTitle }), 4000);
+                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
                     // Notify any listening modals that TV was requested
                     document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
@@ -2056,14 +2069,14 @@
                 } catch (error) {
                     JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
                     requestBtn.disabled = false;
-                    requestBtn.textContent = partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request');
+                    requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
                 }
             }
         });
 
         // Populate season list inside the modal (shows immediately, air dates may be empty)
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
-        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
+        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
         modalInstance.show();
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)
@@ -2120,7 +2133,7 @@
             // When all fetches complete, re-render with backfilled dates
             Promise.all([...seasonFetches, tmdbFetch]).then(() => {
                 applyAirDateBackfill(tvDetails);
-                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes);
+                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
             });
         }
 
@@ -2167,7 +2180,7 @@
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
             if (freshTvDetails) {
                 applyAirDateBackfill(freshTvDetails);
-                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes);
+                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
                 // Update Select All state after refresh
                 if (seasonList._updateSelectAllState) {
                     seasonList._updateSelectAllState();
@@ -2186,12 +2199,21 @@
         }
     };
 
-    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false) {
+    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false, is4kMode = false) {
         if (!seasonListElement || !tvDetails) return;
 
         const seasonStatusMap = {};
-        tvDetails.mediaInfo?.seasons?.forEach(s => { seasonStatusMap[s.seasonNumber] = s.status; });
-        tvDetails.mediaInfo?.requests?.forEach(r => r.seasons?.forEach(sr => { seasonStatusMap[sr.seasonNumber] = sr.status; }));
+        tvDetails.mediaInfo?.seasons?.forEach(s => {
+            const modeStatus = is4kMode ? s.status4k : s.status;
+            if (modeStatus !== undefined && modeStatus !== null) {
+                seasonStatusMap[s.seasonNumber] = modeStatus;
+            }
+        });
+        tvDetails.mediaInfo?.requests?.forEach(r => {
+            const requestIs4k = !!r?.is4k;
+            if (requestIs4k !== !!is4kMode) return;
+            r.seasons?.forEach(sr => { seasonStatusMap[sr.seasonNumber] = sr.status; });
+        });
 
         // Filter out seasons with no episodes, and hide Season 0 (Specials) unless enabled in Seerr
         const seasons = (tvDetails.seasons || [])
@@ -2222,7 +2244,8 @@
                 case 5: statusText = JE.t('jellyseerr_season_status_available'); statusClass = 'available'; break;
             }
 
-            if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.some(ds => ds.episode?.seasonNumber === seasonNumber)) {
+            const modeDownloads = is4kMode ? (tvDetails.mediaInfo?.downloadStatus4k || []) : (tvDetails.mediaInfo?.downloadStatus || []);
+            if ((apiStatus === 2 || apiStatus === 3) && modeDownloads.some(ds => ds.episode?.seasonNumber === seasonNumber)) {
                 statusText = JE.t('jellyseerr_season_status_processing');
             }
 
@@ -2263,8 +2286,8 @@
             const existingProgress = seasonItem.querySelector('.jellyseerr-inline-progress');
             if (existingProgress) existingProgress.remove();
 
-            if ((apiStatus === 2 || apiStatus === 3) && tvDetails.mediaInfo?.downloadStatus?.length > 0) {
-                const seasonDownloads = tvDetails.mediaInfo.downloadStatus.filter(ds => ds.episode?.seasonNumber === seasonNumber);
+            if ((apiStatus === 2 || apiStatus === 3) && modeDownloads.length > 0) {
+                const seasonDownloads = modeDownloads.filter(ds => ds.episode?.seasonNumber === seasonNumber);
                 if (seasonDownloads.length > 0) {
                     const totalSize = seasonDownloads.reduce((sum, ds) => sum + (ds.size || 0), 0);
                     const totalSizeLeft = seasonDownloads.reduce((sum, ds) => sum + (ds.sizeLeft || 0), 0);

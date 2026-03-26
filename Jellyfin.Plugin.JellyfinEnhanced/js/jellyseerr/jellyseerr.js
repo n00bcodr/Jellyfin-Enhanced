@@ -491,9 +491,14 @@
 
                     // Find the original item data from the card
                     const card = event.target.closest('.jellyseerr-card');
-                    const titleText = card?.querySelector('.cardText-first bdi')?.textContent || 'this movie';
                     const button = card?.querySelector('.jellyseerr-request-button');
                     const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+                    const titleText = card?.querySelector('.cardText-first bdi')?.textContent
+                        || searchResultItem?.name
+                        || searchResultItem?.title
+                        || searchResultItem?.originalName
+                        || searchResultItem?.originalTitle
+                        || (mediaType === 'tv' ? 'this show' : 'this movie');
 
                     try {
                         if (mediaType === 'tv') {
@@ -544,9 +549,14 @@
             const mediaType = button.dataset.mediaType;
             const tmdbId = button.dataset.tmdbId;
             const collectionId = button.dataset.collectionId;
-            const card = button.closest('.jellyseerr-card');
-            const titleText = card?.querySelector('.cardText-first bdi')?.textContent || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
             const searchResultItem = button.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+            const card = button.closest('.jellyseerr-card');
+            const titleText = card?.querySelector('.cardText-first bdi')?.textContent
+                || searchResultItem?.name
+                || searchResultItem?.title
+                || searchResultItem?.originalName
+                || searchResultItem?.originalTitle
+                || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
 
             if (mediaType === 'collection' && collectionId) {
                 showCollectionRequestModal(collectionId, titleText, searchResultItem);
