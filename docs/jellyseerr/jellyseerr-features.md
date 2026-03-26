@@ -17,6 +17,7 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 - **Search + Request** - Search + request from Jellyseerr, directly from Jellyfin search results
     - **Advanced requests** *(requires configuration)*
     - **4K Requests**
+    - **4K TV Requests**
     - **Season selection**
 - **Requests Tab**
     - **View request status** - pending, approved, available
@@ -39,6 +40,17 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 2. Results from both Jellyfin and Jellyseerr appear
 3. Jellyseerr results show request status
 4. Click to request or view details
+
+#### 4K TV Requesting:
+
+1. Enable **4K TV Requests** in plugin settings.
+2. For TV results, use the request split-button dropdown and choose **Request in 4K**.
+3. The season selection modal opens in 4K mode.
+4. The modal header shows **Request Series - 4K** and the primary button shows **Request in 4K**.
+
+!!! tip
+
+    In More Info modal, TV actions use **Request More** as the primary action, with **Request in 4K** in the dropdown when 4K is requestable.
 
 #### Request Status Indicators:
 
