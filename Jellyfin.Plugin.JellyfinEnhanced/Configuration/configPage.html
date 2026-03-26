@@ -8,12 +8,24 @@
     <div data-role="content">
         <div class="content-primary">
             <div class="verticalSection">
-                <div class="sectionTitleContainer">
+                <div class="sectionTitleContainer" style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em;">
                      <h2 class="sectionTitle">Jellyfin Enhanced</h2>
                         <a is="emby-linkbutton" class="raised raised-mini emby-button" style="margin-left: 2em;" target="_blank" href="https://github.com/n00bcodr/Jellyfin-Enhanced">
                             <i class="md-icon button-icon button-icon-left secondaryText"></i>
                             <span>Help</span>
                         </a>
+                        <div id="settingsSearchContainer" style="margin-left: auto; min-width: 200px; max-width: 320px; flex: 1;">
+                            <div style="position: relative;">
+                                <i class="material-icons" style="position: absolute; left: 0.6em; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.4); pointer-events: none; font-size: 1.1em;">search</i>
+                                <input id="settingsSearchInput" type="text" placeholder="Search settings..." style="width: 100%; padding: 0.45em 2.2em 0.45em 2.2em; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #eee; font-size: 0.85em; outline: none; box-sizing: border-box;" />
+                                <span id="settingsSearchCount" style="display: none; position: absolute; right: 2.4em; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.4); font-size: 0.75em; white-space: nowrap;"></span>
+                                <button id="settingsSearchClear" type="button" style="display: none; position: absolute; right: 0.4em; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; padding: 0.2em; font-size: 1em; line-height: 1;">&#x2715;</button>
+                            </div>
+                            <label style="display: flex; align-items: center; gap: 0.3em; margin-top: 0.25em; font-size: 0.7em; color: rgba(255,255,255,0.45); cursor: pointer; justify-content: flex-end;">
+                                <input id="settingsSearchAdvanced" type="checkbox" style="margin: 0; width: 12px; height: 12px;" />
+                                <span>Advanced (IDs &amp; attributes)</span>
+                            </label>
+                        </div>
                 </div>
             </div>
             <hr>
@@ -1689,6 +1701,28 @@
                 .jellyfin-tab-button img {
                     pointer-events: none;
                 }
+                .je-search-hidden {
+                    display: none !important;
+                }
+                .je-search-match {
+                    background-color: rgba(255, 200, 0, 0.35);
+                    color: #fff;
+                    border-radius: 2px;
+                    padding: 0 1px;
+                    box-shadow: 0 0 0 1px rgba(255, 200, 0, 0.25);
+                }
+                .je-search-match-active {
+                    background-color: rgba(255, 165, 0, 0.75);
+                    box-shadow: 0 0 0 2px rgba(255, 165, 0, 0.5);
+                }
+                .je-search-tab-label {
+                    font-size: 1.15em;
+                    font-weight: bold;
+                    color: var(--primary-accent-color, #00a4dc);
+                    margin-bottom: 0.5em;
+                    padding: 0.4em 0;
+                    border-bottom: 1px solid rgba(255,255,255,0.1);
+                }
             `;
             document.head.appendChild(style);
 
@@ -1743,6 +1777,226 @@
                 }
             } catch (e) {
                 // Ignore if sessionStorage is not available
+            }
+
+            // === Settings Search ===
+            const searchInput = document.getElementById('settingsSearchInput');
+            const searchClear = document.getElementById('settingsSearchClear');
+            const searchCount = document.getElementById('settingsSearchCount');
+            const searchAdvanced = document.getElementById('settingsSearchAdvanced');
+            const tabButtonsContainer = tabs[0] ? tabs[0].parentElement : null;
+            let isSearchMode = false;
+            const savedDetailsStates = new Map();
+            const SKIP_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'SCRIPT', 'STYLE']);
+            let currentMatchIdx = -1;
+            let allMatches = [];
+
+            let searchDebounce;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchDebounce);
+                searchDebounce = setTimeout(() => performSearch(searchInput.value), 150);
+            });
+
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    searchInput.value = '';
+                    performSearch('');
+                    searchInput.blur();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (allMatches.length > 0) {
+                        goToMatch(currentMatchIdx + (e.shiftKey ? -1 : 1));
+                    }
+                }
+            });
+
+            searchClear.addEventListener('click', () => {
+                searchInput.value = '';
+                performSearch('');
+                searchInput.focus();
+            });
+
+            searchAdvanced.addEventListener('change', () => {
+                if (searchInput.value.trim()) performSearch(searchInput.value);
+            });
+
+            searchInput.addEventListener('focus', () => {
+                searchInput.style.borderColor = 'var(--primary-accent-color, #00a4dc)';
+                searchInput.style.background = 'rgba(255,255,255,0.12)';
+            });
+
+            searchInput.addEventListener('blur', () => {
+                if (!searchInput.value) {
+                    searchInput.style.borderColor = 'rgba(255,255,255,0.15)';
+                    searchInput.style.background = 'rgba(255,255,255,0.08)';
+                }
+            });
+
+            function getSearchableText(element, advanced) {
+                let text = element.textContent.toLowerCase();
+                if (advanced) {
+                    element.querySelectorAll('[id], [name], [data-text], [data-icon]').forEach(el => {
+                        if (el.id) text += ' ' + el.id.toLowerCase();
+                        if (el.name) text += ' ' + el.name.toLowerCase();
+                        if (el.dataset.text) text += ' ' + el.dataset.text.toLowerCase();
+                        if (el.dataset.icon) text += ' ' + el.dataset.icon.toLowerCase();
+                    });
+                }
+                return text;
+            }
+
+            function clearHighlights() {
+                form.querySelectorAll('.je-search-match').forEach(mark => {
+                    const parent = mark.parentNode;
+                    parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                    parent.normalize();
+                });
+                allMatches = [];
+                currentMatchIdx = -1;
+            }
+
+            function highlightTextIn(element, query) {
+                const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+                    acceptNode: function(node) {
+                        if (SKIP_TAGS.has(node.parentElement.tagName)) return NodeFilter.FILTER_REJECT;
+                        if (node.parentElement.closest('.je-search-match, .je-search-tab-label'))
+                            return NodeFilter.FILTER_REJECT;
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                });
+                var textNodes = [];
+                while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+                textNodes.forEach(function(node) {
+                    var text = node.textContent;
+                    var lower = text.toLowerCase();
+                    if (!lower.includes(query)) return;
+
+                    var frag = document.createDocumentFragment();
+                    var last = 0;
+                    var idx;
+                    while ((idx = lower.indexOf(query, last)) !== -1) {
+                        if (idx > last) frag.appendChild(document.createTextNode(text.substring(last, idx)));
+                        var mark = document.createElement('mark');
+                        mark.className = 'je-search-match';
+                        mark.textContent = text.substring(idx, idx + query.length);
+                        frag.appendChild(mark);
+                        last = idx + query.length;
+                    }
+                    if (last < text.length) frag.appendChild(document.createTextNode(text.substring(last)));
+                    node.parentNode.replaceChild(frag, node);
+                });
+            }
+
+            function goToMatch(index) {
+                if (allMatches.length === 0) return;
+                if (currentMatchIdx >= 0 && currentMatchIdx < allMatches.length) {
+                    allMatches[currentMatchIdx].classList.remove('je-search-match-active');
+                }
+                if (index >= allMatches.length) index = 0;
+                if (index < 0) index = allMatches.length - 1;
+                currentMatchIdx = index;
+                allMatches[currentMatchIdx].classList.add('je-search-match-active');
+                allMatches[currentMatchIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                searchCount.textContent = (currentMatchIdx + 1) + ' of ' + allMatches.length;
+            }
+
+            function enterSearchMode() {
+                if (isSearchMode) return;
+                isSearchMode = true;
+                form.querySelectorAll('details').forEach(d => {
+                    savedDetailsStates.set(d, d.open);
+                });
+                if (tabButtonsContainer) tabButtonsContainer.style.display = 'none';
+                tabContents.forEach(tc => {
+                    const btn = document.querySelector('.jellyfin-tab-button[data-tab="' + tc.id + '"]');
+                    const label = btn ? btn.textContent.trim() : tc.id;
+                    const labelEl = document.createElement('div');
+                    labelEl.className = 'je-search-tab-label';
+                    labelEl.textContent = label;
+                    tc.insertBefore(labelEl, tc.firstChild);
+                });
+            }
+
+            function exitSearchMode() {
+                isSearchMode = false;
+                clearHighlights();
+                form.querySelectorAll('.je-search-tab-label').forEach(el => el.remove());
+                if (tabButtonsContainer) tabButtonsContainer.style.display = '';
+                form.querySelectorAll('.je-search-hidden').forEach(el => el.classList.remove('je-search-hidden'));
+                form.querySelectorAll('details').forEach(d => {
+                    if (savedDetailsStates.has(d)) d.open = savedDetailsStates.get(d);
+                });
+                savedDetailsStates.clear();
+                let savedTab = 'enhanced';
+                try {
+                    savedTab = sessionStorage.getItem('jellyfinEnhancedActiveTab') || 'enhanced';
+                } catch (e) {
+                    // Ignore if sessionStorage is not available
+                }
+                activateTab(savedTab);
+                searchCount.style.display = 'none';
+                searchClear.style.display = 'none';
+            }
+
+            function performSearch(query) {
+                query = query.toLowerCase().trim();
+
+                if (!query) {
+                    if (isSearchMode) exitSearchMode();
+                    return;
+                }
+
+                if (!isSearchMode) enterSearchMode();
+
+                clearHighlights();
+                const advanced = searchAdvanced.checked;
+                let sectionCount = 0;
+
+                tabContents.forEach(tabContent => {
+                    let tabHasMatch = false;
+                    const fieldsets = tabContent.querySelectorAll(':scope > fieldset');
+
+                    fieldsets.forEach(fieldset => {
+                        const fullText = getSearchableText(fieldset, advanced);
+
+                        if (!fullText.includes(query)) {
+                            fieldset.classList.add('je-search-hidden');
+                            return;
+                        }
+
+                        fieldset.classList.remove('je-search-hidden');
+                        tabHasMatch = true;
+                        sectionCount++;
+
+                        const detailsEls = fieldset.querySelectorAll('details');
+                        detailsEls.forEach(detail => {
+                            if (getSearchableText(detail, advanced).includes(query)) {
+                                detail.classList.remove('je-search-hidden');
+                                detail.open = true;
+                            } else {
+                                detail.classList.add('je-search-hidden');
+                            }
+                        });
+
+                        highlightTextIn(fieldset, query);
+                    });
+
+                    tabContent.style.display = tabHasMatch ? 'block' : 'none';
+                });
+
+                allMatches = Array.from(form.querySelectorAll('.je-search-match'));
+                currentMatchIdx = -1;
+
+                if (allMatches.length > 0) {
+                    searchCount.textContent = '0 of ' + allMatches.length;
+                } else {
+                    searchCount.textContent = sectionCount > 0
+                        ? sectionCount + ' section' + (sectionCount !== 1 ? 's' : '') + ' found'
+                        : 'No results';
+                }
+                searchCount.style.display = 'block';
+                searchClear.style.display = 'block';
             }
 
         const defaultShortcuts = [
