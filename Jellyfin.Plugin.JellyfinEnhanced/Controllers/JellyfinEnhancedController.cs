@@ -2854,7 +2854,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Ok(new { reachable = true, service = "arr" });
                 }
             }
-            catch (Exception) { /* continue to next service probe */ }
+            catch (HttpRequestException) { /* continue to next service probe */ }
+            catch (TaskCanceledException) { /* continue to next service probe */ }
 
             // Try Jellyfin (/System/Info/Public — public endpoint, returns JSON)
             try
@@ -2871,7 +2872,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
             }
-            catch (Exception) { /* continue to next service probe */ }
+            catch (HttpRequestException) { /* continue to next service probe */ }
+            catch (TaskCanceledException) { /* continue to next service probe */ }
 
             // Try Jellyseerr (/api/v1/status — returns JSON)
             try
@@ -2884,7 +2886,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Ok(new { reachable = true, service = "Seerr" });
                 }
             }
-            catch (Exception) { /* continue to next service probe */ }
+            catch (HttpRequestException) { /* continue to next service probe */ }
+            catch (TaskCanceledException) { /* continue to next service probe */ }
 
             // Try generic reachability — also check HTML title for service name
             try
@@ -2918,7 +2921,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 return Ok(new { reachable = true, service = "unknown" });
             }
-            catch (Exception)
+            catch (HttpRequestException)
+            {
+                return Ok(new { reachable = false, service = "unknown" });
+            }
+            catch (TaskCanceledException)
             {
                 return Ok(new { reachable = false, service = "unknown" });
             }
