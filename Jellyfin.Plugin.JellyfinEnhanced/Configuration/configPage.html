@@ -2186,11 +2186,10 @@
             for (const url of urls) {
                 try {
                     const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/validate`, {
-                        url: url,
-                        apiKey: apiKey
+                        url: url
                     });
 
-                    const res = await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json' });
+                    const res = await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKey } });
 
                     if (res && res.ok) {
                         validated = true;
@@ -3806,7 +3805,7 @@
 
                 // Right side confirmed as correct service?
                 var rightConfirmed = (rightInfo.service === p.service) ||
-                    (rightInfo.service === 'arr' && (p.service === 'Sonarr' || p.service === 'Radarr' || p.service === 'Bazarr'));
+                    (rightInfo.service === 'arr' && (p.service === 'Sonarr' || p.service === 'Radarr'));
 
                 // If right side is only browser-reachable (server can't reach localhost etc.),
                 // check if the configured service URL confirms the service identity
