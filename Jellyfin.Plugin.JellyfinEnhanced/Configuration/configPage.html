@@ -2196,7 +2196,6 @@
                         url: url,
                         apiKey: apiKey
                     });
-                    console.debug("Attempting to validate with URL:", validationUrl);
 
                     const res = await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json' });
 
@@ -3391,11 +3390,12 @@
             }
 
             targets.forEach(function(fieldset) {
-                var banner = document.getElementById(dep.bannerId + '-' + Array.prototype.indexOf.call(fieldsets, fieldset));
+                var bannerId = dep.bannerId + '-' + Array.prototype.indexOf.call(fieldsets, fieldset);
+                var banner = document.getElementById(bannerId);
                 if (!isMet) {
                     if (!banner) {
                         var b = createDepBanner(dep);
-                        b.id = dep.bannerId + '-' + Array.prototype.indexOf.call(fieldsets, fieldset);
+                        b.id = bannerId;
                         var legend = fieldset.querySelector('legend');
                         if (legend) { legend.after(b); } else { fieldset.prepend(b); }
                         banner = b;
@@ -3776,15 +3776,13 @@
                 var leftIsArr = leftInfo.reachable && (leftInfo.service === 'Sonarr' || leftInfo.service === 'Radarr' || leftInfo.service === 'arr' || leftInfo.service === 'Bazarr' || leftInfo.service === 'Jellyseerr');
                 var rightIsJellyfin = (rightInfo.service === 'Jellyfin');
 
-                if (leftIsArr && rightIsJellyfin) {
-                    var detected = leftInfo.service === 'arr' ? 'an *arr service' : leftInfo.service;
-                    issues.push(p.label + ': URLs are reversed. Left side is ' + detected + ' and right side is Jellyfin. Swap them: Jellyfin URL goes on the left, ' + p.service + ' URL on the right.');
-                    return;
-                }
-
                 if (leftIsArr) {
                     var detected = leftInfo.service === 'arr' ? 'an *arr service' : leftInfo.service;
-                    issues.push(p.label + ': Left side (' + p.left + ') is running ' + detected + ', not Jellyfin. Left should be your Jellyfin URL.');
+                    if (rightIsJellyfin) {
+                        issues.push(p.label + ': URLs are reversed. Left side is ' + detected + ' and right side is Jellyfin. Swap them: Jellyfin URL goes on the left, ' + p.service + ' URL on the right.');
+                    } else {
+                        issues.push(p.label + ': Left side (' + p.left + ') is running ' + detected + ', not Jellyfin. Left should be your Jellyfin URL.');
+                    }
                     return;
                 }
 
@@ -3806,7 +3804,7 @@
                 // If right side is only browser-reachable (server can't reach localhost etc.),
                 // check if the configured service URL confirms the service identity
                 if (!rightConfirmed && rightInfo.clientOnly) {
-                    var configUrlId = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Jellyseerr': 'jellyseerrUrls' }[p.service];
+                    var configUrlId = serviceUrlIds[p.service];
                     if (configUrlId) {
                         var configUrl = (document.getElementById(configUrlId)?.value || '').trim().split('\n')[0].trim().replace(/\/+$/, '');
                         var configInfo = configUrl ? uniqueUrls[configUrl] : null;
@@ -3840,17 +3838,15 @@
                 icon.textContent = 'check_circle';
                 resultDiv.appendChild(icon);
                 resultDiv.appendChild(document.createTextNode(good + ' mapping' + (good !== 1 ? 's' : '') + ' verified.'));
-            } else if (issues.length === 0 && warnings.length > 0) {
-                resultDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.15)';
-                resultDiv.style.borderLeft = '4px solid #ffc107';
-                warnings.forEach(function(w) { addIssue(resultDiv, w); });
-                if (good > 0) {
-                    addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' verified.');
-                }
             } else {
-                resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
-                resultDiv.style.borderLeft = '4px solid #dc3545';
-                issues.forEach(function(i) { addIssue(resultDiv, i); });
+                if (issues.length > 0) {
+                    resultDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.15)';
+                    resultDiv.style.borderLeft = '4px solid #dc3545';
+                    issues.forEach(function(i) { addIssue(resultDiv, i); });
+                } else {
+                    resultDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.15)';
+                    resultDiv.style.borderLeft = '4px solid #ffc107';
+                }
                 warnings.forEach(function(w) { addIssue(resultDiv, w); });
                 if (good > 0) {
                     addIssue(resultDiv, good + ' other mapping' + (good !== 1 ? 's' : '') + ' verified.');
