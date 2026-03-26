@@ -2782,6 +2782,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* continue */ }
 
+            // Try Jellyseerr (/api/v1/status)
+            try
+            {
+                var resp = await http.GetAsync($"{cleanUrl}/api/v1/status");
+                if (resp.IsSuccessStatusCode)
+                    return Ok(new { reachable = true, service = "Jellyseerr" });
+            }
+            catch { /* continue */ }
+
             // Try generic reachability
             try
             {

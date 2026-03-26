@@ -521,6 +521,12 @@
                                         <label class="sectionTitle" style="margin-bottom: 5px;" for="jellyseerrUrlMappings">Seerr URL Mappings</label>
                                         <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com&#10;http://192.168.1.10:8096|http://192.168.1.10:5055&#10;https://example.com/jellyfin|https://example.com/jellyseerr"></textarea>
                                         <div class="fieldDescription">Map your Jellyfin URLs to specific Seerr URLs for displaying links to users. Users will get the appropriate Seerr link when using "Link result titles to Seerr instead of TMDB", based on what link they use to access Jellyfin. <br>Format: <code>JellyfinURL|SeerrURL</code>, one mapping per line.<br>If no mapping matches or this is empty, the first URL from above will be used.</div>
+                                        <div style="margin-top: 0.8em;">
+                                            <button is="emby-button" type="button" id="validateSeerrMappingsBtn" class="raised button-submit emby-button">
+                                                <span>Validate Mappings</span>
+                                            </button>
+                                            <div id="seerrMappingsValidationResult" style="display: none; margin-top: 0.8em; padding: 0.8em 1em; border-radius: 4px; font-size: 0.9em; line-height: 1.5;"></div>
+                                        </div>
                                     </div>
                                     <div
                                         style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0; display: flex; align-items: flex-start; gap: 1em;">
@@ -3628,9 +3634,9 @@
             }
         }
 
-        async function validateUrlMappings() {
-            var btn = document.getElementById('validateArrMappingsBtn');
-            var resultDiv = document.getElementById('arrMappingsValidationResult');
+        async function validateMappingSet(mappingDefs, btnId, resultDivId) {
+            var btn = document.getElementById(btnId);
+            var resultDiv = document.getElementById(resultDivId);
             btn.disabled = true;
             btn.querySelector('span').textContent = 'Validating...';
             resultDiv.textContent = '';
@@ -3638,12 +3644,6 @@
             resultDiv.style.backgroundColor = 'rgba(0, 164, 220, 0.1)';
             resultDiv.style.borderLeft = '4px solid #00a4dc';
             resultDiv.textContent = 'Testing URLs...';
-
-            var mappingDefs = [
-                { id: 'sonarrUrlMappings', service: 'Sonarr' },
-                { id: 'radarrUrlMappings', service: 'Radarr' },
-                { id: 'bazarrUrlMappings', service: 'Bazarr' }
-            ];
 
             // Collect all pairs with basic format validation first
             var pairs = [];
@@ -3786,7 +3786,19 @@
             btn.querySelector('span').textContent = 'Validate Mappings';
         }
 
-        document.getElementById('validateArrMappingsBtn').addEventListener('click', validateUrlMappings);
+        document.getElementById('validateArrMappingsBtn').addEventListener('click', function() {
+            validateMappingSet(
+                [{ id: 'sonarrUrlMappings', service: 'Sonarr' }, { id: 'radarrUrlMappings', service: 'Radarr' }, { id: 'bazarrUrlMappings', service: 'Bazarr' }],
+                'validateArrMappingsBtn', 'arrMappingsValidationResult'
+            );
+        });
+
+        document.getElementById('validateSeerrMappingsBtn').addEventListener('click', function() {
+            validateMappingSet(
+                [{ id: 'jellyseerrUrlMappings', service: 'Jellyseerr' }],
+                'validateSeerrMappingsBtn', 'seerrMappingsValidationResult'
+            );
+        });
 
         clearTagsCacheBtn.addEventListener('click', async () => {
             if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
