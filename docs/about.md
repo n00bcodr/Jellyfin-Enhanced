@@ -48,9 +48,9 @@ Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and c
 
 ### Related Projects & Integrations
 
-**[Jellyseerr](https://github.com/Fallenbagel/jellyseerr)**
+**[Seerr](https://github.com/seerr-team/seerr)**
 - Media request management system
-- Jellyfin Enhanced provides deep integration with Jellyseerr
+- Jellyfin Enhanced provides deep integration with Seerr
 
 **[Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)**
 - Custom navigation tabs for Jellyfin

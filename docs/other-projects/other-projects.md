@@ -12,7 +12,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 
 **Features:**
 - Keyboard shortcuts and playback controls
-- Jellyseerr integration
+- Seerr integration
 - Visual tags (quality, genre, language, rating)
 - Custom pause screen
 - Bookmarks and timestamps

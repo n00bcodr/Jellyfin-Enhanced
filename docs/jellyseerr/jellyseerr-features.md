@@ -1,20 +1,20 @@
-# Jellyseerr Integration
+# Seerr Integration
 
-Search, request, and discover media directly from Jellyfin using your Jellyseerr instance.
+Search, request, and discover media directly from Jellyfin using your Seerr instance.
 
 <!-- relative directory  -->
-![Jellyseerr](../images/jellyseerr.png)
+![Seerr](../images/jellyseerr.png)
 
 <!-- use a custom title -->
 !!! info "Note"
 
-    **This plugin is NOT affiliated with Jellyseerr/Seerr.** Jellyseerr is an independent project. This plugin simply integrates with it to enhance the Jellyfin experience.
+    **This plugin is NOT affiliated with Seerr.** Seerr is an independent project. This plugin simply integrates with it to enhance the Jellyfin experience.
 
-    **Please report any issues with this plugin to the Jellyfin Enhanced repository, not to the Jellyseerr/Seerr team.**
+    **Please report any issues with this plugin to the Jellyfin Enhanced repository, not to the Seerr team.**
 
 ## Features
 
-- **Search + Request** - Search + request from Jellyseerr, directly from Jellyfin search results
+- **Search + Request** - Search + request from Seerr, directly from Jellyfin search results
     - **Advanced requests** *(requires configuration)*
     - **4K Requests**
     - **4K TV Requests**
@@ -22,14 +22,14 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 - **Requests Tab**
     - **View request status** - pending, approved, available
 - **Recommendations + Discovery** - Recommendations and similar items on detail pages
-- **Issue Reporting** - Report problems directly to Jellyseerr
+- **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *([requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks)*)
 
 
 <!-- use a custom title -->
 !!! tip "How it works"
 
-    To ensure security and prevent CORS errors, the plugin uses the Jellyfin server as a proxy. This keeps your Jellyseerr API key safe and avoids browser security issues.
+    To ensure security and prevent CORS errors, the plugin uses the Jellyfin server as a proxy. This keeps your Seerr API key safe and avoids browser security issues.
 
 
 ### Search Integration
@@ -37,8 +37,8 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 #### Requesting:
 
 1. Type search query in Jellyfin search bar
-2. Results from both Jellyfin and Jellyseerr appear
-3. Jellyseerr results show request status
+2. Results from both Jellyfin and Seerr appear
+3. Seerr results show request status
 4. Click to request or view details
 
 #### 4K TV Requesting:
@@ -61,7 +61,7 @@ Search, request, and discover media directly from Jellyfin using your Jellyseerr
 
 ### Item Details
 
-View Jellyseerr recommendations and similar items on detail pages.
+View Seerr recommendations and similar items on detail pages.
 
 - Recommended items section
 - Similar items section
@@ -70,7 +70,7 @@ View Jellyseerr recommendations and similar items on detail pages.
 - Real-time request status
 
 #### Configure
-1. Check **"Show Jellyseerr Recommendations and Similar items"**
+1. Check **"Show Seerr Recommendations and Similar items"**
 2. Optional: Enable **"Exclude already in library items"**
 3. Optional: Enable **"Exclude rejected items"**
 
@@ -99,7 +99,7 @@ Browse and discover content by various criteria.
 
 ### Issue Reporting
 
-Report problems with media directly to Jellyseerr.
+Report problems with media directly to Seerr.
 
 #### Issue Types
 
@@ -121,12 +121,12 @@ Report problems with media directly to Jellyseerr.
 
     Issue reporting button will be hidden, if these are true:
 
-    * Jellyseerr is not reachable
+    * Seerr is not reachable
     * User is not linked
 
 ## Requests Page
 
-Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and issues in one dedicated page.
+Monitor active downloads from Sonarr/Radarr and manage Seerr requests and issues in one dedicated page.
 
 ### Setup
 
@@ -134,7 +134,7 @@ Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and i
 2. Navigate to **Seerr Settings** tab
 3. Check **"Enable Requests Page"**
 4. Optionally check **"Show Downloads in Requests Page"** to display active *arr downloads (enabled by default)
-5. Optionally check **"Show Seerr Issues Section"** to display Jellyseerr issues
+5. Optionally check **"Show Seerr Issues Section"** to display Seerr issues
 6. Choose integration method:
    - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
    - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
@@ -166,7 +166,7 @@ Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and i
 #### Features
 
 - View active downloads (if enabled)
-- View Jellyseerr requests with status
+- View Seerr requests with status
 - View reported issues (if enabled)
 - Progress bars and ETA for downloads
 - Quality and size information
@@ -175,7 +175,7 @@ Monitor active downloads from Sonarr/Radarr and manage Jellyseerr requests and i
 
 ### Issues on Downloads Page
 
-View and manage Jellyseerr issues directly from the Requests page.
+View and manage Seerr issues directly from the Requests page.
 
 #### Features
 
@@ -198,7 +198,7 @@ View and manage Jellyseerr issues directly from the Requests page.
 - Navigate to Requests page
 - Issues appear in dedicated section
 - Click issue to view details
-- Use Jellyseerr reporter modal for management
+- Use Seerr reporter modal for management
 
 ### Watchlist Sync
 
@@ -211,14 +211,14 @@ Automatically sync requested media to Jellyfin watchlist.
 #### Features:
 
 - Add requested items to watchlist when available
-- Sync Jellyseerr watchlist to Jellyfin
+- Sync Seerr watchlist to Jellyfin
 - Prevent re-addition of removed items
 - Configurable memory retention
 
 #### Configuration:
 
 - **Add Requested Media to Watchlist** - Auto-add when available
-- **Sync Jellyseerr Watchlist** - Sync watchlist items
+- **Sync Seerr Watchlist** - Sync watchlist items
 - **Prevent Watchlist Re-Addition** - Remember removed items
 - **Memory Retention Days** - How long to remember (default: 365)
 
@@ -229,9 +229,9 @@ When on the search page, a Seerr icon indicates connection status.
 
 | **Icon** | **State** | **Description** |
 | :---: | :--- | :--- |
-|<img alt="active" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:drop-shadow(2px 2px 6px #000);" /> | **Active** | Jellyseerr is successfully connected, and the current Jellyfin user is correctly linked to a Jellyseerr user. <br> Results from Jellyseerr will load along with Jellyfin and requests can be made. |
-| <img alt="noaccess" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" /> | **User Not Found** | Jellyseerr is successfully connected, but the current Jellyfin user is not linked to a Jellyseerr account. <br>If plugin auto import is enabled, linking will be attempted automatically. If disabled, import users manually in Jellyseerr. Results will not load until linked. |
-| <img alt="offline" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" /> | **Offline** | The plugin could not connect to any of the configured Jellyseerr URLs. <br> Check your plugin settings and ensure Jellyseerr is running and accessible. Results will not load. |
+|<img alt="active" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:drop-shadow(2px 2px 6px #000);" /> | **Active** | Seerr is successfully connected, and the current Jellyfin user is correctly linked to a Seerr user. <br> Results from Seerr will load along with Jellyfin and requests can be made. |
+| <img alt="noaccess" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" /> | **User Not Found** | Seerr is successfully connected, but the current Jellyfin user is not linked to a Seerr account. <br>If plugin auto import is enabled, linking will be attempted automatically. If disabled, import users manually in Seerr. Results will not load until linked. |
+| <img alt="offline" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" /> | **Offline** | The plugin could not connect to any of the configured Seerr URLs. <br> Check your plugin settings and ensure Seerr is running and accessible. Results will not load. |
 
 
 ## Troubleshooting
@@ -240,16 +240,16 @@ When on the search page, a Seerr icon indicates connection status.
 
 **Icon Shows Offline:**
 
-1. Verify Jellyseerr URL is correct and accessible
-2. Check Jellyseerr is running
+1. Verify Seerr URL is correct and accessible
+2. Check Seerr is running
 3. Test connection in plugin settings
 4. Check server logs for errors
 
 **Icon Shows User Not Found:**
 
-1. Verify "Enable Jellyfin Sign-In" is enabled in Jellyseerr
+1. Verify "Enable Jellyfin Sign-In" is enabled in Seerr
 2. If plugin auto import is enabled, run **Import Users Now** from Jellyfin plugin settings
-3. If plugin auto import is disabled, import Jellyfin user manually in Jellyseerr
+3. If plugin auto import is disabled, import Jellyfin user manually in Seerr
 4. Ensure the user is not selected in the **Blocked users** list
 5. Ensure same username in both systems
 
@@ -264,33 +264,33 @@ When on the search page, a Seerr icon indicates connection status.
 
 **Results Slow to Load:**
 
-1. Use internal Jellyseerr URL
+1. Use internal Seerr URL
 2. Check network latency
-3. Verify Jellyseerr performance
+3. Verify Seerr performance
 4. Check server resources
 
 ### Request Issues
 
 **Cannot Make Requests:**
 
-1. Verify user has request permissions in Jellyseerr
+1. Verify user has request permissions in Seerr
 2. Check request limits not exceeded
 3. Ensure item not already requested
-4. Check Jellyseerr logs
+4. Check Seerr logs
 
 **Requests Not Appearing:**
 
-1. Refresh Jellyseerr page
+1. Refresh Seerr page
 2. Check request was successful (no errors)
 3. Verify user permissions
-4. Check Jellyseerr request queue
+4. Check Seerr request queue
 
 ### TMDB API Issues
 
-If reviews, elsewhere, or Jellyseerr icons not working:
+If reviews, elsewhere, or Seerr icons not working:
 
 - TMDB API may be blocked in your region
-- Check [Jellyseerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx)
+- Check [Seerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx)
 - Use VPN or proxy if needed
 - Contact ISP about API access
 

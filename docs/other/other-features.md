@@ -476,7 +476,7 @@ Force all clients to clear tag caches.
 
 - [Enhanced Features](enhanced.md) - Core plugin features
 - [Elsewhere Integration](elsewhere.md) - Streaming provider lookup
-- [Jellyseerr Integration](jellyseerr.md) - Request media
+- [Seerr Integration](jellyseerr.md) - Request media
 - [ARR Integration](arr.md) - Sonarr, Radarr integration
 - [FAQ](faq.md) - Common questions
 

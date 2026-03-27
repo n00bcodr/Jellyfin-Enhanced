@@ -59,13 +59,13 @@ Content-Type: application/json
 }
 ```
 
-## Jellyseerr Integration API
+## Seerr Integration API
 
-Plugin exposes proxy endpoints for Jellyseerr:
+Plugin exposes proxy endpoints for Seerr:
 
 ### Check Connection Status
 
-Checks if the plugin can connect to any of the configured Jellyseerr URLs using the provided API key.
+Checks if the plugin can connect to any of the configured Seerr URLs using the provided API key.
 
 ```bash
 curl -X GET \
@@ -75,7 +75,7 @@ curl -X GET \
 
 ### Check User Status
 
-Verifies that the currently logged-in Jellyfin user is successfully linked to a Jellyseerr user account.
+Verifies that the currently logged-in Jellyfin user is successfully linked to a Seerr user account.
 
 ```bash
 curl -X GET \
@@ -84,9 +84,9 @@ curl -X GET \
   "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/user-status"
 ```
 
-### Perform A Jellyseerr Search
+### Perform A Seerr Search
 
-Executes a search query through the Jellyseerr instance for the specified user.
+Executes a search query through the Seerr instance for the specified user.
 
 ```bash
 curl -X GET \
@@ -95,9 +95,9 @@ curl -X GET \
   "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/search?query=Inception"
 ```
 
-### Make a Request on Jellyseerr
+### Make a Request on Seerr
 
-Submits a media request to Jellyseerr on behalf of the specified user.
+Submits a media request to Seerr on behalf of the specified user.
 
 - `mediaType` can be `tv` or `movie`\
 - `mediaId` is the **TMDB ID** of the item

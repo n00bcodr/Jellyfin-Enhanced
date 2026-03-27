@@ -62,7 +62,7 @@ Access via:
 3. Find Hidden Content section
 4. Enable/disable the feature
 5. Configure filter toggles:
-   - Show hide buttons on Jellyseerr items
+   - Show hide buttons on Seerr items
    - Show hide buttons in library views
    - Show hide buttons on detail pages
    - Filter library views
@@ -215,34 +215,34 @@ Fine-tune subtitle appearance with presets and custom colors.
 
 ## Discovery & Integration
 
-### 🪼 Jellyseerr Search Integration
+### 🪼 Seerr Search Integration
 
 Search, request, and discover media directly from Jellyfin's search interface.
 
-![Jellyseerr](../images/jellyseerr.png)
+![Seerr](../images/jellyseerr.png)
 
 **Features:**
-- Search Jellyseerr from Jellyfin search bar
+- Search Seerr from Jellyfin search bar
 - Request movies and TV shows
 - View request status (pending, approved, available)
 - Auto-add requested media to watchlist
-- Sync Jellyseerr watchlist to Jellyfin
+- Sync Seerr watchlist to Jellyfin
 
 **Setup:**
-1. Open plugin settings → **Jellyseerr** tab
-2. Check "Show Jellyseerr Results in Search"
-3. Enter Jellyseerr URL(s) (one per line)
-4. Enter Jellyseerr API Key (from Jellyseerr Settings → General)
+1. Open plugin settings → **Seerr** tab
+2. Check "Show Seerr Results in Search"
+3. Enter Seerr URL(s) (one per line)
+4. Enter Seerr API Key (from Seerr Settings → General)
 5. Click "Test Connection"
 6. Enable optional features:
    - Add Requested Media to Watchlist
-   - Sync Jellyseerr Watchlist to Jellyfin
+   - Sync Seerr Watchlist to Jellyfin
 7. Click **Save**
 
 **Requirements:**
-- Jellyseerr instance with API access
-- "Enable Jellyfin Sign-In" enabled in Jellyseerr
-- Jellyfin users imported into Jellyseerr
+- Seerr instance with API access
+- "Enable Jellyfin Sign-In" enabled in Seerr
+- Jellyfin users imported into Seerr
 
 ![Jellyfin Sign-In](../images/jellyfin-signin.png)
 
@@ -250,11 +250,11 @@ Search, request, and discover media directly from Jellyfin's search interface.
 
 | **Icon** | **State** | **Description** |
 | :---: | :--- | :--- |
-|<img alt="active" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:drop-shadow(2px 2px 6px #000);" /> | **Active** | Jellyseerr is successfully connected, and the current Jellyfin user is correctly linked to a Jellyseerr user. <br> Results from Jellyseerr will load along with Jellyfin and requests can be made. |
-| <img alt="noaccess" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" /> | **User Not Found** | Jellyseerr is successfully connected, but the current Jellyfin user is not linked to a Jellyseerr account. <br>Ensure the user has been imported into Jellyseerr from Jellyfin. Results will not load. |
-| <img alt="offline" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" /> | **Offline** | The plugin could not connect to any of the configured Jellyseerr URLs. <br> Check your plugin settings and ensure Jellyseerr is running and accessible. Results will not load. |
+|<img alt="active" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:drop-shadow(2px 2px 6px #000);" /> | **Active** | Seerr is successfully connected, and the current Jellyfin user is correctly linked to a Seerr user. <br> Results from Seerr will load along with Jellyfin and requests can be made. |
+| <img alt="noaccess" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" /> | **User Not Found** | Seerr is successfully connected, but the current Jellyfin user is not linked to a Seerr account. <br>Ensure the user has been imported into Seerr from Jellyfin. Results will not load. |
+| <img alt="offline" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" /> | **Offline** | The plugin could not connect to any of the configured Seerr URLs. <br> Check your plugin settings and ensure Seerr is running and accessible. Results will not load. |
 
-### 🎬 Jellyseerr Item Details
+### 🎬 Seerr Item Details
 
 View recommendations and similar items on detail pages.
 
@@ -268,8 +268,8 @@ View recommendations and similar items on detail pages.
 - TV season selection
 
 **Setup:**
-1. Configure Jellyseerr integration (see above)
-2. Check "Show Jellyseerr Recommendations and Similar items"
+1. Configure Seerr integration (see above)
+2. Check "Show Seerr Recommendations and Similar items"
 3. Optional: Enable "Exclude already in library items"
 4. Click **Save**
 

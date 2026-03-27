@@ -6,7 +6,7 @@
 
 ### What is Jellyfin Enhanced?
 
-Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Jellyseerr integration, custom pause screens, quality tags, and much more — all in one convenient package.
+Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Seerr integration, custom pause screens, quality tags, and much more — all in one convenient package.
 
 ### Can I customize the keyboard shortcuts?
 
@@ -20,9 +20,9 @@ Yes, the plugin works on the official Jellyfin Android and iOS apps, as well as 
 
 No, the plugin does not work on Android TV or other native TV apps. It only functions on clients that use Jellyfin's embedded web UI, such as the official web, desktop, and mobile apps.
 
-### Is this plugin affiliated with Jellyseerr?
+### Is this plugin affiliated with Seerr?
 
-No, this plugin is not affiliated with Jellyseerr/Seerr. Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. **Please report plugin issues to this repository, not to the Seerr team**.
+No, this plugin is not affiliated with Seerr. Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. **Please report plugin issues to this repository, not to the Seerr team**.
 
 ### How do I change the plugin's language?
 
@@ -91,16 +91,16 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 - [x] If no button, run intro detection again
 
 
-### Jellyseerr integration not connecting?
+### Seerr integration not connecting?
 
 <!-- todo -->
-<!-- ![Jellyseerr Settings](images/jellyseerr.png) -->
+<!-- ![Seerr Settings](images/jellyseerr.png) -->
 
 **Check Configuration:**
 
-1. Verify Jellyseerr URL is correct and accessible
+1. Verify Seerr URL is correct and accessible
 
-2. Verify API key is correct (from Jellyseerr Settings → General)
+2. Verify API key is correct (from Seerr Settings → General)
 
 3. Click "Test Connection" in plugin settings
 
@@ -112,7 +112,7 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 **Enable Jellyfin Sign-In:**
 
-1. In Jellyseerr, go to Settings → Users
+1. In Seerr, go to Settings → Users
 
 2. Enable "Enable Jellyfin Sign-In"
 
@@ -125,15 +125,15 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 Option A (automatic, recommended):
 
-1. In Jellyfin, go to Dashboard -> Plugins -> Jellyfin Enhanced -> Jellyseerr Settings
+1. In Jellyfin, go to Dashboard -> Plugins -> Jellyfin Enhanced -> Seerr Settings
 
 2. Enable "Auto import Jellyfin users to Seerr"
 
 3. Optional: click "Import Users Now" to run bulk import immediately
 
-Option B (manual in Jellyseerr):
+Option B (manual in Seerr):
 
-1. In Jellyseerr, go to Users page
+1. In Seerr, go to Users page
 
 2. Click "Import Jellyfin Users"
 
@@ -154,7 +154,7 @@ Option B (manual in Jellyseerr):
 
 2. Jellyfin server logs for proxy errors
 
-3. Jellyseerr logs for API errors
+3. Seerr logs for API errors
 
 ### Tags not showing on posters?
 
@@ -260,7 +260,7 @@ Option B (manual in Jellyseerr):
 <!-- * EXAMPLE OF A LINK! -->
 See [Pause Screen CSS](../advanced/css-customization.md#pause-screen) for hiding/styling elements.
 
-### Reviews, Elsewhere, or Jellyseerr icons not working?
+### Reviews, Elsewhere, or Seerr icons not working?
 
 This is usually due to TMDB API access issues.
 
@@ -268,7 +268,7 @@ This is usually due to TMDB API access issues.
 
 - TMDB API may be blocked in your region
 
-- Check Jellyseerr troubleshooting: [TMDB Access](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx)
+- Check Seerr troubleshooting: [TMDB Access](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx)
 
 - Use VPN or proxy if needed
 
@@ -282,7 +282,7 @@ This is usually due to TMDB API access issues.
 
 3. Check network tab for failed requests
 
-4. Verify Jellyseerr can access TMDB
+4. Verify Seerr can access TMDB
 
 ### "Remove from Continue Watching" is destructive?
 
@@ -471,8 +471,8 @@ Yes, via Enhanced panel settings:
 | `Access to the path '/jellyfin/jellyfin-web/index.html' is denied.` | Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) or follow [Docker workaround](../installation/troubleshooting.md#docker) |
 | `Access to the path 'C:\Program Files\Jellyfin\Server\jellyfin-web\index.html' is denied.` | Grant "NETWORK SERVICE" Read/Write permissions to Jellyfin folder |
 | Plugin installed but scripts don't load | Run "Jellyfin Enhanced Startup" scheduled task, verify trigger exists |
-| Reviews/Elsewhere/Jellyseerr icons not working | TMDB API may be blocked in your region, see [Jellyseerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) |
-| Jellyseerr search not working | Enable "Jellyfin Sign-In" in Jellyseerr. Then either enable plugin auto import and run "Import Users Now", or import users manually in Jellyseerr. Also verify user is not in blocked users list. |
+| Reviews/Elsewhere/Seerr icons not working | TMDB API may be blocked in your region, see [Seerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) |
+| Seerr search not working | Enable "Jellyfin Sign-In" in Seerr. Then either enable plugin auto import and run "Import Users Now", or import users manually in Seerr. Also verify user is not in blocked users list. |
 | Tags not appearing | Enable in settings, clear cache, verify metadata exists |
 | Bookmarks not saving | Check server logs, verify user data folder permissions |
 
@@ -519,7 +519,7 @@ Yes, via Enhanced panel settings:
 
 **Heavy Features:**
 
-- Jellyseerr discovery pages (many API calls)
+- Seerr discovery pages (many API calls)
 
 - People tags (age calculations)
 
@@ -535,7 +535,7 @@ Yes, via Enhanced panel settings:
 
 - Clear old bookmarks
 
-- Limit Jellyseerr results
+- Limit Seerr results
 
 ---
 

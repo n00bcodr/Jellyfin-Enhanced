@@ -130,7 +130,7 @@ Multiple patterns:
 **TMDB API Access:**
 - TMDB API may be blocked in some regions
 - Use VPN if needed
-- Check [Jellyseerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) for TMDB access issues
+- Check [Seerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) for TMDB access issues
 
 ## No Providers Showing
 
@@ -146,18 +146,18 @@ Multiple patterns:
 - Verify item has TMDB ID
 - Wait and try again later
 
-# Integration with Jellyseerr
+# Integration with Seerr
 
-Elsewhere can be displayed on Jellyseerr discovery pages.
+Elsewhere can be displayed on Seerr discovery pages.
 
 **Enable:**
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to **Jellyseerr Settings** tab
-3. Check "Show Elsewhere on Jellyseerr"
+2. Navigate to **Seerr Settings** tab
+3. Check "Show Elsewhere on Seerr"
 4. Click **Save**
 
 **Features:**
-- Shows streaming availability on Jellyseerr cards
+- Shows streaming availability on Seerr cards
 - Same provider information as item pages
 - Helps decide what to request
 

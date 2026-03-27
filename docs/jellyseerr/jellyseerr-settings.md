@@ -1,19 +1,25 @@
-# Jellyseerr Settings
+# Seerr Settings
 
 <!-- use a custom title -->
 !!! info "Prerequisites"
 
     **Prerequisites:**
 
-    - Jellyseerr instance
+    - Seerr instance
       - **API key**
       - Jellyfin Sign-In enabled
 
+!!! warning "Disclaimer"
+
+    **This plugin is NOT affiliated with Seerr.** Seerr is an independent project.
+
+    **Please report plugin issues to the Jellyfin Enhanced repository, not to the Seerr team.**
+
 ## Setup
 
-### Step 1: Enable Jellyfin Sign-In in Jellyseerr
+### Step 1: Enable Jellyfin Sign-In in Seerr
 
-1. In Jellyseerr, go to **Settings** → **Users**
+1. In Seerr, go to **Settings** → **Users**
 2. Enable **"Enable Jellyfin Sign-In"**
 3. Save settings
 
@@ -24,7 +30,7 @@
 
 This step is optional if you enable plugin-side auto import.
 
-1. In Jellyseerr, go to **Users** page
+1. In Seerr, go to **Users** page
 2. Click **"Import Jellyfin Users"**
 3. Select users to import
 4. Save changes
@@ -43,25 +49,25 @@ This step is optional if you enable plugin-side auto import.
 ### Step 3: Configure Plugin
 
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to **Jellyseerr Settings** tab
-3. Check **"Show Jellyseerr Results in Search"**
-4. Enter your **Jellyseerr URL(s)** (one per line)
+2. Navigate to **Seerr Settings** tab
+3. Check **"Show Seerr Results in Search"**
+4. Enter your **Seerr URL(s)** (one per line)
    - Use internal URL for best performance
    - Can provide multiple URLs (first successful connection used)
-5. Enter your **Jellyseerr API Key**
-   - Found in Jellyseerr: **Settings** → **General** → **API Key**
+5. Enter your **Seerr API Key**
+   - Found in Seerr: **Settings** → **General** → **API Key**
 6. Click **"Test Connection"** to verify
 7. Enable optional features (see below)
 8. Click **Save**
 
 ### Step 4: Configure User Import (Optional)
 
-Enable automatic import in the plugin if you do not want to manually import users in Jellyseerr.
+Enable automatic import in the plugin if you do not want to manually import users in Seerr.
 
 When enabled, new Jellyfin users are automatically imported into Seerr the first time they use Seerr Search.
 
 1. Go to **Dashboard** -> **Plugins** -> **Jellyfin Enhanced**
-2. Navigate to **Jellyseerr Settings** tab
+2. Navigate to **Seerr Settings** tab
 3. In **User Import**, check **"Auto import Jellyfin users to Seerr"**
 4. Optional: expand **Blocked users** and select users to exclude
 5. Optional: click **Import Users Now** to run immediate bulk import
@@ -82,8 +88,8 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
       - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
       - Automatically add items to Jellyfin watchlist when they become available
 
-### Sync Jellyseerr Watchlist to Jellyfin
-- Sync your Jellyseerr watchlist items to Jellyfin watchlist
+### Sync Seerr Watchlist to Jellyfin
+- Sync your Seerr watchlist items to Jellyfin watchlist
 - Items added when they become available in library
 
 ### Show 'Report Issue' Button
@@ -95,7 +101,7 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 
     **Requirements:**
 
-    - Jellyseerr instance with **4K configuration**
+    - Seerr instance with **4K configuration**
     - Permissions for users to request 4K quality
 
   ### Enable 4K TV Requests
@@ -103,7 +109,7 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 
     **Requirements:**
 
-    - Jellyseerr instance with **4K Sonarr configured**
+    - Seerr instance with **4K Sonarr configured**
     - Permissions for users to request **4K Sonarr** quality
 
   When enabled:
@@ -128,7 +134,7 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 
 ### Enable Requests Page
 
-Display a dedicated page showing active downloads from *arr and requests from Jellyseerr.
+Display a dedicated page showing active downloads from *arr and requests from Seerr.
 
 **Configuration:**
 
@@ -150,11 +156,11 @@ Control whether active downloads from Sonarr/Radarr appear on the Requests page.
 
 ### Show Seerr Issues Section
 
-Display Jellyseerr issues on the Requests page.
+Display Seerr issues on the Requests page.
 
 - View all reported issues
 - Filter by issue status
-- Link to Jellyseerr reporter modal
+- Link to Seerr reporter modal
 
 ### Auto-Refresh Settings
 

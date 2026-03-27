@@ -37,11 +37,11 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Streaming Provider Lookup** - See where media is available
 - **Multi-region Support** - Check availability across regions
 
-### 🪼 Jellyseerr
+### 🪼 Seerr
 - **Search Integration** - Request media from Jellyfin search
 - **Item Details** - Recommendations and similar items
 - **Discovery Pages** - Browse by genre, network, person, or tag
-- **Issue Reporting** - Report problems directly to Jellyseerr
+- **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 - **Auto Requests** - Auto next season and next movie (in collection) requests
 - **Requests Page** - Monitor downloads and Seerr requests
