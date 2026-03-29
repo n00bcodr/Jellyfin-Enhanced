@@ -4214,12 +4214,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (Request.Headers.TryGetValue("If-None-Match", out var cachedIfNoneMatch)
                         && cachedIfNoneMatch.ToString().Contains(cached.ETag))
                     {
-                        Response.Headers["Cache-Control"] = "public, max-age=86400";
+                        Response.Headers["Cache-Control"] = "public, max-age=3600";
                         Response.Headers["ETag"] = cached.ETag;
                         return StatusCode(304);
                     }
 
-                    Response.Headers["Cache-Control"] = "public, max-age=86400";
+                    Response.Headers["Cache-Control"] = "public, max-age=3600";
                     Response.Headers["ETag"] = cached.ETag;
                     return File(cached.Content, cached.ContentType);
                 }
@@ -4264,12 +4264,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
                     && ifNoneMatch.ToString().Contains(etag))
                 {
-                    Response.Headers["Cache-Control"] = "public, max-age=86400";
+                    Response.Headers["Cache-Control"] = "public, max-age=3600";
                     Response.Headers["ETag"] = etag;
                     return StatusCode(304);
                 }
 
-                Response.Headers["Cache-Control"] = "public, max-age=86400";
+                Response.Headers["Cache-Control"] = "public, max-age=3600";
                 Response.Headers["ETag"] = etag;
 
                 return File(content, contentType);
