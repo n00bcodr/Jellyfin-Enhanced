@@ -52,7 +52,7 @@
 
         // Catalan
         { text: 'intent de connexió fallit', icon: 'security_update_warning', color: '#f44336' },
-        { text: 'autenticació correcta', icon: 'key', color: '#2e4ed6' },
+        { text: "s'ha autenticat correctament", icon: 'key', color: '#2e4ed6' },
         { text: 'instal·lació fallida', icon: 'warning', color: '#ee3b3bff' },
         { text: 'ha començat a reproduir', icon: 'play_arrow', color: '#2196f3' },
         { text: 'ha parat de reproduir', icon: 'check_circle', color: '#4caf50' },
@@ -62,7 +62,7 @@
         { text: "S'ha canviat", icon: 'key', color: '#ada130ff' },
         { text: "S'ha creat", icon: 'plus', color: '#2ed62eff' },
         { text: 'desinstal·lat', icon: 'delete', color: '#c3342a' },
-        { text: "s'ha instal·lat", icon: 'inventory_2', color: '#c957ddff' },
+        { text: "ha estat instal·lat", icon: 'inventory_2', color: '#c957ddff' },
         { text: 'actualitzat', icon: 'update', color: '#00bcd4' },
 
         // Polish
