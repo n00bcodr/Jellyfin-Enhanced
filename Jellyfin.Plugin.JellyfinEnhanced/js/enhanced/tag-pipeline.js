@@ -202,36 +202,72 @@
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
 
-        // Fetch all items in parallel using cached/prefetched data
-        const itemPromises = batch.map(async ({ el, renderTarget, itemId, itemType }) => {
-            try {
-                const item = JE.helpers?.getItemCached
-                    ? await JE.helpers.getItemCached(itemId, { userId })
-                    : await ApiClient.getItem(userId, itemId);
+        const ids = batch.map(b => b.itemId);
+        const elMap = new Map();
+        for (const b of batch) elMap.set(b.itemId, b);
 
-                if (!item) return;
-                if (!MEDIA_TYPES.has(item.Type)) return;
+        try {
+            // Single batch API call — returns items + first episode data for Series/Season
+            const response = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`, {
+                    ids: ids.join(',')
+                }),
+                dataType: 'json'
+            });
 
-                // Determine what extra data is needed
-                let needsFirstEp = false;
-                let needsParent = false;
-                for (const [, r] of renderers) {
-                    if (!r.isEnabled()) continue;
-                    if (r.needsFirstEpisode && (item.Type === 'Series' || item.Type === 'Season')) needsFirstEp = true;
-                    if (r.needsParentSeries && item.Type === 'Season' && item.SeriesId) needsParent = true;
-                }
+            const items = response?.Items || [];
 
-                // Fetch extra data (shared, cached)
-                const [firstEpisode, parentSeries] = await Promise.all([
-                    needsFirstEp ? getFirstEpisode(userId, item.Id) : Promise.resolve(null),
-                    needsParent ? getParentSeries(userId, item.SeriesId) : Promise.resolve(null),
-                ]);
-
-                // Also fetch parent series for rating fallback (Episode/Season without ratings)
-                let ratingParentSeries = null;
+            // Build parent series lookup for rating fallback
+            const parentSeriesNeeded = new Set();
+            for (const item of items) {
                 if ((item.Type === 'Season' || item.Type === 'Episode') && item.SeriesId &&
                     !item.CommunityRating && !item.CriticRating) {
-                    ratingParentSeries = await getParentSeries(userId, item.SeriesId);
+                    parentSeriesNeeded.add(item.SeriesId);
+                }
+                // Genre also needs parent series for Season items
+                if (item.Type === 'Season' && item.SeriesId) {
+                    parentSeriesNeeded.add(item.SeriesId);
+                }
+            }
+
+            // Batch-fetch any parent series items we need (these are likely already in the same response)
+            const parentSeriesMap = new Map();
+            for (const item of items) {
+                parentSeriesMap.set(item.Id.toString().replace(/-/g, '').toLowerCase(), item);
+            }
+            // For parent series not in this batch, fetch individually
+            for (const seriesId of parentSeriesNeeded) {
+                const normalizedId = seriesId.toString().replace(/-/g, '').toLowerCase();
+                if (!parentSeriesMap.has(normalizedId)) {
+                    try {
+                        const parent = await getParentSeries(userId, seriesId);
+                        if (parent) parentSeriesMap.set(normalizedId, parent);
+                    } catch {}
+                }
+            }
+
+            // Process each item
+            for (const item of items) {
+                const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
+                const batchEntry = elMap.get(itemId);
+                if (!batchEntry) continue;
+
+                const { renderTarget } = batchEntry;
+                if (!MEDIA_TYPES.has(item.Type)) continue;
+
+                // Build extras from the batch response
+                const firstEpisode = item.FirstEpisode || null;
+                let parentSeries = null;
+                let ratingParentSeries = null;
+
+                if (item.SeriesId) {
+                    const parentId = item.SeriesId.toString().replace(/-/g, '').toLowerCase();
+                    parentSeries = parentSeriesMap.get(parentId) || null;
+                    if ((item.Type === 'Season' || item.Type === 'Episode') &&
+                        !item.CommunityRating && !item.CriticRating) {
+                        ratingParentSeries = parentSeries;
+                    }
                 }
 
                 const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
@@ -245,12 +281,28 @@
                         console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
                     }
                 }
-            } catch (err) {
-                console.warn(`${logPrefix} Failed to process item ${itemId}:`, err);
             }
-        });
+        } catch (err) {
+            console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
+            // Fallback: process items individually
+            for (const { el, renderTarget, itemId } of batch) {
+                try {
+                    const item = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId, { userId })
+                        : await ApiClient.getItem(userId, itemId);
+                    if (!item || !MEDIA_TYPES.has(item.Type)) continue;
 
-        await Promise.allSettled(itemPromises);
+                    const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
+                        ? await getFirstEpisode(userId, item.Id) : null;
+                    const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
+
+                    for (const [name, renderer] of renderers) {
+                        if (!renderer.isEnabled()) continue;
+                        try { renderer.render(renderTarget, item, extras); } catch {}
+                    }
+                } catch {}
+            }
+        }
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────

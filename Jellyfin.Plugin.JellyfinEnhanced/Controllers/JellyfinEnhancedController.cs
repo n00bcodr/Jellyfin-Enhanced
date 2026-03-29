@@ -2450,6 +2450,92 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, userCount = userCount });
         }
 
+        /// <summary>
+        /// Batch endpoint for the unified tag pipeline. Returns item metadata plus first-episode
+        /// data for Series/Season items in a single response, eliminating N individual API calls.
+        /// </summary>
+        [HttpGet("tag-data/{userId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagData(Guid userId, [FromQuery] string ids)
+        {
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (string.IsNullOrEmpty(ids))
+            {
+                return BadRequest(new { error = "ids parameter required" });
+            }
+
+            var itemIds = ids.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var results = new List<object>(itemIds.Length);
+
+            foreach (var idStr in itemIds)
+            {
+                if (!Guid.TryParse(idStr.Trim(), out var itemId))
+                    continue;
+
+                var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+                if (item == null)
+                    continue;
+
+                var mediaSources = item.GetMediaSources(false);
+                var mediaStreams = mediaSources.SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>()).ToList();
+
+                object? firstEpisodeData = null;
+
+                // For Series/Season, find the first episode and include its media streams
+                if (item.GetBaseItemKind() == BaseItemKind.Series || item.GetBaseItemKind() == BaseItemKind.Season)
+                {
+                    var episodeQuery = new InternalItemsQuery(user)
+                    {
+                        ParentId = item.Id,
+                        IncludeItemTypes = new[] { BaseItemKind.Episode },
+                        Recursive = true,
+                        Limit = 1
+                    };
+
+                    var episodes = _libraryManager.GetItemList(episodeQuery);
+                    var firstEp = episodes.FirstOrDefault();
+                    if (firstEp != null)
+                    {
+                        var epSources = firstEp.GetMediaSources(false);
+                        var epStreams = epSources.SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>()).ToList();
+                        firstEpisodeData = new
+                        {
+                            Id = firstEp.Id,
+                            Type = firstEp.GetBaseItemKind().ToString(),
+                            MediaSources = epSources,
+                            MediaStreams = epStreams,
+                            Genres = firstEp.Genres
+                        };
+                    }
+                }
+
+                results.Add(new
+                {
+                    Id = item.Id,
+                    Type = item.GetBaseItemKind().ToString(),
+                    Genres = item.Genres,
+                    CommunityRating = item.CommunityRating,
+                    CriticRating = item.CriticRating,
+                    SeriesId = (item is MediaBrowser.Controller.Entities.TV.Episode ep) ? ep.SeriesId
+                             : (item is MediaBrowser.Controller.Entities.TV.Season s) ? s.SeriesId
+                             : (Guid?)null,
+                    ProviderIds = item.ProviderIds,
+                    Name = item.Name,
+                    MediaSources = mediaSources,
+                    MediaStreams = mediaStreams,
+                    FirstEpisode = firstEpisodeData
+                });
+            }
+
+            return Ok(new { Items = results });
+        }
+
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]
         [Produces("application/json")]
