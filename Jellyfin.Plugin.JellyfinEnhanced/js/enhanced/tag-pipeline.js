@@ -154,7 +154,13 @@
             }
 
             processedCards.add(el);
-            requestQueue.push({ el, itemId, itemType });
+
+            // cardImageContainer can have opacity:0 during lazy-load, making child
+            // overlays invisible. Use cardScalable (always visible, position:relative)
+            // as the render target instead.
+            const renderTarget = el.closest('.cardScalable') || el;
+
+            requestQueue.push({ el, renderTarget, itemId, itemType });
         }
 
         if (requestQueue.length > 0 && !isProcessing) {
@@ -197,7 +203,7 @@
         if (!userId) return;
 
         // Fetch all items in parallel using cached/prefetched data
-        const itemPromises = batch.map(async ({ el, itemId, itemType }) => {
+        const itemPromises = batch.map(async ({ el, renderTarget, itemId, itemType }) => {
             try {
                 const item = JE.helpers?.getItemCached
                     ? await JE.helpers.getItemCached(itemId, { userId })
@@ -228,13 +234,13 @@
                     ratingParentSeries = await getParentSeries(userId, item.SeriesId);
                 }
 
-                const extras = { firstEpisode, parentSeries, ratingParentSeries };
+                const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
 
                 // Fan out to all enabled renderers
                 for (const [name, renderer] of renderers) {
                     if (!renderer.isEnabled()) continue;
                     try {
-                        renderer.render(el, item, extras);
+                        renderer.render(renderTarget, item, extras);
                     } catch (err) {
                         console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
                     }
