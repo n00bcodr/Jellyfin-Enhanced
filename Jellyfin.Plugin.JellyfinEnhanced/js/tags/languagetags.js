@@ -4,11 +4,6 @@
     'use strict';
 
     JE.initializeLanguageTags = function() {
-        if (!JE.currentSettings.languageTagsEnabled) {
-            console.log('🪼 Jellyfin Enhanced: Language Tags: Feature is disabled in settings.');
-            return;
-        }
-
         const logPrefix = '🪼 Jellyfin Enhanced: Language Tags:';
         const containerClass = 'language-overlay-container';
         const flagClass = 'language-flag';
@@ -46,16 +41,6 @@
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.language = Hot.language || new Map();
 
-        let processedElements = new WeakSet();
-        let requestQueue = [];
-        let isProcessingQueue = false;
-        const queuedItemIds = new Set();
-        let mutationDebounceTimer = null;
-
-        const visibilityObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => { if (entry.isIntersecting) processElement(entry.target, true); });
-        }, { rootMargin: '200px', threshold: 0.1 });
-
         function saveCache() {
             try { localStorage.setItem(CACHE_KEY, JSON.stringify(langCache)); }
             catch (e) { console.warn(`${logPrefix} Failed to save cache`, e); }
@@ -79,7 +64,7 @@
             }
         }
 
-        function getUserId() { return ApiClient.getCurrentUserId(); }
+        // NOTE: getUserId removed - the unified tag pipeline handles user context.
 
         // Language to country code mapping (shared with features.js)
         const languageToCountryMap = {
@@ -105,36 +90,44 @@
             baq: 'es-pv', eus: 'es-pv'
         };
 
-        async function fetchFirstEpisode(userId, seriesId) {
-            try {
-                const response = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl('/Items', {
-                        ParentId: seriesId,
-                        IncludeItemTypes: 'Episode',
-                        Recursive: true,
-                        SortBy: 'PremiereDate',
-                        SortOrder: 'Ascending',
-                        Limit: 1,
-                        Fields: 'MediaStreams,MediaSources',
-                        userId: userId
-                    }),
-                    dataType: 'json'
+        // NOTE: fetchFirstEpisode removed - the unified tag pipeline handles first episode fetching.
+
+        /**
+         * Extracts audio languages from a Jellyfin item's media sources.
+         * @param {Object} sourceItem - The item (or first episode) to extract languages from.
+         * @returns {Array<{name: string, code: string}>} Normalized array of language objects.
+         */
+        function extractLanguagesFromItem(sourceItem) {
+            if (!sourceItem) return [];
+            const languages = new Set();
+            sourceItem.MediaSources?.forEach(function(source) {
+                source.MediaStreams?.filter(function(stream) { return stream.Type === 'Audio'; }).forEach(function(stream) {
+                    var langCode = stream.Language;
+                    if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
+                        try {
+                            var langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
+                            languages.add(JSON.stringify({ name: langName, code: langCode }));
+                        } catch (e) {
+                            languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
+                        }
+                    }
                 });
-                return response.Items?.[0] || null;
-            } catch {
-                return null;
-            }
+            });
+            return normalizeLanguages(Array.from(languages).map(JSON.parse));
         }
 
+        /**
+         * Legacy fallback: Fetches language info for a given item ID from the Jellyfin API.
+         * NOTE: The primary path is through the tag pipeline renderer.
+         */
         async function fetchItemLanguages(userId, itemId) {
             try {
                 // Use cached item data (populated by batch prefetch) to avoid individual API calls
-                let item;
+                var item;
                 if (JE.helpers?.getItemCached) {
                     item = await JE.helpers.getItemCached(itemId, { userId });
                 } else {
-                    const result = await ApiClient.ajax({
+                    var result = await ApiClient.ajax({
                         type: 'GET',
                         url: ApiClient.getUrl(`/Users/${userId}/Items`, {
                             Ids: itemId,
@@ -146,66 +139,18 @@
                 }
                 if (!item) return [];
 
-                let sourceItem = item;
+                // Series/Season first-episode resolution is handled by the tag pipeline.
+                // This fallback only processes items that have direct media streams.
+                if (item.Type === 'Series' || item.Type === 'Season') return [];
 
-                // For Series/Season, fetch the first episode to get language info
-                if (item.Type === 'Series' || item.Type === 'Season') {
-                    const episode = await fetchFirstEpisode(userId, item.Id);
-                    if (episode) {
-                        sourceItem = episode;
-                    } else {
-                        return []; // No episodes found
-                    }
-                }
-
-                const languages = new Set();
-                sourceItem?.MediaSources?.forEach(source => {
-                    source.MediaStreams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
-                        const langCode = stream.Language;
-                        if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
-                            try {
-                                const langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
-                                languages.add(JSON.stringify({ name: langName, code: langCode }));
-                            } catch (e) {
-                                languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
-                            }
-                        }
-                    });
-                });
-                return normalizeLanguages(Array.from(languages).map(JSON.parse));
+                return extractLanguagesFromItem(item);
             } catch (e) {
                 console.warn(`${logPrefix} Failed to fetch item language for ${itemId}`, e);
                 return [];
             }
         }
 
-        async function processRequestQueue() {
-            if (isProcessingQueue || requestQueue.length === 0) return;
-            isProcessingQueue = true;
-            const batch = requestQueue.splice(0, 4);
-            const promises = batch.map(async ({ element, itemId, userId }) => {
-                try {
-                    const languages = await fetchItemLanguages(userId, itemId);
-                    // Cache hot + persisted
-                    Hot.language.set(itemId, { value: languages, timestamp: Date.now() });
-                    langCache[itemId] = languages;
-                    if (languages && languages.length) insertLanguageTags(element, languages);
-                    queuedItemIds.delete(itemId);
-                } catch (e) {
-                    queuedItemIds.delete(itemId);
-                }
-            });
-            await Promise.allSettled(promises);
-            if (JE._cacheManager) JE._cacheManager.markDirty();
-            isProcessingQueue = false;
-            if (requestQueue.length > 0) {
-                if (typeof requestIdleCallback !== 'undefined') {
-                    requestIdleCallback(() => processRequestQueue(), { timeout: 300 });
-                } else {
-                    setTimeout(processRequestQueue, 300);
-                }
-            }
-        }
+        // NOTE: processRequestQueue removed - the unified tag pipeline handles queue processing.
 
         function computePositionStyles(position) {
             const pos = (position || JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left');
@@ -248,7 +193,7 @@
         }
 
         function insertLanguageTags(container, languages) {
-            if (!container || processedElements.has(container)) return;
+            if (!container) return;
             if (isCardAlreadyTagged(container)) return;
             const existing = container.querySelector(`.${containerClass}`);
             // Always re-render to handle cache migrations or setting changes
@@ -303,34 +248,10 @@
             if (wrap.children.length > 0) {
                 container.appendChild(wrap);
                 markCardTagged(container);
-                processedElements.add(container);
             }
         }
 
-        function getItemIdFromElement(el) {
-            // Try href pattern ...id=<ID>
-            if (el.href) {
-                try {
-                    const url = new URL(el.href, window.location.origin);
-                    const idParam = url.searchParams.get('id');
-                    if (idParam) return idParam;
-                } catch {}
-                // Fallback: parse from hash fragment
-                const m = el.href.match(/[?#&]id=([^&#]+)/);
-                if (m && m[1]) return m[1];
-            }
-            // Try background-image url containing /Items/<ID>
-            if (el.style && el.style.backgroundImage) {
-                const match = el.style.backgroundImage.match(/Items\/(.*?)\//);
-                if (match && match[1]) return match[1];
-            }
-            if (el.dataset?.itemid) return el.dataset.itemid;
-            let parent = el.closest('[data-itemid]');
-            if (parent) return parent.dataset.itemid;
-            // Fallback to legacy data-id
-            let parent2 = el.closest('[data-id]');
-            return parent2 ? parent2.dataset.id : null;
-        }
+        // NOTE: getItemIdFromElement removed - the unified tag pipeline handles DOM -> itemId extraction.
 
         function shouldIgnoreElement(el) {
             return IGNORE_SELECTORS.some(selector => {
@@ -356,79 +277,9 @@
             if (card) card.dataset[TAGGED_ATTR] = '1';
         }
 
-        function processElement(element, isPriority = false) {
-            if (shouldIgnoreElement(element) || processedElements.has(element)) return;
-
-            if (isCardAlreadyTagged(element)) {
-                processedElements.add(element);
-                return;
-            }
-
-            // Check for standard .card parent (poster/card view)
-            const card = element.closest('.card');
-            // Skip cards hidden by hidden-content module
-            if (card && card.classList.contains('je-hidden')) return;
-            if (card && card.dataset.type && !MEDIA_TYPES.has(card.dataset.type)) {
-                return;
-            }
-
-            // Check for .listItem parent (list/episode view)
-            const listItem = element.closest('.listItem');
-            if (listItem && listItem.classList.contains('je-hidden')) return;
-            if (listItem && listItem.dataset.type && !MEDIA_TYPES.has(listItem.dataset.type)) {
-                return;
-            }
-
-            // If neither card nor listItem, check if it's a cardImageContainer (InPlayerEpisodePreview)
-            if (!card && !listItem) {
-                const hasCardClass = element.classList.contains('cardImageContainer');
-                const hasItemId = getItemIdFromElement(element);
-                if (!hasCardClass || !hasItemId) return;
-            }
-
-            const itemId = getItemIdFromElement(element);
-            if (!itemId) return;
-
-            // Hot cache
-            const hot = Hot.language.get(itemId);
-            if (hot && (Date.now() - hot.timestamp) < Hot.ttl) {
-                if (hot.value && hot.value.length) insertLanguageTags(element, hot.value);
-                processedElements.add(element);
-                return;
-            }
-            // Persisted cache
-            let cached = langCache[itemId];
-            if (cached && cached.length) {
-                const normalized = normalizeLanguages(cached);
-                Hot.language.set(itemId, { value: normalized, timestamp: Date.now() });
-                insertLanguageTags(element, normalized);
-                processedElements.add(element);
-                return;
-            }
-
-            const userId = getUserId(); if (!userId) return;
-            if (queuedItemIds.has(itemId)) return;
-            queuedItemIds.add(itemId);
-            const req = { element, itemId, userId };
-            if (isPriority) requestQueue.unshift(req); else requestQueue.push(req);
-            if (!isProcessingQueue) setTimeout(processRequestQueue, 150);
-            visibilityObserver.observe(element);
-        }
-
-        function scanAndProcess() {
-            const elements = Array.from(document.querySelectorAll('.cardImageContainer, div.listItemImage'));
-            elements.forEach(el => {
-                if (!processedElements.has(el)) {
-                    visibilityObserver.observe(el);
-                    processElement(el);
-                }
-            });
-        }
-
-        function debouncedScan() {
-            if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
-            mutationDebounceTimer = setTimeout(scanAndProcess, 400);
-        }
+        // NOTE: processElement, scanAndProcess, debouncedScan removed -
+        // the unified tag pipeline handles DOM scanning, visibility observation,
+        // queue processing, and navigation detection.
 
         function injectCss() {
             const styleId = 'language-tags-styles';
@@ -475,40 +326,58 @@
             document.head.appendChild(style);
         }
 
-        function initialize() {
-            cleanupOldCaches();
-            injectCss();
-            setTimeout(scanAndProcess, 500);
-            // Use centralized observer management from helpers
-            if (JE.helpers?.createObserver) {
-                JE.helpers.createObserver('language-tags-mutations', () => {
-                    if (!JE.currentSettings?.languageTagsEnabled) return;
-                    debouncedScan();
-                }, document.body, { childList: true, subtree: true });
-            } else {
-                // Fallback for older versions
-                const mo = new MutationObserver(() => {
-                    if (!JE.currentSettings?.languageTagsEnabled) return;
-                    debouncedScan();
-                });
-                mo.observe(document.body, { childList: true, subtree: true });
-                window.addEventListener('beforeunload', () => mo.disconnect());
-            }
-            window.addEventListener('beforeunload', () => {
-                saveCache();
-                visibilityObserver.disconnect();
-                if (JE.helpers?.disconnectObserver) {
-                    JE.helpers.disconnectObserver('language-tags-mutations');
-                }
-            });
-            // Register with unified cache manager instead of setInterval
-            if (JE._cacheManager) {
-                JE._cacheManager.register(saveCache);
-            }
-        }
+        // --- INITIALIZATION VIA TAG PIPELINE ---
+        cleanupOldCaches();
 
-        initialize();
-        console.log(`${logPrefix} Initialized successfully.`);
+        // Register with unified cache manager for periodic saves
+        if (JE._cacheManager) {
+            JE._cacheManager.register(saveCache);
+        }
+        window.addEventListener('beforeunload', saveCache);
+
+        if (JE.tagPipeline) {
+            JE.tagPipeline.registerRenderer('language', {
+                render: function(el, item, extras) {
+                    if (shouldIgnoreElement(el)) return;
+                    if (isCardAlreadyTagged(el)) return;
+                    // Skip cards hidden by hidden-content module
+                    if (el.closest('.je-hidden')) return;
+
+                    const itemId = item.Id;
+                    // Check hot cache first
+                    const hot = Hot.language.get(itemId);
+                    if (hot && (Date.now() - hot.timestamp) < Hot.ttl) {
+                        if (hot.value && hot.value.length) insertLanguageTags(el, hot.value);
+                        return;
+                    }
+
+                    var sourceItem = item;
+                    if (item.Type === 'Series' || item.Type === 'Season') {
+                        if (extras.firstEpisode) {
+                            sourceItem = extras.firstEpisode;
+                        } else {
+                            return; // No first episode available, skip
+                        }
+                    }
+
+                    var languages = extractLanguagesFromItem(sourceItem);
+
+                    if (languages.length > 0) {
+                        langCache[itemId] = languages;
+                        Hot.language.set(itemId, { value: languages, timestamp: Date.now() });
+                        if (JE._cacheManager) JE._cacheManager.markDirty();
+                        insertLanguageTags(el, languages);
+                    }
+                },
+                isEnabled: function() { return !!JE.currentSettings?.languageTagsEnabled; },
+                needsFirstEpisode: true,
+                needsParentSeries: false,
+                injectCss: injectCss,
+            });
+            console.log(`${logPrefix} Registered with unified tag pipeline.`);
+        } else {
+            console.warn(`${logPrefix} Tag pipeline not available, language tags will not render.`);
+        }
     };
 
     /**
@@ -527,8 +396,8 @@
             return;
         }
 
-        // Trigger a fresh initialization which will set up everything with current settings
-        JE.initializeLanguageTags();
+        // Trigger pipeline re-scan with current settings
+        JE.tagPipeline?.scheduleScan();
     };
 
 })(window.JellyfinEnhanced);
