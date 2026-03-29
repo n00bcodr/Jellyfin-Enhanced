@@ -1790,6 +1790,8 @@
 
         // Lightweight observer for card/list containers
         if (typeof JE?.helpers?.onBodyMutation === 'function') {
+            // Priority 10: hidden-content must run before other subscribers (tags, bookmarks, etc.)
+            // so it can filter/hide cards before other modules waste time processing them
             JE.helpers.onBodyMutation('hidden-content', (mutations) => {
                 const settings = getSettings();
                 if (!settings.enabled) return;
@@ -1816,7 +1818,7 @@
                     if (shouldFilter) debouncedFilterNative();
                     if (shouldAddButtons) addLibraryHideButtons();
                 }
-            });
+            }, { priority: 10 });
         }
     }
 

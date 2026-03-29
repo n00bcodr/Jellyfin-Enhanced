@@ -50,21 +50,40 @@
     }
 
     /**
+     * Re-sort bodySubscribers Map by priority (highest first).
+     * Called when a subscriber with non-default priority is added.
+     */
+    function resortBodySubscribers() {
+        const sorted = [...bodySubscribers.entries()].sort((a, b) => b[1].priority - a[1].priority);
+        bodySubscribers.clear();
+        for (const [id, sub] of sorted) {
+            bodySubscribers.set(id, sub);
+        }
+    }
+
+    /**
      * Register a callback with the shared body MutationObserver.
      * All subscribers share a single observer on document.body with { childList: true, subtree: true }.
      * @param {string} id - Unique identifier for this subscriber
      * @param {Function} callback - Called with (mutations) on each body mutation batch
+     * @param {Object} [options] - Options
+     * @param {number} [options.priority=0] - Execution priority. Higher values run first.
+     *   Use priority > 0 for subscribers that should filter/hide content before others process it.
      * @returns {{ unsubscribe: Function, disconnect: Function }} Handle to remove this subscriber.
      *   Both unsubscribe() and disconnect() do the same thing -- provided so callers can use
      *   either the subscription convention or the MutationObserver convention consistently.
      */
-    function onBodyMutation(id, callback) {
+    function onBodyMutation(id, callback, options) {
+        const priority = (options && typeof options.priority === 'number') ? options.priority : 0;
         if (bodySubscribers.has(id)) {
             console.warn(`🪼 Jellyfin Enhanced: Replacing body observer subscriber: ${id}`);
         }
-        bodySubscribers.set(id, { callback });
+        bodySubscribers.set(id, { callback, priority });
+        if (priority !== 0) {
+            resortBodySubscribers();
+        }
         ensureBodyObserver();
-        console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (total: ${bodySubscribers.size})`);
+        console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (priority: ${priority}, total: ${bodySubscribers.size})`);
         const cleanup = () => {
             if (!bodySubscribers.has(id)) return;
             bodySubscribers.delete(id);
