@@ -52,7 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
-        // upstream Jellyseerr on every request. Entries expire after 1 hour.
+        // upstream Seerr on every request. Entries expire after 1 hour.
         private static readonly ConcurrentDictionary<string, (byte[] Content, string ContentType, string ETag, DateTime CachedAt)> _avatarCache = new();
         private static readonly TimeSpan _avatarCacheDuration = TimeSpan.FromHours(1);
 
@@ -4204,7 +4204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Check server-side cache first to avoid hitting upstream Jellyseerr
+                // Check server-side cache first to avoid hitting upstream Seerr
                 // on every request. This is critical for large avatars (e.g., animated
                 // GIFs) that would otherwise be re-downloaded on every conditional request.
                 if (_avatarCache.TryGetValue(avatarPath, out var cached)
