@@ -109,7 +109,7 @@
 
     // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
     const itemCache = new Map();
-    const ITEM_CACHE_TTL_MS = 5000;
+    const ITEM_CACHE_TTL_MS = 30000; // 30s -- long enough for batch prefetch to warm cache before tag systems scan
 
     /**
      * Deduplicated item fetch with short TTL cache.
@@ -139,6 +139,19 @@
             }
         }
 
+        // If a batch prefetch is in flight, wait for it -- it may be about to
+        // populate this item's cache entry, avoiding a redundant individual fetch.
+        if (activePrefetchPromise && !options.forceRefresh) {
+            try {
+                await activePrefetchPromise;
+            } catch { /* prefetch failed, fall through to individual fetch */ }
+            // Re-check cache after prefetch completes
+            const freshEntry = itemCache.get(key);
+            if (freshEntry?.item && (Date.now() - freshEntry.ts) < ttlMs) {
+                return freshEntry.item;
+            }
+        }
+
         const promise = ApiClient.getItem(userId, itemId)
             .then((item) => {
                 itemCache.set(key, { item, ts: Date.now(), promise: null });
@@ -151,6 +164,195 @@
 
         itemCache.set(key, { item: null, ts: now, promise });
         return promise;
+    }
+
+    // --- Batch Prefetch ---
+    // Instead of each tag system (genre, language, quality, rating) independently
+    // fetching item metadata one-by-one, this prefetcher collects all visible card
+    // IDs and fetches them in batched /Items?Ids=... requests. Results warm the
+    // itemCache so tag systems hit cache instead of making individual API calls.
+    //
+    // Priority order:
+    //   1. Main item (the series/movie on a detail page)
+    //   2. Visible cards (in the viewport)
+    //   3. Off-screen cards (below the fold, fetched on idle/scroll)
+
+    const PREFETCH_BATCH_SIZE = 50;
+    const PREFETCH_FIELDS = 'Genres,MediaSources,MediaStreams,CommunityRating,CriticRating,ProviderIds,SeriesId';
+    const prefetchedIds = new Set();
+    let prefetchEnabled = false;
+    // Exposed promise so getItemCached can await an in-flight prefetch before falling back to individual fetch
+    let activePrefetchPromise = null;
+    // Collection window: accumulate IDs across multiple mutation bursts, then fetch in one batch
+    const pendingPrefetchIds = new Set();
+    let collectTimer = null;
+    let flushTimer = null;
+    const COLLECT_WINDOW_MS = 150; // Accumulate IDs for this long after last mutation
+    const FLUSH_MAX_WAIT_MS = 250; // Max time before forcing a flush even if mutations continue
+
+    /**
+     * Extract the main item ID from the current URL hash (detail pages).
+     * @returns {string|null}
+     */
+    function getMainItemIdFromUrl() {
+        try {
+            const hash = window.location.hash;
+            if (!hash.includes('id=')) return null;
+            const params = new URLSearchParams(hash.split('?')[1]);
+            return params.get('id') || null;
+        } catch { return null; }
+    }
+
+    /**
+     * Fetch a batch of items by IDs in a single API call and warm the cache.
+     * @param {string[]} ids - Item IDs to fetch
+     * @param {string} userId - Current user ID
+     * @returns {Promise<number>} Number of items fetched
+     */
+    async function prefetchBatch(ids, userId) {
+        if (ids.length === 0) return 0;
+
+        try {
+            const response = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                    Ids: ids.join(','),
+                    Fields: PREFETCH_FIELDS
+                }),
+                dataType: 'json'
+            });
+
+            const items = response?.Items || [];
+            const now = Date.now();
+            for (const item of items) {
+                const key = `${userId}:${item.Id}`;
+                itemCache.set(key, { item, ts: now, promise: null });
+                prefetchedIds.add(item.Id);
+            }
+            return items.length;
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Batch prefetch failed:', err);
+            return 0;
+        }
+    }
+
+    // runBatchPrefetch removed -- replaced by collectNewCardIds + flushPrefetch above
+
+    /**
+     * Initialize the batch prefetch system.
+     * Registers as a body mutation subscriber at priority 5 (after hidden-content
+     * filters cards at priority 10, before tag systems process at priority 0).
+     */
+    /**
+     * Scan the DOM for new card IDs and add them to the pending set.
+     */
+    function collectNewCardIds() {
+        if (typeof ApiClient === 'undefined') return;
+        const userId = ApiClient.getCurrentUserId?.();
+        if (!userId) return;
+
+        const cards = document.querySelectorAll(
+            '.card[data-id]:not(.je-hidden), .listItem[data-id]:not(.je-hidden)'
+        );
+        for (const card of cards) {
+            const id = card.getAttribute('data-id');
+            if (id && !prefetchedIds.has(id)) {
+                const key = `${userId}:${id}`;
+                const cached = itemCache.get(key);
+                if (!cached || !cached.item || (Date.now() - cached.ts) >= ITEM_CACHE_TTL_MS) {
+                    pendingPrefetchIds.add(id);
+                }
+            }
+        }
+    }
+
+    /**
+     * Flush all pending IDs as batched API calls, prioritized by visibility.
+     */
+    async function flushPrefetch() {
+        if (typeof ApiClient === 'undefined') return;
+        const userId = ApiClient.getCurrentUserId?.();
+        if (!userId || pendingPrefetchIds.size === 0) return;
+
+        const mainItemId = getMainItemIdFromUrl();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+        // Snapshot and clear pending set
+        const allIds = [...pendingPrefetchIds];
+        pendingPrefetchIds.clear();
+
+        // Classify by visibility
+        const mainIds = [];
+        const visibleIds = [];
+        const offScreenIds = [];
+
+        for (const id of allIds) {
+            if (id === mainItemId) { mainIds.push(id); continue; }
+            const el = document.querySelector(`.card[data-id="${id}"], .listItem[data-id="${id}"]`);
+            if (!el) { visibleIds.push(id); continue; }
+            const rect = el.getBoundingClientRect();
+            if (rect.top < viewportHeight && rect.bottom > 0) {
+                visibleIds.push(id);
+            } else {
+                offScreenIds.push(id);
+            }
+        }
+
+        if (mainItemId && !prefetchedIds.has(mainItemId) && !mainIds.includes(mainItemId)) {
+            mainIds.push(mainItemId);
+        }
+
+        console.log(`🪼 Jellyfin Enhanced: Batch prefetch flushing: ${mainIds.length} main, ${visibleIds.length} visible, ${offScreenIds.length} off-screen`);
+
+        // Fetch in priority order: main → visible → off-screen
+        const orderedIds = [...mainIds, ...visibleIds, ...offScreenIds];
+        for (let i = 0; i < orderedIds.length; i += PREFETCH_BATCH_SIZE) {
+            await prefetchBatch(orderedIds.slice(i, i + PREFETCH_BATCH_SIZE), userId);
+        }
+    }
+
+    /**
+     * Schedule a flush of accumulated IDs.
+     * Uses a debounce (reset on each mutation) + a max-wait ceiling so that
+     * cards arriving in waves get batched together instead of fetched one-by-one.
+     */
+    function schedulePrefetchFlush() {
+        collectNewCardIds();
+
+        // Debounce: wait COLLECT_WINDOW_MS after last mutation
+        if (collectTimer) clearTimeout(collectTimer);
+        collectTimer = setTimeout(() => {
+            if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+            activePrefetchPromise = flushPrefetch().finally(() => { activePrefetchPromise = null; });
+        }, COLLECT_WINDOW_MS);
+
+        // Max-wait ceiling: flush within FLUSH_MAX_WAIT_MS even if mutations keep coming
+        if (!flushTimer) {
+            flushTimer = setTimeout(() => {
+                flushTimer = null;
+                if (collectTimer) { clearTimeout(collectTimer); collectTimer = null; }
+                activePrefetchPromise = flushPrefetch().finally(() => { activePrefetchPromise = null; });
+            }, FLUSH_MAX_WAIT_MS);
+        }
+    }
+
+    function initBatchPrefetch() {
+        if (prefetchEnabled) return;
+        prefetchEnabled = true;
+
+        onBodyMutation('batch-prefetch', schedulePrefetchFlush, { priority: 5 });
+
+        // Also prefetch on navigation (SPA page changes)
+        onNavigate(() => {
+            prefetchedIds.clear();
+            pendingPrefetchIds.clear();
+            schedulePrefetchFlush();
+        });
+
+        // Initial scan for cards already present at plugin load time
+        setTimeout(schedulePrefetchFlush, 0);
+
+        console.log('🪼 Jellyfin Enhanced: Batch prefetch initialized');
     }
 
     /**
@@ -614,6 +816,9 @@
     } else {
         initialize();
     }
+
+    // Start batch prefetch after helpers are set up
+    initBatchPrefetch();
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {
