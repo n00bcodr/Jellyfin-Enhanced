@@ -193,6 +193,9 @@
         async function processElement(el, isVisible = false) {
             if (processedElements.has(el)) return;
             if (shouldIgnoreElement(el)) return;
+            // Skip cards hidden by hidden-content module
+            const hiddenParent = el.closest('.je-hidden');
+            if (hiddenParent) return;
 
             // Skip if this card already has rating tags (prevents hover-duplication)
             if (isCardAlreadyTagged(el)) {

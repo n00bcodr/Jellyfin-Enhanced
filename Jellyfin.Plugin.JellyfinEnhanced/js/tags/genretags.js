@@ -377,6 +377,8 @@
 
             // Check for standard .card parent (poster/card view)
             const card = element.closest('.card');
+            // Skip cards hidden by hidden-content module
+            if (card && card.classList.contains('je-hidden')) return;
             if (card && card.dataset.type && !MEDIA_TYPES.has(card.dataset.type)) {
                 processedElements.add(element);
                 return;
@@ -384,6 +386,7 @@
 
             // Check for .listItem parent (list/episode view)
             const listItem = element.closest('.listItem');
+            if (listItem && listItem.classList.contains('je-hidden')) return;
             if (listItem && listItem.dataset.type && !MEDIA_TYPES.has(listItem.dataset.type)) {
                 processedElements.add(element);
                 return;

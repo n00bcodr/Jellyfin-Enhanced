@@ -878,6 +878,8 @@
          */
         async function processElement(element, isPriority = false) {
             if (shouldIgnoreElement(element) || processedElements.has(element)) return;
+            // Skip cards hidden by hidden-content module
+            if (element.closest('.je-hidden')) return;
 
             // Skip if this card already has quality tags attached (prevents hover-duplication)
             if (isCardAlreadyTagged(element)) {
