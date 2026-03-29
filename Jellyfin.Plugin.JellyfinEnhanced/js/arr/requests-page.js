@@ -620,6 +620,11 @@
     };
   }
 
+  /**
+   * Revoke all cached avatar blob URLs and clear the result cache.
+   * @param {boolean} [includeInFlight] - If true, also cancel pending fetch promises.
+   *   Pass true on page teardown; omit on re-render to let in-flight fetches complete.
+   */
   function clearAvatarObjectUrlCache(includeInFlight) {
     avatarObjectUrlCache.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
     avatarObjectUrlCache.clear();
@@ -655,6 +660,14 @@
     return false;
   }
 
+  /**
+   * Resolve a protected avatar URL to a blob object URL.
+   * Deduplicates concurrent fetches so that multiple cards referencing the
+   * same avatar share a single network request instead of each downloading
+   * the full image independently.
+   * @param {string} avatarUrl - The avatar proxy URL to resolve
+   * @returns {Promise<string>} A blob: object URL, or "" on failure
+   */
   async function resolveProtectedAvatarUrl(avatarUrl) {
     if (!avatarUrl) return "";
 
