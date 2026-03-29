@@ -66,6 +66,7 @@
 
   const issueMediaCache = new Map();
   const avatarObjectUrlCache = new Map();
+  const avatarFetchPromises = new Map();
 
   const escapeHtml = JE.escapeHtml;
 
@@ -619,9 +620,19 @@
     };
   }
 
-  function clearAvatarObjectUrlCache() {
+  /**
+   * Revoke all cached avatar blob URLs and clear the result cache.
+   * @param {boolean} [includeInFlight] - If true, also cancel pending fetch promises.
+   *   Pass true on page teardown; omit on re-render to let in-flight fetches complete.
+   */
+  function clearAvatarObjectUrlCache(includeInFlight) {
     avatarObjectUrlCache.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
     avatarObjectUrlCache.clear();
+    // Only clear in-flight promises on page teardown, not on re-render.
+    // Clearing mid-flight would cause duplicate downloads for the same avatar.
+    if (includeInFlight) {
+      avatarFetchPromises.clear();
+    }
   }
 
   function isSafeAvatarUrl(url) {
@@ -649,6 +660,14 @@
     return false;
   }
 
+  /**
+   * Resolve a protected avatar URL to a blob object URL.
+   * Deduplicates concurrent fetches so that multiple cards referencing the
+   * same avatar share a single network request instead of each downloading
+   * the full image independently.
+   * @param {string} avatarUrl - The avatar proxy URL to resolve
+   * @returns {Promise<string>} A blob: object URL, or "" on failure
+   */
   async function resolveProtectedAvatarUrl(avatarUrl) {
     if (!avatarUrl) return "";
 
@@ -662,16 +681,31 @@
       return avatarObjectUrlCache.get(avatarUrl);
     }
 
-    try {
-      const response = await fetch(avatarUrl, { headers: getAuthHeaders() });
-      if (!response.ok) return "";
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      avatarObjectUrlCache.set(avatarUrl, objectUrl);
-      return objectUrl;
-    } catch {
-      return "";
+    // Deduplicate in-flight fetches: if a fetch for this URL is already
+    // in progress, await the same promise instead of starting a new one.
+    // This prevents N parallel downloads of the same large avatar image
+    // when N request cards reference the same user.
+    if (avatarFetchPromises.has(avatarUrl)) {
+      return avatarFetchPromises.get(avatarUrl);
     }
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await fetch(avatarUrl, { headers: getAuthHeaders() });
+        if (!response.ok) return "";
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        avatarObjectUrlCache.set(avatarUrl, objectUrl);
+        return objectUrl;
+      } catch {
+        return "";
+      } finally {
+        avatarFetchPromises.delete(avatarUrl);
+      }
+    })();
+
+    avatarFetchPromises.set(avatarUrl, fetchPromise);
+    return fetchPromise;
   }
 
   function hydrateAvatarImages(container) {
@@ -1776,7 +1810,7 @@
     }
 
     clearAvatarObjectUrlCache();
-    container.innerHTML = html;
+    container.innerHTML = html; // existing pattern from upstream — html built from escapeHtml'd values
     hydrateAvatarImages(container);
 
     // Add event listener for refresh button
@@ -2031,7 +2065,7 @@
 
     state.pageVisible = false;
     state.previousPage = null;
-    clearAvatarObjectUrlCache();
+    clearAvatarObjectUrlCache(true);
     stopPolling();
     stopLocationWatcher();
   }

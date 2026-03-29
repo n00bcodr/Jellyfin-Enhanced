@@ -10,6 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
@@ -49,6 +50,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+
+        // Server-side cache for proxied avatar images to avoid re-fetching from
+        // upstream Seerr on every request. Entries expire after 1 hour.
+        private static readonly ConcurrentDictionary<string, (byte[] Content, string ContentType, string ETag, DateTime CachedAt)> _avatarCache = new();
+        private static readonly TimeSpan _avatarCacheDuration = TimeSpan.FromHours(1);
 
         // Cache for Seerr user ID lookups (JellyfinUserId -> SeerrUserId)
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
@@ -4198,8 +4204,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
+                // Check server-side cache first to avoid hitting upstream Seerr
+                // on every request. This is critical for large avatars (e.g., animated
+                // GIFs) that would otherwise be re-downloaded on every conditional request.
+                if (_avatarCache.TryGetValue(avatarPath, out var cached)
+                    && DateTime.UtcNow - cached.CachedAt < _avatarCacheDuration)
+                {
+                    // Serve 304 if client already has this version
+                    if (Request.Headers.TryGetValue("If-None-Match", out var cachedIfNoneMatch)
+                        && cachedIfNoneMatch.ToString().Contains(cached.ETag))
+                    {
+                        Response.Headers["Cache-Control"] = "public, max-age=3600";
+                        Response.Headers["ETag"] = cached.ETag;
+                        return StatusCode(304);
+                    }
+
+                    Response.Headers["Cache-Control"] = "public, max-age=3600";
+                    Response.Headers["ETag"] = cached.ETag;
+                    return File(cached.Content, cached.ContentType);
+                }
+
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10); // Add timeout for avatar fetches
+                client.Timeout = TimeSpan.FromSeconds(10);
 
                 var response = await client.GetAsync($"{jellyseerrUrl}{avatarPath}");
                 if (!response.IsSuccessStatusCode)
@@ -4217,8 +4243,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var content = await response.Content.ReadAsByteArrayAsync();
 
-                // Add cache headers to reduce repeated fetches
+                // Compute ETag from content hash for conditional request support.
+                var hash = SHA256.HashData(content);
+                var etag = $"\"{Convert.ToHexString(hash)}\"";
+
+                // Store in server-side cache and evict expired entries periodically
+                _avatarCache[avatarPath] = (content, contentType, etag, DateTime.UtcNow);
+                if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
+                {
+                    foreach (var key in _avatarCache
+                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _avatarCacheDuration)
+                        .Select(kv => kv.Key)
+                        .ToList())
+                    {
+                        _avatarCache.TryRemove(key, out _);
+                    }
+                }
+
+                // Serve 304 if client already has this version
+                if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
+                    && ifNoneMatch.ToString().Contains(etag))
+                {
+                    Response.Headers["Cache-Control"] = "public, max-age=3600";
+                    Response.Headers["ETag"] = etag;
+                    return StatusCode(304);
+                }
+
                 Response.Headers["Cache-Control"] = "public, max-age=3600";
+                Response.Headers["ETag"] = etag;
 
                 return File(content, contentType);
             }
