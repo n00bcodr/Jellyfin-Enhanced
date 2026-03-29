@@ -27,6 +27,8 @@
     function ensureBodyObserver() {
         if (bodyObserver) return;
         bodyObserver = new MutationObserver((mutations) => {
+            // NOTE: Callbacks may call unsubscribe()/disconnect(), deleting from this Map
+            // during iteration. ES spec guarantees Map iteration handles concurrent deletion.
             for (const [id, sub] of bodySubscribers) {
                 try {
                     sub.callback(mutations);
@@ -52,7 +54,9 @@
      * All subscribers share a single observer on document.body with { childList: true, subtree: true }.
      * @param {string} id - Unique identifier for this subscriber
      * @param {Function} callback - Called with (mutations) on each body mutation batch
-     * @returns {{ unsubscribe: Function }} Handle to remove this subscriber
+     * @returns {{ unsubscribe: Function, disconnect: Function }} Handle to remove this subscriber.
+     *   Both unsubscribe() and disconnect() do the same thing -- provided so callers can use
+     *   either the subscription convention or the MutationObserver convention consistently.
      */
     function onBodyMutation(id, callback) {
         if (bodySubscribers.has(id)) {
@@ -61,13 +65,13 @@
         bodySubscribers.set(id, { callback });
         ensureBodyObserver();
         console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (total: ${bodySubscribers.size})`);
-        return {
-            unsubscribe() {
-                bodySubscribers.delete(id);
-                console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
-                stopBodyObserverIfEmpty();
-            }
+        const cleanup = () => {
+            if (!bodySubscribers.has(id)) return;
+            bodySubscribers.delete(id);
+            console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
+            stopBodyObserverIfEmpty();
         };
+        return { unsubscribe: cleanup, disconnect: cleanup };
     }
 
     /**
@@ -336,9 +340,11 @@
         if (isBodyTarget && isSubtreeWatch && !config.attributes && !config.attributeFilter && !config.characterData) {
             // Use shared body observer
             const handle = onBodyMutation(id, callback);
-            // Return a duck-typed object compatible with MutationObserver for existing code
+            // Return a duck-typed object compatible with both MutationObserver and subscription conventions
+            const cleanup = () => handle.disconnect();
             const proxy = {
-                disconnect() { handle.unsubscribe(); },
+                disconnect: cleanup,
+                unsubscribe: cleanup,
                 observe() { /* no-op, already observing via shared observer */ },
                 takeRecords() { return []; }
             };
