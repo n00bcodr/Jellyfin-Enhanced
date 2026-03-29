@@ -73,14 +73,26 @@ async function backfillSeasonMetadata(tmdbId, data) {
             const tmdbSeason = tmdbMap[sNum];
 
             // Backfill posterPath (validate format to prevent loading from unexpected URLs)
-            if (!season.posterPath && tmdbSeason?.poster_path && isValidPosterPath(tmdbSeason.poster_path)) {
-                season.posterPath = tmdbSeason.poster_path;
-                const posterEl = card.querySelector('.season-poster');
-                if (posterEl && !posterEl.querySelector('img')) {
-                    const img = document.createElement('img');
-                    img.src = `https://image.tmdb.org/t/p/w185${season.posterPath}`;
-                    img.alt = card.querySelector('.season-name')?.textContent || '';
-                    posterEl.appendChild(img);
+            // Try TMDB season poster first, then fall back to the show poster
+            if (!season.posterPath) {
+                const tmdbPoster = tmdbSeason?.poster_path;
+                const fallbackPoster = (tmdbPoster && isValidPosterPath(tmdbPoster)) ? tmdbPoster : data.posterPath;
+                if (fallbackPoster && isValidPosterPath(fallbackPoster)) {
+                    season.posterPath = fallbackPoster;
+                    const posterEl = card.querySelector('.season-poster');
+                    if (posterEl) {
+                        const newSrc = `https://image.tmdb.org/t/p/w185${season.posterPath}`;
+                        const existingImg = posterEl.querySelector('img');
+                        if (existingImg) {
+                            // Update src if it changed (e.g., replacing show poster with season poster)
+                            if (existingImg.src !== newSrc) existingImg.src = newSrc;
+                        } else {
+                            const img = document.createElement('img');
+                            img.src = newSrc;
+                            img.alt = card.querySelector('.season-name')?.textContent || '';
+                            posterEl.appendChild(img);
+                        }
+                    }
                 }
             }
 
@@ -1818,8 +1830,10 @@ function buildSeasonsSection(data) {
                     const seasonInfo = getSeasonStatusInfo(data, season.seasonNumber);
                     const seasonJellyfinId = getSeasonJellyfinId(seasonInfo, false);
                     const seasonJellyfinId4k = getSeasonJellyfinId(seasonInfo, true);
-                    const posterUrl = season.posterPath
-                        ? `https://image.tmdb.org/t/p/w185${season.posterPath}`
+                    const seasonPosterPath = season.posterPath
+                        || (data.posterPath && isValidPosterPath(data.posterPath) ? data.posterPath : null);
+                    const posterUrl = seasonPosterPath
+                        ? `https://image.tmdb.org/t/p/w185${seasonPosterPath}`
                         : '';
 
                     // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label.
