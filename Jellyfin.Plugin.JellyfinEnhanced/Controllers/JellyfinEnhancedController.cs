@@ -4247,8 +4247,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var hash = SHA256.HashData(content);
                 var etag = $"\"{Convert.ToHexString(hash)}\"";
 
-                // Store in server-side cache
+                // Store in server-side cache and evict expired entries periodically
                 _avatarCache[avatarPath] = (content, contentType, etag, DateTime.UtcNow);
+                if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
+                {
+                    foreach (var key in _avatarCache
+                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _avatarCacheDuration)
+                        .Select(kv => kv.Key)
+                        .ToList())
+                    {
+                        _avatarCache.TryRemove(key, out _);
+                    }
+                }
 
                 // Serve 304 if client already has this version
                 if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)

@@ -620,10 +620,14 @@
     };
   }
 
-  function clearAvatarObjectUrlCache() {
+  function clearAvatarObjectUrlCache(includeInFlight) {
     avatarObjectUrlCache.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
     avatarObjectUrlCache.clear();
-    avatarFetchPromises.clear();
+    // Only clear in-flight promises on page teardown, not on re-render.
+    // Clearing mid-flight would cause duplicate downloads for the same avatar.
+    if (includeInFlight) {
+      avatarFetchPromises.clear();
+    }
   }
 
   function isSafeAvatarUrl(url) {
@@ -2048,7 +2052,7 @@
 
     state.pageVisible = false;
     state.previousPage = null;
-    clearAvatarObjectUrlCache();
+    clearAvatarObjectUrlCache(true);
     stopPolling();
     stopLocationWatcher();
   }
