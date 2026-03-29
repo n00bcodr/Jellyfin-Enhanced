@@ -115,7 +115,7 @@
 
     var observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
     var mountPending = false;
-    var observer = new MutationObserver(function () {
+    var observer = JE.helpers.createObserver('arr-requests-custom-tab', function () {
       if (!mountPending) {
         mountPending = true;
         requestAnimationFrame(function () {
@@ -123,8 +123,7 @@
           tryMount();
         });
       }
-    });
-    observer.observe(observeTarget, { childList: true, subtree: true });
+    }, observeTarget, { childList: true, subtree: true });
   }
 
   waitForDownloads(function (JE) {

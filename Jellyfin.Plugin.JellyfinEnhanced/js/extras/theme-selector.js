@@ -415,10 +415,11 @@
 
         // Cleanup existing observer if present
         if (observerInstance) {
-            observerInstance.disconnect();
+            observerInstance.unsubscribe();
+            observerInstance = null;
         }
 
-        observerInstance = new MutationObserver(() => {
+        const callback = () => {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 const selectorExists = document.getElementById(SELECTOR_ID);
@@ -427,12 +428,16 @@
                     injectThemeSelector();
                 }
             }, DEBOUNCE_DELAY);
-        });
+        };
 
-        observerInstance.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        const JE = window.JellyfinEnhanced;
+        if (JE?.helpers?.onBodyMutation) {
+            observerInstance = JE.helpers.onBodyMutation('theme-selector', callback);
+        } else {
+            const mo = new MutationObserver(callback);
+            mo.observe(document.body, { childList: true, subtree: true });
+            observerInstance = { unsubscribe() { mo.disconnect(); } };
+        }
     };
 
     if (window.JellyfinEnhanced) {

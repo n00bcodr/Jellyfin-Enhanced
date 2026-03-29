@@ -1789,8 +1789,8 @@
         }
 
         // Lightweight observer for card/list containers
-        if (typeof MutationObserver !== 'undefined') {
-            const observer = new MutationObserver((mutations) => {
+        if (typeof JE?.helpers?.onBodyMutation === 'function') {
+            JE.helpers.onBodyMutation('hidden-content', (mutations) => {
                 const settings = getSettings();
                 if (!settings.enabled) return;
                 const shouldFilter = getHiddenCount() > 0;
@@ -1817,7 +1817,6 @@
                     if (shouldAddButtons) addLibraryHideButtons();
                 }
             });
-            observer.observe(document.body, { childList: true, subtree: true });
         }
     }
 

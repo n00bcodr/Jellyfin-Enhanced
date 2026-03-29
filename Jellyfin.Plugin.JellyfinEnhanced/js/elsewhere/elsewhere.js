@@ -1120,7 +1120,7 @@
 
         // Replace polling with MutationObserver for better performance
         let processingElsewhere = false;
-        const elsewhereObserver = new MutationObserver(() => {
+        const elsewhereObserver = JE.helpers.createObserver('elsewhere', () => {
             if (!processingElsewhere) {
                 processingElsewhere = true;
                 if (typeof requestIdleCallback !== 'undefined') {
@@ -1135,10 +1135,7 @@
                     }, 100);
                 }
             }
-        });
-
-        // Observe item detail pages for changes
-        elsewhereObserver.observe(document.body, {
+        }, document.body, {
             childList: true,
             subtree: true,
             attributeFilter: ['class']

@@ -469,8 +469,7 @@
         }
 
         setupVideoObserver() {
-          this.observer = new MutationObserver(() => this.checkForVideoChanges());
-          this.observer.observe(document.body, { childList: true, subtree: true });
+          this.observer = JE.helpers.onBodyMutation('pausescreen', () => this.checkForVideoChanges());
           this.checkForVideoChanges();
         }
 
@@ -888,7 +887,7 @@
 
         destroy() {
           this.clearState();
-          if (this.observer) { this.observer.disconnect(); this.observer = null; }
+          if (this.observer) { this.observer.unsubscribe(); this.observer = null; }
 
           // Clean up interaction listeners
           if (this.interactionListeners) {

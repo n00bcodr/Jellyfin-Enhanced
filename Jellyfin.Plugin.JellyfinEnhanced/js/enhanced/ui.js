@@ -382,14 +382,12 @@
             }
         };
 
-        const observer = new MutationObserver(() => {
+        JE.helpers.onBodyMutation('ui-menu-button', () => {
             const sidebar = document.querySelector('.mainDrawer-scrollContainer');
             if (sidebar && !sidebar.querySelector('#jellyfinEnhancedSettingsLink')) {
                 addMenuButton(sidebar);
             }
         });
-
-        observer.observe(document.body, { childList: true, subtree: true });
     };
 
     /**

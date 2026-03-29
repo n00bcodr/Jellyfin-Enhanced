@@ -482,13 +482,13 @@
                 return;
             }
 
-            let observer = null;
+            let observerHandle = null;
             let timeoutId = null;
 
             const cleanup = () => {
-                if (observer) {
-                    observer.disconnect();
-                    observer = null;
+                if (observerHandle) {
+                    observerHandle.unsubscribe();
+                    observerHandle = null;
                 }
                 if (timeoutId) {
                     clearTimeout(timeoutId);
@@ -503,15 +503,13 @@
                 }, { once: true });
             }
 
-            observer = new MutationObserver(() => {
+            observerHandle = JE.helpers.onBodyMutation('jellyseerr-discovery-container-detect', () => {
                 const container = checkContainer();
                 if (container) {
                     cleanup();
                     resolve(container);
                 }
             });
-
-            observer.observe(document.body, { childList: true, subtree: true });
             timeoutId = setTimeout(() => {
                 cleanup();
                 resolve(checkContainer());
