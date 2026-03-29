@@ -655,13 +655,15 @@
          */
         async function fetchItemQuality(userId, itemId) {
             try {
-                // Fetch the item with MediaStreams and MediaSources fields
-                const item = await ApiClient.ajax({
-                    type: "GET",
-                    url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: "MediaStreams,MediaSources,Type,Genres" }),
-                    dataType: "json",
-                    timeout: config.REQUEST_TIMEOUT
-                });
+                // Use cached item data (populated by batch prefetch) to avoid individual API calls
+                const item = JE.helpers?.getItemCached
+                    ? await JE.helpers.getItemCached(itemId, { userId })
+                    : await ApiClient.ajax({
+                        type: "GET",
+                        url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: "MediaStreams,MediaSources,Type,Genres" }),
+                        dataType: "json",
+                        timeout: config.REQUEST_TIMEOUT
+                    });
 
                 if (!item || !MEDIA_TYPES.has(item.Type)) return null;
 

@@ -118,30 +118,42 @@
 
         async function fetchItemRatings(userId, itemId, itemType) {
             try {
-                const result = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/Users/${userId}/Items`, {
-                        Ids: itemId,
-                        Fields: 'CommunityRating,CriticRating'
-                    }),
-                    dataType: 'json'
-                });
-                const item = result?.Items?.[0];
+                // Use cached item data (populated by batch prefetch) to avoid individual API calls
+                let item;
+                if (JE.helpers?.getItemCached) {
+                    item = await JE.helpers.getItemCached(itemId, { userId });
+                } else {
+                    const result = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                            Ids: itemId,
+                            Fields: 'CommunityRating,CriticRating'
+                        }),
+                        dataType: 'json'
+                    });
+                    item = result?.Items?.[0];
+                }
                 if (!item) return { tmdb: null, critic: null };
 
                 // For Series/Season/Episode, prefer the item's own rating, fall back to series rating if not available
                 let sourceItem = item;
                 if ((itemType === 'Season' || itemType === 'Episode') && item.SeriesId && !item.CommunityRating && !item.CriticRating) {
                     try {
-                        const seriesResult = await ApiClient.ajax({
-                            type: 'GET',
-                            url: ApiClient.getUrl(`/Users/${userId}/Items`, {
-                                Ids: item.SeriesId,
-                                Fields: 'CommunityRating,CriticRating'
-                            }),
-                            dataType: 'json'
-                        });
-                        sourceItem = seriesResult?.Items?.[0] || item;
+                        let seriesItem;
+                        if (JE.helpers?.getItemCached) {
+                            seriesItem = await JE.helpers.getItemCached(item.SeriesId, { userId });
+                        } else {
+                            const seriesResult = await ApiClient.ajax({
+                                type: 'GET',
+                                url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                                    Ids: item.SeriesId,
+                                    Fields: 'CommunityRating,CriticRating'
+                                }),
+                                dataType: 'json'
+                            });
+                            seriesItem = seriesResult?.Items?.[0];
+                        }
+                        sourceItem = seriesItem || item;
                     } catch (e) {
                         console.warn(`${logPrefix} Failed to fetch series rating for ${itemType.toLowerCase()}`, e);
                     }

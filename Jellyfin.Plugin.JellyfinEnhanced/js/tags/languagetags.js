@@ -129,15 +129,21 @@
 
         async function fetchItemLanguages(userId, itemId) {
             try {
-                const result = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/Users/${userId}/Items`, {
-                        Ids: itemId,
-                        Fields: 'MediaStreams,MediaSources,MediaInfo,Type'
-                    }),
-                    dataType: 'json'
-                });
-                const item = result?.Items?.[0];
+                // Use cached item data (populated by batch prefetch) to avoid individual API calls
+                let item;
+                if (JE.helpers?.getItemCached) {
+                    item = await JE.helpers.getItemCached(itemId, { userId });
+                } else {
+                    const result = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                            Ids: itemId,
+                            Fields: 'MediaStreams,MediaSources,MediaInfo,Type'
+                        }),
+                        dataType: 'json'
+                    });
+                    item = result?.Items?.[0];
+                }
                 if (!item) return [];
 
                 let sourceItem = item;
