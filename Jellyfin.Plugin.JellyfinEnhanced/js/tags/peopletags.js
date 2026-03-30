@@ -527,30 +527,37 @@
                 }
             }, 100);
 
-            // Create managed observer for people tags (same pattern as features.js)
+            // Create managed observer for people tags.
+            // Only watches childList (not attributes) to avoid firing on every hover
+            // class/style change. Cast sections appear via childList mutations.
             JE.helpers.createObserver(
                 'people-tags',
                 (mutations) => {
                     if (!JE.currentSettings?.peopleTagsEnabled) return;
 
-                    const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
-                    const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
+                    // Quick check: only process if we're on a detail page
+                    if (!document.querySelector('#itemDetailPage:not(.hide)')) return;
 
-                    if (!castSection && !guestCastSection) return;
-
+                    // Only react to actual node additions, not attribute changes
+                    let hasNewNodes = false;
                     for (const mutation of mutations) {
-                        if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                            handlePeopleTags();
+                        if (mutation.addedNodes.length > 0) {
+                            hasNewNodes = true;
                             break;
                         }
                     }
+                    if (!hasNewNodes) return;
+
+                    const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
+                    const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
+                    if (!castSection && !guestCastSection) return;
+
+                    handlePeopleTags();
                 },
                 document.body,
                 {
                     childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['class', 'style']
+                    subtree: true
                 }
             );
 
