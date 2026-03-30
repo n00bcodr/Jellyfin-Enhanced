@@ -124,30 +124,62 @@
     }
 
     let scanScheduled = false;
+    const CARDS_PER_CHUNK = 15; // Process this many cards per animation frame to avoid jank
+    let pendingElements = null;  // Elements waiting to be processed in chunks
 
     /**
-     * Schedule scan for the next animation frame instead of running synchronously
-     * in the MutationObserver callback. This lets the browser finish layout/paint
-     * first, then we scan during idle time. Multiple mutations in the same frame
-     * coalesce into a single scan (rAF dedup).
+     * Schedule scan. Coalesces multiple mutations into a single scan start.
      */
     function scheduleScan() {
         if (scanScheduled) return;
         scanScheduled = true;
         requestAnimationFrame(() => {
             scanScheduled = false;
-            scanCards();
+            startScan();
         });
     }
 
-    function scanCards() {
+    /**
+     * Collect unprocessed elements and begin chunked processing.
+     */
+    function startScan() {
         if (!hasAnyEnabledRenderer()) return;
         if (typeof ApiClient === 'undefined') return;
 
         const elements = document.querySelectorAll('.cardImageContainer, div.listItemImage');
-        let newMisses = 0;
-
+        // Filter to only unprocessed elements (cheap WeakSet check)
+        const unprocessed = [];
         for (const el of elements) {
+            if (!processedCards.has(el)) unprocessed.push(el);
+        }
+
+        if (unprocessed.length === 0) return;
+
+        pendingElements = unprocessed;
+        processNextChunk();
+    }
+
+    /**
+     * Process a chunk of cards, then yield to the browser for the next frame.
+     * This prevents 800ms+ rAF violations on pages with 100+ cards.
+     */
+    function processNextChunk() {
+        if (!pendingElements || pendingElements.length === 0) {
+            pendingElements = null;
+            // Schedule the batch fetch for any cache misses
+            if (requestQueue.length > 0 && !isProcessing) {
+                if (fetchTimer) clearTimeout(fetchTimer);
+                fetchTimer = setTimeout(() => {
+                    fetchTimer = null;
+                    processQueue();
+                }, FETCH_DEBOUNCE_MS);
+            }
+            return;
+        }
+
+        const chunk = pendingElements.splice(0, CARDS_PER_CHUNK);
+
+        for (const el of chunk) {
             if (processedCards.has(el)) continue;
 
             const card = el.closest('.card');
@@ -168,7 +200,7 @@
 
             const renderTarget = el.closest('.cardScalable') || el;
 
-            // Try rendering from localStorage/hot cache first (instant, no API call).
+            // Try rendering from localStorage/hot cache first
             let allCacheHits = true;
             for (const [, renderer] of renderers) {
                 if (!renderer.isEnabled()) continue;
@@ -181,18 +213,11 @@
 
             if (!allCacheHits) {
                 requestQueue.push({ el, renderTarget, itemId, itemType });
-                newMisses++;
             }
         }
 
-        // Debounce only the batch fetch for cache misses
-        if (newMisses > 0 && !isProcessing) {
-            if (fetchTimer) clearTimeout(fetchTimer);
-            fetchTimer = setTimeout(() => {
-                fetchTimer = null;
-                processQueue();
-            }, FETCH_DEBOUNCE_MS);
-        }
+        // Yield to browser, process next chunk in next frame
+        requestAnimationFrame(processNextChunk);
     }
 
     function getItemId(el) {

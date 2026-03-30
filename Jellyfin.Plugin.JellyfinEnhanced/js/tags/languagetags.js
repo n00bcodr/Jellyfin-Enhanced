@@ -212,7 +212,7 @@
             const existing = container.querySelector(`.${containerClass}`);
             // Always re-render to handle cache migrations or setting changes
             if (existing) existing.remove();
-            if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+            container.style.position = 'relative'; // Avoid forced reflow from getComputedStyle
 
             const wrap = document.createElement('div');
             wrap.className = containerClass;

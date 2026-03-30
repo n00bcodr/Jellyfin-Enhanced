@@ -135,9 +135,8 @@
         const existing = container.querySelector(`.${containerClass}`);
         if (existing) existing.remove();
 
-        if (getComputedStyle(container).position === 'static') {
-            container.style.position = 'relative';
-        }
+        // Ensure container is positioned (avoids forced reflow from getComputedStyle)
+        container.style.position = 'relative';
 
         const genreContainer = document.createElement('div');
         genreContainer.className = containerClass;

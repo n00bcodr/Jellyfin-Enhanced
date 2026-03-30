@@ -674,10 +674,8 @@
             const existing = container.querySelector(`.${containerClass}`);
             if (existing) existing.remove();
 
-            // Ensure the parent is positioned relatively for absolute positioning of the tags.
-            if (getComputedStyle(container).position === 'static') {
-                container.style.position = 'relative';
-            }
+            // Ensure container is positioned (avoids forced reflow from getComputedStyle)
+            container.style.position = 'relative';
 
             const qualityContainer = document.createElement('div');
             qualityContainer.className = containerClass;
