@@ -1360,6 +1360,13 @@
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', true);
+        // Live-toggle the body class so hover fade CSS applies immediately
+        const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
+        if (hideOnHoverCheckbox) {
+            hideOnHoverCheckbox.addEventListener('change', () => {
+                document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
+            });
+        }
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 

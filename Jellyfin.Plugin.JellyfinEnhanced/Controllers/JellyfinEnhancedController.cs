@@ -2460,6 +2460,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// - Filenames only (not full paths) for IMAX/3D detection
         /// - 200-item batch cap to prevent abuse
         /// </summary>
+        /// <param name="userId">The Jellyfin user GUID for authorization and library access filtering.</param>
+        /// <param name="ids">Array of item GUID strings to fetch tag data for (max 200).</param>
+        /// <returns>JSON object with Items array containing trimmed metadata per item.</returns>
         [HttpPost("tag-data/{userId}")]
         [Authorize]
         [Produces("application/json")]
