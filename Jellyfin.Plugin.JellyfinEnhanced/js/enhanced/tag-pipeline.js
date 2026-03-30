@@ -418,6 +418,22 @@
             });
         }
 
+        // Inject CSS containment for all tag overlay containers.
+        // This tells the browser these elements are independent from the rest of the
+        // card layout, so hover transforms don't trigger re-layout/re-paint of overlays.
+        // will-change:transform promotes each container to its own compositor layer.
+        if (JE.helpers?.addCSS) {
+            JE.helpers.addCSS('je-tag-pipeline-perf', `
+                .genre-overlay-container,
+                .quality-overlay-container,
+                .language-overlay-container,
+                .rating-overlay-container {
+                    contain: layout style;
+                    will-change: transform;
+                }
+            `);
+        }
+
         // Initial scan for cards already on the page
         setTimeout(runScan, 500);
 
