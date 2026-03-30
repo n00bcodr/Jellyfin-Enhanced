@@ -18,11 +18,12 @@
     // ── State ──────────────────────────────────────────────────────────
 
     const renderers = new Map();        // name → { render, isEnabled, needsFirstEpisode, needsParentSeries }
-    const processedCards = new WeakSet();
+    let processedCards = new WeakSet(); // let, not const — needs reassignment on reinit
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
     let fetchTimer = null;
     let isProcessing = false;
+    let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
     let requestQueue = [];               // { el, itemId, itemType }
 
     // ── Renderer Registration ──────────────────────────────────────────
@@ -251,14 +252,14 @@
         if (isProcessing || requestQueue.length === 0) return;
         isProcessing = true;
 
-        // Take all queued items at once — single API call via POST (no URL length limit)
+        const myGeneration = batchGeneration;
         const batch = requestQueue.splice(0);
-        await processBatch(batch);
+        await processBatch(batch, myGeneration);
 
         isProcessing = false;
     }
 
-    async function processBatch(batch) {
+    async function processBatch(batch, generation) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
 
@@ -277,6 +278,9 @@
             });
 
             const items = response?.Items || [];
+
+            // Abort if navigation happened while we were waiting for the API response
+            if (generation !== batchGeneration) return;
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -409,11 +413,12 @@
         // Also trigger on navigation
         if (JE.helpers.onNavigate) {
             JE.helpers.onNavigate(() => {
-                // Clear caches on navigation
+                // Invalidate any in-flight batch processing (don't reset isProcessing
+                // directly — let stale batches finish naturally and discard results)
+                batchGeneration++;
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
                 requestQueue = [];
-                isProcessing = false;
                 scheduleScan();
             });
         }
@@ -471,10 +476,9 @@
         getParentSeries,
         // For reinitialize support
         clearProcessed() {
-            // WeakSet can't be cleared, create fresh reference
-            // Modules needing reinit should call scheduleScan after this
+            processedCards = new WeakSet(); // Create fresh WeakSet so all cards get re-scanned
             requestQueue = [];
-            isProcessing = false;
+            batchGeneration++;
             firstEpisodeCache.clear();
             parentSeriesCache.clear();
         },
