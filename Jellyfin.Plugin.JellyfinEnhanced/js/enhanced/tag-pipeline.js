@@ -13,7 +13,6 @@
 
     const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet']);
     const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
-    const BATCH_SIZE = 40;
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
 
     // ── State ──────────────────────────────────────────────────────────
@@ -209,10 +208,9 @@
         if (isProcessing || requestQueue.length === 0) return;
         isProcessing = true;
 
-        while (requestQueue.length > 0) {
-            const batch = requestQueue.splice(0, BATCH_SIZE);
-            await processBatch(batch);
-        }
+        // Take all queued items at once — single API call via POST (no URL length limit)
+        const batch = requestQueue.splice(0);
+        await processBatch(batch);
 
         isProcessing = false;
     }
@@ -226,12 +224,12 @@
         for (const b of batch) elMap.set(b.itemId, b);
 
         try {
-            // Single batch API call — returns items + first episode data for Series/Season
+            // Single API call for ALL cache-miss items via POST (no URL length limit)
             const response = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`, {
-                    ids: ids.join(',')
-                }),
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                data: JSON.stringify(ids),
+                contentType: 'application/json',
                 dataType: 'json'
             });
 
@@ -266,38 +264,21 @@
                 }
             }
 
-            // Batch-fetch first episode streams for Series/Season items.
-            // The server returns first episode IDs but can't populate MediaStreams
-            // through the internal API. Fetch them via the native /Items endpoint
-            // which reliably includes stream data. All fetches run in parallel.
-            const firstEpFetches = [];
-            for (const item of items) {
-                if (item.FirstEpisode?.NeedsStreamFetch && item.FirstEpisode?.Id) {
-                    firstEpFetches.push(
-                        getFirstEpisode(userId, item.Id).then(ep => {
-                            if (ep) item.FirstEpisode = ep;
-                        }).catch(() => {})
-                    );
-                }
-            }
-            if (firstEpFetches.length > 0) {
-                await Promise.all(firstEpFetches);
-            }
+            // Render each item as soon as its data is ready.
+            // Items that DON'T need first-episode data (Movies, Episodes) render immediately.
+            // Items that DO (Series, Season) render after their first-episode fetch completes.
+            // This way a slow first-episode lookup doesn't block everything else.
 
-            // Process each item
-            for (const item of items) {
+            const renderItem = (item, firstEpisode) => {
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
                 const batchEntry = elMap.get(itemId);
-                if (!batchEntry) continue;
+                if (!batchEntry) return;
 
                 const { renderTarget } = batchEntry;
-                if (!MEDIA_TYPES.has(item.Type)) continue;
+                if (!MEDIA_TYPES.has(item.Type)) return;
 
-                // Build extras from the batch response
-                const firstEpisode = item.FirstEpisode || null;
                 let parentSeries = null;
                 let ratingParentSeries = null;
-
                 if (item.SeriesId) {
                     const parentId = item.SeriesId.toString().replace(/-/g, '').toLowerCase();
                     parentSeries = parentSeriesMap.get(parentId) || null;
@@ -308,8 +289,6 @@
                 }
 
                 const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
-
-                // Fan out to all enabled renderers
                 for (const [name, renderer] of renderers) {
                     if (!renderer.isEnabled()) continue;
                     try {
@@ -318,6 +297,27 @@
                         console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
                     }
                 }
+            };
+
+            // Process all items: render immediately what we can, fetch first episodes in parallel
+            const pendingFirstEps = [];
+            for (const item of items) {
+                if (item.FirstEpisode?.NeedsStreamFetch) {
+                    // Series/Season: fetch first episode in background, render when ready
+                    pendingFirstEps.push(
+                        getFirstEpisode(userId, item.Id)
+                            .then(ep => renderItem(item, ep))
+                            .catch(() => renderItem(item, null))
+                    );
+                } else {
+                    // Movies, Episodes, etc: render immediately (no extra fetch needed)
+                    renderItem(item, item.FirstEpisode || null);
+                }
+            }
+
+            // Wait for all first-episode renders to complete before marking batch done
+            if (pendingFirstEps.length > 0) {
+                await Promise.all(pendingFirstEps);
             }
         } catch (err) {
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);

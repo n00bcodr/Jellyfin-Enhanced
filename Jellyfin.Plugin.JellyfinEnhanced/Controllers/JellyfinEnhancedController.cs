@@ -2465,10 +2465,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// - OPT-5: Trimmed response — only fields tag renderers need (audio streams for language,
         ///          video streams for quality, genres, ratings, provider IDs)
         /// </summary>
-        [HttpGet("tag-data/{userId}")]
+        [HttpPost("tag-data/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetTagData(Guid userId, [FromQuery] string ids)
+        public IActionResult GetTagData(Guid userId, [FromBody] string[] ids)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -2476,12 +2476,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            if (string.IsNullOrEmpty(ids))
+            if (ids == null || ids.Length == 0)
             {
-                return BadRequest(new { error = "ids parameter required" });
+                return BadRequest(new { error = "ids array required" });
             }
 
-            var itemIds = ids.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var itemIds = ids;
             var results = new List<object>(itemIds.Length);
 
             // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
