@@ -1359,8 +1359,8 @@
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
-        addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', true);
-        // Live-toggle the body class so hover fade CSS applies immediately
+        addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
+        // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
         const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
         if (hideOnHoverCheckbox) {
             hideOnHoverCheckbox.addEventListener('change', () => {
