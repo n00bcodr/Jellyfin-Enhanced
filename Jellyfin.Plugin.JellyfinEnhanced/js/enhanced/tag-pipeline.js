@@ -430,8 +430,8 @@
                 .rating-overlay-container {
                     contain: layout style;
                     /* Override per-tag z-indexes (were 10-101) to sit behind Jellyfin's
-                       hover overlay buttons. pointer-events:none also lets clicks through. */
-                    z-index: 1 !important;
+                       hover overlay buttons (z-index:1). 0 ensures tags are below buttons. */
+                    z-index: 0 !important;
                     pointer-events: none;
                 }
             `);
