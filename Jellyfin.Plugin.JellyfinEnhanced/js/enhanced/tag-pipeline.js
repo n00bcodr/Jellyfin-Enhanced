@@ -470,18 +470,11 @@
             // Hover fade CSS: uses body class so it can be toggled live from settings.
             // The class is added/removed by the settings toggle listener.
             JE.helpers.addCSS('je-tag-hover-fade', `
+                body.je-tags-hide-on-hover .card:hover .genre-overlay-container,
                 body.je-tags-hide-on-hover .card:hover .quality-overlay-container,
                 body.je-tags-hide-on-hover .card:hover .language-overlay-container,
                 body.je-tags-hide-on-hover .card:hover .rating-overlay-container {
-                    opacity: 0.15;
-                }
-                body.je-tags-hide-on-hover .card:hover .genre-overlay-container .genre-tag .material-symbols-outlined {
-                    opacity: 0.15;
-                }
-                body.je-tags-hide-on-hover .card:hover .genre-overlay-container .genre-tag {
-                    background-color: rgba(10, 10, 10, 0.1);
-                    border-color: transparent;
-                    box-shadow: none;
+                    opacity: 0 !important;
                 }
             `);
             // Apply the class based on current setting
