@@ -538,6 +538,16 @@
                 'people-tags',
                 (mutations) => {
                     if (!JE.currentSettings?.peopleTagsEnabled) return;
+
+                    // Reset completion flag when navigating to a different item
+                    // (must happen BEFORE the peopleTagsComplete check)
+                    try {
+                        const currentId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                        if (currentId && currentId !== lastProcessedItemId) {
+                            peopleTagsComplete = false;
+                        }
+                    } catch {}
+
                     if (peopleTagsComplete) return;
 
                     // Quick check: only process if we're on a detail page
