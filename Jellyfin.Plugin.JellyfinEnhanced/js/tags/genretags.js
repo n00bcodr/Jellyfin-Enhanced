@@ -217,9 +217,11 @@
             }
             .${tagClass} .genre-text {
                 /* Absolutely positioned label = no layout reflow when shown/hidden.
-                   Appears beside the icon on hover via opacity (GPU-composited). */
+                   Appears beside the icon on hover via opacity (GPU-composited).
+                   Direction depends on tag position: icons on right → label floats left,
+                   icons on left → label floats right (so it stays inside the card). */
                 position: absolute;
-                right: calc(100% + 4px);
+                ${isLeft ? 'left: calc(100% + 4px)' : 'right: calc(100% + 4px)'};
                 top: 50%;
                 transform: translateY(-50%);
                 white-space: nowrap;
