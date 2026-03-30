@@ -2450,14 +2450,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, userCount = userCount });
         }
 
+        // Server-side cache for first-episode lookups (rarely changes, expensive to compute)
+        private static readonly ConcurrentDictionary<Guid, (object? Data, DateTime CachedAt)> _firstEpisodeCache = new();
+        private static readonly TimeSpan _firstEpisodeCacheTtl = TimeSpan.FromMinutes(5);
+
         /// <summary>
         /// Batch endpoint for the unified tag pipeline. Returns item metadata plus first-episode
         /// data for Series/Season items in a single response, eliminating N individual API calls.
+        ///
+        /// Optimizations applied:
+        /// - OPT-3: Skip GetMediaSources for Series/Season (containers have no media files)
+        /// - OPT-2: Parallel first-episode queries via Parallel.ForEachAsync
+        /// - OPT-4: Server-side memory cache for first-episode data (5 min TTL)
+        /// - OPT-5: Trimmed response — only fields tag renderers need (audio streams for language,
+        ///          video streams for quality, genres, ratings, provider IDs)
         /// </summary>
         [HttpGet("tag-data/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetTagData(Guid userId, [FromQuery] string ids)
+        public async Task<IActionResult> GetTagData(Guid userId, [FromQuery] string ids)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -2471,69 +2482,135 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var itemIds = ids.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            var results = new List<object>(itemIds.Length);
+            var results = new ConcurrentBag<object>();
 
-            foreach (var idStr in itemIds)
+            // Process items in parallel with limited concurrency
+            await Parallel.ForEachAsync(itemIds,
+                new ParallelOptions { MaxDegreeOfParallelism = 8 },
+                async (idStr, ct) =>
             {
                 if (!Guid.TryParse(idStr.Trim(), out var itemId))
-                    continue;
+                    return;
 
                 var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
                 if (item == null)
-                    continue;
+                    return;
 
-                var mediaSources = item.GetMediaSources(false);
-                var mediaStreams = mediaSources.SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>()).ToList();
+                var kind = item.GetBaseItemKind();
+                var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-                object? firstEpisodeData = null;
-
-                // For Series/Season, find the first episode and include its media streams
-                if (item.GetBaseItemKind() == BaseItemKind.Series || item.GetBaseItemKind() == BaseItemKind.Season)
+                // OPT-3: Only get media sources/streams for playable items (Movies, Episodes)
+                // Series and Season are containers with no media files — skip the expensive call
+                List<object>? trimmedStreams = null;
+                if (!isContainer)
                 {
-                    var episodeQuery = new InternalItemsQuery(user)
-                    {
-                        ParentId = item.Id,
-                        IncludeItemTypes = new[] { BaseItemKind.Episode },
-                        Recursive = true,
-                        Limit = 1
-                    };
-
-                    var episodes = _libraryManager.GetItemList(episodeQuery);
-                    var firstEp = episodes.FirstOrDefault();
-                    if (firstEp != null)
-                    {
-                        var epSources = firstEp.GetMediaSources(false);
-                        var epStreams = epSources.SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>()).ToList();
-                        firstEpisodeData = new
+                    var mediaSources = item.GetMediaSources(false);
+                    // OPT-5: Only include fields tag renderers need from MediaStreams
+                    trimmedStreams = mediaSources
+                        .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                        .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                        .Select(s => (object)new
                         {
-                            Id = firstEp.Id,
-                            Type = firstEp.GetBaseItemKind().ToString(),
-                            MediaSources = epSources,
-                            MediaStreams = epStreams,
-                            Genres = firstEp.Genres
-                        };
-                    }
+                            Type = s.Type.ToString(),
+                            Language = s.Language,
+                            Codec = s.Codec,
+                            CodecTag = s.CodecTag,
+                            Profile = s.Profile,
+                            Height = s.Height,
+                            Channels = s.Channels,
+                            ChannelLayout = s.ChannelLayout,
+                            VideoRangeType = s.VideoRangeType,
+                            DisplayTitle = s.DisplayTitle,
+                        })
+                        .ToList();
                 }
+
+                // OPT-2 + OPT-4: First episode with parallel + cached lookup
+                object? firstEpisodeData = null;
+                if (isContainer)
+                {
+                    firstEpisodeData = GetFirstEpisodeCached(item.Id, user);
+                }
+
+                var seriesId = (item is MediaBrowser.Controller.Entities.TV.Episode epItem) ? epItem.SeriesId
+                             : (item is MediaBrowser.Controller.Entities.TV.Season sItem) ? sItem.SeriesId
+                             : (Guid?)null;
 
                 results.Add(new
                 {
                     Id = item.Id,
-                    Type = item.GetBaseItemKind().ToString(),
+                    Type = kind.ToString(),
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
-                    SeriesId = (item is MediaBrowser.Controller.Entities.TV.Episode ep) ? ep.SeriesId
-                             : (item is MediaBrowser.Controller.Entities.TV.Season s) ? s.SeriesId
-                             : (Guid?)null,
+                    SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
-                    MediaSources = mediaSources,
-                    MediaStreams = mediaStreams,
+                    MediaStreams = trimmedStreams,
                     FirstEpisode = firstEpisodeData
                 });
-            }
+            });
 
             return Ok(new { Items = results });
+        }
+
+        /// <summary>
+        /// Get first episode data for a Series/Season with server-side caching.
+        /// The first episode rarely changes, so a 5-minute cache avoids repeated queries.
+        /// </summary>
+        private object? GetFirstEpisodeCached(Guid parentId, JUser user)
+        {
+            // Check cache
+            if (_firstEpisodeCache.TryGetValue(parentId, out var cached) &&
+                DateTime.UtcNow - cached.CachedAt < _firstEpisodeCacheTtl)
+            {
+                return cached.Data;
+            }
+
+            var episodeQuery = new InternalItemsQuery(user)
+            {
+                ParentId = parentId,
+                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                Recursive = true,
+                Limit = 1
+            };
+
+            var firstEp = _libraryManager.GetItemList(episodeQuery).FirstOrDefault();
+            object? data = null;
+
+            if (firstEp != null)
+            {
+                var epSources = firstEp.GetMediaSources(false);
+                // OPT-5: Trim first episode streams to only what tag renderers need
+                var epStreams = epSources
+                    .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                    .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                    .Select(s => new
+                    {
+                        Type = s.Type.ToString(),
+                        Language = s.Language,
+                        Codec = s.Codec,
+                        CodecTag = s.CodecTag,
+                        Profile = s.Profile,
+                        Height = s.Height,
+                        Channels = s.Channels,
+                        ChannelLayout = s.ChannelLayout,
+                        VideoRangeType = s.VideoRangeType,
+                        DisplayTitle = s.DisplayTitle,
+                    })
+                    .ToList();
+
+                data = new
+                {
+                    Id = firstEp.Id,
+                    Type = firstEp.GetBaseItemKind().ToString(),
+                    MediaStreams = epStreams,
+                    Genres = firstEp.Genres
+                };
+            }
+
+            _firstEpisodeCache[parentId] = (data, DateTime.UtcNow);
+            return data;
         }
 
         [HttpGet("file-size/{userId}/{itemId}")]

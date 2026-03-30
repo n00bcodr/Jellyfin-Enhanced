@@ -100,8 +100,11 @@
         function extractLanguagesFromItem(sourceItem) {
             if (!sourceItem) return [];
             const languages = new Set();
-            sourceItem.MediaSources?.forEach(function(source) {
-                source.MediaStreams?.filter(function(stream) { return stream.Type === 'Audio'; }).forEach(function(stream) {
+
+            // Process audio streams from a flat list
+            const processStreams = function(streams) {
+                if (!streams) return;
+                streams.filter(function(s) { return s.Type === 'Audio'; }).forEach(function(stream) {
                     var langCode = stream.Language;
                     if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                         try {
@@ -112,7 +115,18 @@
                         }
                     }
                 });
-            });
+            };
+
+            // Handle both formats: nested MediaSources[].MediaStreams[] and flat MediaStreams[]
+            if (sourceItem.MediaSources) {
+                sourceItem.MediaSources.forEach(function(source) {
+                    processStreams(source.MediaStreams);
+                });
+            }
+            if (sourceItem.MediaStreams) {
+                processStreams(sourceItem.MediaStreams);
+            }
+
             return normalizeLanguages(Array.from(languages).map(JSON.parse));
         }
 
