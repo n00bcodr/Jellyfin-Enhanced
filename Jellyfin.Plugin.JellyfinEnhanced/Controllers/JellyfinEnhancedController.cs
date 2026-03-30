@@ -2455,11 +2455,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// data for Series/Season items in a single response, eliminating N individual API calls.
         ///
         /// Optimizations applied:
-        /// - OPT-3: Skip GetMediaSources for Series/Season (containers have no media files)
-        /// - OPT-2: Parallel first-episode queries via Parallel.ForEachAsync
-        /// - OPT-4: Server-side memory cache for first-episode data (5 min TTL)
-        /// - OPT-5: Trimmed response — only fields tag renderers need (audio streams for language,
-        ///          video streams for quality, genres, ratings, provider IDs)
+        /// - Skip GetMediaSources for Series/Season containers (no media files)
+        /// - Trimmed response: only fields tag renderers need (streams, genres, ratings)
+        /// - Filenames only (not full paths) for IMAX/3D detection
+        /// - 200-item batch cap to prevent abuse
         /// </summary>
         [HttpPost("tag-data/{userId}")]
         [Authorize]
@@ -2544,7 +2543,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ParentId = item.Id,
                         IncludeItemTypes = new[] { BaseItemKind.Episode },
                         Recursive = true,
-                        Limit = 1
+                        Limit = 1,
+                        OrderBy = new[] { (ItemSortBy.PremiereDate, JSortOrder.Ascending) }
                     };
                     var epRef = _libraryManager.GetItemList(epQuery).FirstOrDefault();
                     if (epRef != null)

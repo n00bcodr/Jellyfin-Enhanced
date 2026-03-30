@@ -365,6 +365,7 @@
         }
 
         // Ask the pipeline to rescan the DOM
+        JE.tagPipeline?.clearProcessed();
         JE.tagPipeline?.scheduleScan();
     };
 

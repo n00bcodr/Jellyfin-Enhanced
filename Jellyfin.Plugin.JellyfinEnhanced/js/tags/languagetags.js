@@ -390,7 +390,7 @@
                     const hot = Hot.language.get(itemId);
                     const cached = hot || langCache[itemId];
                     if (cached) {
-                        const languages = Array.isArray(cached) ? cached : cached.languages;
+                        const languages = Array.isArray(cached) ? cached : (cached.value || cached.languages);
                         if (languages && languages.length > 0) {
                             insertLanguageTags(el, languages);
                             return true;
@@ -426,6 +426,7 @@
         }
 
         // Trigger pipeline re-scan with current settings
+        JE.tagPipeline?.clearProcessed();
         JE.tagPipeline?.scheduleScan();
     };
 

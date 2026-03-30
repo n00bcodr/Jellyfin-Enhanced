@@ -949,6 +949,7 @@
         }
 
         // Trigger pipeline re-scan with current settings
+        JE.tagPipeline?.clearProcessed();
         JE.tagPipeline?.scheduleScan();
     };
 

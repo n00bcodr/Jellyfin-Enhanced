@@ -340,6 +340,7 @@
 
         // Schedule a fresh scan via the unified pipeline
         if (JE.tagPipeline) {
+            JE.tagPipeline.clearProcessed();
             JE.tagPipeline.scheduleScan();
         }
     };
