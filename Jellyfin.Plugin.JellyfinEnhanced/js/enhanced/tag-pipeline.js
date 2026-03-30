@@ -124,7 +124,7 @@
     }
 
     let scanScheduled = false;
-    const CARDS_PER_CHUNK = 20;
+    const CARDS_PER_CHUNK = 5; // ~2.5ms per card with cache render, 5 cards = ~12ms (under 16ms frame budget)
     let scanGeneration = 0; // Incremented on each new scan to cancel stale chunk chains
 
     /**
@@ -403,7 +403,7 @@
         }
 
         // Initial scan for cards already on the page
-        setTimeout(scanCards, 500);
+        setTimeout(runScan, 500);
 
         console.log(`${logPrefix} Initialized`);
     }
