@@ -2501,6 +2501,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // OPT-3: Only get media sources/streams for playable items (Movies, Episodes)
                 // Series and Season are containers with no media files — skip the expensive call
                 List<object>? trimmedStreams = null;
+                List<object>? trimmedSources = null;
                 if (!isContainer)
                 {
                     var mediaSources = item.GetMediaSources(false);
@@ -2520,6 +2521,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             ChannelLayout = s.ChannelLayout,
                             VideoRangeType = s.VideoRangeType,
                             DisplayTitle = s.DisplayTitle,
+                        })
+                        .ToList();
+                    // Include trimmed MediaSources with Path/Name for IMAX/3D/media-stub detection
+                    trimmedSources = mediaSources
+                        .Select(s => (object)new
+                        {
+                            Path = s.Path,
+                            Name = s.Name,
                         })
                         .ToList();
                 }
@@ -2567,7 +2576,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
+                    Path = item.Path,
                     MediaStreams = trimmedStreams,
+                    MediaSources = trimmedSources,
                     FirstEpisode = firstEpisodeData
                 });
             }
