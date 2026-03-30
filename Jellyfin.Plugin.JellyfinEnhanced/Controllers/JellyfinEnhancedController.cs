@@ -2468,7 +2468,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("tag-data/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public async Task<IActionResult> GetTagData(Guid userId, [FromQuery] string ids)
+        public IActionResult GetTagData(Guid userId, [FromQuery] string ids)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -2482,19 +2482,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var itemIds = ids.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            var results = new ConcurrentBag<object>();
+            var results = new List<object>(itemIds.Length);
 
-            // Process items in parallel with limited concurrency
-            await Parallel.ForEachAsync(itemIds,
-                new ParallelOptions { MaxDegreeOfParallelism = 8 },
-                async (idStr, ct) =>
+            // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
+            foreach (var idStr in itemIds)
             {
                 if (!Guid.TryParse(idStr.Trim(), out var itemId))
-                    return;
+                    continue;
 
                 var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
                 if (item == null)
-                    return;
+                    continue;
 
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
@@ -2525,11 +2523,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         .ToList();
                 }
 
-                // OPT-2 + OPT-4: First episode with parallel + cached lookup
+                // First episode lookup for Series/Season
                 object? firstEpisodeData = null;
                 if (isContainer)
                 {
-                    firstEpisodeData = GetFirstEpisodeCached(item.Id, user);
+                    // Inline the first-episode lookup to avoid cache/threading issues
+                    var epQuery = new InternalItemsQuery(user)
+                    {
+                        ParentId = item.Id,
+                        IncludeItemTypes = new[] { BaseItemKind.Episode },
+                        Recursive = true,
+                        Limit = 1
+                    };
+                    var epRef = _libraryManager.GetItemList(epQuery).FirstOrDefault();
+                    if (epRef != null)
+                    {
+                        // Return the first episode ID so the frontend can fetch streams
+                        // via the native /Items endpoint (which reliably populates MediaStreams).
+                        // Server-side GetMediaSources/DtoService doesn't populate streams for
+                        // episodes obtained through GetItemList on Jellyfin 10.11.x.
+                        firstEpisodeData = new
+                        {
+                            Id = epRef.Id,
+                            Type = epRef.GetBaseItemKind().ToString(),
+                            Genres = epRef.Genres,
+                            NeedsStreamFetch = true
+                        };
+                    }
                 }
 
                 var seriesId = (item is MediaBrowser.Controller.Entities.TV.Episode epItem) ? epItem.SeriesId
@@ -2549,7 +2569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     MediaStreams = trimmedStreams,
                     FirstEpisode = firstEpisodeData
                 });
-            });
+            }
 
             return Ok(new { Items = results });
         }
@@ -2575,12 +2595,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Limit = 1
             };
 
-            var firstEp = _libraryManager.GetItemList(episodeQuery).FirstOrDefault();
+            var firstEpRef = _libraryManager.GetItemList(episodeQuery).FirstOrDefault();
             object? data = null;
 
-            if (firstEp != null)
+            if (firstEpRef != null)
             {
-                var epSources = firstEp.GetMediaSources(false);
+                // Re-fetch episode by ID to get full item with media sources loaded
+                var firstEp = _libraryManager.GetItemById<BaseItem>(firstEpRef.Id, user) ?? firstEpRef;
+                var epSources = firstEp.GetMediaSources(true); // true = refresh from disk to ensure streams loaded
                 // OPT-5: Trim first episode streams to only what tag renderers need
                 var epStreams = epSources
                     .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())

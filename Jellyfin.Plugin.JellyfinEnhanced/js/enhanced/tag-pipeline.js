@@ -247,6 +247,24 @@
                 }
             }
 
+            // Batch-fetch first episode streams for Series/Season items.
+            // The server returns first episode IDs but can't populate MediaStreams
+            // through the internal API. Fetch them via the native /Items endpoint
+            // which reliably includes stream data. All fetches run in parallel.
+            const firstEpFetches = [];
+            for (const item of items) {
+                if (item.FirstEpisode?.NeedsStreamFetch && item.FirstEpisode?.Id) {
+                    firstEpFetches.push(
+                        getFirstEpisode(userId, item.Id).then(ep => {
+                            if (ep) item.FirstEpisode = ep;
+                        }).catch(() => {})
+                    );
+                }
+            }
+            if (firstEpFetches.length > 0) {
+                await Promise.all(firstEpFetches);
+            }
+
             // Process each item
             for (const item of items) {
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
