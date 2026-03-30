@@ -2450,10 +2450,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, userCount = userCount });
         }
 
-        // Server-side cache for first-episode lookups (rarely changes, expensive to compute)
-        private static readonly ConcurrentDictionary<Guid, (object? Data, DateTime CachedAt)> _firstEpisodeCache = new();
-        private static readonly TimeSpan _firstEpisodeCacheTtl = TimeSpan.FromMinutes(5);
-
         /// <summary>
         /// Batch endpoint for the unified tag pipeline. Returns item metadata plus first-episode
         /// data for Series/Season items in a single response, eliminating N individual API calls.
@@ -2479,6 +2475,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (ids == null || ids.Length == 0)
             {
                 return BadRequest(new { error = "ids array required" });
+            }
+
+            if (ids.Length > 200)
+            {
+                return BadRequest(new { error = "Maximum 200 items per request" });
             }
 
             var itemIds = ids;
@@ -2574,66 +2575,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { Items = results });
         }
 
-        /// <summary>
-        /// Get first episode data for a Series/Season with server-side caching.
-        /// The first episode rarely changes, so a 5-minute cache avoids repeated queries.
-        /// </summary>
-        private object? GetFirstEpisodeCached(Guid parentId, JUser user)
-        {
-            // Check cache
-            if (_firstEpisodeCache.TryGetValue(parentId, out var cached) &&
-                DateTime.UtcNow - cached.CachedAt < _firstEpisodeCacheTtl)
-            {
-                return cached.Data;
-            }
-
-            var episodeQuery = new InternalItemsQuery(user)
-            {
-                ParentId = parentId,
-                IncludeItemTypes = new[] { BaseItemKind.Episode },
-                Recursive = true,
-                Limit = 1
-            };
-
-            var firstEpRef = _libraryManager.GetItemList(episodeQuery).FirstOrDefault();
-            object? data = null;
-
-            if (firstEpRef != null)
-            {
-                // Re-fetch episode by ID to get full item with media sources loaded
-                var firstEp = _libraryManager.GetItemById<BaseItem>(firstEpRef.Id, user) ?? firstEpRef;
-                var epSources = firstEp.GetMediaSources(true); // true = refresh from disk to ensure streams loaded
-                // OPT-5: Trim first episode streams to only what tag renderers need
-                var epStreams = epSources
-                    .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
-                    .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
-                    .Select(s => new
-                    {
-                        Type = s.Type.ToString(),
-                        Language = s.Language,
-                        Codec = s.Codec,
-                        CodecTag = s.CodecTag,
-                        Profile = s.Profile,
-                        Height = s.Height,
-                        Channels = s.Channels,
-                        ChannelLayout = s.ChannelLayout,
-                        VideoRangeType = s.VideoRangeType,
-                        DisplayTitle = s.DisplayTitle,
-                    })
-                    .ToList();
-
-                data = new
-                {
-                    Id = firstEp.Id,
-                    Type = firstEp.GetBaseItemKind().ToString(),
-                    MediaStreams = epStreams,
-                    Genres = firstEp.Genres
-                };
-            }
-
-            _firstEpisodeCache[parentId] = (data, DateTime.UtcNow);
-            return data;
-        }
 
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]

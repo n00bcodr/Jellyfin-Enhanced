@@ -300,7 +300,8 @@
 
         for (const id of allIds) {
             if (id === mainItemId) { mainIds.push(id); continue; }
-            const el = document.querySelector(`.card[data-id="${id}"], .listItem[data-id="${id}"]`);
+            const escaped = CSS.escape(id);
+            const el = document.querySelector(`.card[data-id="${escaped}"], .listItem[data-id="${escaped}"]`);
             if (!el) { visibleIds.push(id); continue; }
             const rect = el.getBoundingClientRect();
             if (rect.top < viewportHeight && rect.bottom > 0) {
