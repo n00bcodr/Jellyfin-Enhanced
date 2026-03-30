@@ -200,8 +200,8 @@
                 align-items: center;
                 justify-content: center;
                 height: clamp(22px, 4.5vw, 30px);
-                min-width: clamp(22px, 4.5vw, 30px);
-                border-radius: 15px;
+                width: clamp(22px, 4.5vw, 30px);
+                border-radius: 50%;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                 overflow: hidden;
                 background-color: rgba(10, 10, 10, 0.8);
@@ -209,31 +209,15 @@
                 border: 1px solid rgba(255, 255, 255, 0.2);
                 flex-shrink: 0;
                 contain: layout style;
-                padding-left: 6px;
-                padding-right: 2px;
             }
             .${tagClass} .material-symbols-outlined {
                 font-size: clamp(1em, 2.8vw, 1.4em);
                 line-height: 1;
-                flex-shrink: 0;
             }
             .${tagClass} .genre-text {
-                /* Use visibility+opacity instead of display:none to avoid reflow.
-                   visibility:hidden keeps the element in layout but invisible.
-                   opacity fades on the GPU. No reflow on hover. */
-                visibility: hidden;
-                opacity: 0;
-                white-space: nowrap;
-                font-size: clamp(9px, 1.7vw, 11px);
-                font-weight: 500;
-                margin-left: 3px;
-                margin-right: 4px;
-                text-transform: capitalize;
-                transition: opacity 0.15s ease, visibility 0.15s ease;
-            }
-            .card:hover .${tagClass} .genre-text {
-                visibility: visible;
-                opacity: 1;
+                /* Genre name shown via title attribute tooltip only.
+                   Text element hidden permanently — no hover expand to avoid reflow jank. */
+                display: none;
             }
             .layout-mobile .${containerClass} { gap: 2px; }
             .layout-mobile .${tagClass} {
@@ -243,7 +227,6 @@
             .layout-mobile .${tagClass} .material-symbols-outlined {
                 font-size: clamp(0.95em, 2.4vw, 1.25em);
             }
-            .layout-mobile .card:hover .${tagClass} .genre-text { visibility: hidden; opacity: 0; }
             @media (max-width: 768px) {
                 .${containerClass} { gap: 2px; }
                 .${tagClass} {

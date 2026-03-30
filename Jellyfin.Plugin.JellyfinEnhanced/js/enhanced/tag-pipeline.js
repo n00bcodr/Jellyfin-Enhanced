@@ -429,9 +429,8 @@
                 .language-overlay-container,
                 .rating-overlay-container {
                     contain: layout style;
-                    will-change: transform;
-                    /* Stay behind Jellyfin's hover overlay so play/info buttons are clickable */
-                    z-index: 1 !important;
+                    /* pointer-events:none lets all clicks pass through to Jellyfin's
+                       play/info/heart buttons underneath, even if tags visually overlap */
                     pointer-events: none;
                 }
             `);
