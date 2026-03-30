@@ -192,7 +192,7 @@
                 z-index: 101;
                 pointer-events: none;
                 max-height: 90%;
-                overflow: hidden;
+                overflow: visible;
             }
             ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
             .${tagClass} {
