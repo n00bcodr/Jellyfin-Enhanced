@@ -75,7 +75,7 @@
             'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
             'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
             'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
-            'Dolby Digital+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
+            'DD+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
             'TRUEHD': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
             '7.1': { bg: 'rgba(156, 39, 176, 0.9)', text: '#ffffff' },
             '5.1': { bg: 'rgba(103, 58, 183, 0.9)', text: '#ffffff' },
@@ -952,7 +952,7 @@
          */
         function renderVisibleTags() {
             const elements = Array.from(document.querySelectorAll(
-                '.cardImageContainer, div.listItemImage'
+                '#itemDetailPage .detailImageContainer .cardImageContainer'
             ));
 
             elements.forEach(el => {
