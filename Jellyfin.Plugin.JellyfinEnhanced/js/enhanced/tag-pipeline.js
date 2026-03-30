@@ -270,9 +270,13 @@
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
 
-        const ids = batch.map(b => b.itemId);
+        // Use arrays per ID to handle duplicate items (same movie in multiple rows)
         const elMap = new Map();
-        for (const b of batch) elMap.set(b.itemId, b);
+        for (const b of batch) {
+            if (!elMap.has(b.itemId)) elMap.set(b.itemId, []);
+            elMap.get(b.itemId).push(b);
+        }
+        const ids = [...elMap.keys()];
 
         try {
             // Single API call for ALL cache-miss items via POST (no URL length limit)
@@ -325,10 +329,8 @@
 
             const renderItem = (item, firstEpisode) => {
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
-                const batchEntry = elMap.get(itemId);
-                if (!batchEntry) return;
-
-                const { renderTarget } = batchEntry;
+                const batchEntries = elMap.get(itemId);
+                if (!batchEntries || batchEntries.length === 0) return;
                 if (!MEDIA_TYPES.has(item.Type)) return;
 
                 let parentSeries = null;
@@ -342,13 +344,17 @@
                     }
                 }
 
-                const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
-                for (const [name, renderer] of renderers) {
-                    if (!renderer.isEnabled()) continue;
-                    try {
-                        renderer.render(renderTarget, item, extras);
-                    } catch (err) {
-                        console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
+                // Render to ALL cards with this ID (same item can appear in multiple rows)
+                for (const entry of batchEntries) {
+                    const { renderTarget } = entry;
+                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
+                    for (const [name, renderer] of renderers) {
+                        if (!renderer.isEnabled()) continue;
+                        try {
+                            renderer.render(renderTarget, item, extras);
+                        } catch (err) {
+                            console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
+                        }
                     }
                 }
             };

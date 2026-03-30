@@ -291,6 +291,16 @@
             JE.tagPipeline.registerRenderer('genre', {
                 render: function(el, item, extras) {
                     if (isCardAlreadyTagged(el)) return;
+                    // Skip excluded contexts (detail page art, cast, admin pages, video player)
+                    if (el.closest('.je-hidden')) return;
+                    if (el.closest('#itemDetailPage .infoWrapper')) return;
+                    if (el.closest('#itemDetailPage #castCollapsible')) return;
+                    if (el.closest('#indexPage .verticalSection.MyMedia')) return;
+                    if (el.closest('.formDialog')) return;
+                    if (el.closest('#itemDetailPage .chapterCardImageContainer')) return;
+                    if (el.closest('#pluginsPage, #pluginCatalogPage, #devicesPage, #mediaLibraryPage')) return;
+                    if (document.querySelector('.videoPlayerContainer')) return;
+                    if (JE.pluginConfig?.DisableTagsOnSearchPage && el.closest('#searchPage')) return;
 
                     var genres = null;
 
