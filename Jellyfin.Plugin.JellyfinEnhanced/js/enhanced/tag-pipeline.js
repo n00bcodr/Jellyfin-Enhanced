@@ -130,10 +130,17 @@
     /**
      * Schedule scan. Coalesces multiple mutations into a single scan start.
      */
+    // Use requestIdleCallback for all tag work so it never competes with
+    // user interactions (hover, scroll, click). Falls back to setTimeout
+    // for browsers without requestIdleCallback support.
+    const scheduleIdle = typeof requestIdleCallback === 'function'
+        ? (fn) => requestIdleCallback(fn, { timeout: 500 })
+        : (fn) => setTimeout(fn, 16);
+
     function scheduleScan() {
         if (scanScheduled) return;
         scanScheduled = true;
-        requestAnimationFrame(() => {
+        scheduleIdle(() => {
             scanScheduled = false;
             runScan();
         });
@@ -205,8 +212,8 @@
             }
 
             if (index < unprocessed.length) {
-                // More cards to process — yield and continue next frame
-                requestAnimationFrame(processChunk);
+                // More cards to process — yield and continue when browser is idle
+                scheduleIdle(processChunk);
             } else {
                 // All cards processed — schedule batch fetch for cache misses
                 if (requestQueue.length > 0 && !isProcessing) {
