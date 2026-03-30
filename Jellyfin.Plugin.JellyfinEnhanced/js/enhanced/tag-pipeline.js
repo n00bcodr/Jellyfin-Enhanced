@@ -124,8 +124,8 @@
     }
 
     let scanScheduled = false;
-    const CARDS_PER_CHUNK = 15; // Process this many cards per animation frame to avoid jank
-    let pendingElements = null;  // Elements waiting to be processed in chunks
+    const CARDS_PER_CHUNK = 20;
+    let scanGeneration = 0; // Incremented on each new scan to cancel stale chunk chains
 
     /**
      * Schedule scan. Coalesces multiple mutations into a single scan start.
@@ -135,89 +135,91 @@
         scanScheduled = true;
         requestAnimationFrame(() => {
             scanScheduled = false;
-            startScan();
+            runScan();
         });
     }
 
     /**
-     * Collect unprocessed elements and begin chunked processing.
+     * Scan all unprocessed cards. Uses chunked processing to avoid jank.
+     * Each chunk processes CARDS_PER_CHUNK cards then yields via rAF.
+     * A generation counter ensures stale chunk chains from previous scans
+     * are cancelled when a new scan starts (e.g., rapid page changes).
      */
-    function startScan() {
+    function runScan() {
         if (!hasAnyEnabledRenderer()) return;
         if (typeof ApiClient === 'undefined') return;
 
         const elements = document.querySelectorAll('.cardImageContainer, div.listItemImage');
-        // Filter to only unprocessed elements (cheap WeakSet check)
         const unprocessed = [];
         for (const el of elements) {
             if (!processedCards.has(el)) unprocessed.push(el);
         }
-
         if (unprocessed.length === 0) return;
 
-        pendingElements = unprocessed;
-        processNextChunk();
-    }
+        // Cancel any in-progress chunk chain from a previous scan
+        const myGeneration = ++scanGeneration;
+        let index = 0;
 
-    /**
-     * Process a chunk of cards, then yield to the browser for the next frame.
-     * This prevents 800ms+ rAF violations on pages with 100+ cards.
-     */
-    function processNextChunk() {
-        if (!pendingElements || pendingElements.length === 0) {
-            pendingElements = null;
-            // Schedule the batch fetch for any cache misses
-            if (requestQueue.length > 0 && !isProcessing) {
-                if (fetchTimer) clearTimeout(fetchTimer);
-                fetchTimer = setTimeout(() => {
-                    fetchTimer = null;
-                    processQueue();
-                }, FETCH_DEBOUNCE_MS);
-            }
-            return;
-        }
+        function processChunk() {
+            // Abort if a newer scan has started
+            if (myGeneration !== scanGeneration) return;
 
-        const chunk = pendingElements.splice(0, CARDS_PER_CHUNK);
+            const end = Math.min(index + CARDS_PER_CHUNK, unprocessed.length);
 
-        for (const el of chunk) {
-            if (processedCards.has(el)) continue;
+            for (; index < end; index++) {
+                const el = unprocessed[index];
+                if (processedCards.has(el)) continue;
+                // Skip elements no longer in the DOM (page changed)
+                if (!document.contains(el)) continue;
 
-            const card = el.closest('.card');
-            if (card && card.classList.contains('je-hidden')) continue;
-            const listItem = el.closest('.listItem');
-            if (listItem && listItem.classList.contains('je-hidden')) continue;
+                const card = el.closest('.card');
+                if (card && card.classList.contains('je-hidden')) continue;
+                const listItem = el.closest('.listItem');
+                if (listItem && listItem.classList.contains('je-hidden')) continue;
 
-            const itemId = getItemId(el);
-            if (!itemId) continue;
+                const itemId = getItemId(el);
+                if (!itemId) continue;
 
-            const itemType = getItemType(el);
-            if (itemType && !MEDIA_TYPES.has(itemType)) {
+                const itemType = getItemType(el);
+                if (itemType && !MEDIA_TYPES.has(itemType)) {
+                    processedCards.add(el);
+                    continue;
+                }
+
                 processedCards.add(el);
-                continue;
-            }
+                const renderTarget = el.closest('.cardScalable') || el;
 
-            processedCards.add(el);
+                let allCacheHits = true;
+                for (const [, renderer] of renderers) {
+                    if (!renderer.isEnabled()) continue;
+                    if (renderer.renderFromCache) {
+                        if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+                    } else {
+                        allCacheHits = false;
+                    }
+                }
 
-            const renderTarget = el.closest('.cardScalable') || el;
-
-            // Try rendering from localStorage/hot cache first
-            let allCacheHits = true;
-            for (const [, renderer] of renderers) {
-                if (!renderer.isEnabled()) continue;
-                if (renderer.renderFromCache) {
-                    if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
-                } else {
-                    allCacheHits = false;
+                if (!allCacheHits) {
+                    requestQueue.push({ el, renderTarget, itemId, itemType });
                 }
             }
 
-            if (!allCacheHits) {
-                requestQueue.push({ el, renderTarget, itemId, itemType });
+            if (index < unprocessed.length) {
+                // More cards to process — yield and continue next frame
+                requestAnimationFrame(processChunk);
+            } else {
+                // All cards processed — schedule batch fetch for cache misses
+                if (requestQueue.length > 0 && !isProcessing) {
+                    if (fetchTimer) clearTimeout(fetchTimer);
+                    fetchTimer = setTimeout(() => {
+                        fetchTimer = null;
+                        processQueue();
+                    }, FETCH_DEBOUNCE_MS);
+                }
             }
         }
 
-        // Yield to browser, process next chunk in next frame
-        requestAnimationFrame(processNextChunk);
+        processChunk();
     }
 
     function getItemId(el) {
