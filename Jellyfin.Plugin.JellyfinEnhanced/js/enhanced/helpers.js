@@ -165,11 +165,6 @@
         return promise;
     }
 
-    // Batch prefetch has been replaced by the unified tag pipeline (tag-pipeline.js).
-    // The pipeline handles cache-first rendering and batch fetching via /tag-data/.
-    function initBatchPrefetch() {
-        // No-op — kept for backward compatibility with plugin.js init sequence
-    }
 
     /**
      * Patch history.pushState / history.replaceState to emit a 'je:navigate' event.
@@ -632,9 +627,6 @@
     } else {
         initialize();
     }
-
-    // Start batch prefetch after helpers are set up
-    initBatchPrefetch();
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {

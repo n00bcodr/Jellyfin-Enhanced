@@ -11,7 +11,6 @@
         const CACHE_KEY = 'JellyfinEnhanced-languageTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-languageTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
-        const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season']);
 
         // CSS selectors for elements that should NOT have language tags applied.
         // This is used to ignore certain views like the cast & crew list.
@@ -64,8 +63,6 @@
             }
         }
 
-        // NOTE: getUserId removed - the unified tag pipeline handles user context.
-
         // Language to country code mapping (shared with features.js)
         const languageToCountryMap = {
             English: 'gb', eng: 'gb', Japanese: 'jp', jpn: 'jp', Spanish: 'es', spa: 'es', French: 'fr', fre: 'fr', fra: 'fr',
@@ -89,8 +86,6 @@
             Catalan: 'es-ct', cat: 'es-ct', ca: 'es-ct', Galician: 'es-ga', glg: 'es-ga', gl: 'es-ga', Basque: 'es-pv',
             baq: 'es-pv', eus: 'es-pv'
         };
-
-        // NOTE: fetchFirstEpisode removed - the unified tag pipeline handles first episode fetching.
 
         /**
          * Extracts audio languages from a Jellyfin item's media sources.
@@ -130,41 +125,6 @@
             return normalizeLanguages(Array.from(languages).map(JSON.parse));
         }
 
-        /**
-         * Legacy fallback: Fetches language info for a given item ID from the Jellyfin API.
-         * NOTE: The primary path is through the tag pipeline renderer.
-         */
-        async function fetchItemLanguages(userId, itemId) {
-            try {
-                // Use cached item data (populated by batch prefetch) to avoid individual API calls
-                var item;
-                if (JE.helpers?.getItemCached) {
-                    item = await JE.helpers.getItemCached(itemId, { userId });
-                } else {
-                    var result = await ApiClient.ajax({
-                        type: 'GET',
-                        url: ApiClient.getUrl(`/Users/${userId}/Items`, {
-                            Ids: itemId,
-                            Fields: 'MediaStreams,MediaSources,MediaInfo,Type'
-                        }),
-                        dataType: 'json'
-                    });
-                    item = result?.Items?.[0];
-                }
-                if (!item) return [];
-
-                // Series/Season first-episode resolution is handled by the tag pipeline.
-                // This fallback only processes items that have direct media streams.
-                if (item.Type === 'Series' || item.Type === 'Season') return [];
-
-                return extractLanguagesFromItem(item);
-            } catch (e) {
-                console.warn(`${logPrefix} Failed to fetch item language for ${itemId}`, e);
-                return [];
-            }
-        }
-
-        // NOTE: processRequestQueue removed - the unified tag pipeline handles queue processing.
 
         function computePositionStyles(position) {
             const pos = (position || JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left');
@@ -265,8 +225,6 @@
             }
         }
 
-        // NOTE: getItemIdFromElement removed - the unified tag pipeline handles DOM -> itemId extraction.
-
         function shouldIgnoreElement(el) {
             return IGNORE_SELECTORS.some(selector => {
                 try {
@@ -290,10 +248,6 @@
             const card = el.closest('.card');
             if (card) card.dataset[TAGGED_ATTR] = '1';
         }
-
-        // NOTE: processElement, scanAndProcess, debouncedScan removed -
-        // the unified tag pipeline handles DOM scanning, visibility observation,
-        // queue processing, and navigation detection.
 
         function injectCss() {
             const styleId = 'language-tags-styles';

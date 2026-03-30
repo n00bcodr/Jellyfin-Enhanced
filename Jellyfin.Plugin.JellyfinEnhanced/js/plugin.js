@@ -545,8 +545,6 @@
             if (typeof JE.loadSettings === 'function' && typeof JE.initializeShortcuts === 'function') {
                 JE.currentSettings = JE.loadSettings(); // This happens AFTER config.js is loaded
                 JE.initializeShortcuts();
-                // console.log('🪼 Jellyfin Enhanced: Settings MERGED post-load:', JSON.stringify(JE.currentSettings));
-                // console.log('🪼 Jellyfin Enhanced: Shortcuts MERGED post-load:', JSON.stringify(JE.state?.activeShortcuts || {}));
             } else {
                  console.error("🪼 Jellyfin Enhanced: FATAL - config.js functions not defined after script loading.");
                  if (typeof JE.hideSplashScreen === 'function') JE.hideSplashScreen();

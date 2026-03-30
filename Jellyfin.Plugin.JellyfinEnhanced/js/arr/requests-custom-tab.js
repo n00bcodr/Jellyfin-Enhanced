@@ -115,7 +115,7 @@
 
     var observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
     var mountPending = false;
-    var observer = JE.helpers.createObserver('arr-requests-custom-tab', function () {
+    JE.helpers.createObserver('arr-requests-custom-tab', function () {
       if (!mountPending) {
         mountPending = true;
         requestAnimationFrame(function () {

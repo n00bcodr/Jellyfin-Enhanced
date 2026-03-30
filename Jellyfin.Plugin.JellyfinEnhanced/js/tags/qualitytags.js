@@ -116,7 +116,6 @@
         });
 
         // --- HELPER FUNCTIONS ---
-        // NOTE: getUserId removed - the unified tag pipeline handles user context.
 
         /**
          * Saves the quality overlay cache to localStorage after pruning expired entries.
@@ -659,8 +658,6 @@
             }
         }
 
-        // NOTE: fetchFirstEpisode removed - the unified tag pipeline handles first episode fetching.
-
         // --- DOM MANIPULATION ---
         /**
          * Injects the quality tag container into the specified element.
@@ -720,8 +717,6 @@
         }
 
 
-
-        // NOTE: getItemIdFromElement removed - the unified tag pipeline handles DOM → itemId extraction.
 
         /**
          * Checks if an element should be ignored based on the IGNORE_SELECTORS list.

@@ -617,7 +617,7 @@
               // Set up delayed pause screen with 3-second delay
               this.pauseScreenTimer = null;
               this.lastUserInteractionAt = Date.now();
-              resetTimer();
+              this.resetPauseScreenTimer();
             }
           };
 

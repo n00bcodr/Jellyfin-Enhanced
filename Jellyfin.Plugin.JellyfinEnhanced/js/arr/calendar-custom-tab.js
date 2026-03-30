@@ -123,7 +123,7 @@
     // Observe the narrowest stable parent available
     var observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
     var mountPending = false;
-    var observer = JE.helpers.createObserver('arr-calendar-custom-tab', function () {
+    JE.helpers.createObserver('arr-calendar-custom-tab', function () {
       if (!mountPending) {
         mountPending = true;
         requestAnimationFrame(function () {
