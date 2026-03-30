@@ -27,6 +27,18 @@
     function ensureBodyObserver() {
         if (bodyObserver) return;
         bodyObserver = new MutationObserver((mutations) => {
+            // Fast-path: skip dispatch entirely if no nodes were added or removed.
+            // This filters out attribute changes, text changes, hover effects, focus
+            // changes, etc. that fire frequently but never add new content.
+            let hasStructuralChange = false;
+            for (let i = 0; i < mutations.length; i++) {
+                if (mutations[i].addedNodes.length > 0 || mutations[i].removedNodes.length > 0) {
+                    hasStructuralChange = true;
+                    break;
+                }
+            }
+            if (!hasStructuralChange) return;
+
             // NOTE: Callbacks may call unsubscribe()/disconnect(), deleting from this Map
             // during iteration. ES spec guarantees Map iteration handles concurrent deletion.
             for (const [id, sub] of bodySubscribers) {
