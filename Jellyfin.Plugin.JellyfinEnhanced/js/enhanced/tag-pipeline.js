@@ -236,9 +236,9 @@
             const match = el.style.backgroundImage.match(/Items\/([a-f0-9]{32})\//i);
             if (match) return match[1];
         }
-        // From parent data-id attribute
-        const parent = el.closest('[data-id]');
-        return parent?.getAttribute('data-id') || null;
+        // From parent data-id or data-itemid attribute
+        const parent = el.closest('[data-id]') || el.closest('[data-itemid]');
+        return parent?.getAttribute('data-id') || parent?.getAttribute('data-itemid') || null;
     }
 
     function getItemType(el) {
@@ -248,13 +248,20 @@
 
     // ── Queue Processing ───────────────────────────────────────────────
 
+    const SERVER_BATCH_LIMIT = 200;
+
     async function processQueue() {
         if (isProcessing || requestQueue.length === 0) return;
         isProcessing = true;
 
         const myGeneration = batchGeneration;
-        const batch = requestQueue.splice(0);
-        await processBatch(batch, myGeneration);
+
+        // Chunk into batches of SERVER_BATCH_LIMIT to avoid 400 errors
+        while (requestQueue.length > 0) {
+            if (myGeneration !== batchGeneration) break; // navigation happened
+            const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT);
+            await processBatch(batch, myGeneration);
+        }
 
         isProcessing = false;
     }
