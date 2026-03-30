@@ -2523,11 +2523,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             DisplayTitle = s.DisplayTitle,
                         })
                         .ToList();
-                    // Include trimmed MediaSources with Path/Name for IMAX/3D/media-stub detection
+                    // Include filenames only (not full paths) for IMAX/3D/media-stub detection.
+                    // Full server paths are not exposed to avoid disclosing filesystem layout.
                     trimmedSources = mediaSources
                         .Select(s => (object)new
                         {
-                            Path = s.Path,
+                            Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
                             Name = s.Name,
                         })
                         .ToList();
@@ -2576,7 +2577,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
-                    Path = item.Path,
+                    Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
                     FirstEpisode = firstEpisodeData
