@@ -435,11 +435,21 @@
                        opacity transition is GPU-composited = zero reflow. */
                     transition: opacity 0.15s ease;
                 }
-                .card:hover .genre-overlay-container,
+                /* Fade non-genre tags on hover so Jellyfin buttons are visible */
                 .card:hover .quality-overlay-container,
                 .card:hover .language-overlay-container,
                 .card:hover .rating-overlay-container {
-                    opacity: 0.2;
+                    opacity: 0.4;
+                }
+                /* Genre: fade the icons but keep the floating text labels fully visible.
+                   Can't use container opacity (would fade labels too), so target icons directly. */
+                .card:hover .genre-overlay-container .genre-tag .material-symbols-outlined {
+                    opacity: 0.4;
+                }
+                .card:hover .genre-overlay-container .genre-tag {
+                    background-color: rgba(10, 10, 10, 0.3);
+                    border-color: rgba(255, 255, 255, 0.08);
+                    box-shadow: none;
                 }
             `);
         }
