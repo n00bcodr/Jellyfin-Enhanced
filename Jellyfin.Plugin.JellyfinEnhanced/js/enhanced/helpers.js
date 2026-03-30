@@ -337,22 +337,11 @@
     }
 
     function initBatchPrefetch() {
-        if (prefetchEnabled) return;
+        // The batch prefetch is now handled by the tag pipeline (tag-pipeline.js).
+        // The pipeline's renderFromCache handles cached items instantly, and cache
+        // misses go through the /tag-data/ endpoint. No separate prefetch needed.
         prefetchEnabled = true;
-
-        onBodyMutation('batch-prefetch', schedulePrefetchFlush, { priority: 5 });
-
-        // Also prefetch on navigation (SPA page changes)
-        onNavigate(() => {
-            prefetchedIds.clear();
-            pendingPrefetchIds.clear();
-            schedulePrefetchFlush();
-        });
-
-        // Initial scan for cards already present at plugin load time
-        setTimeout(schedulePrefetchFlush, 0);
-
-        console.log('🪼 Jellyfin Enhanced: Batch prefetch initialized');
+        console.log('🪼 Jellyfin Enhanced: Batch prefetch disabled (handled by tag pipeline)');
     }
 
     /**
