@@ -201,31 +201,39 @@
                 justify-content: center;
                 height: clamp(22px, 4.5vw, 30px);
                 min-width: clamp(22px, 4.5vw, 30px);
-                border-radius: 50%;
+                border-radius: 15px;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                 overflow: hidden;
                 background-color: rgba(10, 10, 10, 0.8);
                 color: #E0E0E0;
                 border: 1px solid rgba(255, 255, 255, 0.2);
-                /* backdrop-filter removed — blur causes jank during hover animations */
                 flex-shrink: 0;
                 contain: layout style;
-                /* NO transitions on this element — all hover layout changes
-                   (width, border-radius, padding) happen instantly to avoid
-                   reflow during animation. Only the text fades via opacity. */
+                padding-left: 6px;
+                padding-right: 2px;
             }
             .${tagClass} .material-symbols-outlined {
                 font-size: clamp(1em, 2.8vw, 1.4em);
                 line-height: 1;
+                flex-shrink: 0;
             }
             .${tagClass} .genre-text {
-                /* Text is always hidden — genre name shown via title tooltip instead.
-                   Toggling display:none→inline on hover caused layout reflow jank. */
-                position: absolute;
-                width: 1px;
-                height: 1px;
-                overflow: hidden;
-                clip: rect(0,0,0,0);
+                /* Use visibility+opacity instead of display:none to avoid reflow.
+                   visibility:hidden keeps the element in layout but invisible.
+                   opacity fades on the GPU. No reflow on hover. */
+                visibility: hidden;
+                opacity: 0;
+                white-space: nowrap;
+                font-size: clamp(9px, 1.7vw, 11px);
+                font-weight: 500;
+                margin-left: 3px;
+                margin-right: 4px;
+                text-transform: capitalize;
+                transition: opacity 0.15s ease, visibility 0.15s ease;
+            }
+            .card:hover .${tagClass} .genre-text {
+                visibility: visible;
+                opacity: 1;
             }
             .layout-mobile .${containerClass} { gap: 2px; }
             .layout-mobile .${tagClass} {
@@ -235,13 +243,7 @@
             .layout-mobile .${tagClass} .material-symbols-outlined {
                 font-size: clamp(0.95em, 2.4vw, 1.25em);
             }
-            .layout-mobile .${tagClass} {
-                height: clamp(20px, 4vw, 26px);
-                min-width: clamp(20px, 4vw, 26px);
-            }
-            .layout-mobile .${tagClass} .material-symbols-outlined {
-                font-size: clamp(0.95em, 2.4vw, 1.25em);
-            }
+            .layout-mobile .card:hover .${tagClass} .genre-text { visibility: hidden; opacity: 0; }
             @media (max-width: 768px) {
                 .${containerClass} { gap: 2px; }
                 .${tagClass} {

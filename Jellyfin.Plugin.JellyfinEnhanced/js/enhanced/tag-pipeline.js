@@ -430,6 +430,9 @@
                 .rating-overlay-container {
                     contain: layout style;
                     will-change: transform;
+                    /* Stay behind Jellyfin's hover overlay so play/info buttons are clickable */
+                    z-index: 1 !important;
+                    pointer-events: none;
                 }
             `);
         }
