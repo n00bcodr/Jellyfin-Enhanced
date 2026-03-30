@@ -911,6 +911,18 @@
                         insertOverlay(el, qualities);
                     }
                 },
+                renderFromCache: function(el, itemId) {
+                    if (isCardAlreadyTagged(el)) return true;
+                    if (shouldIgnoreElement(el)) return true;
+                    if (el.closest('.je-hidden')) return true;
+                    const hot = Hot.quality.get(itemId);
+                    const cached = hot || (qualityOverlayCache[itemId] && qualityOverlayCache[itemId]);
+                    if (cached && cached.qualities && cached.qualities.length > 0) {
+                        insertOverlay(el, cached.qualities);
+                        return true;
+                    }
+                    return false;
+                },
                 isEnabled: function() { return !!JE.currentSettings?.qualityTagsEnabled; },
                 needsFirstEpisode: true,
                 needsParentSeries: false,

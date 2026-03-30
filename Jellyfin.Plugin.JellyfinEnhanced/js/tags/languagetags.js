@@ -383,6 +383,21 @@
                         insertLanguageTags(el, languages);
                     }
                 },
+                renderFromCache: function(el, itemId) {
+                    if (isCardAlreadyTagged(el)) return true;
+                    if (shouldIgnoreElement(el)) return true;
+                    if (el.closest('.je-hidden')) return true;
+                    const hot = Hot.language.get(itemId);
+                    const cached = hot || langCache[itemId];
+                    if (cached) {
+                        const languages = Array.isArray(cached) ? cached : cached.languages;
+                        if (languages && languages.length > 0) {
+                            insertLanguageTags(el, languages);
+                            return true;
+                        }
+                    }
+                    return false;
+                },
                 isEnabled: function() { return !!JE.currentSettings?.languageTagsEnabled; },
                 needsFirstEpisode: true,
                 needsParentSeries: false,

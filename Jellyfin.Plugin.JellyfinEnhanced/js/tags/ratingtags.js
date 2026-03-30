@@ -298,6 +298,17 @@
                         applyRatingTag(el, rating);
                     }
                 },
+                renderFromCache: function(el, itemId) {
+                    if (isCardAlreadyTagged(el)) return true;
+                    if (shouldIgnoreElement(el)) return true;
+                    if (el.closest('.je-hidden')) return true;
+                    const cached = getCachedEntry(itemId);
+                    if (cached && (cached.tmdb || cached.critic !== null)) {
+                        applyRatingTag(el, cached);
+                        return true;
+                    }
+                    return false;
+                },
                 isEnabled: function() { return !!JE.currentSettings?.ratingTagsEnabled; },
                 needsFirstEpisode: false,
                 needsParentSeries: false,

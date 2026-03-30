@@ -339,6 +339,20 @@
 
                     insertGenreTags(el, sliced);
                 },
+                renderFromCache: function(el, itemId) {
+                    if (isCardAlreadyTagged(el)) return true;
+                    var Hot = JE._hotCache;
+                    var hot = Hot && Hot.genre ? Hot.genre.get(itemId) : undefined;
+                    var cached = hot || genreCache[itemId];
+                    if (cached) {
+                        var genres = Array.isArray(cached) ? cached : cached.genres;
+                        if (genres && genres.length > 0) {
+                            insertGenreTags(el, genres.slice(0, 3));
+                            return true;
+                        }
+                    }
+                    return false;
+                },
                 isEnabled: function() {
                     return !!JE.currentSettings?.genreTagsEnabled;
                 },

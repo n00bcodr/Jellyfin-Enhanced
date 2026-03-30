@@ -12,9 +12,8 @@
     // ── Configuration ──────────────────────────────────────────────────
 
     const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet']);
-    const SCAN_DEBOUNCE_MS = 250;
+    const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
     const BATCH_SIZE = 40;
-    const QUEUE_PROCESS_INTERVAL = 50;
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
 
     // ── State ──────────────────────────────────────────────────────────
@@ -23,7 +22,7 @@
     const processedCards = new WeakSet();
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
-    let scanTimer = null;
+    let fetchTimer = null;
     let isProcessing = false;
     let requestQueue = [];               // { el, itemId, itemType }
 
@@ -36,6 +35,9 @@
      * @param {Function} config.render - (el, item, extras) => void. Renders the overlay.
      *   `extras` contains: { firstEpisode, parentSeries }
      * @param {Function} config.isEnabled - () => boolean. Checked before rendering.
+     * @param {Function} [config.renderFromCache] - (el, itemId) => boolean. Try to render from
+     *   localStorage/hot cache without any API call. Returns true if rendered successfully.
+     *   This is called BEFORE any batch fetch to handle revisited pages instantly.
      * @param {boolean} [config.needsFirstEpisode=false] - Whether Series/Season items need first episode data.
      * @param {boolean} [config.needsParentSeries=false] - Whether Season items need parent Series data.
      * @param {Function} [config.injectCss] - Called once on registration to inject styles.
@@ -44,6 +46,7 @@
     function registerRenderer(name, config) {
         renderers.set(name, {
             render: config.render,
+            renderFromCache: config.renderFromCache || null,
             isEnabled: config.isEnabled,
             needsFirstEpisode: config.needsFirstEpisode || false,
             needsParentSeries: config.needsParentSeries || false,
@@ -121,32 +124,32 @@
         return false;
     }
 
+    /**
+     * Scan immediately on each mutation — no debounce.
+     * Cache hits render instantly. Only the batch API fetch for misses is debounced.
+     */
     function scheduleScan() {
-        if (scanTimer) clearTimeout(scanTimer);
-        scanTimer = setTimeout(scanCards, SCAN_DEBOUNCE_MS);
+        scanCards();
     }
 
     function scanCards() {
         if (!hasAnyEnabledRenderer()) return;
         if (typeof ApiClient === 'undefined') return;
 
-        // Single querySelectorAll for all tag systems
         const elements = document.querySelectorAll('.cardImageContainer, div.listItemImage');
+        let newMisses = 0;
 
         for (const el of elements) {
             if (processedCards.has(el)) continue;
 
-            // Skip hidden cards
             const card = el.closest('.card');
             if (card && card.classList.contains('je-hidden')) continue;
             const listItem = el.closest('.listItem');
             if (listItem && listItem.classList.contains('je-hidden')) continue;
 
-            // Get item ID
             const itemId = getItemId(el);
             if (!itemId) continue;
 
-            // Get item type
             const itemType = getItemType(el);
             if (itemType && !MEDIA_TYPES.has(itemType)) {
                 processedCards.add(el);
@@ -155,16 +158,32 @@
 
             processedCards.add(el);
 
-            // cardImageContainer can have opacity:0 during lazy-load, making child
-            // overlays invisible. Use cardScalable (always visible, position:relative)
-            // as the render target instead.
             const renderTarget = el.closest('.cardScalable') || el;
 
-            requestQueue.push({ el, renderTarget, itemId, itemType });
+            // Try rendering from localStorage/hot cache first (instant, no API call).
+            let allCacheHits = true;
+            for (const [, renderer] of renderers) {
+                if (!renderer.isEnabled()) continue;
+                if (renderer.renderFromCache) {
+                    if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+                } else {
+                    allCacheHits = false;
+                }
+            }
+
+            if (!allCacheHits) {
+                requestQueue.push({ el, renderTarget, itemId, itemType });
+                newMisses++;
+            }
         }
 
-        if (requestQueue.length > 0 && !isProcessing) {
-            processQueue();
+        // Debounce only the batch fetch for cache misses
+        if (newMisses > 0 && !isProcessing) {
+            if (fetchTimer) clearTimeout(fetchTimer);
+            fetchTimer = setTimeout(() => {
+                fetchTimer = null;
+                processQueue();
+            }, FETCH_DEBOUNCE_MS);
         }
     }
 
