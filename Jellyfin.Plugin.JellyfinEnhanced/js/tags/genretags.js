@@ -219,7 +219,7 @@
                 /* Absolutely positioned label = no layout reflow when shown/hidden.
                    Appears beside the icon on hover via opacity (GPU-composited). */
                 position: absolute;
-                left: calc(100% + 4px);
+                right: calc(100% + 4px);
                 top: 50%;
                 transform: translateY(-50%);
                 white-space: nowrap;

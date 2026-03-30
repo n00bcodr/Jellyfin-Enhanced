@@ -439,12 +439,12 @@
                 .card:hover .quality-overlay-container,
                 .card:hover .language-overlay-container,
                 .card:hover .rating-overlay-container {
-                    opacity: 0.4;
+                    opacity: 0.8;
                 }
                 /* Genre: fade the icons but keep the floating text labels fully visible.
                    Can't use container opacity (would fade labels too), so target icons directly. */
                 .card:hover .genre-overlay-container .genre-tag .material-symbols-outlined {
-                    opacity: 0.4;
+                    opacity: 0.8;
                 }
                 .card:hover .genre-overlay-container .genre-tag {
                     background-color: rgba(10, 10, 10, 0.3);
