@@ -429,10 +429,17 @@
                 .language-overlay-container,
                 .rating-overlay-container {
                     contain: layout style;
-                    /* Override per-tag z-indexes (were 10-101) to sit behind Jellyfin's
-                       hover overlay buttons (z-index:1). 0 ensures tags are below buttons. */
                     z-index: 0 !important;
                     pointer-events: none;
+                    /* Fade tags slightly on hover so Jellyfin's buttons are easier to see.
+                       opacity transition is GPU-composited = zero reflow. */
+                    transition: opacity 0.15s ease;
+                }
+                .card:hover .genre-overlay-container,
+                .card:hover .quality-overlay-container,
+                .card:hover .language-overlay-container,
+                .card:hover .rating-overlay-container {
+                    opacity: 0.2;
                 }
             `);
         }

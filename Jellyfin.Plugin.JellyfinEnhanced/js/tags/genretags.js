@@ -203,21 +203,39 @@
                 width: clamp(22px, 4.5vw, 30px);
                 border-radius: 50%;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-                overflow: hidden;
+                overflow: visible;
                 background-color: rgba(10, 10, 10, 0.8);
                 color: #E0E0E0;
                 border: 1px solid rgba(255, 255, 255, 0.2);
                 flex-shrink: 0;
-                contain: layout style;
+                contain: style;
+                position: relative;
             }
             .${tagClass} .material-symbols-outlined {
                 font-size: clamp(1em, 2.8vw, 1.4em);
                 line-height: 1;
             }
             .${tagClass} .genre-text {
-                /* Genre name shown via title attribute tooltip only.
-                   Text element hidden permanently — no hover expand to avoid reflow jank. */
-                display: none;
+                /* Absolutely positioned label = no layout reflow when shown/hidden.
+                   Appears beside the icon on hover via opacity (GPU-composited). */
+                position: absolute;
+                left: calc(100% + 4px);
+                top: 50%;
+                transform: translateY(-50%);
+                white-space: nowrap;
+                font-size: clamp(9px, 1.7vw, 11px);
+                font-weight: 500;
+                text-transform: capitalize;
+                background: rgba(10, 10, 10, 0.85);
+                color: #E0E0E0;
+                padding: 2px 6px;
+                border-radius: 4px;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.12s ease;
+            }
+            .card:hover .${tagClass} .genre-text {
+                opacity: 1;
             }
             .layout-mobile .${containerClass} { gap: 2px; }
             .layout-mobile .${tagClass} {
