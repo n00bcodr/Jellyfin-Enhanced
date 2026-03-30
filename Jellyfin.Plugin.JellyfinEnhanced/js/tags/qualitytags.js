@@ -811,7 +811,7 @@
                     font-variant-caps: small-caps;
                     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                     border: 1px solid rgba(255,255,255,0.15);
-                    backdrop-filter: blur(4px);
+                    /* backdrop-filter removed — blur causes jank during hover animations */
                     opacity: 1;
                     transform: translateY(0);
                     white-space: nowrap;

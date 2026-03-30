@@ -200,88 +200,65 @@
                 align-items: center;
                 justify-content: center;
                 height: clamp(22px, 4.5vw, 30px);
-                width: clamp(22px, 4.5vw, 30px);
+                min-width: clamp(22px, 4.5vw, 30px);
                 border-radius: 50%;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                 overflow: hidden;
                 background-color: rgba(10, 10, 10, 0.8);
                 color: #E0E0E0;
                 border: 1px solid rgba(255, 255, 255, 0.2);
-                backdrop-filter: blur(10px);
+                /* backdrop-filter removed — blur causes jank during hover animations */
                 flex-shrink: 0;
-                transition: all 0.2s ease;
+                contain: layout style;
+                /* NO transitions on this element — all hover layout changes
+                   (width, border-radius, padding) happen instantly to avoid
+                   reflow during animation. Only the text fades via opacity. */
             }
             .${tagClass} .material-symbols-outlined {
                 font-size: clamp(1em, 2.8vw, 1.4em);
                 line-height: 1;
             }
             .${tagClass} .genre-text {
-                display: none;
-                white-space: nowrap;
-                font-size: clamp(9px, 1.7vw, 11px);
-                font-weight: 500;
-                margin-left: 5px;
-                margin-right: 8px;
-                text-transform: capitalize;
-            }
-            .card:hover .${tagClass} {
-                width: auto;
-                border-radius: 15px;
-                padding-left: 6px;
-            }
-            .card:hover .${tagClass} .genre-text {
-                display: inline;
+                /* Text is always hidden — genre name shown via title tooltip instead.
+                   Toggling display:none→inline on hover caused layout reflow jank. */
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                overflow: hidden;
+                clip: rect(0,0,0,0);
             }
             .layout-mobile .${containerClass} { gap: 2px; }
             .layout-mobile .${tagClass} {
                 height: clamp(20px, 4vw, 26px);
-                width: clamp(20px, 4vw, 26px);
+                min-width: clamp(20px, 4vw, 26px);
             }
             .layout-mobile .${tagClass} .material-symbols-outlined {
                 font-size: clamp(0.95em, 2.4vw, 1.25em);
             }
-            /* On mobile keep icons only — no expand/text */
-            .layout-mobile .card:hover .${tagClass} {
-                width: clamp(20px, 4vw, 26px);
-                border-radius: 50%;
-                padding-left: 0;
+            .layout-mobile .${tagClass} {
+                height: clamp(20px, 4vw, 26px);
+                min-width: clamp(20px, 4vw, 26px);
             }
-            .layout-mobile .card:hover .${tagClass} .genre-text { display: none; }
+            .layout-mobile .${tagClass} .material-symbols-outlined {
+                font-size: clamp(0.95em, 2.4vw, 1.25em);
+            }
             @media (max-width: 768px) {
-                .${containerClass} {
-                    gap: 2px;
-                }
+                .${containerClass} { gap: 2px; }
                 .${tagClass} {
                     height: clamp(21px, 4vw, 26px);
-                    width: clamp(21px, 4vw, 26px);
+                    min-width: clamp(21px, 4vw, 26px);
                 }
-                .card:hover .${tagClass} {
-                    width: clamp(21px, 4vw, 26px);
-                    border-radius: 50%;
-                    padding-left: 0;
-                }
-                .card:hover .${tagClass} .genre-text { display: none; }
             }
             @media (max-width: 480px) {
-                .${containerClass} {
-                    gap: 2px;
-                    max-height: 85%;
-                }
+                .${containerClass} { gap: 2px; max-height: 85%; }
                 .${tagClass} {
                     height: clamp(20px, 3.6vw, 24px);
-                    width: clamp(20px, 3.6vw, 24px);
+                    min-width: clamp(20px, 3.6vw, 24px);
                     box-shadow: 0 1px 3px rgba(0,0,0,0.4);
                 }
                 .${tagClass} .material-symbols-outlined {
                     font-size: clamp(0.85em, 2.2vw, 1.1em);
                 }
-                /* Ensure smallest view remains icon-only */
-                .card:hover .${tagClass} {
-                    width: clamp(20px, 3.6vw, 24px);
-                    border-radius: 50%;
-                    padding-left: 0;
-                }
-                .card:hover .${tagClass} .genre-text { display: none; }
             }
         `;
         document.head.appendChild(style);

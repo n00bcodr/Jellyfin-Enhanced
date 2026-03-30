@@ -196,7 +196,7 @@
                 font-size: 13px;
                 font-weight: 600;
                 border-radius: 4px;
-                backdrop-filter: blur(4px);
+                /* backdrop-filter removed — blur causes jank during hover animations */
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
                 white-space: nowrap;
                 line-height: 1;
