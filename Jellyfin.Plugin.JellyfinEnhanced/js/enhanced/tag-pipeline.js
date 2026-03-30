@@ -387,8 +387,17 @@
             return;
         }
 
-        // Register as body mutation subscriber at priority 0 (after hidden-content and prefetch)
-        JE.helpers.onBodyMutation('tag-pipeline', scheduleScan, { priority: 0 });
+        // Register as body mutation subscriber at priority 0 (after hidden-content and prefetch).
+        // Only trigger scans when nodes were actually added to the DOM — ignore attribute
+        // changes, text changes, and hover/focus effects which cause jank if we scan on each.
+        JE.helpers.onBodyMutation('tag-pipeline', (mutations) => {
+            for (let i = 0; i < mutations.length; i++) {
+                if (mutations[i].addedNodes.length > 0) {
+                    scheduleScan();
+                    return;
+                }
+            }
+        }, { priority: 0 });
 
         // Also trigger on navigation
         if (JE.helpers.onNavigate) {
