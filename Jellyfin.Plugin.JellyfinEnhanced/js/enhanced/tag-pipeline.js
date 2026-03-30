@@ -59,6 +59,13 @@
             }
         }
         console.log(`${logPrefix} Renderer registered: ${name} (total: ${renderers.size})`);
+
+        // If cards are already on the page (renderer registered after initial scan),
+        // clear processed set and rescan so existing cards get this renderer's tags.
+        if (processedCards && typeof scheduleScan === 'function') {
+            processedCards = new WeakSet();
+            scheduleScan();
+        }
     }
 
     // ── Shared Data Fetching ───────────────────────────────────────────
@@ -359,10 +366,16 @@
                 }
             };
 
+            // Check if ANY enabled renderer actually needs first-episode data
+            let anyNeedsFirstEp = false;
+            for (const [, r] of renderers) {
+                if (r.isEnabled() && r.needsFirstEpisode) { anyNeedsFirstEp = true; break; }
+            }
+
             // Process all items: render immediately what we can, fetch first episodes in parallel
             const pendingFirstEps = [];
             for (const item of items) {
-                if (item.FirstEpisode?.NeedsStreamFetch) {
+                if (anyNeedsFirstEp && item.FirstEpisode?.NeedsStreamFetch) {
                     // Series/Season: fetch first episode in background, render when ready
                     pendingFirstEps.push(
                         getFirstEpisode(userId, item.Id)
