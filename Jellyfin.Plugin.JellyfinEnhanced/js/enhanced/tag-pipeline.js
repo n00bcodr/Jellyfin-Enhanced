@@ -429,8 +429,9 @@
                 .language-overlay-container,
                 .rating-overlay-container {
                     contain: layout style;
-                    /* pointer-events:none lets all clicks pass through to Jellyfin's
-                       play/info/heart buttons underneath, even if tags visually overlap */
+                    /* Override per-tag z-indexes (were 10-101) to sit behind Jellyfin's
+                       hover overlay buttons. pointer-events:none also lets clicks through. */
+                    z-index: 1 !important;
                     pointer-events: none;
                 }
             `);
