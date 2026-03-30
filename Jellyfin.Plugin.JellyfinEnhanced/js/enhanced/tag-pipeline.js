@@ -123,12 +123,21 @@
         return false;
     }
 
+    let scanScheduled = false;
+
     /**
-     * Scan immediately on each mutation — no debounce.
-     * Cache hits render instantly. Only the batch API fetch for misses is debounced.
+     * Schedule scan for the next animation frame instead of running synchronously
+     * in the MutationObserver callback. This lets the browser finish layout/paint
+     * first, then we scan during idle time. Multiple mutations in the same frame
+     * coalesce into a single scan (rAF dedup).
      */
     function scheduleScan() {
-        scanCards();
+        if (scanScheduled) return;
+        scanScheduled = true;
+        requestAnimationFrame(() => {
+            scanScheduled = false;
+            scanCards();
+        });
     }
 
     function scanCards() {
