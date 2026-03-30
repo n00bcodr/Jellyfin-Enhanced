@@ -78,7 +78,7 @@
             watchProgressMode: 'percentage',
             watchProgressTimeFormat: 'hours',
             pauseScreenEnabled: true,
-            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, peopleTagsEnabled: false,
+            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, peopleTagsEnabled: false, tagsHideOnHover: false,
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,

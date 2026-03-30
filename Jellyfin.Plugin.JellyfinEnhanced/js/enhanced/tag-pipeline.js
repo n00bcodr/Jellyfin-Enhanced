@@ -423,6 +423,7 @@
         // card layout, so hover transforms don't trigger re-layout/re-paint of overlays.
         // will-change:transform promotes each container to its own compositor layer.
         if (JE.helpers?.addCSS) {
+            // Base CSS: always applied for performance and z-index
             JE.helpers.addCSS('je-tag-pipeline-perf', `
                 .genre-overlay-container,
                 .quality-overlay-container,
@@ -431,27 +432,28 @@
                     contain: layout style;
                     z-index: 0 !important;
                     pointer-events: none;
-                    /* Fade tags slightly on hover so Jellyfin's buttons are easier to see.
-                       opacity transition is GPU-composited = zero reflow. */
                     transition: opacity 0.15s ease;
                 }
-                /* Fade non-genre tags on hover so Jellyfin buttons are visible */
-                .card:hover .quality-overlay-container,
-                .card:hover .language-overlay-container,
-                .card:hover .rating-overlay-container {
-                    opacity: 0.8;
-                }
-                /* Genre: fade the icons but keep the floating text labels fully visible.
-                   Can't use container opacity (would fade labels too), so target icons directly. */
-                .card:hover .genre-overlay-container .genre-tag .material-symbols-outlined {
-                    opacity: 0.8;
-                }
-                .card:hover .genre-overlay-container .genre-tag {
-                    background-color: rgba(10, 10, 10, 0.3);
-                    border-color: rgba(255, 255, 255, 0.08);
-                    box-shadow: none;
-                }
             `);
+
+            // Hover fade CSS: only if user has "Hide Tags on Hover" enabled
+            if (JE.currentSettings?.tagsHideOnHover) {
+                JE.helpers.addCSS('je-tag-hover-fade', `
+                    .card:hover .quality-overlay-container,
+                    .card:hover .language-overlay-container,
+                    .card:hover .rating-overlay-container {
+                        opacity: 0.15;
+                    }
+                    .card:hover .genre-overlay-container .genre-tag .material-symbols-outlined {
+                        opacity: 0.15;
+                    }
+                    .card:hover .genre-overlay-container .genre-tag {
+                        background-color: rgba(10, 10, 10, 0.1);
+                        border-color: transparent;
+                        box-shadow: none;
+                    }
+                `);
+            }
         }
 
         // Initial scan for cards already on the page
