@@ -72,6 +72,7 @@
         let processedCastMembers = new WeakSet();
         let processedPersonIds = new Set();
         let lastProcessedItemId = null;
+        let peopleTagsComplete = false; // Set true after all cast members tagged for current item
         let isProcessing = false;
 
         // Inject styles for deceased indicators, overlay positioning, and material-symbols-rounded font
@@ -506,17 +507,20 @@
                         lastProcessedItemId = itemId;
                         processedCastMembers = new WeakSet();
                         processedPersonIds = new Set();
+                        peopleTagsComplete = false;
                         console.debug(`${logPrefix} New item detected: ${itemId}`);
                     }
 
-                    // Skip if already processing
-                    if (isProcessing) {
+                    // Skip if already fully processed for this item
+                    if (peopleTagsComplete || isProcessing) {
                         return;
                     }
 
-                    // Check if visible castCollapsible already has tags
-                    if (castSection?.querySelector('.je-people-age-container, .je-people-place-banner') &&
-                        guestCastSection?.querySelector('.je-people-age-container, .je-people-place-banner')) {
+                    // Check if all visible sections already have tags
+                    const castDone = !castSection || castSection.querySelector('.je-people-age-container, .je-people-place-banner');
+                    const guestDone = !guestCastSection || guestCastSection.querySelector('.je-people-age-container, .je-people-place-banner');
+                    if (castDone && guestDone) {
+                        peopleTagsComplete = true;
                         return;
                     }
 
@@ -534,6 +538,7 @@
                 'people-tags',
                 (mutations) => {
                     if (!JE.currentSettings?.peopleTagsEnabled) return;
+                    if (peopleTagsComplete) return;
 
                     // Quick check: only process if we're on a detail page
                     if (!document.querySelector('#itemDetailPage:not(.hide)')) return;
