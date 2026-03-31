@@ -313,11 +313,12 @@
         if (JE.tagPipeline) {
             JE.tagPipeline.registerRenderer('rating', {
                 render: function(el, item, extras) {
-                    if (shouldIgnoreElement(el)) return;
+                    var checkEl = extras?.cardImageContainer || el;
+                    if (shouldIgnoreElement(checkEl)) return;
                     if (isCardAlreadyTagged(el)) return;
-                    if (el.closest('.je-hidden')) return;
+                    if (checkEl.closest('.je-hidden')) return;
 
-                    const itemId = item.Id;
+                    const itemId = (item.Id || '').toString().replace(/-/g, '').toLowerCase();
                     // Check hot cache
                     const cached = getCachedEntry(itemId);
                     if (cached && cached.tmdb !== undefined) {

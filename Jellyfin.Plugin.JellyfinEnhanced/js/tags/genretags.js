@@ -349,8 +349,8 @@
 
                     var sliced = genres.slice(0, 3);
 
-                    // Update localStorage genre cache
-                    var itemId = item.Id;
+                    // Normalize ID (batch endpoint returns hyphenated GUID, cards use 32-char hex)
+                    var itemId = (item.Id || '').toString().replace(/-/g, '').toLowerCase();
                     if (itemId) {
                         genreCache[itemId] = { genres: sliced, timestamp: Date.now() };
                         if (JE._cacheManager) JE._cacheManager.markDirty();

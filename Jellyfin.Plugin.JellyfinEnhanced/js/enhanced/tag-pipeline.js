@@ -206,13 +206,15 @@
                 }
 
                 processedCards.add(el);
+                // el = cardImageContainer (for shouldIgnoreElement checks)
+                // renderTarget = cardScalable (for DOM insertion, always visible)
                 const renderTarget = el.closest('.cardScalable') || el;
 
                 let allCacheHits = true;
                 for (const [, renderer] of renderers) {
                     if (!renderer.isEnabled()) continue;
                     if (renderer.renderFromCache) {
-                        if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+                        if (!renderer.renderFromCache(el, itemId)) allCacheHits = false;
                     } else {
                         allCacheHits = false;
                     }
@@ -377,8 +379,10 @@
 
                 // Render to ALL cards with this ID (same item can appear in multiple rows)
                 for (const entry of batchEntries) {
-                    const { renderTarget } = entry;
-                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
+                    const { el, renderTarget } = entry;
+                    // el = original cardImageContainer (for shouldIgnoreElement checks)
+                    // renderTarget = cardScalable (for DOM insertion, always visible)
+                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget, cardImageContainer: el };
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try {

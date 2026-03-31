@@ -870,12 +870,12 @@
         if (JE.tagPipeline) {
             JE.tagPipeline.registerRenderer('quality', {
                 render: function(el, item, extras) {
-                    if (shouldIgnoreElement(el)) return;
+                    var checkEl = extras?.cardImageContainer || el;
+                    if (shouldIgnoreElement(checkEl)) return;
                     if (isCardAlreadyTagged(el)) return;
-                    // Skip cards hidden by hidden-content module
-                    if (el.closest('.je-hidden')) return;
+                    if (checkEl.closest('.je-hidden')) return;
 
-                    const itemId = item.Id;
+                    const itemId = (item.Id || '').toString().replace(/-/g, '').toLowerCase();
                     // Check hot cache first
                     const hot = Hot.quality.get(itemId);
                     if (hot && (Date.now() - hot.timestamp) < config.CACHE_TTL) {
