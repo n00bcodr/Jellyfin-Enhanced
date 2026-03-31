@@ -1773,14 +1773,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* ignore */ }
 
-            // Do not expose TMDB API key to clients; expose a boolean instead
-            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
-
             return new JsonResult(new
             {
-                // For Jellyfin Elsewhere & Reviews (only whether configured)
-                TmdbEnabled = tmdbEnabled,
-
                 // For Arr Links
                 config.SonarrUrl,
                 config.RadarrUrl,
@@ -1801,9 +1795,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            // Expose whether TMDB is configured as a boolean so all users
+            // (including non-admin) can use TMDB-dependent features like
+            // Reviews and Elsewhere without leaking the actual API key.
+            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
+
             return new JsonResult(new
             {
                 // Jellyfin Enhanced Settings
+                TmdbEnabled = tmdbEnabled,
                 config.ToastDuration,
                 config.HelpPanelAutocloseDelay,
                 config.EnableCustomSplashScreen,
