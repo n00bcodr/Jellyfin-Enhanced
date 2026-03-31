@@ -904,7 +904,7 @@
                     if (shouldIgnoreElement(el)) return true;
                     if (el.closest('.je-hidden')) return true;
                     const hot = Hot.quality.get(itemId);
-                    const cached = hot || (qualityOverlayCache[itemId] && qualityOverlayCache[itemId]);
+                    const cached = hot || qualityOverlayCache[itemId];
                     if (cached && cached.qualities && cached.qualities.length > 0) {
                         insertOverlay(el, cached.qualities);
                         return true;
@@ -935,7 +935,9 @@
         document.querySelectorAll('[data-je-quality-tagged]').forEach(el => { delete el.dataset.jeQualityTagged; });
 
         // Re-inject CSS in case position settings changed
-        addEnhancedStyles();
+        // Use the renderer's injectCss reference (captures the initialize closure)
+        const renderer = JE.tagPipeline?.getRenderer?.('quality');
+        if (renderer?.injectCss) renderer.injectCss();
 
         if (!JE.currentSettings.qualityTagsEnabled) {
             console.log(`${logPrefix} Feature is disabled after reinit.`);

@@ -11,6 +11,7 @@
         const CACHE_KEY = 'JellyfinEnhanced-languageTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-languageTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
+        const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
 
         // CSS selectors for elements that should NOT have language tags applied.
         // This is used to ignore certain views like the cast & crew list.
@@ -103,7 +104,7 @@
                     var langCode = stream.Language;
                     if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                         try {
-                            var langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
+                            var langName = langDisplayNames.of(langCode);
                             languages.add(JSON.stringify({ name: langName, code: langCode }));
                         } catch (e) {
                             languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
@@ -251,7 +252,8 @@
 
         function injectCss() {
             const styleId = 'language-tags-styles';
-            if (document.getElementById(styleId)) return;
+            const existing = document.getElementById(styleId);
+            if (existing) existing.remove();
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
@@ -376,7 +378,9 @@
         document.querySelectorAll('[data-je-language-tagged]').forEach(el => { delete el.dataset.jeLanguageTagged; });
 
         // Re-inject CSS in case position settings changed
-        injectCss();
+        // Use the renderer's injectCss reference (captures the initialize closure)
+        const renderer = JE.tagPipeline?.getRenderer?.('language');
+        if (renderer?.injectCss) renderer.injectCss();
 
         if (!JE.currentSettings.languageTagsEnabled) {
             console.log(`${logPrefix} Feature is disabled after reinit.`);

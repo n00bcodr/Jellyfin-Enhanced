@@ -908,7 +908,7 @@
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="tagsHideOnHoverToggle" ${JE.currentSettings.tagsHideOnHover ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">Hide Tags on Hover</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">Fade tag overlays when hovering over cards so buttons are easier to see</div></div>
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_hide_tags_on_hover')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_hide_tags_on_hover_desc')}</div></div>
                                 </label>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">

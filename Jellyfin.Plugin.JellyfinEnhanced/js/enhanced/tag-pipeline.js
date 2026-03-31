@@ -270,9 +270,10 @@
             const match = el.style.backgroundImage.match(/Items\/([a-f0-9]{32})\//i);
             if (match) return match[1];
         }
-        // From parent data-id or data-itemid attribute
+        // From parent data-id or data-itemid attribute (normalize to 32-char lowercase hex)
         const parent = el.closest('[data-id]') || el.closest('[data-itemid]');
-        return parent?.getAttribute('data-id') || parent?.getAttribute('data-itemid') || null;
+        const attrId = parent?.getAttribute('data-id') || parent?.getAttribute('data-itemid');
+        return attrId ? attrId.replace(/-/g, '').toLowerCase() : null;
     }
 
     /**
@@ -297,16 +298,18 @@
         if (isProcessing || requestQueue.length === 0) return;
         isProcessing = true;
 
-        const myGeneration = batchGeneration;
+        try {
+            const myGeneration = batchGeneration;
 
-        // Chunk into batches of SERVER_BATCH_LIMIT to avoid 400 errors
-        while (requestQueue.length > 0) {
-            if (myGeneration !== batchGeneration) break; // navigation happened
-            const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT);
-            await processBatch(batch, myGeneration);
+            // Chunk into batches of SERVER_BATCH_LIMIT to avoid 400 errors
+            while (requestQueue.length > 0) {
+                if (myGeneration !== batchGeneration) break; // navigation happened
+                const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT);
+                await processBatch(batch, myGeneration);
+            }
+        } finally {
+            isProcessing = false;
         }
-
-        isProcessing = false;
     }
 
     /**
@@ -547,6 +550,8 @@
         initialize,
         getFirstEpisode,
         getParentSeries,
+        /** @param {string} name - Renderer name (e.g. 'quality'). */
+        getRenderer(name) { return renderers.get(name); },
         // For reinitialize support
         clearProcessed() {
             processedCards = new WeakSet(); // Create fresh WeakSet so all cards get re-scanned
