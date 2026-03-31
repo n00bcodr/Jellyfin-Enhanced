@@ -1759,7 +1759,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new JsonResult(new { });
             }
 
-            // Determine the first configured Seerr URL (if any) for client-side deep links
+            return new JsonResult(new
+            {
+                // For Arr Links (admin-only feature)
+                config.SonarrUrl,
+                config.RadarrUrl,
+                config.BazarrUrl,
+                config.SonarrUrlMappings,
+                config.RadarrUrlMappings,
+                config.BazarrUrlMappings,
+            });
+        }
+        [HttpGet("public-config")]
+        public ActionResult GetPublicConfig()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            // Expose whether TMDB is configured as a boolean so all users
+            // (including non-admin) can use TMDB-dependent features like
+            // Reviews and Elsewhere without leaking the actual API key.
+            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
+
+            // Resolve the first configured Seerr URL for client-side deep links.
+            // Only the base URL is exposed (not the API key), so non-admin users
+            // can generate "Open in Seerr" links from search results.
             string jellyseerrBaseUrl = string.Empty;
             try
             {
@@ -1773,37 +1800,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* ignore */ }
 
-            // Do not expose TMDB API key to clients; expose a boolean instead
-            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
-
-            return new JsonResult(new
-            {
-                // For Jellyfin Elsewhere & Reviews (only whether configured)
-                TmdbEnabled = tmdbEnabled,
-
-                // For Arr Links
-                config.SonarrUrl,
-                config.RadarrUrl,
-                config.BazarrUrl,
-                config.SonarrUrlMappings,
-                config.RadarrUrlMappings,
-                config.BazarrUrlMappings,
-                JellyseerrBaseUrl = jellyseerrBaseUrl,
-                config.JellyseerrUrlMappings
-            });
-        }
-        [HttpGet("public-config")]
-        public ActionResult GetPublicConfig()
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
-            {
-                return StatusCode(503);
-            }
-
             return new JsonResult(new
             {
                 // Jellyfin Enhanced Settings
+                TmdbEnabled = tmdbEnabled,
                 config.ToastDuration,
                 config.HelpPanelAutocloseDelay,
                 config.EnableCustomSplashScreen,
@@ -1882,6 +1882,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
                 config.JellyseerrDisableCache,
+                JellyseerrBaseUrl = jellyseerrBaseUrl,
+                config.JellyseerrUrlMappings,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
