@@ -1759,31 +1759,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new JsonResult(new { });
             }
 
-            // Determine the first configured Seerr URL (if any) for client-side deep links
-            string jellyseerrBaseUrl = string.Empty;
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(config.JellyseerrUrls))
-                {
-                    jellyseerrBaseUrl = config.JellyseerrUrls
-                        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(u => u.Trim())
-                        .FirstOrDefault() ?? string.Empty;
-                }
-            }
-            catch { /* ignore */ }
-
             return new JsonResult(new
             {
-                // For Arr Links
+                // For Arr Links (admin-only feature)
                 config.SonarrUrl,
                 config.RadarrUrl,
                 config.BazarrUrl,
                 config.SonarrUrlMappings,
                 config.RadarrUrlMappings,
                 config.BazarrUrlMappings,
-                JellyseerrBaseUrl = jellyseerrBaseUrl,
-                config.JellyseerrUrlMappings
             });
         }
         [HttpGet("public-config")]
@@ -1799,6 +1783,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // (including non-admin) can use TMDB-dependent features like
             // Reviews and Elsewhere without leaking the actual API key.
             var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
+
+            // Resolve the first configured Seerr URL for client-side deep links.
+            // Only the base URL is exposed (not the API key), so non-admin users
+            // can generate "Open in Seerr" links from search results.
+            string jellyseerrBaseUrl = string.Empty;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(config.JellyseerrUrls))
+                {
+                    jellyseerrBaseUrl = config.JellyseerrUrls
+                        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(u => u.Trim())
+                        .FirstOrDefault() ?? string.Empty;
+                }
+            }
+            catch { /* ignore */ }
 
             return new JsonResult(new
             {
@@ -1882,6 +1882,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
                 config.JellyseerrDisableCache,
+                JellyseerrBaseUrl = jellyseerrBaseUrl,
+                config.JellyseerrUrlMappings,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
