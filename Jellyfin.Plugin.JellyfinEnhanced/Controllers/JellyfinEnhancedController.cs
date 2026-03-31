@@ -10,6 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
@@ -49,6 +50,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+
+        // Server-side cache for proxied avatar images to avoid re-fetching from
+        // upstream Seerr on every request. Entries expire after 1 hour.
+        private static readonly ConcurrentDictionary<string, (byte[] Content, string ContentType, string ETag, DateTime CachedAt)> _avatarCache = new();
+        private static readonly TimeSpan _avatarCacheDuration = TimeSpan.FromHours(1);
 
         // Cache for Seerr user ID lookups (JellyfinUserId -> SeerrUserId)
         private static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
@@ -1753,7 +1759,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new JsonResult(new { });
             }
 
-            // Determine the first configured Seerr URL (if any) for client-side deep links
+            return new JsonResult(new
+            {
+                // For Arr Links (admin-only feature)
+                config.SonarrUrl,
+                config.RadarrUrl,
+                config.BazarrUrl,
+                config.SonarrUrlMappings,
+                config.RadarrUrlMappings,
+                config.BazarrUrlMappings,
+            });
+        }
+        [HttpGet("public-config")]
+        public ActionResult GetPublicConfig()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            // Expose whether TMDB is configured as a boolean so all users
+            // (including non-admin) can use TMDB-dependent features like
+            // Reviews and Elsewhere without leaking the actual API key.
+            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
+
+            // Resolve the first configured Seerr URL for client-side deep links.
+            // Only the base URL is exposed (not the API key), so non-admin users
+            // can generate "Open in Seerr" links from search results.
             string jellyseerrBaseUrl = string.Empty;
             try
             {
@@ -1767,37 +1800,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* ignore */ }
 
-            // Do not expose TMDB API key to clients; expose a boolean instead
-            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
-
-            return new JsonResult(new
-            {
-                // For Jellyfin Elsewhere & Reviews (only whether configured)
-                TmdbEnabled = tmdbEnabled,
-
-                // For Arr Links
-                config.SonarrUrl,
-                config.RadarrUrl,
-                config.BazarrUrl,
-                config.SonarrUrlMappings,
-                config.RadarrUrlMappings,
-                config.BazarrUrlMappings,
-                JellyseerrBaseUrl = jellyseerrBaseUrl,
-                config.JellyseerrUrlMappings
-            });
-        }
-        [HttpGet("public-config")]
-        public ActionResult GetPublicConfig()
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
-            {
-                return StatusCode(503);
-            }
-
             return new JsonResult(new
             {
                 // Jellyfin Enhanced Settings
+                TmdbEnabled = tmdbEnabled,
                 config.ToastDuration,
                 config.HelpPanelAutocloseDelay,
                 config.EnableCustomSplashScreen,
@@ -1877,6 +1883,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
                 config.JellyseerrDisableCache,
+                JellyseerrBaseUrl = jellyseerrBaseUrl,
+                config.JellyseerrUrlMappings,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
@@ -4340,8 +4348,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
+                // Check server-side cache first to avoid hitting upstream Seerr
+                // on every request. This is critical for large avatars (e.g., animated
+                // GIFs) that would otherwise be re-downloaded on every conditional request.
+                if (_avatarCache.TryGetValue(avatarPath, out var cached)
+                    && DateTime.UtcNow - cached.CachedAt < _avatarCacheDuration)
+                {
+                    // Serve 304 if client already has this version
+                    if (Request.Headers.TryGetValue("If-None-Match", out var cachedIfNoneMatch)
+                        && cachedIfNoneMatch.ToString().Contains(cached.ETag))
+                    {
+                        Response.Headers["Cache-Control"] = "public, max-age=3600";
+                        Response.Headers["ETag"] = cached.ETag;
+                        return StatusCode(304);
+                    }
+
+                    Response.Headers["Cache-Control"] = "public, max-age=3600";
+                    Response.Headers["ETag"] = cached.ETag;
+                    return File(cached.Content, cached.ContentType);
+                }
+
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10); // Add timeout for avatar fetches
+                client.Timeout = TimeSpan.FromSeconds(10);
 
                 var response = await client.GetAsync($"{jellyseerrUrl}{avatarPath}");
                 if (!response.IsSuccessStatusCode)
@@ -4359,8 +4387,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var content = await response.Content.ReadAsByteArrayAsync();
 
-                // Add cache headers to reduce repeated fetches
+                // Compute ETag from content hash for conditional request support.
+                var hash = SHA256.HashData(content);
+                var etag = $"\"{Convert.ToHexString(hash)}\"";
+
+                // Store in server-side cache and evict expired entries periodically
+                _avatarCache[avatarPath] = (content, contentType, etag, DateTime.UtcNow);
+                if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
+                {
+                    foreach (var key in _avatarCache
+                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _avatarCacheDuration)
+                        .Select(kv => kv.Key)
+                        .ToList())
+                    {
+                        _avatarCache.TryRemove(key, out _);
+                    }
+                }
+
+                // Serve 304 if client already has this version
+                if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
+                    && ifNoneMatch.ToString().Contains(etag))
+                {
+                    Response.Headers["Cache-Control"] = "public, max-age=3600";
+                    Response.Headers["ETag"] = etag;
+                    return StatusCode(304);
+                }
+
                 Response.Headers["Cache-Control"] = "public, max-age=3600";
+                Response.Headers["ETag"] = etag;
 
                 return File(content, contentType);
             }
