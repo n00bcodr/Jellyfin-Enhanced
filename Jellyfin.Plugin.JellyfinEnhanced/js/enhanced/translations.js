@@ -17,6 +17,10 @@
         const normalizedLang = normalizeLangCode(primaryLang);
         const langCodes = [];
 
+        if (normalizedLang) {
+            langCodes.push(normalizedLang);
+        }
+
         if (normalizedLang && normalizedLang.includes('-')) {
             const baseLang = normalizedLang.split('-')[0];
             if (!langCodes.includes(baseLang)) {
@@ -189,6 +193,15 @@
                 const storedLang = localStorage.getItem(storageKey);
                 if (storedLang) {
                     lang = normalizeLangCode(storedLang);
+                } else {
+                    // Fall back to the HTML lang attribute set by Jellyfin's web client.
+                    // This covers the Android app and other clients where the localStorage
+                    // key may not exist but Jellyfin has already resolved the user's
+                    // preferred language from server-side settings.
+                    const docLang = document.documentElement.lang;
+                    if (docLang) {
+                        lang = normalizeLangCode(docLang);
+                    }
                 }
             }
 
