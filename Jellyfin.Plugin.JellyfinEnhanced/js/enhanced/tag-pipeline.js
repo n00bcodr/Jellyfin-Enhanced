@@ -26,6 +26,32 @@
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
     let requestQueue = [];               // { el, itemId, itemType }
 
+    // ── Pipeline-level exclusions ─────────────────────────────────────
+    // Elements matching these selectors are skipped before any renderer runs.
+    // This catches contexts where tags should never appear regardless of which
+    // renderers are enabled, and avoids the cardScalable vs cardImageContainer
+    // mismatch that can cause renderer-level shouldIgnoreElement to miss.
+    const PIPELINE_SKIP_SELECTORS = [
+        '.chapterCardImageContainer',           // Scenes / chapters
+        '#itemDetailPage .infoWrapper .cardImageContainer',  // Detail page poster
+        '#itemDetailPage #castCollapsible .cardImageContainer', // Cast & Crew
+        '#indexPage .verticalSection.MyMedia .cardImageContainer', // My Media row
+        '.formDialog .cardImageContainer',       // Modal dialogs
+        '#pluginsPage .cardImageContainer',      // Admin pages
+        '#pluginCatalogPage .cardImageContainer',
+        '#devicesPage .cardImageContainer',
+        '#mediaLibraryPage .cardImageContainer',
+    ];
+
+    /**
+     * Check if an element should be skipped by the pipeline entirely.
+     * @param {HTMLElement} el - The cardImageContainer element.
+     * @returns {boolean}
+     */
+    function shouldSkipElement(el) {
+        return PIPELINE_SKIP_SELECTORS.some(sel => el.matches(sel) || el.closest(sel));
+    }
+
     // ── Renderer Registration ──────────────────────────────────────────
 
     /**
@@ -195,6 +221,12 @@
                 if (card && card.classList.contains('je-hidden')) continue;
                 const listItem = el.closest('.listItem');
                 if (listItem && listItem.classList.contains('je-hidden')) continue;
+
+                // Skip contexts that should never have tags
+                if (shouldSkipElement(el)) {
+                    processedCards.add(el);
+                    continue;
+                }
 
                 const itemId = getItemId(el);
                 if (!itemId) continue;
