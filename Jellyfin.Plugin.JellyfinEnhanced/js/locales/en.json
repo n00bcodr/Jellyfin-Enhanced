@@ -35,6 +35,8 @@
     "feature_genre_tags": "{{icon:mask}} Genre Tags",
     "feature_language_tags": "{{icon:flag}} Language Tags",
     "feature_rating_tags": "{{icon:star}} Rating Tags",
+    "feature_people_tags": "People Tags",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Hide Tags on Hover",
     "feature_custom_pause_screen": "{{icon:pip}} Custom Pause Screen",
     "feature_disable_custom_subtitle_styles": "{{icon:noEntry}} Disable Custom Subtitle Styles",
     "feature_long_press_2x_speed": "{{icon:fastForward}} Long Press for 2x Speed",

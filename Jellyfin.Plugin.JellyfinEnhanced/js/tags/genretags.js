@@ -165,6 +165,7 @@
         const genreContainer = document.createElement('div');
         genreContainer.className = containerClass;
 
+        const hideOnHover = !!JE.currentSettings?.tagsHideOnHover;
         genres.forEach(function(genreName) {
             const genreKey = genreName.toLowerCase();
             const iconName = genreIconMap[genreKey] || genreIconMap['default'];
@@ -174,11 +175,14 @@
             const iconSpan = document.createElement('span');
             iconSpan.className = 'material-symbols-outlined';
             iconSpan.textContent = iconName;
-            const textSpan = document.createElement('span');
-            textSpan.className = 'genre-text';
-            textSpan.textContent = genreName;
             tag.appendChild(iconSpan);
-            tag.appendChild(textSpan);
+            // Skip text labels when tags are hidden on hover — they'd never be visible
+            if (!hideOnHover) {
+                const textSpan = document.createElement('span');
+                textSpan.className = 'genre-text';
+                textSpan.textContent = genreName;
+                tag.appendChild(textSpan);
+            }
             genreContainer.appendChild(tag);
         });
 
