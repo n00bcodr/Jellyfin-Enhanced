@@ -206,7 +206,25 @@
                 }
 
                 processedCards.add(el);
-                const renderTarget = el.closest('.cardScalable') || el;
+                // Insert tags BEFORE cardOverlayContainer so Jellyfin's hover overlay
+                // naturally covers them. Uses a lightweight wrapper div positioned
+                // absolutely to match the card bounds.
+                const scalable = el.closest('.cardScalable');
+                let renderTarget = scalable || el;
+                if (scalable) {
+                    let tagLayer = scalable.querySelector('.je-tag-layer');
+                    if (!tagLayer) {
+                        tagLayer = document.createElement('div');
+                        tagLayer.className = 'je-tag-layer';
+                        const overlay = scalable.querySelector('.cardOverlayContainer');
+                        if (overlay) {
+                            scalable.insertBefore(tagLayer, overlay);
+                        } else {
+                            scalable.appendChild(tagLayer);
+                        }
+                    }
+                    renderTarget = tagLayer;
+                }
 
                 let allCacheHits = true;
                 for (const [, renderer] of renderers) {
@@ -482,34 +500,30 @@
         // card layout, so hover transforms don't trigger re-layout/re-paint of overlays.
         // will-change:transform promotes each container to its own compositor layer.
         if (JE.helpers?.addCSS) {
-            // Base CSS: always applied for performance and z-index
+            // Base CSS: tag layer and overlay containment
             JE.helpers.addCSS('je-tag-pipeline-perf', `
+                .je-tag-layer {
+                    position: absolute;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    pointer-events: none;
+                    overflow: visible;
+                }
                 .genre-overlay-container,
                 .quality-overlay-container,
                 .language-overlay-container,
                 .rating-overlay-container {
                     contain: layout style;
-                    z-index: 0 !important;
                     pointer-events: none;
-                    transition: opacity 0.15s ease;
-                }
-                /* Default subtle fade on hover so Jellyfin's buttons are easier to see */
-                .card:hover .genre-overlay-container,
-                .card:hover .quality-overlay-container,
-                .card:hover .language-overlay-container,
-                .card:hover .rating-overlay-container {
-                    opacity: 0.6;
                 }
             `);
 
-            // Hover fade CSS: uses body class so it can be toggled live from settings.
-            // The class is added/removed by the settings toggle listener.
+            // "Hide Tags on Hover" setting: fully hides the tag layer on hover.
+            // Without this, Jellyfin's overlay already covers tags (they're behind it).
+            // This setting makes them completely invisible for users who want zero clutter.
             JE.helpers.addCSS('je-tag-hover-fade', `
-                body.je-tags-hide-on-hover .card:hover .genre-overlay-container,
-                body.je-tags-hide-on-hover .card:hover .quality-overlay-container,
-                body.je-tags-hide-on-hover .card:hover .language-overlay-container,
-                body.je-tags-hide-on-hover .card:hover .rating-overlay-container {
+                body.je-tags-hide-on-hover .card:hover .je-tag-layer {
                     opacity: 0 !important;
+                    transition: opacity 0.15s ease;
                 }
             `);
             // Apply the class based on current setting
