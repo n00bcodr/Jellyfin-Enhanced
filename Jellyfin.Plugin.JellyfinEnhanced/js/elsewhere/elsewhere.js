@@ -1120,7 +1120,7 @@
 
         // Replace polling with MutationObserver for better performance
         let processingElsewhere = false;
-        const elsewhereObserver = JE.helpers.createObserver('elsewhere', () => {
+        JE.helpers.createObserver('elsewhere', () => {
             if (!processingElsewhere) {
                 processingElsewhere = true;
                 if (typeof requestIdleCallback !== 'undefined') {

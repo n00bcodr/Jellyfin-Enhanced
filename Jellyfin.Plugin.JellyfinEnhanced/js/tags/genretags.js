@@ -56,7 +56,7 @@
         'game show': 'quiz', 'reality tv': 'live_tv',
 
         // Danish (da)
-        'eventyr': 'explore', 'komedie': 'mood', 'krimi': 'local_police', 'dokumentar': 'article',
+        'eventyr': 'explore', 'komedie': 'mood', 'dokumentar': 'article',
         'familie': 'family_restroom', 'historie': 'history_edu', 'gyser': 'skull', 'musik': 'music_note',
         'mysterie': 'psychology_alt', 'romantik': 'favorite', 'krig': 'military_tech', 'tv-film': 'tv',
         'spilshow': 'quiz',

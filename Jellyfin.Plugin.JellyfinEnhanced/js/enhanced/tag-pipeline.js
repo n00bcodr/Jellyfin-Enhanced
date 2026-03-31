@@ -440,7 +440,7 @@
         } catch (err) {
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
-            for (const { el, renderTarget, itemId } of batch) {
+            for (const { renderTarget, itemId } of batch) {
                 try {
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
@@ -451,7 +451,7 @@
                         ? await getFirstEpisode(userId, item.Id) : null;
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
 
-                    for (const [name, renderer] of renderers) {
+                    for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try { renderer.render(renderTarget, item, extras); } catch {}
                     }

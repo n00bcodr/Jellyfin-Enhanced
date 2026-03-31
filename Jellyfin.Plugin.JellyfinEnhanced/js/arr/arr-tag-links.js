@@ -189,7 +189,7 @@
             }
         }
 
-        const observer = JE.helpers.createObserver('arr-tag-links', (mutations) => {
+        JE.helpers.createObserver('arr-tag-links', (mutations) => {
             if (!JE?.pluginConfig?.ArrTagsShowAsLinks) {
                 return;
             }
