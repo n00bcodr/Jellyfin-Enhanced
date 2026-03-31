@@ -315,7 +315,7 @@
 
                     const itemId = item.Id;
                     // Check hot cache first
-                    const hot = Hot.language.get(itemId);
+                    const hot = Hot?.language?.get(itemId);
                     if (hot && (Date.now() - hot.timestamp) < Hot.ttl) {
                         if (hot.value && hot.value.length) insertLanguageTags(el, hot.value);
                         return;
@@ -334,7 +334,7 @@
 
                     if (languages.length > 0) {
                         langCache[itemId] = languages;
-                        Hot.language.set(itemId, { value: languages, timestamp: Date.now() });
+                        Hot?.language?.set(itemId, { value: languages, timestamp: Date.now() });
                         if (JE._cacheManager) JE._cacheManager.markDirty();
                         insertLanguageTags(el, languages);
                     }
@@ -343,7 +343,7 @@
                     if (isCardAlreadyTagged(el)) return true;
                     if (shouldIgnoreElement(el)) return true;
                     if (el.closest('.je-hidden')) return true;
-                    const hot = Hot.language.get(itemId);
+                    const hot = Hot?.language?.get(itemId);
                     const cached = hot || langCache[itemId];
                     if (cached) {
                         const languages = Array.isArray(cached) ? cached : (cached.value || cached.languages);

@@ -642,7 +642,7 @@
                 if (qualities.length > 0) {
                     qualityOverlayCache[itemId] = { qualities, timestamp: Date.now() };
                     // Seed hot cache
-                    Hot.quality.set(itemId, { qualities, timestamp: Date.now() });
+                    Hot?.quality?.set(itemId, { qualities, timestamp: Date.now() });
                     if (JE._cacheManager) JE._cacheManager.markDirty();
                     return qualities;
                 }
@@ -877,7 +877,7 @@
 
                     const itemId = item.Id;
                     // Check hot cache first
-                    const hot = Hot.quality.get(itemId);
+                    const hot = Hot?.quality?.get(itemId);
                     if (hot && (Date.now() - hot.timestamp) < config.CACHE_TTL) {
                         insertOverlay(el, hot.qualities);
                         return;
@@ -894,7 +894,7 @@
 
                     if (qualities.length > 0) {
                         qualityOverlayCache[itemId] = { qualities, timestamp: Date.now() };
-                        Hot.quality.set(itemId, { qualities, timestamp: Date.now() });
+                        Hot?.quality?.set(itemId, { qualities, timestamp: Date.now() });
                         if (JE._cacheManager) JE._cacheManager.markDirty();
                         insertOverlay(el, qualities);
                     }
@@ -903,7 +903,7 @@
                     if (isCardAlreadyTagged(el)) return true;
                     if (shouldIgnoreElement(el)) return true;
                     if (el.closest('.je-hidden')) return true;
-                    const hot = Hot.quality.get(itemId);
+                    const hot = Hot?.quality?.get(itemId);
                     const cached = hot || qualityOverlayCache[itemId];
                     if (cached && cached.qualities && cached.qualities.length > 0) {
                         insertOverlay(el, cached.qualities);
