@@ -33,8 +33,6 @@
     // mismatch that can cause renderer-level shouldIgnoreElement to miss.
     const PIPELINE_SKIP_SELECTORS = [
         '.chapterCardImageContainer',           // Scenes / chapters
-        '#itemDetailPage .infoWrapper .cardImageContainer',  // Detail page poster
-        '#itemDetailPage #castCollapsible .cardImageContainer', // Cast & Crew
         '#indexPage .verticalSection.MyMedia .cardImageContainer', // My Media row
         '.formDialog .cardImageContainer',       // Modal dialogs
         '#pluginsPage .cardImageContainer',      // Admin pages
