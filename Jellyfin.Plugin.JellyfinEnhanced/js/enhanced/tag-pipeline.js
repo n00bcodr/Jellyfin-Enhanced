@@ -124,6 +124,10 @@
 
     // ── Card Scanning ──────────────────────────────────────────────────
 
+    /**
+     * Check whether at least one registered renderer is currently enabled.
+     * @returns {boolean} True if any renderer reports enabled.
+     */
     function hasAnyEnabledRenderer() {
         for (const [, r] of renderers) {
             if (r.isEnabled()) return true;
@@ -237,6 +241,11 @@
         processChunk();
     }
 
+    /**
+     * Extract the Jellyfin item ID from a card element.
+     * @param {HTMLElement} el - Card image container element.
+     * @returns {string|null} The item ID or null if not found.
+     */
     function getItemId(el) {
         // From background image URL
         if (el.style?.backgroundImage) {
@@ -248,6 +257,11 @@
         return parent?.getAttribute('data-id') || parent?.getAttribute('data-itemid') || null;
     }
 
+    /**
+     * Extract the item type from a card element's data-type attribute.
+     * @param {HTMLElement} el - Card image container element.
+     * @returns {string|null} The item type or null if not found.
+     */
     function getItemType(el) {
         const parent = el.closest('[data-type]');
         return parent?.getAttribute('data-type') || null;
@@ -257,6 +271,10 @@
 
     const SERVER_BATCH_LIMIT = 200;
 
+    /**
+     * Drain the request queue in SERVER_BATCH_LIMIT-sized chunks.
+     * @returns {Promise<void>}
+     */
     async function processQueue() {
         if (isProcessing || requestQueue.length === 0) return;
         isProcessing = true;
@@ -273,6 +291,12 @@
         isProcessing = false;
     }
 
+    /**
+     * Fetch item data for a batch of cards and fan out to all enabled renderers.
+     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string}>} batch - Queued card entries.
+     * @param {number} generation - Batch generation counter to detect stale navigations.
+     * @returns {Promise<void>}
+     */
     async function processBatch(batch, generation) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
@@ -417,6 +441,10 @@
 
     // ── Lifecycle ──────────────────────────────────────────────────────
 
+    /**
+     * Initialize the tag pipeline: register mutation observer, navigation handler, and inject base CSS.
+     * @returns {void}
+     */
     function initialize() {
         if (!JE.helpers?.onBodyMutation) {
             console.warn(`${logPrefix} helpers.onBodyMutation not available, retrying...`);

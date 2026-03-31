@@ -97,13 +97,8 @@
 
         // --- CONFIGURATION ---
         const config = {
-            MAX_CONCURRENT_REQUESTS: 4,      // Max number of simultaneous API requests.
-            QUEUE_PROCESS_INTERVAL: 400,   // Delay between processing batches from the queue.
-            MUTATION_DEBOUNCE: 600,        // Delay to wait for DOM changes to settle before processing.
-            RENDER_DEBOUNCE: 400,          // Delay for re-rendering tags on navigation.
             CACHE_TTL: (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000, // Cache TTL from server config (default 30 days)
-            REQUEST_TIMEOUT: 8000,           // Timeout for API requests.
-            MAX_RETRIES: 2                     // Number of times to retry a failed API request.
+            REQUEST_TIMEOUT: 8000           // Timeout for API requests (fallback path).
         };
 
         // --- STATE VARIABLES ---

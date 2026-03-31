@@ -182,7 +182,6 @@
             if (Hot.peopleTags.has(cacheKey)) {
                 const cached = Hot.peopleTags.get(cacheKey);
                 if (now - cached.timestamp < CACHE_TTL) {
-                    // console.debug(`${logPrefix} Using in-memory cache for person ${personId}`);
                     return cached.data;
                 }
             }
@@ -190,7 +189,6 @@
             // Check localStorage cache
             if (peopleCache[cacheKey] && peopleCacheTimestamp[cacheKey]) {
                 if (now - peopleCacheTimestamp[cacheKey] < CACHE_TTL) {
-                    // console.debug(`${logPrefix} Using localStorage cache for person ${personId}`);
                     const data = peopleCache[cacheKey];
                     Hot.peopleTags.set(cacheKey, { data, timestamp: now });
                     return data;

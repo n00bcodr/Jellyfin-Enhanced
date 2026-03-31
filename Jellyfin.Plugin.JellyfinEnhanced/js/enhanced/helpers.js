@@ -5,8 +5,6 @@
 (function(JE) {
     'use strict';
 
-    console.log('🪼 Jellyfin Enhanced: Initializing helpers module');
-
     // Store the original onViewShow function
     let originalOnViewShow = null;
 
@@ -658,6 +656,5 @@
     };
 
     console.log('🪼 Jellyfin Enhanced: Helpers initialized successfully');
-    console.log('🪼 Jellyfin Enhanced: Available at JellyfinEnhanced.helpers');
 
 })(window.JellyfinEnhanced);

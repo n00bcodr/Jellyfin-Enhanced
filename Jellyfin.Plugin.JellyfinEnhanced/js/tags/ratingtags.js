@@ -30,6 +30,11 @@
 
     let ratingCache = {};
 
+    /**
+     * Normalize a raw critic rating to a 0-100 integer percentage.
+     * @param {*} raw - Raw critic rating value (may be on a 0-10 or 0-100 scale).
+     * @returns {number|null} Normalized percentage or null if invalid.
+     */
     function normalizeCriticPercent(raw) {
         if (raw === null || raw === undefined) return null;
         const num = Number(raw);
@@ -38,6 +43,11 @@
         return Math.max(0, Math.min(100, percent));
     }
 
+    /**
+     * Retrieve a cached rating entry from localStorage or hot cache.
+     * @param {string} itemId - Jellyfin item ID.
+     * @returns {{tmdb: string|null, critic: number|null}|null} Cached rating or null.
+     */
     function getCachedEntry(itemId) {
         const Hot = JE._hotCache;
         const entry = ratingCache[itemId] ?? (Hot?.rating ? Hot.rating.get(itemId) : undefined);
@@ -54,6 +64,12 @@
         return null;
     }
 
+    /**
+     * Store a rating entry in both localStorage cache and hot cache.
+     * @param {string} itemId - Jellyfin item ID.
+     * @param {{tmdb: string|null, critic: number|null}} rating - Rating data to cache.
+     * @returns {void}
+     */
     function setCachedEntry(itemId, rating) {
         ratingCache[itemId] = rating;
         const Hot = JE._hotCache;
@@ -61,11 +77,19 @@
         if (JE._cacheManager) JE._cacheManager.markDirty();
     }
 
+    /**
+     * Persist the rating cache to localStorage.
+     * @returns {void}
+     */
     function saveCache() {
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(ratingCache)); }
         catch (e) { console.warn(`${logPrefix} Failed to save cache`, e); }
     }
 
+    /**
+     * Remove legacy cache keys and honor server-triggered cache clears.
+     * @returns {void}
+     */
     function cleanupOldCaches() {
         // Clean up old cache keys
         const keysToRemove = [];
@@ -90,10 +114,20 @@
         }
     }
 
+    /**
+     * Check whether an element matches any selector that should be excluded from tagging.
+     * @param {HTMLElement} el - Element to test.
+     * @returns {boolean} True if the element should be skipped.
+     */
     function shouldIgnoreElement(el) {
         return IGNORE_SELECTORS.some(sel => el.matches(sel) || el.closest(sel));
     }
 
+    /**
+     * Check whether a card already has a rating overlay applied.
+     * @param {HTMLElement} el - Element inside the card.
+     * @returns {boolean} True if the card is already tagged.
+     */
     function isCardAlreadyTagged(el) {
         const card = el.closest('.card');
         if (!card) return false;
@@ -102,11 +136,22 @@
         return hasAttr && hasOverlay;
     }
 
+    /**
+     * Mark a card element as tagged to prevent duplicate rating overlays.
+     * @param {HTMLElement} el - Element inside the card.
+     * @returns {void}
+     */
     function markCardTagged(el) {
         const card = el.closest('.card');
         if (card) card.dataset[TAGGED_ATTR] = '1';
     }
 
+    /**
+     * Create and append TMDB and/or critic rating tag elements to a card.
+     * @param {HTMLElement} el - The card container to receive the rating overlay.
+     * @param {{tmdb: string|null, critic: number|null}} rating - Rating data to display.
+     * @returns {void}
+     */
     function applyRatingTag(el, rating) {
         if (!rating || (!rating.tmdb && rating.critic === null)) return;
 
@@ -154,6 +199,10 @@
         }
     }
 
+    /**
+     * Inject or replace the rating tags stylesheet based on current position settings.
+     * @returns {void}
+     */
     function injectCss() {
         const position = JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right';
         const isTop = position.includes('top');

@@ -84,6 +84,10 @@
         'вестерн': 'landscape', 'реалити-шоу': 'live_tv'
     };
 
+    /**
+     * Persist the genre cache to localStorage.
+     * @returns {void}
+     */
     function saveCache() {
         try {
             localStorage.setItem(CACHE_KEY, JSON.stringify(genreCache));
@@ -92,6 +96,10 @@
         }
     }
 
+    /**
+     * Remove legacy cache keys and honor server-triggered cache clears.
+     * @returns {void}
+     */
     function cleanupOldCaches() {
         // Remove old version-based cache keys and legacy cache keys
         for (let i = 0; i < localStorage.length; i++) {
@@ -116,6 +124,11 @@
         }
     }
 
+    /**
+     * Check whether a card already has a genre overlay applied.
+     * @param {HTMLElement} el - Element inside the card.
+     * @returns {boolean} True if the card is already tagged.
+     */
     function isCardAlreadyTagged(el) {
         const card = el.closest('.card');
         if (!card) return false;
@@ -124,11 +137,22 @@
         return hasAttr && hasOverlay;
     }
 
+    /**
+     * Mark a card element as tagged to prevent duplicate overlays.
+     * @param {HTMLElement} el - Element inside the card.
+     * @returns {void}
+     */
     function markCardTagged(el) {
         const card = el.closest('.card');
         if (card) card.dataset[TAGGED_ATTR] = '1';
     }
 
+    /**
+     * Create and insert genre icon tags into a card container.
+     * @param {HTMLElement} container - The card scalable or image container element.
+     * @param {string[]} genres - Array of genre names to display.
+     * @returns {void}
+     */
     function insertGenreTags(container, genres) {
         if (!container) return;
 
@@ -162,6 +186,10 @@
         markCardTagged(container);
     }
 
+    /**
+     * Inject or replace the genre tags stylesheet based on current position settings.
+     * @returns {void}
+     */
     function injectCss() {
         const styleId = 'genre-tags-styles';
         // Remove existing style to allow updates

@@ -185,14 +185,6 @@
             console.log(`🪼 Jellyfin Enhanced: Registered theme - ${themeConfig.name} (identifier: ${themeConfig.uniqueIdentifier})`);
         },
 
-        // /**
-        //  * Re-detect theme (useful for manual theme switches)
-        //  */
-        // redetectTheme() {
-        //     this.activeTheme = null;
-        //     return this.detectActiveTheme();
-        // },
-
         /**
          * Initialize theme detection (runs once on page load)
          */
