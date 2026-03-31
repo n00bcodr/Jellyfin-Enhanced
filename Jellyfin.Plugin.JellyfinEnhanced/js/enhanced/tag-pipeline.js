@@ -503,7 +503,7 @@
             // Base CSS: tag layer and overlay containment
             JE.helpers.addCSS('je-tag-pipeline-perf', `
                 .je-tag-layer {
-                    position: absolute;
+                    position: absolute !important;
                     top: 0; left: 0; right: 0; bottom: 0;
                     pointer-events: none;
                     overflow: visible;
