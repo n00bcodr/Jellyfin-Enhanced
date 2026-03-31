@@ -493,6 +493,13 @@
                     pointer-events: none;
                     transition: opacity 0.15s ease;
                 }
+                /* Default subtle fade on hover so Jellyfin's buttons are easier to see */
+                .card:hover .genre-overlay-container,
+                .card:hover .quality-overlay-container,
+                .card:hover .language-overlay-container,
+                .card:hover .rating-overlay-container {
+                    opacity: 0.6;
+                }
             `);
 
             // Hover fade CSS: uses body class so it can be toggled live from settings.
