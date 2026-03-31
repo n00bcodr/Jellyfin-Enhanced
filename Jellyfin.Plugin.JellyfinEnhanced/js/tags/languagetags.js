@@ -371,8 +371,12 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Language Tags:';
         console.log(`${logPrefix} Re-initializing...`);
 
-        // Always remove existing tags first
+        // Always remove existing tags and clear tagged state
         document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
+        document.querySelectorAll('[data-je-language-tagged]').forEach(el => { delete el.dataset.jeLanguageTagged; });
+
+        // Re-inject CSS in case position settings changed
+        injectCss();
 
         if (!JE.currentSettings.languageTagsEnabled) {
             console.log(`${logPrefix} Feature is disabled after reinit.`);

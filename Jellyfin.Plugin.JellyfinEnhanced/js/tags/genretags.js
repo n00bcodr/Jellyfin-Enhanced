@@ -391,8 +391,9 @@
     JE.reinitializeGenreTags = function() {
         console.log(`${logPrefix} Re-initializing...`);
 
-        // Always remove existing tags first
+        // Always remove existing tags and clear tagged state
         document.querySelectorAll('.genre-overlay-container').forEach(function(el) { el.remove(); });
+        document.querySelectorAll('[data-je-genre-tagged]').forEach(function(el) { delete el.dataset.jeGenreTagged; });
 
         // Re-inject CSS in case position settings changed
         injectCss();

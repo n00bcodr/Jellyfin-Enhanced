@@ -930,8 +930,12 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Quality Tags:';
         console.log(`${logPrefix} Re-initializing...`);
 
-        // Always remove existing tags first
+        // Always remove existing tags and clear tagged state
         document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
+        document.querySelectorAll('[data-je-quality-tagged]').forEach(el => { delete el.dataset.jeQualityTagged; });
+
+        // Re-inject CSS in case position settings changed
+        addEnhancedStyles();
 
         if (!JE.currentSettings.qualityTagsEnabled) {
             console.log(`${logPrefix} Feature is disabled after reinit.`);
