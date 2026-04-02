@@ -3016,6 +3016,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetDownloadQueue()
         {
+            if (!IsAdminUser())
+                return Forbid();
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
