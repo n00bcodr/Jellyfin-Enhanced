@@ -1577,118 +1577,55 @@
                 willUse: savedLanguage
             });
 
-            // Populate language options from Jellyfin's cultures
+            // Populate language options from server-side locale enumeration
             (async () => {
-                const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
-                const AVAILABLE_LANGUAGES_CACHE_KEY = 'JE_available_languages';
-                const AVAILABLE_LANGUAGES_CACHE_TS_KEY = 'JE_available_languages_ts';
-                const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-                // Custom languages not in Jellyfin's official culture list
-                const CUSTOM_LANGUAGES = {
-                    'pr': { Name: 'Pirate', DisplayName: "Pirate", TwoLetterISOLanguageName: 'pr' },
-                    'en-GB': { Name: 'English (United Kingdom)', DisplayName: "English (United Kingdom)", TwoLetterISOLanguageName: 'en-GB' },
-                    'en-US': { Name: 'English (United States)', DisplayName: "English (United States)", TwoLetterISOLanguageName: 'en-US' }
+                const CUSTOM_DISPLAY_NAMES = {
+                    'pr': 'Pirate',
+                    'en-GB': 'English (United Kingdom)',
+                    'en-US': 'English (United States)',
+                    'zh-CN': 'Chinese (Simplified)',
+                    'zh-HK': 'Chinese (Hong Kong)',
+                    'pt-BR': 'Portuguese (Brazil)'
                 };
 
-                let supportedJELanguages = [];
+                try {
+                    const localeCodes = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('/JellyfinEnhanced/locales'),
+                        dataType: 'json'
+                    });
 
-                // Try to load from cache first
-                const cachedLanguages = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_KEY);
-                const cachedTimestamp = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY);
-
-                if (cachedLanguages && cachedTimestamp) {
-                    const age = Date.now() - parseInt(cachedTimestamp, 10);
-                    if (age < CACHE_DURATION) {
-                        console.log('🪼 Jellyfin Enhanced: Using cached available languages (age: ' + Math.round(age / 1000 / 60) + ' minutes)');
-                        supportedJELanguages = JSON.parse(cachedLanguages);
-                    }
-                }
-
-                // If no valid cache, fetch from GitHub
-                if (supportedJELanguages.length === 0) {
-                    // Fetch cultures from Jellyfin API
                     const cultures = await ApiClient.ajax({
                         type: 'GET',
                         url: ApiClient.getUrl('/Localization/Cultures'),
                         dataType: 'json'
                     });
 
-                    console.log('🪼 Jellyfin Enhanced: Translations Loaded', cultures.length, 'cultures from Jellyfin API');
-
-                    // Check which languages have translation files available on GitHub
-                    const checkPromises = cultures.map(async (culture) => {
-                        const langCode = culture.TwoLetterISOLanguageName;
-
-                        if (langCode === 'en') {
-                            return;
-                        }
-
-                        const normalizedLangCode = langCode.includes('-')
-                            ? `${langCode.split('-')[0]}-${langCode.split('-')[1].toUpperCase()}`
-                            : langCode;
-                        try {
-                            const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLangCode}.json`, { method: 'HEAD' });
-                            if (response.ok) {
-                                // Store the normalized code back to the culture object for consistency
-                                culture.TwoLetterISOLanguageName = normalizedLangCode;
-                                supportedJELanguages.push(culture);
-                                console.log('🪼 Jellyfin Enhanced: Found translation for:', culture.Name, '('+normalizedLangCode+')');
-                            }
-                        } catch (err) {
-                            // Translation file doesn't exist
-                        }
+                    const cultureMap = {};
+                    cultures.forEach(c => {
+                        cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
                     });
 
-                    await Promise.all(checkPromises);
+                    const options = localeCodes.map(code => {
+                        const displayName = CUSTOM_DISPLAY_NAMES[code]
+                            || cultureMap[code.toLowerCase()]?.DisplayName
+                            || cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName
+                            || code;
+                        return { code, displayName };
+                    });
 
-                    supportedJELanguages.push(CUSTOM_LANGUAGES['en-GB']);
-                    supportedJELanguages.push(CUSTOM_LANGUAGES['en-US']);
-                    // Add other custom languages that have translation files
-                    for (const langCode in CUSTOM_LANGUAGES) {
-                        if (langCode === 'en-GB' || langCode === 'en-US') {
-                            continue;
-                        }
-
-                        const normalizedLangCode = langCode.includes('-')
-                            ? `${langCode.split('-')[0]}-${langCode.split('-')[1].toUpperCase()}`
-                            : langCode;
-                        try {
-                            const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLangCode}.json`, { method: 'HEAD' });
-                            if (response.ok) {
-                                supportedJELanguages.push(CUSTOM_LANGUAGES[langCode]);
-                                console.log('🪼 Jellyfin Enhanced: Found translation for:', CUSTOM_LANGUAGES[langCode].Name, '('+langCode+')');
-                            }
-                        } catch (err) {
-                            // Translation file doesn't exist
-                        }
-                    }
-
-                    console.log('🪼 Jellyfin Enhanced: Translations Found', supportedJELanguages.length, 'supported cultures with translations');
-
-                    // Cache the results
-                    try {
-                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_KEY, JSON.stringify(supportedJELanguages));
-                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY, Date.now().toString());
-                        console.log('🪼 Jellyfin Enhanced: Cached available languages list');
-                    } catch (err) {
-                        console.warn('🪼 Jellyfin Enhanced: Failed to cache available languages', err);
-                    }
+                    options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                    options.forEach(({ code, displayName }) => {
+                        const option = document.createElement('option');
+                        option.value = code;
+                        option.textContent = displayName;
+                        option.style.background = 'rgba(30,30,30,1)';
+                        option.style.color = '#fff';
+                        displayLanguageSelect.appendChild(option);
+                    });
+                } catch (err) {
+                    console.warn('🪼 Jellyfin Enhanced: Failed to load language options:', err);
                 }
-
-                // Sort by Name
-                supportedJELanguages.sort((a, b) => a.Name.localeCompare(b.Name));
-
-                // Add options using TwoLetterISOLanguageName as value and DisplayName as display
-                supportedJELanguages.forEach(culture => {
-                    const langCode = culture.TwoLetterISOLanguageName;
-                    const option = document.createElement('option');
-                    option.value = langCode;
-                    option.textContent = culture.DisplayName || culture.Name;
-                    option.style.background = 'rgba(30,30,30,1)';
-                    option.style.color = '#fff';
-                    displayLanguageSelect.appendChild(option);
-                });
 
                 // Normalize saved language code with region support (e.g., zh-HK) when available
                 let normalizedLanguage = '';
@@ -1725,18 +1662,17 @@
                 // Use the language code as-is, no special mapping
                 const fullCultureCode = normalizeLangCode(newLang);
 
-                // Check if translation file exists
+                // Check if translation file exists on the server
                 let translationExists = true;
                 if (newLang) {
                     try {
-                        const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
                         const normalizedLang = newLang.includes('-')
                             ? `${newLang.split('-')[0]}-${newLang.split('-')[1].toUpperCase()}`
                             : newLang;
-                        const response = await fetch(`${GITHUB_RAW_BASE}/${normalizedLang}.json`, { method: 'HEAD' });
+                        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${normalizedLang}.json`), { method: 'HEAD' });
                         translationExists = response.ok;
                     } catch (err) {
-                        // Assume it exists if we can't check (offline mode)
+                        // Assume it exists if we can't check
                         translationExists = true;
                     }
                 }
