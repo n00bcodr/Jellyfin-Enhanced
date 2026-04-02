@@ -3248,7 +3248,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 // Check if user has permission to view all requests
-                hasRequestViewPermission = JellyseerrPermissionHelper.HasAnyPermission(
+                // Jellyfin admins can always view all requests regardless of Seerr permissions
+                hasRequestViewPermission = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
                     jellyseerrUser.Permissions,
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
                 );
