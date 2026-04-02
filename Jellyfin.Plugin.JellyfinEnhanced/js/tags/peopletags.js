@@ -514,16 +514,11 @@
                         return;
                     }
 
-                    // Check if all visible sections already have tags
-                    const castDone = !castSection || castSection.querySelector('.je-people-age-container, .je-people-place-banner');
-                    const guestDone = !guestCastSection || guestCastSection.querySelector('.je-people-age-container, .je-people-place-banner');
-                    if (castDone && guestDone) {
+                    // Process cast members for this item, then mark complete
+                    // (don't check for DOM elements — some cast may have no age/place data)
+                    processCastMembers().then(() => {
                         peopleTagsComplete = true;
-                        return;
-                    }
-
-                    // Process cast members for this item
-                    processCastMembers();
+                    });
                 } catch (e) {
                     // Ignore errors (likely not on an item page)
                 }
