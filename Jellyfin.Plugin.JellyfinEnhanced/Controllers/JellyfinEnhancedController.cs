@@ -3023,7 +3023,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // Non-admin users can only see downloads for items they requested via Seerr
             // unless the admin has disabled per-user filtering
-            HashSet<int>? allowedTmdbIds = null;
+            HashSet<(int TmdbId, string MediaType)>? allowedRequests = null;
             if (!IsAdminUser() && config.DownloadsFilterByUserRequests)
             {
                 if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
@@ -3049,7 +3049,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return Ok(new { items = new List<object>() });
                 }
 
-                allowedTmdbIds = new HashSet<int>(userRequests.Select(r => r.TmdbId));
+                allowedRequests = new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType)));
             }
 
             var items = new List<object>();
@@ -3085,7 +3085,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 int? tmdbId = (int?)record.series?.tmdbId;
 
                                 // Filter by user's requested TMDB IDs when not admin
-                                if (allowedTmdbIds != null && (!tmdbId.HasValue || !allowedTmdbIds.Contains(tmdbId.Value)))
+                                if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "tv"))))
                                 {
                                     continue;
                                 }
@@ -3152,7 +3152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 int? tmdbId = (int?)record.movie?.tmdbId;
 
                                 // Filter by user's requested TMDB IDs when not admin
-                                if (allowedTmdbIds != null && (!tmdbId.HasValue || !allowedTmdbIds.Contains(tmdbId.Value)))
+                                if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "movie"))))
                                 {
                                     continue;
                                 }
