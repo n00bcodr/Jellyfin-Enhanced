@@ -1982,6 +1982,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("locales")]
+        [Authorize]
         [ResponseCache(Duration = 86400)]
         public ActionResult GetAvailableLocales()
         {

@@ -3179,31 +3179,27 @@
             };
 
             try {
-                // Single request to server endpoint that enumerates embedded locale resources
-                const localeCodes = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl('/JellyfinEnhanced/locales'),
-                    dataType: 'json'
-                });
-
-                // Fetch Jellyfin cultures for display names
-                const cultures = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl('/Localization/Cultures'),
-                    dataType: 'json'
-                });
+                const [localeCodes, cultures] = await Promise.all([
+                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
+                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
+                ]);
 
                 const cultureMap = {};
                 cultures.forEach(c => {
                     cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
                 });
 
+                const localeSet = new Set(localeCodes.map(c => c.toLowerCase()));
                 const options = localeCodes.map(code => {
-                    const displayName = CUSTOM_DISPLAY_NAMES[code]
-                        || cultureMap[code.toLowerCase()]?.DisplayName
-                        || cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName
-                        || code;
-                    return { code, displayName };
+                    let displayName = CUSTOM_DISPLAY_NAMES[code]
+                        || cultureMap[code.toLowerCase()]?.DisplayName;
+                    if (!displayName && code.includes('-')) {
+                        const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
+                        displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
+                            ? `${baseName} (${code.split('-')[1]})`
+                            : baseName;
+                    }
+                    return { code, displayName: displayName || code };
                 });
 
                 options.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -3214,7 +3210,7 @@
                     defaultLanguageSelect.appendChild(option);
                 });
             } catch (err) {
-                console.warn('Failed to load language options:', err);
+                console.warn('Jellyfin Enhanced: Failed to load language options:', err);
             }
         })();
 

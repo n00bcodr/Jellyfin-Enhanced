@@ -1589,29 +1589,28 @@
                 };
 
                 try {
-                    const localeCodes = await ApiClient.ajax({
-                        type: 'GET',
-                        url: ApiClient.getUrl('/JellyfinEnhanced/locales'),
-                        dataType: 'json'
-                    });
-
-                    const cultures = await ApiClient.ajax({
-                        type: 'GET',
-                        url: ApiClient.getUrl('/Localization/Cultures'),
-                        dataType: 'json'
-                    });
+                    const [localeCodes, cultures] = await Promise.all([
+                        ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
+                        ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
+                    ]);
 
                     const cultureMap = {};
                     cultures.forEach(c => {
                         cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
                     });
 
+                    const localeSet = new Set(localeCodes.map(c => c.toLowerCase()));
                     const options = localeCodes.map(code => {
-                        const displayName = CUSTOM_DISPLAY_NAMES[code]
-                            || cultureMap[code.toLowerCase()]?.DisplayName
-                            || cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName
-                            || code;
-                        return { code, displayName };
+                        let displayName = CUSTOM_DISPLAY_NAMES[code]
+                            || cultureMap[code.toLowerCase()]?.DisplayName;
+                        if (!displayName && code.includes('-')) {
+                            const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
+                            // Append region qualifier when the base code also exists to avoid duplicate labels
+                            displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
+                                ? `${baseName} (${code.split('-')[1]})`
+                                : baseName;
+                        }
+                        return { code, displayName: displayName || code };
                     });
 
                     options.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -1662,20 +1661,8 @@
                 // Use the language code as-is, no special mapping
                 const fullCultureCode = normalizeLangCode(newLang);
 
-                // Check if translation file exists on the server
-                let translationExists = true;
-                if (newLang) {
-                    try {
-                        const normalizedLang = newLang.includes('-')
-                            ? `${newLang.split('-')[0]}-${newLang.split('-')[1].toUpperCase()}`
-                            : newLang;
-                        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${normalizedLang}.json`), { method: 'HEAD' });
-                        translationExists = response.ok;
-                    } catch (err) {
-                        // Assume it exists if we can't check
-                        translationExists = true;
-                    }
-                }
+                // All dropdown options come from /JellyfinEnhanced/locales, so they are guaranteed valid
+                const translationExists = true;
 
                 // Save to settings.json (use base language code)
                 JE.currentSettings.displayLanguage = newLang;
@@ -1714,10 +1701,6 @@
                 }
 
                 cacheKeys.forEach(key => localStorage.removeItem(key));
-
-                // Also clear language availability cache so new languages are detected
-                localStorage.removeItem('JE_available_languages');
-                localStorage.removeItem('JE_available_languages_ts');
 
                 JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
                 setTimeout(() => window.location.reload(), 2000);
