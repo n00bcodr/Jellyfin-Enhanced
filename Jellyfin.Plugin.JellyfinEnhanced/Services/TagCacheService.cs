@@ -251,12 +251,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void ScheduleDebouncedSave()
         {
             _dirty = true;
-            var newTimer = new Timer(_ =>
+            // Reuse existing timer if possible, otherwise create a new one.
+            // Change() resets the countdown without creating a new object.
+            var existing = _debounceSaveTimer;
+            if (existing != null)
+            {
+                try
+                {
+                    existing.Change(TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan);
+                    return;
+                }
+                catch (ObjectDisposedException) { }
+            }
+            var timer = new Timer(_ =>
             {
                 if (_dirty) SaveToDisk();
             }, null, TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan);
-            var oldTimer = Interlocked.Exchange(ref _debounceSaveTimer, newTimer);
-            oldTimer?.Dispose();
+            var old = Interlocked.Exchange(ref _debounceSaveTimer, timer);
+            if (old != null && !ReferenceEquals(old, timer))
+            {
+                old.Dispose();
+            }
         }
 
         public void Dispose()
