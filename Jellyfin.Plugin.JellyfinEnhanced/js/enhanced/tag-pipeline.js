@@ -603,6 +603,30 @@
         }
     }
 
+    // ── Indicator Offset ────────────────────────────────────────────────
+
+    /**
+     * Build CSS rules that offset top-right tag containers below Jellyfin's
+     * card indicators (unwatched count, played badge). Only tags configured
+     * for the top-right corner get the offset. Other positions are untouched.
+     * @returns {string} CSS rules string
+     */
+    function buildIndicatorOffsetCSS() {
+        const posMap = {
+            'genre-overlay-container': JE.currentSettings?.genreTagsPosition || JE.pluginConfig?.GenreTagsPosition || 'top-right',
+            'quality-overlay-container': JE.currentSettings?.qualityTagsPosition || JE.pluginConfig?.QualityTagsPosition || 'top-left',
+            'language-overlay-container': JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left',
+            'rating-overlay-container': JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right',
+        };
+        const topRightContainers = Object.entries(posMap)
+            .filter(([, pos]) => pos === 'top-right')
+            .map(([cls]) => `.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host > .${cls}`)
+            .join(',\n                ');
+
+        if (!topRightContainers) return '';
+        return `${topRightContainers} { margin-top: clamp(20px, 3vw, 30px); }`;
+    }
+
     // ── Lifecycle ──────────────────────────────────────────────────────
 
     /**
@@ -665,6 +689,10 @@
                     pointer-events: none;
                     z-index: auto !important;
                 }
+                /* Offset top-right positioned tag containers when card has visible indicators
+                   (unwatched count badge, played checkmark). Indicators are always top-right in Jellyfin.
+                   Only affects containers configured for the top-right position. */
+                ${buildIndicatorOffsetCSS()}
             `);
 
             // "Hide Tags on Hover" setting: fully hides the tag layer on hover.
