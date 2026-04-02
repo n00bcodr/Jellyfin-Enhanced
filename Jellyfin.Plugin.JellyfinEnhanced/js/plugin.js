@@ -379,6 +379,31 @@
             JE.t = window.JellyfinEnhanced.t; // Ensure the real function is assigned
             await loadPrivateConfig();
 
+            // Clear stale UseCustomTabs / UsePluginPages config flags when those
+            // plugins are not installed.  Settings persist after uninstall, which
+            // causes sidebar injection to be skipped even though the delivery
+            // plugin is no longer present.
+            try {
+                const installedPlugins = await ApiClient.ajax({
+                    type: 'GET', url: ApiClient.getUrl('/Plugins'), dataType: 'json'
+                });
+                if (!Array.isArray(installedPlugins)) throw new Error('Unexpected /Plugins response');
+                const hasCustomTabs = installedPlugins.some(p => p.Name === 'Custom Tabs');
+                const hasPluginPages = installedPlugins.some(p => p.Name === 'Plugin Pages');
+                if (!hasCustomTabs) {
+                    JE.pluginConfig.CalendarUseCustomTabs = false;
+                    JE.pluginConfig.HiddenContentUseCustomTabs = false;
+                    JE.pluginConfig.DownloadsUseCustomTabs = false;
+                }
+                if (!hasPluginPages) {
+                    JE.pluginConfig.HiddenContentUsePluginPages = false;
+                    JE.pluginConfig.DownloadsUsePluginPages = false;
+                    JE.pluginConfig.CalendarUsePluginPages = false;
+                }
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Could not verify installed plugins:', e);
+            }
+
             // Check if server has triggered a translation cache clear
             const serverTranslationClearTs = JE.pluginConfig.ClearTranslationCacheTimestamp || 0;
             const localTranslationClearTs = parseInt(localStorage.getItem('JE_translation_clear_ts') || '0', 10);
