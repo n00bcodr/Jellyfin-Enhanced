@@ -438,8 +438,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 };
                 return _libraryManager.GetItemList(epQuery).FirstOrDefault();
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"[TagCache] Failed to get first episode for {container.Id}: {ex.Message}");
                 return null;
             }
         }
@@ -459,7 +460,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return _libraryManager.GetItemById<BaseItem>(seriesId.Value);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to get parent series for {item.Id}: {ex.Message}");
+            }
             return null;
         }
 
