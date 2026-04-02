@@ -3082,7 +3082,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             foreach (var record in data.records)
                             {
-                                int? tmdbId = (int?)record.series?.tmdbId;
+                                int? tmdbId = record.series?.tmdbId;
 
                                 // Filter by user's requested TMDB IDs when not admin
                                 if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "tv"))))
@@ -3149,7 +3149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             foreach (var record in data.records)
                             {
-                                int? tmdbId = (int?)record.movie?.tmdbId;
+                                int? tmdbId = record.movie?.tmdbId;
 
                                 // Filter by user's requested TMDB IDs when not admin
                                 if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "movie"))))
