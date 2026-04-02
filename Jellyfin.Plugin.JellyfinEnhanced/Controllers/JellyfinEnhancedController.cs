@@ -3016,12 +3016,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetDownloadQueue()
         {
-            if (!IsAdminUser())
-                return Forbid();
-
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
+
+            // Non-admin users can only see downloads for items they requested via Seerr
+            HashSet<int>? allowedTmdbIds = null;
+            if (!IsAdminUser())
+            {
+                if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+                if (string.IsNullOrEmpty(jellyfinUserId))
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+                if (string.IsNullOrEmpty(jellyseerrUserId))
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                var userRequests = await GetJellyseerrRequestsForUser(jellyseerrUserId);
+                if (userRequests == null || userRequests.Count == 0)
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                allowedTmdbIds = new HashSet<int>(userRequests.Select(r => r.TmdbId));
+            }
 
             var items = new List<object>();
 
@@ -3053,6 +3080,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             foreach (var record in data.records)
                             {
+                                int? tmdbId = (int?)record.series?.tmdbId;
+
+                                // Filter by user's requested TMDB IDs when not admin
+                                if (allowedTmdbIds != null && (!tmdbId.HasValue || !allowedTmdbIds.Contains(tmdbId.Value)))
+                                {
+                                    continue;
+                                }
+
                                 string? posterUrl = null;
                                 if (record.series?.images != null)
                                 {
@@ -3079,7 +3114,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     totalSize = (long?)record.size,
                                     sizeRemaining = (long?)record.sizeleft,
                                     timeRemaining = (string?)record.timeleft,
-                                    posterUrl = posterUrl
+                                    posterUrl = posterUrl,
+                                    tmdbId = tmdbId
                                 });
                             }
                         }
@@ -3111,6 +3147,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             foreach (var record in data.records)
                             {
+                                int? tmdbId = (int?)record.movie?.tmdbId;
+
+                                // Filter by user's requested TMDB IDs when not admin
+                                if (allowedTmdbIds != null && (!tmdbId.HasValue || !allowedTmdbIds.Contains(tmdbId.Value)))
+                                {
+                                    continue;
+                                }
+
                                 string? posterUrl = null;
                                 if (record.movie?.images != null)
                                 {
@@ -3137,7 +3181,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     totalSize = (long?)record.size,
                                     sizeRemaining = (long?)record.sizeleft,
                                     timeRemaining = (string?)record.timeleft,
-                                    posterUrl = posterUrl
+                                    posterUrl = posterUrl,
+                                    tmdbId = tmdbId
                                 });
                             }
                         }
