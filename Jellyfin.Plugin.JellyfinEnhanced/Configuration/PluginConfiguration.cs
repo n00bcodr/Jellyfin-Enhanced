@@ -167,6 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Bookmarks Settings
             BookmarksEnabled = true;
             BookmarksUsePluginPages = false;
+            BookmarksUseCustomTabs = false;
 
             // Icon Settings
             UseIcons = true;
@@ -349,6 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Bookmarks Settings
         public bool BookmarksEnabled { get; set; }
         public bool BookmarksUsePluginPages { get; set; }
+        public bool BookmarksUseCustomTabs { get; set; }
 
         // Icon Settings
         public bool UseIcons { get; set; }

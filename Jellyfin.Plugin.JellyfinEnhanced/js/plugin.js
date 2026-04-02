@@ -391,11 +391,13 @@
                 const hasCustomTabs = installedPlugins.some(p => p.Name === 'Custom Tabs');
                 const hasPluginPages = installedPlugins.some(p => p.Name === 'Plugin Pages');
                 if (!hasCustomTabs) {
+                    JE.pluginConfig.BookmarksUseCustomTabs = false;
                     JE.pluginConfig.CalendarUseCustomTabs = false;
                     JE.pluginConfig.HiddenContentUseCustomTabs = false;
                     JE.pluginConfig.DownloadsUseCustomTabs = false;
                 }
                 if (!hasPluginPages) {
+                    JE.pluginConfig.BookmarksUsePluginPages = false;
                     JE.pluginConfig.HiddenContentUsePluginPages = false;
                     JE.pluginConfig.DownloadsUsePluginPages = false;
                     JE.pluginConfig.CalendarUsePluginPages = false;
