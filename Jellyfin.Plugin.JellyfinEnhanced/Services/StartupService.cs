@@ -60,14 +60,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Load tag cache from disk. New/changed items are picked up by the
                 // monitor via Jellyfin's library scan events (ItemAdded/ItemUpdated).
                 // A full rebuild runs daily at 3 AM or can be triggered manually.
-                _tagCacheService.LoadFromDisk();
-                _tagCacheMonitor.Initialize();
-
-                // First install: if no cache exists, build it now so tags work immediately
-                if (_tagCacheService.Count == 0)
+                // Wrapped in try/catch so a cache failure never prevents the rest of
+                // the plugin from working (tags just fall back to batch mode).
+                try
                 {
-                    _logger.Info("[TagCache] No cache on disk, building initial cache...");
-                    _tagCacheService.BuildFullCache(null, CancellationToken.None);
+                    _tagCacheService.LoadFromDisk();
+                    _tagCacheMonitor.Initialize();
+
+                    // First install: if no cache exists, build it now so tags work immediately
+                    if (_tagCacheService.Count == 0)
+                    {
+                        _logger.Info("[TagCache] No cache on disk, building initial cache...");
+                        _tagCacheService.BuildFullCache(null, CancellationToken.None);
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.Error($"[TagCache] Failed to initialize tag cache (tags will use batch fallback): {ex.Message}");
                 }
 
                 _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");
