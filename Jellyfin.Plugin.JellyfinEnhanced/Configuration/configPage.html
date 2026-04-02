@@ -3169,137 +3169,53 @@
             const defaultLanguageSelect = document.getElementById('DefaultLanguage');
             if (!defaultLanguageSelect) return;
 
-            const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
-            const AVAILABLE_LANGUAGES_CACHE_KEY = 'JE_available_languages_config';
-            const AVAILABLE_LANGUAGES_CACHE_TS_KEY = 'JE_available_languages_config_ts';
-            const AVAILABLE_LANGUAGES_CACHE_VER_KEY = 'JE_available_languages_config_ver';
-            const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-            // Fetch plugin version to bust cache on server update/restart
-            let pluginVersion = null;
-            try {
-                const verResp = await fetch(ApiClient.getUrl('/JellyfinEnhanced/version'));
-                if (verResp.ok) pluginVersion = await verResp.text();
-            } catch (_) { /* non-fatal */ }
-
-            const CUSTOM_LANGUAGES = {
-                'pr': { Name: 'Pirate', DisplayName: 'Pirate', TwoLetterISOLanguageName: 'pr', LocaleCode: 'pr' },
-                'en-GB': { Name: 'English (United Kingdom)', DisplayName: 'English (United Kingdom)', TwoLetterISOLanguageName: 'en-GB', LocaleCode: 'en-GB' },
-                'en-US': { Name: 'English (United States)', DisplayName: 'English (United States)', TwoLetterISOLanguageName: 'en-US', LocaleCode: 'en-US' }
+            const CUSTOM_DISPLAY_NAMES = {
+                'pr': 'Pirate',
+                'en-GB': 'English (United Kingdom)',
+                'en-US': 'English (United States)',
+                'zh-CN': 'Chinese (Simplified)',
+                'zh-HK': 'Chinese (Hong Kong)',
+                'pt-BR': 'Portuguese (Brazil)'
             };
 
-            let supportedLanguages = [];
-
             try {
-                // Check cache first
-                const cachedLanguages = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_KEY);
-                const cachedTimestamp = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY);
-                const cachedVersion = localStorage.getItem(AVAILABLE_LANGUAGES_CACHE_VER_KEY);
-                const versionMatch = !pluginVersion || cachedVersion === pluginVersion;
+                // Single request to server endpoint that enumerates embedded locale resources
+                const localeCodes = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/locales'),
+                    dataType: 'json'
+                });
 
-                if (cachedLanguages && cachedTimestamp && versionMatch) {
-                    const age = Date.now() - parseInt(cachedTimestamp, 10);
-                    if (age < CACHE_DURATION) {
-                        supportedLanguages = JSON.parse(cachedLanguages);
-                        supportedLanguages.sort((a, b) => a.Name.localeCompare(b.Name));
-                        supportedLanguages.forEach(culture => {
-                            const option = document.createElement('option');
-                            option.value = culture.LocaleCode || culture.TwoLetterISOLanguageName;
-                            option.textContent = culture.DisplayName || culture.Name;
-                            defaultLanguageSelect.appendChild(option);
-                        });
-                        return;
-                    }
-                }
-
-                // Fetch cultures from Jellyfin API
+                // Fetch Jellyfin cultures for display names
                 const cultures = await ApiClient.ajax({
                     type: 'GET',
                     url: ApiClient.getUrl('/Localization/Cultures'),
                     dataType: 'json'
                 });
 
-                // Check which cultures have translation files on GitHub
-                const checkPromises = cultures.map(async (culture) => {
-                    const langCode = culture.TwoLetterISOLanguageName;
-
-                    // Skip generic "en"
-                    if (langCode === 'en') {
-                        return;
-                    }
-
-                    let normalizedLangCode;
-                    if (langCode.includes('-')) {
-                        const parts = langCode.split('-');
-                        normalizedLangCode = parts[0].toLowerCase() + '-' + parts[1].toUpperCase();
-                    } else {
-                        normalizedLangCode = langCode.toLowerCase();
-                    }
-
-                    try {
-                        const response = await fetch(GITHUB_RAW_BASE + '/' + normalizedLangCode + '.json', { method: 'HEAD' });
-                        if (response.ok) {
-                            supportedLanguages.push({
-                                ...culture,
-                                LocaleCode: normalizedLangCode
-                            });
-                        }
-                    } catch (err) {
-                        // Translation file doesn't exist
-                    }
+                const cultureMap = {};
+                cultures.forEach(c => {
+                    cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
                 });
 
-                await Promise.all(checkPromises);
+                const options = localeCodes.map(code => {
+                    const displayName = CUSTOM_DISPLAY_NAMES[code]
+                        || cultureMap[code.toLowerCase()]?.DisplayName
+                        || cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName
+                        || code;
+                    return { code, displayName };
+                });
 
-                // Always add English variants
-                supportedLanguages.push(CUSTOM_LANGUAGES['en-GB']);
-                supportedLanguages.push(CUSTOM_LANGUAGES['en-US']);
-                // Check other custom languages
-                for (const langCode in CUSTOM_LANGUAGES) {
-                    // Skip English variants
-                    if (langCode === 'en-GB' || langCode === 'en-US') {
-                        continue;
-                    }
-
-                    let normalizedLangCode;
-                    if (langCode.includes('-')) {
-                        const parts = langCode.split('-');
-                        normalizedLangCode = parts[0].toLowerCase() + '-' + parts[1].toUpperCase();
-                    } else {
-                        normalizedLangCode = langCode.toLowerCase();
-                    }
-                    try {
-                        const response = await fetch(GITHUB_RAW_BASE + '/' + normalizedLangCode + '.json', { method: 'HEAD' });
-                        if (response.ok) {
-                            supportedLanguages.push(CUSTOM_LANGUAGES[langCode]);
-                        }
-                    } catch (err) {
-                        // Translation file doesn't exist
-                    }
-                }
-
-                // Cache the results
-                if (supportedLanguages.length > 0) {
-                    try {
-                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_KEY, JSON.stringify(supportedLanguages));
-                        localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_TS_KEY, Date.now().toString());
-                        if (pluginVersion) localStorage.setItem(AVAILABLE_LANGUAGES_CACHE_VER_KEY, pluginVersion);
-                    } catch (err) {
-                        // Ignore cache errors
-                    }
-                }
+                options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                options.forEach(({ code, displayName }) => {
+                    const option = document.createElement('option');
+                    option.value = code;
+                    option.textContent = displayName;
+                    defaultLanguageSelect.appendChild(option);
+                });
             } catch (err) {
-                // Failed to fetch languages
+                console.warn('Failed to load language options:', err);
             }
-
-            // Sort and populate dropdown
-            supportedLanguages.sort((a, b) => a.Name.localeCompare(b.Name));
-            supportedLanguages.forEach(culture => {
-                const option = document.createElement('option');
-                option.value = culture.LocaleCode || culture.TwoLetterISOLanguageName;
-                option.textContent = culture.DisplayName || culture.Name;
-                defaultLanguageSelect.appendChild(option);
-            });
         })();
 
         page.addEventListener('pageshow', loadConfig);
