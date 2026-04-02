@@ -303,23 +303,24 @@
                                     <span>Use Plugin Pages for Bookmarks Library</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 1.5em;">Adds a "Bookmarks" link to the sidebar via <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a>.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Bookmarks" link to the sidebar via <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a>.<br><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="bookmarksUseCustomTabs" is="emby-checkbox" type="checkbox"/>
+                                    <span>Use Custom Tabs for Bookmarks (instead of sidebar)</span>
+                                </label>
+                            </div>
                             <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
                                 <div style="display: flex; align-items: flex-start; gap: 1em;">
                                     <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
                                     <div>
-                                        <h4 style="margin: 0 0 0.5em 0;">How to Use Bookmarks:</h4>
-                                        <ul class="fieldDescription" style="margin: 0.5em 0; padding-left: 1.5em;">
-                                            <li style="margin-bottom: 0.5em;"><strong>During Playback:</strong> Press <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; font-family: monospace;">B</kbd> or click the bookmark icon <i class="material-icons" style="font-size: 16px; vertical-align: middle;">bookmark_add</i> in the video player controls to save a bookmark at the current time.</li>
-                                            <li style="margin-bottom: 0.5em;"><strong>Visual Markers:</strong> Bookmarks appear as location pins <i class="material-icons" style="font-size: 16px; vertical-align: middle; color: #00d4ff;">location_pin</i> on the video progress bar. Click a marker to jump to that timestamp.</li>
-                                            <li style="margin-bottom: 0.5em;"><strong>Multi-Version Support:</strong> Bookmarks track by TMDB/TVDB IDs, so they work across different file versions of the same content.</li>
-                                        </ul>
-                                        <h4 style="margin: 1em 0 0.5em 0;">To View & Manage All Your Bookmarks:</h4>
-                                        <p class="fieldDescription" style="margin: 0;">You can either enable <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> above to add a sidebar link, or create a custom view using the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
+                                        <h4 style="margin: 0 0 0.5em 0;">Embed Bookmarks in Custom Tabs:</h4>
+                                        <p class="fieldDescription" style="margin: 0 0 0.5em 0;">Display the Bookmarks library in a Custom Tabs tab instead of the sidebar link.</p>
+                                        <p class="fieldDescription" style="margin: 0.5em 0;">You need the <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> plugin.</p>
                                         <ol class="fieldDescription" style="margin: 1em 0; padding-left: 1.5em;">
                                             <li style="margin-bottom: 0.5em;">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
                                             <li style="margin-bottom: 0.5em;">Navigate to Dashboard > Plugins > Custom Tabs and add a new tab.</li>
-                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "My Bookmarks").</li>
+                                            <li style="margin-bottom: 0.5em;">Add "Display Text" according to your preference (e.g., "Bookmarks").</li>
                                             <li style="margin-bottom: 0.5em;">Copy the code below and paste it into the 'HTML Content' field.</li>
                                         </ol>
                                         <div style="position: relative;">
@@ -334,6 +335,19 @@
                                             Already have Custom Tabs installed?
                                             <a class="sectionTitle" href="/web/#/configurationpage?name=Custom%20Tabs" style="text-decoration: underline;">Click here to configure it.</a>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1.5em 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 1em;">
+                                    <i class="material-icons" style="color: #00a4dc; font-size: 24px; margin-top: 2px;">info</i>
+                                    <div>
+                                        <h4 style="margin: 0 0 0.5em 0;">How to Use Bookmarks:</h4>
+                                        <ul class="fieldDescription" style="margin: 0.5em 0; padding-left: 1.5em;">
+                                            <li style="margin-bottom: 0.5em;"><strong>During Playback:</strong> Press <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; font-family: monospace;">B</kbd> or click the bookmark icon <i class="material-icons" style="font-size: 16px; vertical-align: middle;">bookmark_add</i> in the video player controls to save a bookmark at the current time.</li>
+                                            <li style="margin-bottom: 0.5em;"><strong>Visual Markers:</strong> Bookmarks appear as location pins <i class="material-icons" style="font-size: 16px; vertical-align: middle; color: #00d4ff;">location_pin</i> on the video progress bar. Click a marker to jump to that timestamp.</li>
+                                            <li style="margin-bottom: 0.5em;"><strong>Multi-Version Support:</strong> Bookmarks track by TMDB/TVDB IDs, so they work across different file versions of the same content.</li>
+                                        </ul>
                                     </div>
                                 </div>
                             </div>
@@ -2600,6 +2614,7 @@
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#bookmarksUsePluginPages').checked = config.BookmarksUsePluginPages === true;
+                document.querySelector('#bookmarksUseCustomTabs').checked = config.BookmarksUseCustomTabs === true;
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
@@ -2807,6 +2822,7 @@
             config.WatchlistMemoryRetentionDays = isNaN(retentionDays) || retentionDays < 1 ? 365 : Math.min(retentionDays, 3650);
             config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
             config.BookmarksUsePluginPages = document.querySelector('#bookmarksUsePluginPages').checked;
+            config.BookmarksUseCustomTabs = document.querySelector('#bookmarksUseCustomTabs').checked;
             config.UseIcons = document.querySelector('#useIcons').checked;
             config.IconStyle = document.querySelector('#iconStyle').value;
 
@@ -3360,6 +3376,7 @@
             { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'bookmarksUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
@@ -3553,7 +3570,7 @@
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
-            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages'] },
+            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
         ];
 

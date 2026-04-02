@@ -1886,6 +1886,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Bookmarks Settings
                 config.BookmarksEnabled,
                 config.BookmarksUsePluginPages,
+                config.BookmarksUseCustomTabs,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,

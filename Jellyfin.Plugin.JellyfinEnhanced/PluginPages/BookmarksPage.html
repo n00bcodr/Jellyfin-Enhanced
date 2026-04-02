@@ -18,16 +18,21 @@
   const preferencesPages = Array.from(document.querySelectorAll("#userPluginPreferencesPage"));
   const preferencesPage = preferencesPages.find(p => p.offsetWidth > 0 && p.offsetHeight > 0);
 
+  // Scope to this page's container -- exclude the standalone page (#je-bookmarks-standalone-page)
+  // which may also have a .je-bookmarks-page in the DOM.
+  const allPages = Array.from(document.querySelectorAll(".je-bookmarks-page"));
+  const ownPage = allPages.find(el => !el.closest("#je-bookmarks-standalone-page"));
   document.querySelectorAll(".sections.bookmarks").forEach(el => {
+    if (ownPage && ownPage.contains(el)) return;
     if (!preferencesPage || !preferencesPage.contains(el)) {
       el.remove();
     }
   });
 
-  if (preferencesPage && !preferencesPage.querySelector(".sections.bookmarks")) {
+  if (!ownPage?.querySelector(".sections.bookmarks")) {
     const newContainer = document.createElement("div");
     newContainer.className = "sections bookmarks";
-    const target = document.querySelector(".je-bookmarks-page") || document.body;
+    const target = ownPage || document.body;
     target.appendChild(newContainer);
   }
 
