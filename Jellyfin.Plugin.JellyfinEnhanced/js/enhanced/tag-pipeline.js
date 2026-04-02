@@ -14,6 +14,9 @@
     const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet']);
     const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
+    let serverCache = null; // Map<itemId, TagCacheEntry> loaded from server
+    let serverCacheVersion = 0;
+    let serverCacheTimestamp = 0;
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -71,6 +74,8 @@
         renderers.set(name, {
             render: config.render,
             renderFromCache: config.renderFromCache || null,
+            renderFromServerCache: config.renderFromServerCache || null,
+            onServerCacheRefresh: config.onServerCacheRefresh || null,
             isEnabled: config.isEnabled,
             needsFirstEpisode: config.needsFirstEpisode || false,
             needsParentSeries: config.needsParentSeries || false,
@@ -144,6 +149,101 @@
 
         parentSeriesCache.set(seriesId, promise);
         return promise;
+    }
+
+    // ── Server Cache ───────────────────────────────────────────────────
+
+    /**
+     * Load the pre-computed tag cache from the server.
+     * If available, tags render entirely from this cache with zero batch API calls.
+     * Falls back to the existing batch POST pipeline if the cache is empty or unavailable.
+     * @returns {Promise<void>}
+     */
+    async function loadServerCache() {
+        if (!JE.pluginConfig?.TagCacheServerMode) {
+            console.log(`${logPrefix} Server cache mode disabled`);
+            return;
+        }
+        try {
+            const userId = ApiClient.getCurrentUserId();
+            if (!userId) return;
+
+            const resp = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`),
+                dataType: 'json'
+            });
+
+            if (resp && resp.items && resp.count > 0) {
+                serverCache = new Map(Object.entries(resp.items));
+                serverCacheVersion = resp.version;
+                serverCacheTimestamp = resp.timestamp;
+                console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
+            } else {
+                console.log(`${logPrefix} Server cache empty, using batch fallback`);
+            }
+        } catch (err) {
+            console.warn(`${logPrefix} Failed to load server cache, using batch fallback:`, err);
+        }
+    }
+
+    /**
+     * Fetch incremental server cache updates since last load.
+     * @returns {Promise<void>}
+     */
+    async function refreshServerCache() {
+        // If server cache was never loaded (e.g. cache was empty at startup),
+        // retry the full load — the scheduled task may have built it since then
+        if (!serverCache) {
+            await loadServerCache();
+            if (serverCache) {
+                // Cache is now available — rescan cards to render from it
+                processedCards = new WeakSet();
+                runScan();
+            }
+            return;
+        }
+        if (!serverCacheTimestamp) return;
+        try {
+            const userId = ApiClient.getCurrentUserId();
+            if (!userId) return;
+
+            const resp = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${serverCacheTimestamp}`),
+                dataType: 'json'
+            });
+
+            if (resp && resp.items) {
+                const newEntries = Object.entries(resp.items);
+                if (newEntries.length > 0) {
+                    for (const [id, entry] of newEntries) {
+                        serverCache.set(id, entry);
+                    }
+                    serverCacheTimestamp = resp.timestamp;
+                    // Notify renderers to invalidate derived caches for updated items
+                    for (const [, renderer] of renderers) {
+                        if (renderer.onServerCacheRefresh) {
+                            try { renderer.onServerCacheRefresh(newEntries.map(e => e[0])); } catch {}
+                        }
+                    }
+                    console.log(`${logPrefix} Server cache updated: +${newEntries.length} items`);
+                }
+                // Full rebuild detected — reload everything
+                if (resp.version !== serverCacheVersion) {
+                    console.log(`${logPrefix} Cache version changed, reloading full cache`);
+                    await loadServerCache();
+                    // Clear all derived caches on full rebuild
+                    for (const [, renderer] of renderers) {
+                        if (renderer.onServerCacheRefresh) {
+                            try { renderer.onServerCacheRefresh(null); } catch {}
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn(`${logPrefix} Failed to refresh server cache:`, err);
+        }
     }
 
     // ── Card Scanning ──────────────────────────────────────────────────
@@ -256,6 +356,19 @@
                     }
                 }
 
+                // Try server cache first (all tag data pre-computed in one object)
+                const serverEntry = serverCache?.get(itemId);
+                if (serverEntry) {
+                    for (const [, renderer] of renderers) {
+                        if (!renderer.isEnabled()) continue;
+                        if (renderer.renderFromServerCache) {
+                            try { renderer.renderFromServerCache(renderTarget, serverEntry, itemId); } catch {}
+                        }
+                    }
+                    continue; // Fully rendered from server cache, skip queue
+                }
+
+                // Fall back to localStorage/hot cache, then batch fetch for misses
                 let allCacheHits = true;
                 for (const [, renderer] of renderers) {
                     if (!renderer.isEnabled()) continue;
@@ -524,6 +637,8 @@
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
                 requestQueue = [];
+                // Pick up any new items added since last load
+                refreshServerCache();
                 scheduleScan();
             });
         }
@@ -567,8 +682,13 @@
             }
         }
 
-        // Initial scan for cards already on the page
-        setTimeout(runScan, 500);
+        // Load server cache then do initial scan.
+        // Cards may have been processed during the async load (via mutation observer),
+        // so clear processedCards after load to rescan with the server cache available.
+        loadServerCache().then(() => {
+            processedCards = new WeakSet();
+            runScan();
+        });
 
         console.log(`${logPrefix} Initialized`);
     }

@@ -50,6 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+        private readonly Services.TagCacheService _tagCacheService;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -124,7 +125,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IDtoService dtoService,
             UserConfigurationManager userConfigurationManager,
             IItemRepository itemRepository,
-            IDbContextFactory<JellyfinDbContext> dbContextFactory)
+            IDbContextFactory<JellyfinDbContext> dbContextFactory,
+            Services.TagCacheService tagCacheService)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -135,6 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _userConfigurationManager = userConfigurationManager;
             _itemRepository = itemRepository;
             _dbContextFactory = dbContextFactory;
+            _tagCacheService = tagCacheService;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
@@ -1859,6 +1862,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.TagsCacheTtlDays,
                 config.DisableTagsOnSearchPage,
                 config.TagsHideOnHover,
+                config.TagCacheServerMode,
 
                 // Seerr Search Settings
                 config.JellyseerrEnabled,
@@ -2457,6 +2461,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
             return Ok(new { success = true, userCount = userCount });
+        }
+
+        /// <summary>
+        /// Returns the pre-computed tag cache filtered by the user's library access.
+        /// The client loads this once per session instead of making per-page batch calls.
+        /// Optional 'since' parameter returns only entries modified after that timestamp.
+        /// </summary>
+        [HttpGet("tag-cache/{userId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null)
+        {
+            if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
+            {
+                return NotFound();
+            }
+
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var items = _tagCacheService.GetCacheForUser(user, since);
+
+            return Ok(new
+            {
+                version = _tagCacheService.Version,
+                timestamp = _tagCacheService.LastModified,
+                count = items.Count,
+                items
+            });
         }
 
         /// <summary>

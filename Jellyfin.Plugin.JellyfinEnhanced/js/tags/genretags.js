@@ -124,6 +124,34 @@
         }
     }
 
+    // CSS selectors for elements that should NOT have genre tags applied.
+    const IGNORE_SELECTORS = [
+        '.je-hidden',
+        '#itemDetailPage .infoWrapper',
+        '#itemDetailPage #castCollapsible',
+        '#indexPage .verticalSection.MyMedia',
+        '.formDialog',
+        '#itemDetailPage .chapterCardImageContainer',
+        '#pluginsPage, #pluginCatalogPage, #devicesPage, #mediaLibraryPage'
+    ];
+
+    // Add search page to ignore list if configured
+    if (JE.pluginConfig?.DisableTagsOnSearchPage === true) {
+        IGNORE_SELECTORS.push('#searchPage');
+    }
+
+    /**
+     * Check whether an element matches any selector that should be excluded from tagging.
+     * @param {HTMLElement} el - Element to test.
+     * @returns {boolean} True if the element should be skipped.
+     */
+    function shouldIgnoreElement(el) {
+        if (document.querySelector('.videoPlayerContainer')) return true;
+        return IGNORE_SELECTORS.some(function(sel) {
+            return el.closest(sel) !== null;
+        });
+    }
+
     /**
      * Check whether a card already has a genre overlay applied.
      * @param {HTMLElement} el - Element inside the card.
@@ -323,16 +351,7 @@
             JE.tagPipeline.registerRenderer('genre', {
                 render: function(el, item, extras) {
                     if (isCardAlreadyTagged(el)) return;
-                    // Skip excluded contexts (detail page art, cast, admin pages, video player)
-                    if (el.closest('.je-hidden')) return;
-                    if (el.closest('#itemDetailPage .infoWrapper')) return;
-                    if (el.closest('#itemDetailPage #castCollapsible')) return;
-                    if (el.closest('#indexPage .verticalSection.MyMedia')) return;
-                    if (el.closest('.formDialog')) return;
-                    if (el.closest('#itemDetailPage .chapterCardImageContainer')) return;
-                    if (el.closest('#pluginsPage, #pluginCatalogPage, #devicesPage, #mediaLibraryPage')) return;
-                    if (document.querySelector('.videoPlayerContainer')) return;
-                    if (JE.pluginConfig?.DisableTagsOnSearchPage && el.closest('#searchPage')) return;
+                    if (shouldIgnoreElement(el)) return;
 
                     var genres = null;
 
@@ -375,6 +394,14 @@
                         }
                     }
                     return false;
+                },
+                renderFromServerCache: function(el, entry) {
+                    if (isCardAlreadyTagged(el)) return;
+                    if (shouldIgnoreElement(el)) return;
+                    var genres = entry.Genres;
+                    if (genres && genres.length > 0) {
+                        insertGenreTags(el, genres.slice(0, 3));
+                    }
                 },
                 isEnabled: function() {
                     return !!JE.currentSettings?.genreTagsEnabled;

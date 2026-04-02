@@ -103,6 +103,7 @@
 
         // --- STATE VARIABLES ---
         let qualityOverlayCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
+        const serverQualityCache = new Map(); // Computed quality labels from server cache entries
         // Hot, in-memory cache shared across modules to avoid repeated deserialization and cold reads
         const Hot = (JE._hotCache = JE._hotCache || {
             ttl: config.CACHE_TTL,
@@ -910,6 +911,25 @@
                         return true;
                     }
                     return false;
+                },
+                renderFromServerCache: function(el, entry, itemId) {
+                    if (isCardAlreadyTagged(el)) return;
+                    if (shouldIgnoreElement(el)) return;
+                    // Check local computed cache first (avoids re-running quality detection)
+                    const cached = serverQualityCache.get(itemId);
+                    if (cached !== undefined) {
+                        if (cached.length > 0) insertOverlay(el, cached);
+                        return;
+                    }
+                    const sd = entry.StreamData;
+                    if (!sd || !sd.Streams) { serverQualityCache.set(itemId, []); return; }
+                    const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
+                    serverQualityCache.set(itemId, qualities);
+                    if (qualities.length > 0) insertOverlay(el, qualities);
+                },
+                onServerCacheRefresh: function(updatedIds) {
+                    if (!updatedIds) { serverQualityCache.clear(); return; }
+                    updatedIds.forEach(function(id) { serverQualityCache.delete(id); });
                 },
                 isEnabled: function() { return !!JE.currentSettings?.qualityTagsEnabled; },
                 needsFirstEpisode: true,

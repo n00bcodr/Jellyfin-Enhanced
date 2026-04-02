@@ -354,6 +354,20 @@
                     }
                     return false;
                 },
+                renderFromServerCache: function(el, entry) {
+                    if (isCardAlreadyTagged(el)) return;
+                    if (shouldIgnoreElement(el)) return;
+                    var codes = entry.AudioLanguages;
+                    if (!codes || codes.length === 0) return;
+                    var languages = codes.map(function(code) {
+                        try {
+                            return { name: langDisplayNames.of(code), code: code };
+                        } catch (e) {
+                            return { name: code.toUpperCase(), code: code };
+                        }
+                    });
+                    insertLanguageTags(el, languages);
+                },
                 isEnabled: function() { return !!JE.currentSettings?.languageTagsEnabled; },
                 needsFirstEpisode: true,
                 needsParentSeries: false,

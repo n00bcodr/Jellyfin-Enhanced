@@ -59,6 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
+            TagCacheServerMode = true;
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
@@ -254,6 +255,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }
+        public bool TagCacheServerMode { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }

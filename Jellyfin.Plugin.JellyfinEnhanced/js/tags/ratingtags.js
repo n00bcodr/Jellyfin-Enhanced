@@ -358,6 +358,19 @@
                     }
                     return false;
                 },
+                renderFromServerCache: function(el, entry) {
+                    if (isCardAlreadyTagged(el)) return;
+                    if (shouldIgnoreElement(el)) return;
+                    const tmdb = entry.CommunityRating != null
+                        ? parseFloat(entry.CommunityRating).toFixed(1)
+                        : null;
+                    const critic = entry.CriticRating != null
+                        ? normalizeCriticPercent(entry.CriticRating)
+                        : null;
+                    if (tmdb || critic !== null) {
+                        applyRatingTag(el, { tmdb, critic });
+                    }
+                },
                 isEnabled: function() { return !!JE.currentSettings?.ratingTagsEnabled; },
                 needsFirstEpisode: false,
                 needsParentSeries: false,

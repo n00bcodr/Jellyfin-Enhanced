@@ -22,19 +22,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly AutoSeasonRequestMonitor _autoSeasonRequestMonitor;
         private readonly AutoMovieRequestMonitor _autoMovieRequestMonitor;
         private readonly WatchlistMonitor _watchlistMonitor;
+        private readonly TagCacheService _tagCacheService;
+        private readonly TagCacheMonitor _tagCacheMonitor;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Injects the Jellyfin Enhanced script using the File Transformation plugin and performs necessary cleanups.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
             _autoSeasonRequestMonitor = autoSeasonRequestMonitor;
             _autoMovieRequestMonitor = autoMovieRequestMonitor;
             _watchlistMonitor = watchlistMonitor;
+            _tagCacheService = tagCacheService;
+            _tagCacheMonitor = tagCacheMonitor;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -52,6 +56,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Initialize watchlist monitoring
                 _watchlistMonitor.Initialize();
+
+                // Load tag cache from disk (the BuildTagCacheTask will rebuild it if stale)
+                _tagCacheService.LoadFromDisk();
+                _tagCacheMonitor.Initialize();
 
                 _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");
             }, cancellationToken);

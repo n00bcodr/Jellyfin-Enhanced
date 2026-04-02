@@ -201,6 +201,7 @@
                                 </fieldset>
                                 <div class="checkboxContainer" style="margin-top: 2em;margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
                                 <div class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="tagsHideOnHover" is="emby-checkbox" type="checkbox"/><span>Hide Tags on Hover (Default)<div style="font-size: 0.8em;">When enabled, tag overlays fade out when users hover over cards. Users can override this in their personal settings.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="tagCacheServerMode" is="emby-checkbox" type="checkbox"/><span>Server-Side Tag Cache<div style="font-size: 0.8em;">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode.</div></span></label></div>
                             </div>
                         </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -2548,6 +2549,7 @@
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
                 document.querySelector('#tagsHideOnHover').checked = config.TagsHideOnHover === true;
+                document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
@@ -2739,6 +2741,7 @@
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
+            config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
             config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
             config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
