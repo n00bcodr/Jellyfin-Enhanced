@@ -515,9 +515,16 @@
                     }
 
                     // Process cast members for this item, then mark complete
-                    // (don't check for DOM elements — some cast may have no age/place data)
+                    // after a short delay to allow late-arriving DOM updates.
+                    // Capture the itemId so stale completions from previous
+                    // navigations don't mark the wrong item as done.
+                    const processingItemId = itemId;
                     processCastMembers().then(() => {
-                        peopleTagsComplete = true;
+                        setTimeout(() => {
+                            if (lastProcessedItemId === processingItemId) {
+                                peopleTagsComplete = true;
+                            }
+                        }, 2000);
                     });
                 } catch (e) {
                     // Ignore errors (likely not on an item page)
