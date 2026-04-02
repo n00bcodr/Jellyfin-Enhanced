@@ -1926,6 +1926,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DownloadsUseCustomTabs,
                 config.DownloadsPagePollingEnabled,
                 config.DownloadsPollIntervalSeconds,
+                config.DownloadsFilterByUserRequests,
 
                 // Calendar Page Settings
                 config.CalendarPageEnabled,
@@ -3021,8 +3022,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, "Plugin configuration not available");
 
             // Non-admin users can only see downloads for items they requested via Seerr
+            // unless the admin has disabled per-user filtering
             HashSet<int>? allowedTmdbIds = null;
-            if (!IsAdminUser())
+            if (!IsAdminUser() && config.DownloadsFilterByUserRequests)
             {
                 if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
                 {

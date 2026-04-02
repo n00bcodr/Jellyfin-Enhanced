@@ -786,6 +786,13 @@
                             <div class="fieldDescription" style="margin-bottom: 2em;">Shows active downloads from Sonarr/Radarr on the Requests page. (Requires *arr links and API keys to be configured)</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
+                                    <input id="downloadsFilterByUserRequests" is="emby-checkbox" type="checkbox"/>
+                                    <span>Filter Downloads by User Requests</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, non-admin users only see downloads for content they requested. When disabled, all users see the full download queue.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
                                     <input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/>
                                     <span>Show Seerr Issues Section</span>
                                 </label>
@@ -2661,6 +2668,7 @@
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#showDownloadsInRequests').checked = config.ShowDownloadsInRequests !== false;
+                document.querySelector('#downloadsFilterByUserRequests').checked = config.DownloadsFilterByUserRequests !== false;
                 document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
@@ -2866,6 +2874,7 @@
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
             config.ShowDownloadsInRequests = document.querySelector('#showDownloadsInRequests').checked;
+            config.DownloadsFilterByUserRequests = document.querySelector('#downloadsFilterByUserRequests').checked;
             config.DownloadsPageShowIssues = document.querySelector('#downloadsPageShowIssues').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
             config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
@@ -3562,6 +3571,7 @@
             { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
             { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
             { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
+            { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
