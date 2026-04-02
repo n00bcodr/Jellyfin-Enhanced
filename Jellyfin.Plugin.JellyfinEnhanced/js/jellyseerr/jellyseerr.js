@@ -418,7 +418,7 @@
             const timeout = 20000;
 
             const checkForUser = async () => {
-                if (ApiClient.getCurrentUserId()) {
+                if (ApiClient.getCurrentUserId() && ApiClient.accessToken()) {
                     console.log(`${logPrefix} User session found. Initializing...`);
                     const status = await checkUserStatus();
                     isJellyseerrActive = status.active;
