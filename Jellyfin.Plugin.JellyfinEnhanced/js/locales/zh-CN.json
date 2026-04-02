@@ -472,5 +472,9 @@
   "hidden_content_n_hidden_items": "{count} 个隐藏项目",
   "hidden_content_1_hidden_item": "1 个隐藏项目",
   "hidden_content_unknown_show": "未知剧集",
-  "hidden_content_experimental_label": "实验性"
+  "hidden_content_experimental_label": "实验性",
+  "feature_people_tags": "人物标签",
+  "feature_tags_hide_on_hover": "{{icon:eye}} 悬停时隐藏标签",
+  "panel_settings_ui_hide_tags_on_hover": "悬停时隐藏标签",
+  "panel_settings_ui_hide_tags_on_hover_desc": "在悬停卡片时隐藏标签覆盖层，以便更容易看到按钮"
 }

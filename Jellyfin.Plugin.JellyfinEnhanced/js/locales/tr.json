@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} gizli öğe",
     "hidden_content_1_hidden_item": "1 gizli öğe",
     "hidden_content_unknown_show": "Bilinmeyen dizi",
-    "hidden_content_experimental_label": "Deneysel"
+    "hidden_content_experimental_label": "Deneysel",
+    "feature_people_tags": "Kişi etiketleri",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Üzerine gelince etiketleri gizle",
+    "panel_settings_ui_hide_tags_on_hover": "Üzerine gelince etiketleri gizle",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Kartların üzerine gelindiğinde düğmelerin daha iyi görünmesi için etiket katmanlarını gizler"
 }

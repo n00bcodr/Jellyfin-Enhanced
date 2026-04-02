@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} éléments masqués",
     "hidden_content_1_hidden_item": "1 élément masqué",
     "hidden_content_unknown_show": "Série inconnue",
-    "hidden_content_experimental_label": "Expérimental"
+    "hidden_content_experimental_label": "Expérimental",
+    "feature_people_tags": "Étiquettes des personnes",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Masquer les étiquettes au survol",
+    "panel_settings_ui_hide_tags_on_hover": "Masquer les étiquettes au survol",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Masque les superpositions d'étiquettes au survol des cartes pour mieux voir les boutons"
 }

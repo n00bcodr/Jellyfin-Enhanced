@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} скрытых элементов",
     "hidden_content_1_hidden_item": "1 скрытый элемент",
     "hidden_content_unknown_show": "Неизвестный сериал",
-    "hidden_content_experimental_label": "Экспериментально"
+    "hidden_content_experimental_label": "Экспериментально",
+    "feature_people_tags": "Теги персон",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Скрывать теги при наведении",
+    "panel_settings_ui_hide_tags_on_hover": "Скрывать теги при наведении",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Скрывает наложения тегов при наведении на карточки, чтобы кнопки было легче видеть"
 }

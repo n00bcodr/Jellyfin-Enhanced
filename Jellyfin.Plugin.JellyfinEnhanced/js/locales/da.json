@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} skjulte elementer",
     "hidden_content_1_hidden_item": "1 skjult element",
     "hidden_content_unknown_show": "Ukendt serie",
-    "hidden_content_experimental_label": "Eksperimentel"
+    "hidden_content_experimental_label": "Eksperimentel",
+    "feature_people_tags": "Person-tags",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Skjul tags ved hover",
+    "panel_settings_ui_hide_tags_on_hover": "Skjul tags ved hover",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Skjul tag-overlays ved hover over kort, så knapper er lettere at se"
 }

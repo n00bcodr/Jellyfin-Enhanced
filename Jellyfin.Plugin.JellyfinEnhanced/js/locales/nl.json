@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} verborgen items",
     "hidden_content_1_hidden_item": "1 verborgen item",
     "hidden_content_unknown_show": "Onbekende serie",
-    "hidden_content_experimental_label": "Experimenteel"
+    "hidden_content_experimental_label": "Experimenteel",
+    "feature_people_tags": "Persoon-tags",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Tags verbergen bij hover",
+    "panel_settings_ui_hide_tags_on_hover": "Tags verbergen bij hover",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Verbergt tag-overlays bij hoveren over kaarten zodat knoppen beter zichtbaar zijn"
 }

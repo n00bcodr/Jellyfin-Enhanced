@@ -192,7 +192,7 @@
                                             </span>
                                         </label>
                                     </div>
-                                    <div style="margin-top: 1em;">
+                                    <div id="clientTagCacheControls" style="margin-top: 1em;">
                                         <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
                                             <span>Clear All Client Caches</span>
                                         </button>
@@ -3637,6 +3637,17 @@
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             PARENT_DEPS.forEach(updateParentDep);
+            updateClientTagCacheControlsVisibility();
+        }
+
+        /**
+         * Shows clear-client-cache controls only when server-side tag cache is disabled.
+         */
+        function updateClientTagCacheControlsVisibility() {
+            var serverModeCheckbox = document.getElementById('tagCacheServerMode');
+            var controls = document.getElementById('clientTagCacheControls');
+            if (!serverModeCheckbox || !controls) return;
+            controls.style.display = serverModeCheckbox.checked ? 'none' : '';
         }
 
         // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)

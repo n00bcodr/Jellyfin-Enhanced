@@ -28,7 +28,9 @@
     "feature_random_button": "{{icon:random}} Zufallsbutton",
     "feature_unwatched_only": "{{icon:random}} Nur ungesehene",
     "feature_file_size_display": "{{icon:file}} Dateigröße anzeigen",
-    "feature_audio_language_display": "{{icon:speaker}} Audiosprachen anzeigen",    "feature_watch_progress_display": "{{icon:eye}} Sehfortschritt anzeigen",    "feature_remove_continue_watching": "{{icon:eye}} Aus „Weiter ansehen“ entfernen",
+    "feature_audio_language_display": "{{icon:speaker}} Audiosprachen anzeigen",
+    "feature_watch_progress_display": "{{icon:eye}} Sehfortschritt anzeigen",
+    "feature_remove_continue_watching": "{{icon:eye}} Aus „Weiter ansehen“ entfernen",
     "feature_quality_tags": "{{icon:tag}} Qualitäts-Tags",
     "feature_genre_tags": "{{icon:mask}} Genre-Tags",
     "feature_language_tags": "{{icon:flag}} Sprach-Tags",
@@ -470,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} versteckte Elemente",
     "hidden_content_1_hidden_item": "1 verstecktes Element",
     "hidden_content_unknown_show": "Unbekannte Serie",
-    "hidden_content_experimental_label": "Experimentell"
+    "hidden_content_experimental_label": "Experimentell",
+    "feature_people_tags": "Personen-Tags",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Tags bei Hover ausblenden",
+    "panel_settings_ui_hide_tags_on_hover": "Tags bei Hover ausblenden",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Blendet Tag-Overlays beim Überfahren von Karten aus, damit Schaltflächen besser sichtbar sind"
 }

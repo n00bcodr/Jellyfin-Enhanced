@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} itens ocultos",
     "hidden_content_1_hidden_item": "1 item oculto",
     "hidden_content_unknown_show": "Série desconhecida",
-    "hidden_content_experimental_label": "Experimental"
+    "hidden_content_experimental_label": "Experimental",
+    "feature_people_tags": "Etiquetas de Pessoas",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Ocultar Etiquetas ao Passar o Rato",
+    "panel_settings_ui_hide_tags_on_hover": "Ocultar Etiquetas ao Passar o Rato",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Oculta as sobreposições de etiquetas ao passar o rato sobre os cartões para facilitar a visualização dos botões"
 }

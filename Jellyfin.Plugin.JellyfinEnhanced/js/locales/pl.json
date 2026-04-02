@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} ukryte elementy",
     "hidden_content_1_hidden_item": "1 ukryty element",
     "hidden_content_unknown_show": "Nieznany serial",
-    "hidden_content_experimental_label": "Eksperymentalne"
+    "hidden_content_experimental_label": "Eksperymentalne",
+    "feature_people_tags": "Tagi osób",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Ukryj tagi po najechaniu",
+    "panel_settings_ui_hide_tags_on_hover": "Ukryj tagi po najechaniu",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Ukrywa nakładki tagów po najechaniu na karty, aby przyciski były lepiej widoczne"
 }

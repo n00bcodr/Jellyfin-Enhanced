@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} elements ocults",
     "hidden_content_1_hidden_item": "1 element ocult",
     "hidden_content_unknown_show": "Sèrie desconeguda",
-    "hidden_content_experimental_label": "Experimental"
+    "hidden_content_experimental_label": "Experimental",
+    "feature_people_tags": "Etiquetes de persones",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Amaga les etiquetes en passar el cursor",
+    "panel_settings_ui_hide_tags_on_hover": "Amaga les etiquetes en passar el cursor",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Amaga les superposicions d'etiquetes en passar el cursor sobre les targetes perquè els botons es vegin millor"
 }

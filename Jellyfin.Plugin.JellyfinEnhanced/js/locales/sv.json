@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} dolda objekt",
     "hidden_content_1_hidden_item": "1 dolt objekt",
     "hidden_content_unknown_show": "Okänd serie",
-    "hidden_content_experimental_label": "Experimentell"
+    "hidden_content_experimental_label": "Experimentell",
+    "feature_people_tags": "Person-taggar",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Dölj taggar vid hovring",
+    "panel_settings_ui_hide_tags_on_hover": "Dölj taggar vid hovring",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Döljer taggöverlägg när du hovrar över kort så att knapparna syns bättre"
 }
