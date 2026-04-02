@@ -1931,6 +1931,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DownloadsUseCustomTabs,
                 config.DownloadsPagePollingEnabled,
                 config.DownloadsPollIntervalSeconds,
+                config.DownloadsFilterByUserRequests,
 
                 // Calendar Page Settings
                 config.CalendarPageEnabled,
@@ -3198,6 +3199,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
 
+            // Non-admin users can only see downloads for items they requested via Seerr
+            // unless the admin has disabled per-user filtering
+            HashSet<(int TmdbId, string MediaType)>? allowedRequests = null;
+            if (!IsAdminUser() && config.DownloadsFilterByUserRequests)
+            {
+                if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+                if (string.IsNullOrEmpty(jellyfinUserId))
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+                if (string.IsNullOrEmpty(jellyseerrUserId))
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                var userRequests = await GetJellyseerrRequestsForUser(jellyseerrUserId);
+                if (userRequests == null || userRequests.Count == 0)
+                {
+                    return Ok(new { items = new List<object>() });
+                }
+
+                allowedRequests = new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType)));
+            }
+
             var items = new List<object>();
 
             // Fetch Sonarr queue
@@ -3228,6 +3260,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             foreach (var record in data.records)
                             {
+                                int? tmdbId = record.series?.tmdbId;
+
+                                // Filter by user's requested TMDB IDs when not admin
+                                if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "tv"))))
+                                {
+                                    continue;
+                                }
+
                                 string? posterUrl = null;
                                 if (record.series?.images != null)
                                 {
@@ -3254,7 +3294,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     totalSize = (long?)record.size,
                                     sizeRemaining = (long?)record.sizeleft,
                                     timeRemaining = (string?)record.timeleft,
-                                    posterUrl = posterUrl
+                                    posterUrl = posterUrl,
+                                    tmdbId = tmdbId
                                 });
                             }
                         }
@@ -3286,6 +3327,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             foreach (var record in data.records)
                             {
+                                int? tmdbId = record.movie?.tmdbId;
+
+                                // Filter by user's requested TMDB IDs when not admin
+                                if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "movie"))))
+                                {
+                                    continue;
+                                }
+
                                 string? posterUrl = null;
                                 if (record.movie?.images != null)
                                 {
@@ -3312,7 +3361,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     totalSize = (long?)record.size,
                                     sizeRemaining = (long?)record.sizeleft,
                                     timeRemaining = (string?)record.timeleft,
-                                    posterUrl = posterUrl
+                                    posterUrl = posterUrl,
+                                    tmdbId = tmdbId
                                 });
                             }
                         }
@@ -3378,7 +3428,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 // Check if user has permission to view all requests
-                hasRequestViewPermission = JellyseerrPermissionHelper.HasAnyPermission(
+                // Jellyfin admins can always view all requests regardless of Seerr permissions
+                hasRequestViewPermission = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
                     jellyseerrUser.Permissions,
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
                 );
