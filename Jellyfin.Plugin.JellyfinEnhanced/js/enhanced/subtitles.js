@@ -74,8 +74,8 @@
      * Watches for subtitle elements and applies styles to them as they appear.
      */
     function startSubtitleObserver() {
-        if (subtitleObserver) subtitleObserver.disconnect();
-        subtitleObserver = new MutationObserver((mutations) => {
+        if (subtitleObserver) subtitleObserver.unsubscribe();
+        subtitleObserver = JE.helpers.onBodyMutation('subtitles', (mutations) => {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
@@ -89,7 +89,6 @@
                 }
             }
         });
-        subtitleObserver.observe(document.body, { childList: true, subtree: true });
     }
 
     /**
@@ -139,7 +138,7 @@
     JE.applySavedStylesWhenReady = () => {
         if (!document.querySelector('video')) {
             if (subtitleObserver) {
-                subtitleObserver.disconnect();
+                subtitleObserver.unsubscribe();
                 subtitleObserver = null;
             }
             return;

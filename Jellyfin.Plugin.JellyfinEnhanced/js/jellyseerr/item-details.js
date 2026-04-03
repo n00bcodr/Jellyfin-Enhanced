@@ -95,13 +95,13 @@
             }
 
             // Set up observer
-            let observer = null;
+            let observerHandle = null;
             let timeoutId = null;
 
             const cleanup = () => {
-                if (observer) {
-                    observer.disconnect();
-                    observer = null;
+                if (observerHandle) {
+                    observerHandle.unsubscribe();
+                    observerHandle = null;
                 }
                 if (timeoutId) {
                     clearTimeout(timeoutId);
@@ -117,15 +117,13 @@
                 }, { once: true });
             }
 
-            observer = new MutationObserver(() => {
+            observerHandle = JE.helpers.onBodyMutation('jellyseerr-item-details-page-detect', () => {
                 const result = checkPage();
                 if (result) {
                     cleanup();
                     resolve(result);
                 }
             });
-
-            observer.observe(document.body, { childList: true, subtree: true });
 
             // Timeout fallback (3 seconds)
             timeoutId = setTimeout(() => {

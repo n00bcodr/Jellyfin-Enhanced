@@ -313,7 +313,7 @@
                 return button;
             }
 
-            observer = new MutationObserver(() => {
+            observer = JE.helpers.createObserver('arr-links', () => {
                 if (!JE?.pluginConfig?.ArrLinksEnabled) {
                     // Feature disabled - disconnect observer
                     if (observer) {
@@ -331,9 +331,7 @@
                 debounceTimer = setTimeout(() => {
                     addArrLinks();
                 }, 100); // Wait 100ms after last mutation before processing
-            });
-
-            observer.observe(document.body, {
+            }, document.body, {
                 childList: true,
                 subtree: true,
                 attributes: true,

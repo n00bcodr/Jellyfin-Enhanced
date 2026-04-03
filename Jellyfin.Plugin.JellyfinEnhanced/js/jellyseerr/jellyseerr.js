@@ -386,8 +386,7 @@
                 manualRefreshJellyseerrData(query);
             });
 
-            const observer = new MutationObserver(tryAttachSearchListener);
-            observer.observe(document.body, { childList: true, subtree: true });
+            JE.helpers.onBodyMutation('jellyseerr-search-listener', tryAttachSearchListener);
 
             // Immediately check if the search page is already rendered (handles the
             // case where the observer was set up after the search page loaded, e.g.

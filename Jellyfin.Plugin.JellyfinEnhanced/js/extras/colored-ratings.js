@@ -15,6 +15,7 @@
     };
 
     let observer = null;
+    let urlObserverHandle = null;
     let fallbackTimer = null;
     let debounceTimer = null;
     let processedElements = new WeakSet();
@@ -105,7 +106,8 @@
         if (!window.MutationObserver) return false;
 
         try {
-            observer = new MutationObserver((mutations) => {
+            const JE = window.JellyfinEnhanced;
+            const callback = (mutations) => {
                 let shouldProcess = false;
 
                 mutations.forEach((mutation) => {
@@ -133,14 +135,25 @@
                 if (shouldProcess) {
                     debouncedProcess();
                 }
-            });
+            };
 
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true,
-                characterData: true,
-                characterDataOldValue: false
-            });
+            // Uses characterData so needs a dedicated observer via createObserver
+            if (JE?.helpers?.createObserver) {
+                observer = JE.helpers.createObserver(
+                    'colored-ratings',
+                    callback,
+                    document.body,
+                    { childList: true, subtree: true, characterData: true, characterDataOldValue: false }
+                );
+            } else {
+                observer = new MutationObserver(callback);
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true,
+                    characterDataOldValue: false
+                });
+            }
 
             return true;
 
@@ -207,6 +220,10 @@
             observer.disconnect();
             observer = null;
         }
+        if (urlObserverHandle) {
+            urlObserverHandle.unsubscribe();
+            urlObserverHandle = null;
+        }
         if (fallbackTimer) {
             clearInterval(fallbackTimer);
             fallbackTimer = null;
@@ -240,15 +257,28 @@
 
     let lastUrl = location.href;
 
-    new MutationObserver(() => {
-        const url = location.href;
-        if (url !== lastUrl) {
-            lastUrl = url;
-            if (isFeatureEnabled()) {
-                setTimeout(initialize, 500);
+    const JE = window.JellyfinEnhanced;
+    if (JE?.helpers?.onBodyMutation) {
+        urlObserverHandle = JE.helpers.onBodyMutation('colored-ratings-url-watcher', () => {
+            const url = location.href;
+            if (url !== lastUrl) {
+                lastUrl = url;
+                if (isFeatureEnabled()) {
+                    setTimeout(initialize, 500);
+                }
             }
-        }
-    }).observe(document, { subtree: true, childList: true });
+        });
+    } else {
+        new MutationObserver(() => {
+            const url = location.href;
+            if (url !== lastUrl) {
+                lastUrl = url;
+                if (isFeatureEnabled()) {
+                    setTimeout(initialize, 500);
+                }
+            }
+        }).observe(document, { subtree: true, childList: true });
+    }
 
     window.addEventListener('beforeunload', cleanup);
     if (window.JellyfinEnhanced) {

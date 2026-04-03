@@ -192,7 +192,7 @@
                                             </span>
                                         </label>
                                     </div>
-                                    <div style="margin-top: 1em;">
+                                    <div id="clientTagCacheControls" style="margin-top: 1em;">
                                         <button id="clearTagsCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button">
                                             <span>Clear All Client Caches</span>
                                         </button>
@@ -200,6 +200,9 @@
                                     </div>
                                 </fieldset>
                                 <div class="checkboxContainer" style="margin-top: 2em;margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="tagsHideOnHover" is="emby-checkbox" type="checkbox"/><span>Hide Tags on Hover<div style="font-size: 0.8em;">When enabled, tag overlays fade out when users hover over cards. Users can override this in their personal settings.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="tagCacheServerMode" is="emby-checkbox" type="checkbox"/><span>Server-Side Tag Cache<div style="font-size: 0.8em;">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode (not recommended).</div></span></label></div>
+                                <div id="tagsLocalStorageFallbackContainer" class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Local Storage<div style="font-size: 0.8em;">Available when Server-Side Tag Cache is disabled. Stores fallback tag cache entries in browser localStorage for faster repeat loads.</div></span></label></div>
                             </div>
                         </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -784,6 +787,13 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Shows active downloads from Sonarr/Radarr on the Requests page. (Requires *arr links and API keys to be configured)</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="downloadsFilterByUserRequests" is="emby-checkbox" type="checkbox"/>
+                                    <span>Filter Downloads by User Requests</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em;">When enabled, non-admin users only see downloads for content they requested. When disabled, all authenticated users can see every item in the download queue, including content requested by other users.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                 <label>
                                     <input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/>
@@ -1431,12 +1441,6 @@
                                         <img src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/colored-activity-icons.png" style="max-width: 400px; margin: 0.5em 0; border-radius: 10px;" alt="Colored Activity Icons Example">
                                     </a>
                                 </details>
-                            </div>
-                            <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #00a4dc; border-radius: 4px; padding: .5em 1em; margin: 0 0 1.5em 0; display: flex; align-items: center; gap: 1em;">
-                                <i class="material-icons" style="color: #00a4dc; font-size: 18px;">info</i>
-                                <div>
-                                    Currently works with English activity logs only. PRs welcome for additional languages.
-                                </div>
                             </div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label>
@@ -2560,6 +2564,9 @@
                 if (pChk) pChk.checked = peopleEnabled;
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
+                document.querySelector('#tagsHideOnHover').checked = config.TagsHideOnHover === true;
+                document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
+                document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
@@ -2661,6 +2668,7 @@
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#showDownloadsInRequests').checked = config.ShowDownloadsInRequests !== false;
+                document.querySelector('#downloadsFilterByUserRequests').checked = config.DownloadsFilterByUserRequests !== false;
                 document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
@@ -2751,6 +2759,11 @@
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
+            config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
+            config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
+            config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
+                ? document.querySelector('#enableTagsLocalStorageFallback').checked
+                : true;
             config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
             config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
@@ -2866,6 +2879,7 @@
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
             config.ShowDownloadsInRequests = document.querySelector('#showDownloadsInRequests').checked;
+            config.DownloadsFilterByUserRequests = document.querySelector('#downloadsFilterByUserRequests').checked;
             config.DownloadsPageShowIssues = document.querySelector('#downloadsPageShowIssues').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
             config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
@@ -3491,6 +3505,7 @@
             { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
             { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
             { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
+            { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
@@ -3556,6 +3571,28 @@
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             PARENT_DEPS.forEach(updateParentDep);
+            updateClientTagCacheControlsVisibility();
+        }
+
+        /**
+         * Shows clear-client-cache controls only when server-side tag cache is disabled.
+         */
+        function updateClientTagCacheControlsVisibility() {
+            var serverModeCheckbox = document.getElementById('tagCacheServerMode');
+            var controls = document.getElementById('clientTagCacheControls');
+            var localStorageFallbackContainer = document.getElementById('tagsLocalStorageFallbackContainer');
+            var localStorageFallbackCheckbox = document.getElementById('enableTagsLocalStorageFallback');
+            if (!serverModeCheckbox || !controls) return;
+
+            if (localStorageFallbackContainer) {
+                localStorageFallbackContainer.style.display = serverModeCheckbox.checked ? 'none' : '';
+            }
+
+            if (!serverModeCheckbox.checked && localStorageFallbackCheckbox) {
+                localStorageFallbackCheckbox.checked = true;
+            }
+
+            controls.style.display = serverModeCheckbox.checked ? 'none' : '';
         }
 
         // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)
@@ -3569,6 +3606,7 @@
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
+        document.querySelector('#tagCacheServerMode').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey', '#sonarrUrl', '#sonarrApiKey', '#radarrUrl', '#radarrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });

@@ -72,6 +72,7 @@
         let processedCastMembers = new WeakSet();
         let processedPersonIds = new Set();
         let lastProcessedItemId = null;
+        let peopleTagsComplete = false; // Set true after all cast members tagged for current item
         let isProcessing = false;
 
         // Inject styles for deceased indicators, overlay positioning, and material-symbols-rounded font
@@ -181,7 +182,6 @@
             if (Hot.peopleTags.has(cacheKey)) {
                 const cached = Hot.peopleTags.get(cacheKey);
                 if (now - cached.timestamp < CACHE_TTL) {
-                    // console.debug(`${logPrefix} Using in-memory cache for person ${personId}`);
                     return cached.data;
                 }
             }
@@ -189,7 +189,6 @@
             // Check localStorage cache
             if (peopleCache[cacheKey] && peopleCacheTimestamp[cacheKey]) {
                 if (now - peopleCacheTimestamp[cacheKey] < CACHE_TTL) {
-                    // console.debug(`${logPrefix} Using localStorage cache for person ${personId}`);
                     const data = peopleCache[cacheKey];
                     Hot.peopleTags.set(cacheKey, { data, timestamp: now });
                     return data;
@@ -506,51 +505,74 @@
                         lastProcessedItemId = itemId;
                         processedCastMembers = new WeakSet();
                         processedPersonIds = new Set();
+                        peopleTagsComplete = false;
                         console.debug(`${logPrefix} New item detected: ${itemId}`);
                     }
 
-                    // Skip if already processing
-                    if (isProcessing) {
+                    // Skip if already fully processed for this item
+                    if (peopleTagsComplete || isProcessing) {
                         return;
                     }
 
-                    // Check if visible castCollapsible already has tags
-                    if (castSection?.querySelector('.je-people-age-container, .je-people-place-banner') &&
-                        guestCastSection?.querySelector('.je-people-age-container, .je-people-place-banner')) {
-                        return;
-                    }
-
-                    // Process cast members for this item
-                    processCastMembers();
+                    // Process cast members for this item, then mark complete
+                    // after a short delay to allow late-arriving DOM updates.
+                    // Capture the itemId so stale completions from previous
+                    // navigations don't mark the wrong item as done.
+                    const processingItemId = itemId;
+                    processCastMembers().then(() => {
+                        setTimeout(() => {
+                            if (lastProcessedItemId === processingItemId) {
+                                peopleTagsComplete = true;
+                            }
+                        }, 2000);
+                    });
                 } catch (e) {
                     // Ignore errors (likely not on an item page)
                 }
             }, 100);
 
-            // Create managed observer for people tags (same pattern as features.js)
+            // Create managed observer for people tags.
+            // Only watches childList (not attributes) to avoid firing on every hover
+            // class/style change. Cast sections appear via childList mutations.
             JE.helpers.createObserver(
                 'people-tags',
                 (mutations) => {
                     if (!JE.currentSettings?.peopleTagsEnabled) return;
 
-                    const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
-                    const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
+                    // Reset completion flag when navigating to a different item
+                    // (must happen BEFORE the peopleTagsComplete check)
+                    try {
+                        const currentId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                        if (currentId && currentId !== lastProcessedItemId) {
+                            peopleTagsComplete = false;
+                        }
+                    } catch {}
 
-                    if (!castSection && !guestCastSection) return;
+                    if (peopleTagsComplete) return;
 
+                    // Quick check: only process if we're on a detail page
+                    if (!document.querySelector('#itemDetailPage:not(.hide)')) return;
+
+                    // Only react to actual node additions, not attribute changes
+                    let hasNewNodes = false;
                     for (const mutation of mutations) {
-                        if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                            handlePeopleTags();
+                        if (mutation.addedNodes.length > 0) {
+                            hasNewNodes = true;
                             break;
                         }
                     }
+                    if (!hasNewNodes) return;
+
+                    const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
+                    const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
+                    if (!castSection && !guestCastSection) return;
+
+                    handlePeopleTags();
                 },
                 document.body,
                 {
                     childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['class', 'style']
+                    subtree: true
                 }
             );
 

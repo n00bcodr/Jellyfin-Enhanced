@@ -58,6 +58,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             PeopleTagsEnabled = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
+            TagsHideOnHover = false;
+            TagCacheServerMode = true;
+            EnableTagsLocalStorageFallback = false;
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
@@ -189,6 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DownloadsPollIntervalSeconds = 30;
             DownloadsPageShowIssues = false;
             ShowDownloadsInRequests = true;
+            DownloadsFilterByUserRequests = true;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
             CalendarPageEnabled = false;
@@ -253,6 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool PeopleTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
+        public bool TagsHideOnHover { get; set; }
+        public bool TagCacheServerMode { get; set; }
+        public bool EnableTagsLocalStorageFallback { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }
@@ -372,6 +379,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int DownloadsPollIntervalSeconds { get; set; }
         public bool DownloadsPageShowIssues { get; set; }
         public bool ShowDownloadsInRequests { get; set; }
+        public bool DownloadsFilterByUserRequests { get; set; }
 
         // Calendar Page Settings (Sonarr/Radarr Releases)
         public bool CalendarPageEnabled { get; set; }

@@ -472,5 +472,9 @@
   "hidden_content_n_hidden_items": "{count} 個隱藏項目",
   "hidden_content_1_hidden_item": "1 個隱藏項目",
   "hidden_content_unknown_show": "未知劇集",
-  "hidden_content_experimental_label": "實驗性"
+  "hidden_content_experimental_label": "實驗性",
+  "feature_people_tags": "人物標籤",
+  "feature_tags_hide_on_hover": "{{icon:eye}} 滑過時隱藏標籤",
+  "panel_settings_ui_hide_tags_on_hover": "滑過時隱藏標籤",
+  "panel_settings_ui_hide_tags_on_hover_desc": "當滑過卡片時隱藏標籤覆蓋層，讓按鈕更易看見"
 }
