@@ -17,6 +17,9 @@
         // Use static cache key (not version-based) to persist across plugin updates
         const CACHE_KEY = 'JellyfinEnhanced-qualityTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-qualityTagsCacheTimestamp';
+        const ENABLE_LOCAL_STORAGE_FALLBACK =
+            JE.pluginConfig?.TagCacheServerMode === false ||
+            JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
 
         // CSS selectors for elements that should NOT have quality tags applied.
         // This is used to ignore certain views like the cast & crew list.
@@ -102,7 +105,9 @@
         };
 
         // --- STATE VARIABLES ---
-        let qualityOverlayCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
+        let qualityOverlayCache = ENABLE_LOCAL_STORAGE_FALLBACK
+            ? (JSON.parse(localStorage.getItem(CACHE_KEY)) || {})
+            : {};
         const serverQualityCache = new Map(); // Computed quality labels from server cache entries
         // Hot, in-memory cache shared across modules to avoid repeated deserialization and cold reads
         const Hot = (JE._hotCache = JE._hotCache || {
@@ -117,6 +122,7 @@
          * Saves the quality overlay cache to localStorage after pruning expired entries.
          */
         function saveCache() {
+            if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
             try {
                 const now = Date.now();
                 // Prune old entries from cache
@@ -135,6 +141,7 @@
          * Also checks if server has triggered a cache clear.
          */
         function cleanupOldCaches() {
+            if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
             // Remove old version-based cache keys and legacy cache keys
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
@@ -863,10 +870,12 @@
         cleanupOldCaches();
 
         // Register with unified cache manager for periodic saves
-        if (JE._cacheManager) {
+        if (ENABLE_LOCAL_STORAGE_FALLBACK && JE._cacheManager) {
             JE._cacheManager.register(saveCache);
         }
-        window.addEventListener('beforeunload', saveCache);
+        if (ENABLE_LOCAL_STORAGE_FALLBACK) {
+            window.addEventListener('beforeunload', saveCache);
+        }
 
         if (JE.tagPipeline) {
             JE.tagPipeline.registerRenderer('quality', {

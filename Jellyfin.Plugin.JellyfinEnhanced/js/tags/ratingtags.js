@@ -9,6 +9,9 @@
     const TAGGED_ATTR = 'jeRatingTagged';
     const CACHE_KEY = 'JellyfinEnhanced-ratingTagsCache';
     const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-ratingTagsCacheTimestamp';
+    const ENABLE_LOCAL_STORAGE_FALLBACK =
+        JE.pluginConfig?.TagCacheServerMode === false ||
+        JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
 
     // CSS selectors for elements that should NOT have rating tags applied.
     const IGNORE_SELECTORS = [
@@ -82,6 +85,7 @@
      * @returns {void}
      */
     function saveCache() {
+        if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(ratingCache)); }
         catch (e) { console.warn(`${logPrefix} Failed to save cache`, e); }
     }
@@ -91,6 +95,7 @@
      * @returns {void}
      */
     function cleanupOldCaches() {
+        if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
         // Clean up old cache keys
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -298,7 +303,9 @@
         }
 
         // Initialize caches
-        ratingCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+        ratingCache = ENABLE_LOCAL_STORAGE_FALLBACK
+            ? JSON.parse(localStorage.getItem(CACHE_KEY) || '{}')
+            : {};
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.rating = Hot.rating || new Map();
 
@@ -306,7 +313,7 @@
         injectCss();
 
         // Register with unified cache manager for periodic persistence
-        if (JE._cacheManager) {
+        if (ENABLE_LOCAL_STORAGE_FALLBACK && JE._cacheManager) {
             JE._cacheManager.register(saveCache);
         }
 

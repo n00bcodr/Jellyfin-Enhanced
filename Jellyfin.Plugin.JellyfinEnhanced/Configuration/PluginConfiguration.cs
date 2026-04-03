@@ -60,6 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
             TagCacheServerMode = true;
+            EnableTagsLocalStorageFallback = false;
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
@@ -258,6 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }
         public bool TagCacheServerMode { get; set; }
+        public bool EnableTagsLocalStorageFallback { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }

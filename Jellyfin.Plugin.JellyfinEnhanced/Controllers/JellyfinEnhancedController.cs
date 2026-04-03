@@ -1863,6 +1863,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DisableTagsOnSearchPage,
                 config.TagsHideOnHover,
                 config.TagCacheServerMode,
+                config.EnableTagsLocalStorageFallback,
 
                 // Seerr Search Settings
                 config.JellyseerrEnabled,

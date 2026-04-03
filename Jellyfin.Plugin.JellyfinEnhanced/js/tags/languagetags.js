@@ -10,6 +10,9 @@
         const TAGGED_ATTR = 'jeLanguageTagged';
         const CACHE_KEY = 'JellyfinEnhanced-languageTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-languageTagsCacheTimestamp';
+        const ENABLE_LOCAL_STORAGE_FALLBACK =
+            JE.pluginConfig?.TagCacheServerMode === false ||
+            JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
         const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
 
@@ -37,16 +40,20 @@
             IGNORE_SELECTORS.push('#searchPage .cardImageContainer');
         }
 
-        let langCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+        let langCache = ENABLE_LOCAL_STORAGE_FALLBACK
+            ? JSON.parse(localStorage.getItem(CACHE_KEY) || '{}')
+            : {};
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.language = Hot.language || new Map();
 
         function saveCache() {
+            if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
             try { localStorage.setItem(CACHE_KEY, JSON.stringify(langCache)); }
             catch (e) { console.warn(`${logPrefix} Failed to save cache`, e); }
         }
 
         function cleanupOldCaches() {
+            if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key && (key.startsWith('languageTagsCache-') || key === 'languageTagsCache' || key === 'languageTagsCacheTimestamp') && key !== CACHE_KEY && key !== CACHE_TIMESTAMP_KEY) {
@@ -300,10 +307,12 @@
         cleanupOldCaches();
 
         // Register with unified cache manager for periodic saves
-        if (JE._cacheManager) {
+        if (ENABLE_LOCAL_STORAGE_FALLBACK && JE._cacheManager) {
             JE._cacheManager.register(saveCache);
         }
-        window.addEventListener('beforeunload', saveCache);
+        if (ENABLE_LOCAL_STORAGE_FALLBACK) {
+            window.addEventListener('beforeunload', saveCache);
+        }
 
         if (JE.tagPipeline) {
             JE.tagPipeline.registerRenderer('language', {

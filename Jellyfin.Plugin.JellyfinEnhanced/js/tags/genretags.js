@@ -8,8 +8,13 @@
     const TAGGED_ATTR = 'jeGenreTagged';
     const CACHE_KEY = 'JellyfinEnhanced-genreTagsCache';
     const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-genreTagsCacheTimestamp';
+    const ENABLE_LOCAL_STORAGE_FALLBACK =
+        JE.pluginConfig?.TagCacheServerMode === false ||
+        JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
 
-    let genreCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
+    let genreCache = ENABLE_LOCAL_STORAGE_FALLBACK
+        ? (JSON.parse(localStorage.getItem(CACHE_KEY)) || {})
+        : {};
 
     const genreIconMap = {
         // Default
@@ -89,6 +94,7 @@
      * @returns {void}
      */
     function saveCache() {
+        if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
         try {
             localStorage.setItem(CACHE_KEY, JSON.stringify(genreCache));
         } catch (e) {
@@ -101,6 +107,7 @@
      * @returns {void}
      */
     function cleanupOldCaches() {
+        if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
         // Remove old version-based cache keys and legacy cache keys
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
@@ -342,10 +349,12 @@
         }
 
         // Register with unified cache manager for periodic persistence
-        if (JE._cacheManager) {
+        if (ENABLE_LOCAL_STORAGE_FALLBACK && JE._cacheManager) {
             JE._cacheManager.register(saveCache);
         }
-        window.addEventListener('beforeunload', saveCache);
+        if (ENABLE_LOCAL_STORAGE_FALLBACK) {
+            window.addEventListener('beforeunload', saveCache);
+        }
 
         if (JE.tagPipeline) {
             JE.tagPipeline.registerRenderer('genre', {
