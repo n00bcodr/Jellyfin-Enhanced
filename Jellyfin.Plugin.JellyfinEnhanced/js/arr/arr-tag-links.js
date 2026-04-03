@@ -189,7 +189,7 @@
             }
         }
 
-        const observer = new MutationObserver((mutations) => {
+        JE.helpers.createObserver('arr-tag-links', (mutations) => {
             if (!JE?.pluginConfig?.ArrTagsShowAsLinks) {
                 return;
             }
@@ -200,9 +200,7 @@
             }
 
             debounceTimer = setTimeout(checkAndAddLinks, 100);
-        });
-
-        observer.observe(document.body, {
+        }, document.body, {
             childList: true,
             subtree: true,
             attributes: true,

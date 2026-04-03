@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} skrytých položiek",
     "hidden_content_1_hidden_item": "1 skrytá položka",
     "hidden_content_unknown_show": "Neznámy seriál",
-    "hidden_content_experimental_label": "Experimentálne"
+    "hidden_content_experimental_label": "Experimentálne",
+    "feature_people_tags": "Štítky osôb",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Skryť štítky pri prechode myšou",
+    "panel_settings_ui_hide_tags_on_hover": "Skryť štítky pri prechode myšou",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Skryje prekrytia štítkov pri prechode myšou nad kartami, aby boli tlačidlá lepšie viditeľné"
 }

@@ -50,6 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+        private readonly Services.TagCacheService _tagCacheService;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -124,7 +125,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IDtoService dtoService,
             UserConfigurationManager userConfigurationManager,
             IItemRepository itemRepository,
-            IDbContextFactory<JellyfinDbContext> dbContextFactory)
+            IDbContextFactory<JellyfinDbContext> dbContextFactory,
+            Services.TagCacheService tagCacheService)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -135,6 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _userConfigurationManager = userConfigurationManager;
             _itemRepository = itemRepository;
             _dbContextFactory = dbContextFactory;
+            _tagCacheService = tagCacheService;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
@@ -1858,6 +1861,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 config.TagsCacheTtlDays,
                 config.DisableTagsOnSearchPage,
+                config.TagsHideOnHover,
+                config.TagCacheServerMode,
+                config.EnableTagsLocalStorageFallback,
 
                 // Seerr Search Settings
                 config.JellyseerrEnabled,
@@ -2459,6 +2465,179 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
             return Ok(new { success = true, userCount = userCount });
         }
+
+        /// <summary>
+        /// Returns the pre-computed tag cache filtered by the user's library access.
+        /// The client loads this once per session instead of making per-page batch calls.
+        /// Optional 'since' parameter returns only entries modified after that timestamp.
+        /// </summary>
+        [HttpGet("tag-cache/{userId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null)
+        {
+            if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
+            {
+                return NotFound();
+            }
+
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var items = _tagCacheService.GetCacheForUser(user, since);
+
+            return Ok(new
+            {
+                version = _tagCacheService.Version,
+                timestamp = _tagCacheService.LastModified,
+                count = items.Count,
+                items
+            });
+        }
+
+        /// <summary>
+        /// Batch endpoint for the unified tag pipeline. Returns item metadata plus first-episode
+        /// data for Series/Season items in a single response, eliminating N individual API calls.
+        ///
+        /// Optimizations applied:
+        /// - Skip GetMediaSources for Series/Season containers (no media files)
+        /// - Trimmed response: only fields tag renderers need (streams, genres, ratings)
+        /// - Filenames only (not full paths) for IMAX/3D detection
+        /// - 200-item batch cap to prevent abuse
+        /// </summary>
+        /// <param name="userId">The Jellyfin user GUID for authorization and library access filtering.</param>
+        /// <param name="ids">Array of item GUID strings to fetch tag data for (max 200).</param>
+        /// <returns>JSON object with Items array containing trimmed metadata per item.</returns>
+        [HttpPost("tag-data/{userId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagData(Guid userId, [FromBody] string[] ids)
+        {
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (ids == null || ids.Length == 0)
+            {
+                return BadRequest(new { error = "ids array required" });
+            }
+
+            if (ids.Length > 200)
+            {
+                return BadRequest(new { error = "Maximum 200 items per request" });
+            }
+
+            var itemIds = ids;
+            var results = new List<object>(itemIds.Length);
+
+            // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
+            foreach (var idStr in itemIds)
+            {
+                if (!Guid.TryParse(idStr.Trim(), out var itemId))
+                    continue;
+
+                var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+                if (item == null)
+                    continue;
+
+                var kind = item.GetBaseItemKind();
+                var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
+
+                // OPT-3: Only get media sources/streams for playable items (Movies, Episodes)
+                // Series and Season are containers with no media files — skip the expensive call
+                List<object>? trimmedStreams = null;
+                List<object>? trimmedSources = null;
+                if (!isContainer)
+                {
+                    var mediaSources = item.GetMediaSources(false);
+                    // OPT-5: Only include fields tag renderers need from MediaStreams
+                    trimmedStreams = mediaSources
+                        .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                        .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                        .Select(s => (object)new
+                        {
+                            Type = s.Type.ToString(),
+                            Language = s.Language,
+                            Codec = s.Codec,
+                            CodecTag = s.CodecTag,
+                            Profile = s.Profile,
+                            Height = s.Height,
+                            Channels = s.Channels,
+                            ChannelLayout = s.ChannelLayout,
+                            VideoRangeType = s.VideoRangeType,
+                            DisplayTitle = s.DisplayTitle,
+                        })
+                        .ToList();
+                    // Include filenames only (not full paths) for IMAX/3D/media-stub detection.
+                    // Full server paths are not exposed to avoid disclosing filesystem layout.
+                    trimmedSources = mediaSources
+                        .Select(s => (object)new
+                        {
+                            Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
+                            Name = s.Name,
+                        })
+                        .ToList();
+                }
+
+                // First episode lookup for Series/Season
+                object? firstEpisodeData = null;
+                if (isContainer)
+                {
+                    // Inline the first-episode lookup to avoid cache/threading issues
+                    var epQuery = new InternalItemsQuery(user)
+                    {
+                        ParentId = item.Id,
+                        IncludeItemTypes = new[] { BaseItemKind.Episode },
+                        Recursive = true,
+                        Limit = 1,
+                        OrderBy = new[] { (ItemSortBy.PremiereDate, JSortOrder.Ascending) }
+                    };
+                    var epRef = _libraryManager.GetItemList(epQuery).FirstOrDefault();
+                    if (epRef != null)
+                    {
+                        // Return the first episode ID so the frontend can fetch streams
+                        // via the native /Items endpoint (which reliably populates MediaStreams).
+                        // Server-side GetMediaSources/DtoService doesn't populate streams for
+                        // episodes obtained through GetItemList on Jellyfin 10.11.x.
+                        firstEpisodeData = new
+                        {
+                            Id = epRef.Id,
+                            Type = epRef.GetBaseItemKind().ToString(),
+                            Genres = epRef.Genres,
+                            NeedsStreamFetch = true
+                        };
+                    }
+                }
+
+                var seriesId = (item is MediaBrowser.Controller.Entities.TV.Episode epItem) ? epItem.SeriesId
+                             : (item is MediaBrowser.Controller.Entities.TV.Season sItem) ? sItem.SeriesId
+                             : (Guid?)null;
+
+                results.Add(new
+                {
+                    Id = item.Id,
+                    Type = kind.ToString(),
+                    Genres = item.Genres,
+                    CommunityRating = item.CommunityRating,
+                    CriticRating = item.CriticRating,
+                    SeriesId = seriesId,
+                    ProviderIds = item.ProviderIds,
+                    Name = item.Name,
+                    Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
+                    MediaStreams = trimmedStreams,
+                    MediaSources = trimmedSources,
+                    FirstEpisode = firstEpisodeData
+                });
+            }
+
+            return Ok(new { Items = results });
+        }
+
 
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]

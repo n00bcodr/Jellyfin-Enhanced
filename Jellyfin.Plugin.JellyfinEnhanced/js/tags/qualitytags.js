@@ -9,12 +9,6 @@
      * Initializes the Quality Tags feature.
      */
     JE.initializeQualityTags = function() {
-        // Exit immediately if the user has disabled this feature in their settings.
-        if (!JE.currentSettings.qualityTagsEnabled) {
-            console.log('🪼 Jellyfin Enhanced: Quality Tags: Feature is disabled in settings.');
-            return;
-        }
-
         // --- CONSTANTS ---
         const logPrefix = '🪼 Jellyfin Enhanced: Quality Tags:';
         const overlayClass = 'quality-overlay-label';
@@ -23,6 +17,9 @@
         // Use static cache key (not version-based) to persist across plugin updates
         const CACHE_KEY = 'JellyfinEnhanced-qualityTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-qualityTagsCacheTimestamp';
+        const ENABLE_LOCAL_STORAGE_FALLBACK =
+            JE.pluginConfig?.TagCacheServerMode === false ||
+            JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
 
         // CSS selectors for elements that should NOT have quality tags applied.
         // This is used to ignore certain views like the cast & crew list.
@@ -103,55 +100,29 @@
 
         // --- CONFIGURATION ---
         const config = {
-            MAX_CONCURRENT_REQUESTS: 4,      // Max number of simultaneous API requests.
-            QUEUE_PROCESS_INTERVAL: 400,   // Delay between processing batches from the queue.
-            MUTATION_DEBOUNCE: 600,        // Delay to wait for DOM changes to settle before processing.
-            RENDER_DEBOUNCE: 400,          // Delay for re-rendering tags on navigation.
             CACHE_TTL: (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000, // Cache TTL from server config (default 30 days)
-            REQUEST_TIMEOUT: 8000,           // Timeout for API requests.
-            MAX_RETRIES: 2                     // Number of times to retry a failed API request.
+            REQUEST_TIMEOUT: 8000           // Timeout for API requests (fallback path).
         };
 
         // --- STATE VARIABLES ---
-        let qualityOverlayCache = JSON.parse(localStorage.getItem(CACHE_KEY)) || {};
+        let qualityOverlayCache = ENABLE_LOCAL_STORAGE_FALLBACK
+            ? (JSON.parse(localStorage.getItem(CACHE_KEY)) || {})
+            : {};
+        const serverQualityCache = new Map(); // Computed quality labels from server cache entries
         // Hot, in-memory cache shared across modules to avoid repeated deserialization and cold reads
         const Hot = (JE._hotCache = JE._hotCache || {
             ttl: config.CACHE_TTL,
             quality: new Map(),
             genre: new Map()
         });
-        let processedElements = new WeakSet(); // Stores elements that have been processed to avoid re-work.
-        let requestQueue = []; // A queue for API requests to avoid server overload.
-        let isProcessingQueue = false;
-        const queuedItemIds = new Set(); // De-duplicate queued requests per itemId
-        let renderDebounceTimer = null;
-
-        // --- OBSERVERS ---
-        // Observes elements to see when they enter the viewport, for lazy-loading tags.
-        const visibilityObserver = new IntersectionObserver(handleIntersection, {
-            rootMargin: '200px',
-            threshold: 0.1
-        });
 
         // --- HELPER FUNCTIONS ---
-        /**
-         * Retrieves the current user's ID from the ApiClient.
-         * @returns {string|null} The user ID or null if not found.
-         */
-        function getUserId() {
-            try {
-                return (window.ApiClient?._serverInfo?.UserId) ||
-                       (window.Dashboard?.getCurrentUserId?.()) ||
-                       null;
-            } catch {
-                return null;
-            }
-        }
 
         /**
          * Saves the quality overlay cache to localStorage after pruning expired entries.
          */
         function saveCache() {
+            if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
             try {
                 const now = Date.now();
                 // Prune old entries from cache
@@ -170,6 +141,7 @@
          * Also checks if server has triggered a cache clear.
          */
         function cleanupOldCaches() {
+            if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
             // Remove old version-based cache keys and legacy cache keys
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
@@ -648,113 +620,44 @@
 
         /**
          * Fetches quality information for a given item ID from the Jellyfin API.
-         * For Series/Seasons, it fetches the first episode to determine quality.
+         * NOTE: This is a legacy fallback - the primary path is through the tag pipeline renderer.
+         * Series/Season first-episode resolution is handled by the pipeline; this function
+         * only handles direct Movie/Episode items when called outside the pipeline.
          * @param {string} userId - The current user's ID.
          * @param {string} itemId - The ID of the item to fetch.
          * @returns {Promise<Array<string>|null>} A promise resolving to an array of quality tags or null.
          */
         async function fetchItemQuality(userId, itemId) {
             try {
-                // Fetch the item with MediaStreams and MediaSources fields
-                const item = await ApiClient.ajax({
-                    type: "GET",
-                    url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: "MediaStreams,MediaSources,Type,Genres" }),
-                    dataType: "json",
-                    timeout: config.REQUEST_TIMEOUT
-                });
+                // Use cached item data (populated by batch prefetch) to avoid individual API calls
+                const item = JE.helpers?.getItemCached
+                    ? await JE.helpers.getItemCached(itemId, { userId })
+                    : await ApiClient.ajax({
+                        type: "GET",
+                        url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: "MediaStreams,MediaSources,Type,Genres" }),
+                        dataType: "json",
+                        timeout: config.REQUEST_TIMEOUT
+                    });
 
                 if (!item || !MEDIA_TYPES.has(item.Type)) return null;
 
-                let qualities = [];
+                // Series/Season first-episode resolution is handled by the tag pipeline.
+                // This fallback only processes items that have direct media streams.
+                if (item.Type === "Series" || item.Type === "Season") return null;
 
-                if (item.Type === "Series" || item.Type === "Season") {
-                    // For a series or season, find the first episode to represent the quality.
-                    const episode = await fetchFirstEpisode(userId, item.Id);
-                    if (episode) {
-                        qualities = getEnhancedQuality(episode.MediaStreams, episode.MediaSources, episode);
-                    }
-                } else {
-                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item);
-                }
+                const qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item);
 
                 if (qualities.length > 0) {
                     qualityOverlayCache[itemId] = { qualities, timestamp: Date.now() };
                     // Seed hot cache
-                    Hot.quality.set(itemId, { qualities, timestamp: Date.now() });
+                    Hot?.quality?.set(itemId, { qualities, timestamp: Date.now() });
                     if (JE._cacheManager) JE._cacheManager.markDirty();
                     return qualities;
                 }
                 return null;
             } catch (error) {
                 console.warn(`${logPrefix} API request failed for item ${itemId}`, error);
-                throw error; // Propagate error to be handled by the queue processor
-            }
-        }
-
-        /**
-         * Fetches the first episode of a series to determine its quality.
-         * @param {string} userId - The current user's ID.
-         * @param {string} seriesId - The ID of the series.
-         * @returns {Promise<object|null>} The first episode item or null.
-         */
-        async function fetchFirstEpisode(userId, seriesId) {
-            try {
-                const response = await ApiClient.ajax({
-                    type: "GET",
-                    url: ApiClient.getUrl("/Items", {
-                        ParentId: seriesId,
-                        IncludeItemTypes: "Episode",
-                        Recursive: true,
-                        SortBy: "PremiereDate",
-                        SortOrder: "Ascending",
-                        Limit: 1,
-                        Fields: "MediaStreams,MediaSources",
-                        userId: userId
-                    }),
-                    dataType: "json"
-                });
-                return response.Items?.[0] || null;
-            } catch {
-                return null;
-            }
-        }
-
-        /**
-         * Processes the request queue in batches to avoid overwhelming the server.
-         */
-        async function processRequestQueue() {
-            if (isProcessingQueue || requestQueue.length === 0) return;
-            isProcessingQueue = true;
-
-            const batch = requestQueue.splice(0, config.MAX_CONCURRENT_REQUESTS);
-            const promises = batch.map(async ({ element, itemId, userId, retryCount = 0 }) => {
-                try {
-                    const qualities = await fetchItemQuality(userId, itemId);
-                    if (qualities) {
-                        insertOverlay(element, qualities);
-                        queuedItemIds.delete(itemId);
-                    }
-                } catch (error) {
-                    // If the request fails, retry up to MAX_RETRIES times.
-                    if (retryCount < config.MAX_RETRIES) {
-                        requestQueue.push({ element, itemId, userId, retryCount: retryCount + 1 });
-                    } else {
-                        // Give up after final retry
-                        queuedItemIds.delete(itemId);
-                    }
-                }
-            });
-
-            await Promise.allSettled(promises);
-            isProcessingQueue = false;
-
-            // If there are more items, schedule the next batch with deferred execution
-            if (requestQueue.length > 0) {
-                if (typeof requestIdleCallback !== 'undefined') {
-                    requestIdleCallback(() => processRequestQueue(), { timeout: config.QUEUE_PROCESS_INTERVAL });
-                } else {
-                    setTimeout(processRequestQueue, config.QUEUE_PROCESS_INTERVAL);
-                }
+                throw error;
             }
         }
 
@@ -765,16 +668,14 @@
          * @param {Array<string>} qualities - The array of quality strings to display.
          */
         function insertOverlay(container, qualities) {
-            if (!container || processedElements.has(container)) return;
+            if (!container) return;
 
             // Remove any old tags before adding new ones
             const existing = container.querySelector(`.${containerClass}`);
             if (existing) existing.remove();
 
-            // Ensure the parent is positioned relatively for absolute positioning of the tags.
-            if (getComputedStyle(container).position === 'static') {
-                container.style.position = 'relative';
-            }
+            // Ensure container is positioned (avoids forced reflow from getComputedStyle)
+            container.style.position = 'relative';
 
             const qualityContainer = document.createElement('div');
             qualityContainer.className = containerClass;
@@ -816,31 +717,9 @@
 
             container.appendChild(qualityContainer);
             markCardTagged(container);
-            processedElements.add(container);
         }
 
 
-
-        /**
-         * Extracts the Jellyfin item ID from a DOM element.
-         * @param {HTMLElement} el - The element to inspect.
-         * @returns {string|null} The found item ID or null.
-         */
-        function getItemIdFromElement(el) {
-            // Check href, background-image, and data attributes recursively up the tree.
-            if (el.href) {
-                const match = el.href.match(/id=([a-f0-9]{32})/i);
-                if (match) return match[1];
-            }
-            if (el.style.backgroundImage) {
-                const match = el.style.backgroundImage.match(/\/Items\/([a-f0-9]{32})\//i);
-                if (match) return match[1];
-            }
-            if (el.dataset?.itemid) return el.dataset.itemid;
-
-            let parent = el.closest('[data-itemid]');
-            return parent ? parent.dataset.itemid : null;
-        }
 
         /**
          * Checks if an element should be ignored based on the IGNORE_SELECTORS list.
@@ -871,126 +750,9 @@
             if (card) card.dataset[TAGGED_ATTR] = '1';
         }
 
-        /**
-         * Main processing function for a single DOM element.
-         * @param {HTMLElement} element - The element to process.
-         * @param {boolean} isPriority - Whether to add the request to the front of the queue.
-         */
-        async function processElement(element, isPriority = false) {
-            if (shouldIgnoreElement(element) || processedElements.has(element)) return;
-
-            // Skip if this card already has quality tags attached (prevents hover-duplication)
-            if (isCardAlreadyTagged(element)) {
-                processedElements.add(element);
-                return;
-            }
-
-            const itemId = getItemIdFromElement(element);
-            if (!itemId) return;
-
-            // 1. Check cache first
-            // Hot cache first
-            const hot = Hot.quality.get(itemId);
-            if (hot && (Date.now() - hot.timestamp) < config.CACHE_TTL) {
-                insertOverlay(element, hot.qualities);
-                return;
-            }
-            // Fallback to persisted cache if present
-            const cached = qualityOverlayCache[itemId];
-            if (cached && Date.now() - cached.timestamp < config.CACHE_TTL) {
-                Hot.quality.set(itemId, cached);
-                insertOverlay(element, cached.qualities);
-                return;
-            }
-
-            // 2. If not cached, add to the request queue
-            const userId = getUserId();
-            if (!userId) return;
-
-            // Avoid enqueuing duplicate work for the same itemId
-            if (queuedItemIds.has(itemId)) return;
-            queuedItemIds.add(itemId);
-
-            const request = { element, itemId, userId };
-            if (isPriority) {
-                requestQueue.unshift(request); // High priority for visible items
-            } else {
-                requestQueue.push(request);
-            }
-
-            // 3. Trigger queue processing if not already running
-            if (!isProcessingQueue) {
-                setTimeout(processRequestQueue, isPriority ? 0 : config.QUEUE_PROCESS_INTERVAL);
-            }
-        }
-
-        // --- EVENT HANDLERS & INITIALIZATION ---
-        /**
-         * Callback for the IntersectionObserver. Processes visible elements.
-         * @param {Array<IntersectionObserverEntry>} entries - The observed entries.
-         */
-        function handleIntersection(entries) {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const el = entry.target;
-                    visibilityObserver.unobserve(el);
-                    processElement(el, true); // Prioritize visible elements
-                }
-            });
-        }
-
-        /**
-         * A debounced function to scan the DOM for new items to tag.
-         */
-        function debouncedRender() {
-            if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
-            renderDebounceTimer = setTimeout(renderVisibleTags, config.RENDER_DEBOUNCE);
-        }
-
-        /**
-         * Scans the DOM for unprocessed poster/card elements and processes them.
-         */
-        function renderVisibleTags() {
-            const elements = Array.from(document.querySelectorAll(
-                '.cardImageContainer, div.listItemImage'
-            ));
-
-            elements.forEach(el => {
-                if (processedElements.has(el) || shouldIgnoreElement(el)) return;
-                // Rely on IntersectionObserver to trigger when elements scroll into view
-                visibilityObserver.observe(el);
-            });
-        }
-
-        /**
-         * Sets up handlers to detect page navigation and trigger a re-scan.
-         */
-        function setupNavigationHandlers() {
-            let currentUrl = window.location.href;
-            const handleNavigation = () => {
-                // Use a short delay to allow the new page's DOM to settle.
-                setTimeout(() => {
-                    if (window.location.href !== currentUrl) {
-                        currentUrl = window.location.href;
-                        // Check if feature is still enabled before processing
-                        if (!JE.currentSettings?.qualityTagsEnabled) {
-                            return;
-                        }
-                        processedElements = new WeakSet(); // Reset processed elements on navigation
-                        requestQueue.length = 0;
-                        debouncedRender();
-                    }
-                }, 500);
-            };
-
-            // Monkey-patch history API to detect SPA navigation
-            const originalPushState = history.pushState;
-            history.pushState = function (...args) {
-                originalPushState.apply(this, args);
-                handleNavigation();
-            };
-            window.addEventListener('popstate', handleNavigation);
-        }
+        // NOTE: processElement, handleIntersection, debouncedRender, renderVisibleTags,
+        // setupNavigationHandlers removed - the unified tag pipeline handles DOM scanning,
+        // visibility observation, queue processing, and navigation detection.
 
         /**
          * Injects the necessary CSS for styling the tags into the document head.
@@ -1047,7 +809,7 @@
                     font-variant-caps: small-caps;
                     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                     border: 1px solid rgba(255,255,255,0.15);
-                    backdrop-filter: blur(4px);
+                    /* backdrop-filter removed — blur causes jank during hover animations */
                     opacity: 1;
                     transform: translateY(0);
                     white-space: nowrap;
@@ -1104,48 +866,89 @@
             document.head.appendChild(style);
         }
 
-        /**
-         * Main initialization function for the script.
-         */
-        function initialize() {
-            cleanupOldCaches();
-            addEnhancedStyles();
-            setupNavigationHandlers();
-            setTimeout(renderVisibleTags, 1000); // Initial run after page load
+        // --- INITIALIZATION VIA TAG PIPELINE ---
+        cleanupOldCaches();
 
-            // Use centralized observer management from helpers
-            if (JE.helpers?.createObserver) {
-                JE.helpers.createObserver('quality-tags-mutations', () => {
-                    if (!JE.currentSettings?.qualityTagsEnabled) return;
-                    debouncedRender();
-                }, document.body, { childList: true, subtree: true });
-            } else {
-                // Fallback for older versions
-                const mutationObserver = new MutationObserver(() => {
-                    if (!JE.currentSettings?.qualityTagsEnabled) return;
-                    debouncedRender();
-                });
-                mutationObserver.observe(document.body, { childList: true, subtree: true });
-                window.addEventListener('beforeunload', () => mutationObserver.disconnect());
-            }
-
-            // Set up cleanup and cache saving
-            window.addEventListener('beforeunload', () => {
-                saveCache();
-                visibilityObserver.disconnect();
-                if (JE.helpers?.disconnectObserver) {
-                    JE.helpers.disconnectObserver('quality-tags-mutations');
-                }
-            });
-            // Register with unified cache manager instead of setInterval
-            if (JE._cacheManager) {
-                JE._cacheManager.register(saveCache);
-            }
+        // Register with unified cache manager for periodic saves
+        if (ENABLE_LOCAL_STORAGE_FALLBACK && JE._cacheManager) {
+            JE._cacheManager.register(saveCache);
+        }
+        if (ENABLE_LOCAL_STORAGE_FALLBACK) {
+            window.addEventListener('beforeunload', saveCache);
         }
 
-        // --- SCRIPT EXECUTION ---
-        initialize();
-        console.log(`${logPrefix} Initialized successfully.`);
+        if (JE.tagPipeline) {
+            JE.tagPipeline.registerRenderer('quality', {
+                render: function(el, item, extras) {
+                    if (shouldIgnoreElement(el)) return;
+                    if (isCardAlreadyTagged(el)) return;
+                    // Skip cards hidden by hidden-content module
+                    if (el.closest('.je-hidden')) return;
+
+                    const itemId = item.Id;
+                    // Check hot cache first
+                    const hot = Hot?.quality?.get(itemId);
+                    if (hot && (Date.now() - hot.timestamp) < config.CACHE_TTL) {
+                        insertOverlay(el, hot.qualities);
+                        return;
+                    }
+
+                    let qualities = [];
+                    if (item.Type === 'Series' || item.Type === 'Season') {
+                        if (extras.firstEpisode) {
+                            qualities = getEnhancedQuality(extras.firstEpisode.MediaStreams, extras.firstEpisode.MediaSources, extras.firstEpisode);
+                        }
+                    } else {
+                        qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item);
+                    }
+
+                    if (qualities.length > 0) {
+                        qualityOverlayCache[itemId] = { qualities, timestamp: Date.now() };
+                        Hot?.quality?.set(itemId, { qualities, timestamp: Date.now() });
+                        if (JE._cacheManager) JE._cacheManager.markDirty();
+                        insertOverlay(el, qualities);
+                    }
+                },
+                renderFromCache: function(el, itemId) {
+                    if (isCardAlreadyTagged(el)) return true;
+                    if (shouldIgnoreElement(el)) return true;
+                    if (el.closest('.je-hidden')) return true;
+                    const hot = Hot?.quality?.get(itemId);
+                    const cached = hot || qualityOverlayCache[itemId];
+                    if (cached && cached.qualities && cached.qualities.length > 0) {
+                        insertOverlay(el, cached.qualities);
+                        return true;
+                    }
+                    return false;
+                },
+                renderFromServerCache: function(el, entry, itemId) {
+                    if (isCardAlreadyTagged(el)) return;
+                    if (shouldIgnoreElement(el)) return;
+                    // Check local computed cache first (avoids re-running quality detection)
+                    const cached = serverQualityCache.get(itemId);
+                    if (cached !== undefined) {
+                        if (cached.length > 0) insertOverlay(el, cached);
+                        return;
+                    }
+                    const sd = entry.StreamData;
+                    if (!sd || !sd.Streams) { serverQualityCache.set(itemId, []); return; }
+                    const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
+                    serverQualityCache.set(itemId, qualities);
+                    if (qualities.length > 0) insertOverlay(el, qualities);
+                },
+                onServerCacheRefresh: function(updatedIds) {
+                    if (!updatedIds) { serverQualityCache.clear(); return; }
+                    updatedIds.forEach(function(id) { serverQualityCache.delete(id); });
+                },
+                isEnabled: function() { return !!JE.currentSettings?.qualityTagsEnabled; },
+                needsFirstEpisode: true,
+                needsParentSeries: false,
+                injectCss: addEnhancedStyles,
+            });
+            console.log(`${logPrefix} Registered with unified tag pipeline.`);
+        } else {
+            console.warn(`${logPrefix} Tag pipeline not available, quality tags will not render.`);
+        }
     };
 
     /**
@@ -1156,16 +959,23 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Quality Tags:';
         console.log(`${logPrefix} Re-initializing...`);
 
-        // Always remove existing tags first
+        // Always remove existing tags and clear tagged state
         document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
+        document.querySelectorAll('[data-je-quality-tagged]').forEach(el => { delete el.dataset.jeQualityTagged; });
+
+        // Re-inject CSS in case position settings changed
+        // Use the renderer's injectCss reference (captures the initialize closure)
+        const renderer = JE.tagPipeline?.getRenderer?.('quality');
+        if (renderer?.injectCss) renderer.injectCss();
 
         if (!JE.currentSettings.qualityTagsEnabled) {
             console.log(`${logPrefix} Feature is disabled after reinit.`);
             return;
         }
 
-        // Trigger a fresh initialization which will set up everything with current settings
-        JE.initializeQualityTags();
+        // Trigger pipeline re-scan with current settings
+        JE.tagPipeline?.clearProcessed();
+        JE.tagPipeline?.scheduleScan();
     };
 
 })(window.JellyfinEnhanced);

@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} skrytých položek",
     "hidden_content_1_hidden_item": "1 skrytá položka",
     "hidden_content_unknown_show": "Neznámý seriál",
-    "hidden_content_experimental_label": "Experimentální"
+    "hidden_content_experimental_label": "Experimentální",
+    "feature_people_tags": "Štítky osob",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Skrýt štítky při najetí",
+    "panel_settings_ui_hide_tags_on_hover": "Skrýt štítky při najetí",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Při najetí na karty skryje překryvné štítky, aby byla tlačítka lépe vidět"
 }

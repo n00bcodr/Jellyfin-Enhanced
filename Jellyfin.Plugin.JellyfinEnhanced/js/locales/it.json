@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} elementi nascosti",
     "hidden_content_1_hidden_item": "1 elemento nascosto",
     "hidden_content_unknown_show": "Serie sconosciuta",
-    "hidden_content_experimental_label": "Sperimentale"
+    "hidden_content_experimental_label": "Sperimentale",
+    "feature_people_tags": "Tag persone",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Nascondi tag al passaggio del mouse",
+    "panel_settings_ui_hide_tags_on_hover": "Nascondi tag al passaggio del mouse",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Nasconde le sovrapposizioni dei tag quando passi il mouse sulle schede per vedere meglio i pulsanti"
 }

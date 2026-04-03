@@ -123,7 +123,7 @@
     // Observe the narrowest stable parent available
     var observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
     var mountPending = false;
-    var observer = new MutationObserver(function () {
+    JE.helpers.createObserver('arr-calendar-custom-tab', function () {
       if (!mountPending) {
         mountPending = true;
         requestAnimationFrame(function () {
@@ -131,8 +131,7 @@
           tryMount();
         });
       }
-    });
-    observer.observe(observeTarget, { childList: true, subtree: true });
+    }, observeTarget, { childList: true, subtree: true });
   }
 
   waitForCalendar(function (JE) {

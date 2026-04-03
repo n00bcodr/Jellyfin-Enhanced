@@ -20,7 +20,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<AutoMovieRequestService>();
             serviceCollection.AddSingleton<AutoMovieRequestMonitor>();
             serviceCollection.AddSingleton<WatchlistMonitor>();
+            serviceCollection.AddSingleton<TagCacheService>();
+            serviceCollection.AddSingleton<TagCacheMonitor>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
+            serviceCollection.AddTransient<BuildTagCacheTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();

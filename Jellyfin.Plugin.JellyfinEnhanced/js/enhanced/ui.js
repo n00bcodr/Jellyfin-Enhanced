@@ -382,14 +382,12 @@
             }
         };
 
-        const observer = new MutationObserver(() => {
+        JE.helpers.onBodyMutation('ui-menu-button', () => {
             const sidebar = document.querySelector('.mainDrawer-scrollContainer');
             if (sidebar && !sidebar.querySelector('#jellyfinEnhancedSettingsLink')) {
                 addMenuButton(sidebar);
             }
         });
-
-        observer.observe(document.body, { childList: true, subtree: true });
     };
 
     /**
@@ -907,6 +905,12 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_people_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_people_tags_desc')}</div></div>
                                 </label>
                             </div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="tagsHideOnHoverToggle" ${JE.currentSettings.tagsHideOnHover ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_hide_tags_on_hover')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_hide_tags_on_hover_desc')}</div></div>
+                                </label>
+                            </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="removeContinueWatchingToggle" ${JE.currentSettings.removeContinueWatchingEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -1355,6 +1359,14 @@
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
+        addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
+        // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
+        const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
+        if (hideOnHoverCheckbox) {
+            hideOnHoverCheckbox.addEventListener('change', () => {
+                document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
+            });
+        }
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 

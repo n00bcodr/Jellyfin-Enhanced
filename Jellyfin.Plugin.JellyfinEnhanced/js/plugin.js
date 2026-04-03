@@ -503,6 +503,7 @@
                 // enhanced
                 'enhanced/config.js',
                 'enhanced/helpers.js',
+                'enhanced/tag-pipeline.js',
                 'enhanced/icons.js',
                 'enhanced/features.js',
                 'enhanced/events.js',
@@ -571,8 +572,6 @@
             if (typeof JE.loadSettings === 'function' && typeof JE.initializeShortcuts === 'function') {
                 JE.currentSettings = JE.loadSettings(); // This happens AFTER config.js is loaded
                 JE.initializeShortcuts();
-                // console.log('🪼 Jellyfin Enhanced: Settings MERGED post-load:', JSON.stringify(JE.currentSettings));
-                // console.log('🪼 Jellyfin Enhanced: Shortcuts MERGED post-load:', JSON.stringify(JE.state?.activeShortcuts || {}));
             } else {
                  console.error("🪼 Jellyfin Enhanced: FATAL - config.js functions not defined after script loading.");
                  if (typeof JE.hideSplashScreen === 'function') JE.hideSplashScreen();
@@ -625,6 +624,8 @@
             if (typeof JE.initializeReviewsScript === 'function' && JE.pluginConfig?.ShowReviews) JE.initializeReviewsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
             if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
+            // Initialize the unified tag pipeline AFTER all tag renderers have registered
+            if (typeof JE.tagPipeline?.initialize === 'function') JE.tagPipeline.initialize();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
             // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
             if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();

@@ -142,7 +142,7 @@
 
         // Replace polling with MutationObserver for better performance
         let processingLetterboxd = false;
-        const letterboxdObserver = new MutationObserver(() => {
+        const letterboxdObserver = JE.helpers.createObserver('letterboxd-links', () => {
             if (!JE?.pluginConfig?.LetterboxdEnabled) {
                 letterboxdObserver.disconnect();
                 console.log(`${logPrefix} Stopped - feature disabled`);
@@ -163,9 +163,7 @@
                     }, 100);
                 }
             }
-        });
-
-        letterboxdObserver.observe(document.body, {
+        }, document.body, {
             childList: true,
             subtree: true,
             attributeFilter: ['class']

@@ -375,7 +375,7 @@
     function startMonitoring() {
         if (observer) return;
 
-        observer = new MutationObserver((mutations) => {
+        const callback = (mutations) => {
             let shouldProcess = false;
 
             mutations.forEach((mutation) => {
@@ -401,17 +401,21 @@
             if (shouldProcess) {
                 debouncedUpdateActivityIcons();
             }
-        });
+        };
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        const JE = window.JellyfinEnhanced;
+        if (JE?.helpers?.onBodyMutation) {
+            observer = JE.helpers.onBodyMutation('colored-activity-icons', callback);
+        } else {
+            const mo = new MutationObserver(callback);
+            mo.observe(document.body, { childList: true, subtree: true });
+            observer = { unsubscribe() { mo.disconnect(); } };
+        }
     }
 
     function stopMonitoring() {
         if (observer) {
-            observer.disconnect();
+            observer.unsubscribe();
             observer = null;
         }
     }

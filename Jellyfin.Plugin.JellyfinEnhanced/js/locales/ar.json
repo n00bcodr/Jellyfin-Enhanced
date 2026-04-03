@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} عناصر مخفية",
     "hidden_content_1_hidden_item": "عنصر واحد مخفي",
     "hidden_content_unknown_show": "مسلسل غير معروف",
-    "hidden_content_experimental_label": "تجريبي"
+    "hidden_content_experimental_label": "تجريبي",
+    "feature_people_tags": "علامات الأشخاص",
+    "feature_tags_hide_on_hover": "{{icon:eye}} إخفاء العلامات عند التحويم",
+    "panel_settings_ui_hide_tags_on_hover": "إخفاء العلامات عند التحويم",
+    "panel_settings_ui_hide_tags_on_hover_desc": "إخفاء تراكبات العلامات عند التحويم فوق البطاقات لتسهيل رؤية الأزرار"
 }

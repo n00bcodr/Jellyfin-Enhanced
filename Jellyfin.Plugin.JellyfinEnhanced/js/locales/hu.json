@@ -472,5 +472,9 @@
     "hidden_content_n_hidden_items": "{count} rejtett elem",
     "hidden_content_1_hidden_item": "1 rejtett elem",
     "hidden_content_unknown_show": "Ismeretlen sorozat",
-    "hidden_content_experimental_label": "Kísérleti"
+    "hidden_content_experimental_label": "Kísérleti",
+    "feature_people_tags": "Személy címkék",
+    "feature_tags_hide_on_hover": "{{icon:eye}} Címkék elrejtése rámutatáskor",
+    "panel_settings_ui_hide_tags_on_hover": "Címkék elrejtése rámutatáskor",
+    "panel_settings_ui_hide_tags_on_hover_desc": "Elrejti a címke-rétegeket, amikor a kártyák fölé viszel az egeret, hogy a gombok jobban látszódjanak"
 }
