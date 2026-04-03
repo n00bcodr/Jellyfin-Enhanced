@@ -1988,6 +1988,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpGet("locales")]
+        [Authorize]
+        [ResponseCache(Duration = 86400)]
+        public ActionResult GetAvailableLocales()
+        {
+            var prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
+            var suffix = ".json";
+            var locales = Assembly.GetExecutingAssembly()
+                .GetManifestResourceNames()
+                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && n.EndsWith(suffix, StringComparison.Ordinal))
+                .Select(n => n.Substring(prefix.Length, n.Length - prefix.Length - suffix.Length))
+                .Where(code => code != "en") // Exclude base English (en-GB and en-US are the usable variants)
+                .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            return Ok(locales);
+        }
+
         [HttpGet("locales/{lang}.json")]
         public ActionResult GetLocale(string lang)
         {
