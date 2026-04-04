@@ -8,7 +8,7 @@
  * - Detecting missing keys in translations
  * - Finding unused translation keys not referenced in code
  * - Checking for placeholder mismatches
- * - Generating translation templates for new languages
+ * - Generating translation templates for maintainers when needed
  *
  * Usage:
  *   node scripts/validate-translations.js [command] [options]
@@ -27,6 +27,7 @@ const path = require('path');
 const LOCALES_DIR = path.join(__dirname, '../Jellyfin.Plugin.JellyfinEnhanced/js/locales');
 const JS_DIR = path.join(__dirname, '../Jellyfin.Plugin.JellyfinEnhanced/js');
 const BASE_LANG = 'en';
+const WEBLATE_URL = 'https://hosted.weblate.org/projects/jellyfinenhanced/';
 
 // ANSI color codes for terminal output
 const colors = {
@@ -336,6 +337,7 @@ function createTranslationTemplate(lang) {
         fs.writeFileSync(filePath, JSON.stringify(template, null, 4) + '\n', { encoding: 'utf8', flag: 'wx' });
         logSuccess(`Created translation template: ${filePath}`);
         logInfo(`Now edit ${lang}.json and translate the English values to ${lang.toUpperCase()}`);
+        logInfo(`Preferred workflow for contributors is Weblate: ${WEBLATE_URL}`);
     } catch (error) {
         if (error.code === 'EEXIST') {
             logError(`Translation file ${lang}.json already exists!`);
@@ -432,7 +434,7 @@ ${colors.cyan}Commands:${colors.reset}
         node scripts/validate-translations.js find-unused
 
   ${colors.green}create <lang>${colors.reset}
-      Create a new translation file template for the specified language
+    Create a new translation file template for the specified language (maintainer fallback)
       Language can be 2-letter code (pl, es) or region-specific (zh-HK, pt-BR)
       Example:
         node scripts/validate-translations.js create pl
@@ -447,6 +449,9 @@ ${colors.cyan}Commands:${colors.reset}
       Show this help message
 
 ${colors.cyan}Examples:${colors.reset}
+    # Preferred translator workflow
+    Translate in Weblate: ${WEBLATE_URL}
+
   # Validate all translations
   node scripts/validate-translations.js validate
 

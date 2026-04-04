@@ -16,7 +16,11 @@ You can contribute code through:
 
 ### 2. Translation Contributions
 
-Help make Jellyfin Enhanced accessible to more users by contributing translations! See the [Internationalization & Translations](README.md#-internationalization--translations) section in the README for details.
+Help make Jellyfin Enhanced accessible to more users by contributing translations through Weblate:
+
+- https://hosted.weblate.org/projects/jellyfinenhanced/
+
+See the [Internationalization & Translations](README.md#-internationalization--translations) section in the README for details.
 
 
 ## 🚀 Getting Started

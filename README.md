@@ -157,12 +157,18 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 
 Help translate Jellyfin Enhanced into your language!
 
-1. Copy `en.json` from `Jellyfin.Plugin.JellyfinEnhanced/js/locales/`
-2. Rename to your language code (e.g., `es.json`)
-3. Translate the text
-4. Submit a pull request
+Translate directly in Weblate:
 
-Translations are available immediately after merge!
+- https://hosted.weblate.org/projects/jellyfinenhanced/
+
+1. Open the Jellyfin Enhanced project in Weblate
+2. Pick your language (or request a new language)
+3. Translate strings in the Web UI
+4. Save and submit suggestions/changes
+
+Weblate will sync translation changes back to this repository.
+
+Manual locale PRs are still possible for maintainers, but Weblate is the preferred workflow for all translators.
 
 [Translation Guide →](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/contributing-translations/)
 
