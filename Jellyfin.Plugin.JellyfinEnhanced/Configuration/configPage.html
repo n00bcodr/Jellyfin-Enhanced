@@ -36,6 +36,11 @@
                 </div>
             </div>
 
+            <div id="webVersionWarning" style="display: none; margin-bottom: 1em; padding: 1em 1.2em; background-color: rgba(255, 50, 50, 0.15); border: 1px solid rgba(255, 50, 50, 0.5); border-radius: 8px; color: #ff6b6b; font-size: 0.95em; line-height: 1.5;">
+                <strong style="font-size: 1.05em;">⚠ Jellyfin Web Client Out of Date</strong><br>
+                <span id="webVersionMessage"></span>
+            </div>
+
             <div style="margin-bottom: 1em;">
                 <button class="jellyfin-tab-button active" data-tab="enhanced" style="background: none; border: none; color: var(--primary-accent-color, #fff); cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid var(--primary-accent-color, #fff);"><h3>Enhanced Settings</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere" style="background: none; border: none; color: #ccc; cursor: pointer; transition: color 0.3s, border-bottom 0.3s; border-bottom: 2px solid transparent;"><h3>Elsewhere Settings</h3></button>
@@ -2481,9 +2486,62 @@
             });
         }
 
+        function checkWebClientVersion() {
+            try {
+                var webVersion = ApiClient._appVersion;
+                var serverVersion = ApiClient._serverVersion;
+                if (!webVersion || !serverVersion || webVersion === serverVersion) return;
+
+                var webParts = webVersion.split('.').map(Number);
+                var serverParts = serverVersion.split('.').map(Number);
+
+                // Compare major.minor (e.g. 10.8 vs 10.11)
+                var webMajorMinor = webParts[0] * 1000 + (webParts[1] || 0);
+                var serverMajorMinor = serverParts[0] * 1000 + (serverParts[1] || 0);
+
+                if (webMajorMinor >= serverMajorMinor) return;
+
+                var minorDiff = (serverParts[1] || 0) - (webParts[1] || 0);
+                var container = document.getElementById('webVersionMessage');
+                container.textContent = '';
+
+                var parts = [
+                    { text: 'Your Jellyfin web client (' },
+                    { text: webVersion, bold: true },
+                    { text: ') does not match your server version (' },
+                    { text: serverVersion, bold: true },
+                    { text: '). The web client is ' },
+                    { text: minorDiff + ' minor version' + (minorDiff > 1 ? 's' : ''), bold: true },
+                    { text: ' behind. Some Jellyfin Enhanced features (such as Seerr search) may not work correctly. Please update your ' },
+                    { text: 'jellyfin-web', code: true },
+                    { text: ' package to match your server version.' }
+                ];
+
+                parts.forEach(function(p) {
+                    var el;
+                    if (p.bold) {
+                        el = document.createElement('strong');
+                        el.textContent = p.text;
+                    } else if (p.code) {
+                        el = document.createElement('code');
+                        el.textContent = p.text;
+                        el.style.cssText = 'background: rgba(255,255,255,0.1); padding: 2px 5px; border-radius: 3px;';
+                    } else {
+                        el = document.createTextNode(p.text);
+                    }
+                    container.appendChild(el);
+                });
+
+                document.getElementById('webVersionWarning').style.display = 'block';
+            } catch (e) {
+                console.warn('Jellyfin Enhanced: Could not check web client version:', e);
+            }
+        }
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
+            checkWebClientVersion();
             ApiClient.getPluginConfiguration(pluginId).then((config) => {
                 const savedShortcuts = (config.Shortcuts && config.Shortcuts.length > 0) ? config.Shortcuts : defaultShortcuts;
                 shortcutOverrides = savedShortcuts.filter(saved => {
