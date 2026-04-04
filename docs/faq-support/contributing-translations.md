@@ -4,6 +4,10 @@
 
 Use Weblate for all translation work:
 
+<a href="https://hosted.weblate.org/engage/jellyfinenhanced/">
+<img src="https://hosted.weblate.org/widget/jellyfinenhanced/287x66-grey.png" alt="Translation status" />
+</a>
+
 - https://hosted.weblate.org/projects/jellyfinenhanced/
 
 1. Open the Jellyfin Enhanced project in Weblate

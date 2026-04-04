@@ -157,6 +157,12 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 
 Help translate Jellyfin Enhanced into your language!
 
+<p align="center">
+  <a href="https://hosted.weblate.org/engage/jellyfinenhanced/">
+    <img src="https://hosted.weblate.org/widget/jellyfinenhanced/multi-auto.svg" alt="Translation status" />
+  </a>
+</p>
+
 Translate directly in Weblate:
 
 - https://hosted.weblate.org/projects/jellyfinenhanced/
