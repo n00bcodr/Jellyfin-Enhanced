@@ -2494,14 +2494,16 @@
 
                 var webParts = webVersion.split('.').map(Number);
                 var serverParts = serverVersion.split('.').map(Number);
+                var validSemver = !isNaN(webParts[0]) && !isNaN(webParts[1]) && !isNaN(serverParts[0]) && !isNaN(serverParts[1]);
 
-                // Compare major.minor (e.g. 10.8 vs 10.11)
-                var webMajorMinor = webParts[0] * 1000 + (webParts[1] || 0);
-                var serverMajorMinor = serverParts[0] * 1000 + (serverParts[1] || 0);
+                if (validSemver) {
+                    // Compare major.minor (e.g. 10.8 vs 10.11)
+                    var webMajorMinor = webParts[0] * 1000 + webParts[1];
+                    var serverMajorMinor = serverParts[0] * 1000 + serverParts[1];
+                    if (webMajorMinor >= serverMajorMinor) return;
+                }
 
-                if (webMajorMinor >= serverMajorMinor) return;
-
-                var minorDiff = (serverParts[1] || 0) - (webParts[1] || 0);
+                // Non-semver web version (e.g. "20220818.18-unstable") or web is behind server
                 var container = document.getElementById('webVersionMessage');
                 container.textContent = '';
 
@@ -2510,12 +2512,19 @@
                     { text: webVersion, bold: true },
                     { text: ') does not match your server version (' },
                     { text: serverVersion, bold: true },
-                    { text: '). The web client is ' },
-                    { text: minorDiff + ' minor version' + (minorDiff > 1 ? 's' : ''), bold: true },
-                    { text: ' behind. Some Jellyfin Enhanced features (such as Seerr search) may not work correctly. Please update your ' },
-                    { text: 'jellyfin-web', code: true },
-                    { text: ' package to match your server version.' }
+                    { text: '). ' }
                 ];
+
+                if (validSemver) {
+                    var minorDiff = serverParts[1] - webParts[1];
+                    parts.push({ text: 'The web client is ' });
+                    parts.push({ text: minorDiff + ' version' + (minorDiff > 1 ? 's' : ''), bold: true });
+                    parts.push({ text: ' behind. ' });
+                }
+
+                parts.push({ text: 'Some Jellyfin Enhanced features (such as Seerr search) may not work correctly. Please update your ' });
+                parts.push({ text: 'jellyfin-web', code: true });
+                parts.push({ text: ' package to match your server version.' });
 
                 parts.forEach(function(p) {
                     var el;
