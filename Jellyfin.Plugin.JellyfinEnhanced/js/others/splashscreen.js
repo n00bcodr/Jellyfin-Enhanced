@@ -105,7 +105,7 @@
             return;
         }
 
-        mediaBarBlocker = JE.helpers.createObserver('splashscreen-media-bar-blocker', (mutations) => {
+        mediaBarBlocker = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.addedNodes.forEach((node) => {
                     if (node instanceof HTMLElement) {
@@ -117,7 +117,8 @@
                     }
                 });
             });
-        }, document.body, {
+        });
+        mediaBarBlocker.observe(document.body, {
             childList: true,
             subtree: false
         });
@@ -359,7 +360,7 @@
             return;
         }
 
-        const readyHandle = JE.helpers.onBodyMutation('splashscreen-ready-observer', () => {
+        const bodyCallback = () => {
             removeMediaBarSplash();
 
             if (document.querySelector('.bar-loading:not(.je-loading)')) {
@@ -369,8 +370,10 @@
             if (isUIReady()) {
                 hideSplashScreen('core UI detected');
             }
-        });
-        readyObserver = { disconnect() { readyHandle.unsubscribe(); } };
+        };
+        const obs = new MutationObserver(bodyCallback);
+        obs.observe(document.body, { childList: true, subtree: true });
+        readyObserver = obs;
 
         window.addEventListener('hashchange', () => {
             if (isUIReady()) {
