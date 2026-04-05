@@ -2025,7 +2025,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private ActionResult GetScriptResource(string resourcePath)
         {
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
-            return stream == null ? NotFound() : new FileStreamResult(stream, "application/javascript");
+            if (stream == null) return NotFound();
+
+            Response.Headers["Cache-Control"] = "no-cache";
+            return new FileStreamResult(stream, "application/javascript");
         }
 
         /// <summary>
