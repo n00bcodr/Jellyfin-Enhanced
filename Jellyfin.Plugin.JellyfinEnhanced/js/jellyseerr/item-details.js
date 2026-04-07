@@ -1,15 +1,25 @@
 // /js/jellyseerr/item-details.js
-// Adds Similar and Recommended sections to item details pages using Jellyseerr API
+// Adds Similar and Recommended sections to item details pages using Jellyseerr API.
+// Also adds a "Request More" button next to the Seasons section heading on
+// Series detail pages when the show has unrequested seasons in Seerr.
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr Recommendations:';
+    const requestMoreLogPrefix = '🪼 Jellyfin Enhanced: Series Request More:';
 
     // Track processed items to avoid duplicate renders
     const processedItems = new Set();
+    const processedRequestMoreItems = new Set();
 
-    // Current abort controller for cancellation
+    // CSS class used to mark and dedupe the injected Request More button
+    const REQUEST_MORE_BTN_CLASS = 'je-series-request-more-btn';
+
+    // Current abort controllers for cancellation. Separate controllers prevent
+    // the slower similar/recommended fetch from cancelling the Request More
+    // check (and vice versa) when the user navigates between detail pages.
     let currentAbortController = null;
+    let requestMoreAbortController = null;
 
     /**
      * Gets the TMDB ID from a Jellyfin item
@@ -401,6 +411,223 @@
     }
 
     /**
+     * Waits for the Seasons section heading on a Series detail page to become
+     * visible. On a Series page Jellyfin renders the seasons list inside
+     * #listChildrenCollapsible (NOT #childrenCollapsible — that variant is
+     * used for non-Series item types and stays hidden). The heading inside
+     * is an h2.sectionTitle.sectionTitle-cards with a child <span> whose
+     * text reads "Series" once Jellyfin has populated it.
+     * Returns the h2 element when ready, or null on abort/timeout.
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<HTMLElement|null>}
+     */
+    function waitForSeasonsHeading(signal) {
+        return new Promise((resolve) => {
+            if (signal?.aborted) {
+                resolve(null);
+                return;
+            }
+
+            const findHeading = () => {
+                const activePage = document.querySelector('.libraryPage:not(.hide)');
+                if (!activePage) return null;
+                const collapsible = activePage.querySelector('#listChildrenCollapsible');
+                if (!collapsible || collapsible.classList.contains('hide')) {
+                    return null;
+                }
+                const heading = collapsible.querySelector('h2.sectionTitle.sectionTitle-cards');
+                if (!heading || heading.classList.contains('hide')) {
+                    return null;
+                }
+                // Wait until Jellyfin has populated the title span (initially empty)
+                const span = heading.querySelector('span');
+                if (!span || !span.textContent.trim()) {
+                    return null;
+                }
+                return heading;
+            };
+
+            const immediate = findHeading();
+            if (immediate) {
+                resolve(immediate);
+                return;
+            }
+
+            let observerHandle = null;
+            let timeoutId = null;
+            const cleanup = () => {
+                if (observerHandle) {
+                    observerHandle.unsubscribe();
+                    observerHandle = null;
+                }
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+            };
+
+            if (signal) {
+                signal.addEventListener('abort', () => {
+                    cleanup();
+                    resolve(null);
+                }, { once: true });
+            }
+
+            observerHandle = JE.helpers.onBodyMutation('jellyseerr-request-more-heading-detect', () => {
+                const heading = findHeading();
+                if (heading) {
+                    cleanup();
+                    resolve(heading);
+                }
+            });
+
+            // Timeout fallback. Jellyfin usually populates the heading within
+            // a few hundred ms; allow up to 5s for slow connections.
+            timeoutId = setTimeout(() => {
+                cleanup();
+                resolve(findHeading());
+            }, 5000);
+        });
+    }
+
+    /**
+     * Builds the Request More button DOM. Reuses the .jellyseerr-request-button
+     * styling already injected by ui.js so visuals match the rest of Seerr UI.
+     * Uses textContent / DOM construction (no innerHTML) for safety.
+     * @param {object} tvDetails - TV show details from Seerr
+     * @returns {HTMLButtonElement}
+     */
+    function buildSeriesRequestMoreButton(tvDetails) {
+        // Defensive: i18n table may not be initialized yet on first navigation;
+        // match the fallback pattern used elsewhere in this file.
+        const labelText = (JE.t && JE.t('jellyseerr_btn_request_more')) || 'Request More';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `jellyseerr-request-button jellyseerr-button-request ${REQUEST_MORE_BTN_CLASS}`;
+        button.title = labelText;
+        // Inline overrides so the button sits comfortably next to the h2 text
+        // without inheriting the heading's font size or block layout.
+        button.style.display = 'inline-flex';
+        button.style.alignItems = 'center';
+        button.style.verticalAlign = 'middle';
+        button.style.fontSize = '0.85rem';
+        button.style.padding = '0.4em 0.9em';
+        button.style.marginLeft = '1em';
+
+        const icon = document.createElement('span');
+        icon.className = 'material-icons';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'download';
+        icon.style.marginRight = '0.4em';
+        icon.style.fontSize = '1.1em';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = labelText;
+
+        button.appendChild(icon);
+        button.appendChild(labelSpan);
+
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (JE.jellyseerrUI?.showSeasonSelectionModal) {
+                JE.jellyseerrUI.showSeasonSelectionModal(
+                    tvDetails.id,
+                    'tv',
+                    tvDetails.name || tvDetails.title,
+                    tvDetails
+                );
+            }
+        });
+
+        return button;
+    }
+
+    /**
+     * Renders a "Request More" button next to the Seasons section heading on
+     * a Series detail page when the show has unrequested seasons in Seerr.
+     * Reuses checkForUnrequestedSeasons from more-info-modal.js so the
+     * detection logic stays in one place.
+     * @param {string} itemId - Jellyfin item ID
+     */
+    async function renderSeriesRequestMoreButton(itemId) {
+        if (processedRequestMoreItems.has(itemId)) return;
+
+        // Cancel any in-flight Request More check from a previous navigation.
+        if (requestMoreAbortController) {
+            requestMoreAbortController.abort();
+        }
+        requestMoreAbortController = new AbortController();
+        const signal = requestMoreAbortController.signal;
+
+        try {
+            if (!JE.pluginConfig?.JellyseerrEnabled) return;
+            if (JE.pluginConfig?.JellyseerrShowRequestMoreOnSeries === false) return;
+
+            const status = await JE.jellyseerrAPI.checkUserStatus();
+            if (signal.aborted) return;
+            if (!status?.active) return;
+
+            const { tmdbId, type } = await getTmdbIdFromItem(itemId, signal);
+            if (signal.aborted) return;
+            if (!tmdbId || type !== 'tv') return;
+
+            const tvDetails = await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+            if (signal.aborted) return;
+            if (!tvDetails) return;
+
+            const checker = JE.jellyseerrMoreInfo?.checkForUnrequestedSeasons;
+            if (typeof checker !== 'function') {
+                console.warn(`${requestMoreLogPrefix} checkForUnrequestedSeasons unavailable, skipping`);
+                return;
+            }
+            const hasUnrequested = await checker(tvDetails);
+            if (signal.aborted) return;
+            if (!hasUnrequested) {
+                // Dedupe negative results too. Each call to checker() runs an
+                // HTTP request to /JellyfinEnhanced/jellyseerr/request, so we
+                // don't want to repeat it on every viewshow for the same item.
+                // cleanup() clears this set on real navigation.
+                processedRequestMoreItems.add(itemId);
+                console.debug(`${requestMoreLogPrefix} No unrequested seasons for "${tvDetails.name || tvDetails.title}"`);
+                return;
+            }
+
+            const heading = await waitForSeasonsHeading(signal);
+            if (signal.aborted) return;
+            if (!heading) {
+                console.debug(`${requestMoreLogPrefix} Seasons heading not found, skipping`);
+                return;
+            }
+
+            // Dedup: bail if we already injected a button into this heading.
+            if (heading.querySelector(`.${REQUEST_MORE_BTN_CLASS}`)) {
+                processedRequestMoreItems.add(itemId);
+                return;
+            }
+
+            // Lay the button out inline next to the heading text via a class
+            // (instead of mutating heading.style directly) so the override is
+            // discoverable in CSS, easy to remove, and doesn't permanently
+            // overwrite Jellyfin's inline display value on the heading.
+            heading.classList.add('je-series-request-more-heading');
+
+            const button = buildSeriesRequestMoreButton(tvDetails);
+            heading.appendChild(button);
+
+            processedRequestMoreItems.add(itemId);
+            console.debug(`${requestMoreLogPrefix} Added Request More button for "${tvDetails.name || tvDetails.title}"`);
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.debug(`${requestMoreLogPrefix} Aborted for item ${itemId}`);
+                return;
+            }
+            console.error(`${requestMoreLogPrefix} Error rendering button:`, error);
+        }
+    }
+
+    /**
      * Handles item details page navigation
      */
     function handleItemDetailsPage() {
@@ -417,6 +644,7 @@
                 // This ensures we're in sync with the rendering cycle
                 requestAnimationFrame(() => {
                     renderSimilarAndRecommended(itemId);
+                    renderSeriesRequestMoreButton(itemId);
                 });
             }
         } catch (error) {
@@ -433,8 +661,31 @@
             currentAbortController.abort();
             currentAbortController = null;
         }
-        // Clear processed items cache
+        if (requestMoreAbortController) {
+            requestMoreAbortController.abort();
+            requestMoreAbortController = null;
+        }
+        // Clear processed items caches
         processedItems.clear();
+        processedRequestMoreItems.clear();
+    }
+
+    /**
+     * Injects the CSS used by the Series "Request More" button. Kept tiny so
+     * it can live alongside the JS module instead of needing a separate file.
+     */
+    function injectRequestMoreStyles() {
+        if (document.getElementById('je-series-request-more-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'je-series-request-more-styles';
+        style.textContent = `
+            h2.sectionTitle.sectionTitle-cards.je-series-request-more-heading {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     /**
@@ -442,6 +693,7 @@
      */
     function initialize() {
         console.debug(`${logPrefix} Initializing Recommendations and Similar sections`);
+        injectRequestMoreStyles();
 
         // Listen for hash changes (navigation)
         window.addEventListener('hashchange', () => {

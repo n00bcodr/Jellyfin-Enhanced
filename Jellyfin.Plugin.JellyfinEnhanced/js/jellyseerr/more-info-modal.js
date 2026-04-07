@@ -3077,6 +3077,11 @@ function injectStyles() {
         }
     });
 
+    // Expose helpers used by other modules (e.g., item-details.js for the
+    // Series page "Request More" button) so the unrequested-seasons check
+    // logic does not need to be duplicated.
+    moreInfoModal.checkForUnrequestedSeasons = checkForUnrequestedSeasons;
+
     // Expose the module on the global JE object
     JE.jellyseerrMoreInfo = moreInfoModal;
 
