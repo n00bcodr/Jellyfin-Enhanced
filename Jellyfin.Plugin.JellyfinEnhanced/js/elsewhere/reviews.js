@@ -230,7 +230,6 @@
          * Builds the star display HTML for a 1–5 rating.
          * @param {number} rating - Integer 1 to 5.
          */
-        function renderStars(rating) {
         function renderUserStarRating(rating) {
             if (!rating) return '';
 
