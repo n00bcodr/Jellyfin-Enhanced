@@ -132,6 +132,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        // ─── Shared reviews file ─────────────────────────────────────────────────
+
+        private static readonly object _reviewsFileLock = new object();
+
+        /// Reads the server-wide reviews store from the shared reviews.json file.
+        public AllReviewsStore GetAllReviews()
+        {
+            lock (_reviewsFileLock)
+            {
+                var filePath = Path.Combine(_configBaseDir, "reviews.json");
+                if (!File.Exists(filePath)) return new AllReviewsStore();
+                try
+                {
+                    var json = File.ReadAllText(filePath);
+                    if (string.IsNullOrWhiteSpace(json)) return new AllReviewsStore();
+                    return JsonConvert.DeserializeObject<AllReviewsStore>(json) ?? new AllReviewsStore();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to read shared reviews.json: {ex.Message}");
+                    return new AllReviewsStore();
+                }
+            }
+        }
+
+        /// Writes the server-wide reviews store to the shared reviews.json file.
+        public void SaveAllReviews(AllReviewsStore store)
+        {
+            lock (_reviewsFileLock)
+            {
+                try
+                {
+                    var filePath = Path.Combine(_configBaseDir, "reviews.json");
+                    var json = JsonConvert.SerializeObject(store, Formatting.Indented);
+                    File.WriteAllText(filePath, json);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to save shared reviews.json: {ex.Message}");
+                    throw;
+                }
+            }
+        }
+
         /// Gets processed watchlist items for a user.
         public ProcessedWatchlistItems GetProcessedWatchlistItems(Guid userId)
         {

@@ -148,4 +148,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public Dictionary<string, HiddenContentItem> Items { get; set; } = new Dictionary<string, HiddenContentItem>();
         public HiddenContentSettings Settings { get; set; } = new HiddenContentSettings();
     }
+
+    /// <summary>
+    /// A single user-written review for a TMDB item.
+    /// </summary>
+    public class UserReview
+    {
+        /// <summary>Jellyfin user ID in N format (no dashes).</summary>
+        public string UserId { get; set; } = string.Empty;
+        public string TmdbId { get; set; } = string.Empty;
+        /// <summary>"movie" or "tv"</summary>
+        public string MediaType { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        /// <summary>Optional rating, 1–5 (whole numbers only).</summary>
+        public int? Rating { get; set; }
+        public string CreatedAt { get; set; } = string.Empty;
+        public string UpdatedAt { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Server-wide store of all user reviews, keyed by "{userIdN}:{mediaType}:{tmdbId}".
+    /// Stored in a single shared file (reviews.json) at the plugin config root.
+    /// </summary>
+    public class AllReviewsStore
+    {
+        public Dictionary<string, UserReview> Reviews { get; set; } = new Dictionary<string, UserReview>();
+    }
 }

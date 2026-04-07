@@ -2435,6 +2435,165 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // ─── User Reviews (shared reviews.json at plugin config root) ────────────
+
+        public sealed class ReviewPayload
+        {
+            public string Content { get; set; } = string.Empty;
+            public int? Rating { get; set; }
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex _tmdbIdRegex =
+            new System.Text.RegularExpressions.Regex(@"^\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// Returns all user-written reviews for a specific TMDB item,
+        /// enriched with each reviewer's display name.
+        /// </summary>
+        [HttpGet("reviews/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetItemReviews(string mediaType, string tmdbId)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+                return BadRequest(new { message = "MediaType must be 'movie' or 'tv'." });
+
+            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+                return BadRequest(new { message = "Invalid TmdbId." });
+
+            var suffix = $":{mediaType}:{tmdbId}";
+            var store = _userConfigurationManager.GetAllReviews();
+            var results = new List<object>();
+
+            foreach (var kvp in store.Reviews)
+            {
+                if (!kvp.Key.EndsWith(suffix, StringComparison.Ordinal)) continue;
+                var review = kvp.Value;
+
+                string displayName = review.UserId;
+                if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
+                {
+                    var jellyfinUser = _userManager.GetUserById(userGuid);
+                    if (jellyfinUser != null) displayName = jellyfinUser.Username;
+                }
+
+                results.Add(new
+                {
+                    userId = review.UserId,
+                    userName = displayName,
+                    tmdbId = review.TmdbId,
+                    mediaType = review.MediaType,
+                    content = review.Content,
+                    rating = review.Rating,
+                    createdAt = review.CreatedAt,
+                    updatedAt = review.UpdatedAt
+                });
+            }
+
+            return Ok(new { reviews = results });
+        }
+
+        /// <summary>
+        /// Creates or updates the current user's review for a TMDB item.
+        /// User identity is resolved from the auth token — no userId in the path.
+        /// </summary>
+        [HttpPost("reviews/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult UpsertReview(string mediaType, string tmdbId, [FromBody] ReviewPayload payload)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+                return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
+
+            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+                return BadRequest(new { success = false, message = "Invalid TmdbId." });
+
+            if (payload == null || string.IsNullOrWhiteSpace(payload.Content))
+                return BadRequest(new { success = false, message = "Review content cannot be empty." });
+
+            if (payload.Content.Length > 2000)
+                return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
+
+            if (payload.Rating.HasValue && (payload.Rating.Value < 1 || payload.Rating.Value > 5))
+                return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
+
+            var currentUserId = UserHelper.GetCurrentUserId(User);
+            if (!currentUserId.HasValue) return Forbid();
+            var userIdN = currentUserId.Value.ToString("N");
+
+            try
+            {
+                var store = _userConfigurationManager.GetAllReviews();
+                var key = $"{userIdN}:{mediaType}:{tmdbId}";
+                var now = DateTime.UtcNow.ToString("o");
+
+                if (store.Reviews.TryGetValue(key, out var existing))
+                {
+                    existing.Content = payload.Content;
+                    existing.Rating = payload.Rating;
+                    existing.UpdatedAt = now;
+                }
+                else
+                {
+                    store.Reviews[key] = new UserReview
+                    {
+                        UserId = userIdN,
+                        TmdbId = tmdbId,
+                        MediaType = mediaType,
+                        Content = payload.Content,
+                        Rating = payload.Rating,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    };
+                }
+
+                _userConfigurationManager.SaveAllReviews(store);
+                _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {userIdN}.");
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save review for user {userIdN}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save review." });
+            }
+        }
+
+        /// <summary>
+        /// Deletes the current user's review for a TMDB item.
+        /// </summary>
+        [HttpDelete("reviews/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DeleteReview(string mediaType, string tmdbId)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+                return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
+
+            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+                return BadRequest(new { success = false, message = "Invalid TmdbId." });
+
+            var currentUserId = UserHelper.GetCurrentUserId(User);
+            if (!currentUserId.HasValue) return Forbid();
+            var userIdN = currentUserId.Value.ToString("N");
+
+            try
+            {
+                var store = _userConfigurationManager.GetAllReviews();
+                var key = $"{userIdN}:{mediaType}:{tmdbId}";
+                if (store.Reviews.Remove(key))
+                {
+                    _userConfigurationManager.SaveAllReviews(store);
+                    _logger.Info($"Deleted review for {mediaType}:{tmdbId} by user {userIdN}.");
+                }
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to delete review for user {userIdN}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to delete review." });
+            }
+        }
+
         [HttpPost("reset-all-users-settings")]
         [Authorize]
         public IActionResult ResetAllUsersSettings()
