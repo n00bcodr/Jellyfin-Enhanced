@@ -884,7 +884,6 @@
   document.head.appendChild(style);
 
   const logPrefix = '🪼 Jellyfin Enhanced: Bookmarks Library:';
-  let sectionObserver = null;
   let isRendering = false;
   let lastRenderTs = 0;
   let lastMountedContainer = null;
@@ -1243,10 +1242,13 @@
           handleNavigation();
         }
 
-        // Watch for section being injected by CustomTabs (persistent -- do not disconnect)
-        const observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
+        // Watch for section being injected by CustomTabs. Observe document.body
+        // (not .mainAnimatedPages) because Jellyfin replaces .mainAnimatedPages
+        // when navigating to the admin dashboard — an observer bound to the old
+        // element would become orphaned after returning to home (issue 536).
+        // Routes to the shared multiplexed body observer.
         let mountPending = false;
-        sectionObserver = new MutationObserver(() => {
+        JE.helpers.createObserver('bookmarks-library-custom-tab', () => {
           if (!mountPending) {
             mountPending = true;
             requestAnimationFrame(() => {
@@ -1254,8 +1256,7 @@
               renderIfSectionExists();
             });
           }
-        });
-        sectionObserver.observe(observeTarget, { childList: true, subtree: true });
+        }, document.body, { childList: true, subtree: true });
 
         // Try immediate render in case tab is already visible
         renderIfSectionExists();
