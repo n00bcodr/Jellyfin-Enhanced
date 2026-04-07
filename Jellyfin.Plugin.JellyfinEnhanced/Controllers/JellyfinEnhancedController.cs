@@ -2013,6 +2013,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var resourcePath = $"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{sanitizedLang}.json";
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourcePath);
 
+            if (stream == null && sanitizedLang.Contains('-'))
+            {
+                // Fall back from regional variant (e.g. de-DE) to the base language (de).
+                // Jellyfin reports BCP-47 codes like de-DE when the user picks "Auto" or a
+                // regional locale, but the plugin only ships base-language files for most
+                // languages. Without this fallback the user gets English instead of German.
+                var baseLang = sanitizedLang.Split('-')[0];
+                var fallbackPath = $"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json";
+                stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(fallbackPath);
+                if (stream != null)
+                {
+                    _logger.Info($"Locale file not found for {sanitizedLang}, falling back to base language {baseLang}");
+                }
+            }
+
             if (stream == null)
             {
                 _logger.Warning($"Locale file not found for language: {sanitizedLang}");
