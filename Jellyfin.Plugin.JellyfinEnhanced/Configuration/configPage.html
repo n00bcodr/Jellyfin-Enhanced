@@ -481,6 +481,11 @@
                                 </label>
                             </div>
                             <div class="checkboxContainer">
+                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="showUserReviews" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable User Reviews in Item Details Page<div style="font-size: .9em;">Allows users to write reviews and rate items in the library.<br/><strong>Completely independent of Elsewhere being enabled and TMDB Reviews being enabled</strong></div></span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="reviewsExpandedByDefault" is="emby-checkbox" type="checkbox"/>
                                     <span>Expand reviews by default<div style="font-size: .9em;">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div></span>
                                 </label>
@@ -2570,6 +2575,7 @@
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
+                document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
@@ -2772,6 +2778,7 @@
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
+            config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;

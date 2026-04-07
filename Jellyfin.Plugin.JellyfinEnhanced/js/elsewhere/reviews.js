@@ -231,12 +231,15 @@
          * @param {number} rating - Integer 1 to 5.
          */
         function renderStars(rating) {
+        function renderUserStarRating(rating) {
             if (!rating) return '';
-            let html = '';
-            for (let i = 1; i <= 5; i++) {
-                html += `<span class="je-star${i <= rating ? ' je-star-filled' : ''}" aria-hidden="true">★</span>`;
-            }
-            return html;
+
+            const stars = Array.from({ length: 5 }, (_, index) => {
+                const filled = index < rating;
+                return `<span class="je-user-star${filled ? ' je-user-star-filled' : ''}" aria-hidden="true">★</span>`;
+            }).join('');
+
+            return `<span class="je-user-star-rating">${stars}</span>`;
         }
 
         /**
@@ -248,6 +251,7 @@
             reviewCard.className = 'tmdb-review-card je-user-review-card';
 
             const content = review.content || '';
+            const hasContent = content.length > 0;
             const isLongReview = content.length > REVIEW_PREVIEW_LENGTH;
             const previewContent = isLongReview ? content.substring(0, REVIEW_PREVIEW_LENGTH) : content;
 
@@ -256,7 +260,7 @@
                 : (review.createdAt ? new Date(review.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
             const ratingDisplay = review.rating
-                ? `<span class="tmdb-review-rating je-user-review-rating">${renderStars(review.rating)} <span class="je-star-score">${review.rating}/5</span></span>`
+                ? `<span class="tmdb-review-rating je-user-review-rating">${renderUserStarRating(review.rating)}</span>`
                 : '';
 
             // Avatar URL — Jellyfin serves user images at /Users/{id}/Images/Primary
@@ -266,8 +270,8 @@
             const isOwn = review.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
             const actionButtons = isOwn ? `
                 <div class="je-user-review-actions">
-                    <button class="je-review-btn je-review-edit-btn" title="${escapeHtml(JE.t('reviews_edit_yours'))}" aria-label="${escapeHtml(JE.t('reviews_edit_yours'))}">${JE.icon(JE.IconName.EDIT)}</button>
-                    <button class="je-review-btn je-review-delete-btn" title="${escapeHtml(JE.t('reviews_delete_confirm'))}" aria-label="${escapeHtml(JE.t('reviews_delete_confirm'))}">${JE.icon(JE.IconName.TRASH)}</button>
+                    <button class="je-review-btn je-review-edit-btn">${JE.icon(JE.IconName.EDIT)}</button>
+                    <button class="je-review-btn je-review-delete-btn">${JE.icon(JE.IconName.TRASH)}</button>
                 </div>` : '';
 
             reviewCard.innerHTML = `
@@ -278,18 +282,21 @@
                     <div class="tmdb-review-author-info">
                         <strong class="tmdb-review-author">${escapeHtml(review.userName || 'User')}</strong>
                         <span class="tmdb-review-date">${reviewDate}</span>
-                        ${ratingDisplay}
                     </div>
+                    ${ratingDisplay}
                     ${actionButtons}
                 </div>
+                ${hasContent ? `
                 <div class="tmdb-review-content-wrapper">
                     <p class="tmdb-review-text"></p>
-                </div>
+                </div>` : ''}
             `;
 
             const textElement = reviewCard.querySelector('.tmdb-review-text');
-            textElement.innerHTML = parseMarkdown(previewContent) +
-                (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
+            if (textElement) {
+                textElement.innerHTML = parseMarkdown(previewContent) +
+                    (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
+            }
 
             // Store full content for toggling
             reviewCard.dataset.fullContent = content;
@@ -311,22 +318,20 @@
         function createReviewForm(existingReview, onSave, onCancel) {
             const form = document.createElement('div');
             form.className = 'je-review-form';
-
-            const titleKey = existingReview ? 'reviews_form_edit_title' : 'reviews_form_add_title';
             let currentRating = existingReview?.rating || 0;
 
             form.innerHTML = `
-                <h4 class="je-review-form-title">${JE.t(titleKey)}</h4>
-                <div class="je-review-star-picker" role="radiogroup" aria-label="${escapeHtml(JE.t('reviews_rating_label'))}">
-                    ${[1,2,3,4,5].map(n => `<button class="je-star-btn${currentRating >= n ? ' je-star-selected' : ''}" data-value="${n}" aria-label="${n}" type="button">★</button>`).join('')}
-                    <button class="je-star-clear-btn" type="button" title="${escapeHtml(JE.t('reviews_rating_clear'))}" aria-label="${escapeHtml(JE.t('reviews_rating_clear'))}">✕</button>
+                ${existingReview ? '' : `<h4 class="je-review-form-title">${JE.t('reviews_add')}</h4>`}
+                <div class="je-review-star-picker" role="radiogroup">
+                    ${[1,2,3,4,5].map(n => `<button class="je-star-btn${currentRating >= n ? ' je-star-selected' : ''}" data-value="${n}" type="button">★</button>`).join('')}
+                    <button class="je-star-clear-btn" type="button"><span class="material-icons" aria-hidden="true">close</span></button>
                     <span class="je-star-label"></span>
                 </div>
-                <textarea class="je-review-textarea" maxlength="2000" placeholder="${escapeHtml(JE.t('reviews_form_placeholder'))}">${escapeHtml(existingReview?.content || '')}</textarea>
+                <textarea class="je-review-textarea" maxlength="2000">${escapeHtml(existingReview?.content || '')}</textarea>
                 <div class="je-review-char-counter"><span class="je-review-char-count">${existingReview?.content?.length || 0}</span>/2000</div>
                 <div class="je-review-form-btns">
-                    <button class="je-review-btn je-review-submit-btn" type="button">${JE.t('reviews_form_save')}</button>
-                    <button class="je-review-btn je-review-cancel-btn" type="button">${JE.t('reviews_form_cancel')}</button>
+                    <button class="je-review-btn je-review-submit-btn" type="button"><span class="material-icons" aria-hidden="true">save</span></button>
+                    <button class="je-review-btn je-review-cancel-btn" type="button"><span class="material-icons" aria-hidden="true">close</span></button>
                 </div>
                 <div class="je-review-form-error" aria-live="polite"></div>
             `;
@@ -365,19 +370,19 @@
 
             submitBtn.addEventListener('click', async () => {
                 const content = textarea.value.trim();
-                if (!content) {
+                if (!content && !currentRating) {
                     errorEl.textContent = JE.t('reviews_form_error_empty');
                     return;
                 }
                 errorEl.textContent = '';
                 submitBtn.disabled = true;
-                submitBtn.textContent = JE.t('reviews_form_saving');
+                submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span>';
                 try {
                     await onSave(content, currentRating || null);
                 } catch (err) {
                     errorEl.textContent = JE.t('reviews_form_error_save');
                     submitBtn.disabled = false;
-                    submitBtn.textContent = JE.t('reviews_form_save');
+                    submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">save</span>';
                 }
             });
 
@@ -411,14 +416,15 @@
                 summary.innerHTML = `${JE.t('reviews_title', { count: totalCount })} <i class="material-icons expand-icon">expand_more</i>`;
                 reviewsSection.appendChild(summary);
 
-                // ── "Write a Review" / "Edit Your Review" button bar ──────────────
+                // ── "Write a Review" / "Edit Review" button bar ──────────────
                 const actionBar = document.createElement('div');
                 actionBar.className = 'je-review-action-bar';
+                let writeBtn = null;
 
-                if (userReviewsEnabled) {
-                    const writeBtn = document.createElement('button');
+                if (userReviewsEnabled && !ownReview) {
+                    writeBtn = document.createElement('button');
                     writeBtn.className = 'je-review-btn je-review-write-btn';
-                    writeBtn.textContent = ownReview ? JE.t('reviews_edit_yours') : JE.t('reviews_add');
+                    writeBtn.textContent = JE.t('reviews_add');
                     actionBar.appendChild(writeBtn);
                 }
                 reviewsSection.appendChild(actionBar);
@@ -478,13 +484,15 @@
                     form.querySelector('.je-review-textarea').focus();
                 }
 
-                writeBtn.addEventListener('click', () => {
-                    if (formPlaceholder.querySelector('.je-review-form')) {
-                        formPlaceholder.innerHTML = '';
-                    } else {
-                        openForm(ownReview || null);
-                    }
-                });
+                if (writeBtn) {
+                    writeBtn.addEventListener('click', () => {
+                        if (formPlaceholder.querySelector('.je-review-form')) {
+                            formPlaceholder.innerHTML = '';
+                        } else {
+                            openForm(ownReview || null);
+                        }
+                    });
+                }
 
                 // ── Read-more toggle for TMDB reviews ─────────────────────────────
                 swipeContainer.addEventListener('click', function (e) {
@@ -601,7 +609,7 @@
                 }
                 .je-user-review-card {
                     border-left-color: rgb(94, 213, 95);
-                    background: rgba(0, 50, 0, 0.25);
+                    background: rgba(10, 26, 10, 0.52);
                 }
                 @media (min-width: 768px) { .tmdb-review-card { flex-basis: 400px; } }
                 .tmdb-review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1em; }
@@ -610,10 +618,14 @@
                 .tmdb-review-author { color: #fff; font-size: 1.1em; font-weight: 600; }
                 .tmdb-review-date { color: #aaa; font-size: 0.9em; }
                 .tmdb-review-rating { color: #ffd700; background: rgba(255, 215, 0, 0.1); padding: 0.2em 0.5em; border-radius: 4px; }
-                .je-user-review-rating { display: inline-flex; align-items: center; gap: 0.25em; background: rgba(94, 213, 95, 0.1); color: #5ed55f; margin-top: 0.2em; font-size: 0.9em; }
-                .je-star { color: rgba(255,255,255,0.2); font-size: 1em; }
-                .je-star-filled { color: #ffd700; }
-                .je-star-score { font-weight: 600; }
+                .je-user-review-rating {
+                    white-space: nowrap;
+                    background: rgba(94, 213, 95, 0.12);
+                    color: #ffd700;
+                }
+                .je-user-star-rating { display: inline-flex; align-items: center; gap: 0.08em; }
+                .je-user-star { color: rgba(255, 255, 255, 0.28); font-size: 0.95em; }
+                .je-user-star-filled { color: #ffd700; }
                 .tmdb-review-content-wrapper { flex-grow: 1; line-height: 1.7; overflow-y: auto; color: #ddd; font-size: 0.95em; }
                 .tmdb-review-text { word-wrap: break-word; }
                 .tmdb-review-text strong { color: #fff; font-weight: 600; }
@@ -655,8 +667,17 @@
                 .je-review-btn:hover { background: rgba(255,255,255,0.15); }
                 .je-review-write-btn { border-color: rgb(94, 213, 95); color: rgb(94, 213, 95); }
                 .je-review-write-btn:hover { background: rgba(94, 213, 95, 0.15); }
-                .je-review-edit-btn { border-color: rgb(94, 213, 95); color: rgb(94, 213, 95); font-size: 0.8em; }
-                .je-review-delete-btn { border-color: rgb(244, 67, 54); color: rgb(244, 67, 54); font-size: 0.8em; }
+                .je-review-edit-btn, .je-review-delete-btn, .je-review-submit-btn, .je-review-cancel-btn {
+                    width: 2.4em;
+                    height: 2.4em;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0;
+                }
+                .je-review-edit-btn .material-icons, .je-review-delete-btn .material-icons, .je-review-submit-btn .material-icons, .je-review-cancel-btn .material-icons, .je-star-clear-btn .material-icons { font-size: 18px; }
+                .je-review-edit-btn { border-color: rgb(94, 213, 95); color: rgb(94, 213, 95); }
+                .je-review-delete-btn { border-color: rgb(244, 67, 54); color: rgb(244, 67, 54); }
                 .je-review-delete-btn:hover { background: rgba(244, 67, 54, 0.15); }
 
                 /* Inline review form */
@@ -686,14 +707,19 @@
                 .je-star-btn:hover, .je-star-btn.je-star-hover, .je-star-btn.je-star-selected { color: #ffd700; }
                 .je-star-btn:hover { transform: scale(1.2); }
                 .je-star-clear-btn {
-                    background: none;
-                    border: none;
+                    background: rgba(255,255,255,0.08);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    border-radius: 6px;
                     cursor: pointer;
-                    color: rgba(255,255,255,0.3);
-                    font-size: 0.85em;
-                    padding: 0 0.3em;
+                    color: rgba(255,255,255,0.7);
+                    width: 2.2em;
+                    height: 2.2em;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0;
                 }
-                .je-star-clear-btn:hover { color: rgba(255,255,255,0.7); }
+                .je-star-clear-btn:hover { background: rgba(255,255,255,0.15); }
                 .je-star-label { color: #ffd700; font-size: 0.9em; margin-left: 0.25em; min-width: 2.5em; }
                 .je-review-textarea {
                     width: 100%;

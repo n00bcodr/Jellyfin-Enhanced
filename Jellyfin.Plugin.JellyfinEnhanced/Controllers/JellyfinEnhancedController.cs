@@ -1839,6 +1839,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowAudioLanguages,
                 config.Shortcuts,
                 config.ShowReviews,
+                config.ShowUserReviews,
                 config.ReviewsExpandedByDefault,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
@@ -2508,10 +2509,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
-            if (payload == null || string.IsNullOrWhiteSpace(payload.Content))
-                return BadRequest(new { success = false, message = "Review content cannot be empty." });
+            if (payload == null)
+                return BadRequest(new { success = false, message = "Invalid review payload." });
 
-            if (payload.Content.Length > 2000)
+            var normalizedContent = payload.Content?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedContent) && !payload.Rating.HasValue)
+                return BadRequest(new { success = false, message = "A rating or review text is required." });
+
+            if (normalizedContent.Length > 2000)
                 return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
 
             if (payload.Rating.HasValue && (payload.Rating.Value < 1 || payload.Rating.Value > 5))
@@ -2529,7 +2535,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (store.Reviews.TryGetValue(key, out var existing))
                 {
-                    existing.Content = payload.Content;
+                    existing.Content = normalizedContent;
                     existing.Rating = payload.Rating;
                     existing.UpdatedAt = now;
                 }
@@ -2540,7 +2546,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         UserId = userIdN,
                         TmdbId = tmdbId,
                         MediaType = mediaType,
-                        Content = payload.Content,
+                        Content = normalizedContent,
                         Rating = payload.Rating,
                         CreatedAt = now,
                         UpdatedAt = now
