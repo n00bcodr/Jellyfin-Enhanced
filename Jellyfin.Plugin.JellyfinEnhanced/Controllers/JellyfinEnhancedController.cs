@@ -1843,6 +1843,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowReviews,
                 config.ShowUserReviews,
                 config.ReviewsExpandedByDefault,
+                config.HideReviewsFromHiddenUsers,
+                config.HideReviewsFromDisabledUsers,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
