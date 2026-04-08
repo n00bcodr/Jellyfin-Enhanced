@@ -624,7 +624,7 @@
                 const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
                 if (countryCode) {
                     const flag = document.createElement('img');
-                    flag.src = `https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.1/flags/4x3/${flagInfo.countryCode.toLowerCase()}.svg`;
+                    flag.src = `https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.1/flags/4x3/${countryCode.toLowerCase()}.svg`;
                     flag.alt = `${lang.name} flag`;
                     flag.style.width = '18px';
                     flag.style.marginRight = '0.3em';
