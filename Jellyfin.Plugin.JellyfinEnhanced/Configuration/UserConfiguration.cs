@@ -45,7 +45,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string DisplayLanguage { get; set; } = string.Empty;
         public string CalendarDisplayMode { get; set; } = "list";
         public string CalendarDefaultViewMode { get; set; } = "agenda";
-        public bool? IsAdmin { get; set; }
     }
 
     public class UserShortcuts

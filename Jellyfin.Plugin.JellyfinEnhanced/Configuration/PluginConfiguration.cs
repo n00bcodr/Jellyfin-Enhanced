@@ -51,6 +51,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowReviews = false;
             ShowUserReviews = false;
             ReviewsExpandedByDefault = false;
+            HideReviewsFromHiddenUsers = true;
+            HideReviewsFromDisabledUsers = true;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
             GenreTagsEnabled = false;
@@ -251,6 +253,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowReviews { get; set; }
         public bool ShowUserReviews { get; set; }
         public bool ReviewsExpandedByDefault { get; set; }
+        public bool HideReviewsFromHiddenUsers { get; set; } = true;
+        public bool HideReviewsFromDisabledUsers { get; set; } = true;
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public bool QualityTagsEnabled { get; set; }
