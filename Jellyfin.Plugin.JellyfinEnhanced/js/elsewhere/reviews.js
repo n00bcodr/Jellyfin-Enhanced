@@ -3,8 +3,10 @@
     'use strict';
 
     JE.initializeReviewsScript = function () {
-        if (!JE.pluginConfig.ShowReviews || !JE.pluginConfig.TmdbEnabled) {
-            console.log('🪼 Jellyfin Enhanced: Reviews feature disabled or TMDB API key not set.');
+        const tmdbReviewsEnabled = JE.pluginConfig.ShowReviews && JE.pluginConfig.TmdbEnabled;
+        const userReviewsEnabled = JE.pluginConfig.ShowUserReviews;
+        if (!tmdbReviewsEnabled && !userReviewsEnabled) {
+            console.log('🪼 Jellyfin Enhanced: Reviews feature disabled.');
             return;
         }
 
@@ -24,6 +26,56 @@
                     console.error(`${logPrefix} Failed to fetch reviews.`, error);
                     return null;
                 });
+        }
+
+        /**
+         * Fetches all user-written reviews for a TMDB item (aggregated across all users).
+         */
+        function fetchUserReviews(tmdbId, mediaType) {
+            const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${apiMediaType}/${tmdbId}`);
+            return fetch(url, {
+                headers: { "X-Emby-Token": ApiClient.accessToken() }
+            })
+                .then(r => r.ok ? r.json() : Promise.reject(`API Error: ${r.status}`))
+                .then(data => data.reviews || [])
+                .catch(err => {
+                    console.error(`${logPrefix} Failed to fetch user reviews.`, err);
+                    return [];
+                });
+        }
+
+        /**
+         * Saves (creates or updates) the current user's review for a TMDB item.
+         */
+        async function saveUserReview(tmdbId, mediaType, content, rating) {
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
+            const body = { content, rating: rating || null };
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    "X-Emby-Token": ApiClient.accessToken(),
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body)
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.message || `HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+
+        /**
+         * Deletes the current user's review for a TMDB item.
+         */
+        async function deleteUserReview(tmdbId, mediaType) {
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: { "X-Emby-Token": ApiClient.accessToken() }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
         }
 
         const escapeHtml = JE.escapeHtml;
@@ -174,41 +226,290 @@
             return reviewCard;
         }
 
-        function addReviewsToPage(reviews, contextPage) {
+        /**
+         * Builds the star display HTML for a 1–5 rating.
+         * @param {number} rating - Integer 1 to 5.
+         */
+        function renderUserStarRating(rating) {
+            if (!rating) return '';
+
+            const stars = Array.from({ length: 5 }, (_, index) => {
+                const filled = index < rating;
+                return `<span class="je-user-star${filled ? ' je-user-star-filled' : ''}" aria-hidden="true">★</span>`;
+            }).join('');
+
+            return `<span class="je-user-star-rating">${stars}</span>`;
+        }
+
+        /**
+         * Creates a review card for a user-written review (different border colour).
+         */
+        function createUserReviewElement(review, currentUserId, onEditCallback, onDeleteCallback) {
+            const REVIEW_PREVIEW_LENGTH = 350;
+            const reviewCard = document.createElement('div');
+            reviewCard.className = 'tmdb-review-card je-user-review-card';
+
+            const content = review.content || '';
+            const hasContent = content.length > 0;
+            const isLongReview = content.length > REVIEW_PREVIEW_LENGTH;
+            const previewContent = isLongReview ? content.substring(0, REVIEW_PREVIEW_LENGTH) : content;
+
+            const reviewDate = review.updatedAt
+                ? new Date(review.updatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                : (review.createdAt ? new Date(review.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
+
+            const ratingDisplay = review.rating
+                ? `<span class="tmdb-review-rating je-user-review-rating">${renderUserStarRating(review.rating)}</span>`
+                : '';
+
+            // Avatar URL — Jellyfin serves user images at /Users/{id}/Images/Primary
+            // userId stored in "N" format (no dashes); Jellyfin accepts both formats
+            const avatarSrc = ApiClient.getUrl(`/Users/${review.userId}/Images/Primary`) + '?width=48&quality=90';
+
+            const isOwn = review.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
+            const actionButtons = isOwn ? `
+                <div class="je-user-review-actions">
+                    <button class="je-review-btn je-review-edit-btn">${JE.icon(JE.IconName.EDIT)}</button>
+                    <button class="je-review-btn je-review-delete-btn">${JE.icon(JE.IconName.TRASH)}</button>
+                </div>` : '';
+
+            reviewCard.innerHTML = `
+                <div class="tmdb-review-header je-user-review-header">
+                    <div class="je-user-review-avatar-wrapper">
+                        <img class="je-user-avatar" src="${escapeHtml(avatarSrc)}" alt="" onerror="this.style.display='none'">
+                    </div>
+                    <div class="tmdb-review-author-info">
+                        <strong class="tmdb-review-author">${escapeHtml(review.userName || 'User')}</strong>
+                        <span class="tmdb-review-date">${reviewDate}</span>
+                    </div>
+                    ${ratingDisplay}
+                    ${actionButtons}
+                </div>
+                ${hasContent ? `
+                <div class="tmdb-review-content-wrapper">
+                    <p class="tmdb-review-text"></p>
+                </div>` : ''}
+            `;
+
+            const textElement = reviewCard.querySelector('.tmdb-review-text');
+            if (textElement) {
+                textElement.innerHTML = parseMarkdown(previewContent) +
+                    (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
+            }
+
+            // Store full content for toggling
+            reviewCard.dataset.fullContent = content;
+
+            if (isOwn) {
+                reviewCard.querySelector('.je-review-edit-btn').addEventListener('click', () => onEditCallback(review));
+                reviewCard.querySelector('.je-review-delete-btn').addEventListener('click', () => onDeleteCallback(review));
+            }
+
+            return reviewCard;
+        }
+
+        /**
+         * Creates and injects the inline review form (add / edit).
+         * @param {object|null} existingReview - Existing review data when editing, null when adding.
+         * @param {function} onSave - Called with (content, rating) when the user submits.
+         * @param {function} onCancel - Called when the user cancels.
+         */
+        function createReviewForm(existingReview, onSave, onCancel) {
+            const form = document.createElement('div');
+            form.className = 'je-review-form';
+            let currentRating = existingReview?.rating || 0;
+
+            form.innerHTML = `
+                ${existingReview ? '' : `<h4 class="je-review-form-title">${JE.t('reviews_add')}</h4>`}
+                <div class="je-review-star-picker" role="radiogroup">
+                    ${[1,2,3,4,5].map(n => `<button class="je-star-btn${currentRating >= n ? ' je-star-selected' : ''}" data-value="${n}" type="button">★</button>`).join('')}
+                    <button class="je-star-clear-btn" type="button"><span class="material-icons" aria-hidden="true">close</span></button>
+                    <span class="je-star-label"></span>
+                </div>
+                <textarea class="je-review-textarea" maxlength="2000">${escapeHtml(existingReview?.content || '')}</textarea>
+                <div class="je-review-char-counter"><span class="je-review-char-count">${existingReview?.content?.length || 0}</span>/2000</div>
+                <div class="je-review-form-btns">
+                    <button class="je-review-btn je-review-submit-btn" type="button"><span class="material-icons" aria-hidden="true">save</span></button>
+                    <button class="je-review-btn je-review-cancel-btn" type="button"><span class="material-icons" aria-hidden="true">close</span></button>
+                </div>
+                <div class="je-review-form-error" aria-live="polite"></div>
+            `;
+
+            const starBtns = form.querySelectorAll('.je-star-btn');
+            const clearBtn = form.querySelector('.je-star-clear-btn');
+            const starLabel = form.querySelector('.je-star-label');
+            const textarea = form.querySelector('.je-review-textarea');
+            const charCount = form.querySelector('.je-review-char-count');
+            const submitBtn = form.querySelector('.je-review-submit-btn');
+            const cancelBtn = form.querySelector('.je-review-cancel-btn');
+            const errorEl = form.querySelector('.je-review-form-error');
+
+            function updateStars(value) {
+                currentRating = value;
+                starBtns.forEach(btn => {
+                    const v = parseInt(btn.dataset.value, 10);
+                    btn.classList.toggle('je-star-selected', v <= currentRating);
+                });
+                starLabel.textContent = currentRating > 0 ? `${currentRating}/5` : '';
+            }
+
+            updateStars(currentRating);
+
+            starBtns.forEach(btn => {
+                btn.addEventListener('click', () => updateStars(parseInt(btn.dataset.value, 10)));
+                btn.addEventListener('mouseenter', () => starBtns.forEach(b => b.classList.toggle('je-star-hover', parseInt(b.dataset.value, 10) <= parseInt(btn.dataset.value, 10))));
+                btn.addEventListener('mouseleave', () => starBtns.forEach(b => b.classList.remove('je-star-hover')));
+            });
+
+            clearBtn.addEventListener('click', () => updateStars(0));
+
+            textarea.addEventListener('input', () => {
+                charCount.textContent = textarea.value.length;
+            });
+
+            submitBtn.addEventListener('click', async () => {
+                const content = textarea.value.trim();
+                if (!content && !currentRating) {
+                    errorEl.textContent = JE.t('reviews_form_error_empty');
+                    return;
+                }
+                errorEl.textContent = '';
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span>';
+                try {
+                    await onSave(content, currentRating || null);
+                } catch (err) {
+                    errorEl.textContent = JE.t('reviews_form_error_save');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">save</span>';
+                }
+            });
+
+            cancelBtn.addEventListener('click', onCancel);
+
+            return form;
+        }
+
+        function addReviewsToPage(reviews, userReviews, contextPage, tmdbId, tmdbMediaType) {
             const existingSection = contextPage.querySelector('.tmdb-reviews-section');
             if (existingSection) {
                 existingSection.remove();
             }
 
-            let reviewsSection;
-            const hasReviews = reviews && reviews.length > 0;
+            const currentUserId = ApiClient.getCurrentUserId() || '';
+            const ownReview = userReviews.find(r => r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, ''));
+            const hasReviews = (reviews && reviews.length > 0) || userReviews.length > 0;
 
-            if (hasReviews) {
+            let reviewsSection;
+
+            if (hasReviews || true /* always show so users can add their own */) {
                 reviewsSection = document.createElement('details');
                 reviewsSection.className = 'detailSection tmdb-reviews-section';
-                // Respect user preference for expanded/collapsed section by default
                 if (JE.currentSettings?.reviewsExpandedByDefault) {
                     reviewsSection.setAttribute('open', '');
                 }
+
+                const totalCount = (reviews ? reviews.length : 0) + userReviews.length;
                 const summary = document.createElement('summary');
                 summary.className = 'sectionTitle';
-                summary.innerHTML = `${JE.t('reviews_title', { count: reviews.length })} <i class="material-icons expand-icon">expand_more</i>`;
+                summary.innerHTML = `${JE.t('reviews_title', { count: totalCount })} <i class="material-icons expand-icon">expand_more</i>`;
                 reviewsSection.appendChild(summary);
+
+                // ── "Write a Review" / "Edit Review" button bar ──────────────
+                const actionBar = document.createElement('div');
+                actionBar.className = 'je-review-action-bar';
+                let writeBtn = null;
+
+                if (userReviewsEnabled && !ownReview) {
+                    writeBtn = document.createElement('button');
+                    writeBtn.className = 'je-review-btn je-review-write-btn';
+                    writeBtn.textContent = JE.t('reviews_add');
+                    actionBar.appendChild(writeBtn);
+                }
+                reviewsSection.appendChild(actionBar);
+
+                // ── Inline form placeholder (hidden until button clicked) ──────────
+                const formPlaceholder = document.createElement('div');
+                formPlaceholder.className = 'je-review-form-placeholder';
+                reviewsSection.appendChild(formPlaceholder);
 
                 const swipeContainer = document.createElement('div');
                 swipeContainer.className = 'tmdb-review-swipe-container';
 
-                reviews.slice(0, 10).forEach(review => { // Limit to 10 reviews
-                    swipeContainer.appendChild(createReviewElement(review));
+                // Render user reviews first (distinct border colour)
+                userReviews.forEach(userReview => {
+                    const card = createUserReviewElement(
+                        userReview,
+                        currentUserId,
+                        // Edit callback
+                        (r) => openForm(r),
+                        // Delete callback
+                        async (r) => {
+                            if (!confirm(JE.t('reviews_delete_confirm'))) return;
+                            try {
+                                await deleteUserReview(tmdbId, tmdbMediaType);
+                                refreshReviews(contextPage);
+                            } catch (e) {
+                                console.error(`${logPrefix} Delete failed`, e);
+                            }
+                        }
+                    );
+                    swipeContainer.appendChild(card);
                 });
+
+                // Render TMDB reviews after
+                if (reviews && reviews.length > 0) {
+                    reviews.slice(0, 10).forEach(review => {
+                        swipeContainer.appendChild(createReviewElement(review));
+                    });
+                }
+
                 reviewsSection.appendChild(swipeContainer);
 
+                // ── Form open/close helpers ──────────────────────────────────────
+                function openForm(existingReview) {
+                    formPlaceholder.innerHTML = '';
+                    const form = createReviewForm(
+                        existingReview || null,
+                        async (content, rating) => {
+                            await saveUserReview(tmdbId, tmdbMediaType, content, rating);
+                            refreshReviews(contextPage);
+                        },
+                        () => { formPlaceholder.innerHTML = ''; }
+                    );
+                    formPlaceholder.appendChild(form);
+                    // Automatically open the details section so the form is visible
+                    reviewsSection.setAttribute('open', '');
+                    form.querySelector('.je-review-textarea').focus();
+                }
+
+                if (writeBtn) {
+                    writeBtn.addEventListener('click', () => {
+                        if (formPlaceholder.querySelector('.je-review-form')) {
+                            formPlaceholder.innerHTML = '';
+                        } else {
+                            openForm(ownReview || null);
+                        }
+                    });
+                }
+
+                // ── Read-more toggle for TMDB reviews ─────────────────────────────
                 swipeContainer.addEventListener('click', function (e) {
                     if (e.target.classList.contains('tmdb-review-toggle')) {
                         const textElement = e.target.parentElement;
                         const card = textElement.closest('.tmdb-review-card');
+                        // Skip user review cards (they use dataset.fullContent)
+                        if (card.classList.contains('je-user-review-card')) {
+                            const full = card.dataset.fullContent || '';
+                            if (textElement.classList.toggle('expanded')) {
+                                textElement.innerHTML = parseMarkdown(full) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
+                            } else {
+                                textElement.innerHTML = parseMarkdown(full.substring(0, 350)) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
+                            }
+                            return;
+                        }
                         const review = reviews.find(r => escapeHtml(r.author) === card.querySelector('.tmdb-review-author').textContent);
-
+                        if (!review) return;
                         if (textElement.classList.toggle('expanded')) {
                             textElement.innerHTML = parseMarkdown(review.content) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
                         } else {
@@ -217,6 +518,7 @@
                         }
                     }
                 });
+
                 // Persist user's expand/collapse choice for future pages
                 reviewsSection.addEventListener('toggle', function () {
                     try {
@@ -231,14 +533,6 @@
                         console.error(`${logPrefix} Failed to persist reviews expanded state`, err);
                     }
                 });
-            } else {
-                // If no reviews, create a simple, non-expandable header
-                reviewsSection = document.createElement('div');
-                reviewsSection.className = 'detailSection tmdb-reviews-section';
-                const summary = document.createElement('summary');
-                summary.className = 'sectionTitle';
-                summary.innerHTML = `${JE.t('reviews_title', { count: 0 })}`;
-                reviewsSection.appendChild(summary);
             }
 
             const insertionAnchor =
@@ -250,6 +544,35 @@
                 insertionAnchor.parentNode.insertBefore(reviewsSection, insertionAnchor.nextSibling);
             } else {
                 console.error(`${logPrefix} Could not find a suitable anchor to insert reviews.`);
+            }
+        }
+
+        /**
+         * Re-fetches and re-renders the review section for the current page.
+         */
+        async function refreshReviews(contextPage) {
+            try {
+                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                const userId = ApiClient.getCurrentUserId();
+                if (!itemId || !userId) return;
+
+                const item = JE.helpers?.getItemCached
+                    ? await JE.helpers.getItemCached(itemId, { userId })
+                    : await ApiClient.getItem(userId, itemId);
+                const tmdbId = item?.ProviderIds?.Tmdb;
+                const mediaType = item?.Type;
+                if (!tmdbId || !(mediaType === 'Movie' || mediaType === 'Series')) return;
+
+                const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
+                const [tmdbReviews, userReviews] = await Promise.all([
+                    tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
+                    userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([])
+                ]);
+
+                const page = document.querySelector('#itemDetailPage:not(.hide)') || contextPage;
+                addReviewsToPage(tmdbReviews, userReviews, page, tmdbId, apiMediaType);
+            } catch (err) {
+                console.error(`${logPrefix} Failed to refresh reviews:`, err);
             }
         }
 
@@ -283,12 +606,25 @@
                     display: flex;
                     flex-direction: column;
                 }
+                .je-user-review-card {
+                    border-left-color: rgb(94, 213, 95);
+                    background: rgba(10, 26, 10, 0.52);
+                }
                 @media (min-width: 768px) { .tmdb-review-card { flex-basis: 400px; } }
                 .tmdb-review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1em; }
-                .tmdb-review-author-info { display: flex; flex-direction: column; gap: 0.3em; }
+                .je-user-review-header { align-items: center; gap: 0.75em; }
+                .tmdb-review-author-info { display: flex; flex-direction: column; gap: 0.3em; flex: 1; }
                 .tmdb-review-author { color: #fff; font-size: 1.1em; font-weight: 600; }
                 .tmdb-review-date { color: #aaa; font-size: 0.9em; }
                 .tmdb-review-rating { color: #ffd700; background: rgba(255, 215, 0, 0.1); padding: 0.2em 0.5em; border-radius: 4px; }
+                .je-user-review-rating {
+                    white-space: nowrap;
+                    background: rgba(94, 213, 95, 0.12);
+                    color: #ffd700;
+                }
+                .je-user-star-rating { display: inline-flex; align-items: center; gap: 0.08em; }
+                .je-user-star { color: rgba(255, 255, 255, 0.28); font-size: 0.95em; }
+                .je-user-star-filled { color: #ffd700; }
                 .tmdb-review-content-wrapper { flex-grow: 1; line-height: 1.7; overflow-y: auto; color: #ddd; font-size: 0.95em; }
                 .tmdb-review-text { word-wrap: break-word; }
                 .tmdb-review-text strong { color: #fff; font-weight: 600; }
@@ -307,6 +643,104 @@
                 .tmdb-review-text a { color: rgb(1, 180, 228); text-decoration: underline; }
                 .tmdb-review-text a:hover { color: rgb(50, 200, 250); }
                 .tmdb-review-toggle { color: rgb(1, 180, 228); font-weight: bold; cursor: pointer; text-decoration: underline; margin-left: 0.3em; }
+
+                /* User avatar */
+                .je-user-avatar-wrapper { flex-shrink: 0; }
+                .je-user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgb(94, 213, 95); display: block; }
+
+                /* Action bar */
+                .je-review-action-bar { padding: 0.5em 0.5em 0; display: flex; gap: 0.75em; }
+                .je-user-review-actions { display: flex; gap: 0.5em; flex-shrink: 0; }
+
+                /* Shared button style */
+                .je-review-btn {
+                    background: rgba(255,255,255,0.08);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    border-radius: 6px;
+                    color: #fff;
+                    cursor: pointer;
+                    font-size: 0.85em;
+                    padding: 0.35em 0.9em;
+                    transition: background 0.15s;
+                }
+                .je-review-btn:hover { background: rgba(255,255,255,0.15); }
+                .je-review-write-btn { border-color: rgb(94, 213, 95); color: rgb(94, 213, 95); }
+                .je-review-write-btn:hover { background: rgba(94, 213, 95, 0.15); }
+                .je-review-edit-btn, .je-review-delete-btn, .je-review-submit-btn, .je-review-cancel-btn {
+                    width: 2.4em;
+                    height: 2.4em;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0;
+                }
+                .je-review-edit-btn .material-icons, .je-review-delete-btn .material-icons, .je-review-submit-btn .material-icons, .je-review-cancel-btn .material-icons, .je-star-clear-btn .material-icons { font-size: 18px; }
+                .je-review-edit-btn { border-color: rgb(94, 213, 95); color: rgb(94, 213, 95); }
+                .je-review-delete-btn { border-color: rgb(244, 67, 54); color: rgb(244, 67, 54); }
+                .je-review-delete-btn:hover { background: rgba(244, 67, 54, 0.15); }
+
+                /* Inline review form */
+                .je-review-form-placeholder { padding: 0 0.5em; }
+                .je-review-form {
+                    background: rgba(0,0,0,0.4);
+                    border: 1px solid rgba(94, 213, 95, 0.4);
+                    border-radius: 8px;
+                    padding: 1.2em;
+                    margin: 0.75em 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.75em;
+                }
+                .je-review-form-title { margin: 0; font-size: 1em; color: #fff; font-weight: 600; }
+                .je-review-star-picker { display: flex; align-items: center; gap: 0.3em; }
+                .je-star-btn {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    font-size: 1.6em;
+                    color: rgba(255,255,255,0.2);
+                    padding: 0;
+                    line-height: 1;
+                    transition: color 0.1s, transform 0.1s;
+                }
+                .je-star-btn:hover, .je-star-btn.je-star-hover, .je-star-btn.je-star-selected { color: #ffd700; }
+                .je-star-btn:hover { transform: scale(1.2); }
+                .je-star-clear-btn {
+                    background: rgba(255,255,255,0.08);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    border-radius: 6px;
+                    cursor: pointer;
+                    color: rgba(255,255,255,0.7);
+                    width: 2.2em;
+                    height: 2.2em;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0;
+                }
+                .je-star-clear-btn:hover { background: rgba(255,255,255,0.15); }
+                .je-star-label { color: #ffd700; font-size: 0.9em; margin-left: 0.25em; min-width: 2.5em; }
+                .je-review-textarea {
+                    width: 100%;
+                    min-height: 100px;
+                    resize: vertical;
+                    background: rgba(255,255,255,0.06);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    border-radius: 6px;
+                    color: #fff;
+                    font-size: 0.95em;
+                    padding: 0.6em 0.8em;
+                    box-sizing: border-box;
+                    font-family: inherit;
+                    line-height: 1.5;
+                }
+                .je-review-textarea:focus { outline: none; border-color: rgb(94, 213, 95); }
+                .je-review-char-counter { font-size: 0.8em; color: rgba(255,255,255,0.4); text-align: right; }
+                .je-review-form-btns { display: flex; gap: 0.75em; }
+                .je-review-submit-btn { border-color: rgb(94, 213, 95); color: rgb(94, 213, 95); }
+                .je-review-submit-btn:hover { background: rgba(94, 213, 95, 0.15); }
+                .je-review-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+                .je-review-form-error { color: rgb(244, 67, 54); font-size: 0.85em; min-height: 1em; }
             `;
             document.head.appendChild(style);
         }
@@ -328,8 +762,12 @@
                     const mediaType = item?.Type;
 
                     if (tmdbId && mediaType && (mediaType === 'Movie' || mediaType === 'Series')) {
-                        const reviews = await fetchReviews(tmdbId, mediaType);
-                        addReviewsToPage(reviews, visiblePage);
+                        const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
+                        const [tmdbReviews, userReviews] = await Promise.all([
+                            tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
+                            userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([])
+                        ]);
+                        addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbId, apiMediaType);
                     }
                 }
             } catch (error) {
@@ -342,7 +780,7 @@
         // Use Emby.Page.onViewShow hook for reliable page navigation detection
         const unregister = JE.helpers.onViewPage(async (view, element, hash, itemPromise) => {
             // Check if feature is still enabled
-            if (!JE?.pluginConfig?.ShowReviews || !JE?.pluginConfig?.TmdbEnabled) {
+            if (!JE?.pluginConfig?.ShowReviews && !JE?.pluginConfig?.ShowUserReviews) {
                 unregister();
                 return;
             }

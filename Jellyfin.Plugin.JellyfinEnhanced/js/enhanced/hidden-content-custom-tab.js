@@ -89,9 +89,9 @@
   }
 
   /**
-   * Persistent watcher -- observes .mainAnimatedPages for DOM rebuilds and
-   * remounts the hidden content tab when a new active container appears.
-   * Suspends checks when not on the home page.
+   * Persistent watcher -- observes document.body (via shared observer) for
+   * DOM rebuilds and remounts the hidden content tab when a new active
+   * container appears. Suspends checks when not on the home page.
    * @param {Object} JE - The JellyfinEnhanced global object.
    */
   function watchForContainer(JE) {
@@ -115,9 +115,12 @@
 
     tryMount();
 
-    var observeTarget = document.querySelector('.mainAnimatedPages') || document.body;
+    // Observe document.body (not .mainAnimatedPages) because Jellyfin replaces
+    // .mainAnimatedPages when navigating to the admin dashboard — an observer
+    // bound to the old element would become orphaned after returning to home
+    // (issue 536). Routes to the shared multiplexed body observer.
     var mountPending = false;
-    var observer = new MutationObserver(function () {
+    JE.helpers.createObserver('hidden-content-custom-tab', function () {
       if (!mountPending) {
         mountPending = true;
         requestAnimationFrame(function () {
@@ -125,8 +128,7 @@
           tryMount();
         });
       }
-    });
-    observer.observe(observeTarget, { childList: true, subtree: true });
+    }, document.body, { childList: true, subtree: true });
   }
 
   waitForHiddenContent(function (JE) {
