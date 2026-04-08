@@ -78,7 +78,114 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
         }
 
+        /**
+         * Admin moderation: deletes another user's review for a TMDB item.
+         * Backed by DELETE /JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId},
+         * which is gated on IsAdministrator server-side. A 404 from the
+         * server now means "no matching review to delete" (race with a
+         * concurrent admin, already-deleted review, wrong target) — we
+         * translate that into a human-readable Error so the caller can
+         * show a sensible message.
+         */
+        async function adminDeleteUserReview(targetUserId, tmdbId, mediaType) {
+            const userIdN = (targetUserId || '').replace(/-/g, '');
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`);
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: { "X-Emby-Token": ApiClient.accessToken() }
+            });
+            if (response.status === 404) {
+                throw new Error('No matching review to delete (it may have already been removed).');
+            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        }
+
         const escapeHtml = JE.escapeHtml;
+
+        /**
+         * Shows a Jellyfin-native confirm dialog and returns a Promise<boolean>.
+         * Prefers window.Dashboard.confirm (the built-in Jellyfin modal, which
+         * auto-themes and handles keyboard nav). Falls back to window.confirm
+         * on unusual clients where Dashboard is not exposed, so the feature
+         * still works even if the platform surface changes.
+         *
+         * The native-confirm fallback prepends the title to the text because
+         * window.confirm() has no title parameter — without this, an admin
+         * deleting someone else's review would lose the "(admin)" context.
+         */
+        function jeConfirm(text, title) {
+            return new Promise(resolve => {
+                if (window.Dashboard && typeof window.Dashboard.confirm === 'function') {
+                    try {
+                        window.Dashboard.confirm(text, title, resolve);
+                        return;
+                    } catch (err) {
+                        console.warn(`${logPrefix} Dashboard.confirm threw, falling back:`, err);
+                    }
+                }
+                const combined = title ? `${title}\n\n${text}` : text;
+                resolve(window.confirm(combined));
+            });
+        }
+
+        /**
+         * Shows a Jellyfin-native alert dialog. Falls back to window.alert on
+         * clients without Dashboard. Used to surface delete failures so admins
+         * get visible feedback instead of a silent console.error.
+         */
+        function jeAlert(text, title) {
+            if (window.Dashboard && typeof window.Dashboard.alert === 'function') {
+                try {
+                    window.Dashboard.alert({ title: title || '', message: text || '' });
+                    return;
+                } catch (err) {
+                    console.warn(`${logPrefix} Dashboard.alert threw, falling back:`, err);
+                }
+            }
+            window.alert(title ? `${title}\n\n${text}` : text);
+        }
+
+        // Track which translation keys we've already warned about falling
+        // back on, so a broken i18n system is visible in the console once per
+        // key instead of spamming on every render.
+        const _tFallbackWarned = new Set();
+
+        /**
+         * JE.t with an inline English fallback. Needed because the translation
+         * loader prefers remote en.json over the bundled copy, which means a
+         * brand-new key can return its literal name for one release cycle
+         * until the remote catches up.
+         *
+         * Uses String.prototype.replace with a replacement *function* rather
+         * than a string literal, because a raw replacement string treats `$&`,
+         * `$'`, `` $` ``, `$1`-`$99`, and `$$` as backreferences. Jellyfin's
+         * username regex doesn't allow `$`, so today's only param (a username)
+         * is safe — but if a future caller interpolates a free-form string
+         * into the fallback, the function form avoids the footgun.
+         */
+        function tWithFallback(key, fallback, params) {
+            let result;
+            try {
+                result = JE.t(key, params);
+            } catch (err) {
+                console.warn(`${logPrefix} JE.t('${key}') threw, using fallback:`, err);
+                result = null;
+            }
+            if (!result || result === key) {
+                if (!_tFallbackWarned.has(key)) {
+                    _tFallbackWarned.add(key);
+                    console.warn(`${logPrefix} Missing translation key '${key}', using inline fallback.`);
+                }
+                let out = fallback;
+                if (params) {
+                    for (const [k, v] of Object.entries(params)) {
+                        out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
+                    }
+                }
+                return out;
+            }
+            return result;
+        }
 
         /**
          * Converts markdown text to safe HTML. Escapes raw HTML before applying
@@ -243,8 +350,10 @@
 
         /**
          * Creates a review card for a user-written review (different border colour).
+         * Own reviews get edit + delete. Non-own reviews get an admin delete button
+         * when the viewer is an admin (for moderation).
          */
-        function createUserReviewElement(review, currentUserId, onEditCallback, onDeleteCallback) {
+        function createUserReviewElement(review, currentUserId, viewerIsAdmin, onEditCallback, onDeleteCallback) {
             const REVIEW_PREVIEW_LENGTH = 350;
             const reviewCard = document.createElement('div');
             reviewCard.className = 'tmdb-review-card je-user-review-card';
@@ -267,11 +376,27 @@
             const avatarSrc = ApiClient.getUrl(`/Users/${review.userId}/Images/Primary`) + '?width=48&quality=90';
 
             const isOwn = review.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
-            const actionButtons = isOwn ? `
+            const showModerationDelete = !isOwn && viewerIsAdmin;
+            // Tooltips route through tWithFallback because JE.t returns the
+            // raw key on miss (which is truthy), so a plain `JE.t(key) || 'X'`
+            // would show literal `reviews_edit` until the remote en.json
+            // catches up.
+            const editTitle = tWithFallback('reviews_edit', 'Edit');
+            const deleteTitle = tWithFallback('reviews_delete', 'Delete');
+            const adminDeleteTitle = tWithFallback('reviews_admin_delete', 'Delete as admin');
+            let actionButtons = '';
+            if (isOwn) {
+                actionButtons = `
                 <div class="je-user-review-actions">
-                    <button class="je-review-btn je-review-edit-btn">${JE.icon(JE.IconName.EDIT)}</button>
-                    <button class="je-review-btn je-review-delete-btn">${JE.icon(JE.IconName.TRASH)}</button>
-                </div>` : '';
+                    <button class="je-review-btn je-review-edit-btn" title="${escapeHtml(editTitle)}"><span class="material-icons" aria-hidden="true">edit</span></button>
+                    <button class="je-review-btn je-review-delete-btn" title="${escapeHtml(deleteTitle)}"><span class="material-icons" aria-hidden="true">delete</span></button>
+                </div>`;
+            } else if (showModerationDelete) {
+                actionButtons = `
+                <div class="je-user-review-actions">
+                    <button class="je-review-btn je-review-delete-btn je-review-admin-delete-btn" title="${escapeHtml(adminDeleteTitle)}"><span class="material-icons" aria-hidden="true">delete</span></button>
+                </div>`;
+            }
 
             reviewCard.innerHTML = `
                 <div class="tmdb-review-header je-user-review-header">
@@ -303,6 +428,8 @@
             if (isOwn) {
                 reviewCard.querySelector('.je-review-edit-btn').addEventListener('click', () => onEditCallback(review));
                 reviewCard.querySelector('.je-review-delete-btn').addEventListener('click', () => onDeleteCallback(review));
+            } else if (showModerationDelete) {
+                reviewCard.querySelector('.je-review-admin-delete-btn').addEventListener('click', () => onDeleteCallback(review));
             }
 
             return reviewCard;
@@ -390,13 +517,26 @@
             return form;
         }
 
-        function addReviewsToPage(reviews, userReviews, contextPage, tmdbId, tmdbMediaType) {
+        function addReviewsToPage(reviews, userReviews, contextPage, tmdbId, tmdbMediaType, currentUser) {
             const existingSection = contextPage.querySelector('.tmdb-reviews-section');
             if (existingSection) {
                 existingSection.remove();
             }
 
-            const currentUserId = ApiClient.getCurrentUserId() || '';
+            // `currentUser` is resolved fresh by the caller (processPage /
+            // refreshReviews) instead of read from the cached `JE.currentUser`
+            // set once at plugin init. This matters for:
+            //   1. Admin viewers on first render (race: JE.currentUser promise
+            //      may not have resolved yet, so admin would briefly see no
+            //      moderation buttons).
+            //   2. In-session login switches (Jellyfin's SPA router doesn't
+            //      re-init the plugin, so JE.currentUser stays stale as the
+            //      previous user — a non-admin who logged in after an admin
+            //      would see phantom admin controls, while the backend still
+            //      blocks the actual delete with 403).
+            // Using the live ApiClient session fixes both.
+            const currentUserId = (currentUser?.Id) || ApiClient.getCurrentUserId() || '';
+            const viewerIsAdmin = currentUser?.Policy?.IsAdministrator === true;
             const ownReview = userReviews.find(r => r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, ''));
             const hasReviews = (reviews && reviews.length > 0) || userReviews.length > 0;
 
@@ -441,16 +581,50 @@
                     const card = createUserReviewElement(
                         userReview,
                         currentUserId,
-                        // Edit callback
+                        viewerIsAdmin,
+                        // Edit callback (own reviews only)
                         (r) => openForm(r),
-                        // Delete callback
+                        // Delete callback — routes to self-delete for own reviews,
+                        // admin moderation delete for others (admin viewers only).
                         async (r) => {
-                            if (!confirm(JE.t('reviews_delete_confirm'))) return;
+                            const isOwn = r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
+                            const userName = r.userName || 'user';
+                            const title = isOwn
+                                ? tWithFallback('reviews_delete_title', 'Delete review')
+                                : tWithFallback('reviews_admin_delete_title', 'Delete review (admin)');
+                            const body = isOwn
+                                ? tWithFallback('reviews_delete_confirm',
+                                    'Delete your review for this item?')
+                                : tWithFallback('reviews_admin_delete_confirm',
+                                    'Delete this review by {user}? This cannot be undone.',
+                                    { user: userName });
+                            if (!(await jeConfirm(body, title))) return;
                             try {
-                                await deleteUserReview(tmdbId, tmdbMediaType);
+                                if (isOwn) {
+                                    await deleteUserReview(tmdbId, tmdbMediaType);
+                                } else {
+                                    await adminDeleteUserReview(r.userId, tmdbId, tmdbMediaType);
+                                }
                                 refreshReviews(contextPage);
                             } catch (e) {
+                                // Surface the failure to the admin instead of
+                                // silently failing: without this, a 403/404/500
+                                // on the delete call would leave the review on
+                                // screen with no feedback, making the admin
+                                // believe the content was moderated when it
+                                // wasn't.
                                 console.error(`${logPrefix} Delete failed`, e);
+                                const errTitle = tWithFallback('reviews_delete_error_title',
+                                    'Delete failed');
+                                const errBody = tWithFallback('reviews_delete_error_body',
+                                    'Could not delete the review: {err}',
+                                    { err: (e && e.message) ? e.message : 'Unknown error' });
+                                jeAlert(errBody, errTitle);
+                                // Re-fetch so the admin sees the real current state
+                                // (in case the review was actually removed but the
+                                // response was 500 on the way back, or a concurrent
+                                // admin deleted it first).
+                                refreshReviews(contextPage);
                             }
                         }
                     );
@@ -564,13 +738,17 @@
                 if (!tmdbId || !(mediaType === 'Movie' || mediaType === 'Series')) return;
 
                 const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-                const [tmdbReviews, userReviews] = await Promise.all([
+                // Fetch the current user fresh alongside the review data so
+                // admin status reflects the actual live session, not a
+                // potentially-stale JE.currentUser captured at plugin init.
+                const [tmdbReviews, userReviews, currentUser] = await Promise.all([
                     tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
-                    userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([])
+                    userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
+                    ApiClient.getCurrentUser().catch(() => null),
                 ]);
 
                 const page = document.querySelector('#itemDetailPage:not(.hide)') || contextPage;
-                addReviewsToPage(tmdbReviews, userReviews, page, tmdbId, apiMediaType);
+                addReviewsToPage(tmdbReviews, userReviews, page, tmdbId, apiMediaType, currentUser);
             } catch (err) {
                 console.error(`${logPrefix} Failed to refresh reviews:`, err);
             }
@@ -763,11 +941,15 @@
 
                     if (tmdbId && mediaType && (mediaType === 'Movie' || mediaType === 'Series')) {
                         const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-                        const [tmdbReviews, userReviews] = await Promise.all([
+                        // See refreshReviews for why we resolve currentUser here
+                        // instead of reading JE.currentUser — same race/staleness
+                        // reasoning.
+                        const [tmdbReviews, userReviews, currentUser] = await Promise.all([
                             tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
-                            userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([])
+                            userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
+                            ApiClient.getCurrentUser().catch(() => null),
                         ]);
-                        addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbId, apiMediaType);
+                        addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbId, apiMediaType, currentUser);
                     }
                 }
             } catch (error) {

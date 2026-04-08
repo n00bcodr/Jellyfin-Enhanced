@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using Jellyfin.Data;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
@@ -33,6 +34,7 @@ using MediaBrowser.Controller.Persistence;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
 using Jellyfin.Database.Implementations;
+using Jellyfin.Database.Implementations.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
@@ -1841,6 +1843,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowReviews,
                 config.ShowUserReviews,
                 config.ReviewsExpandedByDefault,
+                config.HideReviewsFromHiddenUsers,
+                config.HideReviewsFromDisabledUsers,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
                 config.GenreTagsEnabled,
@@ -2463,6 +2467,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
                 return BadRequest(new { message = "Invalid TmdbId." });
 
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var viewerIsAdmin = IsAdminUser();
+            var hideHiddenAuthors = config?.HideReviewsFromHiddenUsers ?? true;
+            var hideDisabledAuthors = config?.HideReviewsFromDisabledUsers ?? true;
+
             var suffix = $":{mediaType}:{tmdbId}";
             var store = _userConfigurationManager.GetAllReviews();
             var results = new List<object>();
@@ -2470,26 +2479,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             foreach (var kvp in store.Reviews)
             {
                 if (!kvp.Key.EndsWith(suffix, StringComparison.Ordinal)) continue;
-                var review = kvp.Value;
 
-                string displayName = review.UserId;
-                if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
+                // Per-review try/catch: if anything blows up while looking up
+                // the author or evaluating their permissions, we skip just
+                // this review with a warning. Without this, a single corrupt
+                // or orphaned record would 500 the entire GetItemReviews call
+                // and hide every other review on the item.
+                try
                 {
-                    var jellyfinUser = _userManager.GetUserById(userGuid);
-                    if (jellyfinUser != null) displayName = jellyfinUser.Username;
+                    var review = kvp.Value;
+
+                    string displayName = review.UserId;
+                    Jellyfin.Database.Implementations.Entities.User? jellyfinUser = null;
+                    if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
+                    {
+                        jellyfinUser = _userManager.GetUserById(userGuid);
+                        if (jellyfinUser != null) displayName = jellyfinUser.Username;
+                    }
+
+                    // Admin viewers always see every review so they can moderate.
+                    if (!viewerIsAdmin)
+                    {
+                        // Orphaned authors (Jellyfin user was deleted) are
+                        // hidden from non-admin viewers IF either hide toggle
+                        // is on — fail CLOSED. Otherwise a deleted problem
+                        // user's review would resurface for everyone. Admins
+                        // still see them so orphans can be cleaned up.
+                        if (jellyfinUser == null)
+                        {
+                            if (hideHiddenAuthors || hideDisabledAuthors)
+                            {
+                                _logger.Warning($"Hiding orphaned review for unknown userId={review.UserId} on {mediaType}:{tmdbId} from non-admin viewer.");
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            if (hideHiddenAuthors && jellyfinUser.HasPermission(PermissionKind.IsHidden))
+                                continue;
+                            if (hideDisabledAuthors && jellyfinUser.HasPermission(PermissionKind.IsDisabled))
+                                continue;
+                        }
+                    }
+
+                    results.Add(new
+                    {
+                        userId = review.UserId,
+                        userName = displayName,
+                        tmdbId = review.TmdbId,
+                        mediaType = review.MediaType,
+                        content = review.Content,
+                        rating = review.Rating,
+                        createdAt = review.CreatedAt,
+                        updatedAt = review.UpdatedAt
+                    });
                 }
-
-                results.Add(new
+                catch (Exception ex)
                 {
-                    userId = review.UserId,
-                    userName = displayName,
-                    tmdbId = review.TmdbId,
-                    mediaType = review.MediaType,
-                    content = review.Content,
-                    rating = review.Rating,
-                    createdAt = review.CreatedAt,
-                    updatedAt = review.UpdatedAt
-                });
+                    _logger.Warning($"Skipping review key={kvp.Key} due to filter error: {ex.Message}");
+                }
             }
 
             return Ok(new { reviews = results });
@@ -2530,31 +2578,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var store = _userConfigurationManager.GetAllReviews();
-                var key = $"{userIdN}:{mediaType}:{tmdbId}";
                 var now = DateTime.UtcNow.ToString("o");
-
-                if (store.Reviews.TryGetValue(key, out var existing))
-                {
-                    existing.Content = normalizedContent;
-                    existing.Rating = payload.Rating;
-                    existing.UpdatedAt = now;
-                }
-                else
-                {
-                    store.Reviews[key] = new UserReview
-                    {
-                        UserId = userIdN,
-                        TmdbId = tmdbId,
-                        MediaType = mediaType,
-                        Content = normalizedContent,
-                        Rating = payload.Rating,
-                        CreatedAt = now,
-                        UpdatedAt = now
-                    };
-                }
-
-                _userConfigurationManager.SaveAllReviews(store);
+                _userConfigurationManager.UpsertReview(
+                    userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
                 _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {userIdN}.");
                 return Ok(new { success = true });
             }
@@ -2585,18 +2611,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var store = _userConfigurationManager.GetAllReviews();
-                var key = $"{userIdN}:{mediaType}:{tmdbId}";
-                if (store.Reviews.Remove(key))
-                {
-                    _userConfigurationManager.SaveAllReviews(store);
+                if (_userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId))
                     _logger.Info($"Deleted review for {mediaType}:{tmdbId} by user {userIdN}.");
-                }
                 return Ok(new { success = true });
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to delete review for user {userIdN}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to delete review." });
+            }
+        }
+
+        /// <summary>
+        /// Admin moderation: deletes ANY user's review for a TMDB item.
+        /// Use this to remove inappropriate content without editing reviews.json on disk.
+        /// </summary>
+        [HttpDelete("reviews/admin/{userIdN}/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AdminDeleteReview(string userIdN, string mediaType, string tmdbId)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (mediaType != "movie" && mediaType != "tv")
+                return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
+
+            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+                return BadRequest(new { success = false, message = "Invalid TmdbId." });
+
+            if (string.IsNullOrWhiteSpace(userIdN) || !Guid.TryParseExact(userIdN, "N", out _))
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            try
+            {
+                var removed = _userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId);
+                if (removed)
+                {
+                    _logger.Info($"Admin deleted review for {mediaType}:{tmdbId} by user {userIdN}.");
+                    return Ok(new { success = true, removed = true });
+                }
+                // Fail explicitly: nothing to delete means the review was
+                // already gone (race with a concurrent delete, wrong
+                // userIdN, or a stale admin click). Returning 200 here
+                // lets the frontend think it succeeded and refresh to a
+                // list that looks the same as before.
+                return NotFound(new { success = false, removed = false, message = "No matching review to delete." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Admin failed to delete review for {mediaType}:{tmdbId} user {userIdN}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to delete review." });
             }
         }

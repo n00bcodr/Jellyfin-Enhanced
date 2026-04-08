@@ -490,6 +490,16 @@
                                     <span>Expand reviews by default<div style="font-size: .9em;">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div></span>
                                 </label>
                             </div>
+                            <div class="checkboxContainer">
+                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="hideReviewsFromHiddenUsers" is="emby-checkbox" type="checkbox"/>
+                                    <span>Hide reviews written by hidden users<div style="font-size: .9em;">When enabled, reviews written by Jellyfin users marked as "Hide this user from login screens" are hidden from non-admin viewers. Admins always see all reviews.</div></span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="hideReviewsFromDisabledUsers" is="emby-checkbox" type="checkbox"/>
+                                    <span>Hide reviews written by disabled users<div style="font-size: .9em;">When enabled, reviews written by Jellyfin users marked as "Disable this user" are hidden from non-admin viewers. Admins always see all reviews.</div></span>
+                                </label>
+                            </div>
                         </div>
                     </fieldset>
                 </div>
@@ -2584,6 +2594,8 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
+                document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
+                document.querySelector('#hideReviewsFromDisabledUsers').checked = config.HideReviewsFromDisabledUsers !== false;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
                 document.querySelector('#jellyseerrShowSearchResults').checked = config.JellyseerrShowSearchResults !== false;
@@ -2788,6 +2800,8 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
+            config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;
+            config.HideReviewsFromDisabledUsers = document.querySelector('#hideReviewsFromDisabledUsers').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;
             config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
@@ -3509,6 +3523,7 @@
         var PARENT_DEPS = [
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
+            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition'] },
