@@ -1884,6 +1884,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrAutoImportUsers,
                 config.JellyseerrShowSimilar,
                 config.JellyseerrShowRecommended,
+                config.JellyseerrShowRequestMoreOnSeries,
                 config.JellyseerrShowNetworkDiscovery,
                 config.JellyseerrShowGenreDiscovery,
                 config.JellyseerrShowTagDiscovery,

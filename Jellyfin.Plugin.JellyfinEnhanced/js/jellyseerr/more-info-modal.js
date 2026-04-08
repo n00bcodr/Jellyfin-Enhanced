@@ -1527,10 +1527,17 @@ async function checkForUnrequestedSeasons(data) {
             }
         }
 
-        // Check if any TMDB season is unrequested
+        // Check if any TMDB season is unrequested. Status 0/undefined and 1
+        // (Unknown) mean it has never been requested. Status 7 (Deleted) means
+        // a prior request was removed and the season can be re-requested —
+        // this matches the canRequest checks elsewhere in this file
+        // (e.g. canRequestMain = !status || status === 1 || status === 7).
+        // Without the status 7 case, shows that previously had requests but
+        // had them deleted (e.g. Futurama with most seasons in deleted state)
+        // would never get a "Request More" button.
         for (const tmdbSeason of tmdbSeasons) {
             const status = statusMap[tmdbSeason.seasonNumber];
-            if (!status || status === 1) {
+            if (!status || status === 1 || status === 7) {
                 return true;
             }
         }
@@ -3076,6 +3083,11 @@ function injectStyles() {
             moreInfoModal.close();
         }
     });
+
+    // Expose helpers used by other modules (e.g., item-details.js for the
+    // Series page "Request More" button) so the unrequested-seasons check
+    // logic does not need to be duplicated.
+    moreInfoModal.checkForUnrequestedSeasons = checkForUnrequestedSeasons;
 
     // Expose the module on the global JE object
     JE.jellyseerrMoreInfo = moreInfoModal;

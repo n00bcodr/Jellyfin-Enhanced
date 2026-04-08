@@ -709,6 +709,13 @@
                                     <div class="fieldDescription" style="margin-bottom: 2em;">Displays recommended movies/shows from Seerr on item details pages. Limited to 20 items.</div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
                                         <label>
+                                            <input id="jellyseerrShowRequestMoreOnSeries" is="emby-checkbox" type="checkbox"/>
+                                            <span>Show "Request More" button next to Seasons heading on Series pages</span>
+                                        </label>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 2em;">Adds a "Request More" button beside the Seasons section heading on Series detail pages when the show has unrequested seasons in Seerr. Lets users request additional seasons without going through the search bar.</div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label>
                                             <input id="jellyseerrExcludeLibraryItems" is="emby-checkbox" type="checkbox"/>
                                             <span>Exclude items already in library</span>
                                         </label>
@@ -2598,6 +2605,7 @@
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
                 document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
+                document.querySelector('#jellyseerrShowRequestMoreOnSeries').checked = config.JellyseerrShowRequestMoreOnSeries !== false;
                 document.querySelector('#jellyseerrExcludeLibraryItems').checked = config.JellyseerrExcludeLibraryItems !== false;
                 document.querySelector('#jellyseerrShowNetworkDiscovery').checked = config.JellyseerrShowNetworkDiscovery !== false;
                 document.querySelector('#jellyseerrShowGenreDiscovery').checked = config.JellyseerrShowGenreDiscovery !== false;
@@ -2803,6 +2811,7 @@
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
+            config.JellyseerrShowRequestMoreOnSeries = document.querySelector('#jellyseerrShowRequestMoreOnSeries').checked;
             config.JellyseerrExcludeLibraryItems = document.querySelector('#jellyseerrExcludeLibraryItems').checked;
             config.JellyseerrExcludeBlocklistedItems = document.querySelector('#jellyseerrExcludeBlocklistedItems').checked;
             config.JellyseerrDisableCache = document.querySelector('#jellyseerrDisableCache').checked;

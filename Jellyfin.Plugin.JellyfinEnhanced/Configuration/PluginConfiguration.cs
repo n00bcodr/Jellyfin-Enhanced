@@ -105,6 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowAdvanced = false;
             JellyseerrShowSimilar = true;
             JellyseerrShowRecommended = true;
+            JellyseerrShowRequestMoreOnSeries = true;
             JellyseerrShowNetworkDiscovery = true;
             JellyseerrShowGenreDiscovery = true;
             JellyseerrShowTagDiscovery = true;
@@ -289,6 +290,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowAdvanced { get; set; }
         public bool JellyseerrShowSimilar { get; set; }
         public bool JellyseerrShowRecommended { get; set; }
+        public bool JellyseerrShowRequestMoreOnSeries { get; set; }
         public bool JellyseerrShowNetworkDiscovery { get; set; }
         public bool JellyseerrShowGenreDiscovery { get; set; }
         public bool JellyseerrShowTagDiscovery { get; set; }
