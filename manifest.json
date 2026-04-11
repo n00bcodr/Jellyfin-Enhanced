@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "- Update flag image source to use CDN for flags ([#535](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/535))\n - chore(ci)(deps): bump trufflesecurity/trufflehog from 3.94.1 to 3.94.2 in the github-actions group ([#537](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/537))\n - fix: fall back from regional locale to base language ([#539](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/539))\n - fix: custom tabs render empty after dashboard navigation ([#540](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/540))\n - Add play activity variants across locales\n - feat: User Reviews ([#542](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/542))\n - feat: add \"Request More\" button next to Series heading on Series pages ([#543](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/543))\n - Adding to the user reviews feature. Admin controls for users. Bugs ([#545](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/545))\n - Use mapped countryCode for flag URL",
+        "targetAbi": "10.11.0.0",
+        "version": "11.6.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/11.6.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "7ECC3C30F803481C0343077857D1841B",
+        "timestamp": "2026-04-11T11:43:29"
+      },
+      {
         "changelog": "- fix: prevent plugin UI disappearing after upgrade and crashing at start up ([#531](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/531))",
         "targetAbi": "10.11.0.0",
         "version": "11.5.1.0",
