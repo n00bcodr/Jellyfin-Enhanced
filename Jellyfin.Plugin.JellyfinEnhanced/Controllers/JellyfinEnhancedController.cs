@@ -2472,6 +2472,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var hideHiddenAuthors = config?.HideReviewsFromHiddenUsers ?? true;
             var hideDisabledAuthors = config?.HideReviewsFromDisabledUsers ?? true;
 
+            // Resolve the current viewer's "N"-format user id so we can
+            // always show their OWN review back to them, even when the
+            // viewer themselves is hidden/disabled in Jellyfin and the
+            // hide filters would otherwise drop their author record.
+            // Without this, a hidden non-admin user posting a review would
+            // immediately lose visibility of their own content (issue 546).
+            var viewerUserId = UserHelper.GetCurrentUserId(User);
+            var viewerUserIdN = viewerUserId?.ToString("N");
+            if (string.IsNullOrEmpty(viewerUserIdN))
+            {
+                // Anomalous: [Authorize] passed but the Jellyfin-UserId
+                // claim is missing or unparseable. The self-review bypass
+                // below will silently no-op, so warn here to give a
+                // diagnostic trail if a hidden user reports the symptom
+                // again with no obvious cause.
+                _logger.Warning($"GetItemReviews: could not resolve viewer user id from claims on {mediaType}:{tmdbId}; self-review bypass disabled.");
+            }
+
             var suffix = $":{mediaType}:{tmdbId}";
             var store = _userConfigurationManager.GetAllReviews();
             var results = new List<object>();
@@ -2497,8 +2515,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         if (jellyfinUser != null) displayName = jellyfinUser.Username;
                     }
 
+                    // The viewer's own review is ALWAYS visible to themselves,
+                    // regardless of admin status or hide filters. The hide
+                    // filters exist to let admins moderate OTHER users'
+                    // content, not to make a user's own writing invisible to
+                    // them. Skipping the filter for self also prevents the
+                    // confusing "I just posted, where did it go?" symptom
+                    // when the viewer's own account has IsHidden set.
+                    //
+                    // Require jellyfinUser != null on the self-bypass so an
+                    // orphaned-self record (auth token still resolves to a
+                    // deleted user — Jellyfin doesn't universally invalidate
+                    // tokens on user delete) still falls into the orphan
+                    // hide path below instead of being served back with a
+                    // raw-Guid display name.
+                    var isOwnReview = jellyfinUser != null
+                        && !string.IsNullOrEmpty(viewerUserIdN)
+                        && string.Equals(review.UserId, viewerUserIdN, StringComparison.OrdinalIgnoreCase);
+
                     // Admin viewers always see every review so they can moderate.
-                    if (!viewerIsAdmin)
+                    if (!viewerIsAdmin && !isOwnReview)
                     {
                         // Orphaned authors (Jellyfin user was deleted) are
                         // hidden from non-admin viewers IF either hide toggle
