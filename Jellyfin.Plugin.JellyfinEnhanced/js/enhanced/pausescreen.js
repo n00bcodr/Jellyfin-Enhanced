@@ -568,6 +568,10 @@
           this.currentVideo = video;
           this.cleanupListeners = this.attachVideoListeners(video);
 
+          // Clear item cache on video change so a new item always fetches fresh data
+          this.itemCache.clear();
+          this.imgProbeCache.clear();
+
           const itemId = this.checkForItemId(true);
           if (itemId) {
             this.currentItemId = itemId;
@@ -580,17 +584,9 @@
           if (!force && now - this.lastItemIdCheck < 500) return this.currentItemId;
           this.lastItemIdCheck = now;
 
-          const selectors = [
-            '.videoOsdBottom-hidden > div:nth-child(1) > div:nth-child(4) > button:nth-child(3)',
-            'div.page:nth-child(3) > div:nth-child(3) > div:nth-child(1) > div:nth-child(4) > button:nth-child(3)',
-            '.btnUserRating'
-          ];
-          for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            const dataId = el?.getAttribute('data-id');
-            if (dataId) return dataId;
-          }
-          return null;
+          // Use the OSD favorite button — it's always updated to the current item
+          const el = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
+          return el?.dataset?.id || null;
         }
 
         attachVideoListeners(video) {
