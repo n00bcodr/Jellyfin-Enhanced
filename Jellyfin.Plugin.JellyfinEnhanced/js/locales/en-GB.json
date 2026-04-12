@@ -480,5 +480,7 @@
     "hidden_content_n_hidden_items": "{count} hidden items",
     "hidden_content_1_hidden_item": "1 hidden item",
     "hidden_content_unknown_show": "Unknown Show",
-    "hidden_content_experimental_label": "Experimental"
+    "hidden_content_experimental_label": "Experimental",
+    "active_streams_count": "{count} Active Stream|{count} Active Streams",
+    "active_streams_none": "No Active Streams"
 }

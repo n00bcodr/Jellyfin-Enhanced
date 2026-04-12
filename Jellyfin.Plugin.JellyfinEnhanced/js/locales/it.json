@@ -480,5 +480,7 @@
     "feature_people_tags": "Tag persone",
     "feature_tags_hide_on_hover": "{{icon:eye}} Nascondi tag al passaggio del mouse",
     "panel_settings_ui_hide_tags_on_hover": "Nascondi tag al passaggio del mouse",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Nasconde le sovrapposizioni dei tag quando passi il mouse sulle schede per vedere meglio i pulsanti"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Nasconde le sovrapposizioni dei tag quando passi il mouse sulle schede per vedere meglio i pulsanti",
+    "active_streams_count": "{count} stream attivo|{count} stream attivi",
+    "active_streams_none": "Nessuno stream attivo"
 }

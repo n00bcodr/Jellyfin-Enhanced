@@ -480,5 +480,7 @@
     "feature_people_tags": "Person-tags",
     "feature_tags_hide_on_hover": "{{icon:eye}} Skjul tags ved hover",
     "panel_settings_ui_hide_tags_on_hover": "Skjul tags ved hover",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Skjul tag-overlays ved hover over kort, så knapper er lettere at se"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Skjul tag-overlays ved hover over kort, så knapper er lettere at se",
+    "active_streams_count": "{count} aktivt stream|{count} aktive streams",
+    "active_streams_none": "Ingen aktive streams"
 }

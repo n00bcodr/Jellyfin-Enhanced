@@ -480,5 +480,7 @@
     "feature_people_tags": "Personetiketter",
     "feature_tags_hide_on_hover": "{{icon:eye}} Skjul etiketter ved hovering",
     "panel_settings_ui_hide_tags_on_hover": "Skjul etiketter ved hovering",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Skjuler etikett-overlegg når du holder musen over kort, slik at knapper er lettere å se"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Skjuler etikett-overlegg når du holder musen over kort, slik at knapper er lettere å se",
+    "active_streams_count": "{count} aktiv strøm|{count} aktive strømmer",
+    "active_streams_none": "Ingen aktive strømmer"
 }

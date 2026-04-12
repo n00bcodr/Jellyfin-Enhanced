@@ -480,5 +480,7 @@
     "feature_people_tags": "Etiquetes de persones",
     "feature_tags_hide_on_hover": "{{icon:eye}} Amaga les etiquetes en passar el cursor",
     "panel_settings_ui_hide_tags_on_hover": "Amaga les etiquetes en passar el cursor",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Amaga les superposicions d'etiquetes en passar el cursor sobre les targetes perquè els botons es vegin millor"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Amaga les superposicions d'etiquetes en passar el cursor sobre les targetes perquè els botons es vegin millor",
+    "active_streams_count": "{count} flux actiu|{count} fluxos actius",
+    "active_streams_none": "Cap flux actiu"
 }

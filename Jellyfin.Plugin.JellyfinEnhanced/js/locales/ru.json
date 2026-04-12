@@ -480,5 +480,7 @@
     "feature_people_tags": "Теги персон",
     "feature_tags_hide_on_hover": "{{icon:eye}} Скрывать теги при наведении",
     "panel_settings_ui_hide_tags_on_hover": "Скрывать теги при наведении",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Скрывает наложения тегов при наведении на карточки, чтобы кнопки было легче видеть"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Скрывает наложения тегов при наведении на карточки, чтобы кнопки было легче видеть",
+    "active_streams_count": "{count} активный поток|{count} активных потока",
+    "active_streams_none": "Нет активных потоков"
 }

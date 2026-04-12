@@ -1509,6 +1509,29 @@
                             </div>
 
                             <div style="margin-top: 2em; padding-top: 1.5em; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label>
+                                    <input id="activeStreamsEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Active Streams Widget</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">
+                                Adds a live stream counter to the header. Click it to open a panel showing who is currently playing, what they're watching, playback state, progress, and transcoding details. By default the widget is only visible to admin accounts.
+                            </div>
+                            <div id="activeStreamsAllUsersContainer" style="margin-bottom: 0.5em;">
+                                <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                    <label>
+                                        <input id="activeStreamsAllUsers" is="emby-checkbox" type="checkbox"/>
+                                        <span>Show to all users</span>
+                                    </label>
+                                </div>
+                                <div class="fieldDescription" style="margin-bottom: 1em;">
+                                    Enable this to show it to all users.
+                                </div>
+                            </div>
+                            </div>
+
+                            <div style="margin-top: 2em; padding-top: 1.5em; border-top: 1px solid rgba(255,255,255,0.1);">
                                 <h4 class="sectionTitle" style="margin-top: 0;">Custom Plugin Links</h4>
                                 <div class="fieldDescription" style="margin-bottom: 1em;">
                                     Add custom plugin links to the Dashboard sidebar. Each link should be on a new line in the format: <code>Configuration Page Name | icon_name</code>
@@ -2690,6 +2713,12 @@
                 document.querySelector('#themeSelectorEnabled').checked = config.ThemeSelectorEnabled;
                 document.querySelector('#coloredActivityIconsEnabled').checked = config.ColoredActivityIconsEnabled;
                 document.querySelector('#pluginIconsEnabled').checked = config.PluginIconsEnabled;
+                document.querySelector('#activeStreamsEnabled').checked = config.ActiveStreamsEnabled || false;
+                document.querySelector('#activeStreamsAllUsers').checked = config.ActiveStreamsAllUsers || false;
+                document.getElementById('activeStreamsAllUsersContainer').style.display = config.ActiveStreamsEnabled ? '' : 'none';
+                document.querySelector('#activeStreamsEnabled').addEventListener('change', function() {
+                    document.getElementById('activeStreamsAllUsersContainer').style.display = this.checked ? '' : 'none';
+                });
 
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
@@ -2905,6 +2934,8 @@
             config.ThemeSelectorEnabled = document.querySelector('#themeSelectorEnabled').checked;
             config.ColoredActivityIconsEnabled = document.querySelector('#coloredActivityIconsEnabled').checked;
             config.PluginIconsEnabled = document.querySelector('#pluginIconsEnabled').checked;
+            config.ActiveStreamsEnabled = document.querySelector('#activeStreamsEnabled').checked;
+            config.ActiveStreamsAllUsers = document.querySelector('#activeStreamsAllUsers').checked;
 
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;

@@ -480,5 +480,7 @@
     "feature_people_tags": "علامات الأشخاص",
     "feature_tags_hide_on_hover": "{{icon:eye}} إخفاء العلامات عند التحويم",
     "panel_settings_ui_hide_tags_on_hover": "إخفاء العلامات عند التحويم",
-    "panel_settings_ui_hide_tags_on_hover_desc": "إخفاء تراكبات العلامات عند التحويم فوق البطاقات لتسهيل رؤية الأزرار"
+    "panel_settings_ui_hide_tags_on_hover_desc": "إخفاء تراكبات العلامات عند التحويم فوق البطاقات لتسهيل رؤية الأزرار",
+    "active_streams_count": "تدفقات نشطة: {count}",
+    "active_streams_none": "لا توجد تدفقات نشطة"
 }

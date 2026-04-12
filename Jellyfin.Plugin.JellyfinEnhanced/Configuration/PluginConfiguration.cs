@@ -187,6 +187,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             PluginIconsEnabled = false;
             EnableLoginImage = false;
             CustomPluginLinks = "";
+            ActiveStreamsEnabled = false;
+            ActiveStreamsAllUsers = false;
 
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
             DownloadsPageEnabled = false;
@@ -378,6 +380,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool PluginIconsEnabled { get; set; }
         public bool EnableLoginImage { get; set; }
         public string CustomPluginLinks { get; set; }
+        public bool ActiveStreamsEnabled { get; set; }
+        public bool ActiveStreamsAllUsers { get; set; }
 
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
         public bool DownloadsPageEnabled { get; set; }

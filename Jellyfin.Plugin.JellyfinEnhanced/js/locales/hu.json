@@ -480,5 +480,7 @@
     "feature_people_tags": "Személy címkék",
     "feature_tags_hide_on_hover": "{{icon:eye}} Címkék elrejtése rámutatáskor",
     "panel_settings_ui_hide_tags_on_hover": "Címkék elrejtése rámutatáskor",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Elrejti a címke-rétegeket, amikor a kártyák fölé viszel az egeret, hogy a gombok jobban látszódjanak"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Elrejti a címke-rétegeket, amikor a kártyák fölé viszel az egeret, hogy a gombok jobban látszódjanak",
+    "active_streams_count": "{count} aktív stream",
+    "active_streams_none": "Nincs aktív stream"
 }

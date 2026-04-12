@@ -480,5 +480,7 @@
     "feature_people_tags": "Etiquetas de personas",
     "feature_tags_hide_on_hover": "{{icon:eye}} Ocultar etiquetas al pasar el cursor",
     "panel_settings_ui_hide_tags_on_hover": "Ocultar etiquetas al pasar el cursor",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Oculta las superposiciones de etiquetas al pasar el cursor sobre las tarjetas para que los botones se vean mejor"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Oculta las superposiciones de etiquetas al pasar el cursor sobre las tarjetas para que los botones se vean mejor",
+    "active_streams_count": "{count} transmisión activa|{count} transmisiones activas",
+    "active_streams_none": "Sin transmisiones activas"
 }

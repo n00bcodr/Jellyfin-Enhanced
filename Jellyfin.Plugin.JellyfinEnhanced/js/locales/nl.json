@@ -480,5 +480,7 @@
     "feature_people_tags": "Persoon-tags",
     "feature_tags_hide_on_hover": "{{icon:eye}} Tags verbergen bij hover",
     "panel_settings_ui_hide_tags_on_hover": "Tags verbergen bij hover",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Verbergt tag-overlays bij hoveren over kaarten zodat knoppen beter zichtbaar zijn"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Verbergt tag-overlays bij hoveren over kaarten zodat knoppen beter zichtbaar zijn",
+    "active_streams_count": "{count} actieve stream|{count} actieve streams",
+    "active_streams_none": "Geen actieve streams"
 }

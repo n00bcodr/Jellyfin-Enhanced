@@ -480,5 +480,7 @@
     "feature_people_tags": "Personen-Tags",
     "feature_tags_hide_on_hover": "{{icon:eye}} Tags bei Hover ausblenden",
     "panel_settings_ui_hide_tags_on_hover": "Tags bei Hover ausblenden",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Blendet Tag-Overlays beim Überfahren von Karten aus, damit Schaltflächen besser sichtbar sind"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Blendet Tag-Overlays beim Überfahren von Karten aus, damit Schaltflächen besser sichtbar sind",
+    "active_streams_count": "{count} aktiver Stream|{count} aktive Streams",
+    "active_streams_none": "Keine aktiven Streams"
 }

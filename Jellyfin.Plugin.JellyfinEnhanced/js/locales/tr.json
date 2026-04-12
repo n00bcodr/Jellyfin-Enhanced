@@ -480,5 +480,7 @@
     "feature_people_tags": "Kişi etiketleri",
     "feature_tags_hide_on_hover": "{{icon:eye}} Üzerine gelince etiketleri gizle",
     "panel_settings_ui_hide_tags_on_hover": "Üzerine gelince etiketleri gizle",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Kartların üzerine gelindiğinde düğmelerin daha iyi görünmesi için etiket katmanlarını gizler"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Kartların üzerine gelindiğinde düğmelerin daha iyi görünmesi için etiket katmanlarını gizler",
+    "active_streams_count": "{count} aktif yayın|{count} aktif yayın",
+    "active_streams_none": "Aktif yayın yok"
 }

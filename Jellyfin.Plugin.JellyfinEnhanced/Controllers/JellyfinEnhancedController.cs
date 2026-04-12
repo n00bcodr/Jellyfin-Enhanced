@@ -53,6 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
         private readonly Services.TagCacheService _tagCacheService;
+        private readonly MediaBrowser.Controller.Session.ISessionManager _sessionManager;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -128,7 +129,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             UserConfigurationManager userConfigurationManager,
             IItemRepository itemRepository,
             IDbContextFactory<JellyfinDbContext> dbContextFactory,
-            Services.TagCacheService tagCacheService)
+            Services.TagCacheService tagCacheService,
+            MediaBrowser.Controller.Session.ISessionManager sessionManager)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -140,6 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _itemRepository = itemRepository;
             _dbContextFactory = dbContextFactory;
             _tagCacheService = tagCacheService;
+            _sessionManager = sessionManager;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
@@ -1929,6 +1932,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ColoredActivityIconsEnabled,
                 config.PluginIconsEnabled,
                 config.EnableLoginImage,
+                config.ActiveStreamsEnabled,
+                config.ActiveStreamsAllUsers,
 
                 // Requests Page Settings
                 config.DownloadsPageEnabled,
@@ -3486,6 +3491,86 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"Failed to fetch Sonarr series slug for TVDB ID {tvdbId}: {ex.Message}");
                 return StatusCode(502, new { error = "Failed to query Sonarr" });
+            }
+        }
+
+        // ==================== Active Streams ====================
+
+        /// <summary>
+        /// Proxy for Jellyfin Sessions endpoint. Allows non-admin users to see active streams
+        /// when ActiveStreamsAllUsers is enabled, without exposing admin credentials to the client.
+        /// </summary>
+        [HttpGet("active-streams/sessions")]
+        [Authorize]
+        public IActionResult GetActiveSessions()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.ActiveStreamsEnabled)
+                return StatusCode(503, "Active Streams is not enabled.");
+
+            // Non-admins only allowed if ActiveStreamsAllUsers is on
+            if (!IsAdminUser() && !config.ActiveStreamsAllUsers)
+                return Forbid();
+
+            try
+            {
+                var sessions = _sessionManager.Sessions
+                    .Where(s => s.NowPlayingItem != null)
+                    .Select(s => new
+                    {
+                        UserId = s.UserId,
+                        UserName = s.UserName,
+                        Client = s.Client,
+                        DeviceName = s.DeviceName,
+                        ApplicationVersion = s.ApplicationVersion,
+                        RemoteEndPoint = s.RemoteEndPoint,
+                        LastActivityDate = s.LastActivityDate,
+                        NowPlayingItem = s.NowPlayingItem == null ? null : new
+                        {
+                            Id = s.NowPlayingItem.Id,
+                            Type = s.NowPlayingItem.Type.ToString(),
+                            s.NowPlayingItem.Name,
+                            s.NowPlayingItem.SeriesName,
+                            s.NowPlayingItem.RunTimeTicks,
+                            s.NowPlayingItem.ProductionYear,
+                            ParentIndexNumber = s.NowPlayingItem.ParentIndexNumber,
+                            IndexNumber = s.NowPlayingItem.IndexNumber,
+                            ImageTags = s.NowPlayingItem.ImageTags != null
+                                ? s.NowPlayingItem.ImageTags.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value)
+                                : null,
+                            MediaStreams = s.NowPlayingItem.MediaStreams?.Select(ms => new
+                            {
+                                ms.Type,
+                                ms.Codec,
+                                ms.BitRate
+                            })
+                        },
+                        PlayState = s.PlayState == null ? null : new
+                        {
+                            s.PlayState.IsPaused,
+                            s.PlayState.PositionTicks,
+                            s.PlayState.PlayMethod
+                        },
+                        TranscodingInfo = s.TranscodingInfo == null ? null : new
+                        {
+                            s.TranscodingInfo.IsVideoDirect,
+                            s.TranscodingInfo.VideoCodec,
+                            s.TranscodingInfo.AudioCodec,
+                            s.TranscodingInfo.Bitrate,
+                            s.TranscodingInfo.TranscodeReasons,
+                            s.TranscodingInfo.CompletionPercentage,
+                            s.TranscodingInfo.Width,
+                            s.TranscodingInfo.Height,
+                            s.TranscodingInfo.Framerate
+                        }
+                    });
+
+                return Ok(sessions.ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get active sessions: {ex.Message}");
+                return StatusCode(500, "Failed to retrieve sessions.");
             }
         }
 

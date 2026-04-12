@@ -561,6 +561,7 @@
                 'extras/colored-ratings.js',
                 'extras/plugin-icons.js',
                 'extras/theme-selector.js',
+                'extras/active-streams.js',
 
                 // others
                 'others/letterboxd-links.js',
@@ -641,6 +642,9 @@
             }
             if (JE.pluginConfig?.PluginIconsEnabled && typeof JE.initializePluginIcons === 'function') {
                 JE.initializePluginIcons();
+            }
+            if (JE.pluginConfig?.ActiveStreamsEnabled && typeof JE.activeStreams?.initialize === 'function') {
+                JE.activeStreams.initialize();
             }
             if (JE.pluginConfig?.DownloadsPageEnabled && typeof JE.initializeDownloadsPage === 'function') {
                 JE.initializeDownloadsPage();

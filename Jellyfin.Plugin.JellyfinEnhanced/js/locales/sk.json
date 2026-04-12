@@ -480,5 +480,7 @@
     "feature_people_tags": "Štítky osôb",
     "feature_tags_hide_on_hover": "{{icon:eye}} Skryť štítky pri prechode myšou",
     "panel_settings_ui_hide_tags_on_hover": "Skryť štítky pri prechode myšou",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Skryje prekrytia štítkov pri prechode myšou nad kartami, aby boli tlačidlá lepšie viditeľné"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Skryje prekrytia štítkov pri prechode myšou nad kartami, aby boli tlačidlá lepšie viditeľné",
+    "active_streams_count": "{count} aktívny stream|{count} aktívne streamy",
+    "active_streams_none": "Žiadne aktívne streamy"
 }

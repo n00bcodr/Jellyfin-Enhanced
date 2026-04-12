@@ -480,5 +480,7 @@
     "feature_people_tags": "Étiquettes des personnes",
     "feature_tags_hide_on_hover": "{{icon:eye}} Masquer les étiquettes au survol",
     "panel_settings_ui_hide_tags_on_hover": "Masquer les étiquettes au survol",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Masque les superpositions d'étiquettes au survol des cartes pour mieux voir les boutons"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Masque les superpositions d'étiquettes au survol des cartes pour mieux voir les boutons",
+    "active_streams_count": "{count} flux actif|{count} flux actifs",
+    "active_streams_none": "Aucun flux actif"
 }

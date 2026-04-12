@@ -480,5 +480,7 @@
     "feature_people_tags": "Person-taggar",
     "feature_tags_hide_on_hover": "{{icon:eye}} Dölj taggar vid hovring",
     "panel_settings_ui_hide_tags_on_hover": "Dölj taggar vid hovring",
-    "panel_settings_ui_hide_tags_on_hover_desc": "Döljer taggöverlägg när du hovrar över kort så att knapparna syns bättre"
+    "panel_settings_ui_hide_tags_on_hover_desc": "Döljer taggöverlägg när du hovrar över kort så att knapparna syns bättre",
+    "active_streams_count": "{count} aktiv ström|{count} aktiva strömmar",
+    "active_streams_none": "Inga aktiva strömmar"
 }
