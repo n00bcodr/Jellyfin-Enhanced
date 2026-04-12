@@ -691,7 +691,7 @@
 
     const fetchPromise = (async () => {
       try {
-        const response = await fetch(avatarUrl, { headers: getAuthHeaders() });
+        const response = await fetch(ApiClient.getUrl(avatarUrl), { headers: getAuthHeaders() });
         if (!response.ok) return "";
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
