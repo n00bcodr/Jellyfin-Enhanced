@@ -377,13 +377,18 @@
         card.className = 'je-as-card je-as-card-with-poster';
 
         // ── Poster thumbnail ─────────────────────────────────────────────────
+        // For episodes, prefer the series poster over the episode thumbnail.
+        const seriesTag = item.SeriesPrimaryImageTag;
+        const seriesId  = item.SeriesId;
         const primaryTag = item.ImageTags?.Primary;
-        if (primaryTag && item.Id && typeof ApiClient !== 'undefined') {
+        const posterId  = (seriesId && seriesTag) ? seriesId : item.Id;
+        const posterTag = (seriesId && seriesTag) ? seriesTag : primaryTag;
+        if (posterTag && posterId && typeof ApiClient !== 'undefined') {
             const poster = document.createElement('img');
             poster.className = 'je-as-poster';
             poster.alt = '';
             poster.loading = 'lazy';
-            poster.src = ApiClient.getUrl(`Items/${item.Id}/Images/Primary`) + `?tag=${encodeURIComponent(primaryTag)}&height=120&quality=80`;
+            poster.src = ApiClient.getImageUrl(posterId, { type: 'Primary', tag: posterTag, height: 120, quality: 80 });
             poster.addEventListener('error', () => { poster.replaceWith(placeholder()); });
             card.appendChild(poster);
         } else {

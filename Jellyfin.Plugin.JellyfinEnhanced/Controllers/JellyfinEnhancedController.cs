@@ -3527,7 +3527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LastActivityDate = s.LastActivityDate,
                         NowPlayingItem = s.NowPlayingItem == null ? null : new
                         {
-                            Id = s.NowPlayingItem.Id,
+                            Id = s.NowPlayingItem.Id.ToString("N"),
                             Type = s.NowPlayingItem.Type.ToString(),
                             s.NowPlayingItem.Name,
                             s.NowPlayingItem.SeriesName,
@@ -3538,6 +3538,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             ImageTags = s.NowPlayingItem.ImageTags != null
                                 ? s.NowPlayingItem.ImageTags.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value)
                                 : null,
+                            SeriesId = s.NowPlayingItem.SeriesId?.ToString("N"),
+                            SeriesPrimaryImageTag = s.NowPlayingItem.SeriesPrimaryImageTag,
                             MediaStreams = s.NowPlayingItem.MediaStreams?.Select(ms => new
                             {
                                 ms.Type,

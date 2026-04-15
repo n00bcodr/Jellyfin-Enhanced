@@ -55,7 +55,8 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoResumeEnabled" is="emby-checkbox" type="checkbox"/><span>Auto-resume on tab switch</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="autoPipEnabled" is="emby-checkbox" type="checkbox"/><span>Auto Picture-in-Picture on tab switch</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="longPress2xEnabled" is="emby-checkbox" type="checkbox"/><span>Long press/hold for 2x speed <sup> β</sup></span></label></div>
-                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen<div>This feature is a modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-PauseScreen">BobHasNoSoul</a></div></span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen</span></label></div>
+                                    <div class="fieldDescription" style="margin-bottom: 0.5em;">This feature is a modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-PauseScreen">BobHasNoSoul</a></div>
                                 </div>
                             </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -136,7 +137,8 @@
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showFileSizes" is="emby-checkbox" type="checkbox"/><span>Show file sizes</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="showAudioLanguages" is="emby-checkbox" type="checkbox"/><span>Show available audio languages on item detail page</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
-                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags<div>This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div></span></label></div>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="qualityTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Quality Tags</span></label></div>
+                                    <div class="fieldDescription" style="margin-bottom: 0.5em;">This feature is a slightly modified version of the original script by <a class="sectionTitle" target="_blank" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/">BobHasNoSoul</a></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="languageTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Language Tags</span></label></div>
                                     <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
@@ -199,10 +201,14 @@
                                         <div class="fieldDescription">Forces all clients to clear Language, Quality, Genre and Rating tag caches on next load<br> After the cache is cleared, the clients will re-fetch the tags data to build the cache again, which might cause some slowness on first load.</div>
                                     </div>
                                 </fieldset>
-                                <div class="checkboxContainer" style="margin-top: 2em;margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page<div style="font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div></span></label></div>
-                                <div class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="tagsHideOnHover" is="emby-checkbox" type="checkbox"/><span>Hide Tags on Hover<div style="font-size: 0.8em;">When enabled, tag overlays fade out when users hover over cards. Users can override this in their personal settings.</div></span></label></div>
-                                <div class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="tagCacheServerMode" is="emby-checkbox" type="checkbox"/><span>Server-Side Tag Cache<div style="font-size: 0.8em;">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode (not recommended).</div></span></label></div>
-                                <div id="tagsLocalStorageFallbackContainer" class="checkboxContainer" style="margin-bottom: 2em;"><label style="line-height: 1.2em; align-self: flex-start;"><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Local Storage<div style="font-size: 0.8em;">Available when Server-Side Tag Cache is disabled. Stores fallback tag cache entries in browser localStorage for faster repeat loads.</div></span></label></div>
+                                <div class="checkboxContainer" style="margin-top: 2em; margin-bottom: 0.5em;"><label><input id="disableTagsOnSearchPage" is="emby-checkbox" type="checkbox"/><span>Disable Tags on Search Page</span></label></div>
+                                <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.8em;">Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.</div>
+                                <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="tagsHideOnHover" is="emby-checkbox" type="checkbox"/><span>Hide Tags on Hover</span></label></div>
+                                <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.8em;">When enabled, tag overlays fade out when users hover over cards. Users can override this in their personal settings.</div>
+                                <div class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="tagCacheServerMode" is="emby-checkbox" type="checkbox"/><span>Server-Side Tag Cache</span></label></div>
+                                <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.8em;">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode (not recommended).</div>
+                                <div id="tagsLocalStorageFallbackContainer" class="checkboxContainer" style="margin-bottom: 0.5em;"><label><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Local Storage</span></label></div>
+                                <div class="fieldDescription" style="margin-bottom: 2em; font-size: 0.8em;">Available when Server-Side Tag Cache is disabled. Stores fallback tag cache entries in browser localStorage for faster repeat loads.</div>
                             </div>
                         </details>
                             <details style="margin-bottom: 1em; background-color: rgba(255,255,255,0.05); padding: 1em; border-radius: 5px;">
@@ -474,32 +480,39 @@
                                 <input id="ElsewhereCustomBrandingImageUrl" is="emby-input" name="ElsewhereCustomBrandingImageUrl" type="text" placeholder="e.g., /web/assets/img/icon.png"/>
                                 <div class="fieldDescription">Optional URL for an icon to display next to the custom message. Leave blank for no icon.</div>
                             </div>
-                            <h3>Extras</h3>
-                            <div class="checkboxContainer">
+                            <h3 style="margin-top: 1em;">Extras</h3>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="showReviews" is="emby-checkbox" type="checkbox"/>
-                                    <span>Show Reviews from TMDB in Item Details Page<div style="font-size: .9em;">Requires TMDB API Key to be set</div></span>
+                                    <span>Show Reviews from TMDB in Item Details Page</span>
                                 </label>
                             </div>
-                            <div class="checkboxContainer">
-                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="showUserReviews" is="emby-checkbox" type="checkbox"/>
-                                    <span>Enable User Reviews in Item Details Page<div style="font-size: .9em;">Allows users to write reviews and rate items in the library.<br/><strong>Completely independent of Elsewhere being enabled and TMDB Reviews being enabled</strong></div></span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer">
+                            <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">Requires TMDB API Key to be set</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="reviewsExpandedByDefault" is="emby-checkbox" type="checkbox"/>
-                                    <span>Expand reviews by default<div style="font-size: .9em;">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div></span>
+                                    <span>Expand reviews by default</span>
                                 </label>
                             </div>
-                            <div class="checkboxContainer">
+                            <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div>
+                            <h3 style="margin-top: 2.5em;">User Reviews</h3>
+                            <h5>These settings do not require TMDB API key to be populated</h5>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
+                                <label style="line-height: 1.2em; align-self: flex-start;"><input id="showUserReviews" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable User Reviews in Item Details Page</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">Allows users to write reviews and rate items in the library.<br/><strong>Completely independent of Elsewhere being enabled and TMDB Reviews being enabled</strong></div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="hideReviewsFromHiddenUsers" is="emby-checkbox" type="checkbox"/>
-                                    <span>Hide reviews written by hidden users<div style="font-size: .9em;">When enabled, reviews written by Jellyfin users marked as "Hide this user from login screens" are hidden from non-admin viewers. Admins always see all reviews.</div></span>
+                                    <span>Hide reviews written by hidden users</span>
                                 </label>
                             </div>
-                            <div class="checkboxContainer">
+                            <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">When enabled, reviews written by Jellyfin users marked as "Hide this user from login screens" are hidden from non-admin viewers. Admins always see all reviews.</div>
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="hideReviewsFromDisabledUsers" is="emby-checkbox" type="checkbox"/>
-                                    <span>Hide reviews written by disabled users<div style="font-size: .9em;">When enabled, reviews written by Jellyfin users marked as "Disable this user" are hidden from non-admin viewers. Admins always see all reviews.</div></span>
+                                    <span>Hide reviews written by disabled users</span>
                                 </label>
                             </div>
+                            <div class="fieldDescription" style="margin-bottom: 2em; font-size: 0.9em;">When enabled, reviews written by Jellyfin users marked as "Disable this user" are hidden from non-admin viewers. Admins always see all reviews.</div>
                         </div>
                     </fieldset>
                 </div>
@@ -997,14 +1010,14 @@
                                         </div>
                                     </div>
 
-                                    <div class="checkboxContainer" style="margin-bottom: 1.5em;">
-                                        <label>
+                                    <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                        <label style="line-height: 1.2em; align-self: flex-start;">
                                             <input id="autoMovieRequestFallbackOn4k" is="emby-checkbox" type="checkbox" checked/>
                                             <span>Use default profile instead of 4K for users without 4K request access</span>
                                         </label>
-                                        <div class="fieldDescription" style="margin-top: 0.5em;">
-                                            Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
-                                        </div>
+                                    </div>
+                                    <div class="fieldDescription" style="margin-bottom: 1.5em;">
+                                        Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
                                     </div>
 
                                     <div id="autoMovieRequestCustomSettings" style="margin-bottom: 1.5em; display: none; padding: 1em; background-color: rgba(255,255,255,0.03); border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);">
