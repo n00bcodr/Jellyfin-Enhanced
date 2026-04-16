@@ -3514,6 +3514,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsAdminUser() && !config.ActiveStreamsAllUsers)
                 return Forbid();
 
+            var isAdmin = IsAdminUser();
+
             try
             {
                 var sessions = _sessionManager.Sessions
@@ -3524,8 +3526,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         UserName = s.UserName,
                         Client = s.Client,
                         DeviceName = s.DeviceName,
-                        ApplicationVersion = s.ApplicationVersion,
-                        RemoteEndPoint = s.RemoteEndPoint,
+                        // IP only for admins
+                        RemoteEndPoint = isAdmin ? s.RemoteEndPoint : null,
                         LastActivityDate = s.LastActivityDate,
                         NowPlayingItem = s.NowPlayingItem == null ? null : new
                         {

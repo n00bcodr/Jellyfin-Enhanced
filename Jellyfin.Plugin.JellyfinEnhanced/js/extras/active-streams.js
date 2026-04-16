@@ -362,7 +362,6 @@
         const item = session.NowPlayingItem;
         const ps = session.PlayState || {};
         const isPaused = ps.IsPaused;
-        const isAdmin = JE?.currentUser?.Policy?.IsAdministrator === true;
 
         const title = item.SeriesName || item.Name || 'Unknown';
         const subtitle = item.SeriesName
@@ -517,12 +516,10 @@
         userLabel.textContent = clientParts.join(' \u00b7 ');
         userRow.appendChild(userLabel);
 
-        // ApplicationVersion removed — not useful to display
-
         main.appendChild(userRow);
 
-        // RemoteEndPoint — admin only
-        if (isAdmin && session.RemoteEndPoint) {
+        // RemoteEndPoint — null for non-admins (stripped server-side)
+        if (session.RemoteEndPoint) {
             const ipRow = document.createElement('div');
             ipRow.className = 'je-as-user';
             const ipIcon = document.createElement('span');
