@@ -61,6 +61,7 @@
     "panel_settings_auto_pause_desc": "Pause when switching tabs",
     "panel_settings_custom_pause_screen": "Custom Pause Screen",
     "panel_settings_custom_pause_screen_desc": "Show a stylized screen when videos are paused.",
+    "panel_settings_pause_screen_delay_label": "Delay before showing (seconds):",
     "panel_settings_auto_resume": "Auto-resume",
     "panel_settings_auto_resume_desc": "Resume when returning to tab",
     "panel_settings_auto_pip": "Auto Picture-in-Picture",

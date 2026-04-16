@@ -260,6 +260,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HideReviewsFromDisabledUsers { get; set; } = true;
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
+        public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool QualityTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }

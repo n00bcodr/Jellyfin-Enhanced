@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Metti in pausa quando cambi scheda",
     "panel_settings_custom_pause_screen": "Schermata di pausa personalizzata",
     "panel_settings_custom_pause_screen_desc": "Mostra una schermata stilizzata quando i video sono in pausa.",
+    "panel_settings_pause_screen_delay_label": "Ritardo prima della visualizzazione (secondi):",
     "panel_settings_auto_resume": "Ripresa automatica",
     "panel_settings_auto_resume_desc": "Riprendi quando torni alla scheda",
     "panel_settings_auto_pip": "Picture-in-Picture automatico",

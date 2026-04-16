@@ -735,6 +735,10 @@
                                     <input type="checkbox" id="pauseScreenToggle" ${JE.currentSettings.pauseScreenEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_custom_pause_screen')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_custom_pause_screen_desc')}</div></div>
                                 </label>
+                                <div style="margin-top:10px; display:flex; align-items:center; gap:8px; padding-left:30px;">
+                                    <label for="pauseScreenDelayInput" style="font-size:12px; color:rgba(255,255,255,0.7); white-space:nowrap;">${JE.t('panel_settings_pause_screen_delay_label')}</label>
+                                    <input type="number" id="pauseScreenDelayInput" min="1" max="60" value="${JE.currentSettings.pauseScreenDelaySeconds ?? 5}" style="width:60px; padding:4px 6px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:#fff; font-size:12px; text-align:center;">
+                                </div>
                             </div>
                         </div>
                     </details>
@@ -1356,6 +1360,16 @@
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
         addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
+
+        const pauseScreenDelayInput = document.getElementById('pauseScreenDelayInput');
+        if (pauseScreenDelayInput) {
+            pauseScreenDelayInput.addEventListener('change', () => {
+                const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
+                pauseScreenDelayInput.value = val;
+                JE.currentSettings.pauseScreenDelaySeconds = val;
+                JE.saveUserSettings();
+            });
+        }
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);

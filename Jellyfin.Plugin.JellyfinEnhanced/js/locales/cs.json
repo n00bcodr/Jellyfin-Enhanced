@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pozastavit při přepnutí karty",
     "panel_settings_custom_pause_screen": "Vlastní obrazovka pozastavení",
     "panel_settings_custom_pause_screen_desc": "Zobrazit stylizovanou obrazovku při pozastavených videích.",
+    "panel_settings_pause_screen_delay_label": "Zpoždění před zobrazením (sekundy):",
     "panel_settings_auto_resume": "Automatické pokračování",
     "panel_settings_auto_resume_desc": "Pokračovat při návratu na kartu",
     "panel_settings_auto_pip": "Auto Obraz v obraze",

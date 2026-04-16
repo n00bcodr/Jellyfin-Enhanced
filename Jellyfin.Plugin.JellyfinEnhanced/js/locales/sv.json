@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pausa när du byter flik",
     "panel_settings_custom_pause_screen": "Anpassad pausskärm",
     "panel_settings_custom_pause_screen_desc": "Visa en stiliserad skärm när videor pausas.",
+    "panel_settings_pause_screen_delay_label": "Fördröjning innan visning (sekunder):",
     "panel_settings_auto_resume": "Auto-återuppta",
     "panel_settings_auto_resume_desc": "Återuppta när du återvänder till fliken",
     "panel_settings_auto_pip": "Auto Bild-i-Bild",

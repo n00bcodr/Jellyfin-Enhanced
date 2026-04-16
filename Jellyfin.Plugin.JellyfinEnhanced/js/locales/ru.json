@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Пауза при переключении вкладок",
     "panel_settings_custom_pause_screen": "Пользовательский экран паузы",
     "panel_settings_custom_pause_screen_desc": "Показать стильный экран при паузе видео.",
+    "panel_settings_pause_screen_delay_label": "Задержка перед показом (секунды):",
     "panel_settings_auto_resume": "Автовозобновление",
     "panel_settings_auto_resume_desc": "Возобновить при возврате на вкладку",
     "panel_settings_auto_pip": "Автоматический режим картинка-в-картинке",

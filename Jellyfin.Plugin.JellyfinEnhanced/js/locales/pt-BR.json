@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pausar ao trocar de aba",
     "panel_settings_custom_pause_screen": "Tela de Pausa Personalizada",
     "panel_settings_custom_pause_screen_desc": "Mostrar uma tela estilizada quando os vídeos estiverem pausados.",
+    "panel_settings_pause_screen_delay_label": "Atraso antes de exibir (segundos):",
     "panel_settings_auto_resume": "Retomada Automática",
     "panel_settings_auto_resume_desc": "Retomar ao voltar para a aba",
     "panel_settings_auto_pip": "Picture-in-Picture Automático",

@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pauzuj przy zmianie karty",
     "panel_settings_custom_pause_screen": "Niestandardowy ekran pauzy",
     "panel_settings_custom_pause_screen_desc": "Wyświetlaj stylizowany ekran podczas wstrzymania wideo.",
+    "panel_settings_pause_screen_delay_label": "Opóźnienie przed wyświetleniem (sekundy):",
     "panel_settings_auto_resume": "Auto-wznowienie",
     "panel_settings_auto_resume_desc": "Wznów przy powrocie do karty",
     "panel_settings_auto_pip": "Automatyczny obraz w obrazie",

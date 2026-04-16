@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Sekmeler arası geçişte videoyu duraklat",
     "panel_settings_custom_pause_screen": "Özel Duraklatma Ekranı",
     "panel_settings_custom_pause_screen_desc": "Videolar duraklatıldığında özel bir ekran göster.",
+    "panel_settings_pause_screen_delay_label": "Gösterim öncesi gecikme (saniye):",
     "panel_settings_auto_resume": "Otomatik Devam Et",
     "panel_settings_auto_resume_desc": "Sekmeye dönüldüğünde oynatmaya devam et",
     "panel_settings_auto_pip": "Otomatik Resim içinde Resim (PiP)",

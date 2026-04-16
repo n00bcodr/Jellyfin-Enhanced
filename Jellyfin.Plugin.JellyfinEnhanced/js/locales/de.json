@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pausieren beim Wechseln der Registerkarte",
     "panel_settings_custom_pause_screen": "Benutzerdefinierter Pausenbildschirm",
     "panel_settings_custom_pause_screen_desc": "Zeigen Sie einen stilisierten Bildschirm an, wenn Videos pausiert sind.",
+    "panel_settings_pause_screen_delay_label": "Verzögerung vor der Anzeige (Sekunden):",
     "panel_settings_auto_resume": "Auto-Fortsetzung",
     "panel_settings_auto_resume_desc": "Fortsetzen beim Zurückkehren zur Registerkarte",
     "panel_settings_auto_pip": "Auto-Bild-in-Bild",

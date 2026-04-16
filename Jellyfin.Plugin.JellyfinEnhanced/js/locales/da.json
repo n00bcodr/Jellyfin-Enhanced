@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pause når du skifter fane",
     "panel_settings_custom_pause_screen": "Brugerdefineret pauseskærm",
     "panel_settings_custom_pause_screen_desc": "Vis en stiliseret skærm når videoer er på pause.",
+    "panel_settings_pause_screen_delay_label": "Forsinkelse før visning (sekunder):",
     "panel_settings_auto_resume": "Auto-genoptag",
     "panel_settings_auto_resume_desc": "Genoptag når du vender tilbage til fanen",
     "panel_settings_auto_pip": "Auto Billede-i-Billede",

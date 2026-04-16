@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pause når du bytter til en annen fane",
     "panel_settings_custom_pause_screen": "Tilpasset pause-skjerm",
     "panel_settings_custom_pause_screen_desc": "Vis en tilpasset pause-skjerm med informasjon om det du ser på når videoen er pauset",
+    "panel_settings_pause_screen_delay_label": "Forsinkelse før visning (sekunder):",
     "panel_settings_auto_resume": "Gjennoppta automatisk",
     "panel_settings_auto_resume_desc": "Gjennoppta avspilling når du kommer tilbake til fanen",
     "panel_settings_auto_pip": "Automatisk Bilde i bilde (PiP)",

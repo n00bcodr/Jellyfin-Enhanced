@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pauzeren bij wisselen van tabblad",
     "panel_settings_custom_pause_screen": "Aangepast pauzescherm",
     "panel_settings_custom_pause_screen_desc": "Toon een gestileerd scherm wanneer video’s gepauzeerd zijn.",
+    "panel_settings_pause_screen_delay_label": "Vertraging vóór weergave (seconden):",
     "panel_settings_auto_resume": "Automatisch hervatten",
     "panel_settings_auto_resume_desc": "Hervatten bij terugkeren naar tabblad",
     "panel_settings_auto_pip": "Automatisch Picture-in-Picture",

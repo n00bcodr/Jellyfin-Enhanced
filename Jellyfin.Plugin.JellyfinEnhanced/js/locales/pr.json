@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Drop anchor when switchin' between decks",
     "panel_settings_custom_pause_screen": "Custom Anchor Screen",
     "panel_settings_custom_pause_screen_desc": "Show a fancy screen when th' picture be paused.",
+    "panel_settings_pause_screen_delay_label": "Atraso antes de mostrar (segundos):",
     "panel_settings_auto_resume": "Auto Weigh Anchor",
     "panel_settings_auto_resume_desc": "Resume sailin' when returnin' to this deck",
     "panel_settings_auto_pip": "Auto Spyglass",

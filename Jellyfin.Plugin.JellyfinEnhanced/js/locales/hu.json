@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Szünet lapváltáskor",
     "panel_settings_custom_pause_screen": "Egyéni szünet képernyő",
     "panel_settings_custom_pause_screen_desc": "Stilizált képernyő megjelenítése szüneteltetett videók esetén.",
+    "panel_settings_pause_screen_delay_label": "Megjelenítés előtti késleltetés (másodperc):",
     "panel_settings_auto_resume": "Automatikus folytatás",
     "panel_settings_auto_resume_desc": "Folytatás a lapra való visszatéréskor",
     "panel_settings_auto_pip": "Automatikus kép a képben funkció",

@@ -29,10 +29,11 @@
           this.prevFocused = null;
 
           // Pause screen delay state
-          this.pauseScreenDelayMs = 3000;
+          this.pauseScreenDelayMs = (JE.currentSettings.pauseScreenDelaySeconds ?? 5) * 1000;
           this.pauseScreenTimer = null;
           this.lastUserInteractionAt = Date.now();
           this.interactionListeners = null;
+          this._dismissedThisPause = false;
 
           // DOM refs
           this.overlay = null;
@@ -402,7 +403,7 @@
           closeButton.id = "pause-screen-close-btn";
           closeButton.innerHTML = "&times;";
           closeButton.onclick = () => {
-              this.hideOverlay();
+              this.hideOverlay(true);
           };
 
           // Assemble
@@ -485,6 +486,11 @@
           }
 
           if (!this.currentVideo || !this.currentVideo.paused || this.currentVideo.ended) {
+            return;
+          }
+
+          // User already dismissed the pause screen for this pause — don't show again
+          if (this._dismissedThisPause) {
             return;
           }
 
@@ -610,8 +616,8 @@
                 JE.resumeRatingsPolling();
               }
 
-              // Set up delayed pause screen with 3-second delay
-              this.pauseScreenTimer = null;
+              // New pause event — allow the pause screen to show again
+              this._dismissedThisPause = false;
               this.lastUserInteractionAt = Date.now();
               this.resetPauseScreenTimer();
             }
@@ -652,13 +658,16 @@
             this.overlayContent.focus();
             }
 
-        hideOverlay() {
+        hideOverlay(dismissed = false) {
             document.documentElement.classList.remove('pause-screen-active');
             this.overlay.setAttribute('aria-hidden', 'true');
+            if (dismissed) {
+                this._dismissedThisPause = true;
+            }
             if (this.prevFocused && document.contains(this.prevFocused)) {
                 this.prevFocused.focus();
             }
-            }
+        }
         clearDisplayData() {
           this.overlayPlot.textContent = "";
           this.overlayDetails.innerHTML = "";

@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Mettre en pause lors du changement d'onglet",
     "panel_settings_custom_pause_screen": "Écran de pause personnalisé",
     "panel_settings_custom_pause_screen_desc": "Afficher un écran stylisé lorsque les vidéos sont en pause.",
+    "panel_settings_pause_screen_delay_label": "Délai avant affichage (secondes) :",
     "panel_settings_auto_resume": "Reprise automatique",
     "panel_settings_auto_resume_desc": "Reprendre lors du retour à l'onglet",
     "panel_settings_auto_pip": "Image dans l'image automatique",

@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "Pausar al cambiar de pestaña",
     "panel_settings_custom_pause_screen": "Pantalla de pausa personalizada",
     "panel_settings_custom_pause_screen_desc": "Mostrar una pantalla estilizada cuando los vídeos estén en pausa.",
+    "panel_settings_pause_screen_delay_label": "Retraso antes de mostrar (segundos):",
     "panel_settings_auto_resume": "Reanudación automática",
     "panel_settings_auto_resume_desc": "Reanudar al volver a la pestaña",
     "panel_settings_auto_pip": "PiP automático",

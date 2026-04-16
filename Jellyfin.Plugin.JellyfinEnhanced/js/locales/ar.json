@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "إيقاف مؤقت عند التبديل بين علامات التبويب",
     "panel_settings_custom_pause_screen": "شاشة إيقاف مؤقت مخصصة",
     "panel_settings_custom_pause_screen_desc": "عرض شاشة أنيقة عند إيقاف الفيديوهات مؤقتاً.",
+    "panel_settings_pause_screen_delay_label": "التأخير قبل الظهور (ثوانٍ):",
     "panel_settings_auto_resume": "استئناف تلقائي",
     "panel_settings_auto_resume_desc": "استئناف عند العودة إلى علامة التبويب",
     "panel_settings_auto_pip": "صورة في صورة (PiP) تلقائي",

@@ -59,6 +59,7 @@
     "panel_settings_auto_pause_desc": "切換分頁時暫停",
     "panel_settings_custom_pause_screen": "自訂暫停畫面",
     "panel_settings_custom_pause_screen_desc": "暫停影片時顯示自訂畫面。",
+    "panel_settings_pause_screen_delay_label": "顯示前延遲（秒）：",
     "panel_settings_auto_resume": "自動繼續播放",
     "panel_settings_auto_resume_desc": "返回分頁時繼續播放",
     "panel_settings_auto_pip": "自動畫中畫",
