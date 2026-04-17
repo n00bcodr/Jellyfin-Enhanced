@@ -4420,24 +4420,21 @@
             }
 
             // validateMappingSet is async and reads our temp textareas while it runs, so we
-            // can't remove them synchronously here. The "wipe at entry" above + `.finally()`
-            // handle cleanup: on the next click we blow away any leftovers, and when this
-            // run's promise settles we remove ours too.
+            // can't remove them synchronously here. `.finally(cleanup)` removes ours after the
+            // promise settles, and the "wipe at entry" above handles any leftovers that linger
+            // if a previous run errored between commit and cleanup. `.finally` (rather than
+            // `.then(cleanup, cleanup)`) lets any rejection propagate so the browser's
+            // unhandled-rejection reporting still catches real bugs in the validator.
             var cleanup = function() {
                 createdTempIds.forEach(function(id) {
                     var el = document.getElementById(id);
                     if (el) el.remove();
                 });
             };
-            var result = validateMappingSet(
+            validateMappingSet(
                 mappingDefs,
                 'validateArrMappingsBtn', 'arrMappingsValidationResult'
-            );
-            if (result && typeof result.then === 'function') {
-                result.then(cleanup, cleanup);
-            } else {
-                cleanup();
-            }
+            ).finally(cleanup);
         });
 
         document.getElementById('validateSeerrMappingsBtn').addEventListener('click', function() {
