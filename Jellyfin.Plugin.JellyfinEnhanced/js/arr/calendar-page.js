@@ -1380,12 +1380,50 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       state.events = (data.events || []).filter((evt) => evt && evt.releaseDate);
+      // Surface per-instance errors from the backend envelope so a misconfigured or
+      // unreachable arr instance doesn't silently leave the calendar looking fine.
+      surfaceCalendarErrors(data.errors);
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch calendar events:`, error);
       state.events = [];
       return null;
     }
+  }
+
+  // Once-per-session dedup so a permanently-misconfigured instance doesn't toast on every
+  // calendar refresh. Self-heals: when an error stops appearing the memo entry is dropped
+  // so a future reoccurrence re-toasts.
+  const _toastedCalendarErrors = new Set();
+  // Alias the shared HTML-escape helper to keep toast concatenations short. JE.toast uses
+  // innerHTML so admin-set instance names + upstream error reasons must be escaped.
+  const esc = (s) => window.JellyfinEnhanced?.helpers?.escHtml
+    ? window.JellyfinEnhanced.helpers.escHtml(s)
+    : String(s == null ? "" : s);
+  function surfaceCalendarErrors(errors) {
+    if (!Array.isArray(errors) || errors.length === 0) {
+      // All previously-failing instances have recovered — drop the memo so future errors re-toast.
+      _toastedCalendarErrors.clear();
+      return;
+    }
+    const seenThisTick = new Set();
+    errors.forEach(function(err) {
+      const key = (err.source || "") + "|" + (err.instanceName || "") + "|" + (err.reason || "");
+      seenThisTick.add(key);
+      if (_toastedCalendarErrors.has(key)) return;
+      _toastedCalendarErrors.add(key);
+      if (typeof window.JellyfinEnhanced?.toast === "function") {
+        window.JellyfinEnhanced.toast(
+          "⚠ " + esc(err.source || "Arr") + " calendar instance \"" +
+          esc(err.instanceName || "unknown") + "\" failed: " + esc(err.reason)
+        );
+      }
+      console.warn(`${logPrefix} ${err.source || "Arr"} instance "${err.instanceName}" error: ${err.reason}`);
+    });
+    // Drop memo entries for errors that didn't reappear — lets future occurrences re-toast.
+    Array.from(_toastedCalendarErrors).forEach(function(k) {
+      if (!seenThisTick.has(k)) _toastedCalendarErrors.delete(k);
+    });
   }
 
   /**
@@ -1957,7 +1995,8 @@
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = event.source;
+    const sourceLabelRaw = event.instanceName || event.source;
+    const sourceLabel = escapeHtml(sourceLabelRaw);
     const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const hasFileClass = event.hasFile ? " je-has-file" : "";
@@ -1976,7 +2015,7 @@
         ${subtitle}
         <div class="je-calendar-event-type">
           <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
-          <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span></span>
+          <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span></span>
           ${timeText ? ` • ${timeText}` : ""}${playButton}
         </div>
       </div>
@@ -2200,7 +2239,8 @@
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = event.source;
+    const sourceLabelRaw = event.instanceName || event.source;
+    const sourceLabel = escapeHtml(sourceLabelRaw);
     const iconClass = event.source === "Sonarr" ? "je-sonarr-icon" : "je-radarr-icon";
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
@@ -2243,7 +2283,7 @@
             <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
             <span>${releaseTypeLabel}</span>
             <span>•</span>
-            <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span>
+            <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
             ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
           </div>
         </div>
@@ -2258,7 +2298,8 @@
       const poster = event.posterUrl || event.backdropUrl;
       const releaseTypeLabel = formatReleaseLabel(event);
       const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-      const sourceLabel = event.source;
+      const sourceLabelRaw = event.instanceName || event.source;
+      const sourceLabel = escapeHtml(sourceLabelRaw);
       const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
       const statusIcons = renderStatusIcons(event);
       const timePill = buildTimePill(event);
@@ -2282,7 +2323,7 @@
                   <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
                   <span>${releaseTypeLabel}</span>
                   <span>•</span>
-                  <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span>
+                  <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
                 </div>
               </div>
             </div>
@@ -2302,7 +2343,7 @@
             <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
             <span>${releaseTypeLabel}</span>
             <span>•</span>
-            <span class="je-arr-badge" title="${escapeHtml(sourceLabel)}">${sourceLabel}</span>
+            <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
           </div>
         </div>
       `;

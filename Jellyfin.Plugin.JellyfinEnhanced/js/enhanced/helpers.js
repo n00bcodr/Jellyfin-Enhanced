@@ -631,6 +631,14 @@
         disconnectAllObservers();
     });
 
+    // HTML-escape user-controlled strings before passing to JE.toast (which uses innerHTML)
+    // or other innerHTML sinks. Call from any module instead of redefining per-IIFE.
+    function escHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     // Expose helpers
     JE.helpers = {
         onViewPage,
@@ -650,6 +658,7 @@
         isElementVisible,
         addCSS,
         removeCSS,
+        escHtml,
         getHandlerCount: () => handlers.length,
         getObserverCount: () => activeObservers.size,
         getBodySubscriberCount: () => bodySubscribers.size

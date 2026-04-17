@@ -57,10 +57,25 @@
 
         console.log(`${logPrefix} Initializing...`);
 
+        // Surface stored-config corruption to the admin on first init rather than waiting for
+        // an action endpoint. The backend ships boolean flags in /private-config so the frontend
+        // can toast without round-tripping an action call.
+        if (JE?.pluginConfig?.SonarrInstancesCorrupt && typeof JE.toast === 'function') {
+            JE.toast('⚠ Sonarr instance configuration is corrupt. Open the Jellyfin Enhanced config page to reset it.');
+            console.error(`${logPrefix} SonarrInstances stored JSON is corrupt.`);
+        }
+        if (JE?.pluginConfig?.RadarrInstancesCorrupt && typeof JE.toast === 'function') {
+            JE.toast('⚠ Radarr instance configuration is corrupt. Open the Jellyfin Enhanced config page to reset it.');
+            console.error(`${logPrefix} RadarrInstances stored JSON is corrupt.`);
+        }
+
         let isAddingLinks = false; // Lock to prevent concurrent runs
         let debounceTimer = null;
         let observer = null;
-        const slugCache = new Map(); // Cache Sonarr titleSlugs by TVDB ID
+        // Cache Sonarr titleSlugs + Radarr instance matches by ID. Per-session only;
+        // admin must hard-reload the web client after changing instance config for
+        // this cache to drop (same constraint every other JE module has today).
+        const slugCache = new Map();
 
         // Parse URL mappings from config
         function parseUrlMappings(mappingsString) {
@@ -117,14 +132,46 @@
             const RADARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg';
             const BAZARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg';
 
-            // Parse the URL mappings from config for each service
-            const sonarrMappings = parseUrlMappings(JE.pluginConfig.SonarrUrlMappings || '');
-            const radarrMappings = parseUrlMappings(JE.pluginConfig.RadarrUrlMappings || '');
-            const bazarrMappings = parseUrlMappings(JE.pluginConfig.BazarrUrlMappings || '');
+            // Multi-instance support: read instance arrays from private-config, drop disabled
+            // entries so the dropdown never offers a link to an instance the admin has toggled
+            // off. Backend fan-out already skips disabled instances, so no match would appear
+            // for them anyway — but this keeps the dropdown tidy when only disabled instances
+            // would otherwise show for a given item. Falls back to legacy single fields below.
+            const sonarrInstances = (JE.pluginConfig.SonarrInstances || [])
+                .filter(i => i && i.Enabled !== false)
+                .map(i => ({
+                    name: i.Name || 'Sonarr',
+                    url: getMappedUrl(parseUrlMappings(i.UrlMappings || ''), i.Url),
+                    rawUrl: i.Url,
+                    urlMappings: i.UrlMappings || ''
+                })).filter(i => i.url);
 
-            // Get the URL for each service based on current Jellyfin URL
-            const sonarrUrl = getMappedUrl(sonarrMappings, JE.pluginConfig.SonarrUrl);
-            const radarrUrl = getMappedUrl(radarrMappings, JE.pluginConfig.RadarrUrl);
+            const radarrInstances = (JE.pluginConfig.RadarrInstances || [])
+                .filter(i => i && i.Enabled !== false)
+                .map(i => ({
+                    name: i.Name || 'Radarr',
+                    url: getMappedUrl(parseUrlMappings(i.UrlMappings || ''), i.Url),
+                    rawUrl: i.Url,
+                    urlMappings: i.UrlMappings || ''
+                })).filter(i => i.url);
+
+            // Fall back to legacy single-instance config if no instances available
+            if (sonarrInstances.length === 0 && JE.pluginConfig.SonarrUrl) {
+                const legacyMappings = parseUrlMappings(JE.pluginConfig.SonarrUrlMappings || '');
+                const legacyUrl = getMappedUrl(legacyMappings, JE.pluginConfig.SonarrUrl);
+                if (legacyUrl) {
+                    sonarrInstances.push({ name: 'Sonarr', url: legacyUrl, rawUrl: JE.pluginConfig.SonarrUrl, urlMappings: '' });
+                }
+            }
+            if (radarrInstances.length === 0 && JE.pluginConfig.RadarrUrl) {
+                const legacyMappings = parseUrlMappings(JE.pluginConfig.RadarrUrlMappings || '');
+                const legacyUrl = getMappedUrl(legacyMappings, JE.pluginConfig.RadarrUrl);
+                if (legacyUrl) {
+                    radarrInstances.push({ name: 'Radarr', url: legacyUrl, rawUrl: JE.pluginConfig.RadarrUrl, urlMappings: '' });
+                }
+            }
+
+            const bazarrMappings = parseUrlMappings(JE.pluginConfig.BazarrUrlMappings || '');
             const bazarrUrl = getMappedUrl(bazarrMappings, JE.pluginConfig.BazarrUrl);
 
             const styleId = 'arr-links-styles';
@@ -147,8 +194,110 @@
                     .arr-link-sonarr::before { background-image: url(${SONARR_ICON_URL}); }
                     .arr-link-radarr::before { background-image: url(${RADARR_ICON_URL}); }
                     .arr-link-bazarr::before { background-image: url(${BAZARR_ICON_URL}); }
+
+                    /* Status colors */
+                    .arr-link--complete { border-left: 3px solid #52b54b !important; }
+                    .arr-link--partial  { border-left: 3px solid #e5a00d !important; }
+                    .arr-link--missing  { border-left: 3px solid #666 !important; opacity: 0.7; }
+
+                    /* Status badge */
+                    .arr-badge {
+                        font-size: 0.75em;
+                        padding: 1px 5px;
+                        border-radius: 3px;
+                        margin-left: 6px;
+                        vertical-align: middle;
+                        font-weight: 600;
+                    }
+                    .arr-badge--complete { background: rgba(82,181,75,0.2); color: #52b54b; }
+                    .arr-badge--partial  { background: rgba(229,160,13,0.2); color: #e5a00d; }
+                    .arr-badge--missing  { background: rgba(102,102,102,0.2); color: #999; }
+
+                    /* Dropdown menu */
+                    .arr-dropdown {
+                        position: relative;
+                        display: inline-block;
+                        vertical-align: middle;
+                    }
+                    .arr-dropdown-toggle {
+                        cursor: pointer;
+                    }
+                    .arr-dropdown-toggle::after {
+                        content: "\\25BE";
+                        margin-left: 4px;
+                        font-size: 0.8em;
+                        opacity: 0.6;
+                    }
+                    .arr-dropdown-menu {
+                        display: none;
+                        position: absolute;
+                        top: 100%;
+                        left: 0;
+                        z-index: 1000;
+                        min-width: 220px;
+                        background: #1c1c1e;
+                        border: 1px solid rgba(255,255,255,0.15);
+                        border-radius: 6px;
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+                        padding: 4px 0;
+                        margin-top: 4px;
+                    }
+                    .arr-dropdown.open .arr-dropdown-menu { display: block; }
+                    .arr-dropdown-item {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 8px 12px;
+                        color: #eee;
+                        text-decoration: none;
+                        font-size: 0.9em;
+                        white-space: nowrap;
+                        transition: background 0.15s;
+                    }
+                    .arr-dropdown-item:hover { background: rgba(255,255,255,0.08); }
+                    .arr-dropdown-item-name { flex: 1; }
+                    .arr-dropdown-item-stats { color: rgba(255,255,255,0.5); font-size: 0.85em; }
+                    .arr-dropdown-dot {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 50%;
+                        flex-shrink: 0;
+                    }
+                    .arr-dropdown-dot--complete { background: #52b54b; }
+                    .arr-dropdown-dot--partial  { background: #e5a00d; }
+                    .arr-dropdown-dot--missing  { background: #666; }
+
+                    /* Progress bar (thin line under button text) */
+                    .arr-progress {
+                        display: block;
+                        height: 2px;
+                        margin-top: 2px;
+                        border-radius: 1px;
+                        background: rgba(255,255,255,0.1);
+                        overflow: hidden;
+                    }
+                    .arr-progress-fill {
+                        height: 100%;
+                        border-radius: 1px;
+                        transition: width 0.3s;
+                    }
+                    .arr-progress-fill--complete { background: #52b54b; }
+                    .arr-progress-fill--partial  { background: #e5a00d; }
+                    .arr-progress-fill--missing  { background: #666; }
                 `;
                 document.head.appendChild(style);
+            }
+
+            function formatBytes(bytes) {
+                if (!bytes || bytes <= 0) return '';
+                if (bytes < 1073741824) return (bytes / 1048576).toFixed(0) + ' MB';
+                return (bytes / 1073741824).toFixed(1) + ' GB';
+            }
+
+            function getStatus(episodeFileCount, episodeCount) {
+                if (episodeFileCount === 0) return 'missing';
+                if (episodeFileCount >= episodeCount) return 'complete';
+                return 'partial';
             }
 
             function getExternalIds(context) {
@@ -167,66 +316,147 @@
                 return ids;
             }
 
-            /**
-             * Converts a title string into a URL-friendly slug.
-             * Strips diacritics, replaces '&' with 'and', removes non-alphanumeric
-             * characters, and trims leading/trailing hyphens.
-             * @param {string|null} text - The title to slugify
-             * @returns {string} URL-safe slug (e.g., "Modern Love" -> "modern-love")
-             */
-            function slugify(text) {
-                if (!text) return '';
-                return text
-                    .toString()
-                    .normalize('NFD')                   // Decompose accented characters
-                    .replace(/[\u0300-\u036f]/g, '')   // Strip diacritical marks
-                    .replace(/&/g, 'and')               // Replace ampersands
-                    .toLowerCase()
-                    .trim()
-                    .replace(/\s+/g, '-')               // Whitespace to hyphens
-                    .replace(/[^\w-]+/g, '')            // Remove non-word characters
-                    .replace(/--+/g, '-')               // Collapse consecutive hyphens
-                    .replace(/^-+|-+$/g, '');           // Trim leading/trailing hyphens
+            // Track whether we've already toasted about a backend fetch failure in this session —
+            // otherwise every card render on the item page would re-toast. Also track already-toasted
+            // per-instance errors so a misconfigured instance doesn't flood the user with toasts.
+            const _toastedGlobalFailure = { sonarr: false, radarr: false };
+            const _toastedInstanceErrors = new Set();
+
+            // Alias the shared helper so the toast concatenations read short. JE.toast renders
+            // via innerHTML, so any caller-controlled field (admin-set instance name, upstream
+            // error reason) must pass through escape() to prevent stored XSS.
+            const esc = (s) => JE.helpers?.escHtml ? JE.helpers.escHtml(s) : String(s == null ? '' : s);
+
+            function surfaceInstanceErrors(kind, errors) {
+                if (!Array.isArray(errors) || errors.length === 0) {
+                    // Empty-errors fetch means everything that was failing has recovered. Drop any
+                    // memo entries whose kind matches so the same error can re-toast if it returns.
+                    Array.from(_toastedInstanceErrors).forEach(function(k) {
+                        if (k.startsWith(kind + '|')) _toastedInstanceErrors.delete(k);
+                    });
+                    return;
+                }
+                const seenThisTick = new Set();
+                errors.forEach(function(err) {
+                    const key = kind + '|' + err.instanceName + '|' + err.reason;
+                    seenThisTick.add(key);
+                    if (_toastedInstanceErrors.has(key)) return;
+                    _toastedInstanceErrors.add(key);
+                    if (typeof JE.toast === 'function') {
+                        JE.toast('⚠ ' + esc(kind) + ' instance "' + esc(err.instanceName || 'unknown') + '" failed: ' + esc(err.reason));
+                    }
+                    console.warn(`${logPrefix} ${kind} instance "${err.instanceName}" error: ${err.reason}`);
+                });
+                // Self-heal: drop memo entries for errors that didn't reappear this tick.
+                Array.from(_toastedInstanceErrors).forEach(function(k) {
+                    if (k.startsWith(kind + '|') && !seenThisTick.has(k)) _toastedInstanceErrors.delete(k);
+                });
+            }
+
+            function surfaceGlobalFailure(kind, detail) {
+                if (_toastedGlobalFailure[kind.toLowerCase()]) return;
+                _toastedGlobalFailure[kind.toLowerCase()] = true;
+                if (typeof JE.toast === 'function') {
+                    JE.toast('⚠ ' + esc(kind) + ' lookup failed; links unavailable. See console for details.');
+                }
+                console.warn(`${logPrefix} ${kind} lookup backend failed:`, detail);
             }
 
             /**
-             * Resolves the Sonarr URL slug for a series.
-             * Queries the backend endpoint (which proxies to Sonarr's API) using the
-             * series' TVDB ID to get the actual titleSlug. Results are cached per session.
-             * Falls back to generating a slug from OriginalTitle or translated Name.
+             * Resolves the Sonarr URL slugs across all configured instances.
+             * On backend failure, returns an empty array (no links) and surfaces a toast — never
+             * fabricates per-instance entries with guessed slugs, which would produce dropdown links
+             * pointing at instances that may not contain the series at all (H3).
              * @param {Object} item - Jellyfin item object with Name, OriginalTitle, and ProviderIds
-             * @returns {Promise<string>} The resolved Sonarr slug
+             * @returns {Promise<Array>} Array of { instanceName, instanceUrl, titleSlug, ... } matches
              */
-            async function getSonarrSlug(item) {
+            async function getSonarrSlugs(item) {
                 const tvdbId = String(item.ProviderIds?.Tvdb || '');
+                const cacheKey = `slugs-${tvdbId}`;
 
-                if (tvdbId) {
-                    // Check session cache first to avoid redundant API calls
-                    if (slugCache.has(tvdbId)) {
-                        return slugCache.get(tvdbId);
-                    }
-
-                    try {
-                        const slugResp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/series-slug?tvdbId=${encodeURIComponent(tvdbId)}`), {
-                            headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
-                        });
-                        if (slugResp.ok) {
-                            const slugData = await slugResp.json();
-                            if (slugData.titleSlug) {
-                                slugCache.set(tvdbId, slugData.titleSlug);
-                                return slugData.titleSlug;
-                            }
-                        } else {
-                            console.warn(`${logPrefix} Failed to fetch Sonarr slug (HTTP ${slugResp.status}), using fallback`);
-                        }
-                    } catch (e) {
-                        console.warn(`${logPrefix} Failed to fetch Sonarr slug, using fallback`, e);
-                    }
+                if (tvdbId && slugCache.has(cacheKey)) {
+                    return slugCache.get(cacheKey);
                 }
 
-                // Fallback: generate slug from original title (or translated title).
-                // May not match Sonarr's actual slug for disambiguated series (e.g., "modern-love-2019").
-                return slugify(item.OriginalTitle || item.Name);
+                if (!tvdbId) {
+                    // Without a TVDB ID the multi-instance lookup would fail anyway — return empty
+                    // so we render no link instead of guessing which instance has the series.
+                    return [];
+                }
+
+                try {
+                    const resp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`), {
+                        headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
+                    });
+                    if (!resp.ok) {
+                        surfaceGlobalFailure('Sonarr', `HTTP ${resp.status}`);
+                        return [];
+                    }
+                    const data = await resp.json();
+                    // Reset the once-per-session toast guards on successful fetch so a transient
+                    // failure that has since cleared up isn't permanently silenced for real
+                    // future failures.
+                    _toastedGlobalFailure.sonarr = false;
+                    surfaceInstanceErrors('Sonarr', data.errors);
+                    const matches = Array.isArray(data.matches) ? data.matches : [];
+                    const results = matches.map(m => ({
+                        instanceName: m.instanceName,
+                        instanceUrl: getMappedUrl(parseUrlMappings(m.urlMappings || ''), m.instanceUrl),
+                        titleSlug: m.titleSlug,
+                        episodeFileCount: m.episodeFileCount || 0,
+                        episodeCount: m.episodeCount || 0,
+                        sizeOnDisk: m.sizeOnDisk || 0,
+                        rootFolderPath: m.rootFolderPath || ''
+                    }));
+                    slugCache.set(cacheKey, results);
+                    return results;
+                } catch (e) {
+                    surfaceGlobalFailure('Sonarr', e);
+                    return [];
+                }
+            }
+
+            /**
+             * Looks up which Radarr instances have a given movie by TMDB ID.
+             * On backend failure, returns an empty array and surfaces a toast — never fabricates a
+             * fake "all instances have it" result, which would render dropdown links pointing at
+             * instances that don't actually contain the movie (H3).
+             * @param {string} tmdbId - TMDB ID of the movie
+             * @returns {Promise<Array>} Array of matching instances
+             */
+            async function getRadarrInstances(tmdbId) {
+                if (!tmdbId) return [];
+
+                const cacheKey = `radarr-${tmdbId}`;
+                if (slugCache.has(cacheKey)) {
+                    return slugCache.get(cacheKey);
+                }
+
+                try {
+                    const resp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`), {
+                        headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
+                    });
+                    if (!resp.ok) {
+                        surfaceGlobalFailure('Radarr', `HTTP ${resp.status}`);
+                        return [];
+                    }
+                    const data = await resp.json();
+                    _toastedGlobalFailure.radarr = false;  // reset on success; see Sonarr version above
+                    surfaceInstanceErrors('Radarr', data.errors);
+                    const matches = Array.isArray(data.matches) ? data.matches : [];
+                    const results = matches.map(m => ({
+                        name: m.instanceName,
+                        url: getMappedUrl(parseUrlMappings(m.urlMappings || ''), m.instanceUrl),
+                        hasFile: m.hasFile || false,
+                        sizeOnDisk: m.sizeOnDisk || 0,
+                        rootFolderPath: m.rootFolderPath || ''
+                    }));
+                    slugCache.set(cacheKey, results);
+                    return results;
+                } catch (e) {
+                    surfaceGlobalFailure('Radarr', e);
+                    return [];
+                }
             }
 
             async function addArrLinks() {
@@ -251,6 +481,19 @@
                     return;
                 }
 
+                // Capture the hash and item id at entry. Three awaits (getItemCached +
+                // getSonarrSlugs + getRadarrInstances) can span several seconds on a slow
+                // connection, during which the user may navigate away. After each await we
+                // re-check that (a) the anchor is still in the DOM, (b) the same detail page
+                // is still visible, (c) the hash still points at the same item, and bail out
+                // if any of those changed (H6). This stops us from appending links to a page
+                // the user already left or to a different item.
+                const hashAtStart = window.location.hash;
+                const isStillValidTarget = () =>
+                    document.contains(anchorElement)
+                    && !anchorElement.closest('#itemDetailPage.hide')
+                    && window.location.hash === hashAtStart;
+
                 isAddingLinks = true;
                 try {
                     const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
@@ -259,6 +502,8 @@
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId)
                         : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+
+                    if (!isStillValidTarget()) return;
 
                     // Only process movies and TV shows
                     if (item?.Type !== 'Movie' && item?.Type !== 'Series') return;
@@ -270,17 +515,81 @@
                         return;
                     }
 
-                    if (item.Type === 'Series' && item.Name && sonarrUrl) {
-                        const seriesSlug = await getSonarrSlug(item);
-                        const url = `${sonarrUrl}/series/${seriesSlug}`;
-                        anchorElement.appendChild(document.createTextNode(' '));
-                        anchorElement.appendChild(createLinkButton("Sonarr", url, "arr-link-sonarr"));
+                    // When only one instance matches, collapsing the episode count + status
+                    // border to a plain link keeps the detail page tidy. Multi-instance dropdowns
+                    // always show status because distinguishing between instances is their whole
+                    // purpose. Admin can opt in to always-show via ArrLinksShowStatusSingle.
+                    const showStatusOnSingle = JE?.pluginConfig?.ArrLinksShowStatusSingle === true;
+
+                    if (item.Type === 'Series' && item.Name && sonarrInstances.length > 0) {
+                        const slugMatches = await getSonarrSlugs(item);
+                        if (!isStillValidTarget()) return;
+                        const validMatches = slugMatches.filter(m => m.instanceUrl);
+                        if (validMatches.length === 1) {
+                            const m = validMatches[0];
+                            const url = `${m.instanceUrl.replace(/\/$/, '')}/series/${m.titleSlug}`;
+                            const haveStats = m.episodeFileCount >= 0;
+                            const status = showStatusOnSingle && haveStats ? getStatus(m.episodeFileCount, m.episodeCount) : null;
+                            const badge = showStatusOnSingle && haveStats ? `${m.episodeFileCount}/${m.episodeCount}` : '';
+                            const size = formatBytes(m.sizeOnDisk);
+                            // Tooltip still surfaces the detail — hiding the badge doesn't mean
+                            // hiding information, just decluttering the pill itself.
+                            const tipParts = [m.instanceName];
+                            if (haveStats) tipParts.push(`${m.episodeFileCount}/${m.episodeCount} episodes`);
+                            if (size) tipParts.push(size);
+                            if (m.rootFolderPath) tipParts.push(m.rootFolderPath);
+                            const tip = tipParts.join('\n');
+                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(createLinkButton('Sonarr', url, 'arr-link-sonarr', status, badge, tip));
+                        } else if (validMatches.length > 1) {
+                            const items = validMatches.map(m => {
+                                const status = m.episodeFileCount < 0 ? null : getStatus(m.episodeFileCount, m.episodeCount);
+                                const badge = m.episodeFileCount < 0 ? '' : `${m.episodeFileCount}/${m.episodeCount}`;
+                                const size = formatBytes(m.sizeOnDisk);
+                                const tip = [badge ? `${badge} episodes` : null, size, m.rootFolderPath].filter(Boolean).join(' \u2022 ');
+                                return {
+                                    name: m.instanceName,
+                                    url: `${m.instanceUrl.replace(/\/$/, '')}/series/${m.titleSlug}`,
+                                    status, badge, size, tip
+                                };
+                            });
+                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(createDropdown('Sonarr', 'arr-link-sonarr', items));
+                        }
                     }
 
-                    if (item.Type === 'Movie' && ids.tmdb && radarrUrl) {
-                        const url = `${radarrUrl}/movie/${ids.tmdb}`;
-                        anchorElement.appendChild(document.createTextNode(' '));
-                        anchorElement.appendChild(createLinkButton("Radarr", url, "arr-link-radarr"));
+                    if (item.Type === 'Movie' && ids.tmdb && radarrInstances.length > 0) {
+                        const matchingRadarrs = await getRadarrInstances(ids.tmdb);
+                        if (!isStillValidTarget()) return;
+                        const validMatches = matchingRadarrs.filter(m => m.url);
+                        if (validMatches.length === 1) {
+                            const m = validMatches[0];
+                            const url = `${m.url.replace(/\/$/, '')}/movie/${ids.tmdb}`;
+                            const statusValue = m.hasFile ? 'complete' : 'missing';
+                            const badgeValue = m.hasFile ? 'Downloaded' : 'Missing';
+                            const status = showStatusOnSingle ? statusValue : null;
+                            const badge = showStatusOnSingle ? badgeValue : '';
+                            const size = formatBytes(m.sizeOnDisk);
+                            // Tooltip keeps the "Downloaded/Missing" detail regardless, so info
+                            // isn't lost when the visible badge is suppressed.
+                            const tip = [m.name, badgeValue, size, m.rootFolderPath].filter(Boolean).join('\n');
+                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(createLinkButton('Radarr', url, 'arr-link-radarr', status, badge, tip));
+                        } else if (validMatches.length > 1) {
+                            const items = validMatches.map(m => {
+                                const status = m.hasFile ? 'complete' : 'missing';
+                                const badge = m.hasFile ? 'Downloaded' : 'Missing';
+                                const size = formatBytes(m.sizeOnDisk);
+                                const tip = [badge, size, m.rootFolderPath].filter(Boolean).join(' \u2022 ');
+                                return {
+                                    name: m.name,
+                                    url: `${m.url.replace(/\/$/, '')}/movie/${ids.tmdb}`,
+                                    status, badge, size, tip
+                                };
+                            });
+                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(createDropdown('Radarr', 'arr-link-radarr', items));
+                        }
                     }
 
                     if (item.Type === 'Series' && bazarrUrl) {
@@ -297,28 +606,109 @@
                 }
             }
 
-            function createLinkButton(text, url, iconClass) {
+            function createLinkButton(text, url, iconClass, status, badge, tooltip) {
                 const button = document.createElement('a');
                 button.setAttribute('is', 'emby-linkbutton');
+                const statusClass = status ? ` arr-link--${status}` : '';
                 if (JE.pluginConfig.ShowArrLinksAsText) {
+                    button.className = `button-link emby-button arr-link${statusClass}`;
                     button.textContent = text;
-                    button.className = 'button-link emby-button arr-link';
                 } else {
-                    button.className = `button-link emby-button arr-link ${iconClass}`;
+                    button.className = `button-link emby-button arr-link ${iconClass}${statusClass}`;
+                }
+                if (badge) {
+                    const badgeEl = document.createElement('span');
+                    badgeEl.className = `arr-badge arr-badge--${status || 'missing'}`;
+                    badgeEl.textContent = badge;
+                    button.appendChild(badgeEl);
                 }
                 button.href = url;
                 button.target = '_blank';
                 button.rel = 'noopener noreferrer';
-                button.title = text;
+                button.title = tooltip || text;
                 return button;
             }
 
+            function createDropdown(label, iconClass, items) {
+                const wrapper = document.createElement('span');
+                wrapper.className = 'arr-dropdown';
+
+                // Toggle button
+                const toggle = document.createElement('a');
+                toggle.setAttribute('is', 'emby-linkbutton');
+                toggle.className = `button-link emby-button arr-link ${iconClass} arr-dropdown-toggle`;
+                if (JE.pluginConfig.ShowArrLinksAsText) {
+                    toggle.className = 'button-link emby-button arr-link arr-dropdown-toggle';
+                    toggle.textContent = label;
+                }
+                toggle.href = '#';
+                toggle.title = `${label} (${items.length} instances)`;
+                toggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Close any other open dropdowns
+                    document.querySelectorAll('.arr-dropdown.open').forEach(d => {
+                        if (d !== wrapper) d.classList.remove('open');
+                    });
+                    wrapper.classList.toggle('open');
+                });
+
+                // Menu
+                const menu = document.createElement('div');
+                menu.className = 'arr-dropdown-menu';
+
+                items.forEach(function(item) {
+                    const link = document.createElement('a');
+                    link.className = 'arr-dropdown-item';
+                    link.href = item.url;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.title = item.tip || item.name;
+
+                    const dot = document.createElement('span');
+                    dot.className = `arr-dropdown-dot arr-dropdown-dot--${item.status || 'missing'}`;
+                    link.appendChild(dot);
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'arr-dropdown-item-name';
+                    nameSpan.textContent = item.name;
+                    link.appendChild(nameSpan);
+
+                    if (item.badge) {
+                        const badgeSpan = document.createElement('span');
+                        badgeSpan.className = `arr-badge arr-badge--${item.status || 'missing'}`;
+                        badgeSpan.textContent = item.badge;
+                        link.appendChild(badgeSpan);
+                    }
+
+                    if (item.size) {
+                        const sizeSpan = document.createElement('span');
+                        sizeSpan.className = 'arr-dropdown-item-stats';
+                        sizeSpan.textContent = item.size;
+                        link.appendChild(sizeSpan);
+                    }
+
+                    menu.appendChild(link);
+                });
+
+                wrapper.appendChild(toggle);
+                wrapper.appendChild(menu);
+
+                return wrapper;
+            }
+
+            // Single delegated listener for closing all arr dropdowns on outside click.
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.arr-dropdown')) {
+                    document.querySelectorAll('.arr-dropdown.open').forEach(d => d.classList.remove('open'));
+                }
+            });
+
             observer = JE.helpers.createObserver('arr-links', () => {
                 if (!JE?.pluginConfig?.ArrLinksEnabled) {
-                    // Feature disabled - disconnect observer
                     if (observer) {
                         observer.disconnect();
-                        console.log(`${logPrefix} Observer disconnected - feature disabled`);
+                        console.log(`${logPrefix} Observer disconnected — feature disabled`);
                     }
                     return;
                 }
@@ -332,27 +722,16 @@
                     addArrLinks();
                 }, 100); // Wait 100ms after last mutation before processing
             }, document.body, {
+                // childList + subtree is enough — Jellyfin re-renders the detail page children
+                // on SPA navigation. The shared body observer's fast-path drops attribute-only
+                // batches (see CLAUDE.md "Observer Multiplexer" notes), so attributeFilter
+                // would be inert here.
                 childList: true,
                 subtree: true,
-                attributes: true,
-                attributeFilter: ['class']
             });
 
             // Store observer reference for potential cleanup
             JE._arrLinksObserver = observer;
-
-            // Listen for configuration changes
-            window.addEventListener('JE:configUpdated', () => {
-                const isEnabled = JE?.pluginConfig?.ArrLinksEnabled;
-
-                if (!isEnabled) {
-                    // Disable: disconnect observer
-                    if (observer) {
-                        observer.disconnect();
-                        console.log(`${logPrefix} Observer disconnected - feature disabled via config update`);
-                    }
-                }
-            });
 
             console.log(`${logPrefix} Initialized successfully`);
         } catch (err) {

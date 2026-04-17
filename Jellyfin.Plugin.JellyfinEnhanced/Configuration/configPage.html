@@ -1146,40 +1146,103 @@
                     </fieldset>
                 </div>
                 <div id="arr-links" class="jellyfin-tab-content" style="display: none; font-family: inherit;">
+                    <style>
+                        .arr-instance-card {
+                            border: 1px solid rgba(255,255,255,0.1);
+                            border-radius: 8px;
+                            margin-bottom: 1em;
+                            background: rgba(255,255,255,0.03);
+                        }
+                        .arr-instance-card > summary {
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5em;
+                            padding: 0.8em 1em;
+                            cursor: pointer;
+                            list-style: none;
+                            user-select: none;
+                        }
+                        .arr-instance-card > summary::-webkit-details-marker { display: none; }
+                        .arr-instance-card > summary::before {
+                            content: "\25B6";
+                            font-size: 0.7em;
+                            transition: transform 0.2s;
+                            color: rgba(255,255,255,0.5);
+                        }
+                        .arr-instance-card[open] > summary::before {
+                            transform: rotate(90deg);
+                        }
+                        .arr-instance-card > summary .arr-instance-summary-name {
+                            flex: 1;
+                            font-weight: 500;
+                        }
+                        .arr-instance-card > summary .arr-instance-summary-url {
+                            color: rgba(255,255,255,0.4);
+                            font-size: 0.85em;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                            max-width: 300px;
+                        }
+                        .arr-instance-card-body {
+                            padding: 0 1em 1em;
+                        }
+                        .arr-instance-card-body .arr-instance-header {
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5em;
+                            margin-bottom: 0.5em;
+                        }
+                        .arr-instance-card-body .arr-instance-header input {
+                            flex: 1;
+                        }
+                        .arr-instance-card > summary .arr-instance-enabled {
+                            flex: 0 0 auto;
+                            cursor: pointer;
+                            margin: 0 0.25em 0 0;
+                            width: 1.15em;
+                            height: 1.15em;
+                        }
+                        .arr-instance-card.arr-instance-disabled {
+                            opacity: 0.6;
+                        }
+                        .arr-instance-card.arr-instance-disabled > summary .arr-instance-enabled {
+                            /* Checkbox stays full-opacity so the admin can see + click to re-enable
+                               even when the rest of the card is dimmed. */
+                            opacity: 1;
+                        }
+                        .arr-instance-card.arr-instance-disabled > summary .arr-instance-summary-name {
+                            text-decoration: line-through;
+                            color: rgba(255,255,255,0.55);
+                        }
+                        .arr-instance-remove {
+                            background: transparent;
+                            border: 1px solid rgba(255,80,80,0.5);
+                            color: #ff5050;
+                            border-radius: 4px;
+                            padding: 0.3em 0.6em;
+                            cursor: pointer;
+                            font-size: 0.85em;
+                        }
+                        .arr-instance-remove:hover {
+                            background: rgba(255,80,80,0.15);
+                        }
+                        .arr-add-btn {
+                            margin-top: 0.5em;
+                            margin-bottom: 1em;
+                        }
+                    </style>
+
                     <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Configuration</h3></legend>
                         <div class="configSection">
-                            <div class="inputContainer"  style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="sonarrUrl">Sonarr URL</label>
-                                <input id="sonarrUrl" is="emby-input" name="sonarrUrl" type="text" placeholder="e.g., http://192.168.100.100:8989"/>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="sonarrApiKey">Sonarr API Key</label>
-                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
-                                    <input id="sonarrApiKey" is="emby-input" name="sonarrApiKey" placeholder="Your Sonarr API key" style="flex-grow: 1;"/>
-                                    <span id="sonarrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
-                                    <button is="emby-button" type="button" id="testSonarrBtn" class="raised button-submit">
-                                        <span>Test</span>
-                                    </button>
-                                </div>
-                                <div class="fieldDescription">Find this in Sonarr under Settings > General > Security > API Key</div>
-                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">Configure one or more Sonarr instances. Each instance needs a URL and API key. The name helps identify instances when multiple are configured.</div>
+                            <div id="sonarrInstancesList"></div>
+                            <button id="addSonarrInstance" class="emby-button raised arr-add-btn" type="button">+ Add Sonarr Instance</button>
                             <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5em 0;">
-                            <div class="inputContainer" style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrUrl">Radarr URL</label>
-                                <input id="radarrUrl" is="emby-input" name="radarrUrl" type="text" placeholder="e.g., http://192.168.100.100:7878"/>
-                            </div>
-                            <div class="inputContainer" style="margin-top: 1em;">
-                                <label class="inputLabel inputLabelUnfocused" for="radarrApiKey">Radarr API Key</label>
-                                <div style="display: flex; align-items: center; gap: 1em; margin-left: -1em;">
-                                    <input id="radarrApiKey" is="emby-input" name="radarrApiKey" placeholder="Your Radarr API key" style="flex-grow: 1;"/>
-                                    <span id="radarrStatusIndicator" class="material-icons" style="transition: color 0.3s ease;"></span>
-                                    <button is="emby-button" type="button" id="testRadarrBtn" class="raised button-submit">
-                                        <span>Test</span>
-                                    </button>
-                                </div>
-                                <div class="fieldDescription">Find this in Radarr under Settings > General > Security > API Key</div>
-                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1em;">Configure one or more Radarr instances. Each instance needs a URL and API key.</div>
+                            <div id="radarrInstancesList"></div>
+                            <button id="addRadarrInstance" class="emby-button raised arr-add-btn" type="button">+ Add Radarr Instance</button>
                             <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5em 0;">
                             <div class="inputContainer" style="margin-top: 1em; margin-bottom: 2em;">
                                 <label class="inputLabel inputLabelUnfocused" for="bazarrUrl">Bazarr URL</label>
@@ -1199,16 +1262,6 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 2em;">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. Only for admins.<br> If no URL is added for a service below, links for that service are not shown.</div>
-                            <div>
-                                <label class="sectionTitle" style="margin-bottom: 5px;" for="sonarrUrlMappings">Sonarr URL Mappings</label>
-                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="sonarrUrlMappings" name="sonarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:8989&#10;https://jellyfin.example.com|https://sonarr.example.com"></textarea>
-                                <div class="fieldDescription">Map Jellyfin access URLs to Sonarr URLs. Format: <code>jellyfin_url|sonarr_url</code> (one per line).</div>
-                            </div>
-                            <div style="margin-top: 1em;">
-                                <label class="sectionTitle" style="margin-bottom: 5px;" for="radarrUrlMappings">Radarr URL Mappings</label>
-                                <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="radarrUrlMappings" name="radarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:7878&#10;https://jellyfin.example.com|https://radarr.example.com"></textarea>
-                                <div class="fieldDescription">Map Jellyfin access URLs to Radarr URLs. Format: <code>jellyfin_url|radarr_url</code> (one per line).</div>
-                            </div>
                             <div style="margin-top: 1em;">
                                 <label class="sectionTitle" style="margin-bottom: 5px;" for="bazarrUrlMappings">Bazarr URL Mappings</label>
                                 <textarea style="display:block; height: 12vh !important;" class="emby-textarea emby-input" id="bazarrUrlMappings" name="bazarrUrlMappings" placeholder="http://192.168.1.10:8096|http://192.168.1.10:6767&#10;https://jellyfin.example.com|https://bazarr.example.com"></textarea>
@@ -1220,11 +1273,18 @@
                                 </button>
                                 <div id="arrMappingsValidationResult" style="display: none; margin-top: 0.8em; padding: 0.8em 1em; border-radius: 4px; font-size: 0.9em; line-height: 1.5;"></div>
                             </div>
-                            <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 2em;">
+                            <div class="checkboxContainer" style="margin-top: 1em; margin-bottom: 0.5em;">
                                 <label>
                                     <input id="showArrLinksAsText" is="emby-checkbox" type="checkbox"/>
                                     <span>Show links as text instead of icons</span>
                                 </label>
+                            </div>
+                            <div class="checkboxContainer" style="margin-bottom: 2em;">
+                                <label>
+                                    <input id="arrLinksShowStatusSingle" is="emby-checkbox" type="checkbox"/>
+                                    <span>Show status badge + color for single-instance links</span>
+                                </label>
+                                <div class="fieldDescription" style="margin-left: 1.8em;">When off (default), a single matching Sonarr/Radarr instance renders as a plain icon/text. When on, it also shows the episode count (e.g. 22/41) and a colored left border indicating download status. Multi-instance dropdowns always show this detail.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -2539,6 +2599,295 @@
             });
         }
 
+        // ==================== Multi-Instance Arr Management ====================
+
+        function createEl(tag, attrs, children) {
+            var el = document.createElement(tag);
+            if (attrs) {
+                Object.keys(attrs).forEach(function(k) {
+                    if (k === 'textContent') el.textContent = attrs[k];
+                    else if (k === 'style') el.setAttribute('style', attrs[k]);
+                    else if (k === 'className') el.className = attrs[k];
+                    else el.setAttribute(k, attrs[k]);
+                });
+            }
+            if (children) {
+                children.forEach(function(c) { if (c) el.appendChild(c); });
+            }
+            return el;
+        }
+
+        function createInstanceCard(type, instance, startOpen) {
+            var defaultName = type === 'sonarr' ? 'Sonarr' : 'Radarr';
+            var namePlaceholder = type === 'sonarr' ? 'e.g., TV Shows, Anime' : 'e.g., Movies, 4K Movies';
+            var urlPlaceholder = type === 'sonarr' ? 'e.g., http://192.168.1.100:8989' : 'e.g., http://192.168.1.100:7878';
+
+            // Default Enabled to true when the stored JSON omits the field (backwards compat with
+            // configs written before the Enabled flag existed).
+            var initiallyEnabled = instance.Enabled !== false;
+
+            // Enabled toggle lives in the summary row so admins can flip it without expanding
+            // the card. stopPropagation on pointer events prevents the <details> from toggling
+            // open/closed when the user clicks the checkbox itself.
+            var enabledCheckbox = createEl('input', {
+                type: 'checkbox',
+                className: 'arr-instance-enabled',
+                title: 'Uncheck to skip this instance in all fan-out paths (links, calendar, queue, tag sync) without deleting its URL/API key'
+            });
+            if (initiallyEnabled) enabledCheckbox.checked = true;
+            ['click', 'mousedown', 'keydown'].forEach(function(evt) {
+                enabledCheckbox.addEventListener(evt, function(e) { e.stopPropagation(); });
+            });
+
+            // Summary row (visible when collapsed). Order: [▶ disclosure] [☑ enabled] [name] [(disabled)] [url]
+            var summaryDisabledSpan = createEl('span', {
+                className: 'arr-instance-summary-disabled',
+                textContent: '(disabled)',
+                style: 'color: #e5a00d; font-size: 0.85em; margin-right: 0.5em; display: ' + (initiallyEnabled ? 'none' : 'inline')
+            });
+            var summaryNameSpan = createEl('span', { className: 'arr-instance-summary-name', textContent: instance.Name || defaultName });
+            var summaryUrlSpan = createEl('span', { className: 'arr-instance-summary-url', textContent: instance.Url || '' });
+            var summaryEl = document.createElement('summary');
+            summaryEl.appendChild(enabledCheckbox);
+            summaryEl.appendChild(summaryNameSpan);
+            summaryEl.appendChild(summaryDisabledSpan);
+            summaryEl.appendChild(summaryUrlSpan);
+
+            // Body header: [name input (flex:1)] [Remove]. The Enabled toggle used to live here
+            // too, which crowded the row and left the name input pinched against it. Moved to
+            // the summary above so this row has only the rename + remove affordances.
+            var nameInput = createEl('input', { className: 'arr-instance-name emby-input', type: 'text', placeholder: namePlaceholder, value: instance.Name || '', style: 'flex:1' });
+            var removeBtn = createEl('button', { className: 'arr-instance-remove', type: 'button', title: 'Remove instance', textContent: 'Remove' });
+            var header = createEl('div', { className: 'arr-instance-header' }, [nameInput, removeBtn]);
+
+            var urlLabel = createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'URL' });
+            var urlInput = createEl('input', { className: 'arr-instance-url emby-input', type: 'text', placeholder: urlPlaceholder, value: instance.Url || '' });
+            var urlContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [urlLabel, urlInput]);
+
+            var apiLabel = createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'API Key' });
+            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'password', placeholder: 'API key (find in Settings > General > Security)', value: instance.ApiKey || '' });
+            var statusIcon = createEl('span', { className: 'material-icons arr-instance-status', style: 'transition: color 0.3s ease;' });
+            var testBtn = createEl('button', { className: 'emby-button raised arr-instance-test', type: 'button' });
+            testBtn.appendChild(createEl('span', { textContent: 'Test' }));
+            var apiRow = createEl('div', { style: 'display: flex; align-items: center; gap: 1em;' }, [apiInput, statusIcon, testBtn]);
+            var apiDesc = createEl('div', { className: 'fieldDescription', textContent: 'Find this in ' + (type === 'sonarr' ? 'Sonarr' : 'Radarr') + ' under Settings > General > Security > API Key' });
+            var apiContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [apiLabel, apiRow, apiDesc]);
+
+            var mappingsTextarea = createEl('textarea', { className: 'arr-instance-urlmappings emby-textarea emby-input', style: 'display:block; height: 8vh !important; margin-top: 0.5em;', placeholder: 'jellyfin_url|arr_url (one per line)' });
+            mappingsTextarea.value = instance.UrlMappings || '';
+            var mappingsDesc = createEl('div', { className: 'fieldDescription', textContent: 'Map Jellyfin access URLs to this instance\'s URL. Format: jellyfin_url|arr_url (one per line). Useful for reverse proxy setups.' });
+            var mappingsSummary = createEl('summary', { style: 'cursor:pointer; color: rgba(255,255,255,0.6); font-size: 0.9em;', textContent: 'URL Mappings (optional)' });
+            var mappingsDetails = createEl('details', { style: 'margin-top: 0.5em;' }, [mappingsSummary, mappingsTextarea, mappingsDesc]);
+
+            var body = createEl('div', { className: 'arr-instance-card-body' }, [header, urlContainer, apiContainer, mappingsDetails]);
+
+            // The card is a <details> element
+            var card = document.createElement('details');
+            card.className = 'arr-instance-card';
+            if (!initiallyEnabled) card.classList.add('arr-instance-disabled');
+            card.dataset.type = type;
+            if (startOpen) card.open = true;
+            card.appendChild(summaryEl);
+            card.appendChild(body);
+
+            // Keep summary text in sync with name/url inputs
+            nameInput.addEventListener('input', function() {
+                summaryNameSpan.textContent = nameInput.value.trim() || defaultName;
+            });
+            urlInput.addEventListener('input', function() {
+                summaryUrlSpan.textContent = urlInput.value.trim();
+            });
+
+            // Toggle visual dim state + summary "(disabled)" chip when the Enabled checkbox
+            // changes. The backend is the authority — this is UI feedback only until Save.
+            enabledCheckbox.addEventListener('change', function() {
+                var en = enabledCheckbox.checked;
+                summaryDisabledSpan.style.display = en ? 'none' : 'inline';
+                card.classList.toggle('arr-instance-disabled', !en);
+            });
+
+            // Confirm before removing
+            removeBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var instName = nameInput.value.trim() || defaultName;
+                Dashboard.confirm('Remove "' + instName + '" from the instance list? The change takes effect when you click Save. If you leave the page without saving, the instance is kept.\n\nTip: If you just want to stop using it temporarily, uncheck Enabled instead — that preserves the URL and API key.', 'Remove Instance', function(confirmed) {
+                    if (confirmed) {
+                        card.remove();
+                        updateAllDependencies();
+                    }
+                });
+            });
+
+            testBtn.addEventListener('click', function() { testInstanceConnection(card); });
+            apiInput.style.flex = '1';
+            return card;
+        }
+
+        // Tracks whether each instance-list JSON parsed cleanly on load.
+        // When false, saveArrInstances refuses to overwrite the stored value and legacy fields
+        // to avoid turning a read-side corruption into permanent data loss.
+        var _arrParseOK = { sonarr: true, radarr: true };
+
+        function tryParseInstanceList(raw, type, container) {
+            if (!raw) { _arrParseOK[type] = true; return []; }
+            try {
+                var parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) throw new Error(type + 'Instances JSON is not an array');
+                _arrParseOK[type] = true;
+                return parsed;
+            } catch (e) {
+                _arrParseOK[type] = false;
+                console.error('[JE Config] Failed to parse ' + type + 'Instances — refusing to overwrite on save:', e, raw);
+                insertCorruptBanner(container, type);
+                return [];
+            }
+        }
+
+        function insertCorruptBanner(container, type) {
+            var label = type === 'sonarr' ? 'Sonarr' : 'Radarr';
+            var banner = document.createElement('div');
+            banner.className = 'arr-corrupt-banner';
+            banner.setAttribute('data-arr-corrupt', type);
+            banner.style.cssText = 'padding: 0.8em 1em; margin-bottom: 1em; border: 1px solid #dc3545; background: rgba(220,53,69,0.15); border-radius: 4px;';
+
+            var heading = document.createElement('strong');
+            heading.textContent = '⚠ Stored ' + label + ' instance configuration is corrupted.';
+            var detail = document.createElement('div');
+            detail.style.marginTop = '0.3em';
+            detail.textContent = 'The saved JSON could not be parsed. Saving this page will NOT overwrite the stored value or the legacy ' +
+                label + ' URL/API key — so existing configuration is preserved. To recover: either fix the stored JSON directly in Jellyfin\'s plugin config, ' +
+                'or click the button below to reset this list (destroys the unreadable value).';
+            banner.appendChild(heading);
+            banner.appendChild(detail);
+
+            var resetBtn = document.createElement('button');
+            resetBtn.className = 'emby-button raised';
+            resetBtn.style.marginTop = '0.6em';
+            resetBtn.type = 'button';
+            resetBtn.textContent = 'Reset ' + label + ' instances (clears stored value)';
+            resetBtn.addEventListener('click', function() {
+                Dashboard.confirm(
+                    'Reset the corrupt ' + label + ' instance configuration? The stored JSON is unreadable so any instances it contained cannot be recovered. You will need to add them again. The reset takes effect when you click Save.',
+                    'Reset Instances',
+                    function(confirmed) {
+                        if (!confirmed) return;
+                        _arrParseOK[type] = true;
+                        banner.remove();
+                        // On next Save, the empty array will be written and legacy fields cleared normally.
+                    }
+                );
+            });
+            banner.appendChild(resetBtn);
+
+            container.appendChild(banner);
+        }
+
+        function loadArrInstances(config) {
+            var sonarrList = document.querySelector('#sonarrInstancesList');
+            var radarrList = document.querySelector('#radarrInstancesList');
+            sonarrList.textContent = '';
+            radarrList.textContent = '';
+            _arrParseOK = { sonarr: true, radarr: true };
+
+            var sonarrInstances = tryParseInstanceList(config.SonarrInstances, 'sonarr', sonarrList);
+            var radarrInstances = tryParseInstanceList(config.RadarrInstances, 'radarr', radarrList);
+
+            // Migration: only when parse succeeded AND no instances but legacy fields are populated.
+            // Skip migration when parse failed — the legacy fields may be stale or already migrated.
+            if (_arrParseOK.sonarr && sonarrInstances.length === 0 && config.SonarrUrl && config.SonarrApiKey) {
+                sonarrInstances.push({
+                    Name: 'Sonarr',
+                    Url: config.SonarrUrl,
+                    ApiKey: config.SonarrApiKey,
+                    UrlMappings: config.SonarrUrlMappings || ''
+                });
+            }
+            if (_arrParseOK.radarr && radarrInstances.length === 0 && config.RadarrUrl && config.RadarrApiKey) {
+                radarrInstances.push({
+                    Name: 'Radarr',
+                    Url: config.RadarrUrl,
+                    ApiKey: config.RadarrApiKey,
+                    UrlMappings: config.RadarrUrlMappings || ''
+                });
+            }
+
+            sonarrInstances.forEach(function(inst) {
+                sonarrList.appendChild(createInstanceCard('sonarr', inst));
+            });
+            radarrInstances.forEach(function(inst) {
+                radarrList.appendChild(createInstanceCard('radarr', inst));
+            });
+        }
+
+        function collectInstancesFromDom(selector, defaultName) {
+            var out = [];
+            document.querySelectorAll(selector).forEach(function(card) {
+                var url = card.querySelector('.arr-instance-url').value.trim();
+                var apiKey = card.querySelector('.arr-instance-apikey').value.trim();
+                if (url && apiKey) {
+                    var enabledCb = card.querySelector('.arr-instance-enabled');
+                    out.push({
+                        Name: card.querySelector('.arr-instance-name').value.trim() || defaultName,
+                        Url: url,
+                        ApiKey: apiKey,
+                        UrlMappings: card.querySelector('.arr-instance-urlmappings').value || '',
+                        // Default to true when the checkbox is missing (shouldn't happen, but
+                        // guards against DOM surgery from another script).
+                        Enabled: enabledCb ? enabledCb.checked : true
+                    });
+                }
+            });
+            return out;
+        }
+
+        function saveArrInstances(config) {
+            // Only overwrite stored state when the load parse succeeded. Otherwise leave the stored
+            // JSON AND legacy fields untouched so the admin can recover the original value.
+            if (_arrParseOK.sonarr) {
+                var sonarrInstances = collectInstancesFromDom('#sonarrInstancesList .arr-instance-card', 'Sonarr');
+                config.SonarrInstances = JSON.stringify(sonarrInstances);
+                if (sonarrInstances.length > 0) {
+                    config.SonarrUrl = sonarrInstances[0].Url;
+                    config.SonarrApiKey = sonarrInstances[0].ApiKey;
+                    config.SonarrUrlMappings = sonarrInstances[0].UrlMappings;
+                } else {
+                    config.SonarrUrl = '';
+                    config.SonarrApiKey = '';
+                    config.SonarrUrlMappings = '';
+                }
+            }
+
+            if (_arrParseOK.radarr) {
+                var radarrInstances = collectInstancesFromDom('#radarrInstancesList .arr-instance-card', 'Radarr');
+                config.RadarrInstances = JSON.stringify(radarrInstances);
+                if (radarrInstances.length > 0) {
+                    config.RadarrUrl = radarrInstances[0].Url;
+                    config.RadarrApiKey = radarrInstances[0].ApiKey;
+                    config.RadarrUrlMappings = radarrInstances[0].UrlMappings;
+                } else {
+                    config.RadarrUrl = '';
+                    config.RadarrApiKey = '';
+                    config.RadarrUrlMappings = '';
+                }
+            }
+        }
+
+        // Bind add-instance buttons
+        document.querySelector('#addSonarrInstance').addEventListener('click', function() {
+            document.querySelector('#sonarrInstancesList').appendChild(
+                createInstanceCard('sonarr', { Name: '', Url: '', ApiKey: '', UrlMappings: '' }, true)
+            );
+            updateAllDependencies();
+        });
+        document.querySelector('#addRadarrInstance').addEventListener('click', function() {
+            document.querySelector('#radarrInstancesList').appendChild(
+                createInstanceCard('radarr', { Name: '', Url: '', ApiKey: '', UrlMappings: '' }, true)
+            );
+            updateAllDependencies();
+        });
+
+        // ==================== End Multi-Instance Arr Management ====================
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
@@ -2687,16 +3036,14 @@
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
-                document.querySelector('#sonarrUrlMappings').value = config.SonarrUrlMappings || '';
-                document.querySelector('#radarrUrlMappings').value = config.RadarrUrlMappings || '';
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
-                document.querySelector('#sonarrUrl').value = config.SonarrUrl;
-                document.querySelector('#radarrUrl').value = config.RadarrUrl;
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
+                document.querySelector('#arrLinksShowStatusSingle').checked = config.ArrLinksShowStatusSingle;
                 document.querySelector('#arrTagsSyncEnabled').checked = config.ArrTagsSyncEnabled;
-                document.querySelector('#radarrApiKey').value = config.RadarrApiKey;
-                document.querySelector('#sonarrApiKey').value = config.SonarrApiKey;
+
+                // Load multi-instance Sonarr/Radarr
+                loadArrInstances(config);
                 document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'Requested by: ';
                 document.querySelector('#arrTagsClearOldTags').checked = config.ArrTagsClearOldTags !== false;
                 document.querySelector('#arrTagsShowAsLinks').checked = config.ArrTagsShowAsLinks !== false;
@@ -2912,16 +3259,14 @@
             config.IconStyle = document.querySelector('#iconStyle').value;
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
-            config.SonarrUrlMappings = document.querySelector('#sonarrUrlMappings').value || '';
-            config.RadarrUrlMappings = document.querySelector('#radarrUrlMappings').value || '';
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
-            config.SonarrUrl = document.querySelector('#sonarrUrl').value;
-            config.RadarrUrl = document.querySelector('#radarrUrl').value;
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
+            config.ArrLinksShowStatusSingle = document.querySelector('#arrLinksShowStatusSingle').checked;
             config.ArrTagsSyncEnabled = document.querySelector('#arrTagsSyncEnabled').checked;
-            config.RadarrApiKey = document.querySelector('#radarrApiKey').value;
-            config.SonarrApiKey = document.querySelector('#sonarrApiKey').value;
+
+            // Save multi-instance Sonarr/Radarr
+            saveArrInstances(config);
             config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'Requested by: ';
             config.ArrTagsClearOldTags = document.querySelector('#arrTagsClearOldTags').checked;
             config.ArrTagsShowAsLinks = document.querySelector('#arrTagsShowAsLinks').checked;
@@ -3352,12 +3697,13 @@
          * @returns {boolean} True if any arr service is configured
          */
         function hasAnyArrService() {
-            var sonarrUrl = document.querySelector('#sonarrUrl').value.trim();
-            var sonarrKey = document.querySelector('#sonarrApiKey').value.trim();
-            var radarrUrl = document.querySelector('#radarrUrl').value.trim();
-            var radarrKey = document.querySelector('#radarrApiKey').value.trim();
-            return (sonarrUrl.length > 0 && sonarrKey.length > 0)
-                || (radarrUrl.length > 0 && radarrKey.length > 0);
+            var cards = document.querySelectorAll('#sonarrInstancesList .arr-instance-card, #radarrInstancesList .arr-instance-card');
+            for (var i = 0; i < cards.length; i++) {
+                var url = cards[i].querySelector('.arr-instance-url');
+                var key = cards[i].querySelector('.arr-instance-apikey');
+                if (url && url.value.trim() && key && key.value.trim()) return true;
+            }
+            return false;
         }
 
         var SECTION_DEPS = [
@@ -3582,7 +3928,7 @@
             { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
-            { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['sonarrUrlMappings', 'radarrUrlMappings', 'bazarrUrlMappings', 'showArrLinksAsText'] },
+            { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
@@ -3682,7 +4028,7 @@
         });
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
         document.querySelector('#tagCacheServerMode').addEventListener('change', updateAllDependencies);
-        ['#jellyseerrUrls', '#JellyseerrApiKey', '#sonarrUrl', '#sonarrApiKey', '#radarrUrl', '#radarrApiKey'].forEach(function(sel) {
+        ['#jellyseerrUrls', '#JellyseerrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
 
@@ -3717,45 +4063,39 @@
             return 'Connection to ' + serviceName + ' failed (error ' + (error.status || 'unknown') + ').';
         }
 
-        /**
-         * Tests connectivity to a Sonarr/Radarr instance via the backend validation endpoint.
-         * @param {string} serviceName - Display name (e.g. 'Sonarr')
-         * @param {string} endpoint - Backend route segment (e.g. 'sonarr')
-         * @param {string} urlInputId - DOM id of the URL input
-         * @param {string} apiKeyInputId - DOM id of the API key input
-         * @param {string} statusId - DOM id of the status indicator icon
-         * @param {string} btnId - DOM id of the test button
-         */
-        async function testArrConnection(serviceName, endpoint, urlInputId, apiKeyInputId, statusId, btnId) {
-            var urlVal = (document.querySelector('#' + urlInputId).value || '').trim();
-            var apiKeyVal = (document.querySelector('#' + apiKeyInputId).value || '').trim();
+        async function testInstanceConnection(card) {
+            var type = card.dataset.type;
+            var urlVal = (card.querySelector('.arr-instance-url').value || '').trim();
+            var apiKeyVal = (card.querySelector('.arr-instance-apikey').value || '').trim();
+            var nameVal = card.querySelector('.arr-instance-name').value.trim() || (type === 'sonarr' ? 'Sonarr' : 'Radarr');
+            var btn = card.querySelector('.arr-instance-test');
+            var indicator = card.querySelector('.arr-instance-status');
 
             if (!urlVal || !apiKeyVal) {
-                Dashboard.alert({ title: 'Missing Information', message: 'Please provide both a ' + serviceName + ' URL and API key to test the connection.' });
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide both a URL and API key to test the connection.' });
                 return;
             }
 
-            var btn = document.getElementById(btnId);
-            var indicator = document.getElementById(statusId);
             btn.disabled = true;
             indicator.textContent = 'sync';
             indicator.className = 'material-icons status-check';
             indicator.style.color = '#00a4dc';
 
             try {
+                var endpoint = type === 'sonarr' ? 'sonarr' : 'radarr';
                 var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal });
                 await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKeyVal } });
 
                 indicator.textContent = 'check_circle';
                 indicator.style.color = '#52b54b';
                 indicator.classList.remove('status-check');
-                Dashboard.alert({ title: 'Success', message: 'Successfully connected to ' + serviceName + '!' });
+                Dashboard.alert({ title: 'Success', message: 'Successfully connected to ' + nameVal + '!' });
             } catch (e) {
                 indicator.classList.remove('status-check');
                 indicator.textContent = 'error';
                 indicator.style.color = '#dc3545';
 
-                var msg = connectionErrorMessage(e, serviceName, urlVal);
+                var msg = connectionErrorMessage(e, nameVal, urlVal);
                 Dashboard.alert({ title: 'Connection Failed', message: msg });
             } finally {
                 btn.disabled = false;
@@ -3763,13 +4103,6 @@
 
             updateAllDependencies();
         }
-
-        document.getElementById('testSonarrBtn').addEventListener('click', function() {
-            testArrConnection('Sonarr', 'sonarr', 'sonarrUrl', 'sonarrApiKey', 'sonarrStatusIndicator', 'testSonarrBtn');
-        });
-        document.getElementById('testRadarrBtn').addEventListener('click', function() {
-            testArrConnection('Radarr', 'radarr', 'radarrUrl', 'radarrApiKey', 'radarrStatusIndicator', 'testRadarrBtn');
-        });
 
         // === URL Mapping Validation ===
         /**
@@ -3891,7 +4224,7 @@
             });
 
             // Also probe configured service URLs so we can cross-reference client-only mappings
-            var serviceUrlIds = { 'Sonarr': 'sonarrUrl', 'Radarr': 'radarrUrl', 'Bazarr': 'bazarrUrl', 'Seerr': 'jellyseerrUrls' };
+            var serviceUrlIds = { 'Bazarr': 'bazarrUrl', 'Seerr': 'jellyseerrUrls' };
             pairs.forEach(function(p) {
                 var urlId = serviceUrlIds[p.service];
                 if (!urlId) return;
@@ -3966,14 +4299,18 @@
                 }
 
                 // Check service mismatch (e.g., Sonarr mapping pointing to Radarr)
-                if (rightInfo.service !== 'unknown' && rightInfo.service !== p.service && rightInfo.service !== 'arr') {
+                // p.service may be an instance name like "Sonarr Main" or "Radarr 4K",
+                // so check if the detected service is contained in the instance name
+                var serviceMatchesInstance = rightInfo.service === p.service
+                    || p.service.toLowerCase().indexOf(rightInfo.service.toLowerCase()) !== -1
+                    || rightInfo.service === 'arr';
+                if (rightInfo.service !== 'unknown' && !serviceMatchesInstance) {
                     issues.push(p.label + ': Right side (' + p.right + ') is running ' + rightInfo.service + ', but this is the ' + p.service + ' mapping section.');
                     return;
                 }
 
                 // Right side confirmed as correct service?
-                var rightConfirmed = (rightInfo.service === p.service) ||
-                    (rightInfo.service === 'arr' && (p.service === 'Sonarr' || p.service === 'Radarr'));
+                var rightConfirmed = serviceMatchesInstance;
 
                 // If right side is only browser-reachable (server can't reach localhost etc.),
                 // check if the configured service URL confirms the service identity
@@ -4035,14 +4372,72 @@
         }
 
         document.getElementById('validateArrMappingsBtn').addEventListener('click', function() {
-            validateMappingSet(
-                [
-                    { id: 'sonarrUrlMappings', service: 'Sonarr' },
-                    { id: 'radarrUrlMappings', service: 'Radarr' },
-                    { id: 'bazarrUrlMappings', service: 'Bazarr' }
-                ],
+            // Collect all instance URL mappings + Bazarr mappings
+            var mappingDefs = [];
+            var createdTempIds = [];
+
+            // Wipe any temp textareas left over from a previous validate run so we never
+            // accumulate orphans when a card that previously had mappings now has none.
+            document.querySelectorAll('textarea[data-arr-validate-temp="true"]').forEach(function(el) { el.remove(); });
+
+            function addTempTextarea(value, prefix, idx, serviceName) {
+                var tempId = prefix + '-' + idx;
+                var temp = document.createElement('textarea');
+                temp.id = tempId;
+                temp.value = value;
+                temp.style.display = 'none';
+                temp.setAttribute('data-arr-validate-temp', 'true');
+                document.body.appendChild(temp);
+                createdTempIds.push(tempId);
+                mappingDefs.push({ id: tempId, service: serviceName });
+            }
+
+            // Per-instance URL mappings from cards
+            document.querySelectorAll('#sonarrInstancesList .arr-instance-card').forEach(function(card, idx) {
+                var name = card.querySelector('.arr-instance-name').value.trim() || ('Sonarr ' + (idx + 1));
+                var textarea = card.querySelector('.arr-instance-urlmappings');
+                if (textarea && textarea.value.trim()) {
+                    addTempTextarea(textarea.value, 'arr-validate-sonarr', idx, name);
+                }
+            });
+
+            document.querySelectorAll('#radarrInstancesList .arr-instance-card').forEach(function(card, idx) {
+                var name = card.querySelector('.arr-instance-name').value.trim() || ('Radarr ' + (idx + 1));
+                var textarea = card.querySelector('.arr-instance-urlmappings');
+                if (textarea && textarea.value.trim()) {
+                    addTempTextarea(textarea.value, 'arr-validate-radarr', idx, name);
+                }
+            });
+
+            // Bazarr mappings
+            if (document.getElementById('bazarrUrlMappings').value.trim()) {
+                mappingDefs.push({ id: 'bazarrUrlMappings', service: 'Bazarr' });
+            }
+
+            if (mappingDefs.length === 0) {
+                Dashboard.alert({ title: 'No Mappings', message: 'No URL mappings configured to validate. Add mappings in the instance cards or Bazarr section.' });
+                return;
+            }
+
+            // validateMappingSet is async and reads our temp textareas while it runs, so we
+            // can't remove them synchronously here. The "wipe at entry" above + `.finally()`
+            // handle cleanup: on the next click we blow away any leftovers, and when this
+            // run's promise settles we remove ours too.
+            var cleanup = function() {
+                createdTempIds.forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) el.remove();
+                });
+            };
+            var result = validateMappingSet(
+                mappingDefs,
                 'validateArrMappingsBtn', 'arrMappingsValidationResult'
             );
+            if (result && typeof result.then === 'function') {
+                result.then(cleanup, cleanup);
+            } else {
+                cleanup();
+            }
         });
 
         document.getElementById('validateSeerrMappingsBtn').addEventListener('click', function() {
