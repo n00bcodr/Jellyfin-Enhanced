@@ -1747,6 +1747,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public ActionResult GetMainScript() => GetScriptResource("js/plugin.js");
         [HttpGet("js/{**path}")]
         public ActionResult GetScript(string path) => GetScriptResource($"js/{path}");
+        [HttpGet("css/{**path}")]
+        public ActionResult GetStylesheet(string path) => GetScriptResource($"css/{path}");
         [HttpGet("version")]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
@@ -2069,8 +2071,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             if (stream == null) return NotFound();
 
+            // Pick a content type that matches the requested file. Defaults to JS for the
+            // legacy /js/* callers; adds CSS so /css/* doesn't get served as application/javascript
+            // (which breaks <link rel="stylesheet"> in strict-MIME browsers).
+            string contentType = "application/javascript";
+            if (resourcePath.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
+                contentType = "text/css";
+            else if (resourcePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                contentType = "application/json";
+            else if (resourcePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+                contentType = "text/html";
+
             Response.Headers["Cache-Control"] = "no-cache";
-            return new FileStreamResult(stream, "application/javascript");
+            return new FileStreamResult(stream, contentType);
         }
 
         /// <summary>
