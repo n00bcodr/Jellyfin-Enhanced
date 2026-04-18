@@ -231,7 +231,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var importDefinite = false;
             if (config.JellyseerrAutoImportUsers)
             {
-                _logger.Info($"User not found in Jellyseerr. Attempting just-in-time import for Jellyfin User ID {jellyfinUserId}...");
+                _logger.Info($"User not found in Jellyseerr. Attempting just-in-time import for Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)}...");
                 var (importedUser, definite) = await TryAutoImportJellyseerrUser(jellyfinUserId, urls, httpClient);
                 importDefinite = definite;
                 if (importedUser != null)
@@ -259,7 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {jellyfinUserId} after checking all URLs.");
+            _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)} after checking all URLs.");
             return null;
         }
 
@@ -297,7 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // an orphaned Jellyseerr account with the same email. Won't resolve on retry.
                         if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
                         {
-                            _logger.Warning($"Could not auto-import Jellyfin User ID {jellyfinUserId}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
+                            _logger.Warning($"Could not auto-import Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
                             return (null, true);
                         }
 
@@ -312,7 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
                     if (user != null)
                     {
-                        _logger.Info($"Auto-imported Seerr user ID {user.Id} for Jellyfin User ID {jellyfinUserId}");
+                        _logger.Info($"Auto-imported Seerr user ID {user.Id} for Jellyfin User {ResolveUserDisplay(jellyfinUserId)}");
                         return (user, true);
                     }
 
@@ -331,7 +331,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             var found = allUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
                             if (found != null)
                             {
-                                _logger.Info($"Found Seerr user ID {found.Id} for Jellyfin User ID {jellyfinUserId} via fresh lookup");
+                                _logger.Info($"Found Seerr user ID {found.Id} for Jellyfin User {ResolveUserDisplay(jellyfinUserId)} via fresh lookup");
                                 return (found, true);
                             }
                         }
@@ -343,12 +343,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 catch (HttpRequestException ex)
                 {
                     // Network errors, timeouts, etc. are transient — try the next URL
-                    _logger.Debug($"Connection error during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                    _logger.Debug($"Connection error during auto-import for Jellyfin User {ResolveUserDisplay(jellyfinUserId)} at {url}: {ex.Message}");
                 }
                 catch (JsonException ex)
                 {
                     // Invalid Jellyseerr response — log warning but try next URL
-                    _logger.Warning($"Invalid response from Jellyseerr during auto-import for Jellyfin User ID {jellyfinUserId} at {url}: {ex.Message}");
+                    _logger.Warning($"Invalid response from Jellyseerr during auto-import for Jellyfin User {ResolveUserDisplay(jellyfinUserId)} at {url}: {ex.Message}");
                 }
             }
 
@@ -474,7 +474,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             if (string.IsNullOrEmpty(jellyseerrUserId))
             {
-                _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {ResolveUserDisplay(jellyfinUserId)}. Aborting request.");
                 return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
             }
 
@@ -508,11 +508,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var requestUri = $"{trimmedUrl.TrimEnd('/')}{apiPath}";
-                    // Skip logging for high-frequency endpoints
+                    // Skip logging for high-frequency discovery/search endpoints entirely
                     bool isQuietEndpoint = apiPath.Contains("/similar") || apiPath.Contains("/recommendations") || apiPath.Contains("/discover/");
+                    // Issue polling fires every 30s per open tab — consolidate into a summary line
+                    bool isIssuePolling = apiPath.Contains("/issue?");
+
                     if (!isQuietEndpoint)
                     {
-                        _logger.Info($"Proxying Seerr request for user {jellyfinUserId} to: {requestUri}");
+                        var userDisplay = ResolveUserDisplay(jellyfinUserId);
+                        if (isIssuePolling)
+                            LogPollingRequest(userDisplay, requestUri, $"{jellyfinUserId}:{apiPath}");
+                        else
+                            _logger.Info($"Proxying Seerr request for user {userDisplay} to: {requestUri}");
                     }
 
                     var request = new HttpRequestMessage(method, requestUri);
@@ -550,7 +557,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Content(responseContent, "application/json");
                     }
 
-                    _logger.Warning($"Request to Seerr for user {jellyfinUserId} failed. URL: {trimmedUrl}, Status: {response.StatusCode}, Response: {responseContent}");
+                    _logger.Warning($"Request to Seerr for user {ResolveUserDisplay(jellyfinUserId)} failed. URL: {trimmedUrl}, Path: {apiPath}, Status: {response.StatusCode}, Response: {responseContent}");
                     lastStatusCode = (int)response.StatusCode;
                     try
                     {
@@ -564,7 +571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Failed to connect to Seerr URL for user {jellyfinUserId}: {trimmedUrl}. Error: {ex.Message}");
+                    _logger.Error($"Failed to connect to Seerr URL for user {ResolveUserDisplay(jellyfinUserId)}: {trimmedUrl}. Error: {ex.Message}");
                 }
             }
 
@@ -2288,7 +2295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
-                    _logger.Info($"Saved default settings.json for new user {authorizedUserId} from plugin configuration.");
+                    _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
                 }
             }
 
@@ -2337,13 +2344,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
+                // Diff against the existing config so the log shows what actually changed
+                var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+                var changes = new System.Collections.Generic.List<string>();
+                if (existing != null)
+                {
+                    var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
+                    var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
+                    if (existingJson != newJson)
+                    {
+                        var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
+                        var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
+                        foreach (var prop in newDoc.EnumerateObject())
+                        {
+                            if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) ||
+                                oldVal.ToString() != prop.Value.ToString())
+                            {
+                                changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
+                            }
+                        }
+                    }
+                }
+
                 _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
-                _logger.Info($"Saved user settings for user {authorizedUserId} to settings.json");
+
+                if (changes.Count > 0)
+                    _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                else
+                    _logger.Debug($"Saved user settings for {ResolveUserDisplay(authorizedUserId)} (no changes)");
+
                 return Ok(new { success = true, file = "settings.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user settings for user {authorizedUserId}: {ex.Message}");
+                _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
             }
         }
@@ -2362,12 +2396,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
-                _logger.Info($"Saved user shortcuts for user {authorizedUserId} to shortcuts.json");
+                _logger.Info($"Saved user shortcuts for {ResolveUserDisplay(authorizedUserId)} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user shortcuts for user {authorizedUserId}: {ex.Message}");
+                _logger.Error($"Failed to save user shortcuts for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user shortcuts." });
             }
         }
@@ -2401,12 +2435,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "bookmark.json", userConfiguration);
-                _logger.Info($"Saved enhanced bookmarks for user {authorizedUserId} to bookmark.json");
+                _logger.Info($"Saved enhanced bookmarks for {ResolveUserDisplay(authorizedUserId)} to bookmark.json");
                 return Ok(new { success = true, file = "bookmark.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save enhanced bookmarks for user {authorizedUserId}: {ex.Message}");
+                _logger.Error($"Failed to save enhanced bookmarks for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save enhanced bookmarks." });
             }
         }
@@ -2425,12 +2459,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "elsewhere.json", userConfiguration);
-                _logger.Info($"Saved user elsewhere settings for user {authorizedUserId} to elsewhere.json");
+                _logger.Info($"Saved user elsewhere settings for {ResolveUserDisplay(authorizedUserId)} to elsewhere.json");
                 return Ok(new { success = true, file = "elsewhere.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save user elsewhere settings for user {authorizedUserId}: {ex.Message}");
+                _logger.Error($"Failed to save user elsewhere settings for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user elsewhere settings." });
             }
         }
@@ -2469,12 +2503,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
-                _logger.Info($"Saved hidden content for user {authorizedUserId} to hidden-content.json");
+                _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save hidden content for user {authorizedUserId}: {ex.Message}");
+                _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
             }
         }
@@ -2655,12 +2689,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var now = DateTime.UtcNow.ToString("o");
                 _userConfigurationManager.UpsertReview(
                     userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
-                _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {userIdN}.");
+                _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
                 return Ok(new { success = true });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save review for user {userIdN}: {ex.Message}");
+                _logger.Error($"Failed to save review for user {ResolveUserDisplay(userIdN)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save review." });
             }
         }
@@ -2686,12 +2720,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 if (_userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId))
-                    _logger.Info($"Deleted review for {mediaType}:{tmdbId} by user {userIdN}.");
+                    _logger.Info($"Deleted review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
                 return Ok(new { success = true });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to delete review for user {userIdN}: {ex.Message}");
+                _logger.Error($"Failed to delete review for user {ResolveUserDisplay(userIdN)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to delete review." });
             }
         }
@@ -2722,7 +2756,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var removed = _userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId);
                 if (removed)
                 {
-                    _logger.Info($"Admin deleted review for {mediaType}:{tmdbId} by user {userIdN}.");
+                    _logger.Info($"Admin deleted review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
                     return Ok(new { success = true, removed = true });
                 }
                 // Fail explicitly: nothing to delete means the review was
@@ -2734,7 +2768,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Error($"Admin failed to delete review for {mediaType}:{tmdbId} user {userIdN}: {ex.Message}");
+                _logger.Error($"Admin failed to delete review for {mediaType}:{tmdbId} user {ResolveUserDisplay(userIdN)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to delete review." });
             }
         }
@@ -3914,7 +3948,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Guid.Empty;
         }
 
-        // ==================== Requests Page (Sonarr/Radarr Queue) ====================
+        /// <summary>
+        /// Resolves a Jellyfin user ID string to a "Name (id)" display string for log lines.
+        /// Falls back to the raw ID if the user cannot be found.
+        /// </summary>
+        private string ResolveUserDisplay(string userId)
+        {
+            try
+            {
+                // Accept both dashed and dashless GUIDs
+                if (Guid.TryParse(userId, out var guid) ||
+                    Guid.TryParseExact(userId, "N", out guid))
+                {
+                    var user = _userManager.GetUserById(guid);
+                    if (user != null)
+                        return $"{user.Username} ({userId})";
+                }
+            }
+            catch { /* non-fatal */ }
+            return userId;
+        }
+
+        // Dedup tracker for high-frequency polling log lines.
+        // Key = (userId, apiPath), Value = (last logged message, count since last log, last log time)
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string LastMsg, int Count, DateTime LastLogged)>
+            _pollLogDedup = new();
+        private static readonly TimeSpan _pollLogInterval = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// Logs a high-frequency polling request, consolidating repeated identical calls into a
+        /// single summary line every <see cref="_pollLogInterval"/> rather than one line per poll.
+        /// </summary>
+        private void LogPollingRequest(string userDisplay, string requestUri, string dedupKey)
+        {
+            var now = DateTime.UtcNow;
+            _pollLogDedup.AddOrUpdate(
+                dedupKey,
+                _ =>
+                {
+                    // First occurrence — log immediately
+                    _logger.Info($"Proxying Seerr request for user {userDisplay} to: {requestUri}");
+                    return (requestUri, 0, now);
+                },
+                (_, existing) =>
+                {
+                    var newCount = existing.Count + 1;
+                    if (now - existing.LastLogged >= _pollLogInterval)
+                    {
+                        // Enough time has passed — emit a consolidated summary
+                        _logger.Info($"Proxying Seerr request for user {userDisplay} to: {requestUri} (repeated {newCount}x in last {_pollLogInterval.TotalMinutes:0}m)");
+                        return (requestUri, 0, now);
+                    }
+                    // Still within the quiet window — suppress
+                    return (existing.LastMsg, newCount, existing.LastLogged);
+                });
+        }
 
         /// <summary>
         /// Get combined download queue from Sonarr and Radarr.
@@ -4134,7 +4222,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (jellyseerrUser == null)
                 {
-                    _logger.Warning($"Could not find a Seerr user for Jellyfin user {jellyfinUserId}. Aborting request.");
+                    _logger.Warning($"Could not find a Seerr user for Jellyfin user {ResolveUserDisplay(jellyfinUserId)}. Aborting request.");
                     return NotFound(new { message = "Current Jellyfin user is not linked to a Seerr user." });
                 }
 
