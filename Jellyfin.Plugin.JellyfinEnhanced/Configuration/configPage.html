@@ -493,14 +493,18 @@
                                 </label>
                             </div>
                             <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div>
-                            <h3 style="margin-top: 2.5em;">User Reviews</h3>
-                            <h5>These settings do not require TMDB API key to be populated</h5>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>User Reviews</h3></legend>
+                        <div class="configSection">
+                            <div class="fieldDescription" style="margin-bottom: 1em; font-size: 0.9em;">Independent of Elsewhere. Does not require a TMDB API key.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="showUserReviews" is="emby-checkbox" type="checkbox"/>
                                     <span>Enable User Reviews in Item Details Page</span>
                                 </label>
                             </div>
-                            <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">Allows users to write reviews and rate items in the library.<br/><strong>Completely independent of Elsewhere being enabled and TMDB Reviews being enabled</strong></div>
+                            <div class="fieldDescription" style="margin-bottom: 1.5em; font-size: 0.9em;">Allows users to write reviews and rate items in the library.</div>
                             <div class="checkboxContainer" style="margin-bottom: 0.5em;">
                                 <label style="line-height: 1.2em; align-self: flex-start;"><input id="hideReviewsFromHiddenUsers" is="emby-checkbox" type="checkbox"/>
                                     <span>Hide reviews written by hidden users</span>
@@ -3894,6 +3898,17 @@
                 var container = child.closest('.checkboxContainer, .inputContainer, .selectContainer')
                              || child.closest('label');
 
+                // Collect any immediately-following sibling .fieldDescription blocks so help text
+                // greys with its checkbox (layout places descriptions outside the container).
+                var siblingDescs = [];
+                if (container) {
+                    var sib = container.nextElementSibling;
+                    while (sib && sib.classList && sib.classList.contains('fieldDescription')) {
+                        siblingDescs.push(sib);
+                        sib = sib.nextElementSibling;
+                    }
+                }
+
                 if (!isEnabled) {
                     child.disabled = true;
                     addDepTag(child, tag);
@@ -3909,6 +3924,10 @@
                             container.appendChild(hint);
                         }
                     }
+                    siblingDescs.forEach(function(d) {
+                        d.style.opacity = '0.5';
+                        addDepTag(d, tag);
+                    });
                 } else {
                     var allClear = removeDepTag(child, tag);
                     if (allClear) child.disabled = false;
@@ -3919,6 +3938,9 @@
                         var hint = container.querySelector('.' + hintClass);
                         if (hint) hint.remove();
                     }
+                    siblingDescs.forEach(function(d) {
+                        if (removeDepTag(d, tag)) d.style.opacity = '';
+                    });
                 }
             });
         }

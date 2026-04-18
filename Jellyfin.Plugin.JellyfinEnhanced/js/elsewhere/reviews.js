@@ -3,9 +3,20 @@
     'use strict';
 
     JE.initializeReviewsScript = function () {
-        const tmdbReviewsEnabled = JE.pluginConfig.ShowReviews && JE.pluginConfig.TmdbEnabled;
-        const userReviewsEnabled = JE.pluginConfig.ShowUserReviews;
-        if (!tmdbReviewsEnabled && !userReviewsEnabled) {
+        // TMDB reviews are a sub-feature of Elsewhere so they inherit its master toggle.
+        // User Reviews are intentionally independent of Elsewhere and TMDB.
+        // Read fresh from pluginConfig on every check — admin may toggle at runtime
+        // via the reactive config system, and a captured constant would stay stale.
+        const reviewsGates = () => ({
+            tmdb: !!(JE.pluginConfig?.ElsewhereEnabled && JE.pluginConfig?.ShowReviews && JE.pluginConfig?.TmdbEnabled),
+            user: !!JE.pluginConfig?.ShowUserReviews,
+        });
+        // Register the onViewPage handler whenever either feature COULD become enabled
+        // (ShowReviews or ShowUserReviews is persisted on). The runtime gate inside the
+        // handler decides per-navigation whether to actually fetch. Bailing based on
+        // ElsewhereEnabled at init would orphan reviews when admin re-enables Elsewhere
+        // mid-session, because no handler would be registered to pick up the change.
+        if (!JE.pluginConfig?.ShowReviews && !JE.pluginConfig?.ShowUserReviews) {
             console.log('🪼 Jellyfin Enhanced: Reviews feature disabled.');
             return;
         }
@@ -539,10 +550,14 @@
             const viewerIsAdmin = currentUser?.Policy?.IsAdministrator === true;
             const ownReview = userReviews.find(r => r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, ''));
             const hasReviews = (reviews && reviews.length > 0) || userReviews.length > 0;
+            // Force-show the empty accordion only when user reviews are enabled — users need the
+            // "Write Review" button to appear even when no one has reviewed yet. If user reviews
+            // are off and TMDB has nothing to show, don't render a hollow "Reviews (0)" block.
+            const userReviewsEnabledNow = !!JE.pluginConfig?.ShowUserReviews;
 
             let reviewsSection;
 
-            if (hasReviews || true /* always show so users can add their own */) {
+            if (hasReviews || userReviewsEnabledNow) {
                 reviewsSection = document.createElement('details');
                 reviewsSection.className = 'detailSection tmdb-reviews-section';
                 if (JE.currentSettings?.reviewsExpandedByDefault) {
@@ -560,7 +575,7 @@
                 actionBar.className = 'je-review-action-bar';
                 let writeBtn = null;
 
-                if (userReviewsEnabled && !ownReview) {
+                if (reviewsGates().user && !ownReview) {
                     writeBtn = document.createElement('button');
                     writeBtn.className = 'je-review-btn je-review-write-btn';
                     writeBtn.textContent = JE.t('reviews_add');
@@ -709,6 +724,10 @@
                 });
             }
 
+            // When the if-block above was skipped (no content and user reviews disabled),
+            // reviewsSection is undefined — nothing to insert.
+            if (!reviewsSection) return;
+
             const insertionAnchor =
                 contextPage.querySelector('.streaming-lookup-container') ||
                 contextPage.querySelector('.itemExternalLinks') ||
@@ -741,13 +760,23 @@
                 // Fetch the current user fresh alongside the review data so
                 // admin status reflects the actual live session, not a
                 // potentially-stale JE.currentUser captured at plugin init.
+                const gates = reviewsGates();
+                const page = document.querySelector('#itemDetailPage:not(.hide)') || contextPage;
+
+                // Admin may have disabled the feature between the initial render and this refresh.
+                // Tear down any existing accordion rather than rebuilding an empty "Reviews (0)" block.
+                if (!gates.tmdb && !gates.user) {
+                    const existing = page?.querySelector('.tmdb-reviews-section');
+                    if (existing) existing.remove();
+                    return;
+                }
+
                 const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                    tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
-                    userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
+                    gates.tmdb ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
+                    gates.user ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
                     ApiClient.getCurrentUser().catch(() => null),
                 ]);
 
-                const page = document.querySelector('#itemDetailPage:not(.hide)') || contextPage;
                 addReviewsToPage(tmdbReviews, userReviews, page, tmdbId, apiMediaType, currentUser);
             } catch (err) {
                 console.error(`${logPrefix} Failed to refresh reviews:`, err);
@@ -944,9 +973,12 @@
                         // See refreshReviews for why we resolve currentUser here
                         // instead of reading JE.currentUser — same race/staleness
                         // reasoning.
+                        const gates = reviewsGates();
+                        if (!gates.tmdb && !gates.user) return;
+
                         const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                            tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
-                            userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
+                            gates.tmdb ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
+                            gates.user ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
                             ApiClient.getCurrentUser().catch(() => null),
                         ]);
                         addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbId, apiMediaType, currentUser);
@@ -959,11 +991,30 @@
 
         injectCss();
 
+        // Tear down any lingering reviews section on the currently-visible page
+        // (e.g. a cached detail page from a prior render when features were on).
+        // Scoped to the visible detail page so we don't nuke sections on cached-
+        // but-not-visible prior pages kept in DOM by Jellyfin's SPA router.
+        function teardownExistingSection() {
+            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
+            if (!visiblePage) return;
+            visiblePage.querySelectorAll('.tmdb-reviews-section').forEach(el => el.remove());
+        }
+
         // Use Emby.Page.onViewShow hook for reliable page navigation detection
         const unregister = JE.helpers.onViewPage(async (view, element, hash, itemPromise) => {
-            // Check if feature is still enabled
-            if (!JE?.pluginConfig?.ShowReviews && !JE?.pluginConfig?.ShowUserReviews) {
+            // Only unregister when the persisted toggles say the feature is off — that's the only
+            // state transition that cannot be recovered without a reload. When gates are false purely
+            // because of runtime-derived values (ElsewhereEnabled, TmdbEnabled), skip this navigation
+            // but stay registered so a live admin toggle can re-enable reviews on the next nav.
+            if (!JE.pluginConfig?.ShowReviews && !JE.pluginConfig?.ShowUserReviews) {
+                teardownExistingSection();
                 unregister();
+                return;
+            }
+            const gates = reviewsGates();
+            if (!gates.tmdb && !gates.user) {
+                teardownExistingSection();
                 return;
             }
 
