@@ -3836,6 +3836,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Broadcast a message to all active sessions. Admin-only.
+        /// </summary>
+        [HttpPost("active-streams/broadcast")]
+        [Authorize]
+        public async Task<IActionResult> BroadcastMessage([FromBody] BroadcastMessageRequest request)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Text))
+                return BadRequest("Message text is required.");
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.ActiveStreamsEnabled)
+                return StatusCode(503, "Active Streams is not enabled.");
+
+            var sent = 0;
+            var skipped = 0;
+            var errors = new List<string>();
+
+            // Use the current session as the controlling session (admin's own session)
+            var controllingSessionId = string.Empty;
+            try
+            {
+                var adminSession = _sessionManager.Sessions
+                    .FirstOrDefault(s => s.UserId == GetCurrentUserId());
+                controllingSessionId = adminSession?.Id ?? string.Empty;
+            }
+            catch { /* non-fatal — empty string is accepted */ }
+
+            var command = new MediaBrowser.Model.Session.MessageCommand
+            {
+                Header = request.Header,
+                Text = request.Text,
+                TimeoutMs = request.TimeoutMs
+            };
+
+            foreach (var session in _sessionManager.Sessions)
+            {
+                // Skip sessions with no real user
+                if (string.IsNullOrWhiteSpace(session.UserName) ||
+                    string.Equals(session.UserName, "Unknown", StringComparison.OrdinalIgnoreCase))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                try
+                {
+                    await _sessionManager.SendMessageCommand(
+                        controllingSessionId,
+                        session.Id,
+                        command,
+                        CancellationToken.None).ConfigureAwait(false);
+                    sent++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Broadcast: failed to send to session {session.Id} ({session.UserName}): {ex.Message}");
+                    errors.Add($"{session.UserName}: {ex.Message}");
+                    skipped++;
+                }
+            }
+
+            return Ok(new { sent, skipped, errors });
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)
+                     ?? User.FindFirst("sub")
+                     ?? User.FindFirst("Sid");
+            if (claim != null && Guid.TryParse(claim.Value, out var id))
+                return id;
+            return Guid.Empty;
+        }
+
         // ==================== Requests Page (Sonarr/Radarr Queue) ====================
 
         /// <summary>
@@ -5260,5 +5338,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public DateTime? BirthDate { get; set; }
         public DateTime? DeathDate { get; set; }
         public string? BirthPlace { get; set; }
+    }
+
+    /// <summary>
+    /// Request body for the broadcast-message endpoint.
+    /// </summary>
+    public class BroadcastMessageRequest
+    {
+        /// <summary>Optional message header / title.</summary>
+        public string? Header { get; set; }
+
+        /// <summary>Required message body text.</summary>
+        public string Text { get; set; } = string.Empty;
+
+        /// <summary>Optional display timeout in milliseconds.</summary>
+        public long? TimeoutMs { get; set; }
     }
 }

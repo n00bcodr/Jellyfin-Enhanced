@@ -288,6 +288,148 @@
   padding-top: 6px;
   border-top: 1px solid rgba(255,255,255,0.08);
   margin-top: 2px;
+}
+
+/* ── Broadcast button ──────────────────────────────────────────────────── */
+.je-as-broadcast-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+  transition: color 0.2s;
+}
+.je-as-broadcast-btn:hover { color: var(--je-as-accent, #00a4dc); }
+.je-as-broadcast-btn.je-as-broadcast-active { color: var(--je-as-accent, #00a4dc); }
+
+/* ── Broadcast compose form ────────────────────────────────────────────── */
+.je-as-broadcast-form {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  animation: je-as-fadein 150ms ease forwards;
+}
+.je-as-broadcast-form.je-as-broadcast-form-open {
+  display: flex;
+}
+.je-as-broadcast-input,
+.je-as-broadcast-textarea {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.je-as-broadcast-input:focus,
+.je-as-broadcast-textarea:focus {
+  border-color: var(--je-as-accent, #00a4dc);
+}
+.je-as-broadcast-input::placeholder,
+.je-as-broadcast-textarea::placeholder {
+  color: rgba(255,255,255,0.3);
+  font-style: italic;
+}
+.je-as-broadcast-textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+.je-as-broadcast-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.65);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.je-as-broadcast-timeout-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+  white-space: nowrap;
+}
+.je-as-broadcast-timeout-input {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 72px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.je-as-broadcast-timeout-input:focus {
+  border-color: var(--je-as-accent, #00a4dc);
+}
+.je-as-broadcast-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.je-as-broadcast-send {
+  background: var(--je-as-accent, #00a4dc);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  transition: opacity 0.2s;
+}
+.je-as-broadcast-send:hover { opacity: 0.85; }
+.je-as-broadcast-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.je-as-broadcast-cancel {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 12px;
+  transition: background 0.2s;
+}
+.je-as-broadcast-cancel:hover { background: rgba(255,255,255,0.14); }
+.je-as-broadcast-result {
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  display: none;
+}
+.je-as-broadcast-result.je-as-broadcast-ok {
+  display: block;
+  background: rgba(16,185,129,0.15);
+  color: #6ee7b7;
+}
+.je-as-broadcast-result.je-as-broadcast-err {
+  display: block;
+  background: rgba(239,68,68,0.12);
+  color: #fca5a5;
+}
+.je-as-broadcast-field-note {
+  font-size: 10px;
+  color: rgba(255,193,7,0.8);
+  line-height: 1.4;
+  padding: 3px 0 1px;
 }`;
         document.head.appendChild(style);
     };
@@ -644,6 +786,199 @@
         if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
     };
 
+    // ── Broadcast ────────────────────────────────────────────────────────────
+    let _broadcastFormOpen = false;
+    let _broadcastCollapseTimer = null;
+
+    const injectBroadcastButton = (panel) => {
+        if (!panel) return;
+        if (panel.querySelector('.je-as-broadcast-btn')) return;
+
+        const header = panel.querySelector('.je-as-panel-header');
+        if (!header) return;
+
+        // ── Compose form ──────────────────
+        const form = document.createElement('div');
+        form.className = 'je-as-broadcast-form';
+
+        // Title field
+        const headerLabel = document.createElement('div');
+        headerLabel.className = 'je-as-broadcast-field-label';
+        headerLabel.textContent = 'Title (optional)';
+
+        const headerInput = document.createElement('input');
+        headerInput.type = 'text';
+        headerInput.className = 'je-as-broadcast-input';
+        headerInput.placeholder = 'e.g. Server Message';
+        headerInput.maxLength = 200;
+
+        // Message field
+        const messageLabel = document.createElement('div');
+        messageLabel.className = 'je-as-broadcast-field-label';
+        messageLabel.textContent = 'Message (required)';
+
+        const textArea = document.createElement('textarea');
+        textArea.className = 'je-as-broadcast-textarea';
+        textArea.placeholder = 'e.g. Server shutting down in 10 minutes';
+        textArea.maxLength = 1000;
+
+        // Warning note — below both fields
+        const headerNote = document.createElement('div');
+        headerNote.className = 'je-as-broadcast-field-note';
+        headerNote.textContent = '⚠ Title may not show on all clients (web UI). Message is always visible.';
+
+        // Timeout row
+        const timeoutRow = document.createElement('div');
+        timeoutRow.className = 'je-as-broadcast-timeout-row';
+        const timeoutLabel = document.createElement('span');
+        timeoutLabel.className = 'je-as-broadcast-timeout-label';
+        timeoutLabel.textContent = 'Timeout (s):';
+        const timeoutInput = document.createElement('input');
+        timeoutInput.type = 'number';
+        timeoutInput.className = 'je-as-broadcast-timeout-input';
+        timeoutInput.value = '10';
+        timeoutInput.min = '1';
+        timeoutInput.max = '3600';
+        timeoutRow.appendChild(timeoutLabel);
+        timeoutRow.appendChild(timeoutInput);
+
+        const resultEl = document.createElement('div');
+        resultEl.className = 'je-as-broadcast-result';
+
+        const actions = document.createElement('div');
+        actions.className = 'je-as-broadcast-actions';
+
+        const sendBtn = document.createElement('button');
+        sendBtn.className = 'je-as-broadcast-send';
+        sendBtn.textContent = 'Send';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'je-as-broadcast-cancel';
+        cancelBtn.textContent = 'Cancel';
+
+        actions.appendChild(cancelBtn);
+        actions.appendChild(sendBtn);
+
+        form.appendChild(headerLabel);
+        form.appendChild(headerInput);
+        form.appendChild(messageLabel);
+        form.appendChild(textArea);
+        form.appendChild(headerNote);
+        form.appendChild(timeoutRow);
+        form.appendChild(resultEl);
+        form.appendChild(actions);
+
+        // ── Broadcast icon button ────────────────────────────────────────────
+        const broadcastBtn = document.createElement('button');
+        broadcastBtn.className = 'je-as-broadcast-btn';
+        broadcastBtn.setAttribute('aria-label', 'Broadcast message to all sessions');
+        broadcastBtn.title = 'Broadcast message';
+        const broadcastIcon = document.createElement('span');
+        broadcastIcon.className = 'material-icons';
+        broadcastIcon.style.fontSize = '18px';
+        broadcastIcon.textContent = 'campaign';
+        broadcastBtn.appendChild(broadcastIcon);
+
+        // Insert button before the close button
+        const closeBtn = header.querySelector('.je-as-panel-close');
+        header.insertBefore(broadcastBtn, closeBtn);
+
+        // Insert form between header and body
+        const body = panel.querySelector('.je-as-panel-body');
+        panel.insertBefore(form, body);
+
+        // ── Event wiring ─────────────────────────────────────────────────────
+        broadcastBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleBroadcastForm(broadcastBtn, form, resultEl, textArea, headerInput, timeoutInput);
+        });
+
+        cancelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            collapseBroadcastForm(broadcastBtn, form, resultEl, textArea, headerInput, timeoutInput);
+        });
+
+        sendBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const text = textArea.value.trim();
+            if (!text) {
+                textArea.focus();
+                return;
+            }
+            const header = headerInput.value.trim() || undefined;
+            const secs = parseFloat(timeoutInput.value) || 10;
+            const timeoutMs = Math.round(secs * 1000);
+
+            sendBtn.disabled = true;
+            resultEl.className = 'je-as-broadcast-result';
+            resultEl.textContent = '';
+
+            await sendBroadcast(header, text, timeoutMs, resultEl);
+
+            sendBtn.disabled = false;
+
+            // Auto-collapse after 3 s
+            if (_broadcastCollapseTimer) clearTimeout(_broadcastCollapseTimer);
+            _broadcastCollapseTimer = setTimeout(() => {
+                collapseBroadcastForm(broadcastBtn, form, resultEl, textArea, headerInput, timeoutInput);
+            }, 3000);
+        });
+    };
+
+    const toggleBroadcastForm = (btn, form, resultEl, textArea, headerInput, timeoutInput) => {
+        _broadcastFormOpen = !_broadcastFormOpen;
+        btn.classList.toggle('je-as-broadcast-active', _broadcastFormOpen);
+        form.classList.toggle('je-as-broadcast-form-open', _broadcastFormOpen);
+        if (_broadcastFormOpen) {
+            resultEl.className = 'je-as-broadcast-result';
+            resultEl.textContent = '';
+            textArea.value = '';
+            headerInput.value = '';
+            timeoutInput.value = '10';
+            textArea.focus();
+        }
+    };
+
+    const collapseBroadcastForm = (btn, form, resultEl, textArea, headerInput, timeoutInput) => {
+        _broadcastFormOpen = false;
+        btn.classList.remove('je-as-broadcast-active');
+        form.classList.remove('je-as-broadcast-form-open');
+        resultEl.className = 'je-as-broadcast-result';
+        resultEl.textContent = '';
+        textArea.value = '';
+        headerInput.value = '';
+        timeoutInput.value = '10';
+    };
+
+    const sendBroadcast = async (header, text, timeoutMs, resultEl) => {
+        try {
+            const token = ApiClient?.accessToken?.() || '';
+            const resp = await fetch(ApiClient.getUrl('/JellyfinEnhanced/active-streams/broadcast'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-MediaBrowser-Token': token
+                },
+                body: JSON.stringify({ header: header || null, text, timeoutMs })
+            });
+
+            if (!resp.ok) {
+                const msg = await resp.text().catch(() => resp.statusText);
+                resultEl.className = 'je-as-broadcast-result je-as-broadcast-err';
+                resultEl.textContent = `Error: ${msg}`;
+                return;
+            }
+
+            const data = await resp.json();
+            const errNote = data.errors?.length ? ` (${data.errors.length} error${data.errors.length > 1 ? 's' : ''})` : '';
+            resultEl.className = 'je-as-broadcast-result je-as-broadcast-ok';
+            resultEl.textContent = `Sent to ${data.sent} of ${data.sent + data.skipped} sessions${errNote}`;
+        } catch (err) {
+            resultEl.className = 'je-as-broadcast-result je-as-broadcast-err';
+            resultEl.textContent = `Failed: ${err.message}`;
+        }
+    };
+
     // ── Panel ────────────────────────────────────────────────────────────────
     const togglePanel = () => {
         const panel = document.getElementById('je-active-streams-panel');
@@ -693,6 +1028,11 @@
         const skinHeader = document.querySelector('.skinHeader');
         if (skinHeader) {
             panel.style.top = (skinHeader.getBoundingClientRect().height + 2) + 'px';
+        }
+
+        // Inject broadcast button for admins only
+        if (JE?.currentUser?.Policy?.IsAdministrator === true) {
+            injectBroadcastButton(panel);
         }
 
         _outsideClickListener = (e) => {
@@ -785,10 +1125,12 @@
             stopObserver();
             if (_hashListener) { window.removeEventListener('hashchange', _hashListener); _hashListener = null; }
             if (_outsideClickListener) { document.removeEventListener('click', _outsideClickListener); _outsideClickListener = null; }
+            if (_broadcastCollapseTimer) { clearTimeout(_broadcastCollapseTimer); _broadcastCollapseTimer = null; }
             document.getElementById('je-active-streams')?.remove();
             document.getElementById('je-active-streams-panel')?.remove();
             document.getElementById('je-active-streams-styles')?.remove();
             _panelOpen = false;
+            _broadcastFormOpen = false;
         }
     };
 
