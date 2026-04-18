@@ -594,17 +594,40 @@
         btn.classList.remove('je-as-active', 'je-as-err');
 
         if (!sessions) {
-            iconEl.textContent = 'person_off';
+            iconEl.textContent = 'cast';
             supEl.textContent = '';
             btn.classList.add('je-as-err');
             btn.title = 'Failed to fetch sessions';
         } else {
-            const active = sessions.filter(s => s.NowPlayingItem && !s.PlayState?.IsPaused);
-            const count = active.length;
-            iconEl.textContent = count === 1 ? 'person' : 'group';
-            supEl.textContent = count ? `${count}` : '';
-            if (count) btn.classList.add('je-as-active');
-            btn.title = count ? `${count} active stream${count > 1 ? 's' : ''}` : 'No active streams';
+            const playing = sessions.filter(s => s.NowPlayingItem && !s.PlayState?.IsPaused);
+            const paused  = sessions.filter(s => s.NowPlayingItem &&  s.PlayState?.IsPaused);
+            const total   = playing.length + paused.length;
+
+            if (total === 0) {
+                // Nothing playing — show a neutral "ready" icon, no badge
+                iconEl.textContent = 'play_circle';
+                supEl.textContent = '';
+                btn.title = 'No active streams';
+            } else if (playing.length === 0) {
+                // Everything paused
+                iconEl.textContent = 'pause_circle';
+                supEl.textContent = `${total}`;
+                btn.classList.add('je-as-active');
+                btn.title = `${total} stream${total > 1 ? 's' : ''} paused`;
+            } else if (total === 1) {
+                // Single active stream
+                iconEl.textContent = 'person';
+                supEl.textContent = '1';
+                btn.classList.add('je-as-active');
+                btn.title = '1 active stream';
+            } else {
+                // Multiple streams — show playing count, note paused in tooltip
+                iconEl.textContent = 'group';
+                supEl.textContent = `${total}`;
+                btn.classList.add('je-as-active');
+                const pausedNote = paused.length ? `, ${paused.length} paused` : '';
+                btn.title = `${playing.length} playing${pausedNote}`;
+            }
         }
 
         if (_panelOpen) renderPanel(sessions);
@@ -703,7 +726,7 @@
         const icon = document.createElement('i');
         icon.className = 'material-icons je-as-icon';
         icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = 'person';
+        icon.textContent = 'play_circle';
 
         const sup = document.createElement('span');
         sup.className = 'je-as-sup';
