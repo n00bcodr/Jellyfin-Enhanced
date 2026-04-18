@@ -2370,8 +2370,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (changes.Count > 0)
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
-                else
-                    _logger.Debug($"Saved user settings for {ResolveUserDisplay(authorizedUserId)} (no changes)");
 
                 return Ok(new { success = true, file = "settings.json" });
             }
