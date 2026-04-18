@@ -29,7 +29,15 @@
 
     /**
      * Saves user settings to the server.
+     * For files other than settings.json, skips the POST if the data is identical
+     * to the last saved value (prevents redundant writes for bookmarks, shortcuts etc.).
+     * settings.json is always allowed through on the first save per session because
+     * loadSettings() merges server data with defaults, so the merged result legitimately
+     * differs from the raw stored value and must be written back.
      */
+    // Per-file cache of the last JSON string successfully sent to the server.
+    const _lastSavedJson = {};
+
     JE.saveUserSettings = async (fileName, settings) => {
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
             console.error("🪼 Jellyfin Enhanced: ApiClient not available");
@@ -48,12 +56,26 @@
                 dataToSave = window.JellyfinEnhanced.toPascalCase(settings);
             }
 
+            const serialized = JSON.stringify(dataToSave);
+            const cacheKey = `${userId}:${fileName}`;
+
+            // For non-settings files, skip the POST if nothing has changed.
+            // settings.json is exempt: loadSettings() merges defaults so the first
+            // save per session will always differ from the raw server value — that
+            // write-back is intentional and must not be suppressed.
+            if (fileName !== 'settings.json' && _lastSavedJson[cacheKey] === serialized) {
+                return; // no-op — identical to last save
+            }
+
             await ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
-                data: JSON.stringify(dataToSave),
+                data: serialized,
                 contentType: 'application/json'
             });
+
+            // Update the cache on success so subsequent identical saves are skipped
+            _lastSavedJson[cacheKey] = serialized;
         } catch (e) {
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
         }
