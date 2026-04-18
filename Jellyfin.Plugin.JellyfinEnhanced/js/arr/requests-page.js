@@ -2135,9 +2135,17 @@
 
     const interval = intervalSeconds * 1000;
     state.pollTimer = setInterval(() => {
-      // Re-check visibility on each interval
+      // Stop the timer entirely if the page is no longer visible in any mode —
+      // this catches navigation away via custom tabs / plugin pages where hidePage()
+      // is never called and the timer would otherwise run indefinitely.
       const currentlyVisible = state.pageVisible || state._pluginPageVisible || state._customTabMode;
-      if (currentlyVisible && !state.isLoading) {
+      if (!currentlyVisible) {
+        stopPolling();
+        return;
+      }
+      // Also skip if the browser tab is hidden (user switched tabs / minimised)
+      if (document.visibilityState === 'hidden') return;
+      if (!state.isLoading) {
         loadAllData();
       }
     }, interval);
@@ -2312,7 +2320,8 @@
       console.log(`${logPrefix} handleNavigation matched downloads (hash=${hash} path=${path})`);
       // Show page to win races against Jellyfin's router rendering 404
       showPage();
-    } else if (state.pageVisible) {
+    } else if (state.pageVisible || state._pluginPageVisible) {
+      // Stop polling immediately when navigating away in any mode
       console.log(`${logPrefix} handleNavigation hiding page (hash=${hash} path=${path})`);
       hidePage();
     }
