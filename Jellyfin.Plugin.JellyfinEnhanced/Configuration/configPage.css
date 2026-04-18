@@ -1,0 +1,1052 @@
+/* =============================================================================
+   Jellyfin Enhanced — Config Page Stylesheet
+   ============================================================================= */
+
+/* ---------------------------------------------------------------------------
+   Animations
+   --------------------------------------------------------------------------- */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shake {
+    10%, 90% { transform: translate3d(-1px, 0, 0); }
+    20%, 80% { transform: translate3d(2px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+    40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+.status-check { animation: spin 1s linear infinite; }
+.shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
+
+/* ---------------------------------------------------------------------------
+   Tab navigation
+   --------------------------------------------------------------------------- */
+.jellyfin-tab-button {
+    position: relative;
+    z-index: 1000;
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    transition: color 0.3s, border-bottom 0.3s;
+    border-bottom: 2px solid transparent;
+}
+.jellyfin-tab-button.active {
+    color: var(--primary-accent-color, #fff);
+    border-bottom-color: var(--primary-accent-color, #fff);
+}
+.jellyfin-tab-button h3,
+.jellyfin-tab-button img {
+    pointer-events: none;
+}
+.jellyfin-tab-button img {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    vertical-align: middle;
+    filter: brightness(0.8);
+}
+
+.jellyfin-tab-content {
+    display: none;
+    font-family: inherit;
+}
+.jellyfin-tab-content.active {
+    display: block;
+}
+
+/* ---------------------------------------------------------------------------
+   Settings search bar
+   --------------------------------------------------------------------------- */
+#settingsSearchContainer {
+    margin-left: auto;
+    min-width: 200px;
+    max-width: 320px;
+    flex: 1;
+}
+#settingsSearchContainer > div {
+    position: relative;
+}
+#settingsSearchInput {
+    width: 100%;
+    padding: 0.45em 2.2em 0.45em 2.2em;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    color: #eee;
+    font-size: 0.85em;
+    outline: none;
+    box-sizing: border-box;
+}
+#settingsSearchCount {
+    display: none;
+    position: absolute;
+    right: 2.4em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255,255,255,0.4);
+    font-size: 0.75em;
+    white-space: nowrap;
+}
+#settingsSearchClear {
+    display: none;
+    position: absolute;
+    right: 0.4em;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    padding: 0.2em;
+    font-size: 1em;
+    line-height: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Search highlight utilities
+   --------------------------------------------------------------------------- */
+.je-search-hidden { display: none !important; }
+
+.je-search-match {
+    background-color: rgba(255,200,0,0.35);
+    color: #fff;
+    border-radius: 2px;
+    padding: 0 1px;
+    box-shadow: 0 0 0 1px rgba(255,200,0,0.25);
+}
+.je-search-match-active {
+    background-color: rgba(255,165,0,0.75);
+    box-shadow: 0 0 0 2px rgba(255,165,0,0.5);
+}
+.je-search-tab-label {
+    font-size: 1.15em;
+    font-weight: bold;
+    color: var(--primary-accent-color, #00a4dc);
+    margin-bottom: 0.5em;
+    padding: 0.4em 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* ---------------------------------------------------------------------------
+   Dependency hints / banners
+   --------------------------------------------------------------------------- */
+.dep-hint-text {
+    display: block;
+    font-size: 0.8em;
+    color: #ff9800;
+    margin-top: 2px;
+    font-weight: normal;
+}
+
+/* ---------------------------------------------------------------------------
+   Arr instance cards
+   --------------------------------------------------------------------------- */
+.arr-instance-card {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    margin-bottom: 1em;
+    background: rgba(255,255,255,0.03);
+}
+.arr-instance-card > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.8em 1em;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.arr-instance-card > summary::-webkit-details-marker { display: none; }
+.arr-instance-card > summary::before {
+    content: "\25B6";
+    font-size: 0.7em;
+    transition: transform 0.2s;
+    color: rgba(255,255,255,0.5);
+}
+.arr-instance-card[open] > summary::before {
+    transform: rotate(90deg);
+}
+.arr-instance-card > summary .arr-instance-summary-name {
+    flex: 1;
+    font-weight: 500;
+}
+.arr-instance-card > summary .arr-instance-summary-url {
+    color: rgba(255,255,255,0.4);
+    font-size: 0.85em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+.arr-instance-card-body {
+    padding: 0 1em 1em;
+}
+.arr-instance-card-body .arr-instance-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+.arr-instance-card-body .arr-instance-header input {
+    flex: 1;
+}
+.arr-instance-card > summary .arr-instance-enabled {
+    flex: 0 0 auto;
+    cursor: pointer;
+    margin: 0 0.25em 0 0;
+    width: 1.15em;
+    height: 1.15em;
+}
+.arr-instance-card.arr-instance-disabled {
+    opacity: 0.6;
+}
+.arr-instance-card.arr-instance-disabled > summary .arr-instance-enabled {
+    /* Checkbox stays full-opacity so the admin can see + click to re-enable
+       even when the rest of the card is dimmed. */
+    opacity: 1;
+}
+.arr-instance-card.arr-instance-disabled > summary .arr-instance-summary-name {
+    text-decoration: line-through;
+    color: rgba(255,255,255,0.55);
+}
+.arr-instance-remove {
+    background: transparent;
+    border: 1px solid rgba(255,80,80,0.5);
+    color: #ff5050;
+    border-radius: 4px;
+    padding: 0.3em 0.6em;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.arr-instance-remove:hover {
+    background: rgba(255,80,80,0.15);
+}
+.arr-add-btn {
+    margin-top: 0.5em;
+    margin-bottom: 1em;
+}
+
+/* ---------------------------------------------------------------------------
+   Arr corrupt-config banner
+   --------------------------------------------------------------------------- */
+.arr-corrupt-banner {
+    padding: 0.8em 1em;
+    margin-bottom: 1em;
+    border: 1px solid #dc3545;
+    background: rgba(220,53,69,0.15);
+    border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Arr mappings validation result box
+   --------------------------------------------------------------------------- */
+#arrMappingsValidationResult {
+    display: none;
+    margin-top: 0.8em;
+    padding: 0.8em 1em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------------------
+   Section title header row
+   --------------------------------------------------------------------------- */
+.sectionTitleContainer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em;
+}
+
+/* ---------------------------------------------------------------------------
+   Page-level color
+   --------------------------------------------------------------------------- */
+#JellyfinEnhancedPage {
+    color: #eee;
+}
+
+/* ---------------------------------------------------------------------------
+   Help link button in header
+   --------------------------------------------------------------------------- */
+.je-help-link {
+    margin-left: 2em;
+}
+
+/* ---------------------------------------------------------------------------
+   Tab bar wrapper
+   --------------------------------------------------------------------------- */
+.je-tab-bar {
+    margin-bottom: 1em;
+}
+
+/* (duplicate #settingsSearchContainer > div already declared above) */
+.je-search-icon {
+    position: absolute;
+    left: 0.6em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255,255,255,0.4);
+    pointer-events: none;
+    font-size: 1.1em;
+}
+
+/* ---------------------------------------------------------------------------
+   File Transformation warning banner  (#fileTransformationWarning is shown/hidden by JS)
+   --------------------------------------------------------------------------- */
+#fileTransformationWarning {
+    margin-bottom: 1em;
+    padding: 1em 1.2em;
+    background-color: rgba(255, 165, 0, 0.15);
+    border: 1px solid rgba(255, 165, 0, 0.5);
+    border-radius: 8px;
+    color: #ffcc00;
+    font-size: 0.95em;
+    line-height: 1.5;
+    position: relative;
+}
+.je-ft-warning-title {
+    font-size: 1.05em;
+}
+.je-ft-warning-link {
+    color: #ffa500;
+    text-decoration: underline;
+}
+.je-ft-warning-code {
+    background: rgba(255,255,255,0.1);
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+.je-ft-warning-actions {
+    margin-top: 0.8em;
+    display: flex;
+    gap: 0.6em;
+}
+.je-ft-warning-btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,165,0,0.4);
+    color: #ffcc00;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+
+/* ---------------------------------------------------------------------------
+   Collapsible details sections  (used throughout all tabs)
+   --------------------------------------------------------------------------- */
+.je-details-section {
+    margin-bottom: 1em;
+    background-color: rgba(255,255,255,0.05);
+    padding: 1em;
+    border-radius: 5px;
+}
+.je-details-section > summary {
+    cursor: pointer;
+    font-weight: bold;
+}
+.je-details-body {
+    padding-top: 1em;
+}
+
+/* ---------------------------------------------------------------------------
+   Checkbox containers — standard bottom margin
+   --------------------------------------------------------------------------- */
+.checkboxContainer {
+    margin-bottom: 0.5em;
+}
+
+/* ---------------------------------------------------------------------------
+   fieldDescription spacing variants
+   Use je-field-desc-sm/md/lg/xl for bottom-margin only.
+   Add je-field-desc-small-text for the 0.8em font-size variant.
+   --------------------------------------------------------------------------- */
+.je-field-desc-sm  { margin-bottom: 0.5em; }
+.je-field-desc-md  { margin-bottom: 1em; }
+.je-field-desc-lg  { margin-bottom: 1.5em; }
+.je-field-desc-xl  { margin-bottom: 2em; }
+
+/* Small font (0.8em) — combine with a spacing class as needed */
+/* .je-field-desc-small-text available if needed: font-size: 0.8em */
+
+/* Convenience combos used in the HTML */
+.je-field-desc-sm-font-lg  { margin-bottom: 1.5em; font-size: 0.8em; }
+.je-field-desc-sm-font-xl  { margin-bottom: 2em;   font-size: 0.8em; }
+
+/* Top-margin only variant */
+.je-field-desc-mt    { margin-top: 1em; }
+.je-field-desc-mt-sm { margin-top: 0.5em; }
+
+/* ---------------------------------------------------------------------------
+   Spacing utilities — margin-top / margin-bottom helpers
+   --------------------------------------------------------------------------- */
+/* Top margin */
+.je-mt-sm  { margin-top: 0.5em; }
+.je-mt-md  { margin-top: 1em; }
+.je-mt-lg  { margin-top: 1.5em; }
+.je-mt-xl  { margin-top: 2em; }
+
+/* Bottom margin */
+.je-mb-sm  { margin-bottom: 0.5em; }
+.je-mb-md  { margin-bottom: 1em; }
+.je-mb-lg  { margin-bottom: 1.5em; }
+.je-mb-xl  { margin-bottom: 2em; }
+
+/* Legacy aliases kept for HTML compatibility */
+.je-input-mt       { margin-top: 1em; }
+.je-input-mb       { margin-bottom: 1em; }
+.je-input-mb-sm    { margin-bottom: 0.5em; }
+.je-checkbox-mt    { margin-top: 1em; }
+.je-checkbox-mt-2  { margin-top: 2em; margin-bottom: 0.5em; }
+.je-checkbox-mb-1  { margin-bottom: 1em; }
+.je-checkbox-mb-2  { margin-bottom: 2em; }
+.je-checkbox-mb-075 { margin-bottom: 0.75em; }
+.je-checkbox-mb-15 { margin-bottom: 1.5em; }
+.je-select-mb      { margin-bottom: 1.5em; }
+.je-apply-section  { margin-top: 2em; }
+.je-label-mb       { margin-bottom: 2em; }
+
+/* ---------------------------------------------------------------------------
+   Tags sub-fieldset
+   --------------------------------------------------------------------------- */
+.je-tags-fieldset {
+    margin-top: 1em;
+    padding: 2em;
+    border-radius: 20px;
+    border-color: #ffffff25;
+}
+
+
+.je-rating-label {
+    line-height: 1.2em;
+    align-self: flex-start;
+}
+
+/* ---------------------------------------------------------------------------
+   Divider sections — shared border pattern
+   --------------------------------------------------------------------------- */
+/* Bottom-border dividers */
+.je-icon-section,
+.je-section-panel {
+    margin-bottom: 2em;
+    padding-bottom: 1.5em;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+/* Top-border dividers */
+.je-extras-divider,
+.je-custom-links-section {
+    margin-top: 2em;
+    padding-top: 1.5em;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+/* ---------------------------------------------------------------------------
+   Shortcuts section
+   --------------------------------------------------------------------------- */
+.je-section-h4 { margin-top: 0; }
+.je-shortcut-add-row {
+    display: flex;
+    gap: 1em;
+    align-items: flex-end;
+}
+.je-shortcut-add-row > div { flex: 1; }
+.je-shortcut-add-btn {
+    top: 10px;
+}
+#shortcut-error-comment {
+    color: #ffdddd;
+    font-size: 0.9em;
+    margin-top: 0.75em;
+    background-color: rgba(220, 53, 69, 0.2);
+    padding: 0.5em;
+    border-radius: 4px;
+    border-left: 3px solid #dc3545;
+}
+.je-shortcut-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 1em;
+}
+.je-field-desc-mt {
+    margin-top: 1em;
+}
+
+/* ---------------------------------------------------------------------------
+   Info / note / warning banners
+   All banners share a base shape. Color and spacing vary per modifier.
+   --------------------------------------------------------------------------- */
+
+/* Shared base */
+.je-info-banner,
+.je-info-banner-inline,
+.je-info-banner-inline-center,
+.je-info-banner-compact,
+.je-note-banner,
+.je-danger-banner,
+.je-purple-banner,
+.je-mobile-banner,
+.je-splash-info-banner {
+    border-left-width: 4px;
+    border-left-style: solid;
+    border-radius: 4px;
+    display: flex;
+    gap: 1em;
+}
+
+/* Blue — info */
+.je-info-banner,
+.je-info-banner-inline,
+.je-info-banner-inline-center,
+.je-info-banner-compact,
+.je-splash-info-banner {
+    background-color: rgba(255,255,255,0.05);
+    border-left-color: #00a4dc;
+}
+/* The non-inline variant has a slightly stronger tint */
+.je-info-banner {
+    background-color: rgba(0,164,220,0.1);
+}
+
+/* Yellow — note / mobile */
+.je-note-banner,
+.je-mobile-banner {
+    background-color: rgba(255,193,7,0.1);
+    border-left-color: #ffc107;
+}
+
+/* Red — danger */
+.je-danger-banner {
+    background-color: rgba(220,53,69,0.1);
+    border-left-color: #dc3545;
+}
+
+/* Purple — Seerr affiliation */
+.je-purple-banner {
+    background-color: rgba(100,50,150,0.08);
+    border-left-color: #9b59b6;
+}
+
+/* Padding variants */
+.je-info-banner,
+.je-info-banner-inline,
+.je-info-banner-inline-center,
+.je-purple-banner,
+.je-mobile-banner {
+    padding: 1em 1.5em;
+}
+.je-info-banner-compact,
+.je-note-banner,
+.je-danger-banner,
+.je-splash-info-banner {
+    padding: 0.5em 1em;
+}
+
+/* Margin variants */
+.je-info-banner                { margin-top: 1em; }
+.je-info-banner-inline,
+.je-info-banner-inline-center,
+.je-purple-banner              { margin: 1.5em 0; }
+.je-mobile-banner              { margin: 1em 0; }
+.je-info-banner-compact,
+.je-note-banner,
+.je-danger-banner              { margin: 0 0 1.5em 0; }
+.je-splash-info-banner         { margin: 2em 0 0.5em 0; }
+
+/* Alignment variants */
+.je-info-banner-inline,
+.je-mobile-banner              { align-items: flex-start; }
+.je-info-banner-inline-center,
+.je-info-banner-compact,
+.je-note-banner,
+.je-danger-banner,
+.je-purple-banner,
+.je-splash-info-banner         { align-items: center; }
+
+/* Row inside non-flex banners */
+.je-info-banner-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1em;
+}
+
+/* Icons */
+.je-info-icon,
+.je-bottom-info-icon {
+    color: #00a4dc;
+    font-size: 24px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+.je-info-icon-sm {
+    color: #00a4dc;
+    font-size: 18px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+.je-note-icon,
+.je-mobile-icon {
+    color: #ffc107;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.je-mobile-icon { margin-top: 2px; }
+.je-danger-icon {
+    color: #dc3545;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.je-purple-icon {
+    color: #9b59b6;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Elsewhere tab
+   --------------------------------------------------------------------------- */
+.je-elsewhere-checkbox {
+    margin-bottom: 2em;
+}
+.je-elsewhere-label {
+    line-height: 1.2em;
+    align-self: flex-start;
+}
+.je-api-row {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+    margin-left: -1em;
+}
+.je-api-input {
+    flex-grow: 1;
+}
+.je-status-indicator {
+    transition: color 0.3s ease;
+}
+.je-textarea-tall   { display: block; height: 10vh !important; }
+.je-textarea-medium { display: block; height: 8vh !important; }
+.je-textarea-large  { display: block; height: 12vh !important; }
+.je-h3-mt    { margin-top: 1em; }
+.je-h3-mt-lg { margin-top: 2.5em; }
+
+/* ---------------------------------------------------------------------------
+   Jellyseerr tab
+   --------------------------------------------------------------------------- */
+.je-seerr-label { margin-bottom: 5px; }
+
+/* je-seerr-details shares the same shape as je-details-section */
+.je-seerr-details {
+    margin: 2em 0;
+    background-color: rgba(255,255,255,0.05);
+    padding: 1em;
+    border-radius: 5px;
+}
+.je-seerr-details > summary {
+    cursor: pointer;
+    font-weight: bold;
+}
+.je-validation-result { margin-top: 0.8em; }
+/* je-input-mb is defined in spacing utilities above */
+
+/* ---------------------------------------------------------------------------
+   Auto movie request — custom settings panel
+   --------------------------------------------------------------------------- */
+#autoMovieRequestCustomSettings {
+    margin-bottom: 1.5em;
+    padding: 1em;
+    background-color: rgba(255,255,255,0.03);
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.je-custom-settings-row {
+    margin-bottom: 1em;
+}
+/* je-custom-settings-label and je-trigger-label are identical */
+.je-custom-settings-label,
+.je-trigger-label {
+    display: block;
+    margin-bottom: 0.5em;
+    font-weight: 500;
+}
+.je-trigger-section {
+    margin-bottom: 1.5em;
+}
+.je-quality-mode-section {
+    margin-bottom: 1.5em;
+    margin-top: 1.5em;
+}
+.je-minutes-input {
+    width: 100px;
+    padding: 0.5em;
+    border: 1px solid #555;
+    border-radius: 4px;
+}
+.je-minutes-label { margin-left: 0.5em; }
+
+/* ---------------------------------------------------------------------------
+   Watchlist memory retention
+   --------------------------------------------------------------------------- */
+.je-retention-input {
+    width: 100px;
+}
+.je-retention-list {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+.je-retention-list li {
+    margin-bottom: 0.3em;
+}
+
+/* ---------------------------------------------------------------------------
+   Blocked users panel
+   --------------------------------------------------------------------------- */
+#blockedUsersContainer {
+    padding: 0.5em 0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.je-blocked-user-row {
+    margin-bottom: 0.3em;
+}
+#blockedUsersScrollHint {
+    text-align: center;
+    font-size: 0.75em;
+    opacity: 0.45;
+    margin-top: 0.3em;
+    pointer-events: none;
+}
+.je-import-btn {
+    max-width: 300px;
+}
+
+/* ---------------------------------------------------------------------------
+   *arr tab
+   --------------------------------------------------------------------------- */
+.je-arr-hr {
+    border-color: rgba(255,255,255,0.1);
+    margin: 1.5em 0;
+}
+.je-arr-bazarr-container {
+    margin-top: 1em;
+    margin-bottom: 2em;
+}
+.je-arr-mappings-section {
+    margin-top: 1em;
+}
+.je-arr-mappings-label {
+    margin-bottom: 5px;
+}
+.je-arr-validate-section {
+    margin-top: 1em;
+}
+.je-arr-checkbox-mt {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+}
+
+/* ---------------------------------------------------------------------------
+   Calendar tab
+   --------------------------------------------------------------------------- */
+.je-calendar-checkbox-mt {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Extras tab — screenshot previews
+   --------------------------------------------------------------------------- */
+.je-screenshot-img {
+    max-width: 400px;
+    margin: 0.5em 0;
+    border-radius: 10px;
+}
+.je-screenshot-img-sm {
+    max-width: 200px;
+    margin: 0.5em 0;
+    border-radius: 10px;
+}
+/* je-extras-divider is defined in the divider sections block above */
+
+/* ---------------------------------------------------------------------------
+   Custom Branding section
+   --------------------------------------------------------------------------- */
+.je-branding-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5em;
+    margin-bottom: 1.5em;
+    align-items: stretch;
+}
+.je-branding-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    height: 100%;
+}
+.je-branding-label-bold {
+    font-weight: bold;
+    color: #eee;
+}
+.je-branding-label {
+    color: #eee;
+}
+.je-branding-meta {
+    font-size: 0.75em;
+    color: #999;
+    margin-bottom: 0.5em;
+}
+.je-branding-dropzone {
+    position: relative;
+    background: rgba(255,255,255,0.05);
+    border: 2px dashed rgba(0,164,220,0.5);
+    border-radius: 4px;
+    padding: 0.85em;
+    text-align: center;
+    cursor: pointer;
+    min-height: 170px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+}
+.je-branding-placeholder {
+    margin-bottom: 0.5em;
+}
+.je-branding-placeholder-icon {
+    font-size: 32px;
+    color: #00a4dc;
+}
+.je-branding-preview {
+    max-height: 80px;
+    border-radius: 4px;
+    display: block;
+    margin: 0 auto .5em auto;
+}
+.je-branding-dimensions {
+    font-size: 0.75em;
+    color: #00a4dc;
+    margin-top: 0.25em;
+}
+.je-branding-hint {
+    font-size: 0.9em;
+    color: #ccc;
+}
+.je-branding-maxsize {
+    font-size: 0.8em;
+    color: #999;
+    margin-top: 0.5em;
+}
+.je-branding-status {
+    font-size: 0.8em;
+    margin-top: 0.5em;
+    color: #999;
+}
+.je-branding-delete {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0,0,0,0.4) !important;
+    border: none;
+    color: #fff !important;
+    padding: 6px !important;
+    border-radius: 4px !important;
+}
+.je-branding-delete:hover {
+    background: #c62828 !important;
+}
+.je-branding-file-input {
+    display: none;
+}
+.je-copy-code-wrapper {
+    position: relative;
+}
+.je-copy-html-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background-color: rgba(255,255,255,0.1);
+    border: none;
+    padding: 4px 8px;
+    min-width: 80px;
+    transition: color 0.3s;
+}
+.je-copy-icon {
+    font-size: 16px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.je-copy-btn-text {
+    vertical-align: middle;
+}
+.je-code-pre {
+    background-color: rgba(0,0,0,0.3);
+    padding: 1em;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    font-family: 'Courier New', Courier, monospace;
+}
+.je-custom-tabs-link {
+    text-decoration: underline;
+}
+.je-custom-tabs-ol {
+    margin: 1em 0;
+    padding-left: 1.5em;
+}
+.je-custom-tabs-li {
+    margin-bottom: 0.5em;
+}
+.je-custom-tabs-p {
+    margin: 0 0 0.5em 0;
+}
+.je-custom-tabs-p-mt {
+    margin: 0.5em 0;
+}
+.je-custom-tabs-h4 {
+    margin: 0 0 0.5em 0;
+}
+/* je-custom-tabs-desc-mt removed — not used in HTML */
+
+/* ---------------------------------------------------------------------------
+   Bookmarks / Hidden Content — how-to list
+   --------------------------------------------------------------------------- */
+.je-howto-list {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+.je-howto-li {
+    margin-bottom: 0.5em;
+}
+.je-kbd {
+    background: rgba(255,255,255,0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+.je-icon-inline {
+    font-size: 16px;
+    vertical-align: middle;
+}
+.je-icon-inline-colored {
+    font-size: 16px;
+    vertical-align: middle;
+    color: #00d4ff;
+}
+
+/* ---------------------------------------------------------------------------
+   Splash screen section
+   --------------------------------------------------------------------------- */
+/* je-splash-info-banner is defined in the banners section above */
+
+/* ---------------------------------------------------------------------------
+   Arr instance card — JS-created elements
+   --------------------------------------------------------------------------- */
+.arr-instance-summary-disabled {
+    color: #e5a00d;
+    font-size: 0.85em;
+    margin-right: 0.5em;
+}
+.je-mappings-summary {
+    cursor: pointer;
+    color: rgba(255,255,255,0.6);
+    font-size: 0.9em;
+}
+/* Both containers share the same top margin */
+.je-mappings-details,
+.je-instance-url-container,
+.je-instance-api-container { margin-top: 0.5em; }
+
+.je-instance-api-row {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+}
+/* Both inputs take remaining flex space */
+.je-instance-api-input,
+.je-instance-name-input { flex: 1; }
+
+/* ---------------------------------------------------------------------------
+   Dep banner (created by JS)
+   --------------------------------------------------------------------------- */
+.je-dep-banner {
+    background-color: rgba(255, 165, 0, 0.15);
+    border-left: 4px solid #ff9800;
+    border-radius: 4px;
+    padding: 0.8em 1.2em;
+    margin: 0.5em 0 1.5em 0;
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+}
+.je-dep-banner.je-hidden {
+    display: none !important;
+}
+.je-dep-banner-icon {
+    color: #ff9800;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+.je-dep-banner-text {
+    font-size: 0.9em;
+}
+.je-dep-banner-hint {
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+
+/* ---------------------------------------------------------------------------
+   Corrupt banner (created by JS)
+   --------------------------------------------------------------------------- */
+.arr-corrupt-banner {
+    padding: 0.8em 1em;
+    margin-bottom: 1em;
+    border: 1px solid #dc3545;
+    background: rgba(220,53,69,0.15);
+    border-radius: 4px;
+}
+.je-corrupt-detail {
+    margin-top: 0.3em;
+}
+.je-corrupt-reset-btn {
+    margin-top: 0.6em;
+}
+
+/* ---------------------------------------------------------------------------
+   Validation result divs (shown/hidden by JS — only base styles here)
+   --------------------------------------------------------------------------- */
+#seerrMappingsValidationResult {
+    margin-top: 0.8em;
+    padding: 0.8em 1em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+/* je-validation-issue removed — not used in HTML (JS uses inline styles for validation result items) */
+
+/* je-custom-links-section is defined in the divider sections block above */
+.je-custom-links-input { margin-bottom: 1em; }
+.je-custom-links-desc  { margin-top: 0.5em; }
+
+/* ---------------------------------------------------------------------------
+   Details section summary (cursor + bold)
+   — same as .je-details-section > summary, kept as standalone for JS-created elements
+   --------------------------------------------------------------------------- */
+.je-details-section-summary {
+    cursor: pointer;
+    font-weight: bold;
+}
+
+/* ---------------------------------------------------------------------------
+   Misc small utilities
+   --------------------------------------------------------------------------- */
+.je-shortcut-flex      { flex: 1; }
+.je-blocked-count      { opacity: 0.7; font-weight: normal; }
+.je-elsewhere-subtitle { font-size: 0.9em; }
+.je-loading-text       { opacity: 0.5; }
+.je-bold-link          { text-decoration: underline; font-weight: bolder; }
+
+/* Screenshot details/summary */
+.je-screenshot-details  { margin: 0.5em 0; }
+.je-screenshot-summary  { cursor: pointer; color: #00a4dc; }

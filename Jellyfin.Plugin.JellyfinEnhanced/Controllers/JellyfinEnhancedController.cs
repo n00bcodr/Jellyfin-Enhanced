@@ -1747,10 +1747,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public ActionResult GetMainScript() => GetScriptResource("js/plugin.js");
         [HttpGet("js/{**path}")]
         public ActionResult GetScript(string path) => GetScriptResource($"js/{path}");
-        // Config-page stylesheet lives in Configuration/ next to configPage.html. Keeping
-        // admin UI assets in one folder matches the on-disk convention the maintainer prefers.
-        [HttpGet("Configuration/arr-instances.css")]
-        public ActionResult GetArrInstancesStylesheet() => GetScriptResource("Configuration/arr-instances.css");
+        // Config-page stylesheet lives in Configuration/ next to configPage.html.
+        [HttpGet("Configuration/configPage.css")]
+        public ActionResult GetConfigPageStylesheet() => GetScriptResource("Configuration/configPage.css");
         [HttpGet("version")]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
