@@ -94,7 +94,7 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 ### Seerr integration not connecting?
 
 <!-- todo -->
-<!-- ![Seerr Settings](images/jellyseerr.png) -->
+<!-- ![Seerr Settings](../images/jellyseerr.png) -->
 
 **Check Configuration:**
 
@@ -119,7 +119,7 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 3. Import your Jellyfin users
 
 <!-- todo -->
-<!-- ![Jellyfin Sign-In](images/jellyfin-signin.png) -->
+<!-- ![Jellyfin Sign-In](../images/jellyfin-signin.png) -->
 
 **Import Users:**
 
@@ -143,9 +143,9 @@ Option B (manual in Seerr):
 
 **User Access:**
 
-- Users WITH access: ![Users with access](images/users-with-access.png)
+- Users WITH access: ![Users with access](../images/users-with-access.png)
 
-- Users WITHOUT access: ![Users without access](images/users-no-access.png)
+- Users WITHOUT access: ![Users without access](../images/users-no-access.png)
 <!-- todo -->
 
 **Check Logs:**

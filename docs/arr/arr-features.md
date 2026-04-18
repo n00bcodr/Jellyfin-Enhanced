@@ -35,16 +35,49 @@ The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to ***arr Settings** tab
 3. Check **"Enable *arr Links"**
-4. Enter your URLs:
-   - **Sonarr URL** - Your Sonarr instance URL
-   - **Radarr URL** - Your Radarr instance URL
-   - **Bazarr URL** - Your Bazarr instance URL (optional)
-5. Optional: Check **"Show *arr Links as Text"** for text links instead of icons
-6. Click **Save**
+4. Add one or more Sonarr and/or Radarr instances (see [Multi-Instance Support](#multi-instance-support) below)
+5. Optionally add a **Bazarr URL** for subtitle management links
+6. Optional: Check **"Show *arr Links as Text"** for text links instead of icons
+7. Click **Save**
+
+### Multi-Instance Support
+
+You can configure multiple Sonarr instances and multiple Radarr instances — useful for separate libraries (e.g., TV vs Anime, HD vs 4K).
+
+**Each instance has:**
+
+| Field | Description |
+|---|---|
+| **Name** | Display name shown in dropdowns (e.g., "TV Shows", "Anime", "4K Movies") |
+| **URL** | Base URL of the instance (e.g., `http://192.168.1.100:8989`) |
+| **API Key** | API key for authenticating with the instance |
+| **URL Mappings** | Optional per-instance URL remapping (see below) |
+| **Enabled** | Toggle to disable an instance without deleting it |
+
+**Adding instances:**
+
+1. Open plugin settings → ***arr Settings** tab
+2. Click **"Add Sonarr Instance"** or **"Add Radarr Instance"**
+3. Fill in Name, URL, and API Key
+4. Click **Save**
+
+**Disabling an instance:**
+
+Toggle the **Enabled** switch off to temporarily disable an instance (e.g., during maintenance). The instance remains in config with its URL and API key intact — re-enable it at any time without re-entering credentials.
+
+**How links behave with multiple instances:**
+
+- **Single matching instance** — renders as a plain icon link (no badge clutter). Enable **"Show status badge for single-instance links"** to always show the status border and episode/file count.
+- **Multiple matching instances** — the link becomes a dropdown button. Click it to see each instance with:
+    - A colour-coded status dot (green = complete, amber = partial, grey = missing)
+    - Episode count or download status
+    - File size on disk
+
+**Calendar and Requests pages** fan out across all enabled instances automatically.
 
 ### URL Mappings
 
-Map internal and external URLs for different network contexts.
+Map internal and external URLs for different network contexts. Mappings can be set globally (legacy fields) or per-instance.
 
 **Format:**
 ```text
@@ -59,12 +92,19 @@ http://radarr:7878|https://radarr.example.com
 
 **Use Case:** Different URLs for local network vs remote access.
 
+### Legacy Single-Instance Fields
+
+The original `SonarrUrl`, `SonarrApiKey`, `RadarrUrl`, and `RadarrApiKey` fields are preserved for downgrade safety. If no instances are configured in the new multi-instance list, the plugin automatically falls back to these legacy fields so existing setups continue working without any migration step.
+
+!!! note
+    After adding instances via the new UI, the legacy fields are no longer used for arr links. They remain in config and are not deleted, so downgrading to an older plugin version restores the previous single-instance behaviour.
+
 ### Usage
 
 **On Item Detail Pages:**
 1. Open any movie or TV show
-2. Look for *arr link icons in external links section
-3. Click to open item in respective *arr application
+2. Look for *arr link icons in the external links section
+3. Click to open the item in the respective *arr application, or click the dropdown to choose an instance
 
 **Visibility:**
 - Only visible to administrators

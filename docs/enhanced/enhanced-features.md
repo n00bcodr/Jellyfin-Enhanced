@@ -392,6 +392,63 @@ Display age and birthplace information for cast members.
 
 These are optional scripts from the developer's personal collection.
 
+### 📡 Active Streams Widget
+
+A live stream counter in the Jellyfin header that shows who is currently playing and what they're watching.
+
+**Features:**
+- Stream counter icon in the header, colour-coded by state
+- Click to open a panel listing every active session
+- Poster thumbnails and user avatars per session
+- Direct Play vs Transcoding badges with codec and bitrate details
+- Playback progress bar with current position and total duration
+- Playing / Paused state badge per session
+- Clickable title links to the item detail page
+- Admin-only broadcast button to message all active sessions
+- Polls every 15 seconds; updates automatically while the panel is open
+
+**Header icon states:**
+
+| Icon | State |
+|---|---|
+| `play_circle` (no badge) | No active streams |
+| `person` + badge `1` | One stream playing |
+| `group` + badge count | Multiple streams |
+| `pause_circle` + badge count | All streams paused |
+| Red icon | Failed to fetch sessions |
+
+**Session card details:**
+
+Each card in the panel shows:
+- Poster thumbnail (series poster for episodes, movie poster for films)
+- Title and episode info (S01E01 · Episode Name)
+- Playing / Paused badge
+- Progress bar with elapsed / total time
+- Playback badges: `Direct Play` or `Transcoding`, video codec, bitrate, resolution, framerate
+- Transcode reason (e.g., "Video Codec Not Supported") when applicable
+- User avatar, username, client name, and device name
+- IP address (admins only)
+
+**Broadcast (admin only):**
+
+Admins see a megaphone icon (📣) in the panel header. Click it to open the broadcast form:
+
+| Field | Required | Notes |
+|---|---|---|
+| **Title** | No | May not display on all clients (web UI typically ignores it) |
+| **Message** | Yes | Always visible; sent to every active session |
+| **Timeout** | Yes | Seconds before the notification auto-dismisses (default: 10) |
+
+**Setup:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Other Settings** tab
+3. Enable **"Active Streams Widget"**
+4. Optional: Enable **"Show to all users"** to make the widget visible to non-admin users
+
+!!! note
+    By default the widget is admin-only. Non-admin users see a read-only view (no broadcast button, no IP addresses) when "Show to all users" is enabled.
+
 ### 🎨 Colored Activity Icons
 
 Replace default activity icons with Material Design icons.

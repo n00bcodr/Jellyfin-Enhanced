@@ -114,7 +114,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 | Jellyfin Web UI | ✅ Full | All features available |
 | Android App | ✅ Full | Official app with embedded web UI |
 | iOS App | ✅ Full | Official app with embedded web UI |
-| Desktop Apps | ✅ Full | JMP, Jellyfin Desktop v2.0.0+ |
+| Desktop Apps | ✅ Full | Jellyfin Desktop v2.0.0+ (currently unreleased) |
 | Android TV | ❌ Not Supported, but auto-season, movie requests work| Native app, no web UI |
 | Third-party Apps | ❌ Not Supported, but auto-season, movie requests work | Depends on embedded web UI |
 

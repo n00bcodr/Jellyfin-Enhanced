@@ -105,7 +105,7 @@ Personal scripts from the developer's collection.
 
 Replace default activity icons with Material Design icons with custom colors.
 
-![Colored Activity Icons](images/colored-activity-icons.png)
+![Colored Activity Icons](../images/colored-activity-icons.png)
 
 **Features:**
 - Custom colors for each activity type
@@ -122,7 +122,7 @@ Replace default activity icons with Material Design icons with custom colors.
 
 Color-coded backgrounds for ratings on detail pages.
 
-![Colored Ratings](images/ratings.png)
+![Colored Ratings](../images/ratings.png)
 
 **Features:**
 - Different colors per rating type
@@ -138,7 +138,7 @@ Color-coded backgrounds for ratings on detail pages.
 
 Show user profile images on manual login page.
 
-![Login Image](images/login-image.png)
+![Login Image](../images/login-image.png)
 
 **Features:**
 - Display user avatars
@@ -154,7 +154,7 @@ Show user profile images on manual login page.
 
 Replace default plugin icons with Material Design icons.
 
-![Plugin Icons](images/plugin-icons.png)
+![Plugin Icons](../images/plugin-icons.png)
 
 **Features:**
 - Custom icons for popular plugins
@@ -184,7 +184,7 @@ Custom Plugin|https://example.com/config
 
 Choose from multiple Jellyfin theme color variants.
 
-![Theme Selector](images/theme-selector.png)
+![Theme Selector](../images/theme-selector.png)
 
 **Features:**
 - Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
@@ -210,6 +210,41 @@ Choose from multiple Jellyfin theme color variants.
 - Sunset
 - Forest
 - And more...
+
+
+
+### Active Streams Widget
+
+![Active Streams](../images/active-stream.png)
+
+#### Admin Configuration
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Other Settings** tab
+3. Enable **"Active Streams Widget"**
+4. Optional: Enable **"Show to all users"**
+5. Click **Save**
+
+#### Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| **Active Streams Widget** | Off | Adds the stream counter icon to the Jellyfin header |
+| **Show to all users** | Off | When enabled, non-admin users also see the widget (read-only, no broadcast, no IP addresses) |
+
+#### Broadcast Form Fields
+
+Admins can send a message to all active sessions from the panel header (megaphone icon):
+
+| Field | Required | Description |
+|---|---|---|
+| **Title** | No | Optional heading; may not display on web UI clients |
+| **Message** | Yes | The message body; always visible on all clients |
+| **Timeout (s)** | Yes | Seconds before the notification auto-dismisses (default: 10) |
+
+!!! warning
+    The Title field may not render on the Jellyfin web client. Always put the important information in the Message field.
+
 
 ---
 
