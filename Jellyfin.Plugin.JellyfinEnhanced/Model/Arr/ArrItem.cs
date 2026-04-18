@@ -1,4 +1,5 @@
 
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
@@ -141,6 +142,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         /// </summary>
         [JsonPropertyName("tmdbId")]
         public int? TmdbId { get; set; }
+
+        /// <summary>
+        /// User-assigned instance name (e.g., "Anime", "4K Movies").
+        /// Used to differentiate items from multiple Sonarr/Radarr instances.
+        /// </summary>
+        [JsonPropertyName("instanceName")]
+        public string? InstanceName { get; set; }
+
+        /// <summary>
+        /// Other instance names that also contain this item (populated during dedup).
+        /// Empty when the item exists in only one instance. The UI can use this to show
+        /// "also in: X, Y" context in tooltips so users see which other instances have the item.
+        /// </summary>
+        [JsonPropertyName("alsoInInstances")]
+        public List<string>? AlsoInInstances { get; set; }
 
         /// <summary>
         /// Root folder path from Sonarr/Radarr (used server-side for library access fallback).

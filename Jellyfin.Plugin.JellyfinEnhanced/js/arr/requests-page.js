@@ -747,12 +747,51 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       state.downloads = data.items || [];
+      // Surface per-instance queue errors so a 401 / timeout / SSRF-reject on one
+      // instance doesn't silently produce a "looks empty" downloads page.
+      surfaceDownloadsErrors(data.errors);
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch downloads:`, error);
       state.downloads = [];
       return null;
     }
+  }
+
+  // Once-per-session dedup. Self-heals: when an error stops appearing in a subsequent fetch
+  // the memo entry is dropped so future occurrences re-toast.
+  const _toastedDownloadsErrors = new Set();
+  // Alias the shared HTML-escape helper (JE.toast uses innerHTML).
+  // The inline fallback is a real escaper so XSS is blocked even if helpers.js
+  // hasn't loaded yet (e.g. a load-order race on first init).
+  const esc = (s) => {
+    if (window.JellyfinEnhanced?.helpers?.escHtml) return window.JellyfinEnhanced.helpers.escHtml(s);
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  };
+  function surfaceDownloadsErrors(errors) {
+    if (!Array.isArray(errors) || errors.length === 0) {
+      _toastedDownloadsErrors.clear();
+      return;
+    }
+    const seenThisTick = new Set();
+    errors.forEach(function(err) {
+      const key = (err.source || "") + "|" + (err.instanceName || "") + "|" + (err.reason || "");
+      seenThisTick.add(key);
+      if (_toastedDownloadsErrors.has(key)) return;
+      _toastedDownloadsErrors.add(key);
+      if (typeof window.JellyfinEnhanced?.toast === "function") {
+        window.JellyfinEnhanced.toast(
+          "⚠ " + esc(err.source || "Arr") + " queue \"" +
+          esc(err.instanceName || "unknown") + "\" failed: " + esc(err.reason)
+        );
+      }
+      console.warn(`${logPrefix} ${err.source || "Arr"} queue "${err.instanceName}" error: ${err.reason}`);
+    });
+    Array.from(_toastedDownloadsErrors).forEach(function(k) {
+      if (!seenThisTick.has(k)) _toastedDownloadsErrors.delete(k);
+    });
   }
 
   /**
@@ -979,7 +1018,8 @@
       const query = state.downloadsSearchQuery.toLowerCase();
       filtered = filtered.filter(d =>
         (d.title && d.title.toLowerCase().includes(query)) ||
-        (d.subtitle && d.subtitle.toLowerCase().includes(query))
+        (d.subtitle && d.subtitle.toLowerCase().includes(query)) ||
+        (d.instanceName && d.instanceName.toLowerCase().includes(query))
       );
     }
 
@@ -1238,7 +1278,7 @@
     const STATUS_COLORS = getStatusColors();
     const statusColor = STATUS_COLORS[item.status] || STATUS_COLORS.Unknown;
     const sourceIcon = item.source === "Sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabel = item.source;
+    const sourceLabel = escapeHtml(item.instanceName || item.source);
 
     const posterHtml = item.posterUrl
       ? `<img class="je-download-poster" src="${item.posterUrl}" alt="" loading="lazy" onerror="this.style.display='none'">`
@@ -1464,7 +1504,7 @@
       // Only group sonarr items with season numbers
       if (item.source === "Sonarr" && item.seasonNumber != null) {
         // Group by show title + season + progress (same progress = likely season pack)
-        const key = `${item.title}|${item.seasonNumber}|${item.progress}`;
+        const key = `${item.title}|${item.seasonNumber}|${item.progress}|${item.instanceName || ''}`;
 
         if (!seasonPackMap.has(key)) {
           seasonPackMap.set(key, []);

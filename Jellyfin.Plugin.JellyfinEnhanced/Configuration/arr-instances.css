@@ -1,0 +1,88 @@
+/* Styles for the multi-instance Sonarr/Radarr cards on the Jellyfin Enhanced
+   config page. Loaded via <link> from configPage.html so the admin UI can be
+   styled without an inline <style> block. */
+
+.arr-instance-card {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    margin-bottom: 1em;
+    background: rgba(255,255,255,0.03);
+}
+.arr-instance-card > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.8em 1em;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.arr-instance-card > summary::-webkit-details-marker { display: none; }
+.arr-instance-card > summary::before {
+    content: "\25B6";
+    font-size: 0.7em;
+    transition: transform 0.2s;
+    color: rgba(255,255,255,0.5);
+}
+.arr-instance-card[open] > summary::before {
+    transform: rotate(90deg);
+}
+.arr-instance-card > summary .arr-instance-summary-name {
+    flex: 1;
+    font-weight: 500;
+}
+.arr-instance-card > summary .arr-instance-summary-url {
+    color: rgba(255,255,255,0.4);
+    font-size: 0.85em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+.arr-instance-card-body {
+    padding: 0 1em 1em;
+}
+.arr-instance-card-body .arr-instance-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+.arr-instance-card-body .arr-instance-header input {
+    flex: 1;
+}
+.arr-instance-card > summary .arr-instance-enabled {
+    flex: 0 0 auto;
+    cursor: pointer;
+    margin: 0 0.25em 0 0;
+    width: 1.15em;
+    height: 1.15em;
+}
+.arr-instance-card.arr-instance-disabled {
+    opacity: 0.6;
+}
+.arr-instance-card.arr-instance-disabled > summary .arr-instance-enabled {
+    /* Checkbox stays full-opacity so the admin can see + click to re-enable
+       even when the rest of the card is dimmed. */
+    opacity: 1;
+}
+.arr-instance-card.arr-instance-disabled > summary .arr-instance-summary-name {
+    text-decoration: line-through;
+    color: rgba(255,255,255,0.55);
+}
+.arr-instance-remove {
+    background: transparent;
+    border: 1px solid rgba(255,80,80,0.5);
+    color: #ff5050;
+    border-radius: 4px;
+    padding: 0.3em 0.6em;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.arr-instance-remove:hover {
+    background: rgba(255,80,80,0.15);
+}
+.arr-add-btn {
+    margin-top: 0.5em;
+    margin-bottom: 1em;
+}

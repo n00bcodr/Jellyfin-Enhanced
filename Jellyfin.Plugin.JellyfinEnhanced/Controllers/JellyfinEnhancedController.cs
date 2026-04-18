@@ -1747,6 +1747,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public ActionResult GetMainScript() => GetScriptResource("js/plugin.js");
         [HttpGet("js/{**path}")]
         public ActionResult GetScript(string path) => GetScriptResource($"js/{path}");
+        // Config-page stylesheet lives in Configuration/ next to configPage.html. Keeping
+        // admin UI assets in one folder matches the on-disk convention the maintainer prefers.
+        [HttpGet("Configuration/arr-instances.css")]
+        public ActionResult GetArrInstancesStylesheet() => GetScriptResource("Configuration/arr-instances.css");
         [HttpGet("version")]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
@@ -1767,15 +1771,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new JsonResult(new { });
             }
 
+            // Check + log corruption so admins who never hit one of the action endpoints
+            // still see a server-side error entry on private-config load.
+            WarnIfArrInstancesCorrupt(config);
+
             return new JsonResult(new
             {
-                // For Arr Links (admin-only feature)
+                // For Arr Links (legacy single-instance fields, kept for backward compat)
                 config.SonarrUrl,
                 config.RadarrUrl,
                 config.BazarrUrl,
                 config.SonarrUrlMappings,
                 config.RadarrUrlMappings,
                 config.BazarrUrlMappings,
+
+                // Multi-instance Sonarr/Radarr (no API keys exposed). Enabled flag is exposed so
+                // the config page can render a per-instance toggle and arr-links can filter
+                // disabled instances from the dropdown without a round-trip.
+                SonarrInstances = config.GetSonarrInstances().Select(i => new { i.Name, i.Url, i.UrlMappings, i.Enabled }),
+                RadarrInstances = config.GetRadarrInstances().Select(i => new { i.Name, i.Url, i.UrlMappings, i.Enabled }),
+
+                // Corruption flags so the frontend can surface a toast without waiting for an
+                // action endpoint to round-trip a corruption error envelope.
+                SonarrInstancesCorrupt = config.IsSonarrInstancesCorrupt(),
+                RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
             });
         }
         [HttpGet("public-config")]
@@ -1908,6 +1927,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Arr Links Settings
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
+                config.ArrLinksShowStatusSingle,
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -2053,8 +2073,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             if (stream == null) return NotFound();
 
+            // Pick a content type that matches the requested file. Defaults to JS for the
+            // legacy /js/* callers; adds CSS so /css/* doesn't get served as application/javascript
+            // (which breaks <link rel="stylesheet"> in strict-MIME browsers).
+            string contentType = "application/javascript";
+            if (resourcePath.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
+                contentType = "text/css";
+            else if (resourcePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                contentType = "application/json";
+            else if (resourcePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+                contentType = "text/html";
+
             Response.Headers["Cache-Control"] = "no-cache";
-            return new FileStreamResult(stream, "application/javascript");
+            return new FileStreamResult(stream, contentType);
         }
 
         /// <summary>
@@ -2116,57 +2147,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// IPs are intentionally allowed since arr services run on the local network.
         /// All endpoints using this are admin-only.
         /// </summary>
-        /// <summary>
-        /// Hostname blocklist for cloud metadata services.
-        /// </summary>
-        private static readonly HashSet<string> _blockedHosts = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "metadata.google.internal", "metadata.goog"
-        };
-
-        /// <summary>
-        /// IP blocklist for cloud metadata, loopback, and unspecified addresses.
-        /// Parsed once and compared by value, not string, to handle all representations.
-        /// </summary>
-        private static readonly HashSet<System.Net.IPAddress> _blockedIPs = new()
-        {
-            System.Net.IPAddress.Parse("169.254.169.254"),  // AWS/Azure metadata
-            System.Net.IPAddress.Parse("100.100.100.200"),  // Alibaba metadata
-            System.Net.IPAddress.Parse("169.254.170.2"),    // AWS ECS metadata
-            System.Net.IPAddress.Parse("fd00:ec2::254"),    // AWS IPv6 metadata
-            System.Net.IPAddress.Loopback,                  // 127.0.0.1
-            System.Net.IPAddress.IPv6Loopback,              // ::1
-            System.Net.IPAddress.Any,                       // 0.0.0.0
-            System.Net.IPAddress.IPv6Any                    // ::
-        };
-
-        /// <summary>
-        /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes,
-        /// known cloud metadata endpoints, and loopback/unspecified addresses using
-        /// parsed IP comparison. Not a full SSRF control — private/LAN IPs are
-        /// intentionally allowed since arr services run on the local network.
-        /// All endpoints using this are admin-only.
-        /// </summary>
         private bool IsAllowedUrl(string url)
         {
-            if (string.IsNullOrWhiteSpace(url))
-                return false;
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-                return false;
-            if (uri.Scheme != "http" && uri.Scheme != "https")
-                return false;
+            var allowed = Jellyfin.Plugin.JellyfinEnhanced.Helpers.ArrUrlGuard.IsAllowedUrl(url);
+            if (!allowed && !string.IsNullOrWhiteSpace(url))
+            {
+                // Log at Error so admins can diagnose "instance doesn't return data"
+                // issues caused by a URL that hits the block list (e.g. metadata endpoints, loopback).
+                _logger.Error($"IsAllowedUrl rejected outbound URL: {url}");
+            }
+            return allowed;
+        }
 
-            var host = uri.Host.TrimEnd('.').ToLowerInvariant();
+        // Async variant used by request-path fan-out helpers so the DNS resolution inside the
+        // shared guard doesn't block the request thread before the first await — otherwise N
+        // instances serialize their DNS lookups in the Select() prelude (Codex pass-3 P2).
+        private async Task<bool> IsAllowedUrlAsync(string url, CancellationToken ct)
+        {
+            var allowed = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.ArrUrlGuard.IsAllowedUrlAsync(url, ct).ConfigureAwait(false);
+            if (!allowed && !string.IsNullOrWhiteSpace(url))
+            {
+                _logger.Error($"IsAllowedUrl rejected outbound URL: {url}");
+            }
+            return allowed;
+        }
 
-            // Check hostname blocklist (metadata DNS names)
-            if (_blockedHosts.Contains(host))
-                return false;
+        // Once-per-value dedup so corrupted instance config logs at Error on first hit and stops
+        // spamming on subsequent reads. Keyed by the raw stored JSON so a corrupt→fix→corrupt
+        // cycle gets a fresh log entry.
+        private static readonly HashSet<string> _loggedCorruptArrConfig = new();
+        private static readonly object _loggedCorruptArrConfigLock = new();
 
-            // Parse and check IP blocklist (handles all representations: bracketed, decimal, etc.)
-            if (System.Net.IPAddress.TryParse(host, out var ip) && _blockedIPs.Contains(ip))
-                return false;
-
-            return true;
+        private void WarnIfArrInstancesCorrupt(PluginConfiguration config)
+        {
+            if (config.IsSonarrInstancesCorrupt())
+            {
+                var key = "sonarr:" + (config.SonarrInstances ?? "");
+                bool firstSeen;
+                lock (_loggedCorruptArrConfigLock) firstSeen = _loggedCorruptArrConfig.Add(key);
+                if (firstSeen)
+                    _logger.Error("SonarrInstances config is corrupt JSON — instance list is effectively empty. "
+                        + "Endpoints will return no Sonarr data until the admin opens the config page and resets it. "
+                        + $"Raw value (first 200 chars): {(config.SonarrInstances ?? "").Substring(0, Math.Min(200, (config.SonarrInstances ?? "").Length))}");
+            }
+            if (config.IsRadarrInstancesCorrupt())
+            {
+                var key = "radarr:" + (config.RadarrInstances ?? "");
+                bool firstSeen;
+                lock (_loggedCorruptArrConfigLock) firstSeen = _loggedCorruptArrConfig.Add(key);
+                if (firstSeen)
+                    _logger.Error("RadarrInstances config is corrupt JSON — instance list is effectively empty. "
+                        + "Endpoints will return no Radarr data until the admin opens the config page and resets it. "
+                        + $"Raw value (first 200 chars): {(config.RadarrInstances ?? "").Substring(0, Math.Min(200, (config.RadarrInstances ?? "").Length))}");
+            }
         }
 
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
@@ -3431,11 +3464,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Look up a series' titleSlug in Sonarr by its TVDB ID.
-        /// Used by the frontend to generate accurate Sonarr series links,
-        /// avoiding slug mismatches caused by translated titles.
+        /// Look up a series' titleSlug in the first configured Sonarr instance by its TVDB ID.
+        /// Kept for backward compatibility. Use /arr/series-slugs for multi-instance support.
         /// </summary>
-        /// <param name="tvdbId">The TVDB ID of the series to look up.</param>
         [HttpGet("arr/series-slug")]
         [Authorize]
         public async Task<IActionResult> GetSeriesSlug([FromQuery] int tvdbId)
@@ -3450,50 +3481,276 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (config == null)
                 return StatusCode(500, new { error = "Plugin configuration not available" });
 
-            if (string.IsNullOrWhiteSpace(config.SonarrUrl) || string.IsNullOrWhiteSpace(config.SonarrApiKey))
+            WarnIfArrInstancesCorrupt(config);
+            var instances = config.GetEnabledSonarrInstances();
+            if (instances.Count == 0)
+            {
+                if (config.IsSonarrInstancesCorrupt())
+                    return StatusCode(500, new { error = "Sonarr instance configuration is corrupt — see server logs" });
                 return NotFound(new { error = "Sonarr is not configured" });
+            }
+
+            var outcome = await FetchSeriesInfoFromInstance(instances[0], tvdbId, HttpContext.RequestAborted);
+            if (outcome.Error != null)
+                return StatusCode(502, new { error = $"Sonarr fetch failed: {outcome.Error}" });
+            if (outcome.Match == null)
+                return NotFound(new { error = "Series not found in Sonarr" });
+
+            // Legacy endpoint: extract titleSlug from the enriched response. Preserve the historical
+            // contract — return 404 rather than 200+null if the upstream response lacks titleSlug.
+            var titleSlug = (string?)((dynamic)outcome.Match).titleSlug;
+            if (string.IsNullOrEmpty(titleSlug))
+                return NotFound(new { error = "Series not found in Sonarr" });
+            return Ok(new { titleSlug });
+        }
+
+        /// <summary>
+        /// Look up a series' titleSlug across all configured Sonarr instances.
+        /// Returns an array of matches with instance details for multi-instance link generation.
+        /// </summary>
+        [HttpGet("arr/series-slugs")]
+        [Authorize]
+        public async Task<IActionResult> GetSeriesSlugs([FromQuery] int tvdbId)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (tvdbId <= 0)
+                return BadRequest(new { error = "tvdbId must be a positive integer" });
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, new { error = "Plugin configuration not available" });
+
+            WarnIfArrInstancesCorrupt(config);
+            var instances = config.GetEnabledSonarrInstances();
+            if (instances.Count == 0)
+            {
+                var errList = new List<object>();
+                if (config.IsSonarrInstancesCorrupt())
+                    errList.Add(new { instanceName = "Sonarr", reason = "config corrupt — see server logs" });
+                else if (config.GetSonarrInstances().Count > 0)
+                    // Distinguish "admin disabled everything" from "never configured" so the
+                    // frontend can toast the right message instead of silently showing no links.
+                    errList.Add(new { instanceName = "Sonarr", reason = "all Sonarr instances are disabled" });
+                return Ok(new { matches = Array.Empty<object>(), errors = errList });
+            }
+
+            var ct = HttpContext.RequestAborted;
+            var outcomes = await Task.WhenAll(instances.Select(i => FetchSeriesInfoFromInstance(i, tvdbId, ct)));
+
+            var matches = new List<object>();
+            var errors = new List<object>();
+            for (int i = 0; i < outcomes.Length; i++)
+            {
+                if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
+                if (outcomes[i].Error != null)
+                    errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
+            }
+
+            return Ok(new { matches, errors });
+        }
+
+        /// <summary>
+        /// Outcome from a per-instance fetch: EITHER <see cref="Match"/> is non-null (success),
+        /// OR <see cref="Error"/> is non-null (failure with reason), OR both are null
+        /// (legitimate "instance does not have this item").
+        /// </summary>
+        private struct ArrFetchOutcome
+        {
+            public object? Match;
+            public string? Error;
+        }
+
+        /// <summary>
+        /// Shared shell for all per-instance arr fetches. Handles the SSRF guard, client setup,
+        /// X-Api-Key header, status-code classification, JSON parse, and exception-to-envelope
+        /// mapping that the 6 specific helpers (series/movie-info, queue, calendar × Sonarr/Radarr)
+        /// all duplicated. Each caller provides only the endpoint path, the JSON→result mapper,
+        /// and a default/empty result for error paths.
+        /// </summary>
+        private async Task<(T Result, string? Error)> FetchAndMapAsync<T>(
+            ArrInstance instance,
+            string endpointPath,
+            Func<dynamic?, T> mapper,
+            T emptyResult,
+            TimeSpan timeout,
+            string contextLabel,
+            CancellationToken ct)
+        {
+            if (!await IsAllowedUrlAsync(instance.Url, ct).ConfigureAwait(false))
+                return (emptyResult, "URL rejected by SSRF guard");
 
             try
             {
-                var sonarrUrl = config.SonarrUrl.TrimEnd('/');
+                var url = instance.Url.TrimEnd('/');
                 var client = _httpClientFactory.CreateClient();
-                client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
-                client.Timeout = TimeSpan.FromSeconds(10);
+                // Do NOT use DefaultRequestHeaders for the API key — CreateClient() may return a
+                // pooled/shared instance and DefaultRequestHeaders mutations are not thread-safe
+                // across concurrent fan-out calls. Use a per-request HttpRequestMessage instead.
+                client.Timeout = timeout;
 
-                var response = await client.GetAsync($"{sonarrUrl}/api/v3/series?tvdbId={tvdbId}");
+                var request = new HttpRequestMessage(HttpMethod.Get, $"{url}{endpointPath}");
+                request.Headers.TryAddWithoutValidation("X-Api-Key", instance.ApiKey);
+                var response = await client.SendAsync(request, ct);
 
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
-                    response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                    return StatusCode(502, new { error = "Sonarr authentication failed" });
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    // Before the FetchAndMapAsync consolidation this path only surfaced via the
+                    // response envelope, so a bad API key would leave no server-side trail. Log
+                    // at Error to keep diagnosability on par with the exception branches below.
+                    _logger.Error($"Authentication failed for {contextLabel} from {instance.Name}: HTTP {(int)response.StatusCode}");
+                    return (emptyResult, $"authentication failed ({(int)response.StatusCode})");
+                }
 
                 if (!response.IsSuccessStatusCode)
-                    return StatusCode(502, new { error = "Sonarr returned an error" });
-
-                var json = await response.Content.ReadAsStringAsync();
-                var series = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
-
-                // Sonarr returns an array when filtering by tvdbId
-                string? titleSlug = null;
-                if (series is Newtonsoft.Json.Linq.JArray arr && arr.Count > 0)
                 {
-                    titleSlug = (string?)arr[0]["titleSlug"];
-                }
-                else if (series != null)
-                {
-                    // Single object response
-                    titleSlug = (string?)series.titleSlug;
+                    _logger.Error($"Upstream error fetching {contextLabel} from {instance.Name}: HTTP {(int)response.StatusCode}");
+                    return (emptyResult, $"HTTP {(int)response.StatusCode}");
                 }
 
-                if (string.IsNullOrEmpty(titleSlug))
-                    return NotFound(new { error = "Series not found in Sonarr" });
-
-                return Ok(new { titleSlug });
+                var json = await response.Content.ReadAsStringAsync(ct);
+                var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
+                return (mapper(data), null);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (HttpRequestException ex)
+            {
+                _logger.Error($"Network error fetching {contextLabel} from {instance.Name}: {ex.Message}");
+                return (emptyResult, "network error");
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.Error($"Timeout fetching {contextLabel} from {instance.Name}: {ex.Message}");
+                return (emptyResult, "timeout");
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                _logger.Error($"Invalid JSON from {contextLabel} {instance.Name}: {ex.Message}");
+                return (emptyResult, "invalid response");
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Failed to fetch Sonarr series slug for TVDB ID {tvdbId}: {ex.Message}");
-                return StatusCode(502, new { error = "Failed to query Sonarr" });
+                _logger.Error($"Unexpected error fetching {contextLabel} from {instance.Name}: {ex.Message}");
+                return (emptyResult, "internal error");
             }
+        }
+
+        /// <summary>
+        /// Selects the single record from a Sonarr/Radarr response body that returns either a
+        /// bare object or a (possibly empty) array. Returns null for not-found.
+        /// </summary>
+        private static dynamic? SingleItemOrNull(dynamic? data)
+        {
+            if (data is Newtonsoft.Json.Linq.JArray arr)
+                return arr.Count > 0 ? arr[0] : null;
+            return data;
+        }
+
+        private async Task<ArrFetchOutcome> FetchSeriesInfoFromInstance(ArrInstance instance, int tvdbId, CancellationToken ct)
+        {
+            var (match, error) = await FetchAndMapAsync<object?>(
+                instance,
+                $"/api/v3/series?tvdbId={tvdbId}",
+                data =>
+                {
+                    var item = SingleItemOrNull(data);
+                    if (item == null) return null;
+                    var titleSlug = (string?)item.titleSlug;
+                    // Treat empty/missing titleSlug as "no match" rather than returning a record
+                    // that would render a broken `/series/null` link on the frontend. The legacy
+                    // single-instance endpoint already had this guard; preserve it here.
+                    if (string.IsNullOrEmpty(titleSlug)) return null;
+                    return new
+                    {
+                        instanceName = instance.Name,
+                        instanceUrl = instance.Url,
+                        titleSlug,
+                        urlMappings = instance.UrlMappings,
+                        episodeFileCount = (int?)item.statistics?.episodeFileCount ?? 0,
+                        episodeCount = (int?)item.statistics?.episodeCount ?? 0,
+                        percentOfEpisodes = (double?)item.statistics?.percentOfEpisodes ?? 0,
+                        sizeOnDisk = (long?)item.statistics?.sizeOnDisk ?? 0,
+                        rootFolderPath = GetRootFolderFromPath((string?)item.path)
+                    };
+                },
+                emptyResult: null,
+                timeout: TimeSpan.FromSeconds(10),
+                contextLabel: $"Sonarr series (TVDB {tvdbId})",
+                ct: ct).ConfigureAwait(false);
+            return new ArrFetchOutcome { Match = match, Error = error };
+        }
+
+        /// <summary>
+        /// Look up which Radarr instances have a movie by its TMDB ID.
+        /// Returns an array of matches with instance details and download status.
+        /// </summary>
+        [HttpGet("arr/movie-instances")]
+        [Authorize]
+        public async Task<IActionResult> GetMovieInstances([FromQuery] int tmdbId)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (tmdbId <= 0)
+                return BadRequest(new { error = "tmdbId must be a positive integer" });
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, new { error = "Plugin configuration not available" });
+
+            WarnIfArrInstancesCorrupt(config);
+            var instances = config.GetEnabledRadarrInstances();
+            if (instances.Count == 0)
+            {
+                var errList = new List<object>();
+                if (config.IsRadarrInstancesCorrupt())
+                    errList.Add(new { instanceName = "Radarr", reason = "config corrupt — see server logs" });
+                else if (config.GetRadarrInstances().Count > 0)
+                    errList.Add(new { instanceName = "Radarr", reason = "all Radarr instances are disabled" });
+                return Ok(new { matches = Array.Empty<object>(), errors = errList });
+            }
+
+            var ct = HttpContext.RequestAborted;
+            var outcomes = await Task.WhenAll(instances.Select(i => FetchMovieInfoFromInstance(i, tmdbId, ct)));
+
+            var matches = new List<object>();
+            var errors = new List<object>();
+            for (int i = 0; i < outcomes.Length; i++)
+            {
+                if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
+                if (outcomes[i].Error != null)
+                    errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
+            }
+
+            return Ok(new { matches, errors });
+        }
+
+        private async Task<ArrFetchOutcome> FetchMovieInfoFromInstance(ArrInstance instance, int tmdbId, CancellationToken ct)
+        {
+            var (match, error) = await FetchAndMapAsync<object?>(
+                instance,
+                $"/api/v3/movie?tmdbId={tmdbId}",
+                data =>
+                {
+                    var item = SingleItemOrNull(data);
+                    if (item == null) return null;
+                    return new
+                    {
+                        instanceName = instance.Name,
+                        instanceUrl = instance.Url,
+                        urlMappings = instance.UrlMappings,
+                        hasFile = (bool?)item.hasFile ?? false,
+                        sizeOnDisk = (long?)item.sizeOnDisk ?? 0,
+                        rootFolderPath = GetRootFolderFromPath((string?)item.path)
+                    };
+                },
+                emptyResult: null,
+                timeout: TimeSpan.FromSeconds(10),
+                contextLabel: $"Radarr movie (TMDB {tmdbId})",
+                ct: ct).ConfigureAwait(false);
+            return new ArrFetchOutcome { Match = match, Error = error };
         }
 
         // ==================== Active Streams ====================
@@ -3600,175 +3857,158 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
                 if (string.IsNullOrEmpty(jellyfinUserId))
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
                 if (string.IsNullOrEmpty(jellyseerrUserId))
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 var userRequests = await GetJellyseerrRequestsForUser(jellyseerrUserId);
                 if (userRequests == null || userRequests.Count == 0)
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 allowedRequests = new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType)));
             }
 
+            WarnIfArrInstancesCorrupt(config);
+            var sonarrInstances = config.GetEnabledSonarrInstances();
+            var radarrInstances = config.GetEnabledRadarrInstances();
+
+            var ct = HttpContext.RequestAborted;
+            var sonarrTasks = sonarrInstances.Select(i => FetchSonarrQueue(i, allowedRequests, ct)).ToList();
+            var radarrTasks = radarrInstances.Select(i => FetchRadarrQueue(i, allowedRequests, ct)).ToList();
+
+            var sonarrResults = await Task.WhenAll(sonarrTasks);
+            var radarrResults = await Task.WhenAll(radarrTasks);
+
             var items = new List<object>();
-
-            // Fetch Sonarr queue
-            if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+            var errors = new List<object>();
+            if (config.IsSonarrInstancesCorrupt())
+                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "config corrupt — see server logs" });
+            else if (sonarrInstances.Count == 0 && config.GetSonarrInstances().Count > 0)
+                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "all Sonarr instances are disabled" });
+            if (config.IsRadarrInstancesCorrupt())
+                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "config corrupt — see server logs" });
+            else if (radarrInstances.Count == 0 && config.GetRadarrInstances().Count > 0)
+                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "all Radarr instances are disabled" });
+            for (int i = 0; i < sonarrResults.Length; i++)
             {
-                try
-                {
-                    var sonarrUrl = config.SonarrUrl.TrimEnd('/');
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
-                    client.Timeout = TimeSpan.FromSeconds(10);
-
-                    var response = await client.GetAsync(
-                        $"{sonarrUrl}/api/v3/queue?" +
-                        $"includeEpisode=true&" +
-                        $"includeSeries=true&" +
-                        $"sortKey=timeleft&" +
-                        $"sortDirection=ascending&" +
-                        $"pageSize=1000"
-                    );
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync();
-                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
-
-                        if (data?.records != null)
-                        {
-                            foreach (var record in data.records)
-                            {
-                                int? tmdbId = record.series?.tmdbId;
-
-                                // Filter by user's requested TMDB IDs when not admin
-                                if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "tv"))))
-                                {
-                                    continue;
-                                }
-
-                                string? posterUrl = null;
-                                if (record.series?.images != null)
-                                {
-                                    foreach (var img in record.series.images)
-                                    {
-                                        if ((string?)img.coverType == "poster")
-                                        {
-                                            posterUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                items.Add(new
-                                {
-                                    id = (string?)record.id?.ToString(),
-                                    source = nameof(ArrType.Sonarr),
-                                    title = (string?)record.series?.title ?? "Unknown",
-                                    subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
-                                    seasonNumber = (int?)record.episode?.seasonNumber,
-                                    episodeNumber = (int?)record.episode?.episodeNumber,
-                                    status = (string?)record.status ?? "Unknown",
-                                    progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
-                                    totalSize = (long?)record.size,
-                                    sizeRemaining = (long?)record.sizeleft,
-                                    timeRemaining = (string?)record.timeleft,
-                                    posterUrl = posterUrl,
-                                    tmdbId = tmdbId
-                                });
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to fetch Sonarr queue: {ex.Message}");
-                }
+                items.AddRange(sonarrResults[i].Items);
+                if (sonarrResults[i].Error != null)
+                    errors.Add(new { instanceName = sonarrInstances[i].Name, source = "Sonarr", reason = sonarrResults[i].Error });
+            }
+            for (int i = 0; i < radarrResults.Length; i++)
+            {
+                items.AddRange(radarrResults[i].Items);
+                if (radarrResults[i].Error != null)
+                    errors.Add(new { instanceName = radarrInstances[i].Name, source = "Radarr", reason = radarrResults[i].Error });
             }
 
-            // Fetch Radarr queue
-            if (!string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
+            return Ok(new { items, errors });
+        }
+
+        private static string? PosterFromImages(dynamic images)
+        {
+            if (images == null) return null;
+            foreach (var img in images)
             {
-                try
-                {
-                    var radarrUrl = config.RadarrUrl.TrimEnd('/');
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
-                    client.Timeout = TimeSpan.FromSeconds(10);
-
-                    var response = await client.GetAsync($"{radarrUrl}/api/v3/queue?includeMovie=true");
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync();
-                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
-
-                        if (data?.records != null)
-                        {
-                            foreach (var record in data.records)
-                            {
-                                int? tmdbId = record.movie?.tmdbId;
-
-                                // Filter by user's requested TMDB IDs when not admin
-                                if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "movie"))))
-                                {
-                                    continue;
-                                }
-
-                                string? posterUrl = null;
-                                if (record.movie?.images != null)
-                                {
-                                    foreach (var img in record.movie.images)
-                                    {
-                                        if ((string?)img.coverType == "poster")
-                                        {
-                                            posterUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                items.Add(new
-                                {
-                                    id = (string?)record.id?.ToString(),
-                                    source = nameof(ArrType.Radarr),
-                                    title = (string?)record.movie?.title ?? "Unknown",
-                                    subtitle = (string?)record.movie?.year?.ToString(),
-                                    seasonNumber = (int?)null,
-                                    episodeNumber = (int?)null,
-                                    status = (string?)record.status ?? "Unknown",
-                                    progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
-                                    totalSize = (long?)record.size,
-                                    sizeRemaining = (long?)record.sizeleft,
-                                    timeRemaining = (string?)record.timeleft,
-                                    posterUrl = posterUrl,
-                                    tmdbId = tmdbId
-                                });
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to fetch Radarr queue: {ex.Message}");
-                }
+                if ((string?)img.coverType == "poster")
+                    return (string?)img.remoteUrl ?? (string?)img.url;
             }
+            return null;
+        }
 
-            return Ok(new { items = items });
+        private Task<(List<object> Items, string? Error)> FetchSonarrQueue(ArrInstance instance, HashSet<(int TmdbId, string MediaType)>? allowedRequests, CancellationToken ct)
+        {
+            return FetchAndMapAsync<List<object>>(
+                instance,
+                "/api/v3/queue?includeEpisode=true&includeSeries=true&sortKey=timeleft&sortDirection=ascending&pageSize=1000",
+                data =>
+                {
+                    var items = new List<object>();
+                    if (data?.records == null) return items;
+                    foreach (var record in data.records)
+                    {
+                        int? tmdbId = record.series?.tmdbId;
+                        if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "tv"))))
+                            continue;
+
+                        items.Add(new
+                        {
+                            id = (string?)record.id?.ToString(),
+                            source = nameof(ArrType.Sonarr),
+                            instanceName = instance.Name,
+                            title = (string?)record.series?.title ?? "Unknown",
+                            subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
+                            seasonNumber = (int?)record.episode?.seasonNumber,
+                            episodeNumber = (int?)record.episode?.episodeNumber,
+                            status = (string?)record.status ?? "Unknown",
+                            progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
+                            totalSize = (long?)record.size,
+                            sizeRemaining = (long?)record.sizeleft,
+                            timeRemaining = (string?)record.timeleft,
+                            posterUrl = PosterFromImages(record.series?.images),
+                            tmdbId = tmdbId
+                        });
+                    }
+                    return items;
+                },
+                emptyResult: new List<object>(),
+                timeout: TimeSpan.FromSeconds(10),
+                contextLabel: "Sonarr queue",
+                ct: ct);
+        }
+
+        private Task<(List<object> Items, string? Error)> FetchRadarrQueue(ArrInstance instance, HashSet<(int TmdbId, string MediaType)>? allowedRequests, CancellationToken ct)
+        {
+            return FetchAndMapAsync<List<object>>(
+                instance,
+                "/api/v3/queue?includeMovie=true&pageSize=1000",
+                data =>
+                {
+                    var items = new List<object>();
+                    if (data?.records == null) return items;
+                    foreach (var record in data.records)
+                    {
+                        int? tmdbId = record.movie?.tmdbId;
+                        if (allowedRequests != null && (!tmdbId.HasValue || !allowedRequests.Contains((tmdbId.Value, "movie"))))
+                            continue;
+
+                        items.Add(new
+                        {
+                            id = (string?)record.id?.ToString(),
+                            source = nameof(ArrType.Radarr),
+                            instanceName = instance.Name,
+                            title = (string?)record.movie?.title ?? "Unknown",
+                            subtitle = (string?)record.movie?.year?.ToString(),
+                            seasonNumber = (int?)null,
+                            episodeNumber = (int?)null,
+                            status = (string?)record.status ?? "Unknown",
+                            progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
+                            totalSize = (long?)record.size,
+                            sizeRemaining = (long?)record.sizeleft,
+                            timeRemaining = (string?)record.timeleft,
+                            posterUrl = PosterFromImages(record.movie?.images),
+                            tmdbId = tmdbId
+                        });
+                    }
+                    return items;
+                },
+                emptyResult: new List<object>(),
+                timeout: TimeSpan.FromSeconds(10),
+                contextLabel: "Radarr queue",
+                ct: ct);
         }
 
         private static double CalculateProgress(double? size, double? sizeleft)
@@ -4163,229 +4403,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // Fetch Sonarr calendar events
-            if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+            // Fetch calendar events from all configured instances in parallel
+            WarnIfArrInstancesCorrupt(config);
+            var sonarrInstances = config.GetEnabledSonarrInstances();
+            var radarrInstances = config.GetEnabledRadarrInstances();
+            var ct = HttpContext.RequestAborted;
+
+            var sonarrTasks = sonarrInstances.Select(i => FetchSonarrCalendar(i, startIso, endIso, ParseDate, ct)).ToList();
+            var radarrTasks = radarrInstances.Select(i => FetchRadarrCalendar(i, startIso, endIso, startDate, endDate, ParseDate, AddRelease, ct)).ToList();
+
+            var sonarrCalResults = await Task.WhenAll(sonarrTasks);
+            var radarrCalResults = await Task.WhenAll(radarrTasks);
+
+            var errors = new List<object>();
+            if (config.IsSonarrInstancesCorrupt())
+                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "config corrupt — see server logs" });
+            else if (sonarrInstances.Count == 0 && config.GetSonarrInstances().Count > 0)
+                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "all Sonarr instances are disabled" });
+            if (config.IsRadarrInstancesCorrupt())
+                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "config corrupt — see server logs" });
+            else if (radarrInstances.Count == 0 && config.GetRadarrInstances().Count > 0)
+                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "all Radarr instances are disabled" });
+            for (int i = 0; i < sonarrCalResults.Length; i++)
             {
-                try
-                {
-                    var sonarrUrl = config.SonarrUrl.TrimEnd('/');
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Add("X-Api-Key", config.SonarrApiKey);
-                    client.Timeout = TimeSpan.FromSeconds(30);
-
-                    var response = await client.GetAsync($"{sonarrUrl}/api/v3/calendar?includeSeries=true&unmonitored=true&start={startIso}&end={endIso}");
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync();
-                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
-
-                        if (data != null)
-                        {
-                            foreach (var episode in data)
-                            {
-                                var airDate = ParseDate((string?)episode.airDateUtc ?? (string?)episode.airDate);
-                                if (!airDate.HasValue)
-                                {
-                                    continue;
-                                }
-
-                                var seriesId = (int?)episode.seriesId;
-                                var seriesTitle = "Unknown Series";
-                                int? seriesTvdbId = null;
-                                string? seriesImdbId = null;
-                                string? seriesPosterUrl = null;
-                                string? seriesBackdropUrl = null;
-
-                                seriesTitle = episode.series.title;
-                                seriesTvdbId = episode.series.tvdbId;
-                                seriesImdbId = episode.series.imdbId;
-
-                                if (episode.series.images != null)
-                                {
-                                    foreach (var img in episode.series.images)
-                                    {
-                                        var coverType = (string?)img.coverType;
-                                        var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                        if (string.IsNullOrWhiteSpace(imageUrl))
-                                        {
-                                            continue;
-                                        }
-
-                                        if (seriesBackdropUrl == null && (coverType == "fanart" || coverType == "banner"))
-                                        {
-                                            seriesBackdropUrl = imageUrl;
-                                        }
-                                        else if (seriesPosterUrl == null && coverType == "poster")
-                                        {
-                                            seriesPosterUrl = imageUrl;
-                                        }
-                                    }
-                                }
-
-                                var seasonNumber = (int?)episode.seasonNumber ?? 0;
-                                var episodeNumber = (int?)episode.episodeNumber ?? 0;
-                                var episodeTitle = (string?)episode.title ?? "Unknown Episode";
-
-                                events.Add(new ArrItem
-                                {
-                                    Id = (string?)episode.id?.ToString(),
-                                    Source = nameof(ArrType.Sonarr),
-                                    Type = "Series",
-                                    Title = seriesTitle,
-                                    Subtitle = $"S{seasonNumber:D2}E{episodeNumber:D2} - {episodeTitle}",
-                                    ReleaseDate = airDate.Value.ToUniversalTime().ToString("o"),
-                                    ReleaseType = "Episode",
-                                    HasFile = (bool?)episode.hasFile ?? false,
-                                    Monitored = (bool?)episode.monitored ?? false,
-                                    SeriesId = seriesId,
-                                    SeasonNumber = seasonNumber,
-                                    EpisodeNumber = episodeNumber,
-                                    EpisodeTitle = episodeTitle,
-                                    Overview = (string?)episode.overview,
-                                    TvdbId = seriesTvdbId,
-                                    ImdbId = seriesImdbId,
-                                    TmdbId = (int?)episode.series.tmdbId,
-                                    PosterUrl = seriesPosterUrl,
-                                    BackdropUrl = seriesBackdropUrl,
-                                    EpisodeTvdbId = (int?)episode.tvdbId,
-                                    EpisodeImdbId = (string?)episode.imdbId,
-                                    RootFolderPath = GetRootFolderFromPath((string?)episode.series.path)
-                                });
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to fetch Sonarr calendar: {ex.Message}");
-                }
+                events.AddRange(sonarrCalResults[i].Items);
+                if (sonarrCalResults[i].Error != null)
+                    errors.Add(new { instanceName = sonarrInstances[i].Name, source = "Sonarr", reason = sonarrCalResults[i].Error });
+            }
+            for (int i = 0; i < radarrCalResults.Length; i++)
+            {
+                events.AddRange(radarrCalResults[i].Items);
+                if (radarrCalResults[i].Error != null)
+                    errors.Add(new { instanceName = radarrInstances[i].Name, source = "Radarr", reason = radarrCalResults[i].Error });
             }
 
-            // Fetch Radarr calendar events
-            if (!string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
-            {
-                try
-                {
-                    var radarrUrl = config.RadarrUrl.TrimEnd('/');
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Add("X-Api-Key", config.RadarrApiKey);
-                    client.Timeout = TimeSpan.FromSeconds(10);
-
-                    var response = await client.GetAsync($"{radarrUrl}/api/v3/calendar?unmonitored=true&start={startIso}&end={endIso}");
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var json = await response.Content.ReadAsStringAsync();
-                        var data = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(json);
-
-                        if (data != null)
-                        {
-                            foreach (var movie in data)
-                            {
-                                var releaseDates = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-
-                                string? posterUrl = null;
-                                string? backdropUrl = null;
-                                if (movie.images != null)
-                                {
-                                    foreach (var img in movie.images)
-                                    {
-                                        var coverType = (string?)img.coverType;
-                                        var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                        if (string.IsNullOrWhiteSpace(imageUrl))
-                                        {
-                                            continue;
-                                        }
-
-                                        if (posterUrl == null && coverType == "poster")
-                                        {
-                                            posterUrl = imageUrl;
-                                            continue;
-                                        }
-
-                                        if (backdropUrl == null && (coverType == "fanart" || coverType == "backdrop"))
-                                        {
-                                            backdropUrl = imageUrl;
-                                        }
-                                    }
-                                }
-
-                                AddRelease(releaseDates, "CinemaRelease", (string?)movie.inCinemas);
-                                AddRelease(releaseDates, "PhysicalRelease", (string?)movie.physicalRelease);
-                                AddRelease(releaseDates, "DigitalRelease", (string?)movie.digitalRelease);
-
-                                if (movie.releases != null)
-                                {
-                                    foreach (var release in movie.releases)
-                                    {
-                                        var releaseDate = (object?)release.releaseDate ?? release.date;
-                                        var type = Convert.ToString(release.type)?.ToLowerInvariant();
-                                        var isPhysical = (bool?)release.isPhysical ?? false;
-
-                                        if (isPhysical)
-                                        {
-                                            AddRelease(releaseDates, "PhysicalRelease", releaseDate);
-                                        }
-                                        else if (type == "digital")
-                                        {
-                                            AddRelease(releaseDates, "DigitalRelease", releaseDate);
-                                        }
-                                        else if (type == "theatrical" || type == "cinema" || type == "theater")
-                                        {
-                                            AddRelease(releaseDates, "CinemaRelease", releaseDate);
-                                        }
-                                    }
-                                }
-
-                                if (releaseDates.Count == 0)
-                                {
-                                    continue;
-                                }
-
-                                var movieTitle = (string?)movie.title ?? (string?)movie.originalTitle ?? "Unknown";
-                                string? movieYear = null;
-                                var yearValue = (object?)movie.year;
-                                if (yearValue != null)
-                                {
-                                    movieYear = Convert.ToString(yearValue);
-                                }
-
-                                foreach (var kvp in releaseDates)
-                                {
-                                    // Only include releases within the requested date range
-                                    var releaseUtc = kvp.Value.ToUniversalTime();
-                                    if (releaseUtc < startDate || releaseUtc > endDate)
-                                    {
-                                        continue;
-                                    }
-
-                                    events.Add(new ArrItem
-                                    {
-                                        Id = $"{movie.id}-{kvp.Key}",
-                                        Source = nameof(ArrType.Radarr),
-                                        Type = "Movie",
-                                        Title = movieTitle,
-                                        Subtitle = movieYear,
-                                        ReleaseDate = releaseUtc.ToString("o"),
-                                        ReleaseType = kvp.Key,
-                                        HasFile = (bool?)movie.hasFile ?? false,
-                                        Monitored = (bool?)movie.monitored ?? false,
-                                        PosterUrl = posterUrl,
-                                        BackdropUrl = backdropUrl,
-                                        TmdbId = (int?)movie.tmdbId,
-                                        ImdbId = (string?)movie.imdbId,
-                                        RootFolderPath = GetRootFolderFromPath((string?)movie.path)
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to fetch Radarr calendar: {ex.Message}");
-                }
-            }
-
+            // Resolve ItemIds against Jellyfin's library BEFORE dedup so the dedup tie-breaker can
+            // prefer candidates that the current user can actually access (H4). Without this, dedup
+            // might pick an instance-B candidate with HasFile=true in a root folder the user can't
+            // read, and then the subsequent access filter would hide the event entirely — even
+            // though instance-A had the same episode in an accessible root folder.
             var providerKeys = events
                 .SelectMany(ProviderHelper.GetAllProviders)
                 .Distinct()
@@ -4399,14 +4455,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 evt.ItemEpisodeId = ProviderHelper.GetBestItemId(ProviderHelper.GetEpisodeProviders(evt), itemMap);
             }
 
-            // Filter events by user library access permissions (Issue #443)
+            // Build access info now so the dedup step can consult it.
+            HashSet<Guid>? accessibleIds = null;
+            Dictionary<string, bool>? rootFolderAccessMap = null;
             if (config.CalendarFilterByLibraryAccess)
             {
                 var calendarUserId = UserHelper.GetCurrentUserId(User);
                 if (calendarUserId.HasValue)
                 {
-                    var calendarUser = _userManager.GetUserById(calendarUserId.Value);
-                    if (calendarUser != null)
+                    var calendarUserForFilter = _userManager.GetUserById(calendarUserId.Value);
+                    if (calendarUserForFilter != null)
                     {
                         var uniqueItemIds = events
                             .Select(e => e.ItemId)
@@ -4415,49 +4473,285 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             .Distinct()
                             .ToList();
 
-                        if (uniqueItemIds.Count > 0)
+                        accessibleIds = new HashSet<Guid>();
+                        foreach (var id in uniqueItemIds)
                         {
-                            // GetItemById with user returns null if the user cannot access the item
-                            var accessibleIds = new HashSet<Guid>();
-                            foreach (var id in uniqueItemIds)
-                            {
-                                if (_libraryManager.GetItemById<BaseItem>(id, calendarUser) != null)
-                                {
-                                    accessibleIds.Add(id);
-                                }
-                            }
+                            if (_libraryManager.GetItemById<BaseItem>(id, calendarUserForFilter) != null)
+                                accessibleIds.Add(id);
+                        }
 
-                            // Build rootFolderPath accessibility map from items already in Jellyfin.
-                            // If ANY item from a root folder is accessible, the user has access to that library.
-                            var rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-                            foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
-                            {
-                                var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
-                                if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
-                                {
-                                    rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
-                                }
-                            }
-
-                            events = events.Where(e =>
-                            {
-                                if (e.ItemId.HasValue)
-                                    return accessibleIds.Contains(e.ItemId.Value);
-
-                                // Items not in Jellyfin: use root folder mapping to infer access
-                                if (!string.IsNullOrEmpty(e.RootFolderPath)
-                                    && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
-                                    return hasAccess;
-
-                                // No information available: show by default
-                                return true;
-                            }).ToList();
+                        rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
+                        {
+                            var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
+                            if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
+                                rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
                         }
                     }
                 }
             }
 
-            return Ok(new { events });
+            // Returns true when the filter is off, or when we have positive evidence the user can
+            // access this event. "No information" defaults to true (same as the final filter).
+            bool IsAccessible(ArrItem evt)
+            {
+                if (accessibleIds == null) return true;
+                if (evt.ItemId.HasValue)
+                    return accessibleIds.Contains(evt.ItemId.Value);
+                if (!string.IsNullOrEmpty(evt.RootFolderPath)
+                    && rootFolderAccessMap != null
+                    && rootFolderAccessMap.TryGetValue(evt.RootFolderPath, out var a))
+                    return a;
+                return true;
+            }
+
+            // Deduplicate events across instances. Tie-break priority:
+            //   1. Accessible to the current user (prevents H4 hide-accessible-event bug).
+            //   2. HasFile=true (if one instance has the file downloaded, show that).
+            // The losing candidate's InstanceName is preserved in AlsoInInstances so the UI
+            // can show "also in: X, Y" context instead of silently erasing other instances.
+            var deduped = new Dictionary<string, ArrItem>();
+            foreach (var evt in events)
+            {
+                string dedupeKey;
+                if (evt.Source == nameof(ArrType.Sonarr))
+                {
+                    var seriesKey = evt.TvdbId?.ToString() ?? $"title:{evt.Title}";
+                    dedupeKey = $"sonarr|{seriesKey}|S{evt.SeasonNumber}E{evt.EpisodeNumber}|{evt.ReleaseDate}";
+                }
+                else
+                {
+                    var movieKey = evt.TmdbId?.ToString() ?? $"title:{evt.Title}";
+                    dedupeKey = $"radarr|{movieKey}|{evt.ReleaseType}|{evt.ReleaseDate}";
+                }
+
+                if (!deduped.TryGetValue(dedupeKey, out var existing))
+                {
+                    deduped[dedupeKey] = evt;
+                    continue;
+                }
+
+                var existingAccess = IsAccessible(existing);
+                var newAccess = IsAccessible(evt);
+                ArrItem winner, loser;
+                if (newAccess && !existingAccess)
+                {
+                    winner = evt; loser = existing;
+                }
+                else if (newAccess == existingAccess && !existing.HasFile && evt.HasFile)
+                {
+                    winner = evt; loser = existing;
+                }
+                else
+                {
+                    winner = existing; loser = evt;
+                }
+
+                if (!ReferenceEquals(winner, existing))
+                {
+                    deduped[dedupeKey] = winner;
+                }
+
+                // Merge loser's instance name into winner's AlsoInInstances (dedup & skip self).
+                if (!string.IsNullOrEmpty(loser.InstanceName)
+                    && !string.Equals(loser.InstanceName, winner.InstanceName, StringComparison.Ordinal))
+                {
+                    winner.AlsoInInstances ??= new List<string>();
+                    if (!winner.AlsoInInstances.Contains(loser.InstanceName))
+                        winner.AlsoInInstances.Add(loser.InstanceName);
+                }
+                // Preserve loser's own AlsoInInstances entries too.
+                if (loser.AlsoInInstances != null)
+                {
+                    winner.AlsoInInstances ??= new List<string>();
+                    foreach (var name in loser.AlsoInInstances)
+                    {
+                        if (!string.Equals(name, winner.InstanceName, StringComparison.Ordinal)
+                            && !winner.AlsoInInstances.Contains(name))
+                            winner.AlsoInInstances.Add(name);
+                    }
+                }
+            }
+            events = deduped.Values.ToList();
+
+            // Final safety-net access filter (defense in depth — dedup above already respects this,
+            // but if the filter is on and a lone candidate is inaccessible, it must still be hidden).
+            if (config.CalendarFilterByLibraryAccess && accessibleIds != null)
+            {
+                events = events.Where(e =>
+                {
+                    if (e.ItemId.HasValue)
+                        return accessibleIds.Contains(e.ItemId.Value);
+                    if (!string.IsNullOrEmpty(e.RootFolderPath)
+                        && rootFolderAccessMap != null
+                        && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
+                        return hasAccess;
+                    return true;
+                }).ToList();
+            }
+
+            return Ok(new { events, errors });
+        }
+
+        private Task<(List<ArrItem> Items, string? Error)> FetchSonarrCalendar(
+            ArrInstance instance, string startIso, string endIso,
+            Func<object?, DateTime?> parseDate, CancellationToken ct)
+        {
+            return FetchAndMapAsync<List<ArrItem>>(
+                instance,
+                $"/api/v3/calendar?includeSeries=true&unmonitored=true&start={startIso}&end={endIso}",
+                data =>
+                {
+                    var items = new List<ArrItem>();
+                    if (data == null) return items;
+                    foreach (var episode in data)
+                    {
+                        var airDate = parseDate((string?)episode.airDateUtc ?? (string?)episode.airDate);
+                        if (!airDate.HasValue) continue;
+
+                        string? seriesPosterUrl = null;
+                        string? seriesBackdropUrl = null;
+                        if (episode.series?.images != null)
+                        {
+                            foreach (var img in episode.series.images)
+                            {
+                                var coverType = (string?)img.coverType;
+                                var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                if (string.IsNullOrWhiteSpace(imageUrl)) continue;
+                                if (seriesBackdropUrl == null && (coverType == "fanart" || coverType == "banner"))
+                                    seriesBackdropUrl = imageUrl;
+                                else if (seriesPosterUrl == null && coverType == "poster")
+                                    seriesPosterUrl = imageUrl;
+                            }
+                        }
+
+                        var seasonNumber = (int?)episode.seasonNumber ?? 0;
+                        var episodeNumber = (int?)episode.episodeNumber ?? 0;
+                        var episodeTitle = (string?)episode.title ?? "Unknown Episode";
+
+                        items.Add(new ArrItem
+                        {
+                            Id = (string?)episode.id?.ToString(),
+                            Source = nameof(ArrType.Sonarr),
+                            InstanceName = instance.Name,
+                            Type = "Series",
+                            Title = (string?)episode.series?.title ?? "Unknown Series",
+                            Subtitle = $"S{seasonNumber:D2}E{episodeNumber:D2} - {episodeTitle}",
+                            ReleaseDate = airDate.Value.ToUniversalTime().ToString("o"),
+                            ReleaseType = "Episode",
+                            HasFile = (bool?)episode.hasFile ?? false,
+                            Monitored = (bool?)episode.monitored ?? false,
+                            SeriesId = (int?)episode.seriesId,
+                            SeasonNumber = seasonNumber,
+                            EpisodeNumber = episodeNumber,
+                            EpisodeTitle = episodeTitle,
+                            Overview = (string?)episode.overview,
+                            TvdbId = (int?)episode.series?.tvdbId,
+                            ImdbId = (string?)episode.series?.imdbId,
+                            TmdbId = (int?)episode.series?.tmdbId,
+                            PosterUrl = seriesPosterUrl,
+                            BackdropUrl = seriesBackdropUrl,
+                            EpisodeTvdbId = (int?)episode.tvdbId,
+                            EpisodeImdbId = (string?)episode.imdbId,
+                            RootFolderPath = GetRootFolderFromPath((string?)episode.series?.path)
+                        });
+                    }
+                    return items;
+                },
+                emptyResult: new List<ArrItem>(),
+                timeout: TimeSpan.FromSeconds(30),
+                contextLabel: "Sonarr calendar",
+                ct: ct);
+        }
+
+        private Task<(List<ArrItem> Items, string? Error)> FetchRadarrCalendar(
+            ArrInstance instance, string startIso, string endIso,
+            DateTime startDate, DateTime endDate,
+            Func<object?, DateTime?> parseDate,
+            Action<Dictionary<string, DateTime>, string, object?> addRelease,
+            CancellationToken ct)
+        {
+            return FetchAndMapAsync<List<ArrItem>>(
+                instance,
+                $"/api/v3/calendar?unmonitored=true&start={startIso}&end={endIso}",
+                data =>
+                {
+                    var items = new List<ArrItem>();
+                    if (data == null) return items;
+                    foreach (var movie in data)
+                    {
+                        var releaseDates = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+                        string? posterUrl = null;
+                        string? backdropUrl = null;
+                        if (movie.images != null)
+                        {
+                            foreach (var img in movie.images)
+                            {
+                                var coverType = (string?)img.coverType;
+                                var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
+                                if (string.IsNullOrWhiteSpace(imageUrl)) continue;
+                                if (posterUrl == null && coverType == "poster") { posterUrl = imageUrl; continue; }
+                                if (backdropUrl == null && (coverType == "fanart" || coverType == "backdrop"))
+                                    backdropUrl = imageUrl;
+                            }
+                        }
+
+                        addRelease(releaseDates, "CinemaRelease", (string?)movie.inCinemas);
+                        addRelease(releaseDates, "PhysicalRelease", (string?)movie.physicalRelease);
+                        addRelease(releaseDates, "DigitalRelease", (string?)movie.digitalRelease);
+
+                        if (movie.releases != null)
+                        {
+                            foreach (var release in movie.releases)
+                            {
+                                var releaseDate = (object?)release.releaseDate ?? release.date;
+                                var type = Convert.ToString(release.type)?.ToLowerInvariant();
+                                var isPhysical = (bool?)release.isPhysical ?? false;
+                                if (isPhysical) addRelease(releaseDates, "PhysicalRelease", releaseDate);
+                                else if (type == "digital") addRelease(releaseDates, "DigitalRelease", releaseDate);
+                                else if (type == "theatrical" || type == "cinema" || type == "theater")
+                                    addRelease(releaseDates, "CinemaRelease", releaseDate);
+                            }
+                        }
+
+                        if (releaseDates.Count == 0) continue;
+
+                        var movieTitle = (string?)movie.title ?? (string?)movie.originalTitle ?? "Unknown";
+                        string? movieYear = null;
+                        var yearValue = (object?)movie.year;
+                        if (yearValue != null) movieYear = Convert.ToString(yearValue);
+
+                        foreach (var kvp in releaseDates)
+                        {
+                            var releaseUtc = kvp.Value.ToUniversalTime();
+                            if (releaseUtc < startDate || releaseUtc > endDate) continue;
+                            items.Add(new ArrItem
+                            {
+                                Id = $"{movie.id}-{kvp.Key}",
+                                Source = nameof(ArrType.Radarr),
+                                InstanceName = instance.Name,
+                                Type = "Movie",
+                                Title = movieTitle,
+                                Subtitle = movieYear,
+                                ReleaseDate = releaseUtc.ToString("o"),
+                                ReleaseType = kvp.Key,
+                                HasFile = (bool?)movie.hasFile ?? false,
+                                Monitored = (bool?)movie.monitored ?? false,
+                                PosterUrl = posterUrl,
+                                BackdropUrl = backdropUrl,
+                                TmdbId = (int?)movie.tmdbId,
+                                ImdbId = (string?)movie.imdbId,
+                                RootFolderPath = GetRootFolderFromPath((string?)movie.path)
+                            });
+                        }
+                    }
+                    return items;
+                },
+                emptyResult: new List<ArrItem>(),
+                timeout: TimeSpan.FromSeconds(10),
+                contextLabel: "Radarr calendar",
+                ct: ct);
         }
 
         /// <summary>

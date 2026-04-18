@@ -64,34 +64,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var radarrService = new RadarrService(_httpClientFactory, _logger);
             var sonarrService = new SonarrService(_httpClientFactory, _logger);
 
-            Dictionary<int, List<string>> radarrTags = new Dictionary<int, List<string>>();
-            Dictionary<string, List<string>> sonarrTags = new Dictionary<string, List<string>>();
+            var radarrTags = new Dictionary<int, List<string>>();
+            var sonarrTags = new Dictionary<string, List<string>>();
 
-            // Fetch Radarr tags if configured
-            if (!string.IsNullOrWhiteSpace(config.RadarrUrl) && !string.IsNullOrWhiteSpace(config.RadarrApiKey))
+            // Fetch tags from all configured Radarr instances
+            if (config.IsRadarrInstancesCorrupt())
             {
-                _logger.Info("Fetching tags from Radarr...");
-                radarrTags = await radarrService.GetMovieTagsByTmdbId(config.RadarrUrl, config.RadarrApiKey);
-                _logger.Info($"Fetched {radarrTags.Count} movie tag mappings from Radarr");
+                _logger.Error("RadarrInstances config is corrupt JSON — no Radarr tags will sync this run. "
+                    + "Admin must open the Arr Links config page and reset the corrupt value.");
+            }
+            var radarrInstances = config.GetEnabledRadarrInstances();
+            if (radarrInstances.Count > 0)
+            {
+                foreach (var instance in radarrInstances)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        _logger.Info($"Fetching tags from Radarr instance: {instance.Name}");
+                        var instanceTags = await radarrService.GetMovieTagsByTmdbId(instance.Url, instance.ApiKey, cancellationToken);
+                        _logger.Info($"Fetched {instanceTags.Count} movie tag mappings from {instance.Name}");
+                        foreach (var kvp in instanceTags)
+                        {
+                            if (radarrTags.TryGetValue(kvp.Key, out var existing))
+                            {
+                                foreach (var tag in kvp.Value)
+                                {
+                                    if (!existing.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                                        existing.Add(tag);
+                                }
+                            }
+                            else
+                            {
+                                radarrTags[kvp.Key] = new List<string>(kvp.Value);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger.Error($"Failed to sync tags from Radarr instance {instance.Name}: {ex.Message}");
+                    }
+                }
             }
             else
             {
-                _logger.Info("Radarr URL or API key not configured, skipping Radarr sync");
+                var allRadarr = config.GetRadarrInstances();
+                if (allRadarr.Count > 0)
+                    _logger.Info($"All {allRadarr.Count} Radarr instances are disabled — skipping Radarr sync");
+                else
+                    _logger.Info("No Radarr instances configured, skipping Radarr sync");
             }
 
             progress?.Report(25);
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Fetch Sonarr tags if configured
-            if (!string.IsNullOrWhiteSpace(config.SonarrUrl) && !string.IsNullOrWhiteSpace(config.SonarrApiKey))
+            // Fetch tags from all configured Sonarr instances
+            if (config.IsSonarrInstancesCorrupt())
             {
-                _logger.Info("Fetching tags from Sonarr...");
-                sonarrTags = await sonarrService.GetSeriesTagsByTvdbId(config.SonarrUrl, config.SonarrApiKey);
-                _logger.Info($"Fetched {sonarrTags.Count} series tag mappings from Sonarr");
+                _logger.Error("SonarrInstances config is corrupt JSON — no Sonarr tags will sync this run. "
+                    + "Admin must open the Arr Links config page and reset the corrupt value.");
+            }
+            var sonarrInstances = config.GetEnabledSonarrInstances();
+            if (sonarrInstances.Count > 0)
+            {
+                foreach (var instance in sonarrInstances)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        _logger.Info($"Fetching tags from Sonarr instance: {instance.Name}");
+                        var instanceTags = await sonarrService.GetSeriesTagsByTvdbId(instance.Url, instance.ApiKey, cancellationToken);
+                        _logger.Info($"Fetched {instanceTags.Count} series tag mappings from {instance.Name}");
+                        foreach (var kvp in instanceTags)
+                        {
+                            if (sonarrTags.TryGetValue(kvp.Key, out var existing))
+                            {
+                                foreach (var tag in kvp.Value)
+                                {
+                                    if (!existing.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                                        existing.Add(tag);
+                                }
+                            }
+                            else
+                            {
+                                sonarrTags[kvp.Key] = new List<string>(kvp.Value);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger.Error($"Failed to sync tags from Sonarr instance {instance.Name}: {ex.Message}");
+                    }
+                }
             }
             else
             {
-                _logger.Info("Sonarr URL or API key not configured, skipping Sonarr sync");
+                var allSonarr = config.GetSonarrInstances();
+                if (allSonarr.Count > 0)
+                    _logger.Info($"All {allSonarr.Count} Sonarr instances are disabled — skipping Sonarr sync");
+                else
+                    _logger.Info("No Sonarr instances configured, skipping Sonarr sync");
             }
 
             progress?.Report(50);
