@@ -1953,6 +1953,19 @@
     return `<span class="je-calendar-status-icons">${icons.join("")}</span>`;
   }
 
+  /**
+   * Build the display label for the instance badge on a calendar event.
+   * Join all instances so the badge reads e.g. "Radarr, Radarr4K" instead of just "Radarr".
+   */
+  function buildInstanceLabel(event) {
+    const primary = event.instanceName || event.source;
+    if (!Array.isArray(event.alsoInInstances) || event.alsoInInstances.length === 0) {
+      return primary;
+    }
+    const all = [primary, ...event.alsoInInstances];
+    return all.join(", ");
+  }
+
   function buildTimePill(event) {
     const timeLabel = formatEventTime(event.releaseDate);
     if (!timeLabel) return "";
@@ -2000,7 +2013,7 @@
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabelRaw = event.instanceName || event.source;
+    const sourceLabelRaw = buildInstanceLabel(event);
     const sourceLabel = escapeHtml(sourceLabelRaw);
     const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
@@ -2244,7 +2257,7 @@
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
     const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-    const sourceLabelRaw = event.instanceName || event.source;
+    const sourceLabelRaw = buildInstanceLabel(event);
     const sourceLabel = escapeHtml(sourceLabelRaw);
     const iconClass = event.source === "Sonarr" ? "je-sonarr-icon" : "je-radarr-icon";
     const subtitle = event.subtitle || "";
@@ -2303,7 +2316,7 @@
       const poster = event.posterUrl || event.backdropUrl;
       const releaseTypeLabel = formatReleaseLabel(event);
       const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
-      const sourceLabelRaw = event.instanceName || event.source;
+      const sourceLabelRaw = buildInstanceLabel(event);
       const sourceLabel = escapeHtml(sourceLabelRaw);
       const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
       const statusIcons = renderStatusIcons(event);
