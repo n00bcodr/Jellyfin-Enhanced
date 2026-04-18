@@ -2736,6 +2736,7 @@
 
         function collectInstancesFromDom(selector, defaultName) {
             var out = [];
+            var incomplete = [];
             document.querySelectorAll(selector).forEach(function(card) {
                 var url = card.querySelector('.arr-instance-url').value.trim();
                 var apiKey = card.querySelector('.arr-instance-apikey').value.trim();
@@ -2750,16 +2751,26 @@
                         // guards against DOM surgery from another script).
                         Enabled: enabledCb ? enabledCb.checked : true
                     });
+                } else if (url && !apiKey) {
+                    // Card has a URL but no API key — it would be silently dropped. Collect the
+                    // name so we can warn the admin before the save commits.
+                    incomplete.push(card.querySelector('.arr-instance-name').value.trim() || defaultName);
                 }
             });
-            return out;
+            return { instances: out, incomplete: incomplete };
         }
 
         function saveArrInstances(config) {
             // Only overwrite stored state when the load parse succeeded. Otherwise leave the stored
             // JSON AND legacy fields untouched so the admin can recover the original value.
+            var incompleteWarnings = [];
+
             if (_arrParseOK.sonarr) {
-                var sonarrInstances = collectInstancesFromDom('#sonarrInstancesList .arr-instance-card', 'Sonarr');
+                var sonarrResult = collectInstancesFromDom('#sonarrInstancesList .arr-instance-card', 'Sonarr');
+                var sonarrInstances = sonarrResult.instances;
+                sonarrResult.incomplete.forEach(function(name) {
+                    incompleteWarnings.push('Sonarr instance "' + name + '" has a URL but no API key — it was not saved.');
+                });
                 config.SonarrInstances = JSON.stringify(sonarrInstances);
                 if (sonarrInstances.length > 0) {
                     config.SonarrUrl = sonarrInstances[0].Url;
@@ -2773,7 +2784,11 @@
             }
 
             if (_arrParseOK.radarr) {
-                var radarrInstances = collectInstancesFromDom('#radarrInstancesList .arr-instance-card', 'Radarr');
+                var radarrResult = collectInstancesFromDom('#radarrInstancesList .arr-instance-card', 'Radarr');
+                var radarrInstances = radarrResult.instances;
+                radarrResult.incomplete.forEach(function(name) {
+                    incompleteWarnings.push('Radarr instance "' + name + '" has a URL but no API key — it was not saved.');
+                });
                 config.RadarrInstances = JSON.stringify(radarrInstances);
                 if (radarrInstances.length > 0) {
                     config.RadarrUrl = radarrInstances[0].Url;
@@ -2785,6 +2800,8 @@
                     config.RadarrUrlMappings = '';
                 }
             }
+
+            return incompleteWarnings;
         }
 
         // Bind add-instance buttons
@@ -3181,7 +3198,13 @@
             config.ArrTagsSyncEnabled = document.querySelector('#arrTagsSyncEnabled').checked;
 
             // Save multi-instance Sonarr/Radarr
-            saveArrInstances(config);
+            var arrIncompleteWarnings = saveArrInstances(config);
+            if (arrIncompleteWarnings.length > 0) {
+                // Surface each incomplete-card warning to the admin before the save completes.
+                arrIncompleteWarnings.forEach(function(msg) {
+                    Dashboard.alert({ title: '⚠ Incomplete *arr instance', message: msg });
+                });
+            }
             config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'Requested by: ';
             config.ArrTagsClearOldTags = document.querySelector('#arrTagsClearOldTags').checked;
             config.ArrTagsShowAsLinks = document.querySelector('#arrTagsShowAsLinks').checked;

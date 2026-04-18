@@ -3585,10 +3585,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 var url = instance.Url.TrimEnd('/');
                 var client = _httpClientFactory.CreateClient();
-                client.DefaultRequestHeaders.Add("X-Api-Key", instance.ApiKey);
+                // Do NOT use DefaultRequestHeaders for the API key — CreateClient() may return a
+                // pooled/shared instance and DefaultRequestHeaders mutations are not thread-safe
+                // across concurrent fan-out calls. Use a per-request HttpRequestMessage instead.
                 client.Timeout = timeout;
 
-                var response = await client.GetAsync($"{url}{endpointPath}", ct);
+                var request = new HttpRequestMessage(HttpMethod.Get, $"{url}{endpointPath}");
+                request.Headers.TryAddWithoutValidation("X-Api-Key", instance.ApiKey);
+                var response = await client.SendAsync(request, ct);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
                     || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -3853,25 +3857,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
                 if (string.IsNullOrEmpty(jellyfinUserId))
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
                 if (string.IsNullOrEmpty(jellyseerrUserId))
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 var userRequests = await GetJellyseerrRequestsForUser(jellyseerrUserId);
                 if (userRequests == null || userRequests.Count == 0)
                 {
-                    return Ok(new { items = new List<object>() });
+                    return Ok(new { items = new List<object>(), errors = new List<object>() });
                 }
 
                 allowedRequests = new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType)));

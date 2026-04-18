@@ -762,9 +762,14 @@
   // the memo entry is dropped so future occurrences re-toast.
   const _toastedDownloadsErrors = new Set();
   // Alias the shared HTML-escape helper (JE.toast uses innerHTML).
-  const esc = (s) => window.JellyfinEnhanced?.helpers?.escHtml
-    ? window.JellyfinEnhanced.helpers.escHtml(s)
-    : String(s == null ? "" : s);
+  // The inline fallback is a real escaper so XSS is blocked even if helpers.js
+  // hasn't loaded yet (e.g. a load-order race on first init).
+  const esc = (s) => {
+    if (window.JellyfinEnhanced?.helpers?.escHtml) return window.JellyfinEnhanced.helpers.escHtml(s);
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  };
   function surfaceDownloadsErrors(errors) {
     if (!Array.isArray(errors) || errors.length === 0) {
       _toastedDownloadsErrors.clear();

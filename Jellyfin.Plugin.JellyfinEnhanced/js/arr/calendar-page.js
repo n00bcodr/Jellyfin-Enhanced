@@ -1397,9 +1397,14 @@
   const _toastedCalendarErrors = new Set();
   // Alias the shared HTML-escape helper to keep toast concatenations short. JE.toast uses
   // innerHTML so admin-set instance names + upstream error reasons must be escaped.
-  const esc = (s) => window.JellyfinEnhanced?.helpers?.escHtml
-    ? window.JellyfinEnhanced.helpers.escHtml(s)
-    : String(s == null ? "" : s);
+  // The inline fallback is a real escaper so XSS is blocked even if helpers.js
+  // hasn't loaded yet (e.g. a load-order race on first init).
+  const esc = (s) => {
+    if (window.JellyfinEnhanced?.helpers?.escHtml) return window.JellyfinEnhanced.helpers.escHtml(s);
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  };
   function surfaceCalendarErrors(errors) {
     if (!Array.isArray(errors) || errors.length === 0) {
       // All previously-failing instances have recovered — drop the memo so future errors re-toast.

@@ -325,7 +325,14 @@
             // Alias the shared helper so the toast concatenations read short. JE.toast renders
             // via innerHTML, so any caller-controlled field (admin-set instance name, upstream
             // error reason) must pass through escape() to prevent stored XSS.
-            const esc = (s) => JE.helpers?.escHtml ? JE.helpers.escHtml(s) : String(s == null ? '' : s);
+            // The inline fallback is a real escaper so XSS is blocked even if helpers.js
+            // hasn't loaded yet (e.g. a load-order race on first init).
+            const esc = (s) => {
+                if (JE.helpers?.escHtml) return JE.helpers.escHtml(s);
+                return String(s == null ? '' : s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            };
 
             function surfaceInstanceErrors(kind, errors) {
                 if (!Array.isArray(errors) || errors.length === 0) {
