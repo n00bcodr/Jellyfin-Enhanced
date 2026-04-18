@@ -182,6 +182,9 @@
         }
 
         if (rating.tmdb) {
+            // Show a dash instead of "0.0" — a zero rating means no data, not a genuine score
+            const displayRating = parseFloat(rating.tmdb) === 0 ? '—' : rating.tmdb;
+
             const tmdbTag = document.createElement('div');
             tmdbTag.className = `${tagClass} rating-tag-tmdb`;
 
@@ -191,7 +194,7 @@
 
             const ratingText = document.createElement('span');
             ratingText.className = 'rating-text';
-            ratingText.textContent = rating.tmdb;
+            ratingText.textContent = displayRating;
 
             tmdbTag.appendChild(starIcon);
             tmdbTag.appendChild(ratingText);
