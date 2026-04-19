@@ -356,36 +356,48 @@
 
 /* ---------------------------------------------------------------------------
    Fieldsets (Cards)
+   Card body + darker header strip, per design preferences §3. Body background
+   is lighter than the page, header strip is one shade darker than body so it
+   reads as a clear anchor. Optional soft shadow on the card.
    --------------------------------------------------------------------------- */
 #JellyfinEnhancedForm fieldset {
-    background: rgba(30, 30, 30, 0.5);
+    background: rgba(30, 30, 30, 0.55);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
     padding: 0;
     margin: 0;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22);
     overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.25s ease;
+}
+#JellyfinEnhancedForm fieldset:hover {
+    border-color: rgba(255, 255, 255, 0.12);
 }
 #JellyfinEnhancedForm legend.sectionTitle {
-    background: rgba(0, 0, 0, 0.3);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.3) 100%);
     width: 100%;
     margin: 0;
-    padding: 18px 24px;
-    font-size: 1.15em;
+    padding: 16px 24px;
+    font-size: 1.1em;
     font-weight: 600;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    display: block;
+    letter-spacing: 0.2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    align-items: center;
+    gap: 6px;
     box-sizing: border-box;
+    color: #f0f0f0;
 }
 .configSection {
-    padding: 24px;
+    padding: 22px 24px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 14px;
 }
 
 /* Let specific fieldsets span full width */
 .jellyfin-tab-content.active > fieldset.je-fieldset-wide,
+.jellyfin-tab-content.active > fieldset.je-overview-section,
 .jellyfin-tab-content.active > fieldset:has(.je-branding-grid),
 .jellyfin-tab-content.active > fieldset:has(.arr-instances-list),
 .jellyfin-tab-content.active > fieldset:has(.je-textarea-large),
@@ -399,22 +411,32 @@
 
 /* ---------------------------------------------------------------------------
    Inputs, Checkboxes & Form Elements
+   Sub-cells inside a card visually group related controls. Faint border and
+   a hairline background lift, brightening on hover and on focus-within
+   (design preferences §3 + §5).
    --------------------------------------------------------------------------- */
 .configSection > .inputContainer,
 .configSection > .checkboxContainer,
 .configSection > .selectContainer {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px;
     padding: 14px 18px;
     margin-bottom: 0 !important;
-    transition: border-color 0.2s, background 0.2s;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.configSection > .inputContainer:hover,
+.configSection > .checkboxContainer:hover,
+.configSection > .selectContainer:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.035);
 }
 .configSection > .inputContainer:focus-within,
 .configSection > .checkboxContainer:focus-within,
 .configSection > .selectContainer:focus-within {
     border-color: var(--primary-accent-color, #00a4dc);
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.045);
+    box-shadow: 0 0 0 1px var(--primary-accent-color, #00a4dc) inset;
 }
 .checkboxContainer {
     display: flex;
@@ -444,22 +466,30 @@
 
 /* ---------------------------------------------------------------------------
    Accordions (Details / Summary)
+   Darker-when-closed / lighter-when-open flip is the core appeal of this
+   pattern (design preferences §4). Collapsed reads as "tucked in"; expanded
+   lifts to match the surrounding card body so it feels like a natural
+   extension, not a nested well. Smooth transition on specific properties
+   (avoid `all` to keep the animation cheap).
    --------------------------------------------------------------------------- */
 .je-details-section, .je-seerr-details {
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 10px;
     margin: 5px 0 10px 0;
     overflow: hidden;
-    transition: all 0.3s ease;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+.je-details-section:hover, .je-seerr-details:hover {
+    border-color: rgba(255, 255, 255, 0.1);
 }
 .je-details-section[open], .je-seerr-details[open] {
-    background: rgba(255, 255, 255, 0.02);
-    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.025);
+    border-color: rgba(255, 255, 255, 0.12);
 }
 .je-details-section > summary, .je-seerr-details > summary {
     background: transparent;
-    padding: 16px 20px;
+    padding: 14px 18px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
@@ -467,6 +497,16 @@
     align-items: center;
     list-style: none;
     user-select: none;
+    color: rgba(240, 240, 240, 0.82);
+    transition: color 0.2s ease;
+}
+.je-details-section[open] > summary,
+.je-seerr-details[open] > summary {
+    color: #f5f5f5;
+}
+.je-details-section > summary:hover,
+.je-seerr-details > summary:hover {
+    color: #fff;
 }
 .je-details-section > summary::-webkit-details-marker,
 .je-seerr-details > summary::-webkit-details-marker {
@@ -476,9 +516,10 @@
 .je-seerr-details > summary::after {
     content: "expand_more";
     font-family: "Material Icons";
-    font-size: 24px;
-    transition: transform 0.3s ease;
-    color: rgba(255,255,255,0.4);
+    font-size: 22px;
+    transition: transform 0.25s ease, color 0.2s ease;
+    color: rgba(255, 255, 255, 0.4);
+    line-height: 1;
 }
 .je-details-section[open] > summary::after,
 .je-seerr-details[open] > summary::after {
