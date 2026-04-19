@@ -9,25 +9,38 @@
     <div data-role="content">
         <div class="content-primary">
 
-            <div class="sectionTitleContainer">
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <h2 class="sectionTitle">Jellyfin Enhanced</h2>
-                    <a is="emby-linkbutton" class="raised raised-mini emby-button je-help-link" target="_blank" href="https://github.com/n00bcodr/Jellyfin-Enhanced">
-                        <i class="material-icons button-icon button-icon-left secondaryText" aria-hidden="true">help_outline</i>
-                        <span>Docs &amp; Help</span>
-                    </a>
-                    <button id="toggleDescriptionsBtn" type="button" class="raised raised-mini emby-button je-desc-toggle" title="Show or hide setting descriptions" aria-pressed="true">
-                        <i class="material-icons button-icon button-icon-left secondaryText" aria-hidden="true">subject</i>
-                        <span class="je-desc-toggle-label">Descriptions</span>
-                    </button>
-                </div>
-                <div id="settingsSearchContainer">
-                    <div>
-                        <i class="material-icons je-search-icon">search</i>
-                        <input id="settingsSearchInput" type="text" placeholder="Search settings..." />
-                        <span id="settingsSearchCount"></span>
-                        <button id="settingsSearchClear" type="button" title="Clear search">&#x2715;</button>
+            <div class="je-sticky-header">
+                <div class="sectionTitleContainer">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <h2 class="sectionTitle">Jellyfin Enhanced</h2>
+                        <a is="emby-linkbutton" class="raised raised-mini emby-button je-help-link" target="_blank" href="https://github.com/n00bcodr/Jellyfin-Enhanced">
+                            <i class="material-icons button-icon button-icon-left secondaryText" aria-hidden="true">help_outline</i>
+                            <span>Docs &amp; Help</span>
+                        </a>
+                        <button id="toggleDescriptionsBtn" type="button" class="raised raised-mini emby-button je-desc-toggle" title="Show or hide setting descriptions" aria-pressed="true">
+                            <i class="material-icons button-icon button-icon-left secondaryText" aria-hidden="true">subject</i>
+                            <span class="je-desc-toggle-label">Descriptions</span>
+                        </button>
                     </div>
+                    <div id="settingsSearchContainer">
+                        <div>
+                            <i class="material-icons je-search-icon">search</i>
+                            <input id="settingsSearchInput" type="text" placeholder="Search settings..." />
+                            <span id="settingsSearchCount"></span>
+                            <button id="settingsSearchClear" type="button" title="Clear search">&#x2715;</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="je-tab-bar">
+                <button class="jellyfin-tab-button active" data-tab="overview"><h3><i class="material-icons je-tab-icon" aria-hidden="true">dashboard</i>Overview</h3></button>
+                <button class="jellyfin-tab-button" data-tab="display"><h3><i class="material-icons je-tab-icon" aria-hidden="true">palette</i>Display</h3></button>
+                <button class="jellyfin-tab-button" data-tab="playback"><h3><i class="material-icons je-tab-icon" aria-hidden="true">play_circle</i>Playback</h3></button>
+                <button class="jellyfin-tab-button" data-tab="pages"><h3><i class="material-icons je-tab-icon" aria-hidden="true">view_list</i>Pages</h3></button>
+                <button class="jellyfin-tab-button" data-tab="seerr"><h3><img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" alt="" class="je-tab-icon-img">Seerr</h3></button>
+                <button class="jellyfin-tab-button" data-tab="arr"><h3><i class="material-icons je-tab-icon" aria-hidden="true">dns</i>*arr</h3></button>
+                <button class="jellyfin-tab-button" data-tab="extras"><h3><i class="material-icons je-tab-icon" aria-hidden="true">auto_awesome</i>Extras</h3></button>
+                    <button class="jellyfin-tab-button" data-tab="keyboard"><h3><i class="material-icons je-tab-icon" aria-hidden="true">keyboard</i>Keyboard</h3></button>
                 </div>
             </div>
 
@@ -42,17 +55,6 @@
                         <button id="dismissFtWarningForever" type="button" class="emby-button raised raised-mini">Don't show again</button>
                     </div>
                 </div>
-            </div>
-
-            <div class="je-tab-bar">
-                <button class="jellyfin-tab-button active" data-tab="overview"><h3><i class="material-icons je-tab-icon" aria-hidden="true">dashboard</i>Overview</h3></button>
-                <button class="jellyfin-tab-button" data-tab="display"><h3><i class="material-icons je-tab-icon" aria-hidden="true">palette</i>Display</h3></button>
-                <button class="jellyfin-tab-button" data-tab="playback"><h3><i class="material-icons je-tab-icon" aria-hidden="true">play_circle</i>Playback</h3></button>
-                <button class="jellyfin-tab-button" data-tab="pages"><h3><i class="material-icons je-tab-icon" aria-hidden="true">view_list</i>Pages</h3></button>
-                <button class="jellyfin-tab-button" data-tab="seerr"><h3><img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" alt="" class="je-tab-icon-img">Seerr</h3></button>
-                <button class="jellyfin-tab-button" data-tab="arr"><h3><i class="material-icons je-tab-icon" aria-hidden="true">dns</i>*arr</h3></button>
-                <button class="jellyfin-tab-button" data-tab="extras"><h3><i class="material-icons je-tab-icon" aria-hidden="true">auto_awesome</i>Extras</h3></button>
-                <button class="jellyfin-tab-button" data-tab="keyboard"><h3><i class="material-icons je-tab-icon" aria-hidden="true">keyboard</i>Keyboard</h3></button>
             </div>
 
             <form id="JellyfinEnhancedForm">

@@ -36,6 +36,28 @@
 .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
 
 /* ---------------------------------------------------------------------------
+   Sticky header region — title + search + tab bar stay pinned at the
+   viewport top; only the form content scrolls.
+   Jellyfin's `[data-role="content"]` ancestor sets `overflow: hidden`
+   which kills `position: sticky`. Override that ancestor (scoped to
+   our page) so sticky works on window scroll.
+   --------------------------------------------------------------------------- */
+#JellyfinEnhancedPage[data-role="page"] > [data-role="content"] {
+    overflow: visible;
+}
+.je-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 1100;
+    background: rgba(15, 15, 15, 0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    padding: 8px 8px 0 8px;
+    margin: -8px -8px 20px -8px;
+    box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------------------------------------------------------------------------
    Header & Search Bar
    --------------------------------------------------------------------------- */
 .sectionTitleContainer {
@@ -44,8 +66,8 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 15px;
-    margin-bottom: 1.5em;
-    padding-bottom: 10px;
+    margin-bottom: 0;
+    padding: 10px 0 10px 0;
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .sectionTitleContainer h2 {
@@ -336,23 +358,16 @@
 .je-checklist-pending .je-checklist-icon { color: rgba(255, 255, 255, 0.45); }
 
 /* ---------------------------------------------------------------------------
-   Sticky Tab Navigation
+   Tab Navigation (sits inside .je-sticky-header which handles pinning)
    --------------------------------------------------------------------------- */
 .je-tab-bar {
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     display: flex;
     gap: 10px;
-    padding: 15px 0;
-    margin-bottom: 25px;
+    padding: 12px 0;
+    margin: 0;
     border-bottom: 1px solid rgba(255,255,255,0.08);
     overflow-x: auto;
     scrollbar-width: none;
-    box-shadow: 0 10px 20px -10px rgba(0,0,0,0.5);
 }
 .je-tab-bar::-webkit-scrollbar { display: none; }
 
