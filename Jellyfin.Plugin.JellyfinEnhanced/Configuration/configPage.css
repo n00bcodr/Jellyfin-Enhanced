@@ -1032,6 +1032,28 @@
 .dep-required-icon { vertical-align: middle; margin-left: 6px; }
 
 /* ---------------------------------------------------------------------------
+   Docs tab — embedded live docs iframe
+   Sizes to the available viewport below the sticky header so the iframe
+   shows as much content as possible without forcing a double scrollbar.
+   --------------------------------------------------------------------------- */
+.je-docs-fieldset {
+    grid-column: 1 / -1;
+}
+.je-docs-configsection {
+    padding: 14px !important;
+    gap: 10px !important;
+}
+.je-docs-iframe {
+    width: 100%;
+    height: calc(100vh - 260px);
+    min-height: 520px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    background: #0f0f0f;
+    display: block;
+}
+
+/* ---------------------------------------------------------------------------
    Setting description visibility toggle
    --------------------------------------------------------------------------- */
 body.je-hide-descriptions .je-setting-description { display: none !important; }

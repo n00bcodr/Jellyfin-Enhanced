@@ -42,6 +42,7 @@
                 <button class="jellyfin-tab-button" data-tab="elsewhere"><h3><i class="material-icons je-tab-icon" aria-hidden="true">travel_explore</i>Elsewhere</h3></button>
                 <button class="jellyfin-tab-button" data-tab="extras"><h3><i class="material-icons je-tab-icon" aria-hidden="true">auto_awesome</i>Extras</h3></button>
                     <button class="jellyfin-tab-button" data-tab="keyboard"><h3><i class="material-icons je-tab-icon" aria-hidden="true">keyboard</i>Keyboard</h3></button>
+                    <button class="jellyfin-tab-button" data-tab="docs"><h3><i class="material-icons je-tab-icon" aria-hidden="true">menu_book</i>Docs</h3></button>
                 </div>
             </div>
 
@@ -1727,6 +1728,25 @@
                     </fieldset>
                 </div>
 
+                <div id="docs" class="jellyfin-tab-content">
+                    <fieldset class="je-fieldset-wide je-docs-fieldset">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">menu_book</i>Documentation</legend>
+                        <div class="configSection je-docs-configsection">
+                            <div class="je-info-banner-inline-center">
+                                <div class="je-info-banner-row">
+                                    <i class="material-icons je-info-icon">info</i>
+                                    <div>
+                                        Live docs from
+                                        <a target="_blank" rel="noopener" href="https://n00bcodr.github.io/Jellyfin-Enhanced/" class="je-bold-link">n00bcodr.github.io/Jellyfin-Enhanced</a>.
+                                        If the embedded view below doesn't load, click the link to open in a new tab.
+                                    </div>
+                                </div>
+                            </div>
+                            <iframe id="docsFrame" class="je-docs-iframe" title="Jellyfin Enhanced Documentation" src="about:blank" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                        </div>
+                    </fieldset>
+                </div>
+
                 <div class="je-apply-hint">
                     Settings require a page refresh to take effect. Clear browser cache if changes persist.
                 </div>
@@ -1765,6 +1785,12 @@
             const tabs = document.querySelectorAll('.jellyfin-tab-button');
             const tabContents = document.querySelectorAll('.jellyfin-tab-content');
 
+            // Docs iframe URL — kept in JS rather than hardcoded in the
+            // <iframe src> attribute so we can lazy-load on first Docs
+            // activation (saves the GitHub Pages fetch for admins who
+            // never open this tab).
+            const DOCS_URL = 'https://n00bcodr.github.io/Jellyfin-Enhanced/';
+
             function activateTab(tabId) {
                 tabs.forEach(t => {
                     const isActive = t.dataset.tab === tabId;
@@ -1783,6 +1809,23 @@
                     const isActive = content.id === tabId;
                     content.classList.toggle('active', isActive);
                 });
+                // Lazy-load the Docs iframe the first time the user opens
+                // the Docs tab. Using `about:blank` as the initial src
+                // prevents the GitHub Pages fetch for admins who never
+                // click into it. We set the real src once and never
+                // reset it, so subsequent tab switches re-reveal the
+                // already-loaded page (keeps the admin's scroll position
+                // and any in-page nav state).
+                if (tabId === 'docs') {
+                    try {
+                        var f = document.getElementById('docsFrame');
+                        if (f && (!f.src || f.src === 'about:blank' || /about:blank/.test(f.src))) {
+                            f.src = DOCS_URL;
+                        }
+                    } catch (e) {
+                        console.warn('[JE] docs iframe lazy-load failed:', e);
+                    }
+                }
             }
 
             tabs.forEach(tab => {
