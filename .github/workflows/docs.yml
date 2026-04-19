@@ -39,7 +39,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs-material==9.6.12
+          pip install mkdocs-material==9.6.12 mdx-truly-sane-lists
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
