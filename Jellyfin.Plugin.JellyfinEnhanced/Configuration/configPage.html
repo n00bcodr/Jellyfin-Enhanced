@@ -1462,10 +1462,12 @@
             if (validated) {
                 jellyseerrStatusIndicator.textContent = 'check_circle';
                 jellyseerrStatusIndicator.style.color = '#52b54b';
+                try { setConnectionTestResult('seerr', 'ok', 'Connected'); } catch (e) { /* optional */ }
                 Dashboard.alert({ title: 'Success', message: 'Successfully connected to Seerr!' });
             } else {
                 jellyseerrStatusIndicator.textContent = 'error';
                 jellyseerrStatusIndicator.style.color = '#dc3545';
+                try { setConnectionTestResult('seerr', 'error', (lastError && lastError.length < 80) ? lastError : 'Connection failed'); } catch (e) {}
                 Dashboard.alert({ title: 'Connection Failed', message: lastError || 'Could not connect to any provided URL.' });
             }
         }
@@ -1496,6 +1498,7 @@
 
                 statusIndicator.textContent = 'check_circle';
                 statusIndicator.style.color = '#52b54b';
+                try { setConnectionTestResult('tmdb', 'ok', 'API key valid'); } catch (err) {}
                 Dashboard.alert({ title: 'Success', message: 'Successfully connected to TMDB!' });
 
             } catch (e) {
@@ -1511,6 +1514,12 @@
 
                 statusIndicator.textContent = 'error';
                 statusIndicator.style.color = '#dc3545';
+                try {
+                    var shortDetail = e.status === 401 ? 'API key rejected'
+                        : (e.status === 500 || e.status === 0 || !e.status) ? 'Unreachable'
+                        : 'Error ' + e.status;
+                    setConnectionTestResult('tmdb', 'error', shortDetail);
+                } catch (err) {}
                 Dashboard.alert({ title: 'Connection Failed', message: errorMessage });
             } finally {
                 allTestButtons.forEach(btn => btn.disabled = false);
@@ -3104,6 +3113,237 @@
             });
         }
 
+        // ==============================================================
+        // Connection-test cache + Integration Health checklist (phase 4).
+        // The checklist on Overview is a live health view of every
+        // integration the admin has turned on. It renders rows purely
+        // from (live config) + (cached test results), so it doesn't
+        // hammer external services on every render. TTL keeps results
+        // fresh without forcing probes on every click. The "Re-test all"
+        // Quick Action clears the cache and re-invokes every test.
+        // ==============================================================
+        var CONNECTION_TEST_CACHE_TTL_MS = 5 * 60 * 1000;
+        var _jeConnectionTestCache = new Map();
+
+        /**
+         * Write a test result into the cache and refresh the checklist.
+         * Safe to call multiple times; last write wins. Cache-refresh is
+         * guarded against exceptions so a bug in renderChecklist can't
+         * cascade and break the actual test flow.
+         * @param {string} key  e.g. 'tmdb', 'seerr', 'sonarr:<normalizedUrl>'
+         * @param {'ok'|'error'} status
+         * @param {string} detail short human message shown in the row
+         */
+        function setConnectionTestResult(key, status, detail) {
+            _jeConnectionTestCache.set(key, {
+                status: status,
+                detail: detail || '',
+                at: Date.now()
+            });
+            try { renderChecklist(); } catch (e) {
+                console.warn('[JE] renderChecklist threw after setConnectionTestResult:', e);
+            }
+        }
+
+        /**
+         * Read a test result from the cache. Returns null on miss OR on
+         * expiry — callers render the row as "pending" in that case.
+         */
+        function getConnectionTestResult(key) {
+            var entry = _jeConnectionTestCache.get(key);
+            if (!entry) return null;
+            if (Date.now() - entry.at > CONNECTION_TEST_CACHE_TTL_MS) {
+                _jeConnectionTestCache.delete(key);
+                return null;
+            }
+            return entry;
+        }
+
+        /**
+         * Drop every cached result. Used by the Re-test-all Quick Action
+         * so rows immediately show "pending" while tests fire.
+         */
+        function clearConnectionTestCache() {
+            _jeConnectionTestCache.clear();
+            try { renderChecklist(); } catch (e) {
+                console.warn('[JE] renderChecklist threw after clearConnectionTestCache:', e);
+            }
+        }
+
+        /**
+         * Normalize an arr-instance URL into a cache key fragment.
+         * Trim, lowercase, strip trailing slashes so minor differences
+         * don't fork the cache.
+         */
+        function _jeNormalizeArrUrl(url) {
+            return (url || '').trim().toLowerCase().replace(/\/+$/, '');
+        }
+
+        /**
+         * Build the Integration Health checklist inside #je-checklist.
+         *
+         * Row rules:
+         *   - Only render a row when the integration is enabled.
+         *   - Row state: 'ok' (green), 'amber' (warn), 'error' (red),
+         *     'pending' (grey — enabled + complete config but no cached
+         *     test result within TTL).
+         *   - Zero rows is a valid outcome — render the empty hint.
+         *   - Clicking a row jumps to the target tab.
+         *
+         * No HTML is injected from runtime data — every row is built with
+         * createElement + textContent so untrusted instance names / URLs
+         * can never inject markup into the checklist.
+         */
+        function renderChecklist() {
+            var root = document.getElementById('je-checklist');
+            if (!root) return;
+
+            var rows = [];
+
+            // ---------- TMDB ---------- enabled = key present
+            var tmdbEl = document.querySelector('#TMDB_API_KEY');
+            if (tmdbEl && (tmdbEl.value || '').trim()) {
+                var tmdbCache = getConnectionTestResult('tmdb');
+                rows.push({
+                    id: 'tmdb',
+                    label: 'TMDB',
+                    tab: 'extras',
+                    state: tmdbCache ? tmdbCache.status : 'pending',
+                    detail: tmdbCache ? tmdbCache.detail : 'API key set — not yet verified',
+                });
+            }
+
+            // ---------- Seerr ---------- enabled = checkbox on
+            var seerrEnabled = document.querySelector('#jellyseerrEnabled');
+            if (seerrEnabled && seerrEnabled.checked) {
+                var seerrUrls = readFieldValue('#jellyseerrUrls');
+                var seerrKey = readFieldValue('#JellyseerrApiKey');
+                if (!seerrUrls || !seerrKey) {
+                    rows.push({
+                        id: 'seerr',
+                        label: 'Seerr',
+                        tab: 'seerr',
+                        state: 'amber',
+                        detail: !seerrUrls && !seerrKey ? 'URL and API key missing'
+                            : !seerrUrls ? 'URL missing' : 'API key missing',
+                    });
+                } else {
+                    var seerrCache = getConnectionTestResult('seerr');
+                    rows.push({
+                        id: 'seerr',
+                        label: 'Seerr',
+                        tab: 'seerr',
+                        state: seerrCache ? seerrCache.status : 'pending',
+                        detail: seerrCache ? seerrCache.detail : 'Configured — not yet verified',
+                    });
+                }
+            }
+
+            // ---------- Sonarr / Radarr ---------- per-instance rows
+            ['sonarr', 'radarr'].forEach(function(type) {
+                var listId = type === 'sonarr' ? 'sonarrInstancesList' : 'radarrInstancesList';
+                var list = document.getElementById(listId);
+                if (!list) return;
+                var cards = list.querySelectorAll('.arr-instance-card');
+                cards.forEach(function(card) {
+                    var nameEl = card.querySelector('.arr-instance-name');
+                    var urlEl = card.querySelector('.arr-instance-url');
+                    var keyEl = card.querySelector('.arr-instance-apikey');
+                    if (!urlEl || !keyEl) return;
+                    var urlVal = (urlEl.value || '').trim();
+                    var keyVal = (keyEl.value || '').trim();
+                    var nameVal = (nameEl && nameEl.value ? nameEl.value.trim() : '')
+                                  || (type === 'sonarr' ? 'Sonarr' : 'Radarr');
+                    if (!urlVal && !keyVal) return;
+                    var cacheKey = type + ':' + _jeNormalizeArrUrl(urlVal);
+                    if (!urlVal || !keyVal) {
+                        rows.push({
+                            id: cacheKey,
+                            label: nameVal,
+                            tab: 'arr',
+                            state: 'amber',
+                            detail: !urlVal ? 'URL missing' : 'API key missing',
+                        });
+                        return;
+                    }
+                    var cache = getConnectionTestResult(cacheKey);
+                    rows.push({
+                        id: cacheKey,
+                        label: nameVal,
+                        tab: 'arr',
+                        state: cache ? cache.status : 'pending',
+                        detail: cache ? cache.detail : 'Configured — not yet verified',
+                    });
+                });
+            });
+
+            // ---------- Bazarr ---------- no backend test endpoint; use
+            // URL presence as best-available signal, mappings-only is amber.
+            var bazarrUrl = readFieldValue('#bazarrUrl');
+            var bazarrMappings = readFieldValue('#bazarrUrlMappings');
+            if (bazarrUrl || bazarrMappings) {
+                rows.push({
+                    id: 'bazarr',
+                    label: 'Bazarr',
+                    tab: 'arr',
+                    state: bazarrUrl ? 'ok' : 'amber',
+                    detail: bazarrUrl ? 'URL configured' : 'Only URL mappings set',
+                });
+            }
+
+            // ---------- Render ---------- clear + rebuild, no innerHTML.
+            while (root.firstChild) root.removeChild(root.firstChild);
+
+            if (rows.length === 0) {
+                var empty = document.createElement('div');
+                empty.className = 'je-checklist-empty';
+                empty.textContent = 'Enable an integration in Display, Playback, Seerr, or *arr to see its health here.';
+                root.appendChild(empty);
+                return;
+            }
+
+            rows.forEach(function(row) {
+                var el = document.createElement('button');
+                el.type = 'button';
+                el.className = 'je-checklist-row je-checklist-' + row.state;
+                el.setAttribute('data-target', row.tab);
+                el.setAttribute('data-row-id', row.id);
+
+                var iconName = 'radio_button_unchecked';
+                if (row.state === 'ok') iconName = 'check_circle';
+                else if (row.state === 'amber') iconName = 'warning';
+                else if (row.state === 'error') iconName = 'error';
+
+                var icon = document.createElement('i');
+                icon.className = 'material-icons je-checklist-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = iconName;
+
+                var text = document.createElement('div');
+                text.className = 'je-checklist-text';
+                var label = document.createElement('span');
+                label.className = 'je-checklist-label';
+                label.textContent = row.label;
+                var detail = document.createElement('span');
+                detail.className = 'je-checklist-detail';
+                detail.textContent = row.detail;
+                text.appendChild(label);
+                text.appendChild(detail);
+
+                el.appendChild(icon);
+                el.appendChild(text);
+
+                el.addEventListener('click', function() {
+                    activateTab(row.tab);
+                    try { sessionStorage.setItem('jellyfinEnhancedActiveTab', row.tab); } catch (e) {}
+                    var tabEl = document.getElementById(row.tab);
+                    if (tabEl) tabEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+
+                root.appendChild(el);
+            });
+        }
+
         /**
          * Orchestrator: evaluates all section, individual, and parent dependency rules.
          * Each step is isolated so a throw in the status dashboard (which reads a lot
@@ -3118,6 +3358,11 @@
                 updateStatusDashboard();
             } catch (e) {
                 console.warn('[JE] updateStatusDashboard threw; dashboard may be stale:', e);
+            }
+            try {
+                renderChecklist();
+            } catch (e) {
+                console.warn('[JE] renderChecklist threw; checklist may be stale:', e);
             }
         }
 
@@ -3351,6 +3596,7 @@
             indicator.className = 'material-icons status-check';
             indicator.style.color = '#00a4dc';
 
+            var arrCacheKey = type + ':' + _jeNormalizeArrUrl(urlVal);
             try {
                 var endpoint = type === 'sonarr' ? 'sonarr' : 'radarr';
                 var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal });
@@ -3359,6 +3605,7 @@
                 indicator.textContent = 'check_circle';
                 indicator.style.color = '#52b54b';
                 indicator.classList.remove('status-check');
+                try { setConnectionTestResult(arrCacheKey, 'ok', 'Connected'); } catch (err) {}
                 Dashboard.alert({ title: 'Success', message: 'Successfully connected to ' + nameVal + '!' });
             } catch (e) {
                 indicator.classList.remove('status-check');
@@ -3366,6 +3613,12 @@
                 indicator.style.color = '#dc3545';
 
                 var msg = connectionErrorMessage(e, nameVal, urlVal);
+                try {
+                    var shortArrDetail = e && e.status === 401 ? 'API key rejected'
+                        : e && (e.status === 500 || e.status === 0 || !e.status) ? 'Unreachable'
+                        : 'Error ' + (e && e.status ? e.status : '?');
+                    setConnectionTestResult(arrCacheKey, 'error', shortArrDetail);
+                } catch (err) {}
                 Dashboard.alert({ title: 'Connection Failed', message: msg });
             } finally {
                 btn.disabled = false;
@@ -3759,6 +4012,10 @@
         var retestAllConnectionsBtn = document.getElementById('retestAllConnectionsBtn');
         if (retestAllConnectionsBtn) {
             retestAllConnectionsBtn.addEventListener('click', function() {
+                // Invalidate the cache up front so every checklist row flips
+                // to "pending" immediately; the individual test handlers will
+                // repopulate it as they finish.
+                try { clearConnectionTestCache(); } catch (e) { /* renderChecklist logs */ }
                 var tested = 0;
 
                 // TMDB — one click is enough; pages share the same backing key

@@ -260,7 +260,10 @@
     line-height: 1.3;
 }
 
-/* Integration Health checklist (stub — Phase 4 fills rows) */
+/* Integration Health checklist
+   Live-derived row states: ok / amber / error / pending. Rows pick up a
+   soft tint in the row's state color so the panel is legible at a glance
+   without screaming. */
 .je-checklist {
     display: flex;
     flex-direction: column;
@@ -274,6 +277,74 @@
     font-size: 0.9em;
     text-align: center;
 }
+.je-checklist-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left-width: 3px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    width: 100%;
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.je-checklist-row:hover {
+    transform: translateX(2px);
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.16);
+}
+.je-checklist-row:focus-visible {
+    outline: 2px solid var(--primary-accent-color, #00a4dc);
+    outline-offset: 2px;
+}
+.je-checklist-icon {
+    font-size: 22px !important;
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+.je-checklist-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+.je-checklist-label {
+    font-size: 0.95em;
+    font-weight: 600;
+}
+.je-checklist-detail {
+    font-size: 0.8em;
+    opacity: 0.7;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.je-checklist-ok {
+    background: rgba(76, 175, 80, 0.08);
+    border-left-color: #4caf50;
+}
+.je-checklist-ok .je-checklist-icon { color: #4caf50; }
+.je-checklist-amber {
+    background: rgba(255, 152, 0, 0.08);
+    border-left-color: #ff9800;
+}
+.je-checklist-amber .je-checklist-icon { color: #ff9800; }
+.je-checklist-error {
+    background: rgba(244, 67, 54, 0.08);
+    border-left-color: #f44336;
+}
+.je-checklist-error .je-checklist-icon { color: #f44336; }
+.je-checklist-pending {
+    border-left-color: rgba(255, 255, 255, 0.2);
+}
+.je-checklist-pending .je-checklist-icon { color: rgba(255, 255, 255, 0.45); }
 
 /* ---------------------------------------------------------------------------
    Sticky Tab Navigation
