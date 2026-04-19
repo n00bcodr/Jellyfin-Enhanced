@@ -5083,26 +5083,17 @@
                 // return promises (they're event handlers fired via .click()),
                 // so we can't Promise.allSettled them. Instead, wait until
                 // the cooldown expires — that's our "batch is probably
-                // done" signal — then re-enable + summarize. This is why
-                // RETEST_ALL_COOLDOWN_MS is 15s (longer than the slowest
-                // single test) and not 5s. Edge: if a slow test exceeds
-                // the cooldown, its own in-UI indicator still updates when
-                // it eventually resolves; only the aggregate dialog misses
-                // that tail result.
+                // done" signal — then re-enable the button, drop the
+                // suppress flag, and re-render the checklist so the final
+                // ok/error rows show through. No aggregate dialog — the
+                // status indicators and Integration Health rows are the
+                // single source of truth for per-service results.
                 clearTimeout(_jeRetestAllReenableTimer);
-                var firedCount = tested;
                 _jeRetestAllReenableTimer = setTimeout(function() {
                     _jeSuppressTestAlerts = false;
                     retestAllConnectionsBtn.disabled = false;
                     _setRetestAllButtonLabel(retestAllConnectionsBtn, _retestAllOriginalLabel);
                     try { renderChecklist(); } catch (e) { /* logged */ }
-                    try {
-                        Dashboard.alert({
-                            title: 'Re-test complete',
-                            message: 'Re-tested ' + firedCount + ' service' + (firedCount === 1 ? '' : 's')
-                                + '. Check the Integration Health panel for per-service status.'
-                        });
-                    } catch (e) { /* ignore */ }
                 }, RETEST_ALL_COOLDOWN_MS);
             });
         }
