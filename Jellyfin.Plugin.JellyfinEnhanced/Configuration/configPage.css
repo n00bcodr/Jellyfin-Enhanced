@@ -66,7 +66,7 @@
 }
 #settingsSearchInput {
     width: 100%;
-    padding: 10px 35px;
+    padding: 10px 90px 10px 35px !important; /* Pad right to fit count and clear btn */
     background: rgba(0,0,0,0.25);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 20px;
@@ -75,6 +75,7 @@
     outline: none;
     transition: all 0.3s ease;
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+    box-sizing: border-box;
 }
 #settingsSearchInput:focus {
     background: rgba(0,0,0,0.4);
@@ -91,7 +92,7 @@
 #settingsSearchCount {
     display: none;
     position: absolute;
-    right: 35px;
+    right: 40px;
     color: rgba(255,255,255,0.5);
     font-size: 0.8em;
     font-weight: 500;
@@ -190,7 +191,6 @@
 
 /* ---------------------------------------------------------------------------
    Overview Tab — Service Status, Integration Health, Quick Actions
-   Baseline spacing + layout. Visual card polish lives in Phase 2's pass.
    --------------------------------------------------------------------------- */
 .je-overview-section {
     margin-bottom: 20px;
@@ -198,9 +198,6 @@
 .je-overview-section .je-status-dashboard {
     margin-bottom: 0;
 }
-/* Overview fieldsets are card GRIDS — the fieldset body shouldn't show a
-   thick dark padding strip above/below the cards. Keep the padding tight
-   so the card row sits flush to the legend. */
 .je-overview-section > .configSection {
     padding: 14px 18px;
 }
@@ -266,10 +263,7 @@
     line-height: 1.3;
 }
 
-/* Integration Health checklist
-   Live-derived row states: ok / amber / error / pending. Rows pick up a
-   soft tint in the row's state color so the panel is legible at a glance
-   without screaming. */
+/* Integration Health checklist */
 .je-checklist {
     display: flex;
     flex-direction: column;
@@ -332,24 +326,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.je-checklist-ok {
-    background: rgba(76, 175, 80, 0.08);
-    border-left-color: #4caf50;
-}
+.je-checklist-ok { background: rgba(76, 175, 80, 0.08); border-left-color: #4caf50; }
 .je-checklist-ok .je-checklist-icon { color: #4caf50; }
-.je-checklist-amber {
-    background: rgba(255, 152, 0, 0.08);
-    border-left-color: #ff9800;
-}
+.je-checklist-amber { background: rgba(255, 152, 0, 0.08); border-left-color: #ff9800; }
 .je-checklist-amber .je-checklist-icon { color: #ff9800; }
-.je-checklist-error {
-    background: rgba(244, 67, 54, 0.08);
-    border-left-color: #f44336;
-}
+.je-checklist-error { background: rgba(244, 67, 54, 0.08); border-left-color: #f44336; }
 .je-checklist-error .je-checklist-icon { color: #f44336; }
-.je-checklist-pending {
-    border-left-color: rgba(255, 255, 255, 0.2);
-}
+.je-checklist-pending { border-left-color: rgba(255, 255, 255, 0.2); }
 .je-checklist-pending .je-checklist-icon { color: rgba(255, 255, 255, 0.45); }
 
 /* ---------------------------------------------------------------------------
@@ -410,9 +393,7 @@
     pointer-events: none;
 }
 .jellyfin-tab-button.active .je-tab-icon { opacity: 1; }
-.jellyfin-tab-button:hover {
-    background: rgba(255, 255, 255, 0.12);
-}
+.jellyfin-tab-button:hover { background: rgba(255, 255, 255, 0.12); }
 .jellyfin-tab-button.active {
     background: var(--primary-accent-color, #00a4dc);
     border-color: var(--primary-accent-color, #00a4dc);
@@ -433,11 +414,6 @@
 
 /* ---------------------------------------------------------------------------
    Fieldsets (Cards)
-   Card body + header strip, per design preferences §3. The body is more
-   opaque than before because the page's random backdrop image was bleeding
-   through the translucent body and making padding strips look like hard
-   black boxes. Header strip is a subtle gradient, body sits on top of a
-   near-solid dark fill, cards' own lighter backgrounds still read clearly.
    --------------------------------------------------------------------------- */
 #JellyfinEnhancedForm fieldset {
     background: rgba(22, 22, 22, 0.94);
@@ -490,10 +466,13 @@
 
 /* ---------------------------------------------------------------------------
    Inputs, Checkboxes & Form Elements
-   Sub-cells inside a card visually group related controls. Faint border and
-   a hairline background lift, brightening on hover and on focus-within
-   (design preferences §3 + §5).
    --------------------------------------------------------------------------- */
+.configSection > .inputContainer,
+.configSection > .selectContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
 .configSection > .inputContainer,
 .configSection > .checkboxContainer,
 .configSection > .selectContainer {
@@ -501,7 +480,7 @@
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px;
     padding: 14px 18px;
-    margin-bottom: 0 !important;
+    margin-bottom: 5px !important;
     transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 .configSection > .inputContainer:hover,
@@ -517,6 +496,17 @@
     background: rgba(255, 255, 255, 0.045);
     box-shadow: 0 0 0 1px var(--primary-accent-color, #00a4dc) inset;
 }
+
+/* Ensure inputs span fully where intended */
+.configSection > .inputContainer .emby-input,
+.configSection > .inputContainer .emby-select,
+.configSection > .inputContainer .emby-textarea,
+.configSection > .selectContainer .emby-select {
+    width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
 .checkboxContainer {
     display: flex;
     align-items: center;
@@ -527,6 +517,11 @@
     gap: 10px;
     width: 100%;
     cursor: pointer;
+    word-break: break-word;
+}
+.checkboxContainer input[type="checkbox"] {
+    flex-shrink: 0;
+    margin: 0;
 }
 
 .fieldDescription {
@@ -535,21 +530,25 @@
     margin-top: 8px;
     line-height: 1.4;
 }
+
+/* Beautiful grouping of descriptions without negative margins */
+.je-setting-description {
+    margin-top: 4px;
+    margin-bottom: 12px;
+    padding-left: 14px;
+    border-left: 2px solid rgba(255, 255, 255, 0.08);
+}
 .checkboxContainer + .fieldDescription,
-.inputContainer + .fieldDescription {
-    margin-top: -10px;
-    margin-bottom: 5px;
-    padding: 0 16px;
-    opacity: 0.8;
+.inputContainer + .fieldDescription,
+.selectContainer + .fieldDescription {
+    margin-top: 4px;
+    margin-bottom: 12px;
+    padding-left: 14px;
+    border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
 /* ---------------------------------------------------------------------------
    Accordions (Details / Summary)
-   Darker-when-closed / lighter-when-open flip is the core appeal of this
-   pattern (design preferences §4). Collapsed reads as "tucked in"; expanded
-   lifts to match the surrounding card body so it feels like a natural
-   extension, not a nested well. Smooth transition on specific properties
-   (avoid `all` to keep the animation cheap).
    --------------------------------------------------------------------------- */
 .je-details-section, .je-seerr-details {
     background: rgba(0, 0, 0, 0.28);
@@ -574,6 +573,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
     list-style: none;
     user-select: none;
     color: rgba(240, 240, 240, 0.82);
@@ -599,6 +599,7 @@
     transition: transform 0.25s ease, color 0.2s ease;
     color: rgba(255, 255, 255, 0.4);
     line-height: 1;
+    flex-shrink: 0;
 }
 .je-details-section[open] > summary::after,
 .je-seerr-details[open] > summary::after {
@@ -625,9 +626,7 @@
     margin-bottom: 15px;
     overflow: hidden;
 }
-.arr-instance-card[open] {
-    border-color: var(--primary-accent-color, #00a4dc);
-}
+.arr-instance-card[open] { border-color: var(--primary-accent-color, #00a4dc); }
 .arr-instance-card > summary {
     display: flex;
     align-items: center;
@@ -650,10 +649,7 @@
     transform: rotate(90deg);
     color: var(--primary-accent-color, #00a4dc);
 }
-.arr-instance-summary-name {
-    flex: 1;
-    font-weight: 600;
-}
+.arr-instance-summary-name { flex: 1; font-weight: 600; }
 .arr-instance-summary-url {
     color: rgba(255,255,255,0.4);
     font-size: 0.85em;
@@ -695,8 +691,6 @@
 
 /* ---------------------------------------------------------------------------
    Sticky Save Dock
-   Pinned to bottom of viewport; holds ONLY the Save button. Apply-to-all-users
-   lives in Overview > Quick Actions, not here.
    --------------------------------------------------------------------------- */
 .je-save-dock {
     position: fixed;
@@ -871,8 +865,8 @@
    Misc / Utility
    --------------------------------------------------------------------------- */
 .je-help-link { border-radius: 20px; }
-.je-api-row { display: flex; align-items: center; gap: 12px; }
-.je-api-input { flex-grow: 1; }
+.je-api-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.je-api-row .je-api-input { flex-grow: 1; width: auto; margin: 0; }
 .je-textarea-tall { height: 120px !important; }
 .je-textarea-medium { height: 90px !important; }
 .je-textarea-large { height: 160px !important; }
@@ -896,7 +890,7 @@
 }
 .je-code-pre {
     background: rgba(0,0,0,0.4);
-    padding: 12px 16px;
+    padding: 12px 75px 12px 16px !important; /* Pad right so copy btn doesn't overlap text */
     border-radius: 6px;
     overflow-x: auto;
     font-size: 0.85em;
@@ -928,18 +922,8 @@
 
 /* ---------------------------------------------------------------------------
    Setting description visibility toggle
-   Each restored description block is wrapped in .je-setting-description; the
-   body class `je-hide-descriptions` (driven by the header toggle button)
-   hides them all at once. The toggle button itself shows an "active" accent
-   when descriptions are visible and dims when they're hidden.
    --------------------------------------------------------------------------- */
 body.je-hide-descriptions .je-setting-description { display: none !important; }
-.je-setting-description {
-    /* Slight indent + muted tone, so the description reads as secondary
-       content under each setting rather than competing with the label. */
-    margin-top: -6px;
-    padding-left: 4px;
-}
 .je-desc-toggle { display: inline-flex; align-items: center; gap: 4px; }
 .je-desc-toggle .material-icons { font-size: 18px !important; }
 .je-desc-toggle[aria-pressed="true"] .material-icons { color: var(--primary-accent-color, #00a4dc); }
@@ -948,12 +932,13 @@ body.je-hide-descriptions .je-setting-description { display: none !important; }
 
 /* ---------------------------------------------------------------------------
    Gated help blocks
-   Setup-instruction blocks gated by a matching "Use Custom Tabs for X"
-   toggle. Hidden when the toggle is off. The [hidden] attribute plus the
-   explicit rule below defends against higher-specificity rules that
-   otherwise force a display value on `<details>`.
    --------------------------------------------------------------------------- */
 [data-gated-by][hidden] { display: none !important; }
+
+/* Responsive utility */
+#keyboard .configSection > div[style*="display:flex"] {
+    flex-wrap: wrap;
+}
 
 /* Mobile */
 @media (max-width: 768px) {
