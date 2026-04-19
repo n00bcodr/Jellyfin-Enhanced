@@ -198,6 +198,12 @@
 .je-overview-section .je-status-dashboard {
     margin-bottom: 0;
 }
+/* Overview fieldsets are card GRIDS — the fieldset body shouldn't show a
+   thick dark padding strip above/below the cards. Keep the padding tight
+   so the card row sits flush to the legend. */
+.je-overview-section > .configSection {
+    padding: 14px 18px;
+}
 .je-legend-icon {
     font-size: 20px !important;
     line-height: 1;
@@ -427,12 +433,14 @@
 
 /* ---------------------------------------------------------------------------
    Fieldsets (Cards)
-   Card body + darker header strip, per design preferences §3. Body background
-   is lighter than the page, header strip is one shade darker than body so it
-   reads as a clear anchor. Optional soft shadow on the card.
+   Card body + header strip, per design preferences §3. The body is more
+   opaque than before because the page's random backdrop image was bleeding
+   through the translucent body and making padding strips look like hard
+   black boxes. Header strip is a subtle gradient, body sits on top of a
+   near-solid dark fill, cards' own lighter backgrounds still read clearly.
    --------------------------------------------------------------------------- */
 #JellyfinEnhancedForm fieldset {
-    background: rgba(30, 30, 30, 0.55);
+    background: rgba(22, 22, 22, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
     padding: 0;
@@ -445,11 +453,11 @@
     border-color: rgba(255, 255, 255, 0.12);
 }
 #JellyfinEnhancedForm legend.sectionTitle {
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.3) 100%);
+    background: rgba(0, 0, 0, 0.25);
     width: 100%;
     margin: 0;
-    padding: 16px 24px;
-    font-size: 1.1em;
+    padding: 14px 22px;
+    font-size: 1.05em;
     font-weight: 600;
     letter-spacing: 0.2px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
