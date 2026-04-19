@@ -145,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _sessionManager = sessionManager;
         }
 
-        private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId)
+        private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
@@ -160,7 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
 
-            bool cacheEnabled = !config.JellyseerrDisableCache;
+            bool cacheEnabled = !config.JellyseerrDisableCache && !bypassCache;
             if (cacheEnabled)
             {
                 lock (_userCacheLock)
@@ -478,6 +478,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound(new { message = "Current Jellyfin user is not linked to a Jellyseerr user." });
             }
 
+            // Enforce Seerr permissions for write operations and sensitive reads.
+            // Jellyfin admins bypass all permission checks (they can do anything in Seerr).
+            // For non-admins, validate before proxying so we return a clear 403 rather than
+            // letting Seerr reject the request with a generic error.
+            if (!IsAdminUser())
+            {
+                var seerrUser = await GetJellyseerrUser(jellyfinUserId);
+                if (seerrUser != null)
+                {
+                    var perms = seerrUser.Permissions;
+                    bool isSeerrAdmin = JellyseerrPermissionHelper.HasPermission(perms, JellyseerrPermission.ADMIN);
+
+                    if (!isSeerrAdmin)
+                    {
+                        // POST /api/v1/request — make a request
+                        if (method == HttpMethod.Post && apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
+                                JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_MOVIE | JellyseerrPermission.REQUEST_TV))
+                                return StatusCode(403, new { code = "no_request_permission", message = "You do not have permission to make requests in Seerr." });
+                        }
+
+                        // POST /api/v1/issue — report an issue
+                        if (method == HttpMethod.Post && apiPath.StartsWith("/api/v1/issue", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
+                                JellyseerrPermission.CREATE_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                                return StatusCode(403, new { code = "no_issue_permission", message = "You do not have permission to report issues in Seerr." });
+                        }
+
+                        // GET /api/v1/issue — view issues list
+                        if (method == HttpMethod.Get && (apiPath.StartsWith("/api/v1/issue?", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(apiPath, "/api/v1/issue", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
+                                JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                                return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
+                        }
+                    }
+                }
+            }
+
             // Check server-side response cache for cacheable endpoints
             bool isCacheable = IsCacheableApiPath(apiPath, method) && !config.JellyseerrDisableCache;
             var cacheKey = $"{jellyfinUserId}:{apiPath}";
@@ -685,6 +727,123 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     active = a.GetBoolean();
             }
             return Ok(new { active, userFound = false });
+        }
+
+        /// <summary>
+        /// Admin-only: audits every Jellyfin user's Seerr permissions and returns
+        /// a per-user report of which plugin features they can and cannot use.
+        /// </summary>
+        [HttpGet("jellyseerr/permission-audit")]
+        [Authorize]
+        public async Task<IActionResult> GetPermissionAudit()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled ||
+                string.IsNullOrEmpty(config.JellyseerrApiKey) ||
+                string.IsNullOrEmpty(config.JellyseerrUrls))
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+
+            var jellyfinUsers = _userManager.Users
+                .GroupBy(u => u.Id)
+                .Select(g => g.First())
+                .ToList();
+            var results = new List<object>();
+
+            foreach (var jfUser in jellyfinUsers)
+            {
+                var userId = jfUser.Id.ToString("N");
+                var seerrUser = await GetJellyseerrUser(userId, true);
+
+                if (seerrUser == null)
+                {
+                    results.Add(new
+                    {
+                        jellyfinUsername = jfUser.Username,
+                        jellyfinUserId   = userId,
+                        linked           = false,
+                        permissions      = (int?)null,
+                        issues           = new[] { "Not linked to a Seerr account" }
+                    });
+                    continue;
+                }
+
+                var perms = seerrUser.Permissions;
+                bool isAdmin = JellyseerrPermissionHelper.HasPermission(perms, JellyseerrPermission.ADMIN);
+
+                // Admins inherit all permissions — nothing to flag
+                if (isAdmin)
+                {
+                    results.Add(new
+                    {
+                        jellyfinUsername = jfUser.Username,
+                        jellyfinUserId   = userId,
+                        linked           = true,
+                        permissions      = (int)perms,
+                        issues           = Array.Empty<string>()
+                    });
+                    continue;
+                }
+
+                var issues = new List<string>();
+
+                // Search & request
+                if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
+                    JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_MOVIE | JellyseerrPermission.REQUEST_TV))
+                    issues.Add("Cannot make requests (missing REQUEST / REQUEST_MOVIE / REQUEST_TV)");
+
+                // 4K movie requests (only relevant if plugin has 4K enabled)
+                if (config.JellyseerrEnable4KRequests &&
+                    !JellyseerrPermissionHelper.HasAnyPermission(perms,
+                        JellyseerrPermission.REQUEST_4K | JellyseerrPermission.REQUEST_4K_MOVIE))
+                    issues.Add("Cannot request 4K movies (missing REQUEST_4K / REQUEST_4K_MOVIE)");
+
+                // 4K TV requests
+                if (config.JellyseerrEnable4KTvRequests &&
+                    !JellyseerrPermissionHelper.HasAnyPermission(perms,
+                        JellyseerrPermission.REQUEST_4K | JellyseerrPermission.REQUEST_4K_TV))
+                    issues.Add("Cannot request 4K TV (missing REQUEST_4K / REQUEST_4K_TV)");
+
+                // Advanced request options — only relevant if user can already make requests
+                if (config.JellyseerrShowAdvanced)
+                {
+                    bool canRequest = JellyseerrPermissionHelper.HasAnyPermission(perms,
+                        JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_MOVIE | JellyseerrPermission.REQUEST_TV);
+                    if (canRequest && !JellyseerrPermissionHelper.HasPermission(perms, JellyseerrPermission.REQUEST_ADVANCED))
+                        issues.Add("Cannot use advanced request options (missing REQUEST_ADVANCED)");
+                }
+
+                // Requests page / view — without REQUEST_VIEW they only see their own requests
+                if (config.DownloadsPageEnabled &&
+                    !JellyseerrPermissionHelper.HasAnyPermission(perms,
+                        JellyseerrPermission.REQUEST_VIEW | JellyseerrPermission.MANAGE_REQUESTS))
+                    issues.Add("Can only see own requests on Requests page (missing REQUEST_VIEW / MANAGE_REQUESTS) (Can be ignored if on purpose)");
+
+                // Report issues — MANAGE_ISSUES implies CREATE_ISSUES
+                if (config.JellyseerrShowReportButton &&
+                    !JellyseerrPermissionHelper.HasAnyPermission(perms,
+                        JellyseerrPermission.CREATE_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                    issues.Add("Cannot report issues (missing CREATE_ISSUES or MANAGE_ISSUES)");
+
+                // View issues indicator — MANAGE_ISSUES implies VIEW_ISSUES
+                if (config.JellyseerrShowIssueIndicator &&
+                    !JellyseerrPermissionHelper.HasAnyPermission(perms,
+                        JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                    issues.Add("Cannot view issues from others or count indicator (missing VIEW_ISSUES or MANAGE_ISSUES)");
+
+
+                results.Add(new
+                {
+                    jellyfinUsername = jfUser.Username,
+                    jellyfinUserId   = userId,
+                    linked           = true,
+                    permissions      = (int)perms,
+                    issues
+                });
+            }
+
+            return Ok(results);
         }
 
 

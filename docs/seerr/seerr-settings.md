@@ -74,9 +74,8 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 6. Click **Save**
 
 !!! tip
-
-  The scheduled task **Import Jellyfin Users to Seerr** runs every 6 hours by default when auto import is enabled.
-  You can change the trigger in Jellyfin Dashboard -> Scheduled Tasks.
+    The scheduled task **Import Jellyfin Users to Seerr** runs every 6 hours by default when auto import is enabled.
+    You can change the trigger in Jellyfin Dashboard -> Scheduled Tasks.
 
 ## Optional Features
 
@@ -104,9 +103,9 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
     - Seerr instance with **4K configuration**
     - Permissions for users to request 4K quality
 
-  ### Enable 4K TV Requests
-  !!! note "Requirements"
+### Enable 4K TV Requests
 
+!!! note "Requirements"
     **Requirements:**
 
     - Seerr instance with **4K Sonarr configured**

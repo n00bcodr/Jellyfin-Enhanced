@@ -123,14 +123,15 @@ nav:
 
 
   # ——————————————
-  # Jellyseerr
+  # Seerr
   # ——————————————
-  - Jellyseerr:
+  - Seerr:
     # Features overview
-    - Jellyseerr Features: jellyseerr/jellyseerr-features.md
+    - Seerr Features: seerr/seerr-features.md
 
-    # Jellyseerr Settings
-    - Jellyseerr Settings: jellyseerr/jellyseerr-settings.md
+    # Seerr Settings
+    - Seerr Settings: seerr/seerr-settings.md
+    - Permission Audit: seerr/permission-audit.md
 
 
   # ——————————————

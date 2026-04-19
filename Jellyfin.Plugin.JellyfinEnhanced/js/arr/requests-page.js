@@ -895,6 +895,8 @@
       state.issuesError = false;
       return null;
     }
+    // Stop trying if we already know the user lacks VIEW_ISSUES permission
+    if (state.issuesPermissionDenied) return null;
 
     try {
       const skip = (state.issuesPage - 1) * 20;
@@ -934,6 +936,13 @@
       state.issues = [];
       state.issuesTotalPages = 1;
       state.issuesError = true;
+      // 403 = no VIEW_ISSUES permission — surface once as a toast, then stop polling issues
+      if (error?.status === 403) {
+        state.issuesPermissionDenied = true;
+        if (typeof JE?.toast === 'function') {
+          JE.toast(JE.t?.('jellyseerr_err_no_issue_view_permission') || 'No permission to view issues', 4000);
+        }
+      }
       return null;
     }
   }
