@@ -381,7 +381,7 @@
                             <div class="checkboxContainer"><label><input id="bookmarksUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Bookmarks Library</span></label></div>
                             <div class="checkboxContainer"><label><input id="bookmarksUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Bookmarks</span></label></div>
 
-                            <details class="je-details-section">
+                            <details class="je-details-section" data-gated-by="bookmarksUseCustomTabs">
                                 <summary>Custom Tabs Setup &amp; How To Use</summary>
                                 <div class="je-details-body">
                                     <strong>Embed in Custom Tabs:</strong>
@@ -414,7 +414,7 @@
                             <div class="checkboxContainer"><label><input id="hiddenContentUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Hidden Content</span></label></div>
                             <div class="checkboxContainer"><label><input id="hiddenContentUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Hidden Content</span></label></div>
 
-                            <details class="je-details-section">
+                            <details class="je-details-section" data-gated-by="hiddenContentUseCustomTabs">
                                 <summary>Custom Tabs Setup</summary>
                                 <div class="je-details-body">
                                     <div class="je-copy-code-wrapper">
@@ -438,7 +438,7 @@
                             <div class="checkboxContainer"><label><input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Requests</span></label></div>
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
 
-                            <details class="je-details-section">
+                            <details class="je-details-section" data-gated-by="downloadsUseCustomTabs">
                                 <summary>Custom Tabs Setup</summary>
                                 <div class="je-details-body">
                                     <div class="je-copy-code-wrapper">
@@ -465,7 +465,7 @@
                             <div class="checkboxContainer"><label><input id="calendarUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages</span></label></div>
                             <div class="checkboxContainer"><label><input id="calendarUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
 
-                            <details class="je-details-section">
+                            <details class="je-details-section" data-gated-by="calendarUseCustomTabs">
                                 <summary>Custom Tabs Setup</summary>
                                 <div class="je-details-body">
                                     <div class="je-copy-code-wrapper">
@@ -3344,6 +3344,71 @@
             });
         }
 
+        // ==============================================================
+        // Gated help (phase 5). Any setup-instruction block that only
+        // applies when a specific toggle is on lives under a
+        // [data-gated-by="<checkbox-id>"] attribute. Hidden when the
+        // toggle is off; visible when on. Transitions from off→on also
+        // auto-open the accordion so the admin doesn't have to hunt
+        // for the freshly-revealed help.
+        //
+        // Declarative tag + generic dispatcher = no per-section wiring.
+        // Adding a new gated help block means: drop data-gated-by on
+        // the element + add the checkbox id below to GATED_HELP_IDS.
+        // ==============================================================
+
+        // Track prior checked state per gated-help parent so we can
+        // detect an off→on transition in the change listener and
+        // auto-expand the just-revealed accordion.
+        var _jeGatedHelpState = Object.create(null);
+
+        /**
+         * Syncs visibility of every [data-gated-by] element to its
+         * parent checkbox's checked state. If autoExpandOnRise is true
+         * AND a parent just went from unchecked to checked, the gated
+         * `<details>` is auto-opened.
+         */
+        function applyGatedHelp(autoExpandOnRise) {
+            var gated = document.querySelectorAll('[data-gated-by]');
+            gated.forEach(function(el) {
+                var parentId = el.getAttribute('data-gated-by');
+                if (!parentId) return;
+                var parent = document.getElementById(parentId);
+                if (!parent) return;
+                var isOn = !!parent.checked;
+                var wasOn = _jeGatedHelpState[parentId] === true;
+                _jeGatedHelpState[parentId] = isOn;
+                el.hidden = !isOn;
+                if (autoExpandOnRise && isOn && !wasOn && el.tagName === 'DETAILS') {
+                    el.open = true;
+                }
+            });
+        }
+
+        // Wire one change listener per unique parent id referenced by
+        // [data-gated-by]. A single bulk dispatch refreshes every gated
+        // element regardless of which parent fired.
+        (function wireGatedHelp() {
+            var gated = document.querySelectorAll('[data-gated-by]');
+            var uniqueParents = Object.create(null);
+            gated.forEach(function(el) {
+                var id = el.getAttribute('data-gated-by');
+                if (id) uniqueParents[id] = true;
+            });
+            Object.keys(uniqueParents).forEach(function(id) {
+                var parent = document.getElementById(id);
+                if (!parent) {
+                    console.warn('[JE] gated-help: parent checkbox #' + id + ' not found — help will stay hidden');
+                    return;
+                }
+                parent.addEventListener('change', function() {
+                    try { applyGatedHelp(true); } catch (e) {
+                        console.warn('[JE] applyGatedHelp threw in change handler:', e);
+                    }
+                });
+            });
+        })();
+
         /**
          * Orchestrator: evaluates all section, individual, and parent dependency rules.
          * Each step is isolated so a throw in the status dashboard (which reads a lot
@@ -3363,6 +3428,15 @@
                 renderChecklist();
             } catch (e) {
                 console.warn('[JE] renderChecklist threw; checklist may be stale:', e);
+            }
+            try {
+                // Don't auto-expand when triggered by a bulk dep sync —
+                // that would fire `open = true` on every tick the parent
+                // is checked, which is noisy. Real off→on transitions
+                // go through the dedicated change listener above.
+                applyGatedHelp(false);
+            } catch (e) {
+                console.warn('[JE] applyGatedHelp threw; gated help may be stale:', e);
             }
         }
 

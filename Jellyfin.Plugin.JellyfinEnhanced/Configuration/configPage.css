@@ -918,6 +918,15 @@
 }
 .dep-required-icon { vertical-align: middle; margin-left: 6px; }
 
+/* ---------------------------------------------------------------------------
+   Gated help blocks
+   Setup-instruction blocks gated by a matching "Use Custom Tabs for X"
+   toggle. Hidden when the toggle is off. The [hidden] attribute plus the
+   explicit rule below defends against higher-specificity rules that
+   otherwise force a display value on `<details>`.
+   --------------------------------------------------------------------------- */
+[data-gated-by][hidden] { display: none !important; }
+
 /* Mobile */
 @media (max-width: 768px) {
     .je-save-dock {
