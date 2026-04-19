@@ -919,6 +919,26 @@
 .dep-required-icon { vertical-align: middle; margin-left: 6px; }
 
 /* ---------------------------------------------------------------------------
+   Setting description visibility toggle
+   Each restored description block is wrapped in .je-setting-description; the
+   body class `je-hide-descriptions` (driven by the header toggle button)
+   hides them all at once. The toggle button itself shows an "active" accent
+   when descriptions are visible and dims when they're hidden.
+   --------------------------------------------------------------------------- */
+body.je-hide-descriptions .je-setting-description { display: none !important; }
+.je-setting-description {
+    /* Slight indent + muted tone, so the description reads as secondary
+       content under each setting rather than competing with the label. */
+    margin-top: -6px;
+    padding-left: 4px;
+}
+.je-desc-toggle { display: inline-flex; align-items: center; gap: 4px; }
+.je-desc-toggle .material-icons { font-size: 18px !important; }
+.je-desc-toggle[aria-pressed="true"] .material-icons { color: var(--primary-accent-color, #00a4dc); }
+.je-desc-toggle-off { opacity: 0.75; }
+.je-desc-toggle-off:hover { opacity: 1; }
+
+/* ---------------------------------------------------------------------------
    Gated help blocks
    Setup-instruction blocks gated by a matching "Use Custom Tabs for X"
    toggle. Hidden when the toggle is off. The [hidden] attribute plus the
