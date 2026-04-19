@@ -1145,6 +1145,18 @@
                             </div>
                         </div>
                     </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Permission Audit</h3></legend>
+                        <div class="configSection">
+                            <div class="fieldDescription je-field-desc-md">
+                                Check which users are missing Seerr permissions required for the features you have enabled. Only users linked to a Seerr account are checked.
+                            </div>
+                            <button id="btnPermissionAudit" is="emby-button" type="button" class="raised button-submit emby-button">
+                                <span>Run Audit</span>
+                            </button>
+                            <div id="permissionAuditResult" style="display: none; margin-top: 1em;"></div>
+                        </div>
+                    </fieldset>
                 </div>
                 <div id="arr-links" class="jellyfin-tab-content">
 
@@ -4476,6 +4488,124 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Import Users Now';
+            }
+        });
+
+        // Permission Audit
+        document.getElementById('btnPermissionAudit').addEventListener('click', async () => {
+            const btn = document.getElementById('btnPermissionAudit');
+            const resultDiv = document.getElementById('permissionAuditResult');
+            btn.disabled = true;
+            btn.querySelector('span').textContent = 'Running…';
+            resultDiv.style.display = 'none';
+            resultDiv.innerHTML = '';
+
+            try {
+                const data = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/permission-audit'),
+                    dataType: 'json'
+                });
+
+                const withIssues  = data.filter(u => u.linked && u.issues && u.issues.length > 0);
+                const ok          = data.filter(u => u.linked && (!u.issues || u.issues.length === 0));
+                const unlinked    = data.filter(u => !u.linked);
+
+                const summaryEl = document.createElement('div');
+                summaryEl.className = 'je-audit-summary';
+                if (withIssues.length === 0 && unlinked.length === 0) {
+                    summaryEl.textContent = '✅ All ' + ok.length + ' linked user(s) have the required permissions.';
+                } else {
+                    const parts = [];
+                    if (withIssues.length) parts.push(withIssues.length + ' user(s) with permission gaps');
+                    if (unlinked.length)   parts.push(unlinked.length + ' not linked to Seerr');
+                    if (ok.length)         parts.push(ok.length + ' OK');
+                    summaryEl.textContent = parts.join(' · ');
+                }
+                resultDiv.appendChild(summaryEl);
+
+                if (withIssues.length > 0 || unlinked.length > 0) {
+                    const table = document.createElement('table');
+                    table.className = 'je-audit-table';
+                    table.innerHTML = '<thead><tr><th>User</th><th>Status</th><th>Issues</th></tr></thead>';
+                    const tbody = document.createElement('tbody');
+
+                    [...withIssues, ...unlinked].forEach(function(u) {
+                        const tr = document.createElement('tr');
+                        tr.className = 'je-audit-row-warn';
+
+                        const tdUser = document.createElement('td');
+                        tdUser.className = 'je-audit-username';
+                        tdUser.textContent = u.jellyfinUsername;
+
+                        const tdStatus = document.createElement('td');
+                        const statusSpan = document.createElement('span');
+                        statusSpan.className = u.linked ? 'je-audit-status-warn' : 'je-audit-status-unlinked';
+                        statusSpan.textContent = u.linked ? 'Permissions Missing' : 'Not linked';
+                        tdStatus.appendChild(statusSpan);
+
+                        const tdIssues = document.createElement('td');
+                        const ul = document.createElement('ul');
+                        ul.className = 'je-audit-issues';
+                        (u.issues || []).forEach(function(issue) {
+                            const li = document.createElement('li');
+                            li.textContent = issue;
+                            ul.appendChild(li);
+                        });
+                        tdIssues.appendChild(ul);
+
+                        tr.appendChild(tdUser);
+                        tr.appendChild(tdStatus);
+                        tr.appendChild(tdIssues);
+                        tbody.appendChild(tr);
+                    });
+
+                    if (ok.length > 0) {
+                        const trOk = document.createElement('tr');
+                        const tdOk = document.createElement('td');
+                        tdOk.colSpan = 3;
+                        tdOk.style.paddingTop = '0.5em';
+                        const details = document.createElement('details');
+                        const summary = document.createElement('summary');
+                        summary.style.cssText = 'cursor:pointer;color:rgba(255,255,255,0.4);font-size:0.85em;';
+                        summary.textContent = ok.length + ' user(s) with no issues';
+                        const okTable = document.createElement('table');
+                        okTable.className = 'je-audit-table';
+                        okTable.style.marginTop = '0.5em';
+                        ok.forEach(function(u) {
+                            const tr2 = document.createElement('tr');
+                            tr2.className = 'je-audit-row-ok';
+                            const td1 = document.createElement('td');
+                            td1.className = 'je-audit-username';
+                            td1.textContent = u.jellyfinUsername;
+                            const td2 = document.createElement('td');
+                            const okSpan = document.createElement('span');
+                            okSpan.className = 'je-audit-status-ok';
+                            okSpan.textContent = 'OK';
+                            td2.appendChild(okSpan);
+                            const td3 = document.createElement('td');
+                            tr2.appendChild(td1); tr2.appendChild(td2); tr2.appendChild(td3);
+                            okTable.appendChild(tr2);
+                        });
+                        details.appendChild(summary);
+                        details.appendChild(okTable);
+                        tdOk.appendChild(details);
+                        trOk.appendChild(tdOk);
+                        tbody.appendChild(trOk);
+                    }
+
+                    table.appendChild(tbody);
+                    resultDiv.appendChild(table);
+                }
+
+                resultDiv.style.display = 'block';
+            } catch (e) {
+                resultDiv.innerHTML = `<div style="color:#f44336;">Audit failed: ${e.message || 'Check server logs.'}</div>`;
+                resultDiv.style.display = 'block';
+                console.error('Permission audit failed:', e);
+            } finally {
+                btn.disabled = false;
+                btn.querySelector('span').textContent = 'Run Audit';
             }
         });
 

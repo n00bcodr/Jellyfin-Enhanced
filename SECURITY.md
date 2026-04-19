@@ -50,7 +50,7 @@ We take the security of Jellyfin Enhanced seriously. If you believe you have fou
 4. **Updates**: Keep Jellyfin Enhanced and Jellyfin server up to date
 
 ### External Integrations:
-1. **Jellyseerr/Overseerr**: Ensure your Seerr instance is properly secured
+1. **Seerr**: Ensure your Seerr instance is properly secured
 2. **TMDB API**: Protect your TMDB API key and monitor usage
 3. **Network Access**: Restrict access to your Jellyfin server appropriately
 

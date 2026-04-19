@@ -1039,8 +1039,85 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Misc small utilities
+   Permission audit table
    --------------------------------------------------------------------------- */
+.je-audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85em;
+    margin-top: 0.5em;
+}
+.je-audit-table th {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.6);
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.je-audit-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    vertical-align: middle;
+}
+.je-audit-table tr:last-child td { border-bottom: none; }
+.je-audit-row-ok td { opacity: 0.6; }
+
+.je-audit-row-warn td:nth-child(2),
+.je-audit-row-ok td:nth-child(2) {
+    white-space: nowrap;
+    text-align: center;
+}
+.je-audit-username { font-weight: 500; }
+.je-audit-status-ok {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.8em;
+    font-weight: 600;
+    background: rgba(82,181,75,0.15);
+    color: #52b54b;
+}
+.je-audit-status-warn {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.8em;
+    font-weight: 600;
+    background: rgba(229,160,13,0.15);
+    color: #e5a00d;
+}
+.je-audit-status-unlinked {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.8em;
+    font-weight: 600;
+    background: rgba(102,102,102,0.15);
+    color: #999;
+}
+.je-audit-issues { margin: 0; padding: 0; list-style: none; }
+.je-audit-issues li {
+    padding: 4px 0;
+    color: rgba(255,255,255,0.7);
+    font-size: 0.9em;
+}
+.je-audit-issues li::before {
+    content: '• ';
+    color: #e5a00d;
+}
+
+tr:has(.je-audit-status-unlinked) .je-audit-issues li::before {
+    color: #999;
+}
+
+.je-audit-summary {
+    font-size: 0.95em;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 0.75em;
+}
 .je-shortcut-flex      { flex: 1; }
 .je-blocked-count      { opacity: 0.7; font-weight: normal; }
 .je-elsewhere-subtitle { font-size: 0.9em; }

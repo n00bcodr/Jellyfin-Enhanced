@@ -182,9 +182,10 @@
                     }
                 } catch (error) {
                     console.error(`${logPrefix} Error reporting issue:`, error);
-                    // Check if error is due to Jellyseerr being unavailable
                     const errorMsg = error?.message || error?.toString() || '';
-                    if (errorMsg.toLowerCase().includes('jellyseerr') || errorMsg.toLowerCase().includes('unavailable') || error?.status === 503 || error?.status === 0) {
+                    if (error?.status === 403) {
+                        JE.toast(JE.t('jellyseerr_err_no_issue_permission'), 4000);
+                    } else if (errorMsg.toLowerCase().includes('jellyseerr') || errorMsg.toLowerCase().includes('unavailable') || error?.status === 503 || error?.status === 0) {
                         JE.toast('Jellyseerr is not available', 4000);
                     } else {
                         JE.toast(JE.t('jellyseerr_report_issue_error'), 4000);

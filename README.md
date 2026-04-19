@@ -76,7 +76,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Search & Request** - Request media directly from Jellyfin search
 - **Item Details** - Recommendations and similar items on detail pages
 - **Discovery Pages** - Browse by genre, network, person, or tag
-- **Issue Reporting** - Report problems directly to Jellyseerr
+- **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 
 ### 🔗 *arr Integration
@@ -140,7 +140,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
     <td><img src="docs/images/elsewhere.png" width="400" /></td>
   </tr>
   <tr>
-    <th>Jellyseerr</th>
+    <th>Seerr</th>
     <th>Ratings</th>
   </tr>
   <tr>

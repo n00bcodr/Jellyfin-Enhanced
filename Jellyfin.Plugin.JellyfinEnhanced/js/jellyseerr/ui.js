@@ -1698,6 +1698,10 @@
                             let errorMessage = JE.t('jellyseerr_btn_error');
                             if (error.status === 404) {
                                 errorMessage = JE.t('jellyseerr_btn_user_not_found');
+                            } else if (error.status === 403) {
+                                const code = error.responseJSON?.code;
+                                errorMessage = JE.t(code ? `jellyseerr_err_${code}` : 'jellyseerr_err_no_request_permission')
+                                    || JE.t('jellyseerr_err_no_request_permission');
                             } else if (error.responseJSON?.message) {
                                 errorMessage = error.responseJSON.message;
                             }
@@ -1772,6 +1776,10 @@
                         let errorMessage = JE.t('jellyseerr_btn_error');
                         if (error.status === 404) {
                             errorMessage = JE.t('jellyseerr_btn_user_not_found');
+                        } else if (error.status === 403) {
+                            const code = error.responseJSON?.code;
+                            errorMessage = JE.t(code ? `jellyseerr_err_${code}` : 'jellyseerr_err_no_request_permission')
+                                || JE.t('jellyseerr_err_no_request_permission');
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
@@ -1935,7 +1943,7 @@
             populateAdvancedOptions(modalElement, data, 'movie');
         } catch (error) {
             console.error(`${logPrefix} Failed to load advanced options:`, error);
-            JE.toast('Failed to load server options', 3000);
+            JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
         }
 
 
@@ -2196,7 +2204,7 @@
                 populateAdvancedOptions(modalInstance.modalElement, data, 'tv');
             } catch (error) {
                 console.error(`${logPrefix} Failed to load TV advanced options:`, error);
-                JE.toast('Failed to load server options', 3000);
+                JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
             }
         }
     };

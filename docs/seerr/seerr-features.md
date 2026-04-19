@@ -311,7 +311,7 @@ jellyfin_url|seerr_url
     === "Remote access"
 
         ```text
-        https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com
+        https://jellyfin.mydomain.com|https://seerr.mydomain.com
         ```
 
     === "Local access"
@@ -323,14 +323,14 @@ jellyfin_url|seerr_url
     === "Remote access + Local access"
 
         ```text
-        https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com
+        https://jellyfin.mydomain.com|https://seerr.mydomain.com
         http://192.168.1.10:8096|http://192.168.1.10:5055
         ```
 
     === "Using base URLs + paths"
 
         ```text
-        https://example.com/jellyfin|https://example.com/jellyseerr
+        https://example.com/jellyfin|https://example.com/seerr
         ```
 
 ### Auto-Request Settings
