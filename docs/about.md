@@ -10,13 +10,16 @@ Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and c
 ### Special Thanks
 
 **[Jellyfin Team](https://jellyfin.org/)**
+
 - For creating and maintaining the amazing open-source media server that makes all of this possible
 
 **[BobHasNoSoul](https://github.com/BobHasNoSoul/)**
+
 - Huge inspiration for getting into modding Jellyfin
 - Original creator of [Jellyfin PauseScreen](https://github.com/BobHasNoSoul/Jellyfin-PauseScreen) and [Jellyfin Quality Tags](https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/)
 
 **[IAmParadox27](https://github.com/IAmParadox27/)**
+
 - Inspiration for transitioning Jellyfin Enhanced from a userscript to a plugin
 - Creator of amazing Jellyfin plugins including [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages)
 
@@ -35,36 +38,44 @@ Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and c
 ### Community Contributors
 
 **Translators:**
+
 - Thank you to all community members who have contributed translations in 15+ languages
 - Your work makes Jellyfin Enhanced accessible to users worldwide
 
 **Bug Reporters & Testers:**
+
 - Community members who report issues, test features, and provide valuable feedback
 - Your contributions help improve the plugin for everyone
 
 **Feature Requesters:**
+
 - Users who suggest new features and improvements
 - Your ideas help shape the direction of the plugin
 
 ### Related Projects & Integrations
 
 **[Seerr](https://github.com/seerr-team/seerr)**
+
 - Media request management system
 - Jellyfin Enhanced provides deep integration with Seerr
 
 **[Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)**
+
 - Custom navigation tabs for Jellyfin
 - Jellyfin Enhanced features can be embedded in custom tabs
 
 **[Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages)**
+
 - Add custom pages to Jellyfin sidebar
 - Used by Jellyfin Enhanced for Calendar, Requests, Bookmarks, Hidden Content pages
 
 **[File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)**
+
 - Safe file modifications for plugins
 - Highly recommended for Jellyfin Enhanced installation
 
 **[Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks)**
+
 - Watchlist and additional tweaks
 - Complements Jellyfin Enhanced features
 
@@ -74,6 +85,7 @@ Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and c
 We welcome contributions from the community!
 
 **Ways to Contribute:**
+
 - 🐛 Report bugs and issues
 - 💡 Suggest new features
 - 🌍 Add or improve translations
@@ -83,6 +95,7 @@ We welcome contributions from the community!
 - 💬 Help others in discussions
 
 **Get Started:**
+
 - [Report Issues and Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 - [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 - [Contributing Translations](faq-support/contributing-translations.md)

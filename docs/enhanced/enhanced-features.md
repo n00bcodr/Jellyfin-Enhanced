@@ -11,6 +11,7 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 Per-user content hiding with server-side storage and granular filtering controls.
 
 **Features:**
+
 - Hide specific movies/series from all browsing surfaces
 - Hidden state stored server-side per-user
 - Survives browser/device changes
@@ -19,6 +20,7 @@ Per-user content hiding with server-side storage and granular filtering controls
 - Undo functionality with toast notifications
 
 **Surfaces with Filtering:**
+
 - Library views
 - Discovery pages
 - Search results
@@ -48,6 +50,7 @@ Access via:
 - Custom tab (if configured)
 
 **Management Features:**
+
 - View all hidden items
 - Search hidden content
 - Unhide individual items
@@ -78,6 +81,7 @@ Access via:
    - Custom Tabs (requires Custom Tabs plugin)
 
 **Performance:**
+
 - Optimized with CSS classes instead of inline styles
 - Batched DOM visibility changes
 - Chunked API requests for parent series
@@ -97,27 +101,30 @@ Comprehensive hotkeys for navigation, playback control, and more.
 **Default Shortcuts:**
 
 **Global:**
-   - `/` - Open Search
-   - `Shift+H` - Go to Home
-   - `D` - Go to Dashboard
-   - `Q` - Quick Connect
-   - `R` - Play Random Item
+
+ - `/` - Open Search
+ - `Shift+H` - Go to Home
+ - `D` - Go to Dashboard
+ - `Q` - Quick Connect
+ - `R` - Play Random Item
 
 **Player:**
-   - `A` - Cycle Aspect Ratio
-   - `I` - Show Playback Info
-   - `S` - Subtitle Menu
-   - `C` - Cycle Subtitle Tracks
-   - `V` - Cycle Audio Tracks
-   - `+` - Increase Playback Speed
-   - `-` - Decrease Playback Speed
-   - `R` - Reset Playback Speed
-   - `B` - Bookmark Current Time
-   - `P` - Open Episode Preview
-   - `O` - Skip Intro/Outro
+
+ - `A` - Cycle Aspect Ratio
+ - `I` - Show Playback Info
+ - `S` - Subtitle Menu
+ - `C` - Cycle Subtitle Tracks
+ - `V` - Cycle Audio Tracks
+ - `+` - Increase Playback Speed
+ - `-` - Decrease Playback Speed
+ - `R` - Reset Playback Speed
+ - `B` - Bookmark Current Time
+ - `P` - Open Episode Preview
+ - `O` - Skip Intro/Outro
 
 
 **Customization:**
+
 1. Press `?` to open the Enhanced panel
 2. Go to **Shortcuts** tab
 3. Click on any key to set a custom shortcut
@@ -128,6 +135,7 @@ Comprehensive hotkeys for navigation, playback control, and more.
 Save timestamps and jump to specific moments with visual timeline markers.
 
 **Features:**
+
 - Create bookmarks during playback with `B` key
 - Visual markers on video timeline
 - Add custom labels to bookmarks
@@ -136,12 +144,14 @@ Save timestamps and jump to specific moments with visual timeline markers.
 - Export/import bookmark data
 
 **Usage:**
+
 1. While watching, press `B` at any moment
 2. Add an optional label (e.g., "Epic scene")
 3. Bookmark appears as marker on timeline
 4. Click marker to jump to that timestamp
 
 **Bookmark Management:**
+
 - Access via Custom Tabs plugin
 - View all bookmarks across library
 - Clean up orphaned bookmarks
@@ -155,6 +165,7 @@ Beautiful overlay with media info when you pause a video.
 ![Pause Screen](../images/pausescreen.png)
 
 **Displays:**
+
 - Media title and logo
 - Year, rating, runtime
 - Plot/description
@@ -172,6 +183,7 @@ Beautiful overlay with media info when you pause a video.
 Intelligent playback features for better viewing experience.
 
 **Features:**
+
 - **Auto-pause** - Pause when switching browser tabs
 - **Auto-resume** - Resume when returning to tab
 - **Auto-skip intros/outros** - Seamless binge-watching (requires Intro Skipper plugin)
@@ -186,13 +198,15 @@ Enable/disable in Enhanced panel → Settings tab
 Fine-tune subtitle appearance with presets and custom colors.
 
 **Presets:**
+
 - Multiple font families
 - Size options (small, medium, large, extra large)
 - Background opacity
 - Text shadow options
 - Position adjustments
 
-**Custom Colors (New in v11):**
+**Custom Colors:**
+
 - User-configurable text color with alpha support
 - User-configurable background color with alpha support
 - Live preview in settings
@@ -200,6 +214,7 @@ Fine-tune subtitle appearance with presets and custom colors.
 - Per-user customization
 
 **Usage:**
+
 1. Open Enhanced panel → Settings
 2. Find Subtitle Presets section
 3. Select your preferred preset options
@@ -222,6 +237,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 ![Seerr](../images/jellyseerr.png)
 
 **Features:**
+
 - Search Seerr from Jellyfin search bar
 - Request movies and TV shows
 - View request status (pending, approved, available)
@@ -229,6 +245,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 - Sync Seerr watchlist to Jellyfin
 
 **Setup:**
+
 1. Open plugin settings → **Seerr** tab
 2. Check "Show Seerr Results in Search"
 3. Enter Seerr URL(s) (one per line)
@@ -240,6 +257,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 7. Click **Save**
 
 **Requirements:**
+
 - Seerr instance with API access
 - "Enable Jellyfin Sign-In" enabled in Seerr
 - Jellyfin users imported into Seerr
@@ -259,6 +277,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 View recommendations and similar items on detail pages.
 
 **Features:**
+
 - Recommended items section
 - Similar items section
 - Request directly from recommendations
@@ -268,12 +287,14 @@ View recommendations and similar items on detail pages.
 - TV season selection
 
 **Setup:**
+
 1. Configure Seerr integration (see above)
 2. Check "Show Seerr Recommendations and Similar items"
 3. Optional: Enable "Exclude already in library items"
 4. Click **Save**
 
 **Discovery Pages:**
+
 - Genre-based discovery
 - Network-based discovery
 - Person-based discovery (actors, directors)
@@ -285,6 +306,7 @@ View recommendations and similar items on detail pages.
 Quick access to Sonarr, Radarr, and Bazarr (admin only).
 
 **Features:**
+
 - Direct links to item pages in Sonarr/Radarr
 - Bazarr subtitle management links
 - Display *arr tags as clickable links
@@ -297,12 +319,14 @@ See where else your media is available to stream.
 ![Elsewhere](../images/elsewhere.png)
 
 **Features:**
+
 - Multi-region support
 - Buy, rent, and stream options
 - Provider logos and links
 - Powered by TMDB data
 
 **Usage:**
+
 1. Enable in Enhanced panel → Settings
 2. Select your region
 3. View providers on item detail pages
@@ -312,6 +336,7 @@ See where else your media is available to stream.
 Display user reviews from TMDB on item pages.
 
 **Features:**
+
 - Full review text
 - Author information
 - Rating scores
@@ -330,6 +355,7 @@ Enable "Show TMDB Reviews" in Enhanced panel → Settings
 Display quality information (4K, HDR, Atmos) directly on posters.
 
 **Supported Tags:**
+
 - **Resolution:** 8K, 4K, 1080p, 720p, 480p, LOW-RES
 - **Video Format:** AV1, HEVC, H265, VP9, H264
 - **Video Features:** HDR, Dolby Vision, HDR10+, 3D
@@ -341,6 +367,7 @@ Display quality information (4K, HDR, Atmos) directly on posters.
 Identify genres with themed icons on posters.
 
 **Features:**
+
 - Material Design icons for each genre
 - Circular badges that expand on hover
 - Show up to 3 genres per item
@@ -351,6 +378,7 @@ Identify genres with themed icons on posters.
 Display available audio languages as country flags on posters.
 
 **Features:**
+
 - Country flag icons from flagcdn.com
 - Show up to 3 unique languages
 - Positioned bottom-left by default
@@ -363,6 +391,7 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 ![Ratings](../images/ratings.png)
 
 **Features:**
+
 - TMDB star ratings
 - Rotten Tomatoes critic scores (fresh/rotten icons)
 - Stacked vertically on posters
@@ -375,6 +404,7 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 Display age and birthplace information for cast members.
 
 **Features:**
+
 - Current age or age at death
 - Age at item release
 - Birthplace with country flag
@@ -382,6 +412,7 @@ Display age and birthplace information for cast members.
 - Caching for performance
 
 **Displays:**
+
 - Age chips (top-left of cast cards)
 - Birthplace banner (bottom of cast cards)
 - Deceased styling (grayscale filter)
@@ -397,6 +428,7 @@ These are optional scripts from the developer's personal collection.
 A live stream counter in the Jellyfin header that shows who is currently playing and what they're watching.
 
 **Features:**
+
 - Stream counter icon in the header, colour-coded by state
 - Click to open a panel listing every active session
 - Poster thumbnails and user avatars per session
@@ -456,6 +488,7 @@ Replace default activity icons with Material Design icons.
 ![Colored Activity Icons](../images/colored-activity-icons.png)
 
 **Features:**
+
 - Custom colors for each activity type
 - Material Design icon set
 - Better visual distinction
@@ -470,6 +503,7 @@ Color-coded backgrounds for ratings on detail pages.
 ![Colored Ratings](../images/ratings.png)
 
 **Features:**
+
 - Different colors per rating type
 - Value-based color gradients
 - Supports TMDB, IMDb, Rotten Tomatoes
@@ -484,6 +518,7 @@ Show user profile images on manual login page.
 ![Login Image](../images/login-image.png)
 
 **Features:**
+
 - Display user avatars
 - Cleaner login interface
 - Automatic fallback to text
@@ -498,6 +533,7 @@ Replace default plugin icons with Material Design icons.
 ![Plugin Icons](../images/plugin-icons.png)
 
 **Features:**
+
 - Custom icons for popular plugins
 - Add custom config page links
 - Improved dashboard aesthetics
@@ -512,11 +548,13 @@ Choose from multiple Jellyfin theme color variants.
 ![Theme Selector](../images/theme-selector.png)
 
 **Features:**
+
 - Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
 - Randomize theme daily option
 - Quick theme switching
 
 **Configuration:**
+
 1. Enable in Enhanced panel → Settings → Extras
 2. Select theme from dropdown
 3. Optional: Enable "Randomize Daily"
@@ -530,6 +568,7 @@ Choose from multiple Jellyfin theme color variants.
 Extensive CSS customization options. See [CSS Customization Guide](../advanced/css-customization.md) for more details.
 
 **Available Customizations:**
+
 - Pause Screen CSS
 - Quality Tags CSS
 - Genre Tags CSS
@@ -546,6 +585,7 @@ Extensive CSS customization options. See [CSS Customization Guide](../advanced/c
 Upload your own logos, banners, and favicon.
 
 **Features:**
+
 - Custom Jellyfin logo (header)
 - Custom splash banners (light/dark themes)
 - Custom favicon (browser tab icon)
@@ -553,6 +593,7 @@ Upload your own logos, banners, and favicon.
 - Survives Jellyfin updates
 
 **Setup:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Other Settings** tab
 3. Find **Custom Branding** section
@@ -565,6 +606,7 @@ Upload your own logos, banners, and favicon.
 6. Force refresh browser ++ctrl+f5++
 
 **Requirements:**
+
 - Requires [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
 - Recommended image formats: PNG, SVG
 - Files stored in: `/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/custom_branding/`
@@ -574,22 +616,15 @@ Upload your own logos, banners, and favicon.
 Multi-language support with community translations and automatic caching.
 
 **Supported Languages:**
-- Danish (da)
-- German (de)
-- English (en)
-- Spanish (es)
-- French (fr)
-- Hungarian (hu)
-- Italian (it)
-- Norwegian (no)
-- Polish (pl)
-- Portuguese (pt)
-- Russian (ru)
-- Swedish (sv)
-- Turkish (tr)
-- Chinese (zh-HK)
+
+<p align="left">
+  <a href="https://hosted.weblate.org/engage/jellyfinenhanced/">
+    <img src="https://hosted.weblate.org/widget/jellyfinenhanced/multi-auto.svg" alt="Translation status" />
+  </a>
+</p>
 
 **How It Works:**
+
 - Automatically detects Jellyfin user profile language
 - Fetches latest translations from GitHub on first load
 - Caches translations for 24 hours in localStorage
@@ -597,21 +632,20 @@ Multi-language support with community translations and automatic caching.
 - Falls back to bundled translations if offline
 - Language code normalization (including region variants)
 
-**Translation Cache Refresh (New in v11):**
+**Translation Cache Refresh:**
+
 - Server-side scheduled task runs on plugin startup
 - Automatically signals all clients to clear cached translations
 - Ensures fresh translations after plugin updates
 - No manual intervention required
 
 **Manual Cache Refresh:**
+
 1. Open Enhanced panel (press `?`)
 2. Go to Settings tab
 3. Find translation settings
 4. Click "Refresh Translation Cache" button
 
 **Contributing Translations:**
-1. Copy `en.json` from `Jellyfin.Plugin.JellyfinEnhanced/js/locales/`
-2. Rename to your language code (e.g., `es.json`)
-3. Translate the English text
-4. Submit a pull request
-5. Translations available immediately after merge!
+
+See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.

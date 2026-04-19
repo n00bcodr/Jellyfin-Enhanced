@@ -10,6 +10,7 @@ Access user-configured settings via the Enhanced panel:
 <!-- relative paths for images -->
 
 **Open Panel:**
+
 - Click **Jellyfin Enhanced** in sidebar
 - Press `?` keyboard shortcut
 
@@ -54,7 +55,7 @@ Most features can be enabled/disabled individually:
 
 ## Tags: Quality, Genre, Language, Rating, People
 
-### Configuration 
+### Configuration
 1. Open Enhanced panel → `Enhanced Settings`
 2. Enable and configure tags you want *(Eg: `Quality Tags`)*
 3. Adjust position (top-left, top-right, etc.)

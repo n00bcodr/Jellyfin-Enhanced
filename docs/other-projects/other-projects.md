@@ -11,6 +11,7 @@ Other projects by n00bcodr for Jellyfin customization and enhancement.
 The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
 
 **Features:**
+
 - Keyboard shortcuts and playback controls
 - Seerr integration
 - Visual tags (quality, genre, language, rating)
@@ -30,6 +31,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 Additional tweaks and enhancements for Jellyfin that complement Jellyfin Enhanced.
 
 **Features:**
+
 - Additional UI tweaks
 - Performance optimizations
 - Extra customization options
@@ -46,12 +48,14 @@ Additional tweaks and enhancements for Jellyfin that complement Jellyfin Enhance
 Inject custom JavaScript into Jellyfin web interface without modifying core files.
 
 **Features:**
+
 - Safe JavaScript injection
 - No core file modifications
 - Easy script management
 - Perfect for custom scripts
 
 **Use Cases:**
+
 - Testing custom scripts
 - Running standalone enhancements
 - Prototyping new features
@@ -70,12 +74,14 @@ Inject custom JavaScript into Jellyfin web interface without modifying core file
 Standalone version of the Elsewhere feature for streaming provider lookup.
 
 **Features:**
+
 - Discover where media is available to stream
 - Multi-region support
 - Buy, rent, and stream options
 - TMDB integration
 
 **Use Cases:**
+
 - Use without full Jellyfin Enhanced plugin
 - Lighter alternative
 - Custom implementations
@@ -96,6 +102,7 @@ Standalone version of the Elsewhere feature for streaming provider lookup.
 A beautiful, modern theme for Jellyfin with multiple color variants.
 
 **Features:**
+
 - Clean, modern design
 - Multiple color palettes
 - Responsive layout
@@ -104,6 +111,7 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 - Enhanced visual hierarchy
 
 **Color Variants:**
+
 - Aurora
 - Jellyblue
 - Ocean
@@ -112,6 +120,7 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 - And more...
 
 **Installation:**
+
 1. Go to **Dashboard** → **General** → **Custom CSS**
 2. Add Jellyfish CSS URL
 3. Save and refresh
@@ -127,16 +136,22 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 ### Installing Plugins
 
 **From Repository:**
+
 1. Go to **Dashboard** → **Plugins** → **Catalog** → ⚙️
 2. Add repository URL
 3. Install desired plugin
 4. Restart Jellyfin server
 
-**Repository URL:** Unified Manigest for all plugins `https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json`
+**Repository URL:** Unified Manifest for all plugins
+
+```
+https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json
+```
 
 ### Installing Themes
 
 **Jellyfish Theme:**
+
 1. Go to **Dashboard** → **General** → **Custom CSS**
 2. Add theme CSS URL from repository
 3. Save and refresh browser
@@ -168,15 +183,18 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 ### Getting Help
 
 **For Jellyfin Enhanced:**
+
 - [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
 - [Discord Community](https://discord.gg/EYNFf7y4CG)
 - [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
 
 **For Jellyfin Tweaks:**
+
 - [GitHub Issues](https://github.com/n00bcodr/JellyfinTweaks/issues)
 - [Discord Community](https://discord.gg/EYNFf7y4CG)
 
 **For JavaScript Injector:**
+
 - [GitHub Issues](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/issues)
 - [Discord Community](https://discord.gg/EYNFf7y4CG)
 
@@ -187,6 +205,7 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 Contributions welcome on all projects!
 
 **Ways to Contribute:**
+
 - Report bugs
 - Suggest features
 - Submit pull requests
@@ -195,6 +214,7 @@ Contributions welcome on all projects!
 - Share feedback
 
 **Before Contributing:**
+
 1. Check existing issues
 2. Read contribution guidelines
 3. Test your changes

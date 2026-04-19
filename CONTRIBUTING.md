@@ -20,7 +20,7 @@ Help make Jellyfin Enhanced accessible to more users by contributing translation
 
 - https://hosted.weblate.org/projects/jellyfinenhanced/
 
-See the [Internationalization & Translations](README.md#-internationalization--translations) section in the README for details.
+See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.
 
 
 ## 🚀 Getting Started
@@ -45,6 +45,7 @@ Key directories:
 ### Code Style
 
 1. **Comments are Essential**
+
    - Use JSDoc comments for functions and classes
    - Add inline comments to explain complex logic
    - Document parameters, return values, and side effects
@@ -78,11 +79,13 @@ Key directories:
    ```
 
 2. **Code Understanding**
+
    - Ensure you understand what your changes do
    - Be prepared to answer questions about your implementation
    - Test your changes thoroughly
 
 3. **AI-Assisted Code (VibeCoded PRs)**
+
    - AI-assisted contributions are welcome! However:
      - You must understand what the code does
      - Be able to explain your implementation
@@ -113,11 +116,13 @@ Key directories:
    ```
 
 2. **Make Your Changes**
+
    - Write clean, commented code
    - Follow existing code patterns
    - Test thoroughly
 
 3. **Commit Messages**
+
    - Use clear, descriptive commit messages
    - Reference issues when applicable
 
@@ -131,12 +136,14 @@ Key directories:
    ```
 
 4. **Submit PR**
+
    - Provide a clear description of changes
    - Include screenshots/videos for UI changes as applicable
    - List any breaking changes
    - Mention if you used AI assistance
 
 5. **Code Review**
+
    - Be responsive to feedback
    - Be prepared to make requested changes
    - If you want me to make any further changes, let me know

@@ -37,6 +37,7 @@ Select the primary region for streaming availability checks. Empty defaults to U
 **View full list:** [Available Regions](https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt)
 
 **Examples:**
+
 - `US` - United States
 - `GB` - United Kingdom
 - `DE` - Germany
@@ -56,6 +57,7 @@ Netflix,Hulu,Disney Plus
 ```
 
 **Common Provider Names:**
+
 - Netflix
 - Amazon Prime Video
 - Disney Plus
@@ -87,6 +89,7 @@ Multiple patterns:
 ```
 
 **Use Cases:**
+
 - Hide providers you don't have access to / or have access to
 - Filter out ad-supported tiers
 - Remove free streaming options
@@ -95,10 +98,12 @@ Multiple patterns:
 ## Custom Branding
 
 **Custom Branding Text:**
+
 - Replace "Jellyfin Elsewhere" with your own text
 - Leave empty to use default
 
 **Custom Branding Image URL:**
+
 - Replace the Elsewhere logo with your own image
 - Provide full URL to image file
 - Leave empty to use default logo
@@ -122,12 +127,14 @@ Multiple patterns:
 ## Elsewhere Not Showing
 
 **Check Configuration:**
+
 1. Verify TMDB API key is correct
 2. Ensure "Enable Elsewhere" is checked
 3. Confirm item has TMDB metadata
 4. Check browser console for errors
 
 **TMDB API Access:**
+
 - TMDB API may be blocked in some regions
 - Use VPN if needed
 - Check [Seerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) for TMDB access issues
@@ -135,12 +142,14 @@ Multiple patterns:
 ## No Providers Showing
 
 **Possible Causes:**
+
 - Item not available in selected region
 - All providers in ignore list
 - TMDB data not available for item
 - API rate limit reached
 
 **Solutions:**
+
 - Try different region
 - Check ignore providers list
 - Verify item has TMDB ID
@@ -151,12 +160,14 @@ Multiple patterns:
 Elsewhere can be displayed on Seerr discovery pages.
 
 **Enable:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Seerr Settings** tab
 3. Check "Show Elsewhere on Seerr"
 4. Click **Save**
 
 **Features:**
+
 - Shows streaming availability on Seerr cards
 - Same provider information as item pages
 - Helps decide what to request
@@ -164,16 +175,19 @@ Elsewhere can be displayed on Seerr discovery pages.
 # Privacy & Data
 
 **What Data is Sent:**
+
 - TMDB ID of the item
 - Selected region code
 - API key (securely transmitted)
 
 **What Data is NOT Sent:**
+
 - Your Jellyfin library contents
 - Personal information
 - Viewing history
 
 **Data Source:**
+
 - All provider data comes from TMDB
 - Updated regularly by TMDB community
 - Accuracy depends on TMDB data quality

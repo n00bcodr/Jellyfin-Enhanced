@@ -36,6 +36,7 @@ This step is optional if you enable plugin-side auto import.
 4. Save changes
 
 **User Access:**
+
 - Users WITH access:
 
   <!-- relative directory  -->
@@ -55,6 +56,7 @@ This step is optional if you enable plugin-side auto import.
    - Use internal URL for best performance
    - Can provide multiple URLs (first successful connection used)
 5. Enter your **Seerr API Key**
+
    - Found in Seerr: **Settings** → **General** → **API Key**
 6. Click **"Test Connection"** to verify
 7. Enable optional features (see below)

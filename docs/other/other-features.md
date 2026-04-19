@@ -30,9 +30,11 @@ Upload your own logos, banners, and favicon to personalize your Jellyfin instanc
 ### Setup
 
 **Prerequisites:**
+
 - [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed
 
 **Configuration:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Other Settings** tab
 3. Find **Custom Branding** section
@@ -71,6 +73,7 @@ Configure icon display throughout the plugin interface.
 Enable or disable icons in toasts, settings panel, and other UI elements.
 
 **Enable:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Other Settings** tab
 3. Check **"Use Icons"**
@@ -81,16 +84,19 @@ Enable or disable icons in toasts, settings panel, and other UI elements.
 Choose between different icon sets.
 
 **Available Styles:**
+
 - **Emoji** - Unicode emoji characters (default)
 - **Lucide Icons** - Modern, clean icon set
 - **Material UI Icons** - Google Material Design icons
 
 **Configuration:**
+
 1. Select icon style from dropdown
 2. Click **Save**
 3. Refresh browser to see changes
 
 **Considerations:**
+
 - Emoji - Universal, no loading required
 - Lucide - Clean, modern aesthetic
 - Material UI - Familiar Google design
@@ -108,11 +114,13 @@ Replace default activity icons with Material Design icons with custom colors.
 ![Colored Activity Icons](../images/colored-activity-icons.png)
 
 **Features:**
+
 - Custom colors for each activity type
 - Material Design icon set
 - Better visual distinction
 
 **Enable:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Other Settings** tab
 3. Check **"Enable Colored Activity Icons"**
@@ -125,11 +133,13 @@ Color-coded backgrounds for ratings on detail pages.
 ![Colored Ratings](../images/ratings.png)
 
 **Features:**
+
 - Different colors per rating type
 - Value-based color gradients
 - Supports TMDB, IMDb, Rotten Tomatoes
 
 **Enable:**
+
 1. Navigate to **Other Settings** tab
 2. Check **"Enable Colored Ratings"**
 3. Click **Save**
@@ -141,11 +151,13 @@ Show user profile images on manual login page.
 ![Login Image](../images/login-image.png)
 
 **Features:**
+
 - Display user avatars
 - Cleaner login interface
 - Automatic fallback to text
 
 **Enable:**
+
 1. Navigate to **Other Settings** tab
 2. Check **"Enable Login Image"**
 3. Click **Save**
@@ -157,11 +169,13 @@ Replace default plugin icons with Material Design icons.
 ![Plugin Icons](../images/plugin-icons.png)
 
 **Features:**
+
 - Custom icons for popular plugins
 - Add custom config page links
 - Improved dashboard aesthetics
 
 **Enable:**
+
 1. Navigate to **Other Settings** tab
 2. Check **"Enable Plugin Icons"**
 3. Click **Save**
@@ -187,16 +201,19 @@ Choose from multiple Jellyfin theme color variants.
 ![Theme Selector](../images/theme-selector.png)
 
 **Features:**
+
 - Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
 - Randomize theme daily option
 - Quick theme switching
 
 **Enable:**
+
 1. Navigate to **Other Settings** tab
 2. Check **"Enable Theme Selector"**
 3. Click **Save**
 
 **Usage:**
+
 1. Open Enhanced panel
 2. Go to Settings tab
 3. Find Theme Selector section
@@ -204,6 +221,7 @@ Choose from multiple Jellyfin theme color variants.
 5. Optional: Enable "Randomize Daily"
 
 **Available Themes:**
+
 - Aurora
 - Jellyblue
 - Ocean
@@ -257,6 +275,7 @@ Configure durations for Enhanced panel UI elements.
 Control how long the help panel stays open before automatically closing.
 
 **Configure:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Other Settings** tab
 3. Find **Timeout Settings** section
@@ -267,6 +286,7 @@ Control how long the help panel stays open before automatically closing.
 **Range:** 0-30000ms (0 = no auto-close)
 
 **Use Cases:**
+
 - Longer delay for first-time users
 - Shorter delay for experienced users
 - Disable auto-close (0) for accessibility
@@ -276,6 +296,7 @@ Control how long the help panel stays open before automatically closing.
 Control how long toast notifications are displayed.
 
 **Configure:**
+
 1. In **Timeout Settings** section
 2. Set **Toast Duration** (milliseconds)
 3. Click **Save**
@@ -284,6 +305,7 @@ Control how long toast notifications are displayed.
 **Range:** 1000-10000ms
 
 **Affects:**
+
 - Bookmark saved notifications
 - Success/error messages
 - State change confirmations
@@ -305,11 +327,13 @@ Add Letterboxd external links to movie item detail pages.
 ### Usage
 
 **On Movie Detail Pages:**
+
 1. Open any movie
 2. Look for Letterboxd link in external links section
 3. Click to open movie on Letterboxd
 
 **Features:**
+
 - Automatic TMDB ID to Letterboxd mapping
 - Direct links to movie pages
 - Icon or text display option
@@ -335,6 +359,7 @@ Hide specific items from your Jellyfin library without deleting them.
 3. Find **Hidden Content** section
 4. Check **"Enable Hidden Content"**
 5. Optional: Check **"Use Plugin Pages for Hidden Content Library"**
+
    - Adds a sidebar link to dedicated Hidden Content page
    - Requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin
    - Restart Jellyfin after enabling for first time
@@ -343,6 +368,7 @@ Hide specific items from your Jellyfin library without deleting them.
 ### Usage
 
 **Hide Item:**
+
 1. Open item detail page
 2. Click hide button (if available)
 3. Item removed from library view
@@ -350,6 +376,7 @@ Hide specific items from your Jellyfin library without deleting them.
 **Manage Hidden Items:**
 
 **Via Enhanced Panel:**
+
 1. Open Enhanced panel (press `?`)
 2. Go to Hidden Content section
 3. View all hidden items
@@ -375,6 +402,7 @@ Custom splash screen that appears while Jellyfin is loading.
 2. Navigate to **Other Settings** tab
 3. Check **"Enable Custom Splash Screen"**
 4. Enter **Splash Screen Image URL**
+
    - Use full URL or relative path
    - Default: `/web/assets/img/banner-light.png`
 5. Click **Save**
@@ -389,6 +417,7 @@ Custom splash screen that appears while Jellyfin is loading.
 ### Custom Image
 
 **Upload Custom Image:**
+
 1. Place image in Jellyfin web directory
 2. Note the path (e.g., `/web/custom/splash.png`)
 3. Enter path in plugin settings
@@ -402,20 +431,11 @@ Multi-language support with community translations.
 
 ### Supported Languages
 
-- Danish (da)
-- German (de)
-- English (en)
-- Spanish (es)
-- French (fr)
-- Hungarian (hu)
-- Italian (it)
-- Norwegian (no)
-- Polish (pl)
-- Portuguese (pt, pr)
-- Russian (ru)
-- Swedish (sv)
-- Turkish (tr)
-- Chinese (zh-HK)
+<p align="left">
+  <a href="https://hosted.weblate.org/engage/jellyfinenhanced/">
+    <img src="https://hosted.weblate.org/widget/jellyfinenhanced/multi-auto.svg" alt="Translation status" />
+  </a>
+</p>
 
 ### How It Works
 
@@ -430,6 +450,7 @@ Multi-language support with community translations.
 Set a default language for all users.
 
 **Configuration:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Find **Default UI Language** setting
 3. Select language from dropdown
@@ -438,16 +459,10 @@ Set a default language for all users.
 
 ### Contributing Translations
 
-Help translate Jellyfin Enhanced for the community!
-
-**Steps:**
-1. Go to `Jellyfin.Plugin.JellyfinEnhanced/js/locales/`
-2. Copy `en.json`
-3. Rename to your language code (e.g., `es.json`)
-4. Translate all English text
-5. Submit pull request
+See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.
 
 **Translation Updates:**
+
 - Fetched from GitHub on first load
 - Available immediately after merge
 - No plugin update needed
@@ -464,11 +479,13 @@ Clear various caches to force refresh of data.
 Force all clients to clear their localStorage.
 
 **Use Case:**
+
 - Reset all client-side settings
 - Fix corrupted data
 - Force fresh start
 
 **How:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Find **Clear Local Storage** button
 3. Click to set timestamp
@@ -479,11 +496,13 @@ Force all clients to clear their localStorage.
 Force all clients to re-fetch translations.
 
 **Use Case:**
+
 - Update to latest translations
 - Fix translation issues
 - Force language refresh
 
 **How:**
+
 1. Find **Clear Translation Cache** button
 2. Click to set timestamp
 3. Clients re-fetch on next load
@@ -493,11 +512,13 @@ Force all clients to re-fetch translations.
 Force all clients to clear tag caches.
 
 **Use Case:**
+
 - Update quality/genre/language/rating tags
 - Fix cached tag data
 - Force tag refresh
 
 **How:**
+
 1. Go to Enhanced Settings tab
 2. Find **Clear All Client Caches** button
 3. Click to clear

@@ -19,6 +19,7 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
     - **4K Requests**
     - **4K TV Requests**
     - **Season selection**
+
 - **Requests Tab**
     - **View request status** - pending, approved, available
 - **Recommendations + Discovery** - Recommendations and similar items on detail pages

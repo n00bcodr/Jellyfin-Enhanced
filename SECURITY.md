@@ -26,6 +26,7 @@ We take the security of Jellyfin Enhanced seriously. If you believe you have fou
    - Provide detailed information about the vulnerability
 
 2. **Include in your report:**
+
    - Description of the vulnerability
    - Steps to reproduce the issue
    - Potential impact

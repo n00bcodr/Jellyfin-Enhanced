@@ -102,11 +102,13 @@ The original `SonarrUrl`, `SonarrApiKey`, `RadarrUrl`, and `RadarrApiKey` fields
 ### Usage
 
 **On Item Detail Pages:**
+
 1. Open any movie or TV show
 2. Look for *arr link icons in the external links section
 3. Click to open the item in the respective *arr application, or click the dropdown to choose an instance
 
 **Visibility:**
+
 - Only visible to administrators
 - Automatically detects item type (movie/TV)
 - Shows relevant links only (Sonarr for TV, Radarr for movies)
@@ -118,10 +120,12 @@ Display synced *arr tags as clickable links on item detail pages.
 ### Setup
 
 **Prerequisites:**
+
 - Sonarr and/or Radarr configured
 - API keys for Sonarr and Radarr
 
 **Configuration:**
+
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to ***arr Settings** tab
 3. Check **"Enable *arr Tags Sync"**
@@ -133,16 +137,19 @@ Display synced *arr tags as clickable links on item detail pages.
 ### Tag Settings
 
 **Tag Prefix:**
+
 - Default: `JE Arr Tag: `
 - Prefix added to synced tags
 - Helps identify plugin-managed tags
 
 **Clear Old Tags:**
+
 - Remove old plugin-managed tags before syncing
 - Keeps tags clean and up-to-date
 - Recommended: Enabled
 
 **Show Tags as Links:**
+
 - Display tags as clickable links on item pages
 - Click to view all items with that tag
 - Recommended: Enabled
@@ -150,16 +157,19 @@ Display synced *arr tags as clickable links on item detail pages.
 ### Tag Filtering
 
 **Links Filter (Show Only):**
+
 - Comma-separated list of tag names to show
 - Only matching tags displayed as links
 - Leave empty to show all tags
 
 **Example:**
+
 ```text
 in-netflix,in-disney,4k-upgrade
 ```
 
 **Links Hide Filter:**
+
 - Comma-separated list of tag names to hide
 - Matching tags not displayed as links
 - Overrides show filter
@@ -170,6 +180,7 @@ internal-tag,do-not-show
 ```
 
 **Sync Filter:**
+
 - Comma-separated list of tag names to sync
 - Only matching tags synced from *arr
 - Leave empty to sync all tags
@@ -227,22 +238,27 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 ### Calendar Settings
 
 **First Day of Week:**
+
 - Monday (default)
 - Sunday
 
 **Time Format:**
+
 - `5pm/5:30pm` - 12-hour format
 - `17:00/17:30` - 24-hour format
 
 **Highlight Favorites:**
+
 - Highlight favorite shows/movies in calendar
 - Requires favorites set in Jellyfin
 
 **Highlight Watched Series:**
+
 - Highlight series you're currently watching
 - Based on watch history
 
 **Requests Filter:**
+
 - Filter calendar to show only requested items
 - Helps track upcoming releases you've requested
 - Toggle on/off as needed
@@ -250,11 +266,13 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 ### Usage
 
 **Access Calendar:**
+
 - Click "Calendar" in sidebar (Plugin Pages)
 - Navigate to custom tab (Custom Tabs)
 - Direct URL: `/web/index.html#!/jellyfinenhanced/calendar`
 
 **Features:**
+
 - Month, week, and agenda views
 - Color-coded by series/movie
 - Click event to view details
