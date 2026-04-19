@@ -4983,9 +4983,17 @@
         // is NOT a security boundary — a determined user could still spam
         // via devtools — it's a guardrail against well-intentioned double-
         // clicks and page-reload retries.
-        var RETEST_ALL_COOLDOWN_MS = 15 * 1000;
+        // Minimum time the Re-test-all button stays disabled even if every
+        // test finishes instantly. Acts as the rate-limit floor so rapid
+        // re-clicks can't fire dozens of external API tests per second.
+        var RETEST_ALL_MIN_COOLDOWN_MS = 4 * 1000;
+        // Hard upper bound for the polling loop. If a test still hasn't
+        // resolved after this long, we force-release anyway so the UI
+        // doesn't sit "Retesting…" forever on a hung connection.
+        var RETEST_ALL_MAX_WAIT_MS = 25 * 1000;
         var _jeRetestAllCooldownUntil = 0;
         var _jeRetestAllReenableTimer = null;
+        var _jeRetestAllPollTimer = null;
 
         function _setRetestAllButtonLabel(btn, text) {
             if (!btn) return;
@@ -5006,7 +5014,7 @@
                     try {
                         Dashboard.alert({
                             title: 'Please wait',
-                            message: 'Re-test is rate-limited to once every ' + Math.round(RETEST_ALL_COOLDOWN_MS / 1000) + 's. Try again in ' + remainSec + ' s.'
+                            message: 'Re-test is rate-limited. Try again in ' + remainSec + ' s.'
                         });
                     } catch (e) { /* ignore */ }
                     return;
@@ -5018,11 +5026,10 @@
                 try { clearConnectionTestCache(); } catch (e) { /* renderChecklist logs */ }
 
                 // Suppress per-test Dashboard.alert dialogs for the duration
-                // of this batch — we'll show ONE aggregate dialog at the
-                // end instead of stacking 8+ modals the admin has to dismiss
-                // one by one.
+                // of this batch — per-service indicators + the Integration
+                // Health rows already communicate results.
                 _jeSuppressTestAlerts = true;
-                _jeRetestAllCooldownUntil = now + RETEST_ALL_COOLDOWN_MS;
+                _jeRetestAllCooldownUntil = now + RETEST_ALL_MIN_COOLDOWN_MS;
                 retestAllConnectionsBtn.disabled = true;
                 _setRetestAllButtonLabel(retestAllConnectionsBtn, 'Retesting…');
 
@@ -5081,22 +5088,48 @@
                     return;
                 }
 
-                // Scheduled release: the individual test functions don't
-                // return promises (they're event handlers fired via .click()),
-                // so we can't Promise.allSettled them. Instead, wait until
-                // the cooldown expires — that's our "batch is probably
-                // done" signal — then re-enable the button, drop the
-                // suppress flag, and re-render the checklist so the final
-                // ok/error rows show through. No aggregate dialog — the
-                // status indicators and Integration Health rows are the
-                // single source of truth for per-service results.
+                // The individual test functions don't return promises
+                // (they're event handlers fired via .click()), so we poll
+                // the DOM for the "in-flight" signal each test sets on
+                // start: the `.status-check` class on its status indicator.
+                // When no indicators still carry that class, every test
+                // has resolved — release the button immediately. Falls
+                // back to a hard max-wait so a hung request doesn't leave
+                // the button stuck on "Retesting…".
                 clearTimeout(_jeRetestAllReenableTimer);
-                _jeRetestAllReenableTimer = setTimeout(function() {
+                clearInterval(_jeRetestAllPollTimer);
+                var batchStartedAt = Date.now();
+                function releaseRetestBatch() {
+                    clearInterval(_jeRetestAllPollTimer);
+                    clearTimeout(_jeRetestAllReenableTimer);
                     _jeSuppressTestAlerts = false;
                     retestAllConnectionsBtn.disabled = false;
                     _setRetestAllButtonLabel(retestAllConnectionsBtn, _retestAllOriginalLabel);
                     try { renderChecklist(); } catch (e) { /* logged */ }
-                }, RETEST_ALL_COOLDOWN_MS);
+                }
+                _jeRetestAllPollTimer = setInterval(function() {
+                    var elapsed = Date.now() - batchStartedAt;
+                    // `.status-check` is applied on test START and removed on
+                    // test RESOLVE (success or failure), so it's an accurate
+                    // "in-flight" signal for the three test functions.
+                    var inFlight = document.querySelectorAll('.status-check').length;
+                    // Release when BOTH:
+                    //  - no tests still in flight (UI has caught up), and
+                    //  - the min-cooldown floor has elapsed (rate limit).
+                    // The floor ensures a user who hits retest-all with zero
+                    // real tests configured still has the button disabled long
+                    // enough to prevent double-run, and covers the first-tick
+                    // race where indicators haven't swapped to 'sync' yet.
+                    if (inFlight === 0 && elapsed >= RETEST_ALL_MIN_COOLDOWN_MS) {
+                        releaseRetestBatch();
+                    } else if (elapsed >= RETEST_ALL_MAX_WAIT_MS) {
+                        console.warn('[JE] retest-all: giving up on ' + inFlight + ' in-flight test(s) after ' + elapsed + 'ms');
+                        releaseRetestBatch();
+                    }
+                }, 300);
+                // Hard-stop safety net in case setInterval is suspended
+                // (backgrounded tab, browser throttling, etc.).
+                _jeRetestAllReenableTimer = setTimeout(releaseRetestBatch, RETEST_ALL_MAX_WAIT_MS + 500);
             });
         }
 
