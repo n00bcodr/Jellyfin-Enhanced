@@ -131,11 +131,25 @@
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">bolt</i>Quick Actions</legend>
                         <div class="configSection">
                             <div class="je-quick-actions-grid" id="je-quick-actions-grid">
+                                <button type="button" id="retestAllConnectionsBtn" class="je-quick-action" data-action="retest-all">
+                                    <i class="material-icons je-quick-action-icon" aria-hidden="true">sync</i>
+                                    <div class="je-quick-action-text">
+                                        <span class="je-quick-action-title">Re-test all service connections</span>
+                                        <span class="je-quick-action-detail">Re-runs the TMDB / Seerr / Sonarr / Radarr tests</span>
+                                    </div>
+                                </button>
                                 <button type="button" id="resetAllUserSettingsBtn" class="je-quick-action" data-action="apply-all-users">
                                     <i class="material-icons je-quick-action-icon" aria-hidden="true">group</i>
                                     <div class="je-quick-action-text">
                                         <span class="je-quick-action-title">Apply defaults to all users</span>
                                         <span class="je-quick-action-detail">Overwrite every user's per-user settings with these defaults</span>
+                                    </div>
+                                </button>
+                                <button type="button" id="clearTagCachesQuickBtn" class="je-quick-action" data-action="clear-tag-caches">
+                                    <i class="material-icons je-quick-action-icon" aria-hidden="true">cleaning_services</i>
+                                    <div class="je-quick-action-text">
+                                        <span class="je-quick-action-title">Clear all client tag caches</span>
+                                        <span class="je-quick-action-detail">Forces every client to rebuild its localStorage tag cache</span>
                                     </div>
                                 </button>
                             </div>
@@ -2451,7 +2465,7 @@
 
         // Saves current config and applies it to all users
         async function resetAllUserSettings() {
-            if (confirm("Are you sure?\n\nThis will save the current configuration overwriting the above settings to ALL users on this server.")) {
+            if (confirm("Are you sure?\n\nThis will save the current configuration and overwrite every per-user default for ALL users on this server.")) {
                 Dashboard.showLoadingMsg();
                 try {
                     // First, save the current configuration
@@ -3723,6 +3737,89 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+
+        /**
+         * Quick Action: re-test every external-service connection by proxying
+         * clicks to the existing per-service test buttons. Preserves the per-
+         * button UX (spinners, toasts, status-card updates) without duplicating
+         * logic. Does NOT fabricate a cache — Phase 4 layers a real test cache
+         * on top.
+         *
+         * Services invoked:
+         *   - TMDB: one `.testTmdbBtn` click (multiple copies exist across tabs
+         *     but any one test updates the shared status card)
+         *   - Seerr: `#testJellyseerrBtn` when Seerr is enabled + URL + key set
+         *   - Sonarr / Radarr: every `.arr-instance-test` inside the instance
+         *     lists that has a URL + API key populated
+         *
+         * Skipping an unconfigured service is intentional — clicking a test
+         * button with empty fields would pop a Dashboard.alert per service,
+         * which is noisy for a "one-shot retest" action.
+         */
+        var retestAllConnectionsBtn = document.getElementById('retestAllConnectionsBtn');
+        if (retestAllConnectionsBtn) {
+            retestAllConnectionsBtn.addEventListener('click', function() {
+                var tested = 0;
+
+                // TMDB — one click is enough; pages share the same backing key
+                var tmdbBtn = document.querySelector('.testTmdbBtn');
+                if (tmdbBtn && !tmdbBtn.disabled) { tmdbBtn.click(); tested++; }
+
+                // Seerr — only if enabled with a URL + key (otherwise button
+                // would show a "missing info" toast, which is noisy for a
+                // batch re-test action).
+                var seerrEnabled = document.querySelector('#jellyseerrEnabled');
+                var seerrUrls = document.querySelector('#jellyseerrUrls');
+                var seerrKey = document.querySelector('#JellyseerrApiKey');
+                if (seerrEnabled && seerrEnabled.checked
+                    && seerrUrls && seerrUrls.value.trim()
+                    && seerrKey && seerrKey.value.trim()
+                    && testJellyseerrBtn && !testJellyseerrBtn.disabled) {
+                    testJellyseerrBtn.click();
+                    tested++;
+                }
+
+                // Sonarr / Radarr — per-instance tests. The per-instance test
+                // function itself guards against empty URL/API-key, so we
+                // don't need to re-check here; we just skip already-disabled
+                // buttons (mid-flight tests).
+                var arrBtns = document.querySelectorAll('.arr-instance-test');
+                arrBtns.forEach(function(btn) {
+                    var card = btn.closest('.arr-instance-card');
+                    if (!card) return;
+                    var urlEl = card.querySelector('.arr-instance-url');
+                    var keyEl = card.querySelector('.arr-instance-apikey');
+                    if (!urlEl || !keyEl) return;
+                    if (!urlEl.value.trim() || !keyEl.value.trim()) return;
+                    if (btn.disabled) return;
+                    btn.click();
+                    tested++;
+                });
+
+                // Always refresh the dashboard dots so the user sees feedback
+                // even when no service was re-tested.
+                try { updateStatusDashboard(); } catch (e) { /* logged inside */ }
+
+                if (tested === 0) {
+                    Dashboard.alert({
+                        title: 'Nothing to re-test',
+                        message: 'Enable and configure at least one service (TMDB, Seerr, Sonarr, or Radarr) before running a re-test.'
+                    });
+                }
+            });
+        }
+
+        /**
+         * Quick Action: proxy the "Clear client tag caches" button from the
+         * Display tab. Keeps the canonical clear-flow in one place while
+         * giving the action a home on Overview.
+         */
+        var clearTagCachesQuickBtn = document.getElementById('clearTagCachesQuickBtn');
+        if (clearTagCachesQuickBtn && clearTagsCacheBtn) {
+            clearTagCachesQuickBtn.addEventListener('click', function() {
+                clearTagsCacheBtn.click();
+            });
+        }
 
         /**
          * Updates the blocked users count badge in the collapsible summary.
