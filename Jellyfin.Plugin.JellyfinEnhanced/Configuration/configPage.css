@@ -428,23 +428,34 @@
 #JellyfinEnhancedForm fieldset:hover {
     border-color: rgba(255, 255, 255, 0.12);
 }
+/* Native <legend> has peculiar layout — it's positioned relative to the
+   fieldset's top border and doesn't always respect width/display. The
+   `float: left; width: 100%;` trick normalizes it into a proper block
+   header that spans the full fieldset width. configSection then
+   `clear: both;` so its flow starts below the floated legend. */
 #JellyfinEnhancedForm legend.sectionTitle {
-    background: rgba(0, 0, 0, 0.25);
+    float: left;
     width: 100%;
     margin: 0;
     padding: 14px 22px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
     font-size: 1.05em;
     font-weight: 600;
     letter-spacing: 0.2px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     box-sizing: border-box;
-    color: #f0f0f0;
+    color: #f5f5f5;
+}
+/* Keep the icon inline with the title on a row, now that the legend
+   is a floated block (display:flex would override the float). */
+#JellyfinEnhancedForm legend.sectionTitle .je-legend-icon {
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: -4px;
 }
 .configSection {
-    padding: 22px 24px;
+    clear: both;
+    padding: 20px 24px;
     display: flex;
     flex-direction: column;
     gap: 14px;
