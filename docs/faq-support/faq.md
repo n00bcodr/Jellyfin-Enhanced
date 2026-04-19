@@ -26,7 +26,7 @@ No, this plugin is not affiliated with Seerr. Seerr is an independent project, a
 
 ### How do I change the plugin's language?
 
-The plugin automatically uses the language set in your Jellyfin user profile. If your language isn't available, it defaults to English. See the [Contributing Translations]((../faq-support/contributing-translations.md)) section to help add your language!
+The plugin automatically uses the language set in your Jellyfin user profile. If your language isn't available, it defaults to English. See the [Contributing Translations](contributing-translations.md) section to help add your language!
 
 ### Where is the userscript version?
 
@@ -57,7 +57,7 @@ The userscript has been discontinued as the plugin functionality has grown signi
 
 ### I see "permission denied" errors in logs!!
 
-**See this page in [Installation Troubleshooting, regarding permission issuses](../installation/troubleshooting.md#permission-errors-in-logs)**
+**See this page in [Installation Troubleshooting, regarding permission issuses](../installation/troubleshooting.md#permission-issues)**
 
 
 ---

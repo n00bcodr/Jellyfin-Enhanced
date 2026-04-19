@@ -64,4 +64,4 @@ Most features can be enabled/disabled individually:
 <!-- explicit path seemed necessary (idk why) -->
 !!! tip
 
-    [Custom CSS available](/Jellyfin-Enhanced/advanced/css-customization/#tags)
+    [Custom CSS available](../advanced/css-customization.md#tags)

@@ -11,7 +11,7 @@ Quick access to Sonarr, Radarr, and Bazarr (admin only).
 5. Configure tag filters (show/hide specific tags)
 
 ### CSS Customization
-See [ARR Tag Links CSS](../advanced/customization/#) for styling options.
+See [ARR Tag Links CSS](../advanced/css-customization.md/#arr-tag-links) for styling options.
 
 ---
 

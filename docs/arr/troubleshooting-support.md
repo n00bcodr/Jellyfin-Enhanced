@@ -65,7 +65,7 @@
 
 If you encounter issues:
 
-1. Check [FAQ](faq.md) for common solutions
+1. Check [FAQ](../faq-support/faq.md) for common solutions
 2. Verify *arr URLs and API keys
 3. Check browser console and server logs
 4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)

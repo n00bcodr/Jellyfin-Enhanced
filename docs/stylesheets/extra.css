@@ -1,0 +1,226 @@
+:root {
+  --md-primary-fg-rgb: 155, 89, 182;
+  --md-primary-fg-color: rgba(var(--md-primary-fg-rgb), 1);
+  --md-primary-fg-color--light: rgba(205, 110, 198, 1);
+  --md-primary-fg-color--dark: rgba(78, 69, 163, 1);
+  --md-accent-fg-color: rgba(0, 180, 216, 1);
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+.md-nav__link {
+  border-radius: 8px;
+  padding: 4px 8px;
+  transition: background 0.2s ease;
+}
+
+/* Active nav item */
+.md-nav__link--active {
+  background: rgba(155, 89, 182, 0.15);
+}
+
+/* ============================================================
+   HEADER / TOPBAR
+   ============================================================ */
+.md-header {
+  background: var(--md-primary-fg-color) !important;
+  transition: background 0.3s ease, backdrop-filter 0.3s ease;
+}
+.md-tabs {
+  border-radius: 0 0 20px 20px;
+}
+
+.md-header.scrolled {
+  backdrop-filter: blur(20px);
+  background: linear-gradient(180deg, rgba(var(--md-primary-fg-rgb), 0.8), rgba(var(--md-primary-fg-rgb), 0.2)) !important;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* ============================================================
+   SEARCH
+   ============================================================ */
+.md-search__form {
+  border-radius: 20px;
+  border: 1px solid rgba(155, 89, 182, 0.3);
+  transition: border 0.2s ease;
+}
+.md-search__output,
+.md-search__form {
+  border-radius: 20px !important;
+}
+.md-search__form:focus-within {
+  border-color: rgba(155, 89, 182, 0.8);
+}
+
+/* ============================================================
+   CODE BLOCKS
+   ============================================================ */
+.highlight {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.md-typeset code {
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(155, 89, 182, 0.15) !important;
+  color: #d199f5 !important;
+}
+
+/* ============================================================
+   ADMONITIONS (note, tip, warning etc)
+   ============================================================ */
+.md-typeset .admonition {
+  border-radius: 12px;
+  overflow: hidden;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.md-typeset .admonition-title {
+  border-radius: 10px 10px 0 0;
+}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.md-typeset__scrollwrap {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.md-typeset table:not([class]) th {
+  background: rgba(155, 89, 182, 0.3);
+}
+
+.md-typeset table:not([class]) tr:hover {
+  background: rgba(155, 89, 182, 0.1);
+  transition: background 0.2s ease;
+}
+
+/* ============================================================
+   CONTENT AREA
+   ============================================================ */
+.md-content__inner {
+  padding: 2rem;
+  border-radius: 12px;
+}
+
+/* ============================================================
+   TABS (pymdownx.tabbed)
+   ============================================================ */
+.md-typeset .tabbed-labels {
+  border-radius: 8px 8px 0 0;
+}
+
+.md-typeset .tabbed-content {
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.md-footer {
+  backdrop-filter: blur(20px);
+  background: linear-gradient(0deg, rgba(var(--md-primary-fg-rgb), 0.4), rgba(var(--md-primary-fg-rgb), 0.2)) !important;
+  border-radius: 20px 20px 0 0;
+
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(155, 89, 182, 0.5);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(155, 89, 182, 0.8);
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.md-button {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.md-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(155, 89, 182, 0.4);
+}
+
+/* ============================================================
+   HEADER REPO SOURCE FACTS
+   ============================================================ */
+
+.md-source__fact--version {
+  color: #ffffff;
+}
+
+.md-source__fact--stars {
+  color: #ffc107;
+}
+
+.md-source__fact--stars::before {
+  color: #ffc107;
+}
+
+.md-source__fact--forks {
+  color: #64b5f6;
+}
+
+/* ============================================================
+   SOCIAL ICONS - INDIVIDUAL COLORS
+   ============================================================ */
+
+.md-social__link[title="GitHub Repository"]:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+}
+
+.md-social__link[title="GitHub Repository"] svg {
+  fill: rgba(255, 255, 255, 0.8);
+}
+
+/* Discord - blurple */
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"] {
+  border-color: rgba(88, 101, 242, 0.4);
+  border-radius: 999px;
+}
+
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"]:hover {
+  background: rgba(88, 101, 242, 0.25);
+  border-color: rgba(88, 101, 242, 0.8);
+  box-shadow: 0 0 12px rgba(88, 101, 242, 0.4);
+}
+
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"] svg {
+  fill: #5865f2;
+}
+
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"]:hover svg {
+  fill: #7983f5;
+}

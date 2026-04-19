@@ -459,7 +459,7 @@ Set a default language for all users.
 
 ### Contributing Translations
 
-See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.
+See the [Contributing Translations](../faq-support/contributing-translations.md) section for details.
 
 **Translation Updates:**
 
@@ -528,19 +528,11 @@ Force all clients to clear tag caches.
 
 ---
 
-## Related Features
-
-- [Enhanced Features](enhanced.md) - Core plugin features
-- [Elsewhere Integration](elsewhere.md) - Streaming provider lookup
-- [Seerr Integration](jellyseerr.md) - Request media
-- [ARR Integration](arr.md) - Sonarr, Radarr integration
-- [FAQ](faq.md) - Common questions
-
 ## Support
 
 If you encounter issues:
 
-1. Check [FAQ](faq.md) for common solutions
+1. Check [FAQ](../faq-support/faq.md) for common solutions
 2. Verify settings are correct
 3. Check browser console for errors
 4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)

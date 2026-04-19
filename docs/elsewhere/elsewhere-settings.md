@@ -203,7 +203,7 @@ Elsewhere can be displayed on Seerr discovery pages.
 
 If you encounter issues:
 
-1. Check [FAQ](faq-support/faq.md) for common solutions
+1. Check [FAQ](../faq-support/faq.md) for common solutions
 2. Verify TMDB API key is valid
 3. Check browser console for errors
 4. Report issues on [GitHub](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)

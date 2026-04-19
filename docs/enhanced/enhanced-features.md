@@ -648,4 +648,4 @@ Multi-language support with community translations and automatic caching.
 
 **Contributing Translations:**
 
-See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.
+See the [Contributing Translations](../faq-support/contributing-translations.md) section for details.

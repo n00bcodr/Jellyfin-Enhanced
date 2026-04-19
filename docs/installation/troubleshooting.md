@@ -75,7 +75,7 @@ Access to the path '/jellyfin/jellyfin-web/index.html' is denied.
 
 - Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) *(recommended)*
 
-- Or, try [platform-specific permission fixes](#platform-specific-issues)
+- Or, try [platform-specific permission fixes](#platform-specific-permission-issues)
 
 
 ### Platform-Specific Permission Issues
@@ -143,7 +143,7 @@ sudo chmod -R 755 /usr/lib/jellyfin/
 
 If you encounter issues:
 
-1. Check the [FAQ](../faq-support/faq) for common solutions
+1. Check the [FAQ](../faq-support/faq.md) for common solutions
 2. [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
     - Search existing issues
     - Create a new issue *(please include log and details)*
