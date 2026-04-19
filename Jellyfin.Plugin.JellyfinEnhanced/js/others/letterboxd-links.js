@@ -18,6 +18,19 @@
 
         const LETTERBOXD_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/letterboxd.svg';
 
+        // Safe fallback for helpers.js Stage-3 load-order races.
+        const extLink = JE.helpers?.createExternalLink || ((u, o) => {
+            const a = document.createElement('a');
+            a.setAttribute('is', 'emby-linkbutton');
+            a.href = u;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            if (o?.text) a.textContent = o.text;
+            if (o?.title) a.title = o.title;
+            if (o?.className) a.className = o.className;
+            return a;
+        });
+
         const styleId = 'letterboxd-links-styles';
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
@@ -125,18 +138,13 @@
         }
 
         function createLinkButton(text, url, className) {
-            const button = document.createElement('a');
-            button.setAttribute('is', 'emby-linkbutton');
+            const button = extLink(url, { title: text });
             if (JE.pluginConfig.ShowLetterboxdLinkAsText) {
                 button.textContent = text;
                 button.className = 'button-link emby-button letterboxd-link';
             } else {
                 button.className = 'button-link emby-button letterboxd-link letterboxd-link-icon';
             }
-            button.href = url;
-            button.target = '_blank';
-            button.rel = 'noopener noreferrer';
-            button.title = text;
             return button;
         }
 

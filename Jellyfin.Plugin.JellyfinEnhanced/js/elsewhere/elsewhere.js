@@ -33,6 +33,19 @@
         let availableRegions = {};
         let availableProviders = [];
 
+        // Safe fallback for helpers.js Stage-3 load-order races.
+        const extLink = JE.helpers?.createExternalLink || ((u, o) => {
+            const a = document.createElement('a');
+            a.setAttribute('is', 'emby-linkbutton');
+            a.href = u;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            if (o?.text) a.textContent = o.text;
+            if (o?.title) a.title = o.title;
+            if (o?.className) a.className = o.className;
+            return a;
+        });
+
         console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere starting...');
 
         // Load regions and providers from GitHub repo
@@ -561,7 +574,10 @@
             `;
 
             // Create clickable title that links to JustWatch
-            const title = document.createElement('a');
+            const title = extLink(
+                (hasFilteredServices && regionData && regionData.link) ? regionData.link : '#',
+                { title: 'JustWatch' }
+            );
 
             // Check if services are available in default region
             const hasServices = regionData && regionData.flatrate && regionData.flatrate.length > 0;
@@ -639,12 +655,8 @@
 
             // Add JustWatch link if available and has filtered services
             if (hasFilteredServices && regionData && regionData.link) {
-                title.setAttribute('is', 'emby-linkbutton');
                 title.classList.add('elsewhere-link-reset');
                 title.href = regionData.link;
-                title.target = '_blank';
-                title.rel = 'noopener noreferrer';
-                title.title = 'JustWatch';
                 title.style.padding = '0';
                 title.style.margin = '0';
             } else if (!hasFilteredServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
@@ -979,7 +991,10 @@
             `;
 
             // Create clickable title that links to JustWatch
-            const title = document.createElement('a');
+            const title = extLink(
+                regionData.link || '#',
+                { title: 'JustWatch' }
+            );
             title.textContent = JE.t('elsewhere_panel_available_in_region', { region: availableRegions[region] || region });
             title.style.cssText = `
                 font-weight: 600;
@@ -993,12 +1008,8 @@
 
             // Add JustWatch link if available and enabled
             if (regionData.link) {
-                title.setAttribute('is', 'emby-linkbutton');
                 title.classList.add('elsewhere-link-reset');
                 title.href = regionData.link;
-                title.target = '_blank';
-                title.rel = 'noopener noreferrer';
-                title.title = 'JustWatch';
                 title.style.padding = '0';
                 title.style.margin = '0';
             }

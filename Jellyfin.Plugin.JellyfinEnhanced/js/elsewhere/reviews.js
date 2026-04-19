@@ -215,13 +215,13 @@
             html = html.replace(/`(.+?)`/g, '<code>$1</code>');
 
             // Links [text](url) - only allow http(s) schemes
-            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, '<a is="emby-linkbutton" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
             // Auto-link plain URLs (http:// or https://)
             // Match URLs that aren't already inside href attributes
             html = html.replace(/(^|[^"'>])(https?:\/\/[^\s<]+[^\s<.,;!?)])/gi, function(match, prefix, url) {
                 // Don't linkify if already part of an anchor tag
-                return prefix + '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+                return prefix + '<a is="emby-linkbutton" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
             });
 
             // Process line by line for block elements

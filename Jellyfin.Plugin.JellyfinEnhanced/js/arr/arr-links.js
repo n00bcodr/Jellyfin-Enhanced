@@ -77,6 +77,19 @@
         // this cache to drop (same constraint every other JE module has today).
         const slugCache = new Map();
 
+        // Safe fallback for helpers.js Stage-3 load-order races.
+        const extLink = JE.helpers?.createExternalLink || ((u, o) => {
+            const a = document.createElement('a');
+            a.setAttribute('is', 'emby-linkbutton');
+            a.href = u;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            if (o?.text) a.textContent = o.text;
+            if (o?.title) a.title = o.title;
+            if (o?.className) a.className = o.className;
+            return a;
+        });
+
         // Parse URL mappings from config
         function parseUrlMappings(mappingsString) {
             const mappings = [];
@@ -610,11 +623,12 @@
             };
 
             function createLinkButton(text, url, iconClass, status, badge, tooltip) {
-                const button = document.createElement('a');
-                button.setAttribute('is', 'emby-linkbutton');
                 const statusClass = status ? ` arr-link--${status}` : '';
+                const button = extLink(url, {
+                    title: tooltip || text,
+                    className: `button-link emby-button arr-link${statusClass}`,
+                });
                 if (JE.pluginConfig.ShowArrLinksAsText) {
-                    button.className = `button-link emby-button arr-link${statusClass}`;
                     button.textContent = text;
                     // Badge in text-mode so users have visible status without hovering
                     if (badge) {
@@ -624,7 +638,6 @@
                         button.appendChild(badgeEl);
                     }
                 } else {
-                    button.className = `button-link emby-button arr-link${statusClass}`;
                     // Use <img> so the icon sits inline exactly like Jellyfin's own external link icons
                     const iconUrl = ICON_URLS[iconClass];
                     if (iconUrl) {
@@ -635,10 +648,6 @@
                         button.appendChild(img);
                     }
                 }
-                button.href = url;
-                button.target = '_blank';
-                button.rel = 'noopener noreferrer';
-                button.title = tooltip || text;
                 return button;
             }
 
@@ -697,12 +706,10 @@
                 menu.className = 'arr-dropdown-menu';
 
                 items.forEach(function(item) {
-                    const link = document.createElement('a');
-                    link.className = 'arr-dropdown-item';
-                    link.href = item.url;
-                    link.target = '_blank';
-                    link.rel = 'noopener noreferrer';
-                    link.title = item.tip || item.name;
+                    const link = extLink(item.url, {
+                        title: item.tip || item.name,
+                        className: 'arr-dropdown-item',
+                    });
 
                     const dot = document.createElement('span');
                     dot.className = `arr-dropdown-dot arr-dropdown-dot--${item.status || 'missing'}`;

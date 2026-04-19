@@ -1044,8 +1044,8 @@
         const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.jellyfinMediaId4k || null;
         const jellyfinHref = jellyfinMediaId ? `#!/details?id=${jellyfinMediaId}` : null;
         const isAvailable = Boolean(jellyfinMediaId);
-        const usesExternalTitleLink = !jellyfinHref && !useMoreInfoModal && !!jellyseerrUrl;
-        const titleLinkIsAttribute = usesExternalTitleLink ? '' : 'is="emby-linkbutton"';
+        // is="emby-linkbutton" routes external URLs through the system browser on iOS/Android.
+        const titleLinkIsAttribute = 'is="emby-linkbutton"';
         const titleHrefAttribute = jellyfinHref
             ? `href="${jellyfinHref}"`
             : (useMoreInfoModal
@@ -1132,7 +1132,15 @@
                             JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                         }
                     } else if (jellyseerrUrl) {
-                        window.open(jellyseerrUrl, '_blank', 'noopener,noreferrer');
+                        const tmp = (JE.helpers?.createExternalLink || ((u) => {
+                            const a = document.createElement('a');
+                            a.setAttribute('is', 'emby-linkbutton');
+                            a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                            return a;
+                        }))(jellyseerrUrl);
+                        document.body.appendChild(tmp);
+                        tmp.click();
+                        document.body.removeChild(tmp);
                     }
                 });
             };
@@ -1268,15 +1276,9 @@
                     return;
                 }
 
-                // For plain external links, bypass Jellyfin's hash router and open in a new tab.
-                const isPlainLeftClick = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+                // For external Seerr links the <a> has is="emby-linkbutton" — let default run.
                 if (isExternalJellyseerrLink && isPlainLeftClick) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (e.stopImmediatePropagation) {
-                        e.stopImmediatePropagation();
-                    }
-                    window.open(href, '_blank', 'noopener,noreferrer');
+                    return;
                 }
             }, true);
         }

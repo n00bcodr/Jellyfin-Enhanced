@@ -312,7 +312,7 @@
             try {
                 const currentView = getCurrentView();
                 const currentHash = window.location.hash;
-                
+
                 if (!options.pages || options.pages.includes(currentView)) {
                     const element = document.querySelector('.libraryPage:not(.hide)');
                     let itemPromise = null;
@@ -345,9 +345,9 @@
         if (!visiblePage) return null;
 
         // Try to get view from data attributes or id
-        return visiblePage.dataset.type || 
-               visiblePage.id || 
-               visiblePage.getAttribute('data-role') || 
+        return visiblePage.dataset.type ||
+               visiblePage.id ||
+               visiblePage.getAttribute('data-role') ||
                null;
     }
 
@@ -639,6 +639,41 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    /**
+     * Creates an external-link <a> that Jellyfin's native apps open in the system
+     * browser (iOS SFSafariViewController, Android Custom Tabs) via `is="emby-linkbutton"`.
+     *
+     * Use this for every external URL in the plugin — one place, consistent behaviour.
+     *
+     * @param {string} url
+     * @param {object} [options]
+     * @param {string}   [options.text]       - Text content.
+     * @param {string}   [options.title]      - Tooltip.
+     * @param {string}   [options.className]  - CSS class(es).
+     * @param {boolean}  [options.resetStyle] - Strip emby-button chrome for plain-link appearance.
+     * @param {Function} [options.setup]      - Callback(el) for extra DOM work.
+     * @returns {HTMLAnchorElement}
+     */
+    function createExternalLink(url, options = {}) {
+        const a = document.createElement('a');
+        // This attribute is what tells Jellyfin's native app shell to open the URL
+        // in the system browser instead of the in-app WebView.
+        a.setAttribute('is', 'emby-linkbutton');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        if (options.title)     a.title = options.title;
+        if (options.className) a.className = options.className;
+        if (options.text)      a.textContent = options.text;
+        if (options.resetStyle) {
+            // Strip the default emby-button chrome (padding, background, border-radius)
+            // so the element renders as a plain unstyled link.
+            a.style.cssText = 'padding:0;background:none;border-radius:0;min-width:0;';
+        }
+        if (typeof options.setup === 'function') options.setup(a);
+        return a;
+    }
+
     // Expose helpers
     JE.helpers = {
         onViewPage,
@@ -659,6 +694,7 @@
         addCSS,
         removeCSS,
         escHtml,
+        createExternalLink,
         getHandlerCount: () => handlers.length,
         getObserverCount: () => activeObservers.size,
         getBodySubscriberCount: () => bodySubscribers.size
