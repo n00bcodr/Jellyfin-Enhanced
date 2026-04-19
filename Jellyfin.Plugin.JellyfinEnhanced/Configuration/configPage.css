@@ -540,7 +540,7 @@
 .checkboxContainer label {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
     cursor: pointer;
     word-break: break-word;
@@ -548,6 +548,91 @@
 .checkboxContainer input[type="checkbox"] {
     flex-shrink: 0;
     margin: 0;
+}
+/* Slightly brighter, medium-weight labels — when descriptions are off
+   the label is the only cue, so make it readable first. */
+.checkboxContainer label > span {
+    font-size: 0.95em;
+    font-weight: 500;
+    color: #e8e8e8;
+    line-height: 1.35;
+}
+.inputContainer > label.inputLabel,
+.selectContainer > label.selectLabel,
+.inputContainer > label.selectLabel,
+.selectContainer > label.inputLabel {
+    font-weight: 500;
+    color: #d0d0d0;
+    font-size: 0.9em;
+}
+
+/* Feature-enabler (master-toggle) checkboxes — visually pronounced so
+   the sub-options that follow read as OPTIONS of that feature, not
+   independent peers. Uses :has() to target specific known master IDs;
+   modern browsers (Chrome 105+, Safari 15.4+, Firefox 121+) support
+   it, older fallback is the plain checkbox look (still functional). */
+.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
+.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled),
+.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled),
+.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
+.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled),
+.configSection > .checkboxContainer:has(> label > input#activeStreamsEnabled),
+.configSection > .checkboxContainer:has(> label > input#showUserReviews),
+.configSection > .checkboxContainer:has(> label > input#autoSeasonRequestEnabled),
+.configSection > .checkboxContainer:has(> label > input#autoMovieRequestEnabled),
+.configSection > .checkboxContainer:has(> label > input#qualityTagsEnabled),
+.configSection > .checkboxContainer:has(> label > input#tagCacheServerMode) {
+    background: linear-gradient(90deg, rgba(0, 164, 220, 0.14) 0%, rgba(0, 164, 220, 0.02) 100%);
+    border-color: rgba(0, 164, 220, 0.22);
+    border-left: 3px solid var(--primary-accent-color, #00a4dc);
+}
+.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#activeStreamsEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#showUserReviews) label > span,
+.configSection > .checkboxContainer:has(> label > input#autoSeasonRequestEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#autoMovieRequestEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#qualityTagsEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#tagCacheServerMode) label > span {
+    font-weight: 600;
+    font-size: 1.02em;
+    color: #fff;
+    letter-spacing: 0.1px;
+}
+
+/* Integration-choice toggles (Plugin Pages vs Custom Tabs) — pair of
+   alternatives that answer "how do you want this feature delivered?".
+   Subtle purple/blue accent to distinguish from the feature-master. */
+.configSection > .checkboxContainer:has(> label > input[id$="UsePluginPages"]),
+.configSection > .checkboxContainer:has(> label > input[id$="UseCustomTabs"]) {
+    background: rgba(155, 89, 182, 0.05);
+    border-left: 2px solid rgba(155, 89, 182, 0.4);
+}
+
+/* Small visual breather between a master-enabler and its options, so
+   the grouping reads at a glance. */
+.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
+.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled),
+.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled),
+.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
+.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled),
+.configSection > .checkboxContainer:has(> label > input#showUserReviews) {
+    margin-bottom: 12px !important;
 }
 
 .fieldDescription {
