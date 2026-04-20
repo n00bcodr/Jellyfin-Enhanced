@@ -573,11 +573,6 @@
                 margin-bottom: 10px;
             `;
 
-            // Create clickable title that links to JustWatch
-            const title = extLink(
-                (hasFilteredServices && regionData && regionData.link) ? regionData.link : '#',
-                { title: 'JustWatch' }
-            );
 
             // Check if services are available in default region
             const hasServices = regionData && regionData.flatrate && regionData.flatrate.length > 0;
@@ -608,6 +603,12 @@
             }
 
             const hasFilteredServices = filteredServices.length > 0;
+
+            // Create clickable title that links to JustWatch
+            const title = extLink(
+                (hasFilteredServices && regionData && regionData.link) ? regionData.link : '#',
+                { title: 'JustWatch' }
+            );
 
             if (hasFilteredServices) {
                 title.textContent = JE.t('elsewhere_panel_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
