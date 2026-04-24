@@ -210,21 +210,32 @@
 }
 #settingsSearchContainer > div {
     position: relative;
-    display: flex;
-    align-items: center;
+    /* display: block is enough — the icon / count / clear are all
+       absolute-positioned. A flex container tried to treat them as
+       items and relied on `top: auto` resolving to the static position
+       under align-items: center, which some browsers render with
+       sub-pixel offsets. Using block + explicit top: 50% /
+       translateY(-50%) on each overlay is deterministic across
+       browsers. */
+    display: block;
 }
 #settingsSearchInput {
     width: 100%;
-    padding: 10px 90px 10px 35px !important; /* Pad right to fit count and clear btn */
+    /* Pad left for the search icon, right for count + clear button. */
+    padding: 10px 90px 10px 40px !important;
     background: var(--je-overlay);
     border: 1px solid var(--je-border);
     border-radius: 20px;
     color: #eee;
     font-size: 0.9em;
     outline: none;
-    transition: all 0.3s ease;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
     box-sizing: border-box;
+    /* Ensure the input paints BELOW the overlay icons so its selection
+       highlight (native browser paint) doesn't cover them. */
+    position: relative;
+    z-index: 0;
 }
 #settingsSearchInput:focus {
     background: var(--je-overlay-hard);
@@ -233,23 +244,36 @@
 }
 .je-search-icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--je-text-subtle);
     pointer-events: none;
-    font-size: 1.2em;
+    font-size: 18px !important;
+    line-height: 1;
+    /* Sit above the input so the native selection-highlight paint
+       (which can cover the input's full content box) never masks the
+       icon. */
+    z-index: 1;
 }
 #settingsSearchCount {
     display: none;
     position: absolute;
     right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--je-text-muted);
     font-size: 0.8em;
     font-weight: 500;
+    pointer-events: none;
+    z-index: 1;
 }
 #settingsSearchClear {
     display: none;
     position: absolute;
     right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
     background: var(--je-surface-3);
     border: none;
     color: #fff;
@@ -261,6 +285,7 @@
     align-items: center;
     justify-content: center;
     transition: background 0.2s;
+    z-index: 2;
 }
 #settingsSearchClear:hover {
     background: #dc3545;
@@ -1122,6 +1147,15 @@
 .arr-instance-disabled > summary .arr-instance-summary-name {
     text-decoration: line-through;
     color: var(--je-text-muted);
+}
+/* Belt-and-braces disable for the body — the form controls already
+   carry the HTML `disabled` attribute (see setBodyDisabled in
+   createInstanceCard), but pointer-events:none also blocks click
+   handlers attached via addEventListener (the Remove button's confirm
+   dialog, etc.) and prevents hover/focus states on the card while
+   the instance is off. */
+.arr-instance-disabled > .arr-instance-card-body {
+    pointer-events: none;
 }
 .arr-instance-remove {
     background: transparent;

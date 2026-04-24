@@ -2164,17 +2164,11 @@
             });
 
 
-            searchInput.addEventListener('focus', () => {
-                searchInput.style.borderColor = 'var(--primary-accent-color, #00a4dc)';
-                searchInput.style.background = 'rgba(255,255,255,0.12)';
-            });
-
-            searchInput.addEventListener('blur', () => {
-                if (!searchInput.value) {
-                    searchInput.style.borderColor = 'rgba(255,255,255,0.15)';
-                    searchInput.style.background = 'rgba(255,255,255,0.08)';
-                }
-            });
+            // Focus/blur visuals are handled entirely by the CSS :focus rule —
+            // see #settingsSearchInput:focus in configPage.css. A prior JS
+            // version set inline styles here with hardcoded rgba(...) colors
+            // that fought with the theme-aware CSS vars and left stale styles
+            // after blur-with-value.
 
             /**
              * Collects searchable text from an element, including IDs, names, and data attributes.
@@ -2530,7 +2524,7 @@
             const _testToken = (typeof beginConnectionTest === 'function') ? beginConnectionTest() : undefined;
             testJellyseerrBtn.disabled = true;
             jellyseerrStatusIndicator.textContent = 'sync';
-            jellyseerrStatusIndicator.className = 'material-icons status-check';
+            jellyseerrStatusIndicator.classList.add('status-check');
             jellyseerrStatusIndicator.style.color = 'var(--primary-accent-color, #00a4dc)';
 
             let validated = false;
@@ -2588,7 +2582,7 @@
             allTestButtons.forEach(btn => btn.disabled = true);
 
             statusIndicator.textContent = 'sync';
-            statusIndicator.className = 'material-icons status-check';
+            statusIndicator.classList.add('status-check');
             statusIndicator.style.color = 'var(--primary-accent-color, #00a4dc)';
 
             try {
@@ -3263,10 +3257,31 @@
             // changes. The backend is the authority — this is UI feedback only until Save.
             // Also re-renders the Overview Service Status card so a disabled instance
             // instantly shows as "Disabled" instead of a stale red/green badge.
+            //
+            // When disabled, every form control inside the card body (name, URL,
+            // API key, URL mappings textarea, Test + Remove buttons) is marked
+            // with the `disabled` attribute so the instance is genuinely read-
+            // only while unchecked. Prior behaviour only dimmed the opacity —
+            // the fields were still fully editable, so an admin could type into
+            // a "disabled" instance and (since collectInstancesFromDom respects
+            // the Enabled flag on save) the edits would persist silently
+            // without the instance being used. CSS in configPage.css also
+            // applies `pointer-events: none` as a belt-and-braces layer.
+            function setBodyDisabled(disabled) {
+                body.querySelectorAll('input, textarea, button, select').forEach(function(el) {
+                    if (disabled) {
+                        el.setAttribute('disabled', '');
+                    } else {
+                        el.removeAttribute('disabled');
+                    }
+                });
+            }
+            setBodyDisabled(!initiallyEnabled);
             enabledCheckbox.addEventListener('change', function() {
                 var en = enabledCheckbox.checked;
                 summaryDisabledSpan.style.display = en ? 'none' : 'inline';
                 card.classList.toggle('arr-instance-disabled', !en);
+                setBodyDisabled(!en);
                 try { renderServiceStatusDashboard(); } catch (e) {
                     console.warn('[JE] renderServiceStatusDashboard threw from arr-instance enable-toggle:', e);
                 }
@@ -5901,7 +5916,11 @@
             var _testToken = (typeof beginConnectionTest === 'function') ? beginConnectionTest() : undefined;
             btn.disabled = true;
             indicator.textContent = 'sync';
-            indicator.className = 'material-icons status-check';
+            // Don't wipe the indicator's class wholesale with `className = ...` —
+            // that drops `arr-instance-status`, the identifier used to re-query
+            // this element on subsequent Test clicks. classList.add leaves the
+            // identifier class intact so repeated tests on the same card work.
+            indicator.classList.add('status-check');
             indicator.style.color = 'var(--primary-accent-color, #00a4dc)';
 
             var arrCacheKey = type + ':' + _jeNormalizeArrUrl(urlVal);
