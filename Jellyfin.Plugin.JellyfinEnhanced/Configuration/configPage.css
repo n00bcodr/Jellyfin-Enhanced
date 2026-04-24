@@ -147,15 +147,17 @@
     position: sticky;
     top: 0;
     z-index: 1100;
-    /* Neutral translucent overlay — the backdrop-filter blur pulls the
-       underlying theme color through, so this reads correctly on any
-       Jellyfin theme (teal default, purple, red, etc.) rather than
-       hard-coding a grey tint. */
+    padding: 8px 8px 0 8px;
+    margin: -8px -8px 20px -8px;
+    /* Background/blur/shadow applied only when the form is actually
+       scrolled — at scrollTop=0 the header is transparent so the
+       Jellyfin top bar / user avatar underneath stays visible. */
+    transition: background-color 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.je-sticky-header.je-is-scrolled {
     background: var(--je-overlay-hard);
     backdrop-filter: blur(14px) saturate(150%);
     -webkit-backdrop-filter: blur(14px) saturate(150%);
-    padding: 8px 8px 0 8px;
-    margin: -8px -8px 20px -8px;
     border-bottom: 1px solid color-mix(in srgb, var(--primary-accent-color, #00a4dc) 18%, transparent);
     box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.6);
 }
@@ -265,6 +267,16 @@
     color: var(--primary-accent-color, #00a4dc);
 }
 .sectionTitle .je-legend-icon { vertical-align: -4px; }
+.je-legend-icon-img {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    vertical-align: -5px;
+    background: #fff;
+    border-radius: 4px;
+    padding: 2px;
+    box-sizing: content-box;
+}
 
 /* Quick Actions grid */
 .je-quick-actions-grid {
@@ -588,6 +600,14 @@
     width: 18px;
     height: 18px;
     pointer-events: none;
+    /* White plate so the brand SVG (which ships with transparent regions)
+       doesn't go see-through when the tab's background flips to the accent
+       color on the active state. Matches the plate treatment used on
+       service-status cards. */
+    background: #fff;
+    border-radius: 4px;
+    padding: 2px;
+    box-sizing: content-box;
 }
 .jellyfin-tab-button .je-tab-icon {
     font-size: 20px !important;
@@ -792,8 +812,6 @@
 .configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
 .configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
 .configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled),
-.configSection > .checkboxContainer:has(> label > input#activeStreamsEnabled),
-.configSection > .checkboxContainer:has(> label > input#showUserReviews),
 .configSection > .checkboxContainer:has(> label > input#autoSeasonRequestEnabled),
 .configSection > .checkboxContainer:has(> label > input#autoMovieRequestEnabled),
 .configSection > .checkboxContainer:has(> label > input#qualityTagsEnabled),
@@ -813,8 +831,6 @@
 .configSection > .checkboxContainer:has(> label > input#randomButtonEnabled) label > span,
 .configSection > .checkboxContainer:has(> label > input#arrLinksEnabled) label > span,
 .configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#activeStreamsEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#showUserReviews) label > span,
 .configSection > .checkboxContainer:has(> label > input#autoSeasonRequestEnabled) label > span,
 .configSection > .checkboxContainer:has(> label > input#autoMovieRequestEnabled) label > span,
 .configSection > .checkboxContainer:has(> label > input#qualityTagsEnabled) label > span,
@@ -939,9 +955,10 @@
 }
 .je-details-section > summary::after,
 .je-seerr-details > summary::after {
-    content: "expand_more";
+    content: "chevron_right";
     font-family: "Material Icons";
-    font-size: 22px;
+    font-size: 24px;
+    display: inline-block;
     transition: transform 0.25s ease, color 0.2s ease;
     color: var(--je-text-subtle);
     line-height: 1;
@@ -949,7 +966,7 @@
 }
 .je-details-section[open] > summary::after,
 .je-seerr-details[open] > summary::after {
-    transform: rotate(180deg);
+    transform: rotate(90deg);
     color: var(--primary-accent-color, #00a4dc);
 }
 .je-details-body {
@@ -1180,6 +1197,12 @@
     border-radius: 4px;
     padding: 0 3px;
     box-shadow: 0 0 0 1px rgba(255,200,0,0.25);
+    /* box-decoration-break: clone keeps the highlight inline with surrounding
+       text across line wraps, so the rest of the description doesn't get
+       pushed to a new line when a short match lands at line start. */
+    display: inline;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
 }
 .je-search-match-active {
     background-color: rgba(255,165,0,0.85);
@@ -1392,7 +1415,7 @@ body.je-hide-descriptions .je-tab-intro { display: none !important; }
 }
 .je-arr-action-row > button { width: fit-content; margin: 0; }
 .je-desc-toggle { display: inline-flex; align-items: center; gap: 4px; }
-.je-desc-toggle .material-icons { font-size: 18px !important; }
+.je-desc-toggle .material-icons { font-size: 18px !important; color: var(--je-text-primary, #fff); }
 .je-desc-toggle[aria-pressed="true"] .material-icons { color: var(--primary-accent-color, #00a4dc); }
 .je-desc-toggle-off { opacity: 0.75; }
 .je-desc-toggle-off:hover { opacity: 1; }

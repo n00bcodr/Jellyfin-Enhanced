@@ -555,6 +555,14 @@
                     <fieldset>
                         <legend class="sectionTitle">Hidden Content</legend>
                         <div class="configSection">
+                            <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
+                                <div class="je-info-banner-row">
+                                    <i class="material-icons je-info-icon">info</i>
+                                    <div>
+                                        <strong>Hidden Content</strong> lets users hide individual items from Home and Library views and browse them from a dedicated Hidden Content page. Per-user state with a server-wide enable/disable kill switch.
+                                    </div>
+                                </div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Hidden Content</span></label></div>
                             <div class="je-setting-description" data-desc-for="hiddenContentEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
@@ -1265,10 +1273,10 @@
                     </div>
 
                     <fieldset>
-                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">tv</i>Sonarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg" alt="">Sonarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="sonarrInstancesList">
-                                <div class="fieldDescription">TV-show-focused *arr service. Add one instance per Sonarr server.</div>
+                                <div class="fieldDescription">Automated TV show collection management and monitoring. Add one instance per Sonarr server.</div>
                             </div>
                             <div id="sonarrInstancesList"></div>
                             <div class="je-arr-action-row">
@@ -1280,10 +1288,10 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">movie</i>Radarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr.svg" alt="">Radarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="radarrInstancesList">
-                                <div class="fieldDescription">Movie-focused *arr service. Add one instance per Radarr server.</div>
+                                <div class="fieldDescription">Automated movie collection management and monitoring. Add one instance per Radarr server.</div>
                             </div>
                             <div id="radarrInstancesList"></div>
                             <div class="je-arr-action-row">
@@ -1295,10 +1303,10 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">subtitles</i>Bazarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg" alt="">Bazarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="bazarrUrl">
-                                <div class="fieldDescription">Subtitle-management service. Single instance, no API key — detail-page links only.</div>
+                                <div class="fieldDescription">Automated subtitle downloading and management for Sonarr and Radarr. Single instance, no API key — detail-page links only.</div>
                             </div>
 
                             <div class="inputContainer">
@@ -1438,22 +1446,20 @@
                                         <div class="fieldDescription"><br/>Shared with Seerr Settings</div>
                                     </div>
 
-                            <div style="display:flex; gap:15px; flex-wrap:wrap;">
-                                <div class="inputContainer" style="flex:1;">
+                                <div class="inputContainer">
                                     <label class="inputLabel" for="DEFAULT_REGION">Default Region</label>
                                     <input id="DEFAULT_REGION" is="emby-input" type="text" placeholder="e.g., US"/>
                                 </div>
                                     <div class="je-setting-description" data-desc-for="DEFAULT_REGION">
                                         <div class="fieldDescription">The default two-letter country code for streaming provider lookup. Empty defaults to US. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt" target="_blank">Full List</a></div>
                                     </div>
-                                <div class="inputContainer" style="flex:2;">
+                                <div class="inputContainer">
                                     <label class="inputLabel" for="DEFAULT_PROVIDERS">Default Providers</label>
                                     <input id="DEFAULT_PROVIDERS" class="emby-input" type="text" placeholder="e.g., Netflix,Hulu"/>
                                 </div>
                                     <div class="je-setting-description" data-desc-for="DEFAULT_PROVIDERS">
                                         <div class="fieldDescription">A list of default streaming providers to show. Leave blank to show all. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a></div>
                                     </div>
-                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="IGNORE_PROVIDERS">Ignore Providers</label>
                                 <input id="IGNORE_PROVIDERS" class="emby-input" type="text" placeholder="e.g., .*with Ads, Hulu"/>
@@ -2630,6 +2636,7 @@
         var hasPluginPages = null;
         var hasCustomTabs = null;
         var hasIntroSkipper = null;
+        var hasInPlayerEpisodePreview = null;
         var hasFileTransformation = null;
         var hasKefinTweaks = null;
         var _jeDisabledPlugins = {}; // key -> true when installed but Status !== 'Active'
@@ -2696,6 +2703,7 @@
                 hasPluginPages        = probe('pluginPages',        ['Plugin Pages']);
                 hasCustomTabs         = probe('customTabs',         ['Custom Tabs']);
                 hasIntroSkipper       = probe('introSkipper',       ['Intro Skipper', 'SkipIntro']);
+                hasInPlayerEpisodePreview = probe('inPlayerEpisodePreview', ['In Player Episode Preview', 'InPlayerEpisodePreview']);
 
                 // KefinTweaks installs as a web-mod (files in /config/KefinTweaks/
                 // injected via File Transformation into index.html), NOT as a
@@ -2720,6 +2728,7 @@
                 document.body.classList.toggle('je-has-customtabs',        hasCustomTabs         === true);
                 document.body.classList.toggle('je-has-pluginpages',       hasPluginPages        === true);
                 document.body.classList.toggle('je-has-introskipper',      hasIntroSkipper       === true);
+                document.body.classList.toggle('je-has-inplayerepisodepreview', hasInPlayerEpisodePreview === true);
                 document.body.classList.toggle('je-has-kefintweaks',       hasKefinTweaks        === true);
                 document.body.classList.toggle('je-has-filetransformation', hasFileTransformation === true);
 
@@ -2757,10 +2766,11 @@
                 hasPluginPages = null;
                 hasCustomTabs = null;
                 hasIntroSkipper = null;
+                hasInPlayerEpisodePreview = null;
                 hasFileTransformation = null;
                 hasKefinTweaks = null;
                 customTabsCompatState = null;
-                document.body.classList.remove('je-has-customtabs', 'je-has-pluginpages', 'je-has-introskipper', 'je-has-customtabs-compat', 'je-has-kefintweaks', 'je-has-filetransformation');
+                document.body.classList.remove('je-has-customtabs', 'je-has-pluginpages', 'je-has-introskipper', 'je-has-inplayerepisodepreview', 'je-has-customtabs-compat', 'je-has-kefintweaks', 'je-has-filetransformation');
                 setProbeWarning('plugins', "Couldn't reach the Jellyfin /Plugins endpoint to verify which integrations are installed (auth expiry, network, or server issue). Dependency hints and \"plugin detected\" badges are now hidden until you retry.");
                 try { updateAllDependencies(); } catch (e) {
                     console.warn('[JE] updateAllDependencies threw during plugin-detect fallback:', e);
@@ -4482,6 +4492,48 @@
             });
         })();
 
+        // Apply the blurred background to .je-sticky-header only when the
+        // scroll container has actually scrolled — at scrollTop=0 the header
+        // stays transparent so it doesn't cover the Jellyfin top bar / user
+        // avatar. The scroll container is whichever ancestor of the form
+        // actually scrolls (usually Jellyfin's page view, occasionally the
+        // window itself on mobile).
+        (function wireStickyHeaderScroll() {
+            var header = document.querySelector('.je-sticky-header');
+            if (!header) return;
+            function findScrollContainer(el) {
+                var node = el && el.parentNode;
+                while (node && node !== document.body && node.nodeType === 1) {
+                    var style = getComputedStyle(node);
+                    var oy = style.overflowY;
+                    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) {
+                        return node;
+                    }
+                    node = node.parentNode;
+                }
+                return window;
+            }
+            var container = findScrollContainer(header);
+            var ticking = false;
+            function read() {
+                var top = container === window
+                    ? (window.pageYOffset || document.documentElement.scrollTop || 0)
+                    : container.scrollTop;
+                header.classList.toggle('je-is-scrolled', top > 4);
+                ticking = false;
+            }
+            function onScroll() {
+                if (ticking) return;
+                ticking = true;
+                requestAnimationFrame(read);
+            }
+            container.addEventListener('scroll', onScroll, { passive: true });
+            // Prior listeners from a previous pageshow may still be live —
+            // removeEventListener is a no-op when none match, and idempotent
+            // when one does, so re-adding is safe across SPA re-entries.
+            read();
+        })();
+
         // ================================
         // SETTING DEPENDENCY SYSTEM
         // ================================
@@ -5043,6 +5095,7 @@
             { key: 'pluginPages',        name: 'Plugin Pages',        icon: 'view_list',       url: 'https://github.com/IAmParadox27/jellyfin-plugin-pages',               purpose: 'Sidebar pages for Bookmarks, Hidden Content, Requests, Calendar.',                   getFlag: function(){ return hasPluginPages; } },
             { key: 'customTabs',         name: 'Custom Tabs',         icon: 'tab',             url: 'https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs',         purpose: 'Home-page tab entries for Bookmarks, Hidden Content, Requests, Calendar.',          getFlag: function(){ return hasCustomTabs; } },
             { key: 'introSkipper',       name: 'Intro Skipper',       icon: 'skip_next',       url: 'https://github.com/intro-skipper/intro-skipper',                      purpose: 'Source of timestamps for Auto-skip Intro / Auto-skip Outro.',                        getFlag: function(){ return hasIntroSkipper; } },
+            { key: 'inPlayerEpisodePreview', name: 'In-Player Episode Preview', icon: 'movie_filter', url: 'https://github.com/Namo2/InPlayerEpisodePreview',            purpose: 'Enables the in-player Episode Preview keyboard shortcut.',                           getFlag: function(){ return hasInPlayerEpisodePreview; } },
             { key: 'kefinTweaks',        name: 'KefinTweaks',         icon: 'bookmark_border', url: 'https://github.com/ranaldsgift/KefinTweaks',                          purpose: 'Renders the Watchlist UI in Jellyfin. Required to view watchlisted items from the Seerr Watchlist features. Installs as a web-mod (not a normal plugin), detected via its injected scripts.', getFlag: function(){ return hasKefinTweaks; } }
         ];
         function renderOptionalPluginsDashboard() {
@@ -5527,7 +5580,8 @@
             pushCard({
                 id: 'tmdb',
                 name: 'TMDB',
-                tab: 'extras',
+                tab: 'elsewhere',
+                scrollTo: '#TMDB_API_KEY',
                 state: tmdbKey ? 'ok' : 'off',
                 detail: tmdbKey ? 'API key set' : 'No API key',
                 icon: 'vpn_key'
@@ -5661,6 +5715,16 @@
                 btn.addEventListener('click', function() {
                     var tabBtn = document.querySelector('.jellyfin-tab-button[data-tab="' + c.tab + '"]');
                     if (tabBtn) tabBtn.click();
+                    // Optional deep-link: after the tab activates (next frame so
+                    // content has laid out), scroll the specific field into
+                    // view. Cards that don't set scrollTo land at the tab's
+                    // scroll-memory position as before.
+                    if (c.scrollTo) {
+                        requestAnimationFrame(function() {
+                            var target = document.querySelector(c.scrollTo);
+                            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        });
+                    }
                 });
                 root.appendChild(btn);
             });
