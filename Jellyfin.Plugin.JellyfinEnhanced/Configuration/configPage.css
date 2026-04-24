@@ -800,9 +800,14 @@
 
 /* Feature-enabler (master-toggle) checkboxes — visually pronounced so
    the sub-options that follow read as OPTIONS of that feature, not
-   independent peers. Uses :has() to target specific known master IDs;
-   modern browsers (Chrome 105+, Safari 15.4+, Firefox 121+) support
-   it, older fallback is the plain checkbox look (still functional). */
+   independent peers. Scoped to one PRIMARY toggle per fieldset (the
+   "enable this page/feature entirely" switch). Mid-fieldset mode
+   selectors and sub-feature anchors stay plain — the dashed-indent
+   `je-setting-dep` pattern already signals their parent→child
+   relationships without visually overloading the page.
+   Uses :has() to target specific known master IDs; modern browsers
+   (Chrome 105+, Safari 15.4+, Firefox 121+) support it, older
+   fallback is the plain checkbox look (still functional). */
 .configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
 .configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
 .configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
@@ -811,11 +816,7 @@
 .configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
 .configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
 .configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
-.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled),
-.configSection > .checkboxContainer:has(> label > input#autoSeasonRequestEnabled),
-.configSection > .checkboxContainer:has(> label > input#autoMovieRequestEnabled),
-.configSection > .checkboxContainer:has(> label > input#qualityTagsEnabled),
-.configSection > .checkboxContainer:has(> label > input#tagCacheServerMode) {
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) {
     background: linear-gradient(90deg,
         color-mix(in srgb, var(--primary-accent-color, #00a4dc) 14%, transparent) 0%,
         color-mix(in srgb, var(--primary-accent-color, #00a4dc) 2%, transparent) 100%);
@@ -830,11 +831,7 @@
 .configSection > .checkboxContainer:has(> label > input#elsewhereEnabled) label > span,
 .configSection > .checkboxContainer:has(> label > input#randomButtonEnabled) label > span,
 .configSection > .checkboxContainer:has(> label > input#arrLinksEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#autoSeasonRequestEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#autoMovieRequestEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#qualityTagsEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#tagCacheServerMode) label > span {
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) label > span {
     font-weight: 600;
     font-size: 1.02em;
     color: #fff;
