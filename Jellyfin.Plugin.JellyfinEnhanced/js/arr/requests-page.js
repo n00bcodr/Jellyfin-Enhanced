@@ -2499,7 +2499,8 @@
     prevIssuesPage,
     renderPage,
     renderForCustomTab,
-    injectStyles
+    injectStyles,
+    _state: state
   };
 
   JE.initializeDownloadsPage = initialize;

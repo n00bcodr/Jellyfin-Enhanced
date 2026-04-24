@@ -47,7 +47,11 @@
 
       // Use the main module's startPolling which properly respects config and visibility
       // Mark the page as visible for the polling logic
-      JE.downloadsPage._pluginPageVisible = true;
+      if (JE.downloadsPage._state) {
+        JE.downloadsPage._state._pluginPageVisible = true;
+      } else {
+        JE.downloadsPage._pluginPageVisible = true; // fallback for older builds
+      }
 
       // Start polling - will use the interval from pluginConfig or default to 30 seconds
       if (typeof JE.downloadsPage.startPolling === 'function') {
@@ -102,7 +106,12 @@ window.addEventListener('beforeunload', () => {
   if (JE?.downloadsPage?._pluginPagePollTimer) {
     clearInterval(JE.downloadsPage._pluginPagePollTimer);
   }
-  JE.downloadsPage._pluginPageVisible = false;
+  if (JE?.downloadsPage?._state) {
+    JE.downloadsPage._state._pluginPageVisible = false;
+  }
+  if (JE?.downloadsPage) {
+    JE.downloadsPage._pluginPageVisible = false;
+  }
 });
 
 function handleClickOnPlay() {

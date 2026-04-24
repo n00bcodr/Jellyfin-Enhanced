@@ -93,8 +93,30 @@
    * @param {Object} JE - The JellyfinEnhanced global object.
    */
   function watchForContainer(JE) {
+    /** Whether we were on the home page on the last check. */
+    var wasOnHomePage = false;
+
     function tryMount() {
-      if (!isOnHomePage()) return;
+      var onHome = isOnHomePage();
+
+      // Navigated away — stop polling and clear custom tab mode so the
+      // timer's own visibility guard doesn't keep it alive.
+      if (!onHome) {
+        if (wasOnHomePage) {
+          JE.downloadsPage.stopPolling?.();
+          if (JE.downloadsPage._state) {
+            JE.downloadsPage._state._customTabMode = false;
+          }
+          lastMountedContainer = null;
+        }
+        wasOnHomePage = false;
+        return;
+      }
+
+      // Returned to home page — force a remount so polling restarts even if
+      // the container DOM node was not rebuilt (Jellyfin reuses it).
+      var justReturned = !wasOnHomePage;
+      wasOnHomePage = true;
 
       var container = findActiveContainer();
       if (!container) {
@@ -102,7 +124,8 @@
         return;
       }
 
-      var shouldMount = container !== lastMountedContainer
+      var shouldMount = justReturned
+        || container !== lastMountedContainer
         || !container.hasChildNodes()
         || (lastMountedContainer && !document.contains(lastMountedContainer));
 
@@ -112,6 +135,10 @@
     }
 
     tryMount();
+
+    // Also react immediately to hash changes so polling stops as soon as the
+    // user navigates away, without waiting for a DOM mutation to fire.
+    window.addEventListener('hashchange', tryMount);
 
     // Observe document.body (not .mainAnimatedPages) because Jellyfin replaces
     // .mainAnimatedPages when navigating to the admin dashboard — an observer
