@@ -1446,15 +1446,17 @@ body.je-hide-descriptions .je-tab-intro { display: none !important; }
 }
 .je-arr-action-row > button { width: fit-content; margin: 0; }
 .je-desc-toggle { display: inline-flex; align-items: center; gap: 4px; }
-/* Icon always inherits the button's own text color via currentColor —
-   earlier the pressed state used `var(--primary-accent-color)` which
-   vanishes on themes whose raised-button background also uses the
-   accent color (any "Jellyfish"-style accent-filled button theme).
-   Use the button label's color for the icon so it stays visible on
-   every theme, and mark the pressed state with an accent ring on the
-   button itself — the ring reads against any bg because it's painted
-   outside the button. */
-.je-desc-toggle .material-icons { font-size: 18px !important; color: currentColor; }
+/* Icons on both header buttons inherit the button's own text color via
+   currentColor. Earlier they carried Jellyfin's `secondaryText` class
+   and (on the Descriptions toggle) a pressed-state accent color — both
+   vanish on themes whose raised-button background is the accent color
+   or uses a secondaryText tone matching its own fill. Using
+   currentColor keeps them readable on every theme, and the Descriptions
+   ON-state is marked instead by a 2px accent ring on the button itself
+   (painted outside the button, so the fill can't mask it). */
+.je-desc-toggle .material-icons,
+.je-help-link .material-icons { color: currentColor; }
+.je-desc-toggle .material-icons { font-size: 18px !important; }
 .je-desc-toggle[aria-pressed="true"] {
     box-shadow: 0 0 0 2px var(--primary-accent-color, #00a4dc);
 }
