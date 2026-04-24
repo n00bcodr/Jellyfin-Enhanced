@@ -2099,9 +2099,6 @@
                 if (descToggleBtn) {
                     descToggleBtn.setAttribute('aria-pressed', show ? 'true' : 'false');
                     descToggleBtn.classList.toggle('je-desc-toggle-off', !show);
-                    // Label stays "Descriptions" regardless of state; the
-                    // adjacent pill (.je-desc-toggle-state) carries the
-                    // On/Off indicator.
                     const state = descToggleBtn.querySelector('.je-desc-toggle-state');
                     if (state) state.textContent = show ? 'On' : 'Off';
                 }
@@ -2164,11 +2161,6 @@
             });
 
 
-            // Focus/blur visuals are handled entirely by the CSS :focus rule —
-            // see #settingsSearchInput:focus in configPage.css. A prior JS
-            // version set inline styles here with hardcoded rgba(...) colors
-            // that fought with the theme-aware CSS vars and left stale styles
-            // after blur-with-value.
 
             /**
              * Collects searchable text from an element, including IDs, names, and data attributes.
@@ -3340,15 +3332,9 @@
             // Also re-renders the Overview Service Status card so a disabled instance
             // instantly shows as "Disabled" instead of a stale red/green badge.
             //
-            // When disabled, every form control inside the card body (name, URL,
-            // API key, URL mappings textarea, Test + Remove buttons) is marked
-            // with the `disabled` attribute so the instance is genuinely read-
-            // only while unchecked. Prior behaviour only dimmed the opacity —
-            // the fields were still fully editable, so an admin could type into
-            // a "disabled" instance and (since collectInstancesFromDom respects
-            // the Enabled flag on save) the edits would persist silently
-            // without the instance being used. CSS in configPage.css also
-            // applies `pointer-events: none` as a belt-and-braces layer.
+            // setBodyDisabled marks every form control inside the card body read-only when
+            // the toggle is off so edits can't silently persist — collectInstancesFromDom
+            // reads input values directly and respects the Enabled flag on save.
             function setBodyDisabled(disabled) {
                 body.querySelectorAll('input, textarea, button, select').forEach(function(el) {
                     if (disabled) {
@@ -4646,14 +4632,9 @@
                 try {
                     header.classList.toggle('je-is-scrolled', currentScrollTop() > 4);
                 } catch (e) {
-                    // Belt-and-braces: reading scrollTop and toggling a class
-                    // on a detached node doesn't normally throw, but if it
-                    // ever does (custom element, closed shadow root, etc.)
-                    // we don't want the rAF pipeline to wedge on `ticking`.
                     console.warn('[JE] sticky-header read failed:', e);
                 } finally {
-                    // Always reset `ticking` so the next scroll event can
-                    // schedule a fresh rAF, even if read() threw above.
+                    // Guarantees the rAF pipeline doesn't wedge on `ticking` if read() throws.
                     ticking = false;
                 }
             }
@@ -4662,14 +4643,8 @@
                 ticking = true;
                 requestAnimationFrame(read);
             }
-            // Always listen on window (covers document-scrolling layouts) and
-            // on each overflow-declared ancestor (covers mid-tree scrollers).
-            // If Jellyfin ever re-parents .je-sticky-header under a new
-            // scroll ancestor not present at bind time, the window listener
-            // is the fallback — on document-scrolling layouts it will fire.
-            // For container-scrolling layouts after a re-parent, the blur
-            // would fail to update, but `console.warn` below at least makes
-            // the "no candidates found" case observable.
+            // Always listen on window (document-scrolling layouts) and on
+            // each overflow-declared ancestor (mid-tree scrollers).
             window.addEventListener('scroll', onScroll, { passive: true });
             if (candidates.length === 0) {
                 console.warn('[JE] sticky-header: no overflow:auto|scroll ancestors found; relying on window scroll only.');

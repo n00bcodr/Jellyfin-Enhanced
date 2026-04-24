@@ -625,10 +625,8 @@
     width: 18px;
     height: 18px;
     pointer-events: none;
-    /* Black circular plate — matches how the Seerr brand shows its
-       logo in its own dashboard (purple gradient centred on solid
-       black). Per review feedback on PR #569 (comment on this rule).
-       Hides transparent SVG regions from the active-tab accent bg. */
+    /* Black plate hides transparent SVG regions from the active-tab
+       accent bg. */
     background: #000;
     border-radius: 50%;
     padding: 0;
@@ -832,18 +830,12 @@
         feature (e.g., a "Bookmarks" fieldset for bookmarksEnabled, a
         "Seerr Connection Setup" fieldset for jellyseerrEnabled). If
         the fieldset bundles unrelated settings (e.g., "UI Preferences",
-        "External Links", "UI Tweaks"), the toggle should stay plain —
-        otherwise it visually stands out from its unrelated siblings.
+        "External Links", "UI Tweaks"), the toggle should stay plain.
      2. OR the toggle gates an entire tab via SECTION_DEPS (currently
         only jellyseerrEnabled, which also satisfies #1).
 
-   Parent→child dependency signaling for non-master toggles is handled
-   uniformly by the dashed-indent `je-setting-dep` pattern — don't add
-   a toggle here just because it gates sub-settings.
-
-   Uses :has() to target specific known master IDs; modern browsers
-   (Chrome 105+, Safari 15.4+, Firefox 121+) support it, older
-   fallback is the plain checkbox look (still functional). */
+   :has() requires Chrome 105+ / Safari 15.4+ / Firefox 121+; older
+   browsers fall back to the plain checkbox look. */
 .configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
 .configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
 .configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
@@ -1125,12 +1117,6 @@
     text-decoration: line-through;
     color: var(--je-text-muted);
 }
-/* Belt-and-braces disable for the body — the form controls already
-   carry the HTML `disabled` attribute (see setBodyDisabled in
-   createInstanceCard), but pointer-events:none also blocks click
-   handlers attached via addEventListener (the Remove button's confirm
-   dialog, etc.) and prevents hover/focus states on the card while
-   the instance is off. */
 .arr-instance-disabled > .arr-instance-card-body {
     pointer-events: none;
 }
