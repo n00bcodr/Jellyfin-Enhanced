@@ -1219,6 +1219,21 @@
    Search Highlight Utilities
    --------------------------------------------------------------------------- */
 .je-search-hidden { display: none !important; }
+
+/* In search mode the form becomes a flex column so tab-contents
+   whose tab name itself matches the query can hoist to the top via
+   order: -1 — searching "elsewhere" should surface the Elsewhere
+   tab above other tabs that merely mention "Elsewhere" in service-
+   status labels. Outside search mode, only a single tab-content is
+   active and the form's default block flow is fine. */
+#JellyfinEnhancedForm.je-search-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+#JellyfinEnhancedForm.je-search-mode > .jellyfin-tab-content.je-tab-name-match {
+    order: -1;
+}
 .je-search-match {
     background-color: rgba(255,200,0,0.35);
     color: #fff;
