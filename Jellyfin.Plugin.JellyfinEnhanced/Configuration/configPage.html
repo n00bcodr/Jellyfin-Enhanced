@@ -2195,6 +2195,18 @@
                     parent.replaceChild(document.createTextNode(mark.textContent), mark);
                     parent.normalize();
                 });
+                // Unwrap the flex/grid protection spans added by
+                // highlightTextIn. After the marks above were unwrapped,
+                // the wrapper contains only text nodes — move them up to
+                // the parent and drop the wrapper, so normalize() can
+                // merge back into a single text node identical to before
+                // the search.
+                form.querySelectorAll('.je-search-wrap').forEach(wrap => {
+                    const parent = wrap.parentNode;
+                    while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+                    parent.removeChild(wrap);
+                    parent.normalize();
+                });
                 allMatches = [];
                 currentMatchIdx = -1;
             }
@@ -2233,7 +2245,27 @@
                         last = idx + query.length;
                     }
                     if (last < text.length) frag.appendChild(document.createTextNode(text.substring(last)));
-                    node.parentNode.replaceChild(frag, node);
+
+                    // If the text node lives directly inside a flex/grid
+                    // container, splitting it into mark + remainder nodes
+                    // creates multiple flex/grid items. Those items then
+                    // get repositioned by justify-content / align-items on
+                    // the parent — e.g. a <summary> with space-between
+                    // would spread the <mark> to the start and the
+                    // trailing text to the end, splitting "Auto Season
+                    // Requests" into "Auto Sea" ... "son Requests" on a
+                    // search for "auto sea". Wrap in an inline span so
+                    // the parent still sees a single child.
+                    var parent = node.parentNode;
+                    var parentDisplay = getComputedStyle(parent).display;
+                    if (/(flex|grid)$/.test(parentDisplay) && frag.childNodes.length > 1) {
+                        var wrapper = document.createElement('span');
+                        wrapper.className = 'je-search-wrap';
+                        wrapper.appendChild(frag);
+                        parent.replaceChild(wrapper, node);
+                    } else {
+                        parent.replaceChild(frag, node);
+                    }
                 });
             }
 
