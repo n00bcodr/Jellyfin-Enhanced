@@ -146,7 +146,7 @@
 .je-sticky-header {
     position: sticky;
     top: 0;
-    z-index: 1100;
+    z-index: 1010;
     padding: 8px 8px 0 8px;
     margin: -8px -8px 20px -8px;
     /* Background/blur/shadow applied only when the form is actually
