@@ -1556,32 +1556,6 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
     }
 }
 
-/* Two-column input pairs — side-by-side input+description blocks on wide
-   viewports, stacking under the mobile breakpoint. Each .je-two-col-pair
-   owns one input and its description so the description sits directly
-   under its input instead of spanning the whole grid. */
-.je-two-col-pairs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px;
-    align-items: start;
-}
-.je-two-col-pair {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-}
-.je-two-col-pair > .inputContainer,
-.je-two-col-pair > .je-setting-description {
-    margin: 0;
-}
-@media (max-width: 720px) {
-    .je-two-col-pairs {
-        grid-template-columns: 1fr;
-    }
-}
-
 /* Custom Tabs auto-manage toggles — hidden by default. Revealed only when
    the Custom Tabs plugin is detected AND its config schema matches what
    Jellyfin Enhanced knows how to write. JS sets `je-has-customtabs-compat`
