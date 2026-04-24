@@ -88,6 +88,7 @@
   position: fixed;
   right: 12px;
   width: 360px;
+  max-width: calc(100vw - 16px);
   max-height: calc(100vh - 72px);
   overflow-y: auto;
   background: rgba(18,18,18,0.97);
@@ -99,6 +100,7 @@
   display: none;
   flex-direction: column;
   gap: 10px;
+  box-sizing: border-box;
 }
 #je-active-streams-panel.je-as-panel-open { display: flex; }
 
@@ -247,6 +249,14 @@
 }
 #je-active-streams-panel.je-as-panel-open {
   animation: je-as-fadein 150ms ease forwards;
+}
+
+@media (max-width: 400px) {
+  #je-active-streams-panel {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
 }
 
 /* Poster thumbnail */
