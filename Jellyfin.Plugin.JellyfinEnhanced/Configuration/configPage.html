@@ -14,12 +14,11 @@
                     <div class="je-header-title-row">
                         <h2 class="sectionTitle">Jellyfin Enhanced</h2>
                         <a is="emby-linkbutton" class="raised raised-mini emby-button je-help-link" target="_blank" href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Docs &amp; Help" aria-label="Docs and Help">
-                            <i class="material-icons button-icon button-icon-left secondaryText" aria-hidden="true">help_outline</i>
                             <span class="je-help-link-label">Docs &amp; Help</span>
                         </a>
                         <button id="toggleDescriptionsBtn" type="button" class="raised raised-mini emby-button je-desc-toggle" title="Show or hide setting descriptions" aria-label="Show or hide setting descriptions" aria-pressed="true">
-                            <i class="material-icons button-icon button-icon-left secondaryText" aria-hidden="true">subject</i>
                             <span class="je-desc-toggle-label">Descriptions</span>
+                            <span class="je-desc-toggle-state" aria-hidden="true">On</span>
                         </button>
                     </div>
                     <div id="settingsSearchContainer">
@@ -2100,8 +2099,11 @@
                 if (descToggleBtn) {
                     descToggleBtn.setAttribute('aria-pressed', show ? 'true' : 'false');
                     descToggleBtn.classList.toggle('je-desc-toggle-off', !show);
-                    const label = descToggleBtn.querySelector('.je-desc-toggle-label');
-                    if (label) label.textContent = show ? 'Descriptions' : 'Descriptions off';
+                    // Label stays "Descriptions" regardless of state; the
+                    // adjacent pill (.je-desc-toggle-state) carries the
+                    // On/Off indicator.
+                    const state = descToggleBtn.querySelector('.je-desc-toggle-state');
+                    if (state) state.textContent = show ? 'On' : 'Off';
                 }
             }
             (function initDescriptionVisibility() {

@@ -1445,22 +1445,30 @@ body.je-hide-descriptions .je-tab-intro { display: none !important; }
     margin-top: 8px;
 }
 .je-arr-action-row > button { width: fit-content; margin: 0; }
-.je-desc-toggle { display: inline-flex; align-items: center; gap: 4px; }
-/* Icons on both header buttons inherit the button's own text color via
-   currentColor. Earlier they carried Jellyfin's `secondaryText` class
-   and (on the Descriptions toggle) a pressed-state accent color — both
-   vanish on themes whose raised-button background is the accent color
-   or uses a secondaryText tone matching its own fill. Using
-   currentColor keeps them readable on every theme, and the Descriptions
-   ON-state is marked instead by a 2px accent ring on the button itself
-   (painted outside the button, so the fill can't mask it). */
-.je-desc-toggle .material-icons,
-.je-help-link .material-icons { color: currentColor; }
-.je-desc-toggle .material-icons { font-size: 18px !important; }
-.je-desc-toggle[aria-pressed="true"] {
-    box-shadow: 0 0 0 2px var(--primary-accent-color, #00a4dc);
+.je-desc-toggle { display: inline-flex; align-items: center; gap: 8px; }
+/* On/Off pill — replaces the earlier Material-icons indicator that
+   vanished on themes whose raised-button fill matches the accent.
+   Pill is a small chip that flips its background between a muted
+   neutral (OFF) and the user's accent color (ON). Always reads
+   against the button because the chip has its own fill. */
+.je-desc-toggle-state {
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    color: currentColor;
+    line-height: 1.4;
+    min-width: 28px;
+    text-align: center;
 }
-.je-desc-toggle-off { opacity: 0.75; }
+.je-desc-toggle[aria-pressed="true"] .je-desc-toggle-state {
+    background: var(--primary-accent-color, #00a4dc);
+    color: #fff;
+}
+.je-desc-toggle-off { opacity: 0.85; }
 .je-desc-toggle-off:hover { opacity: 1; }
 
 /* ---------------------------------------------------------------------------
@@ -1835,25 +1843,17 @@ body.je-has-filetransformation .je-installed-badge[data-plugin="filetransformati
     }
 }
 
-/* Sub-mobile: hide button labels on the very narrowest viewports so the
-   header stays compact even on iPhone SE / Android Mini. The icon alone
-   stays clickable; `aria-label` + `title` on the button surface the label
-   for assistive tech and on long-press for users who need it. Tap target
-   is bumped to meet WCAG 2.1 AAA (44×44 CSS px). */
+/* Sub-mobile: tighten typography + ensure the buttons stay tappable.
+   Labels stay visible (no icon fallback anymore after the header icons
+   were removed — an icon-less button with a hidden label would render
+   as an empty square). 44×44 min size meets WCAG 2.1 AAA. */
 @media (max-width: 420px) {
-    .je-help-link .je-help-link-label,
-    .je-desc-toggle .je-desc-toggle-label {
-        display: none;
-    }
     .je-help-link,
     .je-desc-toggle {
-        min-width: 44px;
         min-height: 44px;
-        padding: 10px;
-        justify-content: center;
+        padding: 8px 12px;
+        font-size: 0.82em;
     }
-    .je-help-link .material-icons,
-    .je-desc-toggle .material-icons { font-size: 20px !important; }
     .sectionTitleContainer h2 { font-size: 1.25em; }
 }
 
