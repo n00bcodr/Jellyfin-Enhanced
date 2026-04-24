@@ -2228,6 +2228,22 @@
                 var textNodes = [];
                 while (walker.nextNode()) textNodes.push(walker.currentNode);
 
+                // Per-parent display cache. getComputedStyle forces style
+                // recomputation and — called naively once per text node during
+                // a big search — caused the settings search to feel
+                // extremely laggy on every keystroke. Most matches in a
+                // fieldset share a parent (e.g., all text nodes inside one
+                // .fieldDescription), so a WeakMap keyed on the parent
+                // element cuts the call count to one per distinct parent.
+                var parentDisplayCache = new WeakMap();
+                function isFlexOrGridParent(parent) {
+                    if (parentDisplayCache.has(parent)) return parentDisplayCache.get(parent);
+                    var d = getComputedStyle(parent).display;
+                    var flex = /(flex|grid)$/.test(d);
+                    parentDisplayCache.set(parent, flex);
+                    return flex;
+                }
+
                 textNodes.forEach(function(node) {
                     var text = node.textContent;
                     var lower = text.toLowerCase();
@@ -2256,9 +2272,15 @@
                     // Requests" into "Auto Sea" ... "son Requests" on a
                     // search for "auto sea". Wrap in an inline span so
                     // the parent still sees a single child.
+                    //
+                    // Order the checks cheap-first: childNodes.length is
+                    // an O(1) lookup with no style side-effects, while
+                    // isFlexOrGridParent triggers getComputedStyle on a
+                    // cache miss. If the fragment has only one child
+                    // (the whole text matched exactly), no splitting
+                    // happens and we can skip the style check entirely.
                     var parent = node.parentNode;
-                    var parentDisplay = getComputedStyle(parent).display;
-                    if (/(flex|grid)$/.test(parentDisplay) && frag.childNodes.length > 1) {
+                    if (frag.childNodes.length > 1 && isFlexOrGridParent(parent)) {
                         var wrapper = document.createElement('span');
                         wrapper.className = 'je-search-wrap';
                         wrapper.appendChild(frag);
@@ -2348,6 +2370,23 @@
 
                 if (!query) {
                     if (isSearchMode) exitSearchMode();
+                    return;
+                }
+
+                // 1-character queries like "a" or "e" match ~2000–4000 text
+                // nodes across the entire settings page, each triggering a
+                // DOM mutation. That costs 3–6 s and feels like the page
+                // froze. A 2-char minimum keeps the search responsive and
+                // still lets short feature names (e.g. "ui", "tv", "4k")
+                // through. If the user is mid-edit (backspaced a longer
+                // query down to 1 char), exit search mode and clear stale
+                // highlights, then surface a hint via the counter so the
+                // search UI doesn't look broken.
+                if (query.length < 2) {
+                    if (isSearchMode) exitSearchMode();
+                    searchCount.textContent = 'Type 2+ characters to search';
+                    searchCount.style.display = 'block';
+                    searchClear.style.display = 'block';
                     return;
                 }
 
