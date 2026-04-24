@@ -43,6 +43,15 @@
     --je-accent-tint-10: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 10%, transparent);
     --je-accent-tint-20: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 20%, transparent);
     --je-accent-border:  color-mix(in srgb, var(--primary-accent-color, #00a4dc) 40%, transparent);
+    /* Icon plate — the small background under brand SVGs (Seerr tab
+       icon, Sonarr/Radarr/Bazarr legend icons) so their transparent
+       regions don't bleed through the underlying surface (especially
+       the accent color on an active tab). Soft off-white in dark
+       themes; dark plate in .je-light-theme below (otherwise the
+       white-bodied Sonarr/Bazarr logos merge into the light page
+       background). */
+    --je-icon-plate-bg:      rgba(255, 255, 255, 0.94);
+    --je-icon-plate-shadow:  0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 #JellyfinEnhancedPage.je-light-theme {
@@ -64,6 +73,12 @@
     --je-overlay-soft:   rgba(0, 0, 0, 0.06);
     --je-overlay:        rgba(0, 0, 0, 0.1);
     --je-overlay-hard:   rgba(0, 0, 0, 0.35);
+    /* Dark plate on light theme — white-bodied Sonarr/Bazarr logos
+       would merge into a light-theme page without this. Picks up a
+       small amount of the user's accent so the plate harmonizes
+       instead of reading as a stark dark chip. */
+    --je-icon-plate-bg:      color-mix(in srgb, var(--primary-accent-color, #00a4dc) 18%, #1a202c);
+    --je-icon-plate-shadow:  0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 /* OS-level light preference as a fallback: only kicks in when the JS
@@ -89,6 +104,8 @@
         --je-overlay-soft:   rgba(0, 0, 0, 0.06);
         --je-overlay:        rgba(0, 0, 0, 0.1);
         --je-overlay-hard:   rgba(0, 0, 0, 0.35);
+        --je-icon-plate-bg:      color-mix(in srgb, var(--primary-accent-color, #00a4dc) 18%, #1a202c);
+        --je-icon-plate-shadow:  0 1px 2px rgba(0, 0, 0, 0.18);
     }
 }
 
@@ -272,10 +289,14 @@
     height: 20px;
     margin-right: 8px;
     vertical-align: -5px;
-    background: #fff;
+    /* Same theme-aware plate as the tab icons (see --je-icon-plate-bg
+       definition near the top of this file) — keeps Sonarr/Radarr/
+       Bazarr brand logos legible on both dark and light themes. */
+    background: var(--je-icon-plate-bg);
     border-radius: 4px;
     padding: 2px;
     box-sizing: content-box;
+    box-shadow: var(--je-icon-plate-shadow);
 }
 
 /* Quick Actions grid */
@@ -600,14 +621,16 @@
     width: 18px;
     height: 18px;
     pointer-events: none;
-    /* White plate so the brand SVG (which ships with transparent regions)
-       doesn't go see-through when the tab's background flips to the accent
-       color on the active state. Matches the plate treatment used on
-       service-status cards. */
-    background: #fff;
+    /* Brand SVGs ship with transparent regions; without a plate, the
+       active-tab accent background bleeds through those gaps. Plate
+       color is theme-aware: off-white on dark themes, dark accent-
+       tinted on .je-light-theme. Soft drop-shadow gives depth so the
+       chip doesn't read as a stark stamp. */
+    background: var(--je-icon-plate-bg);
     border-radius: 4px;
     padding: 2px;
     box-sizing: content-box;
+    box-shadow: var(--je-icon-plate-shadow);
 }
 .jellyfin-tab-button .je-tab-icon {
     font-size: 20px !important;
@@ -1530,6 +1553,32 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
 @media (max-width: 600px) {
     .je-tag-row > .je-tag-position {
         flex: 1 1 100%;
+    }
+}
+
+/* Two-column input pairs — side-by-side input+description blocks on wide
+   viewports, stacking under the mobile breakpoint. Each .je-two-col-pair
+   owns one input and its description so the description sits directly
+   under its input instead of spanning the whole grid. */
+.je-two-col-pairs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    align-items: start;
+}
+.je-two-col-pair {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+.je-two-col-pair > .inputContainer,
+.je-two-col-pair > .je-setting-description {
+    margin: 0;
+}
+@media (max-width: 720px) {
+    .je-two-col-pairs {
+        grid-template-columns: 1fr;
     }
 }
 
