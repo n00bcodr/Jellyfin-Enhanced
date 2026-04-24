@@ -1991,6 +1991,10 @@
                 // Restore (or reset) the scroll position after the new tab's
                 // content is in the DOM. rAF waits for the layout pass so the
                 // saved scrollY actually addresses the right document height.
+                // NOTE: load-bearing for the service-status card deep-link at
+                // renderServiceStatusDashboard (scrollTo handler uses a
+                // double-rAF to run after this restore). If this rAF goes
+                // away or gains an extra frame, update that handler to match.
                 const saved = _jeTabScroll[tabId];
                 requestAnimationFrame(() => _jeSetScrollTop(saved || 0));
                 _jePrevTabId = tabId;
@@ -2703,7 +2707,7 @@
                 hasPluginPages        = probe('pluginPages',        ['Plugin Pages']);
                 hasCustomTabs         = probe('customTabs',         ['Custom Tabs']);
                 hasIntroSkipper       = probe('introSkipper',       ['Intro Skipper', 'SkipIntro']);
-                hasInPlayerEpisodePreview = probe('inPlayerEpisodePreview', ['In Player Episode Preview', 'InPlayerEpisodePreview']);
+                hasInPlayerEpisodePreview = probe('inPlayerEpisodePreview', ['In Player Episode Preview', 'In-Player Episode Preview', 'InPlayerEpisodePreview']);
 
                 // KefinTweaks installs as a web-mod (files in /config/KefinTweaks/
                 // injected via File Transformation into index.html), NOT as a
@@ -4493,44 +4497,87 @@
         })();
 
         // Apply the blurred background to .je-sticky-header only when the
-        // scroll container has actually scrolled — at scrollTop=0 the header
-        // stays transparent so it doesn't cover the Jellyfin top bar / user
-        // avatar. The scroll container is whichever ancestor of the form
-        // actually scrolls (usually Jellyfin's page view, occasionally the
-        // window itself on mobile).
+        // surrounding scroll container has actually scrolled — at scrollTop=0
+        // the header stays transparent so it doesn't cover the Jellyfin top
+        // bar / user avatar. We don't know ahead of time which element
+        // actually scrolls (Jellyfin's layout has several candidates: the
+        // page view wrapper, body, and window — and Jellyfin's `.scrollY`
+        // utility class decorates some non-scrolling nodes), so we attach
+        // scroll listeners to every reasonable candidate (matching ancestor
+        // + window) and read whichever reports a non-zero scroll position.
+        // This IIFE runs once at script parse; the listeners persist across
+        // SPA navigation since Jellyfin keeps the config page DOM alive.
         (function wireStickyHeaderScroll() {
             var header = document.querySelector('.je-sticky-header');
             if (!header) return;
-            function findScrollContainer(el) {
+            // Collect all overflow-y:auto|scroll ancestors as scroll-candidate
+            // nodes. We don't trust scrollHeight>clientHeight at bind time
+            // (async content hasn't landed yet); we don't pick just the
+            // first match (Jellyfin's .scrollY utility flags decorative
+            // containers that don't actually scroll). Listening on all
+            // matches plus window means whichever actually scrolls drives
+            // the class toggle.
+            function findScrollCandidates(el) {
+                var nodes = [];
                 var node = el && el.parentNode;
                 while (node && node !== document.body && node.nodeType === 1) {
-                    var style = getComputedStyle(node);
-                    var oy = style.overflowY;
-                    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) {
-                        return node;
-                    }
+                    var oy = getComputedStyle(node).overflowY;
+                    if (oy === 'auto' || oy === 'scroll') nodes.push(node);
                     node = node.parentNode;
                 }
-                return window;
+                return nodes;
             }
-            var container = findScrollContainer(header);
+            var candidates = findScrollCandidates(header);
             var ticking = false;
+            function currentScrollTop() {
+                var winTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+                var contTop = 0;
+                for (var i = 0; i < candidates.length; i++) {
+                    var n = candidates[i];
+                    // Skip detached nodes: their scrollTop freezes at the last
+                    // value, which would incorrectly pin `.je-is-scrolled` on
+                    // after the live scroller returns to top.
+                    if (!n.isConnected) continue;
+                    var t = n.scrollTop || 0;
+                    if (t > contTop) contTop = t;
+                }
+                return winTop > contTop ? winTop : contTop;
+            }
             function read() {
-                var top = container === window
-                    ? (window.pageYOffset || document.documentElement.scrollTop || 0)
-                    : container.scrollTop;
-                header.classList.toggle('je-is-scrolled', top > 4);
-                ticking = false;
+                try {
+                    header.classList.toggle('je-is-scrolled', currentScrollTop() > 4);
+                } catch (e) {
+                    // Belt-and-braces: reading scrollTop and toggling a class
+                    // on a detached node doesn't normally throw, but if it
+                    // ever does (custom element, closed shadow root, etc.)
+                    // we don't want the rAF pipeline to wedge on `ticking`.
+                    console.warn('[JE] sticky-header read failed:', e);
+                } finally {
+                    // Always reset `ticking` so the next scroll event can
+                    // schedule a fresh rAF, even if read() threw above.
+                    ticking = false;
+                }
             }
             function onScroll() {
                 if (ticking) return;
                 ticking = true;
                 requestAnimationFrame(read);
             }
-            container.addEventListener('scroll', onScroll, { passive: true });
-            // Prior listeners from a previous pageshow may still be live —
-            // removeEventListener is a no-op when none match, and idempotent
-            // when one does, so re-adding is safe across SPA re-entries.
+            // Always listen on window (covers document-scrolling layouts) and
+            // on each overflow-declared ancestor (covers mid-tree scrollers).
+            // If Jellyfin ever re-parents .je-sticky-header under a new
+            // scroll ancestor not present at bind time, the window listener
+            // is the fallback — on document-scrolling layouts it will fire.
+            // For container-scrolling layouts after a re-parent, the blur
+            // would fail to update, but `console.warn` below at least makes
+            // the "no candidates found" case observable.
+            window.addEventListener('scroll', onScroll, { passive: true });
+            if (candidates.length === 0) {
+                console.warn('[JE] sticky-header: no overflow:auto|scroll ancestors found; relying on window scroll only.');
+            }
+            candidates.forEach(function(n) {
+                n.addEventListener('scroll', onScroll, { passive: true });
+            });
             read();
         })();
 
@@ -5715,14 +5762,23 @@
                 btn.addEventListener('click', function() {
                     var tabBtn = document.querySelector('.jellyfin-tab-button[data-tab="' + c.tab + '"]');
                     if (tabBtn) tabBtn.click();
-                    // Optional deep-link: after the tab activates (next frame so
-                    // content has laid out), scroll the specific field into
-                    // view. Cards that don't set scrollTo land at the tab's
-                    // scroll-memory position as before.
+                    // Optional deep-link: after the tab activates AND
+                    // activateTab's own per-tab scroll-memory rAF has run
+                    // (double rAF), scroll the specific field into view.
+                    // activateTab schedules a rAF to restore scroll position,
+                    // so scheduling our scroll in the frame AFTER that wins
+                    // the race deterministically. Cards that don't set
+                    // scrollTo land at the tab's scroll-memory position.
                     if (c.scrollTo) {
                         requestAnimationFrame(function() {
-                            var target = document.querySelector(c.scrollTo);
-                            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            requestAnimationFrame(function() {
+                                var target = document.querySelector(c.scrollTo);
+                                if (target) {
+                                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                } else {
+                                    console.warn('[JE] service-status deep-link target not found:', c.scrollTo);
+                                }
+                            });
                         });
                     }
                 });
