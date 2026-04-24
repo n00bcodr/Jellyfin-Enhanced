@@ -798,13 +798,24 @@
     font-size: 0.9em;
 }
 
-/* Feature-enabler (master-toggle) checkboxes — visually pronounced so
-   the sub-options that follow read as OPTIONS of that feature, not
-   independent peers. Scoped to one PRIMARY toggle per fieldset (the
-   "enable this page/feature entirely" switch). Mid-fieldset mode
-   selectors and sub-feature anchors stay plain — the dashed-indent
-   `je-setting-dep` pattern already signals their parent→child
-   relationships without visually overloading the page.
+/* Feature-enabler (master-toggle) checkboxes — accent left-border +
+   gradient bg + bold label to signal "this toggle masters the feature
+   that this fieldset exists for."
+
+   Criterion for adding an ID here:
+     1. The toggle sits in a fieldset whose whole purpose IS that one
+        feature (e.g., a "Bookmarks" fieldset for bookmarksEnabled, a
+        "Seerr Connection Setup" fieldset for jellyseerrEnabled). If
+        the fieldset bundles unrelated settings (e.g., "UI Preferences",
+        "External Links", "UI Tweaks"), the toggle should stay plain —
+        otherwise it visually stands out from its unrelated siblings.
+     2. OR the toggle gates an entire tab via SECTION_DEPS (currently
+        only jellyseerrEnabled, which also satisfies #1).
+
+   Parent→child dependency signaling for non-master toggles is handled
+   uniformly by the dashed-indent `je-setting-dep` pattern — don't add
+   a toggle here just because it gates sub-settings.
+
    Uses :has() to target specific known master IDs; modern browsers
    (Chrome 105+, Safari 15.4+, Firefox 121+) support it, older
    fallback is the plain checkbox look (still functional). */
