@@ -1,6 +1,119 @@
 /* =============================================================================
-   Jellyfin Enhanced — Config Page Stylesheet
+   Jellyfin Enhanced — Config Page Stylesheet (Modernized)
    ============================================================================= */
+
+/* ---------------------------------------------------------------------------
+   Theme-aware surface palette
+   ---------------------------------------------------------------------------
+   Jellyfin ships multiple themes (Dark, Pumpkin, Light, WMC, Blue Radiance,
+   Apple TV, Purple Haze). Each swaps a whole theme.css at runtime with
+   hardcoded colors — no CSS-variable contract we can rely on. So we define
+   our own small palette below, with dark defaults and a `.je-light-theme`
+   override block that kicks in when a tiny JS detector at page load decides
+   the current theme has a light body. `@media (prefers-color-scheme: light)`
+   acts as a secondary fallback for browser-level preferences.
+   --------------------------------------------------------------------------- */
+#JellyfinEnhancedPage {
+    /* Surface lift layers — slightly lighter than body bg */
+    --je-surface-1:      rgba(255, 255, 255, 0.03);
+    --je-surface-2:      rgba(255, 255, 255, 0.05);
+    --je-surface-3:      rgba(255, 255, 255, 0.08);
+    --je-surface-hover:  rgba(255, 255, 255, 0.08);
+    /* Borders */
+    --je-border-subtle:  rgba(255, 255, 255, 0.04);
+    --je-border:         rgba(255, 255, 255, 0.08);
+    --je-border-strong:  rgba(255, 255, 255, 0.12);
+    --je-border-focus:   rgba(255, 255, 255, 0.2);
+    /* Text — `inherit` stays legible under any theme's <html> color */
+    --je-text:           inherit;
+    --je-text-strong:    rgba(255, 255, 255, 0.87);
+    --je-text-muted:     rgba(255, 255, 255, 0.6);
+    --je-text-subtle:    rgba(255, 255, 255, 0.45);
+    --je-text-dim:       rgba(255, 255, 255, 0.3);
+    /* Subtle decorative gradients for card surfaces (light shine → transparent).
+       Swap to dark shine on light themes so cards keep a faint lift. */
+    --je-card-gradient:       linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+    --je-card-gradient-lift:  linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+    --je-legend-gradient:     linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+    /* Dark overlays for intentionally-dark modals (preview panel, toasts) */
+    --je-overlay-soft:   rgba(0, 0, 0, 0.12);
+    --je-overlay:        rgba(0, 0, 0, 0.28);
+    --je-overlay-hard:   rgba(0, 0, 0, 0.55);
+    /* Accent tints (already theme-adapting via --primary-accent-color) */
+    --je-accent-tint-10: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 10%, transparent);
+    --je-accent-tint-20: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 20%, transparent);
+    --je-accent-border:  color-mix(in srgb, var(--primary-accent-color, #00a4dc) 40%, transparent);
+}
+
+#JellyfinEnhancedPage.je-light-theme {
+    --je-surface-1:      rgba(0, 0, 0, 0.025);
+    --je-surface-2:      rgba(0, 0, 0, 0.05);
+    --je-surface-3:      rgba(0, 0, 0, 0.08);
+    --je-surface-hover:  rgba(0, 0, 0, 0.08);
+    --je-border-subtle:  rgba(0, 0, 0, 0.06);
+    --je-border:         rgba(0, 0, 0, 0.1);
+    --je-border-strong:  rgba(0, 0, 0, 0.15);
+    --je-border-focus:   rgba(0, 0, 0, 0.25);
+    --je-text-strong:    rgba(0, 0, 0, 0.87);
+    --je-text-muted:     rgba(0, 0, 0, 0.65);
+    --je-text-subtle:    rgba(0, 0, 0, 0.5);
+    --je-text-dim:       rgba(0, 0, 0, 0.35);
+    --je-card-gradient:       linear-gradient(145deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
+    --je-card-gradient-lift:  linear-gradient(145deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.015) 100%);
+    --je-legend-gradient:     linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.01) 100%);
+    --je-overlay-soft:   rgba(0, 0, 0, 0.06);
+    --je-overlay:        rgba(0, 0, 0, 0.1);
+    --je-overlay-hard:   rgba(0, 0, 0, 0.35);
+}
+
+/* OS-level light preference as a fallback: only kicks in when the JS
+   detector hasn't explicitly declared the page dark (to let Jellyfin's
+   user-selected dark themes stay dark even on a light OS). */
+@media (prefers-color-scheme: light) {
+    #JellyfinEnhancedPage:not(.je-dark-theme):not(.je-light-theme) {
+        --je-surface-1:      rgba(0, 0, 0, 0.025);
+        --je-surface-2:      rgba(0, 0, 0, 0.05);
+        --je-surface-3:      rgba(0, 0, 0, 0.08);
+        --je-surface-hover:  rgba(0, 0, 0, 0.08);
+        --je-border-subtle:  rgba(0, 0, 0, 0.06);
+        --je-border:         rgba(0, 0, 0, 0.1);
+        --je-border-strong:  rgba(0, 0, 0, 0.15);
+        --je-border-focus:   rgba(0, 0, 0, 0.25);
+        --je-text-strong:    rgba(0, 0, 0, 0.87);
+        --je-text-muted:     rgba(0, 0, 0, 0.65);
+        --je-text-subtle:    rgba(0, 0, 0, 0.5);
+        --je-text-dim:       rgba(0, 0, 0, 0.35);
+        --je-card-gradient:       linear-gradient(145deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
+        --je-card-gradient-lift:  linear-gradient(145deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.015) 100%);
+        --je-legend-gradient:     linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.01) 100%);
+        --je-overlay-soft:   rgba(0, 0, 0, 0.06);
+        --je-overlay:        rgba(0, 0, 0, 0.1);
+        --je-overlay-hard:   rgba(0, 0, 0, 0.35);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+   Base Form Container & Typography
+   --------------------------------------------------------------------------- */
+#JellyfinEnhancedPage {
+    color: inherit;
+    font-family: inherit;
+}
+
+/* Override Jellyfin admin's `.content-primary form { max-width: ~803px }`
+   default. The page-id prefix gives us higher specificity than the
+   admin theme, so we don't need !important.
+   Cap at 2400px so the tab grid (auto-fit, minmax(480px, 1fr)) can fit
+   4-5 cards on ultrawide while preventing single-row content (Overview's
+   status dashboard, Integration Health, Quick Actions — all of which span
+   `grid-column: 1 / -1`) from stretching across a 4K/5K viewport at a
+   single huge column. 2400px = 4 full cards at 480px wide + gaps. */
+#JellyfinEnhancedPage #JellyfinEnhancedForm {
+    max-width: 2400px;
+    width: 100%;
+    margin: 0 auto;
+    padding-bottom: 120px; /* Space for sticky footer */
+}
 
 /* ---------------------------------------------------------------------------
    Animations
@@ -12,1118 +125,1868 @@
     30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
     40%, 60% { transform: translate3d(4px, 0, 0); }
 }
+@keyframes slideUpFade {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
 .status-check { animation: spin 1s linear infinite; }
 .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
 
 /* ---------------------------------------------------------------------------
-   Tab navigation
+   Sticky header region — title + search + tab bar stay pinned at the
+   viewport top; only the form content scrolls.
+   Jellyfin's `[data-role="content"]` ancestor sets `overflow: hidden`
+   which kills `position: sticky`. Override that ancestor (scoped to
+   our page) so sticky works on window scroll.
    --------------------------------------------------------------------------- */
-.jellyfin-tab-button {
-    position: relative;
-    z-index: 1000;
-    background: none;
-    border: none;
-    color: #ccc;
-    cursor: pointer;
-    transition: color 0.3s, border-bottom 0.3s;
-    border-bottom: 2px solid transparent;
+#JellyfinEnhancedPage[data-role="page"] > [data-role="content"] {
+    overflow: visible;
 }
-.jellyfin-tab-button.active {
-    color: var(--primary-accent-color, #fff);
-    border-bottom-color: var(--primary-accent-color, #fff);
+.je-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 1100;
+    padding: 8px 8px 0 8px;
+    margin: -8px -8px 20px -8px;
+    /* Background/blur/shadow applied only when the form is actually
+       scrolled — at scrollTop=0 the header is transparent so the
+       Jellyfin top bar / user avatar underneath stays visible. */
+    transition: background-color 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
-.jellyfin-tab-button h3,
-.jellyfin-tab-button img {
-    pointer-events: none;
-}
-.jellyfin-tab-button img {
-    width: 20px;
-    height: 20px;
-    margin-right: 8px;
-    vertical-align: middle;
-    filter: brightness(0.8);
-}
-
-.jellyfin-tab-content {
-    display: none;
-    font-family: inherit;
-}
-.jellyfin-tab-content.active {
-    display: block;
+.je-sticky-header.je-is-scrolled {
+    background: var(--je-overlay-hard);
+    backdrop-filter: blur(14px) saturate(150%);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+    border-bottom: 1px solid color-mix(in srgb, var(--primary-accent-color, #00a4dc) 18%, transparent);
+    box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.6);
 }
 
 /* ---------------------------------------------------------------------------
-   Settings search bar
+   Header & Search Bar
    --------------------------------------------------------------------------- */
+.sectionTitleContainer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 0;
+    padding: 10px 0 10px 0;
+    border-bottom: 1px solid var(--je-border);
+}
+.sectionTitleContainer h2 {
+    font-size: 1.8em;
+    font-weight: 600;
+    margin: 0;
+}
+.je-header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
 #settingsSearchContainer {
-    margin-left: auto;
-    min-width: 200px;
-    max-width: 320px;
+    min-width: 260px;
+    max-width: 350px;
     flex: 1;
 }
 #settingsSearchContainer > div {
     position: relative;
+    /* display: block is enough — the icon / count / clear are all
+       absolute-positioned. A flex container tried to treat them as
+       items and relied on `top: auto` resolving to the static position
+       under align-items: center, which some browsers render with
+       sub-pixel offsets. Using block + explicit top: 50% /
+       translateY(-50%) on each overlay is deterministic across
+       browsers. */
+    display: block;
 }
 #settingsSearchInput {
     width: 100%;
-    padding: 0.45em 2.2em 0.45em 2.2em;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 6px;
+    /* Pad left for the search icon, right for count + clear button. */
+    padding: 10px 90px 10px 40px !important;
+    background: var(--je-overlay);
+    border: 1px solid var(--je-border);
+    border-radius: 20px;
     color: #eee;
-    font-size: 0.85em;
+    font-size: 0.9em;
     outline: none;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
     box-sizing: border-box;
+    /* Ensure the input paints BELOW the overlay icons so its selection
+       highlight (native browser paint) doesn't cover them. */
+    position: relative;
+    z-index: 0;
+}
+#settingsSearchInput:focus {
+    background: var(--je-overlay-hard);
+    border-color: var(--primary-accent-color, #00a4dc);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-accent-color, #00a4dc) 20%, transparent);
+}
+.je-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--je-text-subtle);
+    pointer-events: none;
+    font-size: 18px !important;
+    line-height: 1;
+    /* Sit above the input so the native selection-highlight paint
+       (which can cover the input's full content box) never masks the
+       icon. */
+    z-index: 1;
 }
 #settingsSearchCount {
     display: none;
     position: absolute;
-    right: 2.4em;
+    right: 40px;
     top: 50%;
     transform: translateY(-50%);
-    color: rgba(255,255,255,0.4);
-    font-size: 0.75em;
-    white-space: nowrap;
+    color: var(--je-text-muted);
+    font-size: 0.8em;
+    font-weight: 500;
+    pointer-events: none;
+    z-index: 1;
 }
 #settingsSearchClear {
     display: none;
     position: absolute;
-    right: 0.4em;
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
-    background: none;
+    background: var(--je-surface-3);
     border: none;
-    color: rgba(255,255,255,0.5);
+    color: #fff;
     cursor: pointer;
-    padding: 0.2em;
-    font-size: 1em;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 0.8em;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    z-index: 2;
+}
+#settingsSearchClear:hover {
+    background: #dc3545;
+}
+
+/* ---------------------------------------------------------------------------
+   Overview Tab — Service Status, Quick Actions
+   --------------------------------------------------------------------------- */
+.je-overview-section {
+    margin-bottom: 20px;
+}
+.je-overview-section > .configSection {
+    padding: 14px 18px;
+}
+.je-legend-icon {
+    font-size: 20px !important;
+    line-height: 1;
+    vertical-align: middle;
+    margin-right: 8px;
+    opacity: 0.75;
+    color: var(--primary-accent-color, #00a4dc);
+}
+.sectionTitle .je-legend-icon { vertical-align: -4px; }
+.je-legend-icon-img {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    vertical-align: -5px;
+    /* No plate: the Sonarr/Radarr/Bazarr brand SVGs already carry
+       their own solid backgrounds in-file (rounded squircle for
+       Sonarr, circle for Radarr, circle for Bazarr) so an extra
+       plate reads as a double-backing. */
+}
+
+/* Quick Actions grid */
+.je-quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+}
+.je-quick-action {
+    background: var(--je-card-gradient);
+    border: 1px solid var(--je-border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    font: inherit;
+    width: 100%;
+}
+.je-quick-action:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    border-color: var(--je-text-dim);
+    background: var(--je-card-gradient-lift);
+}
+.je-quick-action:focus-visible {
+    outline: 2px solid var(--primary-accent-color, #00a4dc);
+    outline-offset: 2px;
+}
+.je-quick-action-icon {
+    font-size: 26px !important;
+    color: var(--primary-accent-color, #00a4dc);
+    flex-shrink: 0;
+}
+.je-quick-action-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.je-quick-action-title {
+    font-size: 0.95em;
+    font-weight: 600;
+}
+.je-quick-action-detail {
+    font-size: 0.8em;
+    opacity: 0.65;
+    line-height: 1.3;
+}
+
+/* Empty-state hint shared by Service Status, Features, and Optional
+   Dependencies renderers when they have nothing to show. */
+.je-checklist-empty {
+    padding: 14px 16px;
+    border: 1px dashed var(--je-border);
+    border-radius: 10px;
+    color: #888;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+   Overview Tab — Service Status (merged from legacy status cards + checklist)
+   Mirrors the Optional Dependencies / Features look: card grid with a
+   left-border accent per state, icon + name + detail. Clickable rows jump
+   to the owning tab.
+   --------------------------------------------------------------------------- */
+.je-service-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+}
+.je-service-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: var(--je-surface-1);
+    border: 1px solid var(--je-border);
+    border-left-width: 3px;
+    border-radius: 10px;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+    font: inherit;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+.je-service-card:hover { background: var(--je-surface-2); transform: translateY(-1px); }
+.je-service-card.je-state-ok       { border-left-color: #4caf50; }
+.je-service-card.je-state-warn     { border-left-color: #ff9800; }
+.je-service-card.je-state-error    { border-left-color: #f44336; }
+.je-service-card.je-state-pending  { border-left-color: var(--je-text-dim); }
+.je-service-card.je-state-off      { border-left-color: var(--je-border-strong); opacity: 0.55; }
+.je-service-icon {
+    font-size: 20px !important;
+    color: var(--je-text-muted);
+    flex-shrink: 0;
+}
+.je-service-card.je-state-ok    .je-service-icon { color: #4caf50; }
+.je-service-card.je-state-warn  .je-service-icon { color: #ff9800; }
+.je-service-card.je-state-error .je-service-icon { color: #f44336; }
+.je-service-body {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.je-service-name {
+    font-size: 0.92em;
+    font-weight: 600;
+}
+.je-service-detail {
+    font-size: 0.78em;
+    color: var(--je-text-muted);
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+@media (max-width: 540px) {
+    .je-service-dashboard { grid-template-columns: 1fr; }
+    .je-service-card { padding: 10px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Overview Tab — Optional Dependencies grid
+   --------------------------------------------------------------------------- */
+.je-optional-plugins-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+.je-optional-plugin-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
+    background: var(--je-surface-1);
+    border: 1px solid var(--je-border);
+    border-left-width: 3px;
+    border-left-color: var(--je-border-strong);
+    border-radius: 10px;
+    position: relative;
+}
+.je-optional-plugin-link {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    color: var(--je-text-subtle);
+    opacity: 0.7;
+    text-decoration: none;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.je-optional-plugin-link:hover,
+.je-optional-plugin-link:focus-visible {
+    opacity: 1;
+    color: var(--primary-accent-color, #00a4dc);
+    background: var(--je-accent-tint-10);
+    outline: none;
+}
+.je-optional-plugin-link .material-icons {
+    font-size: 16px !important;
     line-height: 1;
 }
-
-/* ---------------------------------------------------------------------------
-   Search highlight utilities
-   --------------------------------------------------------------------------- */
-.je-search-hidden { display: none !important; }
-
-.je-search-match {
-    background-color: rgba(255,200,0,0.35);
-    color: #fff;
-    border-radius: 2px;
-    padding: 0 1px;
-    box-shadow: 0 0 0 1px rgba(255,200,0,0.25);
+.je-optional-plugin-body {
+    padding-right: 28px;
 }
-.je-search-match-active {
-    background-color: rgba(255,165,0,0.75);
-    box-shadow: 0 0 0 2px rgba(255,165,0,0.5);
-}
-.je-search-tab-label {
-    font-size: 1.15em;
-    font-weight: bold;
-    color: var(--primary-accent-color, #00a4dc);
-    margin-bottom: 0.5em;
-    padding: 0.4em 0;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-}
-
-/* ---------------------------------------------------------------------------
-   Dependency hints / banners
-   --------------------------------------------------------------------------- */
-.dep-hint-text {
-    display: block;
-    font-size: 0.8em;
-    color: #ff9800;
+.je-optional-plugin-card.je-state-installed  { border-left-color: #4caf50; }
+.je-optional-plugin-card.je-state-missing    { border-left-color: var(--je-border-strong); opacity: 0.75; }
+.je-optional-plugin-card.je-state-unknown    { border-left-color: var(--je-text-dim); }
+.je-optional-plugin-card.je-state-warn       { border-left-color: #ff9800; }
+.je-optional-plugin-icon {
+    font-size: 20px !important;
+    flex-shrink: 0;
     margin-top: 2px;
-    font-weight: normal;
+    color: var(--je-text-muted);
+}
+.je-optional-plugin-card.je-state-installed .je-optional-plugin-icon { color: #4caf50; }
+.je-optional-plugin-card.je-state-warn      .je-optional-plugin-icon { color: #ff9800; }
+.je-optional-plugin-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.je-optional-plugin-name {
+    font-weight: 600;
+    font-size: 0.92em;
+}
+.je-optional-plugin-status {
+    font-size: 0.8em;
+    color: var(--je-text-muted);
+    line-height: 1.35;
+}
+.je-optional-plugin-purpose {
+    font-size: 0.78em;
+    color: var(--je-text-subtle);
+    line-height: 1.4;
+    margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Overview Tab — Features dashboard
+   --------------------------------------------------------------------------- */
+.je-features-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px;
+}
+.je-feature-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--je-surface-1);
+    border: 1px solid var(--je-border);
+    border-left-width: 3px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+    font: inherit;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+.je-feature-row:hover {
+    background: var(--je-surface-2);
+    transform: translateY(-1px);
+}
+.je-feature-row.je-state-on         { border-left-color: #4caf50; }
+.je-feature-row.je-state-warn       { border-left-color: #ff9800; }
+.je-feature-row.je-state-off        { border-left-color: var(--je-border-strong); opacity: 0.55; }
+.je-feature-icon {
+    font-size: 18px !important;
+    color: var(--je-text-muted);
+    flex-shrink: 0;
+}
+.je-feature-row.je-state-on   .je-feature-icon { color: #4caf50; }
+.je-feature-row.je-state-warn .je-feature-icon { color: #ff9800; }
+.je-feature-body {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.je-feature-name {
+    font-size: 0.9em;
+    font-weight: 500;
+}
+.je-feature-detail {
+    font-size: 0.78em;
+    color: var(--je-text-muted);
+    line-height: 1.3;
+    word-break: break-word;
+}
+
+@media (max-width: 540px) {
+    .je-optional-plugins-dashboard,
+    .je-features-dashboard { grid-template-columns: 1fr; }
+    .je-optional-plugin-card, .je-feature-row { padding: 10px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Tab Navigation (sits inside .je-sticky-header which handles pinning)
+   --------------------------------------------------------------------------- */
+.je-tab-bar {
+    display: flex;
+    gap: 10px;
+    padding: 12px 0;
+    margin: 0;
+    border-bottom: 1px solid var(--je-border);
+    overflow-x: auto;
+    scrollbar-width: none;
+    cursor: grab;
+    user-select: none;
+}
+.je-tab-bar::-webkit-scrollbar { display: none; }
+.je-tab-bar.je-dragging {
+    cursor: grabbing;
+    scroll-behavior: auto;
+}
+.je-tab-bar.je-dragging .jellyfin-tab-button {
+    pointer-events: none;
+}
+
+.jellyfin-tab-button {
+    background: var(--je-surface-2);
+    border: 1px solid var(--je-border);
+    border-radius: 30px;
+    padding: 10px 20px;
+    color: #ccc;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+.jellyfin-tab-button h3 {
+    margin: 0;
+    font-size: 1em;
+    font-weight: inherit;
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.jellyfin-tab-button img,
+.jellyfin-tab-button .je-tab-icon-img {
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    /* Black plate hides transparent SVG regions from the active-tab
+       accent bg. */
+    background: #000;
+    border-radius: 50%;
+    padding: 0;
+    box-sizing: content-box;
+}
+.jellyfin-tab-button .je-tab-icon {
+    font-size: 20px !important;
+    line-height: 1;
+    opacity: 0.85;
+    pointer-events: none;
+}
+.jellyfin-tab-button.active .je-tab-icon { opacity: 1; }
+.jellyfin-tab-button:hover { background: var(--je-surface-3); }
+.jellyfin-tab-button.active {
+    background: var(--primary-accent-color, #00a4dc);
+    border-color: var(--primary-accent-color, #00a4dc);
+    color: #fff !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-accent-color, #00a4dc) 30%, transparent);
+}
+
+.jellyfin-tab-content {
+    display: none;
+    animation: slideUpFade 0.3s ease forwards;
+}
+.jellyfin-tab-content.active {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+    gap: 20px;
+    align-items: start;
+}
+
+/* ---------------------------------------------------------------------------
+   Fieldsets (Cards)
+   --------------------------------------------------------------------------- */
+#JellyfinEnhancedForm fieldset {
+    background: rgba(22, 22, 22, 0.94);
+    border: 1px solid var(--je-border);
+    border-radius: 12px;
+    padding: 0;
+    margin: 0;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.25s ease;
+}
+#JellyfinEnhancedForm fieldset:hover {
+    border-color: var(--je-border);
+}
+/* Native <legend> has peculiar layout — it's positioned relative to the
+   fieldset's top border and doesn't always respect width/display. The
+   `float: left; width: 100%;` trick normalizes it into a proper block
+   header that spans the full fieldset width. configSection then
+   `clear: both;` so its flow starts below the floated legend. */
+#JellyfinEnhancedForm legend.sectionTitle {
+    float: left;
+    width: 100%;
+    margin: 0;
+    padding: 14px 22px;
+    background: var(--je-legend-gradient);
+    font-size: 1.05em;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    border-bottom: 1px solid var(--je-border);
+    box-sizing: border-box;
+    color: #f5f5f5;
+}
+/* Keep the icon inline with the title on a row, now that the legend
+   is a floated block (display:flex would override the float). */
+#JellyfinEnhancedForm legend.sectionTitle .je-legend-icon {
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: -4px;
+}
+.configSection {
+    clear: both;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* Let specific fieldsets span full width */
+.jellyfin-tab-content.active > fieldset.je-fieldset-wide,
+.jellyfin-tab-content.active > fieldset.je-overview-section,
+.jellyfin-tab-content.active > fieldset:has(.je-branding-grid),
+.jellyfin-tab-content.active > fieldset:has(.arr-instances-list),
+.jellyfin-tab-content.active > fieldset:has(.je-textarea-large),
+.jellyfin-tab-content.active > fieldset:has(.je-seerr-label) {
+    grid-column: 1 / -1;
+}
+.jellyfin-tab-content.active > .je-info-banner,
+.jellyfin-tab-content.active > .je-dep-banner {
+    grid-column: 1 / -1;
+}
+
+/* ---------------------------------------------------------------------------
+   Inputs, Checkboxes & Form Elements
+   --------------------------------------------------------------------------- */
+.configSection > .inputContainer,
+.configSection > .selectContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.configSection > .inputContainer,
+.configSection > .checkboxContainer,
+.configSection > .selectContainer {
+    background: var(--je-surface-1);
+    border: 1px solid var(--je-border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 5px !important;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.configSection > .inputContainer:hover,
+.configSection > .checkboxContainer:hover,
+.configSection > .selectContainer:hover {
+    border-color: var(--je-border);
+    background: var(--je-surface-1);
+}
+.configSection > .inputContainer:focus-within,
+.configSection > .checkboxContainer:focus-within,
+.configSection > .selectContainer:focus-within {
+    border-color: var(--primary-accent-color, #00a4dc);
+    background: var(--je-surface-2);
+    box-shadow: 0 0 0 1px var(--primary-accent-color, #00a4dc) inset;
+}
+
+/* Ensure inputs span fully where intended */
+.configSection > .inputContainer .emby-input,
+.configSection > .inputContainer .emby-select,
+.configSection > .inputContainer .emby-textarea,
+.configSection > .selectContainer .emby-select {
+    width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+/* Consistent dropdown chevron across every <select> inside this config page.
+   Jellyfin admin's native emby-select styling sometimes shows no arrow
+   (depending on theme), which makes the control look like a text input. We
+   zero the native appearance and paint our own chevron SVG to guarantee a
+   visible "this is a dropdown" affordance that matches the accent color on
+   focus. */
+#JellyfinEnhancedPage select.emby-select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23e0e0e0' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 12px 8px;
+    padding-right: 36px !important;
+    cursor: pointer;
+}
+#JellyfinEnhancedPage select.emby-select:focus,
+#JellyfinEnhancedPage select.emby-select:focus-visible {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%2300a4dc' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>");
+}
+/* IE/Edge legacy — hide the built-in dropdown arrow to avoid double chevrons */
+#JellyfinEnhancedPage select.emby-select::-ms-expand { display: none; }
+
+.checkboxContainer {
+    display: flex;
+    align-items: center;
+}
+.checkboxContainer label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    cursor: pointer;
+    word-break: break-word;
+}
+.checkboxContainer input[type="checkbox"] {
+    flex-shrink: 0;
+    margin: 0;
+}
+/* Slightly brighter, medium-weight labels — when descriptions are off
+   the label is the only cue, so make it readable first. */
+.checkboxContainer label > span {
+    font-size: 0.95em;
+    font-weight: 500;
+    color: #e8e8e8;
+    line-height: 1.35;
+}
+.inputContainer > label.inputLabel,
+.selectContainer > label.selectLabel,
+.inputContainer > label.selectLabel,
+.selectContainer > label.inputLabel {
+    font-weight: 500;
+    color: #d0d0d0;
+    font-size: 0.9em;
+}
+
+/* Feature-enabler (master-toggle) checkboxes — accent left-border +
+   gradient bg + bold label to signal "this toggle masters the feature
+   that this fieldset exists for."
+
+   Criterion for adding an ID here:
+     1. The toggle sits in a fieldset whose whole purpose IS that one
+        feature (e.g., a "Bookmarks" fieldset for bookmarksEnabled, a
+        "Seerr Connection Setup" fieldset for jellyseerrEnabled). If
+        the fieldset bundles unrelated settings (e.g., "UI Preferences",
+        "External Links", "UI Tweaks"), the toggle should stay plain.
+     2. OR the toggle gates an entire tab via SECTION_DEPS (currently
+        only jellyseerrEnabled, which also satisfies #1).
+
+   :has() requires Chrome 105+ / Safari 15.4+ / Firefox 121+; older
+   browsers fall back to the plain checkbox look. */
+.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
+.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled),
+.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled),
+.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
+.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) {
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--primary-accent-color, #00a4dc) 14%, transparent) 0%,
+        color-mix(in srgb, var(--primary-accent-color, #00a4dc) 2%, transparent) 100%);
+    border-color: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 22%, transparent);
+    border-left: 3px solid var(--primary-accent-color, #00a4dc);
+}
+.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled) label > span,
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) label > span {
+    font-weight: 600;
+    font-size: 1.02em;
+    color: #fff;
+    letter-spacing: 0.1px;
+}
+
+/* Integration-choice toggles (Plugin Pages vs Custom Tabs) — pair of
+   alternatives that answer "how do you want this feature delivered?".
+   Subtle purple/blue accent to distinguish from the feature-master. */
+.configSection > .checkboxContainer:has(> label > input[id$="UsePluginPages"]),
+.configSection > .checkboxContainer:has(> label > input[id$="UseCustomTabs"]) {
+    background: rgba(155, 89, 182, 0.05);
+    border-left: 2px solid rgba(155, 89, 182, 0.4);
+}
+
+/* Small visual breather between a master-enabler and its options, so
+   the grouping reads at a glance. */
+.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
+.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
+.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled),
+.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled),
+.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
+.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
+.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled),
+.configSection > .checkboxContainer:has(> label > input#showUserReviews) {
+    margin-bottom: 12px !important;
+}
+
+.fieldDescription {
+    color: #aaa;
+    font-size: 0.85em;
+    margin-top: 8px;
+    line-height: 1.4;
+}
+
+/* Beautiful grouping of descriptions without negative margins */
+.je-setting-description {
+    margin-top: 4px;
+    margin-bottom: 12px;
+    padding-left: 14px;
+    border-left: 2px solid var(--je-border);
+}
+.checkboxContainer + .fieldDescription,
+.inputContainer + .fieldDescription,
+.selectContainer + .fieldDescription {
+    margin-top: 4px;
+    margin-bottom: 12px;
+    padding-left: 14px;
+    border-left: 2px solid var(--je-border);
+}
+/* Inside flex containers (.configSection, .je-details-body) the parent's `gap`
+   already provides between-child spacing. The 4px + 12px margins above DON'T
+   collapse against the gap — they stack with it, adding ~16px of extra space
+   between each setting. Zero them out so the gap alone owns the spacing. */
+.configSection > .je-setting-description,
+.je-details-body > .je-setting-description {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+/* Inner .fieldDescription adds margin-top: 8px globally (see :645) for the
+   stand-alone case where it follows a checkbox directly. Inside a
+   .je-setting-description wrapper the wrapper already provides the visual
+   indent + spacing, so the inner margin would just push text further from
+   its border + add a visible gap. Zero it here. */
+.je-setting-description > .fieldDescription {
+    margin-top: 0;
+}
+/* Tighten the gap inside accordion bodies — 15px reads as too loose for
+   a stack of toggle+description pairs since the description block already
+   has its border + padding making it visually distinct. */
+.je-details-body { gap: 10px; }
+
+/* ---------------------------------------------------------------------------
+   Accordions (Details / Summary)
+   --------------------------------------------------------------------------- */
+.je-details-section, .je-seerr-details {
+    background: var(--je-overlay);
+    border: 1px solid var(--je-border-subtle);
+    border-radius: 10px;
+    margin: 5px 0 10px 0;
+    overflow: hidden;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+.je-details-section:hover, .je-seerr-details:hover {
+    border-color: var(--je-border);
+}
+.je-details-section[open], .je-seerr-details[open] {
+    background: var(--je-surface-1);
+    border-color: var(--je-border);
+}
+.je-details-section > summary, .je-seerr-details > summary {
+    background: transparent;
+    padding: 14px 18px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    list-style: none;
+    user-select: none;
+    color: rgba(240, 240, 240, 0.82);
+    transition: color 0.2s ease;
+}
+.je-details-section[open] > summary,
+.je-seerr-details[open] > summary {
+    color: #f5f5f5;
+}
+.je-details-section > summary:hover,
+.je-seerr-details > summary:hover {
+    color: #fff;
+}
+.je-details-section > summary::-webkit-details-marker,
+.je-seerr-details > summary::-webkit-details-marker {
+    display: none;
+}
+.je-details-section > summary::after,
+.je-seerr-details > summary::after {
+    content: "chevron_right";
+    font-family: "Material Icons";
+    font-size: 24px;
+    display: inline-block;
+    transition: transform 0.25s ease, color 0.2s ease;
+    color: var(--je-text-subtle);
+    line-height: 1;
+    flex-shrink: 0;
+}
+.je-details-section[open] > summary::after,
+.je-seerr-details[open] > summary::after {
+    transform: rotate(90deg);
+    color: var(--primary-accent-color, #00a4dc);
+}
+.je-details-body {
+    padding: 0 20px 20px 20px;
+    border-top: 1px solid var(--je-border);
+    margin-top: 5px;
+    padding-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
 }
 
 /* ---------------------------------------------------------------------------
    Arr instance cards
    --------------------------------------------------------------------------- */
+/* Instance cards mirror the .je-details-section (Tag Filters) look: subtle
+   on rest, slightly lighter on open, no strong accent border. Keep a
+   chevron summary prefix but mute the color so it feels consistent with
+   other collapsibles on the page. */
 .arr-instance-card {
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-    margin-bottom: 1em;
-    background: rgba(255,255,255,0.03);
+    background: var(--je-overlay);
+    border: 1px solid var(--je-border-subtle);
+    border-radius: 10px;
+    margin: 5px 0 10px 0;
+    overflow: hidden;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+.arr-instance-card:hover  { border-color: var(--je-border); }
+.arr-instance-card[open] {
+    background: var(--je-surface-1);
+    border-color: var(--je-border);
 }
 .arr-instance-card > summary {
     display: flex;
     align-items: center;
-    gap: 0.5em;
-    padding: 0.8em 1em;
+    gap: 12px;
+    padding: 14px 18px;
     cursor: pointer;
     list-style: none;
     user-select: none;
+    background: transparent;
+    color: rgba(240, 240, 240, 0.82);
 }
 .arr-instance-card > summary::-webkit-details-marker { display: none; }
 .arr-instance-card > summary::before {
-    content: "\25B6";
-    font-size: 0.7em;
+    content: "\e5cc";
+    font-family: "Material Icons";
+    font-size: 20px;
     transition: transform 0.2s;
-    color: rgba(255,255,255,0.5);
+    color: var(--je-text-subtle);
 }
 .arr-instance-card[open] > summary::before {
     transform: rotate(90deg);
+    color: var(--je-text-strong);
 }
-.arr-instance-card > summary .arr-instance-summary-name {
-    flex: 1;
-    font-weight: 500;
+
+/* Custom toggle for the per-instance Enabled checkbox (can't use is="emby-checkbox"
+   because the summary row has no <label><span> wrapper). Renders as a
+   pill-style switch that inherits the accent color when checked. */
+.arr-instance-enabled {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 34px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--je-surface-3);
+    border: 1px solid var(--je-border-strong);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.18s ease, border-color 0.18s ease;
+    margin: 0;
 }
-.arr-instance-card > summary .arr-instance-summary-url {
-    color: rgba(255,255,255,0.4);
+.arr-instance-enabled::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ddd;
+    transform: translateY(-50%);
+    transition: left 0.18s ease, background 0.18s ease;
+}
+.arr-instance-enabled:hover {
+    border-color: var(--je-text-dim);
+}
+.arr-instance-enabled:checked {
+    background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 70%, transparent);
+    border-color: var(--primary-accent-color, #00a4dc);
+}
+.arr-instance-enabled:checked::before {
+    left: 18px;
+    background: #fff;
+}
+.arr-instance-enabled:focus-visible {
+    outline: 2px solid var(--primary-accent-color, #00a4dc);
+    outline-offset: 2px;
+}
+.arr-instance-summary-name { flex: 1; font-weight: 600; }
+.arr-instance-summary-url {
+    color: var(--je-text-subtle);
     font-size: 0.85em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 300px;
+    max-width: 250px;
 }
 .arr-instance-card-body {
-    padding: 0 1em 1em;
+    padding: 15px 18px;
+    border-top: 1px solid var(--je-border);
 }
-.arr-instance-card-body .arr-instance-header {
+.arr-instance-header {
     display: flex;
     align-items: center;
-    gap: 0.5em;
-    margin-bottom: 0.5em;
+    gap: 10px;
+    margin-bottom: 10px;
 }
-.arr-instance-card-body .arr-instance-header input {
-    flex: 1;
-}
-.arr-instance-card > summary .arr-instance-enabled {
-    flex: 0 0 auto;
-    cursor: pointer;
-    margin: 0 0.25em 0 0;
-    width: 1.15em;
-    height: 1.15em;
-}
-.arr-instance-card.arr-instance-disabled {
-    opacity: 0.6;
-}
-.arr-instance-card.arr-instance-disabled > summary .arr-instance-enabled {
-    /* Checkbox stays full-opacity so the admin can see + click to re-enable
-       even when the rest of the card is dimmed. */
-    opacity: 1;
-}
-.arr-instance-card.arr-instance-disabled > summary .arr-instance-summary-name {
+.arr-instance-disabled { opacity: 0.6; }
+.arr-instance-disabled > summary .arr-instance-enabled { opacity: 1; }
+.arr-instance-disabled > summary .arr-instance-summary-name {
     text-decoration: line-through;
-    color: rgba(255,255,255,0.55);
+    color: var(--je-text-muted);
+}
+.arr-instance-disabled > .arr-instance-card-body {
+    pointer-events: none;
 }
 .arr-instance-remove {
     background: transparent;
-    border: 1px solid rgba(255,80,80,0.5);
-    color: #ff5050;
-    border-radius: 4px;
-    padding: 0.3em 0.6em;
+    border: 1px solid rgba(220,53,69,0.5);
+    color: #ff6b6b;
+    border-radius: 6px;
+    padding: 6px 12px;
     cursor: pointer;
     font-size: 0.85em;
+    transition: all 0.2s;
 }
 .arr-instance-remove:hover {
-    background: rgba(255,80,80,0.15);
-}
-.arr-add-btn {
-    margin-top: 0.5em;
-    margin-bottom: 1em;
-}
-
-/* ---------------------------------------------------------------------------
-   Arr corrupt-config banner
-   --------------------------------------------------------------------------- */
-.arr-corrupt-banner {
-    padding: 0.8em 1em;
-    margin-bottom: 1em;
-    border: 1px solid #dc3545;
     background: rgba(220,53,69,0.15);
-    border-radius: 4px;
+    color: #ff4c4c;
 }
 
 /* ---------------------------------------------------------------------------
-   Arr mappings validation result box
+   Sticky Save Dock
    --------------------------------------------------------------------------- */
-#arrMappingsValidationResult {
-    display: none;
-    margin-top: 0.8em;
-    padding: 0.8em 1em;
-    border-radius: 4px;
-    font-size: 0.9em;
-    line-height: 1.5;
-}
-
-/* ---------------------------------------------------------------------------
-   Section title header row
-   --------------------------------------------------------------------------- */
-.sectionTitleContainer {
+.je-save-dock {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
+    justify-content: center;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5em;
+    background: rgba(25, 25, 25, 0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--je-border);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    border-radius: 50px;
+    padding: 10px 16px;
+    z-index: 2000;
+}
+.je-save-dock .je-save-dock-btn {
+    margin: 0 !important;
+    border-radius: 50px !important;
+    padding: 10px 28px !important;
+    font-weight: 600;
+    font-size: 1em;
+    letter-spacing: 0.5px;
+    background: var(--primary-accent-color, #00a4dc);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.je-save-dock .je-save-dock-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+}
+.je-save-dock-icon {
+    font-size: 20px !important;
+    line-height: 1;
 }
 
 /* ---------------------------------------------------------------------------
-   Page-level color
+   Banners & Alerts
    --------------------------------------------------------------------------- */
-#JellyfinEnhancedPage {
-    color: #eee;
-}
-
-/* ---------------------------------------------------------------------------
-   Help link button in header
-   --------------------------------------------------------------------------- */
-.je-help-link {
-    margin-left: 2em;
-}
-
-/* ---------------------------------------------------------------------------
-   Tab bar wrapper
-   --------------------------------------------------------------------------- */
-.je-tab-bar {
-    margin-bottom: 1em;
-}
-
-/* (duplicate #settingsSearchContainer > div already declared above) */
-.je-search-icon {
-    position: absolute;
-    left: 0.6em;
-    top: 50%;
-    transform: translateY(-50%);
-    color: rgba(255,255,255,0.4);
-    pointer-events: none;
-    font-size: 1.1em;
-}
-
-/* ---------------------------------------------------------------------------
-   File Transformation warning banner  (#fileTransformationWarning is shown/hidden by JS)
-   --------------------------------------------------------------------------- */
-#fileTransformationWarning {
-    margin-bottom: 1em;
-    padding: 1em 1.2em;
-    background-color: rgba(255, 165, 0, 0.15);
-    border: 1px solid rgba(255, 165, 0, 0.5);
+.je-info-banner, .je-info-banner-inline, .je-info-banner-inline-center, .je-info-banner-compact,
+.je-note-banner, .je-danger-banner, .je-purple-banner, .je-mobile-banner, .je-splash-info-banner, .je-dep-banner {
     border-radius: 8px;
-    color: #ffcc00;
-    font-size: 0.95em;
-    line-height: 1.5;
-    position: relative;
-}
-.je-ft-warning-title {
-    font-size: 1.05em;
-}
-.je-ft-warning-link {
-    color: #ffa500;
-    text-decoration: underline;
-}
-.je-ft-warning-code {
-    background: rgba(255,255,255,0.1);
-    padding: 2px 5px;
-    border-radius: 3px;
-}
-.je-ft-warning-actions {
-    margin-top: 0.8em;
     display: flex;
-    gap: 0.6em;
-}
-.je-ft-warning-btn {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,165,0,0.4);
-    color: #ffcc00;
-    padding: 4px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85em;
-}
-
-/* ---------------------------------------------------------------------------
-   Collapsible details sections  (used throughout all tabs)
-   --------------------------------------------------------------------------- */
-.je-details-section {
-    margin-bottom: 1em;
-    background-color: rgba(255,255,255,0.05);
-    padding: 1em;
-    border-radius: 5px;
-}
-.je-details-section > summary {
-    cursor: pointer;
-    font-weight: bold;
-}
-.je-details-body {
-    padding-top: 1em;
-}
-
-/* ---------------------------------------------------------------------------
-   Checkbox containers — standard bottom margin
-   --------------------------------------------------------------------------- */
-.checkboxContainer {
-    margin-bottom: 0.5em;
-}
-
-/* ---------------------------------------------------------------------------
-   fieldDescription spacing variants
-   Use je-field-desc-sm/md/lg/xl for bottom-margin only.
-   Add je-field-desc-small-text for the 0.8em font-size variant.
-   --------------------------------------------------------------------------- */
-.je-field-desc-sm  { margin-bottom: 0.5em; }
-.je-field-desc-md  { margin-bottom: 1em; }
-.je-field-desc-lg  { margin-bottom: 1.5em; }
-.je-field-desc-xl  { margin-bottom: 2em; }
-
-/* Small font (0.8em) — combine with a spacing class as needed */
-/* .je-field-desc-small-text available if needed: font-size: 0.8em */
-
-/* Convenience combos used in the HTML */
-.je-field-desc-sm-font-lg  { margin-bottom: 1.5em; font-size: 0.8em; }
-.je-field-desc-sm-font-xl  { margin-bottom: 2em;   font-size: 0.8em; }
-
-/* Top-margin only variant */
-.je-field-desc-mt    { margin-top: 1em; }
-.je-field-desc-mt-sm { margin-top: 0.5em; }
-
-/* ---------------------------------------------------------------------------
-   Spacing utilities — margin-top / margin-bottom helpers
-   --------------------------------------------------------------------------- */
-/* Top margin */
-.je-mt-sm  { margin-top: 0.5em; }
-.je-mt-md  { margin-top: 1em; }
-.je-mt-lg  { margin-top: 1.5em; }
-.je-mt-xl  { margin-top: 2em; }
-
-/* Bottom margin */
-.je-mb-sm  { margin-bottom: 0.5em; }
-.je-mb-md  { margin-bottom: 1em; }
-.je-mb-lg  { margin-bottom: 1.5em; }
-.je-mb-xl  { margin-bottom: 2em; }
-
-/* Legacy aliases kept for HTML compatibility */
-.je-input-mt       { margin-top: 1em; }
-.je-input-mb       { margin-bottom: 1em; }
-.je-input-mb-sm    { margin-bottom: 0.5em; }
-.je-checkbox-mt    { margin-top: 1em; }
-.je-checkbox-mt-2  { margin-top: 2em; margin-bottom: 0.5em; }
-.je-checkbox-mb-1  { margin-bottom: 1em; }
-.je-checkbox-mb-2  { margin-bottom: 2em; }
-.je-checkbox-mb-075 { margin-bottom: 0.75em; }
-.je-checkbox-mb-15 { margin-bottom: 1.5em; }
-.je-select-mb      { margin-bottom: 1.5em; }
-.je-apply-section  { margin-top: 2em; }
-.je-label-mb       { margin-bottom: 2em; }
-
-/* ---------------------------------------------------------------------------
-   Tags sub-fieldset
-   --------------------------------------------------------------------------- */
-.je-tags-fieldset {
-    margin-top: 1em;
-    padding: 2em;
-    border-radius: 20px;
-    border-color: #ffffff25;
-}
-
-
-.je-rating-label {
-    line-height: 1.2em;
-    align-self: flex-start;
-}
-
-/* ---------------------------------------------------------------------------
-   Divider sections — shared border pattern
-   --------------------------------------------------------------------------- */
-/* Bottom-border dividers */
-.je-icon-section,
-.je-section-panel {
-    margin-bottom: 2em;
-    padding-bottom: 1.5em;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-}
-/* Top-border dividers */
-.je-extras-divider,
-.je-custom-links-section {
-    margin-top: 2em;
-    padding-top: 1.5em;
-    border-top: 1px solid rgba(255,255,255,0.1);
-}
-
-/* ---------------------------------------------------------------------------
-   Shortcuts section
-   --------------------------------------------------------------------------- */
-.je-section-h4 { margin-top: 0; }
-.je-shortcut-add-row {
-    display: flex;
-    gap: 1em;
-    align-items: flex-end;
-}
-.je-shortcut-add-row > div { flex: 1; }
-.je-shortcut-add-btn {
-    top: 10px;
-}
-#shortcut-error-comment {
-    color: #ffdddd;
-    font-size: 0.9em;
-    margin-top: 0.75em;
-    background-color: rgba(220, 53, 69, 0.2);
-    padding: 0.5em;
-    border-radius: 4px;
-    border-left: 3px solid #dc3545;
-}
-.je-shortcut-list {
-    display: flex;
-    flex-direction: column;
-    margin-top: 1em;
-}
-.je-field-desc-mt {
-    margin-top: 1em;
-}
-
-/* ---------------------------------------------------------------------------
-   Info / note / warning banners
-   All banners share a base shape. Color and spacing vary per modifier.
-   --------------------------------------------------------------------------- */
-
-/* Shared base */
-.je-info-banner,
-.je-info-banner-inline,
-.je-info-banner-inline-center,
-.je-info-banner-compact,
-.je-note-banner,
-.je-danger-banner,
-.je-purple-banner,
-.je-mobile-banner,
-.je-splash-info-banner {
+    gap: 15px;
+    padding: 14px 20px;
+    margin: 10px 0;
+    align-items: center;
     border-left-width: 4px;
     border-left-style: solid;
-    border-radius: 4px;
-    display: flex;
-    gap: 1em;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
+.je-info-banner-row { display: flex; align-items: flex-start; gap: 15px; }
 
-/* Blue — info */
-.je-info-banner,
-.je-info-banner-inline,
-.je-info-banner-inline-center,
-.je-info-banner-compact,
-.je-splash-info-banner {
-    background-color: rgba(255,255,255,0.05);
-    border-left-color: #00a4dc;
+.je-info-banner, .je-info-banner-inline, .je-info-banner-inline-center, .je-info-banner-compact, .je-splash-info-banner {
+    background-color: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 10%, transparent);
+    border-left-color: var(--primary-accent-color, #00a4dc);
 }
-/* The non-inline variant has a slightly stronger tint */
-.je-info-banner {
-    background-color: rgba(0,164,220,0.1);
+.je-note-banner, .je-mobile-banner, .je-dep-banner {
+    background-color: rgba(255,193,7,0.1); border-left-color: #ffc107;
 }
-
-/* Yellow — note / mobile */
-.je-note-banner,
-.je-mobile-banner {
-    background-color: rgba(255,193,7,0.1);
-    border-left-color: #ffc107;
-}
-
-/* Red — danger */
 .je-danger-banner {
-    background-color: rgba(220,53,69,0.1);
-    border-left-color: #dc3545;
+    background-color: rgba(220,53,69,0.15); border-left-color: #ff6b6b;
 }
-
-/* Purple — Seerr affiliation */
 .je-purple-banner {
-    background-color: rgba(100,50,150,0.08);
-    border-left-color: #9b59b6;
+    background-color: rgba(155,89,182,0.15); border-left-color: #9b59b6;
 }
 
-/* Padding variants */
-.je-info-banner,
-.je-info-banner-inline,
-.je-info-banner-inline-center,
-.je-purple-banner,
-.je-mobile-banner {
-    padding: 1em 1.5em;
-}
-.je-info-banner-compact,
-.je-note-banner,
-.je-danger-banner,
-.je-splash-info-banner {
-    padding: 0.5em 1em;
-}
-
-/* Margin variants */
-.je-info-banner                { margin-top: 1em; }
-.je-info-banner-inline,
-.je-info-banner-inline-center,
-.je-purple-banner              { margin: 1.5em 0; }
-.je-mobile-banner              { margin: 1em 0; }
-.je-info-banner-compact,
-.je-note-banner,
-.je-danger-banner              { margin: 0 0 1.5em 0; }
-.je-splash-info-banner         { margin: 2em 0 0.5em 0; }
-
-/* Alignment variants */
-.je-info-banner-inline,
-.je-mobile-banner              { align-items: flex-start; }
-.je-info-banner-inline-center,
-.je-info-banner-compact,
-.je-note-banner,
-.je-danger-banner,
-.je-purple-banner,
-.je-splash-info-banner         { align-items: center; }
-
-/* Row inside non-flex banners */
-.je-info-banner-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 1em;
-}
-
-/* Icons */
-.je-info-icon,
-.je-bottom-info-icon {
-    color: #00a4dc;
-    font-size: 24px;
-    margin-top: 2px;
-    flex-shrink: 0;
-}
-.je-info-icon-sm {
-    color: #00a4dc;
-    font-size: 18px;
-    margin-top: 2px;
-    flex-shrink: 0;
-}
-.je-note-icon,
-.je-mobile-icon {
-    color: #ffc107;
-    font-size: 18px;
-    flex-shrink: 0;
-}
-.je-mobile-icon { margin-top: 2px; }
-.je-danger-icon {
-    color: #dc3545;
-    font-size: 18px;
-    flex-shrink: 0;
-}
-.je-purple-icon {
-    color: #9b59b6;
-    font-size: 18px;
-    flex-shrink: 0;
-}
+.je-info-icon, .je-bottom-info-icon, .je-info-icon-sm { color: var(--primary-accent-color, #00a4dc); font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.je-note-icon, .je-mobile-icon, .je-dep-banner-icon { color: #ffc107; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.je-danger-icon { color: #ff6b6b; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.je-purple-icon { color: #9b59b6; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.je-hidden { display: none !important; }
 
 /* ---------------------------------------------------------------------------
-   Elsewhere tab
+   Search Highlight Utilities
    --------------------------------------------------------------------------- */
-.je-elsewhere-checkbox {
-    margin-bottom: 2em;
-}
-.je-elsewhere-label {
-    line-height: 1.2em;
-    align-self: flex-start;
-}
-.je-api-row {
+.je-search-hidden { display: none !important; }
+
+/* In search mode the form becomes a flex column so tab-contents
+   whose tab name itself matches the query can hoist to the top via
+   order: -1 — searching "elsewhere" should surface the Elsewhere
+   tab above other tabs that merely mention "Elsewhere" in service-
+   status labels. Outside search mode, only a single tab-content is
+   active and the form's default block flow is fine. */
+#JellyfinEnhancedForm.je-search-mode {
     display: flex;
-    align-items: center;
-    gap: 1em;
-    margin-left: -1em;
+    flex-direction: column;
+    gap: 20px;
 }
-.je-api-input {
-    flex-grow: 1;
+#JellyfinEnhancedForm.je-search-mode > .jellyfin-tab-content.je-tab-name-match {
+    order: -1;
 }
-.je-status-indicator {
-    transition: color 0.3s ease;
+.je-search-match {
+    background-color: rgba(255,200,0,0.35);
+    color: #fff;
+    border-radius: 4px;
+    padding: 0 3px;
+    box-shadow: 0 0 0 1px rgba(255,200,0,0.25);
+    /* box-decoration-break: clone keeps the highlight inline with surrounding
+       text across line wraps, so the rest of the description doesn't get
+       pushed to a new line when a short match lands at line start. */
+    display: inline;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
 }
-.je-textarea-tall   { display: block; height: 10vh !important; }
-.je-textarea-medium { display: block; height: 8vh !important; }
-.je-textarea-large  { display: block; height: 12vh !important; }
-.je-h3-mt    { margin-top: 1em; }
-.je-h3-mt-lg { margin-top: 2.5em; }
-
-/* ---------------------------------------------------------------------------
-   Jellyseerr tab
-   --------------------------------------------------------------------------- */
-.je-seerr-label { margin-bottom: 5px; }
-
-/* je-seerr-details shares the same shape as je-details-section */
-.je-seerr-details {
-    margin: 2em 0;
-    background-color: rgba(255,255,255,0.05);
-    padding: 1em;
-    border-radius: 5px;
-}
-.je-seerr-details > summary {
-    cursor: pointer;
+.je-search-match-active {
+    background-color: rgba(255,165,0,0.85);
+    box-shadow: 0 0 0 2px rgba(255,165,0,0.5);
+    color: #000;
     font-weight: bold;
 }
-.je-validation-result { margin-top: 0.8em; }
-/* je-input-mb is defined in spacing utilities above */
-
-/* ---------------------------------------------------------------------------
-   Auto movie request — custom settings panel
-   --------------------------------------------------------------------------- */
-#autoMovieRequestCustomSettings {
-    margin-bottom: 1.5em;
-    padding: 1em;
-    background-color: rgba(255,255,255,0.03);
-    border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.1);
-}
-.je-custom-settings-row {
+.je-search-tab-label {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: var(--primary-accent-color, #00a4dc);
     margin-bottom: 1em;
-}
-/* je-custom-settings-label and je-trigger-label are identical */
-.je-custom-settings-label,
-.je-trigger-label {
-    display: block;
-    margin-bottom: 0.5em;
-    font-weight: 500;
-}
-.je-trigger-section {
-    margin-bottom: 1.5em;
-}
-.je-quality-mode-section {
-    margin-bottom: 1.5em;
-    margin-top: 1.5em;
-}
-.je-minutes-input {
-    width: 100px;
-    padding: 0.5em;
-    border: 1px solid #555;
-    border-radius: 4px;
-}
-.je-minutes-label { margin-left: 0.5em; }
-
-/* ---------------------------------------------------------------------------
-   Watchlist memory retention
-   --------------------------------------------------------------------------- */
-.je-retention-input {
-    width: 100px;
-}
-.je-retention-list {
-    margin: 0.5em 0;
-    padding-left: 1.5em;
-}
-.je-retention-list li {
-    margin-bottom: 0.3em;
+    padding-bottom: 0.5em;
+    border-bottom: 2px solid var(--je-border);
+    grid-column: 1 / -1;
 }
 
 /* ---------------------------------------------------------------------------
-   Blocked users panel
-   --------------------------------------------------------------------------- */
-#blockedUsersContainer {
-    padding: 0.5em 0;
-    max-height: 300px;
-    overflow-y: auto;
-}
-.je-blocked-user-row {
-    margin-bottom: 0.3em;
-}
-#blockedUsersScrollHint {
-    text-align: center;
-    font-size: 0.75em;
-    opacity: 0.45;
-    margin-top: 0.3em;
-    pointer-events: none;
-}
-.je-import-btn {
-    max-width: 300px;
-}
-
-/* ---------------------------------------------------------------------------
-   *arr tab
-   --------------------------------------------------------------------------- */
-.je-arr-hr {
-    border-color: rgba(255,255,255,0.1);
-    margin: 1.5em 0;
-}
-.je-arr-bazarr-container {
-    margin-top: 1em;
-    margin-bottom: 2em;
-}
-.je-arr-mappings-section {
-    margin-top: 1em;
-}
-.je-arr-mappings-label {
-    margin-bottom: 5px;
-}
-.je-arr-validate-section {
-    margin-top: 1em;
-}
-.je-arr-checkbox-mt {
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-}
-
-/* ---------------------------------------------------------------------------
-   Calendar tab
-   --------------------------------------------------------------------------- */
-.je-calendar-checkbox-mt {
-    margin-top: 1.5em;
-    margin-bottom: 0.5em !important;
-}
-
-/* ---------------------------------------------------------------------------
-   Extras tab — screenshot previews
-   --------------------------------------------------------------------------- */
-.je-screenshot-img {
-    max-width: 400px;
-    margin: 0.5em 0;
-    border-radius: 10px;
-}
-.je-screenshot-img-sm {
-    max-width: 200px;
-    margin: 0.5em 0;
-    border-radius: 10px;
-}
-/* je-extras-divider is defined in the divider sections block above */
-
-/* ---------------------------------------------------------------------------
-   Custom Branding section
+   Custom Branding Dropzones
    --------------------------------------------------------------------------- */
 .je-branding-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.5em;
-    margin-bottom: 1.5em;
-    align-items: stretch;
+    gap: 20px;
+    margin: 15px 0;
 }
 .je-branding-card {
+    background: var(--je-overlay-soft);
+    border: 1px solid var(--je-border);
+    border-radius: 12px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 0.5em;
-    height: 100%;
+    gap: 8px;
 }
-.je-branding-label-bold {
-    font-weight: bold;
-    color: #eee;
-}
-.je-branding-label {
-    color: #eee;
-}
-.je-branding-meta {
-    font-size: 0.75em;
-    color: #999;
-    margin-bottom: 0.5em;
-}
+.je-branding-label-bold { font-weight: bold; color: #fff; font-size: 1.05em; }
+.je-branding-label { color: #aaa; font-size: 0.85em; }
+.je-branding-meta { font-size: 0.8em; color: #aaa; margin-bottom: 10px; }
 .je-branding-dropzone {
-    position: relative;
-    background: rgba(255,255,255,0.05);
-    border: 2px dashed rgba(0,164,220,0.5);
-    border-radius: 4px;
-    padding: 0.85em;
+    background: var(--je-surface-1);
+    border: 2px dashed color-mix(in srgb, var(--primary-accent-color, #00a4dc) 50%, transparent);
+    border-radius: 8px;
+    padding: 20px;
     text-align: center;
     cursor: pointer;
-    min-height: 170px;
+    min-height: 180px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    flex: 1;
+    transition: all 0.2s;
+    position: relative;
 }
-.je-branding-placeholder {
-    margin-bottom: 0.5em;
+.je-branding-dropzone:hover {
+    background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 5%, transparent);
+    border-color: var(--primary-accent-color, #00a4dc);
 }
-.je-branding-placeholder-icon {
-    font-size: 32px;
-    color: #00a4dc;
-}
-.je-branding-preview {
-    max-height: 80px;
-    border-radius: 4px;
-    display: block;
-    margin: 0 auto .5em auto;
-}
-.je-branding-dimensions {
-    font-size: 0.75em;
-    color: #00a4dc;
-    margin-top: 0.25em;
-}
-.je-branding-hint {
-    font-size: 0.9em;
-    color: #ccc;
-}
-.je-branding-maxsize {
-    font-size: 0.8em;
-    color: #999;
-    margin-top: 0.5em;
-}
-.je-branding-status {
-    font-size: 0.8em;
-    margin-top: 0.5em;
-    color: #999;
-}
-.je-branding-delete {
-    display: none;
+.je-branding-file-input {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(0,0,0,0.4) !important;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.je-branding-preview { max-height: 100px; border-radius: 4px; margin-bottom: 10px; }
+.je-branding-placeholder { color: var(--je-text-dim); font-size: 2em; }
+.je-branding-placeholder-icon { font-size: 2.5em; }
+.je-branding-status { font-size: 0.85em; margin-top: 5px; min-height: 1em; }
+.je-branding-dimensions { font-size: 0.75em; opacity: 0.5; margin-top: 3px; }
+.je-branding-hint { font-size: 0.85em; opacity: 0.7; margin-top: 5px; }
+.je-branding-maxsize { font-size: 0.7em; opacity: 0.4; margin-top: 2px; }
+.je-branding-delete {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: var(--je-overlay-hard) !important;
     border: none;
     color: #fff !important;
     padding: 6px !important;
-    border-radius: 4px !important;
+    border-radius: 50% !important;
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
 }
-.je-branding-delete:hover {
-    background: #c62828 !important;
-}
-.je-branding-file-input {
-    display: none;
-}
+.je-branding-delete:hover { background: #e53935 !important; }
+
+/* ---------------------------------------------------------------------------
+   Misc / Utility
+   --------------------------------------------------------------------------- */
+.je-help-link { border-radius: 20px; }
+.je-api-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.je-api-row .je-api-input { flex-grow: 1; width: auto; margin: 0; }
+.je-textarea-tall { height: 120px !important; }
+.je-textarea-medium { height: 90px !important; }
+.je-textarea-large { height: 160px !important; }
+.je-bold-link { font-weight: bold; color: #fff; text-decoration: underline; }
+.je-kbd { background: var(--je-surface-3); padding: 3px 6px; border-radius: 4px; font-family: monospace; }
+.je-screenshot-img { max-width: 100%; border-radius: 8px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.je-screenshot-img-sm { max-width: 60%; }
+.je-loading-text { opacity: 0.5; }
+
 .je-copy-code-wrapper {
     position: relative;
+    margin: 10px 0;
 }
 .je-copy-html-btn {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    background-color: rgba(255,255,255,0.1);
-    border: none;
-    padding: 4px 8px;
-    min-width: 80px;
-    transition: color 0.3s;
-}
-.je-copy-icon {
-    font-size: 16px;
-    margin-right: 4px;
-    vertical-align: middle;
-}
-.je-copy-btn-text {
-    vertical-align: middle;
+    top: 5px;
+    right: 5px;
+    font-size: 0.75em !important;
+    padding: 4px 10px !important;
+    z-index: 2;
 }
 .je-code-pre {
-    background-color: rgba(0,0,0,0.3);
-    padding: 1em;
-    border-radius: 4px;
-    white-space: pre-wrap;
-    word-break: break-all;
+    background: var(--je-overlay-hard);
+    padding: 12px 75px 12px 16px !important; /* Pad right so copy btn doesn't overlap text */
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.85em;
     margin: 0;
-    font-family: 'Courier New', Courier, monospace;
-}
-.je-custom-tabs-link {
-    text-decoration: underline;
-}
-.je-custom-tabs-ol {
-    margin: 1em 0;
-    padding-left: 1.5em;
-}
-.je-custom-tabs-li {
-    margin-bottom: 0.5em;
-}
-.je-custom-tabs-p {
-    margin: 0 0 0.5em 0;
-}
-.je-custom-tabs-p-mt {
-    margin: 0.5em 0;
-}
-.je-custom-tabs-h4 {
-    margin: 0 0 0.5em 0;
-}
-/* je-custom-tabs-desc-mt removed — not used in HTML */
-
-/* ---------------------------------------------------------------------------
-   Bookmarks / Hidden Content — how-to list
-   --------------------------------------------------------------------------- */
-.je-howto-list {
-    margin: 0.5em 0;
-    padding-left: 1.5em;
-}
-.je-howto-li {
-    margin-bottom: 0.5em;
-}
-.je-kbd {
-    background: rgba(255,255,255,0.1);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: monospace;
-}
-.je-icon-inline {
-    font-size: 16px;
-    vertical-align: middle;
-}
-.je-icon-inline-colored {
-    font-size: 16px;
-    vertical-align: middle;
-    color: #00d4ff;
+    border: 1px solid var(--je-border);
 }
 
-/* ---------------------------------------------------------------------------
-   Splash screen section
-   --------------------------------------------------------------------------- */
-/* je-splash-info-banner is defined in the banners section above */
-
-/* ---------------------------------------------------------------------------
-   Arr instance card — JS-created elements
-   --------------------------------------------------------------------------- */
-.arr-instance-summary-disabled {
-    color: #e5a00d;
+.je-apply-hint {
+    text-align: center;
+    color: #888;
     font-size: 0.85em;
-    margin-right: 0.5em;
-}
-.je-mappings-summary {
-    cursor: pointer;
-    color: rgba(255,255,255,0.6);
-    font-size: 0.9em;
-}
-/* Both containers share the same top margin */
-.je-mappings-details,
-.je-instance-url-container,
-.je-instance-api-container { margin-top: 0.5em; }
-
-.je-instance-api-row {
-    display: flex;
-    align-items: center;
-    gap: 1em;
-}
-/* Both inputs take remaining flex space */
-.je-instance-api-input,
-.je-instance-name-input { flex: 1; }
-
-/* ---------------------------------------------------------------------------
-   Dep banner (created by JS)
-   --------------------------------------------------------------------------- */
-.je-dep-banner {
-    background-color: rgba(255, 165, 0, 0.15);
-    border-left: 4px solid #ff9800;
-    border-radius: 4px;
-    padding: 0.8em 1.2em;
-    margin: 0.5em 0 1.5em 0;
-    display: flex;
-    align-items: center;
-    gap: 0.8em;
-}
-.je-dep-banner.je-hidden {
-    display: none !important;
-}
-.je-dep-banner-icon {
-    color: #ff9800;
-    font-size: 22px;
-    flex-shrink: 0;
-}
-.je-dep-banner-text {
-    font-size: 0.9em;
-}
-.je-dep-banner-hint {
-    opacity: 0.8;
-    font-size: 0.9em;
+    margin-top: 10px;
+    grid-column: 1 / -1;
 }
 
-/* ---------------------------------------------------------------------------
-   Corrupt banner (created by JS)
-   --------------------------------------------------------------------------- */
-.arr-corrupt-banner {
-    padding: 0.8em 1em;
-    margin-bottom: 1em;
-    border: 1px solid #dc3545;
-    background: rgba(220,53,69,0.15);
-    border-radius: 4px;
-}
-.je-corrupt-detail {
-    margin-top: 0.3em;
-}
-.je-corrupt-reset-btn {
-    margin-top: 0.6em;
-}
+.je-ft-warning-title { display: block; margin-bottom: 0.3em; }
+.je-ft-warning-link { color: #ff6b6b; text-decoration: underline; }
+.je-ft-warning-code { background: var(--je-surface-3); padding: 2px 6px; border-radius: 3px; }
+.je-ft-warning-actions { display: flex; gap: 10px; margin-top: 10px; }
 
-/* ---------------------------------------------------------------------------
-   Validation result divs (shown/hidden by JS — only base styles here)
-   --------------------------------------------------------------------------- */
-#seerrMappingsValidationResult {
-    margin-top: 0.8em;
-    padding: 0.8em 1em;
-    border-radius: 4px;
-    font-size: 0.9em;
-    line-height: 1.5;
-}
-/* je-validation-issue removed — not used in HTML (JS uses inline styles for validation result items) */
-
-/* je-custom-links-section is defined in the divider sections block above */
-.je-custom-links-input { margin-bottom: 1em; }
-.je-custom-links-desc  { margin-top: 0.5em; }
-
-/* ---------------------------------------------------------------------------
-   Details section summary (cursor + bold)
-   — same as .je-details-section > summary, kept as standalone for JS-created elements
-   --------------------------------------------------------------------------- */
-.je-details-section-summary {
-    cursor: pointer;
-    font-weight: bold;
-}
-
-/* ---------------------------------------------------------------------------
-   Permission audit table
-   --------------------------------------------------------------------------- */
-.je-audit-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85em;
-    margin-top: 0.5em;
-}
-.je-audit-table th {
-    text-align: left;
-    padding: 6px 10px;
-    border-bottom: 1px solid rgba(255,255,255,0.15);
-    color: rgba(255,255,255,0.6);
-    font-weight: 600;
+.dep-hint-text {
+    color: #ffc107;
     font-size: 0.8em;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
+    margin-top: 4px;
+    display: block;
+    font-style: italic;
 }
-.je-audit-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-    vertical-align: middle;
-}
-.je-audit-table tr:last-child td { border-bottom: none; }
-.je-audit-row-ok td { opacity: 0.6; }
+.dep-required-icon { vertical-align: middle; margin-left: 6px; }
 
-.je-audit-row-warn td:nth-child(2),
-.je-audit-row-ok td:nth-child(2) {
-    white-space: nowrap;
+/* ---------------------------------------------------------------------------
+   Docs tab — embedded live docs iframe
+   Breaks out of the form's 1400px max-width so the iframe goes edge-to-edge.
+   Keeps only a thin single-line header with the title + "open in new tab".
+   --------------------------------------------------------------------------- */
+/* Docs tab takes the full width of the form (matching the tab bar above it)
+   and uses a single-row header + tall iframe with no fieldset chrome. */
+#docs.jellyfin-tab-content.active {
+    display: block;
+    width: 100%;
+    padding: 0;
+    gap: 0;
+}
+.je-docs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    background: rgba(22, 22, 22, 0.94);
+    border-bottom: 1px solid var(--je-border);
+}
+.je-docs-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 1.05em;
+    color: var(--primary-accent-color, #00a4dc);
+}
+.je-docs-title .je-legend-icon { font-size: 20px !important; }
+.je-docs-open-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--primary-accent-color, #00a4dc);
+    text-decoration: none;
+    font-size: 0.9em;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+.je-docs-open-link:hover { background: var(--je-surface-2); text-decoration: underline; }
+.je-docs-open-link .material-icons { font-size: 16px !important; }
+.je-docs-iframe {
+    width: 100%;
+    height: calc(100vh - 170px);
+    min-height: 520px;
+    border: 0;
+    background: #0f0f0f;
+    display: block;
+}
+
+/* ---------------------------------------------------------------------------
+   Setting description visibility toggle
+   --------------------------------------------------------------------------- */
+body.je-hide-descriptions .je-setting-description { display: none !important; }
+body.je-hide-descriptions .je-overview-intro,
+body.je-hide-descriptions .je-tab-intro { display: none !important; }
+
+/* Per-service action row on the *arr tab — [+ Add instance] [Validate Mappings] */
+.je-arr-action-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 8px;
+}
+.je-arr-action-row > button { width: fit-content; margin: 0; }
+.je-desc-toggle { display: inline-flex; align-items: center; gap: 8px; }
+/* On/Off pill — replaces the earlier Material-icons indicator that
+   vanished on themes whose raised-button fill matches the accent.
+   Pill is a small chip that flips its background between a muted
+   neutral (OFF) and the user's accent color (ON). Always reads
+   against the button because the chip has its own fill. */
+.je-desc-toggle-state {
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    color: currentColor;
+    line-height: 1.4;
+    min-width: 28px;
     text-align: center;
 }
-.je-audit-username { font-weight: 500; }
-.je-audit-status-ok {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.8em;
-    font-weight: 600;
-    background: rgba(82,181,75,0.15);
-    color: #52b54b;
+.je-desc-toggle[aria-pressed="true"] .je-desc-toggle-state {
+    background: var(--primary-accent-color, #00a4dc);
+    color: #fff;
 }
-.je-audit-status-warn {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.8em;
-    font-weight: 600;
-    background: rgba(229,160,13,0.15);
-    color: #e5a00d;
+.je-desc-toggle-off { opacity: 0.85; }
+.je-desc-toggle-off:hover { opacity: 1; }
+
+/* ---------------------------------------------------------------------------
+   Collapsible info banners
+   When "Descriptions" is off, every .je-info-banner-inline(-center) folds
+   into a small clickable (i) next to its anchor (fieldset legend or the
+   checkbox label container). Clicking the icon expands the banner(s) in
+   place; clicking outside closes them. Banners inside a .je-setting-
+   description are re-surfaced via :has() without also revealing the plain
+   fieldDescription text in the same container.
+   --------------------------------------------------------------------------- */
+.je-banner-trigger {
+    display: none;
+    align-items: center;
+    vertical-align: middle;
+    margin-left: 6px;
+    padding: 2px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--primary-accent-color, #00a4dc);
+    cursor: pointer;
+    opacity: 0.75;
+    transition: opacity 0.15s ease, background 0.15s ease;
 }
-.je-audit-status-unlinked {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.8em;
-    font-weight: 600;
-    background: rgba(102,102,102,0.15);
-    color: #999;
+.je-banner-trigger:hover { opacity: 1; }
+.je-banner-trigger[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 20%, transparent);
+    opacity: 1;
 }
-.je-audit-issues { margin: 0; padding: 0; list-style: none; }
-.je-audit-issues li {
-    padding: 4px 0;
-    color: rgba(255,255,255,0.7);
-    font-size: 0.9em;
-}
-.je-audit-issues li::before {
-    content: '• ';
-    color: #e5a00d;
+.je-banner-trigger .material-icons {
+    font-size: 18px !important;
+    line-height: 1;
+    vertical-align: middle;
 }
 
-tr:has(.je-audit-status-unlinked) .je-audit-issues li::before {
-    color: #999;
+body.je-hide-descriptions .je-banner-trigger { display: inline-flex; }
+body.je-hide-descriptions .je-banner-managed { display: none; }
+body.je-hide-descriptions .je-banner-managed.je-banner-open { display: block; }
+
+/* Per-banner gating: hide the banner + surface the trigger icon when the
+   gating parent checkbox (.je-setting-description[data-desc-for="X"] where
+   #X is a checkbox) is unchecked. Same UX as descriptions-off, but scoped
+   to a single banner group rather than global. */
+.je-banner-managed.je-banner-parent-off:not(.je-banner-open) { display: none; }
+.je-banner-managed.je-banner-parent-off.je-banner-open { display: block; }
+.je-banner-trigger.je-banner-parent-off { display: inline-flex; }
+
+/* Surface the parent description container only for sections whose banner
+   is explicitly opened, and suppress the plain description text within. */
+body.je-hide-descriptions .je-setting-description:has(.je-banner-managed.je-banner-open) {
+    display: block !important;
+}
+body.je-hide-descriptions .je-setting-description:has(.je-banner-managed.je-banner-open) > .fieldDescription {
+    display: none;
 }
 
+/* ---------------------------------------------------------------------------
+   Gated help blocks
+   --------------------------------------------------------------------------- */
+[data-gated-by][hidden] { display: none !important; }
+
+/* ---------------------------------------------------------------------------
+   Dynamic descriptions — hide install-only content when the relevant
+   integration plugin is detected on the server. Body classes are toggled
+   by checkInstalledPlugins() in configPage.html.
+   --------------------------------------------------------------------------- */
+body.je-has-customtabs   .je-needs-customtabs   { display: none !important; }
+body.je-has-pluginpages  .je-needs-pluginpages  { display: none !important; }
+body.je-has-introskipper .je-needs-introskipper { display: none !important; }
+
+/* Media Tags rows — pair an Enable toggle with its Position dropdown on
+   one row so the relationship is obvious without an "Advanced" accordion.
+   Falls to a stacked layout on narrow viewports so the dropdown doesn't
+   shrink unreadably. */
+.je-tag-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.je-tag-row > .checkboxContainer {
+    flex: 1 1 200px;
+    margin: 0;
+    min-width: 0;
+}
+.je-tag-row > .je-tag-position {
+    flex: 0 0 auto;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.je-tag-row > .je-tag-position .inputLabel {
+    font-size: 0.85em;
+    margin: 0;
+    white-space: nowrap;
+}
+.je-tag-row > .je-tag-position .emby-select {
+    min-width: 140px;
+}
+@media (max-width: 600px) {
+    .je-tag-row > .je-tag-position {
+        flex: 1 1 100%;
+    }
+}
+
+/* Custom Tabs auto-manage toggles — hidden by default. Revealed only when
+   the Custom Tabs plugin is detected AND its config schema matches what
+   Jellyfin Enhanced knows how to write. JS sets `je-has-customtabs-compat`
+   on body after a successful schema validation. */
+.je-customtabs-automanage { display: none; }
+body.je-has-customtabs-compat .je-customtabs-automanage { display: block; }
+
+/* "✓ Plugin detected" badges — hidden by default, revealed when the
+   matching body class is present. Authors place
+   <span class="je-installed-badge" data-plugin="customtabs">…</span>
+   wherever a positive confirmation makes sense. */
+.je-installed-badge { display: none; }
+body.je-has-customtabs   .je-installed-badge[data-plugin="customtabs"]   { display: inline-flex; }
+body.je-has-pluginpages  .je-installed-badge[data-plugin="pluginpages"]  { display: inline-flex; }
+body.je-has-introskipper .je-installed-badge[data-plugin="introskipper"] { display: inline-flex; }
+body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { display: inline-flex; }
+body.je-has-filetransformation .je-installed-badge[data-plugin="filetransformation"] { display: inline-flex; }
+.je-installed-badge {
+    align-items: center;
+    gap: 4px;
+    color: #4caf50;
+    font-size: 0.85em;
+    font-weight: 500;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.je-installed-badge .material-icons { font-size: 16px !important; }
+
+/* ---------------------------------------------------------------------------
+   Permission Audit (Seerr → Permission Audit)
+   Card-list layout that reflows cleanly on narrow viewports instead of a
+   three-column table. Status shown via color-coded chips + a left border
+   accent per card. OK users collapsed behind a <details> as name pills.
+   --------------------------------------------------------------------------- */
 .je-audit-summary {
-    font-size: 0.95em;
-    color: rgba(255,255,255,0.5);
-    margin-bottom: 0.75em;
+    font-size: 0.92em;
+    color: var(--je-text-strong);
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 10%, transparent);
+    border-left: 3px solid var(--primary-accent-color, #00a4dc);
+    border-radius: 6px;
+    line-height: 1.4;
 }
-.je-shortcut-flex      { flex: 1; }
-.je-blocked-count      { opacity: 0.7; font-weight: normal; }
-.je-elsewhere-subtitle { font-size: 0.9em; }
-.je-loading-text       { opacity: 0.5; }
-.je-bold-link          { text-decoration: underline; font-weight: bolder; }
+.je-audit-summary-title { font-weight: 600; }
+.je-audit-summary-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.je-audit-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.82em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.je-audit-chip .material-icons { font-size: 14px !important; }
+.je-audit-chip-warn     { background: rgba(229,160,13,0.18); color: #e5a00d; }
+.je-audit-chip-unlinked { background: rgba(158,158,158,0.18); color: #bdbdbd; }
+.je-audit-chip-ok       { background: rgba(82,181,75,0.18); color: #52b54b; }
 
-/* Screenshot details/summary */
-.je-screenshot-details  { margin: 0.5em 0; }
-.je-screenshot-summary  { cursor: pointer; color: #00a4dc; }
+.je-audit-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 12px 0;
+}
+.je-audit-card {
+    background: var(--je-surface-1);
+    border: 1px solid var(--je-border);
+    border-left-width: 3px;
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.je-audit-card-warn     { border-left-color: #e5a00d; }
+.je-audit-card-unlinked { border-left-color: #9e9e9e; }
+.je-audit-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.je-audit-card-user {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    min-width: 0;
+    word-break: break-word;
+}
+.je-audit-card-user .material-icons {
+    font-size: 18px !important;
+    color: var(--je-text-subtle);
+}
+.je-audit-card-issues {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.je-audit-card-issues li {
+    color: var(--je-text-strong);
+    font-size: 0.88em;
+    padding-left: 18px;
+    position: relative;
+    line-height: 1.4;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+}
+.je-audit-card-issues li::before {
+    content: '•';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    color: #e5a00d;
+    font-weight: 700;
+}
+.je-audit-card-unlinked .je-audit-card-issues li::before { color: #9e9e9e; }
+
+.je-audit-ok-section { margin-top: 6px; }
+.je-audit-ok-section > summary {
+    cursor: pointer;
+    color: var(--je-text-muted);
+    font-size: 0.88em;
+    padding: 6px 2px;
+    user-select: none;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.je-audit-ok-section > summary::-webkit-details-marker { display: none; }
+.je-audit-ok-section > summary::before {
+    content: 'chevron_right';
+    font-family: 'Material Icons';
+    font-size: 18px;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+.je-audit-ok-section[open] > summary::before { transform: rotate(90deg); }
+.je-audit-ok-section > summary:hover { color: var(--je-text-strong); }
+.je-audit-ok-names {
+    list-style: none;
+    margin: 8px 0 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.je-audit-ok-names li {
+    padding: 3px 10px;
+    background: rgba(82,181,75,0.12);
+    color: #52b54b;
+    border-radius: 999px;
+    font-size: 0.82em;
+    word-break: break-word;
+}
+.je-audit-error {
+    color: #f44336;
+    padding: 10px 14px;
+    background: rgba(244,67,54,0.08);
+    border-left: 3px solid #f44336;
+    border-radius: 6px;
+}
+
+@media (max-width: 540px) {
+    .je-audit-summary { padding: 8px 10px; font-size: 0.88em; }
+    .je-audit-card { padding: 10px 12px; }
+    .je-audit-card-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .je-audit-chip { font-size: 0.78em; padding: 2px 8px; }
+}
+
+/* Responsive utility */
+#keyboard .configSection > div[style*="display:flex"] {
+    flex-wrap: wrap;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .je-save-dock {
+        flex-direction: column;
+        bottom: 10px;
+        width: 90%;
+        border-radius: 20px;
+        padding: 12px;
+    }
+    .je-save-dock .je-save-dock-btn { width: 100%; justify-content: center; }
+    .je-tab-bar { padding: 10px 0; }
+    .jellyfin-tab-button { padding: 8px 14px; }
+    .je-tab-icon { font-size: 18px !important; }
+
+    /* The tab content grid uses minmax(480px, 1fr) for desktop multi-column.
+       On viewports narrower than the 480px min, the grid forces horizontal
+       overflow (descriptions get cut off, page scrolls sideways). Collapse
+       to single column under 768px so cards stack cleanly. */
+    .jellyfin-tab-content.active {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    /* Grid items default to `min-width: auto` (their intrinsic content width).
+       Banners and fieldsets containing flex layouts have a wide intrinsic min
+       (the longest line of unwrapped text), which forces grid items wider than
+       the column even with `1fr`. Set `min-width: 0` so items honor the column
+       width and let their text/contents wrap inside. */
+    .jellyfin-tab-content.active > * {
+        min-width: 0;
+    }
+
+    /* Flex children default to min-width: auto, which equals their intrinsic
+       content width. Inside info banners, that means the inner text div refuses
+       to shrink below the longest line — pushing the whole page wider than the
+       viewport. Force `min-width: 0` so flex children honor their parent's
+       width, and force long words/URLs to break instead of overflowing. */
+    .je-info-banner > *,
+    .je-info-banner-inline > *,
+    .je-info-banner-inline-center > *,
+    .je-info-banner-compact > *,
+    .je-note-banner > *,
+    .je-mobile-banner > *,
+    .je-danger-banner > *,
+    .je-purple-banner > *,
+    .je-dep-banner > *,
+    .je-splash-info-banner > *,
+    .je-info-banner-row > * {
+        min-width: 0;
+    }
+    .fieldDescription, .je-setting-description {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    /* Same anti-overflow for the form itself in case any ancestor's min-width
+       forces it wide; let it shrink to viewport. */
+    #JellyfinEnhancedForm {
+        min-width: 0;
+    }
+
+    /* Header row: title + the two action buttons + search. The action
+       buttons ("Docs & Help" / "Descriptions") were wrapping to 3 lines
+       and overflowing the viewport. Shrink padding + let the title row
+       wrap so buttons drop below if needed. */
+    .sectionTitleContainer { gap: 8px; }
+    .sectionTitleContainer h2 { font-size: 1.4em; flex: 1 1 100%; }
+    .je-header-title-row {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .je-help-link, .je-desc-toggle {
+        padding: 6px 10px;
+        font-size: 0.85em;
+    }
+    #settingsSearchContainer {
+        flex: 1 1 100%;
+        max-width: 100%;
+    }
+}
+
+/* Sub-mobile: tighten typography + ensure the buttons stay tappable.
+   Labels stay visible (no icon fallback anymore after the header icons
+   were removed — an icon-less button with a hidden label would render
+   as an empty square). 44×44 min size meets WCAG 2.1 AAA. */
+@media (max-width: 420px) {
+    .je-help-link,
+    .je-desc-toggle {
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 0.82em;
+    }
+    .sectionTitleContainer h2 { font-size: 1.25em; }
+}
+
+#settingsSearchClear { display: none; }
+#settingsSearchClear.show { display: flex; }
+
+/* =========================================================================
+   Timing preview buttons (Playback tab → Shortcuts Panel & Toast Timing)
+   Lets admins preview how long the shortcuts panel or a toast stays visible
+   with the current (unsaved) values from the form inputs.
+   ========================================================================= */
+
+/* Row wrapper lives OUTSIDE .je-setting-description so the preview buttons
+   stay visible even when "Descriptions" is toggled off (which hides every
+   .je-setting-description via body.je-hide-descriptions). Padding-left
+   mirrors the description indent so it lines up visually when descriptions
+   are on; margin-top collapses a bit when the preceding description is
+   hidden so it doesn't look stranded. */
+.je-timing-test-row {
+    padding-left: 14px;
+    margin: 2px 0 12px 0;
+}
+body.je-hide-descriptions .je-timing-test-row {
+    margin-top: 8px;
+}
+.je-timing-test-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+}
+.je-timing-test-btn .material-icons {
+    font-size: 1.1em;
+}
+
+/* Full-screen preview of the shortcuts panel autoclose timing — card styled
+   to match the real panel in js/enhanced/ui.js: solid rgb(24,24,24) bg,
+   subtle white border, 16px radius, centered on screen, backdrop blur. */
+.je-preview-panel-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--je-overlay-hard);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: je-preview-fade-in 0.2s ease;
+}
+.je-preview-panel-card {
+    background: rgb(24, 24, 24);
+    color: #fff;
+    border: 1px solid var(--je-border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    min-width: 350px;
+    max-width: min(520px, 90vw);
+    max-height: 90vh;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    font-size: 14px;
+    font-family: inherit;
+}
+.je-preview-panel-title {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin: 0 0 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--primary-accent-color, #00a4dc);
+}
+.je-preview-panel-body {
+    line-height: 1.5;
+    margin: 0 0 18px 0;
+    opacity: 0.92;
+}
+.je-preview-panel-countdown {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-weight: 700;
+    color: var(--primary-accent-color, #00a4dc);
+    white-space: nowrap;
+}
+.je-preview-panel-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Bottom-right toast preview — mirrors the real JE.toast() in js/enhanced/ui.js:
+   same position, dark gradient bg, accent border, backdrop blur, and
+   slide-in-from-right transition (not a keyframe animation). */
+.je-preview-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    transform: translateX(calc(100% + 20px));
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(40, 40, 40, 0.9));
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 8px;
+    z-index: 99999;
+    font-size: clamp(13px, 2vw, 16px);
+    font-weight: 500;
+    text-shadow: -1px -1px 10px black;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid var(--primary-accent-color, rgba(255, 255, 255, 0.1));
+    max-width: clamp(280px, 80vw, 350px);
+    transition: transform 0.3s ease-out;
+    pointer-events: none;
+}
+.je-preview-toast.je-shown {
+    transform: translateX(0);
+}
+
+@keyframes je-preview-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .je-preview-panel-overlay { animation: none; }
+    .je-preview-toast { transition: none; }
+}

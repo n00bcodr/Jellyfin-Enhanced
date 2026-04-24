@@ -145,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _sessionManager = sessionManager;
         }
 
-        private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false)
+        private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
@@ -227,9 +227,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // User not found — attempt just-in-time import into Jellyseerr
+            // User not found — attempt just-in-time import into Jellyseerr.
+            // `allowAutoImport=false` is passed by read-only callers (e.g. the
+            // Permission Audit endpoint, which advertises itself as a non-
+            // mutating check). Without this guard, clicking "Run Audit" with
+            // auto-import enabled would silently create Seerr users as a side
+            // effect — including users an admin may have deliberately kept out
+            // of Seerr (but not yet added to the blocklist).
             var importDefinite = false;
-            if (config.JellyseerrAutoImportUsers)
+            if (allowAutoImport && config.JellyseerrAutoImportUsers)
             {
                 _logger.Info($"User not found in Jellyseerr. Attempting just-in-time import for Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)}...");
                 var (importedUser, definite) = await TryAutoImportJellyseerrUser(jellyfinUserId, urls, httpClient);
@@ -754,10 +760,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             foreach (var jfUser in jellyfinUsers)
             {
                 var userId = jfUser.Id.ToString("N");
-                var seerrUser = await GetJellyseerrUser(userId, true);
+                // allowAutoImport: false — audit must be read-only and must not
+                // create Seerr users as a side effect.
+                var seerrUser = await GetJellyseerrUser(userId, bypassCache: true, allowAutoImport: false);
 
                 if (seerrUser == null)
                 {
+                    // Null has 5 distinct causes: user genuinely unlinked, blocked
+                    // by JE config, every Seerr URL HTTP-failed, every URL threw,
+                    // or JSON shape mismatch. The UI renders them all as "Not
+                    // linked", which misleads admins during transient Seerr
+                    // outages. Leave a breadcrumb in the server log so the cause
+                    // can be correlated with the preceding WARN/ERROR lines
+                    // that GetJellyseerrUser already emits.
+                    _logger.Info($"[audit] user {jfUser.Username} ({userId}): GetJellyseerrUser returned null — see preceding log lines for cause");
                     results.Add(new
                     {
                         jellyfinUsername = jfUser.Username,

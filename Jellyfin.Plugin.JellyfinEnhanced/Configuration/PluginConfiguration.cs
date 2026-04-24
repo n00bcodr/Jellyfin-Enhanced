@@ -182,6 +182,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             BookmarksEnabled = true;
             BookmarksUsePluginPages = false;
             BookmarksUseCustomTabs = false;
+            BookmarksAutoCreateCustomTab = false;
+            BookmarksCustomTabJeOwned = false;
 
             // Icon Settings
             UseIcons = true;
@@ -201,6 +203,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DownloadsPageEnabled = false;
             DownloadsUsePluginPages = false;
             DownloadsUseCustomTabs = false;
+            DownloadsAutoCreateCustomTab = false;
+            DownloadsCustomTabJeOwned = false;
             DownloadsPagePollingEnabled = true;
             DownloadsPollIntervalSeconds = 30;
             DownloadsPageShowIssues = false;
@@ -211,6 +215,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarPageEnabled = false;
             CalendarUsePluginPages = false;
             CalendarUseCustomTabs = false;
+            CalendarAutoCreateCustomTab = false;
+            CalendarCustomTabJeOwned = false;
             CalendarFirstDayOfWeek = "Monday";
             CalendarTimeFormat = "5pm/5:30pm";
             CalendarHighlightFavorites = false;
@@ -223,6 +229,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentEnabled = false;
             HiddenContentUsePluginPages = false;
             HiddenContentUseCustomTabs = false;
+            HiddenContentAutoCreateCustomTab = false;
+            HiddenContentCustomTabJeOwned = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -388,6 +396,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool BookmarksEnabled { get; set; }
         public bool BookmarksUsePluginPages { get; set; }
         public bool BookmarksUseCustomTabs { get; set; }
+        /// <summary>
+        /// When true (and the Custom Tabs plugin is detected with a recognized
+        /// config schema), Jellyfin Enhanced will manage the corresponding
+        /// Custom Tabs entry: creating it when <see cref="BookmarksUseCustomTabs"/>
+        /// is enabled and removing it when disabled. The toggle in the UI is
+        /// only shown when both conditions hold; it is silently ignored otherwise.
+        /// </summary>
+        public bool BookmarksAutoCreateCustomTab { get; set; }
+
+        /// <summary>
+        /// True if Jellyfin Enhanced created the corresponding Custom Tabs entry
+        /// (set when sync ADDs an entry; cleared when sync REMOVES one). Sync uses
+        /// this flag to ensure it never deletes a Custom Tabs entry the admin
+        /// created manually. Hidden field — no UI; managed entirely by saveConfig.
+        /// </summary>
+        public bool BookmarksCustomTabJeOwned { get; set; }
 
         // Icon Settings
         public bool UseIcons { get; set; }
@@ -407,6 +431,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DownloadsPageEnabled { get; set; }
         public bool DownloadsUsePluginPages { get; set; }
         public bool DownloadsUseCustomTabs { get; set; }
+        public bool DownloadsAutoCreateCustomTab { get; set; }
+        public bool DownloadsCustomTabJeOwned { get; set; }
         public bool DownloadsPagePollingEnabled { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
         public bool DownloadsPageShowIssues { get; set; }
@@ -417,6 +443,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarPageEnabled { get; set; }
         public bool CalendarUseCustomTabs { get; set; }
         public bool CalendarUsePluginPages { get; set; }
+        public bool CalendarAutoCreateCustomTab { get; set; }
+        public bool CalendarCustomTabJeOwned { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
         public string CalendarTimeFormat { get; set; }
         public bool CalendarHighlightFavorites { get; set; }
@@ -429,6 +457,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentEnabled { get; set; }
         public bool HiddenContentUsePluginPages { get; set; }
         public bool HiddenContentUseCustomTabs { get; set; }
+        public bool HiddenContentAutoCreateCustomTab { get; set; }
+        public bool HiddenContentCustomTabJeOwned { get; set; }
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.
