@@ -9,8 +9,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 {
     /// <summary>
     /// Shared best-effort URL guard for outbound requests to user-supplied Sonarr/Radarr URLs.
-    /// Blocks non-HTTP schemes, known cloud metadata DNS names, and loopback/unspecified IPs.
-    /// Private/LAN IPs are intentionally allowed because arr services run on local networks.
+    /// Blocks non-HTTP schemes, known cloud metadata DNS names, and unspecified IPs.
+    /// Loopback (127.0.0.1 / ::1) and private/LAN IPs are intentionally allowed because
+    /// arr services commonly run on the same host or local network as Jellyfin.
     /// All callers must be admin-gated — this is not a full SSRF control.
     /// </summary>
     public static class ArrUrlGuard
@@ -27,8 +28,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             IPAddress.Parse("100.100.100.200"),
             IPAddress.Parse("169.254.170.2"),
             IPAddress.Parse("fd00:ec2::254"),
-            IPAddress.Loopback,
-            IPAddress.IPv6Loopback,
             IPAddress.Any,
             IPAddress.IPv6Any
         };
