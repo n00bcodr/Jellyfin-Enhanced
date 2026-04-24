@@ -2320,7 +2320,18 @@
                 if (tabButtonsContainer) tabButtonsContainer.style.display = 'none';
                 tabContents.forEach(tc => {
                     const btn = document.querySelector('.jellyfin-tab-button[data-tab="' + tc.id + '"]');
-                    const label = btn ? btn.textContent.trim() : tc.id;
+                    // btn.textContent would include Material Icons font
+                    // ligature names ("dashboard", "view_list", …) which
+                    // render as glyphs but read as raw strings in
+                    // textContent. That leaked into tab headers like
+                    // "dashboardOverview" / "view_listPages". Clone the
+                    // button, strip out the icon elements, then read.
+                    let label = tc.id;
+                    if (btn) {
+                        const clone = btn.cloneNode(true);
+                        clone.querySelectorAll('i.material-icons, img').forEach(el => el.remove());
+                        label = clone.textContent.trim() || tc.id;
+                    }
                     const labelEl = document.createElement('div');
                     labelEl.className = 'je-search-tab-label';
                     labelEl.textContent = label;
