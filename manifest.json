@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "- Use helper for external links & add fallback\n - Add Seerr permission audit & enforce perms\n - Fix Lists in Documentation\n - Add 404 page, assets, and fix doc links\n - Add mdx-truly-sane-lists to MkDocs dependencies\n - chore(ci)(deps): bump the github-actions group with 3 updates ([#567](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/567))\n - Update elsewhere.js\n - Settings UI Redesign ([#569](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/569))\n - Change Radarr Icon and z-Index so that backbutton and profile picture are visible\n - Remove loopback addresses from SSRF\n - Fix Active Streams widget styling\n - Update configPage.html\n - fix: resolve multiple requests page polling\n - refactor(config): reorganise settings layout and simplify feature-toggle styling",
+        "targetAbi": "10.11.0.0",
+        "version": "11.8.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/11.8.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "BACDFE1D28CCA909B9CCC093536B049F",
+        "timestamp": "2026-04-25T17:24:53"
+      },
+      {
         "changelog": "- fix: hidden users could not see their own reviews ([#548](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/548))\n - Fix avatar image source for requests page ([#551](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/551))\n - Clear caches on video change; simplify item ID lookup\n - Update .gitignore\n - feat: Add Active Streams widget and session API\n - chore(ci)(deps): bump trufflesecurity/trufflehog from 3.94.2 to 3.94.3 in the github-actions group ([#553](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/553))\n - chore(ci)(deps): bump actions/upload-pages-artifact from 4.0.0 to 5.0.0 ([#554](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/554))\n - Refactor config UI, stream image & IDs\n - Add configurable pause screen delay\n - Hide IP for non-admins and remove app version\n - feat: multi-instance Sonarr/Radarr support ([#559](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/559))\n - Handle ratings when 0\n - Use <img> icons and themeable ARR dropdown\n - Add external configPage.css and refactor HTML\n - Missed translation key\n - Improve Active Streams Icons\n - Add admin broadcast to Active Streams\n - Improve logging: user display & polling dedup\n - Stop polling when page is not visible\n - Avoid redundant user-settings POSTs\n - Show all instances in calendar labels\n - Docs: Add multi-instance ARR and Active Streams\n - Update JellyfinEnhancedController.cs",
         "targetAbi": "10.11.0.0",
         "version": "11.7.0.0",
