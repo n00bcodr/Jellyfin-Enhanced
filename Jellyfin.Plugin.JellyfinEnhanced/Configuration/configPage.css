@@ -821,45 +821,19 @@
     font-size: 0.9em;
 }
 
-/* Feature-enabler (master-toggle) checkboxes — accent left-border +
+/* Feature-enabler (main-feature) checkboxes — accent left-border +
    gradient bg + bold label to signal "this toggle masters the feature
-   that this fieldset exists for."
-
-   Criterion for adding an ID here:
-     1. The toggle sits in a fieldset whose whole purpose IS that one
-        feature (e.g., a "Bookmarks" fieldset for bookmarksEnabled, a
-        "Seerr Connection Setup" fieldset for jellyseerrEnabled). If
-        the fieldset bundles unrelated settings (e.g., "UI Preferences",
-        "External Links", "UI Tweaks"), the toggle should stay plain.
-     2. OR the toggle gates an entire tab via SECTION_DEPS (currently
-        only jellyseerrEnabled, which also satisfies #1).
-
-   :has() requires Chrome 105+ / Safari 15.4+ / Firefox 121+; older
-   browsers fall back to the plain checkbox look. */
-.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
-.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
-.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
-.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled),
-.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled),
-.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
-.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
-.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
-.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) {
+   that this fieldset exists for." Add je-main-feature to the
+   checkboxContainer in HTML to opt in. */
+.configSection > .je-main-feature {
     background: linear-gradient(90deg,
         color-mix(in srgb, var(--primary-accent-color, #00a4dc) 14%, transparent) 0%,
         color-mix(in srgb, var(--primary-accent-color, #00a4dc) 2%, transparent) 100%);
     border-color: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 22%, transparent);
     border-left: 3px solid var(--primary-accent-color, #00a4dc);
+    margin-bottom: 12px !important;
 }
-.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled) label > span,
-.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled) label > span {
+.configSection > .je-main-feature label > span {
     font-weight: 600;
     font-size: 1.02em;
     color: #fff;
@@ -873,21 +847,6 @@
 .configSection > .checkboxContainer:has(> label > input[id$="UseCustomTabs"]) {
     background: rgba(155, 89, 182, 0.05);
     border-left: 2px solid rgba(155, 89, 182, 0.4);
-}
-
-/* Small visual breather between a master-enabler and its options, so
-   the grouping reads at a glance. */
-.configSection > .checkboxContainer:has(> label > input#downloadsPageEnabled),
-.configSection > .checkboxContainer:has(> label > input#calendarPageEnabled),
-.configSection > .checkboxContainer:has(> label > input#bookmarksEnabled),
-.configSection > .checkboxContainer:has(> label > input#hiddenContentEnabled),
-.configSection > .checkboxContainer:has(> label > input#jellyseerrEnabled),
-.configSection > .checkboxContainer:has(> label > input#elsewhereEnabled),
-.configSection > .checkboxContainer:has(> label > input#randomButtonEnabled),
-.configSection > .checkboxContainer:has(> label > input#arrLinksEnabled),
-.configSection > .checkboxContainer:has(> label > input#arrTagsSyncEnabled),
-.configSection > .checkboxContainer:has(> label > input#showUserReviews) {
-    margin-bottom: 12px !important;
 }
 
 .fieldDescription {
@@ -1002,6 +961,9 @@
     display: flex;
     flex-direction: column;
     gap: 15px;
+}
+.je-details-body > .je-setting-description {
+    margin-top: -2em;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1142,7 +1104,6 @@
     position: fixed;
     bottom: 30px;
     left: 50%;
-    transform: translateX(-50%);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1989,4 +1950,11 @@ body.je-hide-descriptions .je-timing-test-row {
 @media (prefers-reduced-motion: reduce) {
     .je-preview-panel-overlay { animation: none; }
     .je-preview-toast { transition: none; }
+}
+
+div#seerrMappingsValidationResult,
+div#sonarrMappingsValidationResult,
+div#radarrMappingsValidationResult,
+div#bazarrMappingsValidationResult {
+    padding: 10px;
 }

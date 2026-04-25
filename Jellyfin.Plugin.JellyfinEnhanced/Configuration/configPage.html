@@ -141,7 +141,7 @@
                         <div class="configSection">
                             <div class="checkboxContainer"><label><input id="showWatchProgress" is="emby-checkbox" type="checkbox"/><span>Show watch progress</span></label></div>
                             <div class="je-setting-description" data-desc-for="showWatchProgress">
-                                <div class="fieldDescription">Show a progress bar on poster cards for partially-watched items.</div>
+                                <div class="fieldDescription">Show watch progress for items in item details page.</div>
                             </div>
 
                             <div class="inputContainer">
@@ -169,7 +169,7 @@
 
                             <div class="checkboxContainer"><label><input id="showFileSizes" is="emby-checkbox" type="checkbox"/><span>Show file sizes</span></label></div>
                             <div class="je-setting-description" data-desc-for="showFileSizes">
-                                <div class="fieldDescription">Display the file size of each video file on item detail pages.</div>
+                                <div class="fieldDescription">Display the file size of each item on item detail pages or collections pages.</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="showAudioLanguages" is="emby-checkbox" type="checkbox"/><span>Show available audio languages on item detail page</span></label></div>
@@ -239,7 +239,9 @@
                                 <div class="fieldDescription">Show TMDB and Rotten Tomatoes ratings on poster cards.</div>
                             </div>
 
-                            <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
+                            <div class="je-tag-row">
+                                <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
+                            </div>
                             <div class="je-setting-description" data-desc-for="peopleTagsEnabled">
                                 <div class="fieldDescription">Display age and birthplace information for cast members on item detail pages.</div>
                             </div>
@@ -313,9 +315,9 @@
                     <fieldset>
                         <legend class="sectionTitle">Random Button</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="randomButtonEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Random Button</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="randomButtonEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Random Button</span></label></div>
                             <div class="je-setting-description" data-desc-for="randomButtonEnabled">
-                                <div class="fieldDescription">Adds a "Play Random" button to the Jellyfin header that picks an item at random from the user's accessible libraries and plays it.</div>
+                                <div class="fieldDescription">Adds a "Play Random" button to the Jellyfin header that opens a random item from the user's accessible libraries.</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="randomUnwatchedOnly" is="emby-checkbox" type="checkbox"/><span>Show unwatched only</span></label></div>
@@ -330,7 +332,22 @@
 
                             <div class="checkboxContainer"><label><input id="randomIncludeShows" is="emby-checkbox" type="checkbox"/><span>Include shows</span></label></div>
                             <div class="je-setting-description" data-desc-for="randomIncludeShows">
-                                <div class="fieldDescription">Include TV episodes in the random pool.</div>
+                                <div class="fieldDescription">Include TV Shows in the random pool.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Default Language</legend>
+                        <div class="configSection">
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="DefaultLanguage">Default UI Language</label>
+                                <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
+                                    <option value="">System Default</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="DefaultLanguage">
+                                <div class="fieldDescription">Sets the default language for all users. Users can still override this in their own settings.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -383,7 +400,7 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="sectionTitle">Subtitles &amp; Language</legend>
+                        <legend class="sectionTitle">Subtitles</legend>
                         <div class="configSection">
                             <div class="checkboxContainer"><label><input id="disableCustomSubtitleStyles" is="emby-checkbox" type="checkbox"/><span>Disable Custom Subtitle Styles by default</span></label></div>
                             <div class="je-setting-description" data-desc-for="disableCustomSubtitleStyles">
@@ -423,15 +440,6 @@
                                 <div class="fieldDescription">Default subtitle font applied to new users; users can override in their personal settings.</div>
                             </div>
 
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="DefaultLanguage">Default UI Language</label>
-                                <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
-                                    <option value="">System Default</option>
-                                </select>
-                            </div>
-                            <div class="je-setting-description" data-desc-for="DefaultLanguage">
-                                <div class="fieldDescription">Sets the default language for all users. Users can still override this in their own settings.</div>
-                            </div>
                         </div>
                     </fieldset>
 
@@ -480,7 +488,7 @@
                         <div class="configSection">
                             <div class="je-info-banner-inline">
                                 <div class="je-info-banner-row">
-                                    <i class="material-icons je-info-icon">info</i>
+                                    <i class="material-icons je-info-icon">bookmark_add</i>
                                     <div>
                                         <h4 class="je-custom-tabs-h4">How to Use Bookmarks:</h4>
                                         <ul class="fieldDescription je-howto-list">
@@ -491,7 +499,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="bookmarksEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Bookmarks Feature</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="bookmarksEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Bookmarks Feature</span></label></div>
                             <div class="je-setting-description" data-desc-for="bookmarksEnabled">
                                 <div class="fieldDescription je-field-desc-lg">Save custom bookmarks/timestamps while watching videos to quickly jump back to your favorite scenes or moments.</div>
                             </div>
@@ -556,13 +564,13 @@
                         <div class="configSection">
                             <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
                                 <div class="je-info-banner-row">
-                                    <i class="material-icons je-info-icon">info</i>
+                                    <i class="material-icons je-info-icon">visibility</i>
                                     <div>
                                         <strong>Hidden Content</strong> lets users hide individual items from Home and Library views and browse them from a dedicated Hidden Content page. Per-user state with a server-wide enable/disable kill switch.
                                     </div>
                                 </div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Hidden Content</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Hidden Content</span></label></div>
                             <div class="je-setting-description" data-desc-for="hiddenContentEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
                             </div>
@@ -627,7 +635,7 @@
                         <div class="configSection">
                             <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
                                 <div class="je-info-banner-row">
-                                    <i class="material-icons je-info-icon">info</i>
+                                    <i class="material-icons je-info-icon">download</i>
                                     <div>
                                         <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Seerr.
                                         <div id="requestsPageRequirementsLine" style="display: none; margin-top: 10px;">
@@ -637,7 +645,7 @@
                                 </div>
                             </div>
 
-                            <div class="checkboxContainer"><label><input id="downloadsPageEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Requests Page</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="downloadsPageEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Requests Page</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsPageEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Adds a "Requests" link to the navigation showing active downloads and requests.</div>
                             </div>
@@ -729,7 +737,7 @@
                                 </div>
                             </div>
 
-                            <div class="checkboxContainer"><label><input id="calendarPageEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Calendar Page</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="calendarPageEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Calendar Page</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarPageEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Adds a "Calendar" link to the navigation showing upcoming releases from Sonarr/Radarr.</div>
                             </div>
@@ -834,7 +842,7 @@
                     <fieldset>
                         <legend class="sectionTitle">Seerr Connection Setup</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer">
+                            <div class="checkboxContainer je-main-feature">
                                 <label><input id="jellyseerrEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Seerr integration</span></label>
                             </div>
                             <div class="je-setting-description" data-desc-for="jellyseerrEnabled">
@@ -1267,7 +1275,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">download_for_offline</i>
                         <div>
-                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, and <strong>Bazarr</strong> instances. Each service gets its own box below — add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint. Each instance can be enabled, disabled, or removed independently.
+                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, and <strong>Bazarr</strong> instances.<br/>Each service gets its own box below — add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint. Each instance can be enabled, disabled, or removed independently.
                         </div>
                     </div>
 
@@ -1287,7 +1295,7 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/radarr-light-hybrid-light.svg" alt="">Radarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg" alt="">Radarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="radarrInstancesList">
                                 <div class="fieldDescription">Automated movie collection management and monitoring. Add one instance per Radarr server.</div>
@@ -1313,7 +1321,7 @@
                                 <input id="bazarrUrl" is="emby-input" name="bazarrUrl" type="text" placeholder="e.g., http://192.168.100.100:6767"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="bazarrUrl">
-                                <div class="fieldDescription">Note: this links to the main movies/series page — Bazarr does not support direct item-deep-links. If Bazarr sits behind an auth proxy (Authentik, Authelia, Cloudflare Access, etc.), put the INTERNAL address here (e.g. <code>http://bazarr:6767</code>) and use the URL Mappings below to redirect user-facing links to the public URL.</div>
+                                <div class="fieldDescription">Note: this links to the main movies/series page — Bazarr does not support direct item-deep-links.<br/>If Bazarr sits behind an auth proxy (Authentik, Authelia, Cloudflare Access, etc.), put the INTERNAL address here (e.g. <code>http://bazarr:6767</code>) and use the URL Mappings below to redirect user-facing links to the public URL.</div>
                             </div>
 
                             <div class="inputContainer">
@@ -1333,9 +1341,9 @@
                     <fieldset>
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">link</i>*arr UI Links</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="arrLinksEnabled" is="emby-checkbox" type="checkbox"/><span>Enable *arr Links on Detail Pages</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="arrLinksEnabled" is="emby-checkbox" type="checkbox"/><span>Enable *arr Links on Detail Pages</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrLinksEnabled">
-                                <div class="fieldDescription je-field-desc-xl">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. Admins only. If no URL is configured for a service above, links for that service are not shown.</div>
+                                <div class="fieldDescription je-field-desc-xl">Show Sonarr, Radarr, and Bazarr links of the items on item detail pages for quick access. <strong>Admins only</strong>.<br/>If no URL is configured for a service , links for that service are not shown.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showArrLinksAsText" is="emby-checkbox" type="checkbox"/><span>Show links as text</span></label></div>
                             <div class="je-setting-description" data-desc-for="showArrLinksAsText">
@@ -1343,7 +1351,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="arrLinksShowStatusSingle" is="emby-checkbox" type="checkbox"/><span>Show status badge for single-instance</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrLinksShowStatusSingle">
-                                <div class="fieldDescription je-field-desc-xl">When off (default), a single matching Sonarr/Radarr instance renders as a plain icon/text. When on, it also shows the episode count (e.g. 22/41) and a colored left border indicating download status. Multi-instance dropdowns always show this detail.</div>
+                                <div class="fieldDescription je-field-desc-xl">When off (default), a single matching Sonarr/Radarr instance renders as a plain icon/text.<br/>When on, it also shows the episode count (e.g. 22/41) and a colored left border indicating download status. Multi-instance dropdowns always show this detail.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -1351,7 +1359,7 @@
                     <fieldset>
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">label</i>Tags Sync</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="arrTagsSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Tags Sync</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="arrTagsSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Tags Sync</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrTagsSyncEnabled">
                                 <div class="fieldDescription je-field-desc-xl">
                                     Fetches all tags from Radarr and Sonarr instances defined above and adds them as Jellyfin tags.
@@ -1427,7 +1435,7 @@
                     <fieldset>
                         <legend class="sectionTitle">Elsewhere (Streaming Providers)</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="elsewhereEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Elsewhere</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="elsewhereEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Elsewhere</span></label></div>
                             <div class="je-setting-description" data-desc-for="elsewhereEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Adds an "Elsewhere" panel to item detail pages showing where the title is available on streaming services in the user's region (powered by TMDB watch-provider data).</div>
                             </div>
@@ -1471,7 +1479,7 @@
                                 <summary>Custom Branding</summary>
                                 <div class="je-details-body">
                                     <div class="inputContainer">
-                                        <label class="inputLabel" for="ElsewhereCustomBrandingText">Custom Branding Msg</label>
+                                        <label class="inputLabel" for="ElsewhereCustomBrandingText">Custom Branding Message</label>
                                         <input id="ElsewhereCustomBrandingText" is="emby-input" type="text" placeholder="e.g., Only available on My Server"/>
                                     </div>
                                         <div class="je-setting-description" data-desc-for="ElsewhereCustomBrandingText">
@@ -1490,9 +1498,9 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="sectionTitle">Reviews</legend>
+                        <legend class="sectionTitle">TMDB Reviews</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="showReviews" is="emby-checkbox" type="checkbox"/><span>Show TMDB Reviews</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="showReviews" is="emby-checkbox" type="checkbox"/><span>Show TMDB Reviews</span></label></div>
                             <div class="je-setting-description" data-desc-for="showReviews">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Requires TMDB API Key to be set</div>
                             </div>
@@ -1500,9 +1508,19 @@
                             <div class="je-setting-description" data-desc-for="reviewsExpandedByDefault">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="showUserReviews" is="emby-checkbox" type="checkbox"/><span>Enable User Written Reviews</span></label></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">User Reviews</legend>
+                        <div class="configSection">
+                            <div class="je-info-banner-inline je-banner-managed">
+                                <i class="material-icons je-info-icon" aria-hidden="true">info</i>
+                                <span class="fieldDescription">Completely independent of Elsewhere being enabled and TMDB Reviews being enabled</span>
+                            </div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="showUserReviews" is="emby-checkbox" type="checkbox"/><span>Enable User Written Reviews</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserReviews">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">Allows users to write reviews and rate items in the library.<br><strong>Completely independent of Elsewhere being enabled and TMDB Reviews being enabled</strong></div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Allows users to write reviews and rate items in the library.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="hideReviewsFromHiddenUsers" is="emby-checkbox" type="checkbox"/><span>Hide reviews from hidden users</span></label></div>
                             <div class="je-setting-description" data-desc-for="hideReviewsFromHiddenUsers">
@@ -1596,10 +1614,10 @@
 
                             <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.05); margin: 5px 0;">
 
-                            <div class="checkboxContainer"><label><input id="activeStreamsEnabled" is="emby-checkbox" type="checkbox"/><span>Active Streams Header Widget</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="activeStreamsEnabled" is="emby-checkbox" type="checkbox"/><span>Active Streams Header Widget</span></label></div>
                             <div class="je-setting-description" data-desc-for="activeStreamsEnabled">
                                 <div class="fieldDescription je-field-desc-md">
-                                    Adds a live stream counter to the header. Click it to open a panel showing who is currently playing, what they're watching, playback state, progress, and transcoding details. By default the widget is only visible to admin accounts.
+                                    Adds a live stream counter to the header. Click it to open a panel showing who is currently playing, what they're watching, playback state, progress, and transcoding details.<br/>By default the widget is only visible to admin accounts.
                                 </div>
                             </div>
                             <div id="activeStreamsAllUsersContainer" class="checkboxContainer"><label><input id="activeStreamsAllUsers" is="emby-checkbox" type="checkbox"/><span>Show widget to non-admins</span></label></div>
@@ -1609,7 +1627,7 @@
                     <fieldset>
                         <legend class="sectionTitle">External Links</legend>
                         <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="letterboxdEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Letterboxd Links</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="letterboxdEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Letterboxd Links</span></label></div>
                             <div class="je-setting-description" data-desc-for="letterboxdEnabled">
                                 <div class="fieldDescription je-field-desc-md">Adds Letterboxd links to item details page.</div>
                             </div>
@@ -1657,7 +1675,7 @@
                                 </div>
                             </div>
 
-                            <div class="checkboxContainer"><label><input id="enableCustomSplashScreen" is="emby-checkbox" type="checkbox"/><span>Enable Splash Screen Override</span></label></div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="enableCustomSplashScreen" is="emby-checkbox" type="checkbox"/><span>Enable Splash Screen Override</span></label></div>
                             <div class="je-setting-description" data-desc-for="enableCustomSplashScreen">
                                 <div class="fieldDescription">Replace Jellyfin's login splash background with a custom image URL specified below.</div>
                             </div>
@@ -5894,7 +5912,10 @@
             if (!serverModeCheckbox || !controls) return;
 
             if (localStorageFallbackContainer) {
-                localStorageFallbackContainer.style.display = serverModeCheckbox.checked ? 'none' : '';
+                var hide = serverModeCheckbox.checked ? 'none' : '';
+                localStorageFallbackContainer.style.display = hide;
+                var localStorageFallbackDesc = document.querySelector('[data-desc-for="enableTagsLocalStorageFallback"]');
+                if (localStorageFallbackDesc) localStorageFallbackDesc.style.display = hide;
             }
 
             if (!serverModeCheckbox.checked && localStorageFallbackCheckbox) {
@@ -5902,6 +5923,7 @@
             }
 
             controls.style.display = serverModeCheckbox.checked ? 'none' : '';
+            updateClearTagCachesQuickBtnVisibility();
         }
 
         // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)
@@ -6524,6 +6546,17 @@
             clearTagCachesQuickBtn.addEventListener('click', function() {
                 clearTagsCacheBtn.click();
             });
+        }
+
+        /**
+         * Syncs the "Clear all client tag caches" quick-action button visibility
+         * with the server-mode toggle — it's only relevant when server-side cache
+         * is disabled.
+         */
+        function updateClearTagCachesQuickBtnVisibility() {
+            var serverModeCheckbox = document.getElementById('tagCacheServerMode');
+            if (!clearTagCachesQuickBtn || !serverModeCheckbox) return;
+            clearTagCachesQuickBtn.style.display = serverModeCheckbox.checked ? 'none' : '';
         }
 
         /**
