@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "- fix(config): inject configPage.css via ApiClient.getUrl for reverse-proxy support ([#572](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/572))\n - Scope all generic Jellyfin class styles to JellyfinEnhancedPage\n - Update configPage.css",
+        "targetAbi": "10.11.0.0",
+        "version": "11.8.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/11.8.1.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "693803A202F9B2AD4FA0C5CBE90BF720",
+        "timestamp": "2026-04-26T21:11:26"
+      },
+      {
         "changelog": "- Use helper for external links & add fallback\n - Add Seerr permission audit & enforce perms\n - Fix Lists in Documentation\n - Add 404 page, assets, and fix doc links\n - Add mdx-truly-sane-lists to MkDocs dependencies\n - chore(ci)(deps): bump the github-actions group with 3 updates ([#567](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/567))\n - Update elsewhere.js\n - Settings UI Redesign ([#569](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/569))\n - Change Radarr Icon and z-Index so that backbutton and profile picture are visible\n - Remove loopback addresses from SSRF\n - Fix Active Streams widget styling\n - Update configPage.html\n - fix: resolve multiple requests page polling\n - refactor(config): reorganise settings layout and simplify feature-toggle styling",
         "targetAbi": "10.11.0.0",
         "version": "11.8.0.0",
