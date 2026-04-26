@@ -5322,7 +5322,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             if (nextEp.TryGetProperty("airDate", out var airDateProp))
                             {
-                                nextAirDate = airDateProp.GetString();
+                                nextAirDate = ConvertTmdbDateToIso(airDateProp.GetString());
                             }
                         }
                     }
@@ -5331,6 +5331,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         posterUrl = $"https://image.tmdb.org/t/p/w300{poster.GetString()}";
                     }
+
+                    // Apply timezone conversion to bare TMDB movie dates as well
+                    digitalReleaseDate = ConvertTmdbDateToIso(digitalReleaseDate);
+                    theatricalReleaseDate = ConvertTmdbDateToIso(theatricalReleaseDate);
+                    initialAirDate = ConvertTmdbDateToIso(initialAirDate);
 
                     return new TmdbEnrichmentResult
                     {
@@ -5386,6 +5391,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return (result.Title, result.Year, result.PosterUrl, result.DigitalReleaseDate, result.TheatricalReleaseDate, result.InitialAirDate, result.NextAirDate);
+        }
+
+        /// <summary>
+        /// Converts a TMDB bare date string (e.g., "2026-04-26") to an ISO 8601 timestamp
+        /// that accounts for the configured timezone offset.
+        /// TMDB stores air dates as US local dates (no timezone). For viewers in other timezones,
+        /// a show airing Sunday evening US time may actually air Monday local time.
+        /// This method interprets the bare date in the configured timezone and converts to UTC,
+        /// so the frontend's `new Date(dateStr)` correctly maps to the viewer's local day.
+        /// </summary>
+        private string? ConvertTmdbDateToIso(string? bareDate)
+        {
+            if (string.IsNullOrWhiteSpace(bareDate))
+                return bareDate;
+
+            // If already an ISO timestamp with timezone info, return as-is
+            if (bareDate.Contains("T") || bareDate.Contains("Z") || bareDate.Contains("+") || (bareDate.Length > 10 && bareDate[10] == 'T'))
+                return bareDate;
+
+            // TMDB stores air dates as bare dates (e.g. "2026-04-26") representing the
+            // local air date in the US Eastern timezone. Since TMDB dates follow US scheduling,
+            // we interpret them as 9 PM US Eastern and convert to UTC. The browser's local
+            // timezone then correctly maps the resulting UTC timestamp to the viewer's local day.
+            //
+            // Example: A show airing Sunday 9PM ET ("2026-04-26") -> UTC: 2026-04-27T01:00:00Z
+            // In NZ (UTC+12): Monday 1PM -> shows as "April 27" (correct)
+            // In US ET: Sunday 9PM -> shows as "April 26" (correct)
+
+            TimeZoneInfo tz;
+            try
+            {
+                tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+            }
+            catch
+            {
+                tz = TimeZoneInfo.Utc;
+            }
+
+            // Parse the bare date (e.g., "2026-04-26")
+            if (DateTime.TryParseExact(bareDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var localDate))
+            {
+                // Assume the show airs at 9 PM in the source timezone on that date
+                // This maps the TMDB date (which is a US local date) to a proper UTC timestamp
+                var localAirTime = localDate.AddHours(21); // 9 PM in source timezone
+                try
+                {
+                    var utcTime = TimeZoneInfo.ConvertTimeToUtc(localAirTime, tz);
+                    return utcTime.ToString("o"); // ISO 8601 with timezone
+                }
+                catch (Exception)
+                {
+                    // Fallback: treat as UTC
+                    return localAirTime.ToUniversalTime().ToString("o");
+                }
+            }
+
+            return bareDate;
         }
 
         private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
