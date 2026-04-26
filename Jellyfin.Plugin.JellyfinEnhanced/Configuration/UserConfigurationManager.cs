@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
@@ -12,11 +13,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private readonly string _configBaseDir;
         private readonly Logger _logger;
 
+        /// <summary>Per-(user, file) lock pool used to serialize RMW writers.</summary>
+        private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
+
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
             _configBaseDir = Path.Combine(appPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
             Directory.CreateDirectory(_configBaseDir);
             _logger = logger;
+        }
+
+        /// <summary>
+        /// Returns the lock object all writers to a given user file must
+        /// hold across an RMW sequence. Different files for the same user
+        /// have independent locks.
+        /// </summary>
+        public object GetUserFileLock(string userId, string fileName)
+        {
+            var normalized = userId?.Replace("-", "") ?? string.Empty;
+            var key = normalized + "|" + (fileName ?? string.Empty);
+            return _userFileLocks.GetOrAdd(key, _ => new object());
         }
 
         private string GetUserConfigDir(string userId)
@@ -41,7 +57,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// Loads user configuration from a JSON file.
+        /// <summary>
+        /// Lenient read for read-only paths. Returns <c>new T()</c> for
+        /// missing, empty, or unparseable files. Use
+        /// <see cref="GetUserConfigurationStrict{T}"/> on the write path.
+        /// </summary>
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
         {
             var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
@@ -77,12 +97,78 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return new T();
         }
 
-        /// Saves user configuration to a JSON file.
-        public void SaveUserConfiguration(string userId, string fileName, object config)
+        /// <summary>
+        /// Strict read for the write path of an RMW. A missing file is
+        /// the legitimate first-write case and returns <c>new T()</c>.
+        /// An existing-but-empty/whitespace/literal-<c>null</c> file is
+        /// treated as corruption (the shape a crashed write would
+        /// leave): backed up to <c>{path}.corrupt-{yyyyMMddHHmmss}</c>
+        /// and <see cref="InvalidDataException"/> thrown so the caller
+        /// doesn't silently overwrite damaged data.
+        /// </summary>
+        /// <exception cref="InvalidDataException">File exists but is unreadable or empty.</exception>
+        public T GetUserConfigurationStrict<T>(string userId, string fileName) where T : new()
         {
+            var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+            if (!File.Exists(configPath)) return new T();
+
+            string json;
             try
             {
-                var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+                json = File.ReadAllText(configPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to read '{fileName}' for user '{userId}': {ex.Message}");
+                BackupCorruptFile(configPath);
+                throw;
+            }
+
+            if (string.IsNullOrWhiteSpace(json)
+                || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
+            {
+                _logger.Error($"'{fileName}' for user '{userId}' exists but is empty or literal-null; refusing to overwrite.");
+                BackupCorruptFile(configPath);
+                throw new InvalidDataException($"'{fileName}' is empty or literal null; refusing to overwrite.");
+            }
+
+            try
+            {
+                var parsed = JsonConvert.DeserializeObject<T>(json);
+                if (parsed == null)
+                {
+                    _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
+                    BackupCorruptFile(configPath);
+                    throw new InvalidDataException($"'{fileName}' deserialized to null.");
+                }
+                return parsed;
+            }
+            catch (InvalidDataException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to parse '{fileName}' for user '{userId}': {ex.Message}");
+                BackupCorruptFile(configPath);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Atomically writes the user's JSON config via temp file +
+        /// <see cref="File.Move(string,string,bool)"/>, so a crash
+        /// mid-write leaves the canonical file untouched. Callers
+        /// performing RMW must hold <see cref="GetUserFileLock"/>.
+        /// </summary>
+        public void SaveUserConfiguration(string userId, string fileName, object config)
+        {
+            string configPath = string.Empty;
+            string tempPath = string.Empty;
+            try
+            {
+                configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+                tempPath = configPath + ".tmp";
 
                 JToken token;
                 if (config is System.Text.Json.JsonElement jsonElement)
@@ -96,12 +182,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
 
                 var jsonToSave = JsonConvert.SerializeObject(token, Formatting.Indented);
-                File.WriteAllText(configPath, jsonToSave);
+
+                File.WriteAllText(tempPath, jsonToSave);
+                File.Move(tempPath, configPath, overwrite: true);
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to save user configuration for user '{userId}' to file '{fileName}'. Exception: {ex.Message}");
+                try { if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath)) File.Delete(tempPath); }
+                catch (Exception cleanupEx) { _logger.Warning($"Failed to clean up stale .tmp for '{fileName}': {cleanupEx.Message}"); }
                 throw;
+            }
+        }
+
+        /// <summary>Copies a corrupt file to <c>{path}.corrupt-{yyyyMMddHHmmss}</c> for forensic recovery.</summary>
+        private void BackupCorruptFile(string filePath)
+        {
+            try
+            {
+                var backupPath = filePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                if (!File.Exists(backupPath)) File.Copy(filePath, backupPath);
+                _logger.Warning($"Corrupt config backed up to {backupPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to back up corrupt config: {ex.Message}");
             }
         }
 
