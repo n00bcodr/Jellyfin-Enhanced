@@ -5,7 +5,46 @@
 </head>
 <body style="background: black;">
 <div class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-checkbox,emby-select" data-role="page" id="JellyfinEnhancedPage">
-    <link rel="stylesheet" href="/JellyfinEnhanced/Configuration/configPage.css">
+    <script>
+        // Inject configPage.css using ApiClient.getUrl so it resolves correctly behind
+        // reverse proxies that mount Jellyfin at a sub-path (e.g. seedboxes serving
+        // https://host/user/jellyfin/). A bare absolute href like
+        // "/JellyfinEnhanced/Configuration/configPage.css" bypasses the base path,
+        // hits the SPA fallback, and is returned as text/html which browsers silently
+        // reject as a stylesheet, leaving the settings page unstyled.
+        (function () {
+            try {
+                // Idempotency guard: Jellyfin's SPA can re-execute this inline script
+                // on view re-mount. Skip if the link element already exists.
+                if (document.getElementById('je-configPage-css')) return;
+
+                var apiClientReady = typeof window.ApiClient !== 'undefined'
+                    && window.ApiClient
+                    && typeof window.ApiClient.getUrl === 'function';
+                if (!apiClientReady) {
+                    // Surface the degraded path loudly so a maintainer sees it in
+                    // the console — the fallback URL is the same one that triggers
+                    // the original reverse-proxy bug. ApiClient is normally available
+                    // before any plugin config page renders, so this branch should
+                    // not be reachable in practice.
+                    console.error('[JellyfinEnhanced] ApiClient unavailable when injecting configPage.css; falling back to absolute path which may break behind reverse proxies.');
+                }
+                var href = apiClientReady
+                    ? window.ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css')
+                    : '/JellyfinEnhanced/Configuration/configPage.css';
+                var link = document.createElement('link');
+                link.id = 'je-configPage-css';
+                link.rel = 'stylesheet';
+                link.href = href;
+                link.onerror = function () {
+                    console.error('[JellyfinEnhanced] configPage.css failed to load from', href, '- the settings page will render unstyled. Check reverse proxy configuration.');
+                };
+                (document.head || document.documentElement).appendChild(link);
+            } catch (e) {
+                console.warn('[JellyfinEnhanced] Failed to inject configPage.css:', e);
+            }
+        })();
+    </script>
     <div data-role="content">
         <div class="content-primary">
 
