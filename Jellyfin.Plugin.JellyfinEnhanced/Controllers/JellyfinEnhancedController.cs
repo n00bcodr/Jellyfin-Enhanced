@@ -2675,7 +2675,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                // Shares the lock with the CW endpoints + event consumers
+                // so frontend bulk save can't tear with a backend RMW.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                {
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                }
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
             }
@@ -2683,6 +2688,180 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        // ─── Remove from Continue Watching (writes to hidden-content.json) ──────
+        // Entries are scoped HideScope="continuewatching" and surface in
+        // Hidden Content's management page. All writers share the per-user
+        // file lock from UserConfigurationManager.GetUserFileLock.
+
+        /// <summary>
+        /// Adds a <c>HideScope="continuewatching"</c> entry to the user's
+        /// <c>hidden-content.json</c>. Snapshot metadata is resolved
+        /// server-side. Idempotent: re-hiding overwrites the existing entry.
+        /// </summary>
+        /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
+        /// <response code="200">Entry written; returns the new entry and its key.</response>
+        /// <response code="400">Invalid itemId format.</response>
+        /// <response code="403">Not authenticated, or user lost.</response>
+        /// <response code="404">Item not in library or not accessible to this user.</response>
+        /// <response code="503">hidden-content.json is corrupt; backed up to .corrupt-{ts}.</response>
+        [HttpPost("continue-watching/hide/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult HideFromContinueWatching(string itemId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
+            if (userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(itemId, out var itemGuid) && !Guid.TryParseExact(itemId, "N", out itemGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid itemId." });
+            }
+
+            // Resolve under the user so library access is enforced.
+            var user = _userManager.GetUserById(userId);
+            if (user == null) return Forbid();
+
+            var jfItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(itemGuid, user);
+            if (jfItem == null)
+            {
+                return NotFound(new { success = false, message = "Item not found or not accessible." });
+            }
+
+            string? seriesId = null;
+            string? seriesName = null;
+            int? seasonNumber = null;
+            int? episodeNumber = null;
+            string typeName = jfItem.GetType().Name;
+
+            if (jfItem is MediaBrowser.Controller.Entities.TV.Episode ep)
+            {
+                seriesId = ep.SeriesId == Guid.Empty ? null : ep.SeriesId.ToString();
+                seriesName = ep.SeriesName;
+                seasonNumber = ep.ParentIndexNumber;
+                episodeNumber = ep.IndexNumber;
+            }
+
+            var entry = new HiddenContentItem
+            {
+                ItemId = itemGuid.ToString(),
+                Name = jfItem.Name ?? string.Empty,
+                Type = typeName,
+                TmdbId = string.Empty,
+                HiddenAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                PosterPath = string.Empty,
+                SeriesId = seriesId ?? string.Empty,
+                SeriesName = seriesName ?? string.Empty,
+                SeasonNumber = seasonNumber,
+                EpisodeNumber = episodeNumber,
+                HideScope = "continuewatching"
+            };
+
+            // ItemId as the key matches HC's own convention for
+            // Jellyfin-resolvable entries — so HC's management UI sees
+            // and "Unhide"s against the same dictionary slot.
+            var key = entry.ItemId;
+            var authorizedUserId = userId.ToString("N");
+
+            try
+            {
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                {
+                    var hidden = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                        authorizedUserId, "hidden-content.json");
+                    hidden.Items[key] = entry;
+                    _userConfigurationManager.SaveUserConfiguration(
+                        authorizedUserId, "hidden-content.json", hidden);
+                }
+                return Ok(new { success = true, key, entry });
+            }
+            catch (InvalidDataException)
+            {
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to add CW hide for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to hide from Continue Watching." });
+            }
+        }
+
+        /// <summary>
+        /// Removes the user's <c>HideScope="continuewatching"</c> entry
+        /// for <paramref name="itemId"/> — the "Add back to Continue
+        /// Watching" path. Won't touch entries under any other scope.
+        /// </summary>
+        /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
+        /// <response code="200">Entry removed.</response>
+        /// <response code="400">Invalid itemId format.</response>
+        /// <response code="404">No matching <c>continuewatching</c>-scope entry.</response>
+        /// <response code="503">hidden-content.json is corrupt; backed up to .corrupt-{ts}.</response>
+        [HttpDelete("continue-watching/hide/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult UnhideFromContinueWatching(string itemId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
+            if (userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(itemId, out var itemGuid) && !Guid.TryParseExact(itemId, "N", out itemGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid itemId." });
+            }
+
+            var authorizedUserId = userId.ToString("N");
+            var canonical = itemGuid.ToString();
+            var canonicalN = itemGuid.ToString("N");
+
+            try
+            {
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                {
+                    var hidden = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                        authorizedUserId, "hidden-content.json");
+                    if (hidden?.Items == null || hidden.Items.Count == 0)
+                    {
+                        return NotFound(new { success = false, message = "No matching hidden-content entry." });
+                    }
+
+                    var dropKeys = new List<string>();
+                    foreach (var kvp in hidden.Items)
+                    {
+                        var entry = kvp.Value;
+                        if (entry == null) continue;
+                        if (!string.Equals(entry.HideScope, "continuewatching", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var entryId = entry.ItemId ?? string.Empty;
+                        if (string.Equals(entryId, canonical, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(entryId, canonicalN, StringComparison.OrdinalIgnoreCase))
+                        {
+                            dropKeys.Add(kvp.Key);
+                        }
+                    }
+
+                    if (dropKeys.Count == 0)
+                    {
+                        return NotFound(new { success = false, message = "No matching hidden-content entry." });
+                    }
+
+                    foreach (var k in dropKeys) hidden.Items.Remove(k);
+                    _userConfigurationManager.SaveUserConfiguration(
+                        authorizedUserId, "hidden-content.json", hidden);
+                }
+
+                return Ok(new { success = true });
+            }
+            catch (InvalidDataException)
+            {
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to remove CW hide for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to unhide." });
             }
         }
 

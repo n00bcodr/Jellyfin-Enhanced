@@ -1016,9 +1016,13 @@
     );
 
     /**
-     * Resets the playback position of an item to 0, effectively removing it from "Continue Watching".
-     * @param {string} itemId The ID of the item to remove.
-     * @returns {Promise<boolean>} A promise that resolves to true on success, false on failure.
+     * Non-destructive "Remove from Continue Watching". POSTs to JE's
+     * hide endpoint (writes a HideScope="continuewatching" entry to
+     * hidden-content.json) and optimistically hides the just-clicked
+     * card. The server-side resume filter handles every other render.
+     * Playback position is preserved; resuming the item auto-unhides.
+     * @param {string} itemId The Jellyfin item ID.
+     * @returns {Promise<boolean>} true on success, false on failure.
      */
     async function removeFromContinueWatching(itemId) {
         const userId = ApiClient.getCurrentUserId();
@@ -1030,10 +1034,20 @@
         try {
             await ApiClient.ajax({
                 type: 'POST',
-                url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}/UserData`),
-                data: JSON.stringify({ PlaybackPositionTicks: 0 }),
+                url: ApiClient.getUrl(`/JellyfinEnhanced/continue-watching/hide/${itemId}`),
+                data: '{}',
+                contentType: 'application/json',
+                dataType: 'json',
                 headers: { 'Content-Type': 'application/json' }
             });
+
+            try {
+                document.querySelectorAll(`.card[data-id="${CSS.escape(itemId)}"]`).forEach(card => {
+                    if (card.hasAttribute('data-positionticks')) {
+                        card.style.display = 'none';
+                    }
+                });
+            } catch (e) { /* CSS.escape — non-fatal */ }
             return true;
         } catch (error) {
             const errorMessage = error.responseJSON?.Message || error.statusText || JE.t('unknown_error');
@@ -1041,6 +1055,63 @@
             return false;
         }
     }
+
+    /**
+     * Closes any open Jellyfin action sheet via HTMLDialogElement.close()
+     * or, as a fallback, an Escape keydown. Avoids synthetic mouse
+     * events because they bubble to card-open handlers and reopen a
+     * fresh sheet.
+     */
+    function closeOpenActionSheet() {
+        try {
+            let closedViaApi = false;
+            const dialogs = document.querySelectorAll('dialog[open]');
+            for (const dlg of dialogs) {
+                if (typeof dlg.close === 'function') {
+                    try { dlg.close(); closedViaApi = true; } catch (e) { /* not a real dialog */ }
+                }
+            }
+            if (!closedViaApi) {
+                document.dispatchEvent(new KeyboardEvent('keydown', {
+                    key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+                    bubbles: true, cancelable: true
+                }));
+            }
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: action sheet close failed', err);
+        }
+    }
+
+    /**
+     * Hides "Continue Watching" / "Next Up" rows whose visible-card
+     * count just dropped to zero, so the section title doesn't linger
+     * above empty space. A card counts as visible when it has no
+     * `je-hidden` class and no inline `display: none`.
+     */
+    function hideEmptyHomeSections() {
+        try {
+            const sections = document.querySelectorAll('.verticalSection, .section, .homeSection');
+            for (const section of sections) {
+                const titleEl = section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle');
+                const title = (titleEl?.textContent || '').toLowerCase().trim();
+                const isCW = title.startsWith('continue watching');
+                const isNextUp = title.startsWith('next up');
+                if (!isCW && !isNextUp) continue;
+
+                const cards = section.querySelectorAll('.card[data-positionticks], .card[data-id]');
+                let visibleCount = 0;
+                for (const card of cards) {
+                    if (card.classList.contains('je-hidden')) continue;
+                    if (card.style.display === 'none') continue;
+                    visibleCount++;
+                }
+                if (visibleCount === 0) section.style.display = 'none';
+            }
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: hideEmptyHomeSections failed', err);
+        }
+    }
+    JE.hideEmptyHomeSections = hideEmptyHomeSections;
 
     /**
      * Creates the "Remove" button for the context menu action sheet.
@@ -1073,9 +1144,24 @@
             const success = await removeFromContinueWatching(itemId);
 
             if (success) {
-                document.querySelector('.actionSheet.opened')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                // Restore the button visuals BEFORE attempting to close the
+                // sheet — Jellyfin web sometimes leaves the action sheet
+                // open under unusual layouts/themes, and a stuck "Removing..."
+                // button is a worse UX than a fully restored one.
+                button.disabled = false;
+                buttonTextElem.textContent = originalText;
+                buttonIconElem.textContent = originalIcon;
+
+                closeOpenActionSheet();
+
                 showNotification(JE.t('remove_continue_watching_success'), "success");
-                setTimeout(() => window.Emby?.Page?.currentView?.refresh({ force: true }), 500);
+
+                // The optimistic DOM hide already removed the card; also
+                // tear down the section header / row container if this
+                // hide emptied the Continue Watching shelf, otherwise the
+                // "Continue Watching" title sits there alone until the
+                // next page navigation.
+                hideEmptyHomeSections();
             } else {
                 button.disabled = false;
                 buttonTextElem.textContent = originalText;

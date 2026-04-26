@@ -40,6 +40,18 @@
     /** Initial filter delay after module initialization. */
     const INIT_FILTER_DELAY_MS = 150;
 
+    /**
+     * Returns JE.t(key) when the key resolves; otherwise the literal
+     * fallback. Works around JE.t returning the raw key on miss.
+     * @param {string} key Translation key.
+     * @param {string} fallback English literal to use when missing.
+     * @returns {string}
+     */
+    function tFallback(key, fallback) {
+        const t = JE.t && JE.t(key);
+        return (t && t !== key) ? t : fallback;
+    }
+
     /** Data attribute marking a card as already scanned. */
     const PROCESSED_ATTR = 'data-je-hidden-checked';
     /** Data attribute storing the parent series ID that caused hiding. */
@@ -656,11 +668,17 @@
 
         const hasEpisodeChoice = !!dialogOptions.showEpisodeChoice;
 
-        // Option 1: Hide from this surface only (scoped)
+        // Surface-specific scoped label so a CW hide reads "Remove from
+        // Continue Watching" and a Next Up hide reads "Hide from Next Up only".
         const scopedBtn = document.createElement('button');
         scopedBtn.className = 'je-hide-confirm-hide';
         scopedBtn.style.width = '100%';
-        scopedBtn.textContent = JE.t('hidden_content_confirm_hide_scoped');
+        scopedBtn.textContent =
+            dialogOptions.surface === 'continuewatching'
+                ? tFallback('hidden_content_confirm_hide_cw_only', 'Remove from Continue Watching')
+                : dialogOptions.surface === 'nextup'
+                    ? tFallback('hidden_content_confirm_hide_nextup_only', 'Hide from Next Up only')
+                    : JE.t('hidden_content_confirm_hide_scoped');
         scopedBtn.addEventListener('click', () => {
             closeDialog();
             if (dialogOptions.onChooseScoped) dialogOptions.onChooseScoped();
@@ -1040,12 +1058,21 @@
         const metaDiv = document.createElement('div');
         metaDiv.className = 'je-hidden-item-meta';
         const hiddenDate = item.hiddenAt ? new Date(item.hiddenAt).toLocaleDateString() : '';
-        metaDiv.textContent = [item.type, hiddenDate].filter(Boolean).join(' \u00B7 ');
+        // Scope label tells global hides apart from CW-only / Next Up-only ones.
+        const _scope = (item.hideScope || 'global').toLowerCase();
+        const _scopeText =
+            _scope === 'continuewatching' ? tFallback('hidden_content_scope_cw_label', 'Continue Watching only') :
+            _scope === 'nextup'           ? tFallback('hidden_content_scope_nextup_label', 'Next Up only') :
+            _scope === 'homesections'     ? tFallback('hidden_content_scope_homesections_label', 'Home sections only') :
+            '';
+        metaDiv.textContent = [item.type, _scopeText, hiddenDate].filter(Boolean).join(' \u00B7 ');
         info.appendChild(metaDiv);
 
         const unhideBtn = document.createElement('button');
         unhideBtn.className = 'je-hidden-item-unhide';
-        unhideBtn.textContent = JE.t('hidden_content_unhide');
+        unhideBtn.textContent = _scope === 'continuewatching'
+            ? tFallback('hidden_content_add_back_to_cw', 'Add back to Continue Watching')
+            : JE.t('hidden_content_unhide');
         info.appendChild(unhideBtn);
 
         card.appendChild(info);
@@ -1412,7 +1439,13 @@
             restoreNativeCardsForIds(hiddenIdSet);
             return;
         }
-        requestAnimationFrame(filterAllNativeCards);
+        requestAnimationFrame(() => {
+            filterAllNativeCards();
+            // Drop the section title if its row just emptied.
+            if (typeof JE.hideEmptyHomeSections === 'function') {
+                JE.hideEmptyHomeSections();
+            }
+        });
     }
 
     /**
@@ -1636,7 +1669,9 @@
      */
     async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState) {
         const itemData = { itemId, name: cardName };
-        const dialogOpts = { surface: 'homesections' };
+        // Pass surface through so the resulting hideScope stays bound to
+        // the row the user clicked (CW only / Next Up only, never both).
+        const dialogOpts = { surface };
 
         try {
             const userId = ApiClient.getCurrentUserId();
@@ -1658,7 +1693,7 @@
             if ((itemType === 'Episode' || itemType === 'Season') && seriesId) {
                 dialogOpts.showEpisodeChoice = true;
                 dialogOpts.onChooseScoped = () => {
-                    hideItem({ ...itemData, hideScope: 'homesections' });
+                    hideItem({ ...itemData, hideScope: surface });
                     card.classList.add('je-hidden');
                 };
                 dialogOpts.onChooseShow = async () => {
@@ -1681,14 +1716,14 @@
                 };
             } else {
                 dialogOpts.onChooseScoped = () => {
-                    hideItem({ ...itemData, hideScope: 'homesections' });
+                    hideItem({ ...itemData, hideScope: surface });
                     card.classList.add('je-hidden');
                 };
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fetch item data for scoped hide', err);
             dialogOpts.onChooseScoped = () => {
-                hideItem({ itemId, name: cardName, hideScope: 'homesections' });
+                hideItem({ itemId, name: cardName, hideScope: surface });
                 card.classList.add('je-hidden');
             };
         }
