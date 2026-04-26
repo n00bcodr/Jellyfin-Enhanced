@@ -5,7 +5,12 @@
 </head>
 <body style="background: black;">
 <div class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-checkbox,emby-select" data-role="page" id="JellyfinEnhancedPage">
-    <link rel="stylesheet" href="/JellyfinEnhanced/Configuration/configPage.css">
+    <script>
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
+        document.head.appendChild(link);
+    </script>
     <div data-role="content">
         <div class="content-primary">
 
