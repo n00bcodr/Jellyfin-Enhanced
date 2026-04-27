@@ -1016,13 +1016,9 @@
     );
 
     /**
-     * Non-destructive "Remove from Continue Watching". POSTs to JE's
-     * hide endpoint (writes a HideScope="continuewatching" entry to
-     * hidden-content.json) and optimistically hides the just-clicked
-     * card. The server-side resume filter handles every other render.
-     * Playback position is preserved; resuming the item auto-unhides.
-     * @param {string} itemId The Jellyfin item ID.
-     * @returns {Promise<boolean>} true on success, false on failure.
+     * Non-destructive "Remove from Continue Watching": POST + optimistic DOM hide. Position preserved.
+     * @param {string} itemId Jellyfin item ID.
+     * @returns {Promise<boolean>}
      */
     async function removeFromContinueWatching(itemId) {
         const userId = ApiClient.getCurrentUserId();
@@ -1056,12 +1052,7 @@
         }
     }
 
-    /**
-     * Closes any open Jellyfin action sheet via HTMLDialogElement.close()
-     * or, as a fallback, an Escape keydown. Avoids synthetic mouse
-     * events because they bubble to card-open handlers and reopen a
-     * fresh sheet.
-     */
+    /** Closes any open action sheet via dialog.close() / Escape; no synthetic mouse events (they reopen the sheet). */
     function closeOpenActionSheet() {
         try {
             let closedViaApi = false;
@@ -1082,12 +1073,7 @@
         }
     }
 
-    /**
-     * Hides "Continue Watching" / "Next Up" rows whose visible-card
-     * count just dropped to zero, so the section title doesn't linger
-     * above empty space. A card counts as visible when it has no
-     * `je-hidden` class and no inline `display: none`.
-     */
+    /** Hides Continue Watching / Next Up rows whose visible-card count is zero so the title doesn't linger. */
     function hideEmptyHomeSections() {
         try {
             const sections = document.querySelectorAll('.verticalSection, .section, .homeSection');

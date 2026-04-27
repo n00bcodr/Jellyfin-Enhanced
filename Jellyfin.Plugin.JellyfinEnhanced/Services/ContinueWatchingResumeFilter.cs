@@ -10,14 +10,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
-    /// <summary>
-    /// Post-routing MVC filter that strips the user's hidden-content
-    /// entries from Jellyfin's native resume endpoint
-    /// (<c>ItemsController.GetResumeItems</c> and
-    /// <c>GetResumeItemsLegacy</c>). Operates on the typed
-    /// <see cref="QueryResult{T}"/> before serialization, so it works for
-    /// every Jellyfin client without URL rewriting.
-    /// </summary>
+    /// <summary>Post-routing filter that strips hidden-content entries from <c>ItemsController.GetResumeItems</c> / <c>GetResumeItemsLegacy</c>.</summary>
     public sealed class ContinueWatchingResumeFilter : IAsyncActionFilter
     {
         private const string ControllerName = "Items";
@@ -96,8 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 hideItemIds.Add(NormalizeId(entry.ItemId));
 
-                // A "Series" entry cascades to every episode whose
-                // SeriesId matches its ItemId.
+                // Series entries cascade to all matching episodes.
                 if (string.Equals(entry.Type, "Series", StringComparison.OrdinalIgnoreCase))
                 {
                     hideSeriesIds.Add(NormalizeId(entry.ItemId));
@@ -168,11 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return false;
         }
 
-        /// <summary>
-        /// Normalizes a GUID-shaped id to lowercase hyphenated form so
-        /// hyphenated and N-format keys match the same entry. Non-GUID
-        /// ids (TMDB-only entries) are lowercased.
-        /// </summary>
+        /// <summary>Lowercase-hyphenated form so hyphenated and N-format GUIDs match; non-GUIDs are lowercased.</summary>
         private static string NormalizeId(string id)
         {
             if (string.IsNullOrEmpty(id)) return string.Empty;

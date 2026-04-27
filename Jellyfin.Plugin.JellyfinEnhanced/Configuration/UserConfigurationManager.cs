@@ -23,11 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             _logger = logger;
         }
 
-        /// <summary>
-        /// Returns the lock object all writers to a given user file must
-        /// hold across an RMW sequence. Different files for the same user
-        /// have independent locks.
-        /// </summary>
+        /// <summary>Returns the per-(user, file) lock writers must hold across an RMW.</summary>
         public object GetUserFileLock(string userId, string fileName)
         {
             var normalized = userId?.Replace("-", "") ?? string.Empty;
@@ -57,11 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>
-        /// Lenient read for read-only paths. Returns <c>new T()</c> for
-        /// missing, empty, or unparseable files. Use
-        /// <see cref="GetUserConfigurationStrict{T}"/> on the write path.
-        /// </summary>
+        /// <summary>Lenient read; returns <c>new T()</c> on missing/empty/unparseable. Use <see cref="GetUserConfigurationStrict{T}"/> on the write path.</summary>
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
         {
             var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
@@ -97,15 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return new T();
         }
 
-        /// <summary>
-        /// Strict read for the write path of an RMW. A missing file is
-        /// the legitimate first-write case and returns <c>new T()</c>.
-        /// An existing-but-empty/whitespace/literal-<c>null</c> file is
-        /// treated as corruption (the shape a crashed write would
-        /// leave): backed up to <c>{path}.corrupt-{yyyyMMddHHmmss}</c>
-        /// and <see cref="InvalidDataException"/> thrown so the caller
-        /// doesn't silently overwrite damaged data.
-        /// </summary>
+        /// <summary>Strict read for RMW; treats existing empty/null/garbage as corruption, backs up to <c>.corrupt-{ts}</c>, and throws.</summary>
         /// <exception cref="InvalidDataException">File exists but is unreadable or empty.</exception>
         public T GetUserConfigurationStrict<T>(string userId, string fileName) where T : new()
         {
@@ -155,12 +139,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>
-        /// Atomically writes the user's JSON config via temp file +
-        /// <see cref="File.Move(string,string,bool)"/>, so a crash
-        /// mid-write leaves the canonical file untouched. Callers
-        /// performing RMW must hold <see cref="GetUserFileLock"/>.
-        /// </summary>
+        /// <summary>Atomic save via temp file + <see cref="File.Move(string,string,bool)"/>. RMW callers must hold <see cref="GetUserFileLock"/>.</summary>
         public void SaveUserConfiguration(string userId, string fileName, object config)
         {
             string configPath = string.Empty;

@@ -135,9 +135,7 @@
             : (pluginDefaults.DefaultLanguage || '');
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
 
-        // Admin-set defaults that should flow into per-user settings.
-        // The camelCase merge loop above misses PascalCase keys from
-        // GetPublicConfig, so wire these explicitly.
+        // Admin → per-user default (camelCase merge loop above misses PascalCase keys from GetPublicConfig).
         if (!userSettings.hasOwnProperty('removeContinueWatchingEnabled')
             && pluginDefaults.RemoveContinueWatchingEnabled === true) {
             mergedSettings.removeContinueWatchingEnabled = true;

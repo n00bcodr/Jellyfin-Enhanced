@@ -40,13 +40,7 @@
     /** Initial filter delay after module initialization. */
     const INIT_FILTER_DELAY_MS = 150;
 
-    /**
-     * Returns JE.t(key) when the key resolves; otherwise the literal
-     * fallback. Works around JE.t returning the raw key on miss.
-     * @param {string} key Translation key.
-     * @param {string} fallback English literal to use when missing.
-     * @returns {string}
-     */
+    /** Resolves <code>JE.t(key)</code> or returns <code>fallback</code> when the key is missing (JE.t returns the raw key on miss). */
     function tFallback(key, fallback) {
         const t = JE.t && JE.t(key);
         return (t && t !== key) ? t : fallback;

@@ -2675,8 +2675,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Shares the lock with the CW endpoints + event consumers
-                // so frontend bulk save can't tear with a backend RMW.
+                // Shared lock with CW endpoints + event consumers.
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
                 {
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
@@ -2691,22 +2690,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        // ─── Remove from Continue Watching (writes to hidden-content.json) ──────
-        // Entries are scoped HideScope="continuewatching" and surface in
-        // Hidden Content's management page. All writers share the per-user
-        // file lock from UserConfigurationManager.GetUserFileLock.
+        // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
-        /// <summary>
-        /// Adds a <c>HideScope="continuewatching"</c> entry to the user's
-        /// <c>hidden-content.json</c>. Snapshot metadata is resolved
-        /// server-side. Idempotent: re-hiding overwrites the existing entry.
-        /// </summary>
+        /// <summary>Adds a <c>HideScope="continuewatching"</c> entry; idempotent.</summary>
         /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
-        /// <response code="200">Entry written; returns the new entry and its key.</response>
-        /// <response code="400">Invalid itemId format.</response>
-        /// <response code="403">Not authenticated, or user lost.</response>
-        /// <response code="404">Item not in library or not accessible to this user.</response>
-        /// <response code="503">hidden-content.json is corrupt; backed up to .corrupt-{ts}.</response>
+        /// <response code="200">Entry written.</response>
+        /// <response code="400">Invalid itemId.</response>
+        /// <response code="403">Not authenticated.</response>
+        /// <response code="404">Item not accessible to this user.</response>
+        /// <response code="503">Store corrupt; backed up to <c>.corrupt-{ts}</c>.</response>
         [HttpPost("continue-watching/hide/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -2759,9 +2751,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 HideScope = "continuewatching"
             };
 
-            // ItemId as the key matches HC's own convention for
-            // Jellyfin-resolvable entries — so HC's management UI sees
-            // and "Unhide"s against the same dictionary slot.
+            // ItemId as the key matches HC's convention so its management UI shares the same slot.
             var key = entry.ItemId;
             var authorizedUserId = userId.ToString("N");
 
@@ -2788,16 +2778,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        /// <summary>
-        /// Removes the user's <c>HideScope="continuewatching"</c> entry
-        /// for <paramref name="itemId"/> — the "Add back to Continue
-        /// Watching" path. Won't touch entries under any other scope.
-        /// </summary>
+        /// <summary>Removes the user's <c>continuewatching</c>-scope entry for <paramref name="itemId"/>; leaves other scopes alone.</summary>
         /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
         /// <response code="200">Entry removed.</response>
-        /// <response code="400">Invalid itemId format.</response>
+        /// <response code="400">Invalid itemId.</response>
         /// <response code="404">No matching <c>continuewatching</c>-scope entry.</response>
-        /// <response code="503">hidden-content.json is corrupt; backed up to .corrupt-{ts}.</response>
+        /// <response code="503">Store corrupt; backed up to <c>.corrupt-{ts}</c>.</response>
         [HttpDelete("continue-watching/hide/{itemId}")]
         [Authorize]
         [Produces("application/json")]

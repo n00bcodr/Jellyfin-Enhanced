@@ -27,12 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         }
     }
 
-    /// <summary>
-    /// Drops the user's <c>continuewatching</c>/<c>homesections</c> HC
-    /// entries when they resume the matching item. Episode resumes also
-    /// drop a series-scope entry pointing at the parent series.
-    /// Global-scope hides are intentionally left alone.
-    /// </summary>
+    /// <summary>Drops <c>continuewatching</c>/<c>homesections</c> HC entries on resume; global hides are left alone.</summary>
     public sealed class ContinueWatchingPlaybackConsumer : IEventConsumer<PlaybackStartEventArgs>
     {
         private static readonly HashSet<string> AutoRemoveScopes =
@@ -100,12 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             return Task.CompletedTask;
         }
 
-        /// <summary>
-        /// Acquires the per-user file lock, strict-reads
-        /// <c>hidden-content.json</c>, applies <paramref name="mutate"/>,
-        /// and saves if any changes were made. Returns the count
-        /// reported by the mutator (0 means no save).
-        /// </summary>
+        /// <summary>Lock + strict-read + <paramref name="mutate"/> + save if mutator returned > 0.</summary>
         private int MutateUnderLock(Guid userId, Func<UserHiddenContent, int> mutate)
         {
             var userIdN = userId.ToString("N");
@@ -135,11 +125,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         }
     }
 
-    /// <summary>
-    /// Subscribes to <see cref="ILibraryManager.ItemRemoved"/> at startup
-    /// and prunes <c>hidden-content.json</c> entries pointing at deleted
-    /// items so users don't accumulate orphan rows.
-    /// </summary>
+    /// <summary>Subscribes to <see cref="ILibraryManager.ItemRemoved"/> and prunes orphan HC entries.</summary>
     public sealed class ContinueWatchingLibraryHook : IHostedService
     {
         private readonly ILibraryManager _libraryManager;

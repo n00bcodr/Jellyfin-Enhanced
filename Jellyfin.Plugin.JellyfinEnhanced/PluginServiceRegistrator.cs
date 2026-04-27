@@ -32,8 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
 
-            // Remove from Continue Watching (non-destructive). Storage
-            // lives in hidden-content.json with HideScope=continuewatching.
+            // Remove from Continue Watching: stores HideScope=continuewatching in hidden-content.json.
             serviceCollection.AddSingleton<ContinueWatchingResumeFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
