@@ -2678,20 +2678,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
                 {
                     // Pre-write strict read — if the existing file is corrupt
-                    // (empty / whitespace / literal-null), trip the corruption
-                    // guard so we 503 + back up rather than silently letting
-                    // the bulk save overwrite a damaged file.
-                    _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
-                        authorizedUserId, "hidden-content.json");
+                    // (empty / whitespace / literal-null / unparseable), trip
+                    // the corruption guard so we 503 + back up rather than
+                    // silently letting the bulk save overwrite a damaged file.
+                    try
+                    {
+                        _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                            authorizedUserId, "hidden-content.json");
+                    }
+                    catch (Exception strictEx) when (strictEx is InvalidDataException
+                                                  || strictEx is Newtonsoft.Json.JsonException
+                                                  || strictEx is IOException)
+                    {
+                        _logger.Warning($"hidden-content.json strict-read failed for {ResolveUserDisplay(authorizedUserId)} (file backed up): {strictEx.Message}");
+                        return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+                    }
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
                 }
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
-            }
-            catch (InvalidDataException)
-            {
-                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -2702,6 +2708,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
+        /// <summary>Picks the WIDER of two HC scopes (rank: global &gt; homesections &gt; {nextup, continuewatching} &gt; unknown &gt; null).</summary>
+        private static string? WiderScope(string? a, string? b)
+        {
+            if (string.IsNullOrEmpty(a)) return b;
+            if (string.IsNullOrEmpty(b)) return a;
+            return ScopeRank(a) >= ScopeRank(b) ? a : b;
+        }
+
+        private static int ScopeRank(string scope)
+        {
+            if (string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase)) return 4;
+            if (string.Equals(scope, "homesections", StringComparison.OrdinalIgnoreCase)) return 3;
+            if (string.Equals(scope, "nextup", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scope, "continuewatching", StringComparison.OrdinalIgnoreCase)) return 2;
+            return 1; // unknown / future
+        }
+
+        /// <summary>Returns the earlier of two ISO-8601 timestamps; tolerates either being null/unparseable.</summary>
+        private static string? EarliestHiddenAt(string? a, string? b)
+        {
+            DateTime? da = TryParseIso(a);
+            DateTime? db = TryParseIso(b);
+            if (da == null) return b ?? a;
+            if (db == null) return a;
+            return da <= db ? a : b;
+        }
+
+        private static DateTime? TryParseIso(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            return DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? (DateTime?)dt : null;
+        }
+
         /// <summary>Merges an existing HC scope with the new <c>continuewatching</c> hide so the user's earlier wider intent isn't narrowed.</summary>
         private static string MergeWithCwScope(string existing)
         {
@@ -2711,8 +2751,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.Equals(existing, "continuewatching", StringComparison.OrdinalIgnoreCase)) return "continuewatching";
             // nextup + continuewatching = the union scope (homesections).
             if (string.Equals(existing, "nextup", StringComparison.OrdinalIgnoreCase)) return "homesections";
-            // Any other / unknown value: don't narrow it.
-            return existing;
+            // Unknown / typo / future scope: widen to homesections so the CW
+            // intent is honored (better than silently leaving an unrecognized
+            // scope that downstream filters will ignore).
+            return "homesections";
         }
 
         /// <summary>Adds a <c>HideScope="continuewatching"</c> entry; idempotent.</summary>
@@ -2787,27 +2829,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // Merge with any existing entry rather than blindly
                         // overwrite — a previous wider scope (global /
                         // homesections / nextup) would otherwise be narrowed
-                        // to continuewatching, regressing the user's earlier
-                        // hide intent. Existing entries may live under either
-                        // hyphenated (this controller's canonical form) or
-                        // N-format keys (HC frontend's older convention).
-                        HiddenContentItem? existing = null;
-                        if (h.Items.TryGetValue(key, out var e1) && e1 != null) existing = e1;
-                        else if (h.Items.TryGetValue(keyN, out var e2) && e2 != null) existing = e2;
+                        // to continuewatching. Existing entries may live under
+                        // either the hyphenated (this controller's canonical)
+                        // or N-format key (HC frontend's older convention);
+                        // pick the WIDER existing scope from either, so a
+                        // hyphenated stub doesn't shadow an N-format wider entry.
+                        h.Items.TryGetValue(key, out var hyphenEntry);
+                        h.Items.TryGetValue(keyN, out var nEntry);
 
-                        if (existing != null && !string.IsNullOrEmpty(existing.HideScope))
+                        var existingScope = WiderScope(
+                            hyphenEntry?.HideScope,
+                            nEntry?.HideScope);
+
+                        if (!string.IsNullOrEmpty(existingScope))
                         {
-                            entry.HideScope = MergeWithCwScope(existing.HideScope);
-                            // Preserve the earliest HiddenAt so the user's history
-                            // doesn't reset when they re-affirm a wider hide.
-                            if (!string.IsNullOrEmpty(existing.HiddenAt))
-                            {
-                                entry.HiddenAt = existing.HiddenAt;
-                            }
+                            entry.HideScope = MergeWithCwScope(existingScope);
                         }
 
-                        // Drop any duplicate key under the alternate format so we
-                        // don't end up with two entries for the same item.
+                        // Preserve the earliest HiddenAt across both possible
+                        // entries so re-affirming a wider hide doesn't reset
+                        // the user's history.
+                        var existingHiddenAt = EarliestHiddenAt(
+                            hyphenEntry?.HiddenAt,
+                            nEntry?.HiddenAt);
+                        if (!string.IsNullOrEmpty(existingHiddenAt))
+                        {
+                            entry.HiddenAt = existingHiddenAt;
+                        }
+
+                        // Collapse to a single canonical (hyphenated) entry.
                         h.Items.Remove(keyN);
                         h.Items[key] = entry;
                         return 1;

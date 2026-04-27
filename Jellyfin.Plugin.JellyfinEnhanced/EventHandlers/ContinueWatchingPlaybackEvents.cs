@@ -68,14 +68,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                     ? ep.SeriesId.ToString()
                     : null;
 
-                int dropped;
+                int changed;
                 try
                 {
-                    dropped = _configManager.RmwUserConfiguration<UserHiddenContent>(
+                    changed = _configManager.RmwUserConfiguration<UserHiddenContent>(
                         userId.ToString("N"), "hidden-content.json", hidden =>
                     {
                         if (hidden?.Items == null || hidden.Items.Count == 0) return 0;
                         var keysToDrop = new List<string>();
+                        var keysToDemote = new List<string>();
                         foreach (var kvp in hidden.Items)
                         {
                             var entry = kvp.Value;
@@ -84,14 +85,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                             if (!AutoRemoveScopes.Contains(scope)) continue;
                             if (string.IsNullOrEmpty(entry.ItemId)) continue;
 
-                            if (CwEventHelpers.IdMatches(entry.ItemId, itemIdStr)
-                                || (seriesIdStr != null && CwEventHelpers.IdMatches(entry.ItemId, seriesIdStr)))
+                            if (!(CwEventHelpers.IdMatches(entry.ItemId, itemIdStr)
+                                || (seriesIdStr != null && CwEventHelpers.IdMatches(entry.ItemId, seriesIdStr))))
+                            {
+                                continue;
+                            }
+
+                            // homesections = nextup + continuewatching union.
+                            // Resuming an item only signals the user no longer
+                            // wants the CW filter for it — preserve the NextUp
+                            // half by demoting to nextup-only rather than
+                            // fully dropping the entry.
+                            if (string.Equals(scope, "homesections", StringComparison.OrdinalIgnoreCase))
+                            {
+                                keysToDemote.Add(kvp.Key);
+                            }
+                            else
                             {
                                 keysToDrop.Add(kvp.Key);
                             }
                         }
                         foreach (var k in keysToDrop) hidden.Items.Remove(k);
-                        return keysToDrop.Count;
+                        foreach (var k in keysToDemote)
+                        {
+                            if (hidden.Items.TryGetValue(k, out var e) && e != null) e.HideScope = "nextup";
+                        }
+                        return keysToDrop.Count + keysToDemote.Count;
                     });
                 }
                 catch (InvalidDataException ex)
@@ -100,9 +119,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                     return Task.CompletedTask;
                 }
 
-                if (dropped > 0)
+                if (changed > 0)
                 {
-                    _logger.Info($"CW: dropped {dropped} hidden-content entr{(dropped == 1 ? "y" : "ies")} for user {userId} on resume of item {item.Id}");
+                    _logger.Info($"CW: dropped/demoted {changed} hidden-content entr{(changed == 1 ? "y" : "ies")} for user {userId} on resume of item {item.Id}");
                 }
             }
             catch (Exception ex)
@@ -151,29 +170,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
 
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
         {
-            // Capture the id synchronously (the EventArgs object isn't safe to
-            // dereference once the event handler returns) but offload the
-            // per-user loop so a bulk library cleanup doesn't serialize sync
-            // I/O on the event-publisher thread.
-            var id = e?.Item?.Id ?? Guid.Empty;
-            if (id == Guid.Empty) return;
-            var idStr = id.ToString();
-            var userIds = _userManager.Users.Select(u => u.Id).ToArray();
-
-            _ = Task.Run(() =>
+            try
             {
-                try
+                var id = e?.Item?.Id ?? Guid.Empty;
+                if (id == Guid.Empty) return;
+                var idStr = id.ToString();
+
+                // Capture user IDs synchronously — _userManager and the
+                // EventArgs aren't guaranteed to be safe to dereference
+                // once the event handler returns — but offload the per-user
+                // loop so a bulk library cleanup doesn't serialize sync I/O
+                // on the event-publisher thread.
+                var userIds = _userManager.Users.Select(u => u.Id).ToArray();
+
+                _ = Task.Run(() =>
                 {
-                    foreach (var userId in userIds)
+                    try
                     {
-                        PruneOrphan(userId, idStr);
+                        foreach (var userId in userIds)
+                        {
+                            PruneOrphan(userId, idStr);
+                        }
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"CW: orphan-prune failed for removed item: {ex.Message}");
-                }
-            });
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"CW: orphan-prune background task failed: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // Belt-and-suspenders: never throw out of an event handler.
+                _logger.Warning($"CW: orphan-prune failed before scheduling: {ex.Message}");
+            }
         }
 
         /// <summary>Removes any HC entries for <paramref name="userId"/> whose ItemId matches <paramref name="targetId"/>.</summary>

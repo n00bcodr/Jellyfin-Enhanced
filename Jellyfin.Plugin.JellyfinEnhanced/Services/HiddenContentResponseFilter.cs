@@ -100,27 +100,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // /Items?Ids=... is used by HC's own frontend for parent-series
-            // lookups and similar exact-id metadata reads. Filtering those
-            // would make hidden items invisible to HC's management code
-            // itself, breaking SeriesId resolution. Pass through unfiltered
-            // for the browse/search-shaped variants only.
-            if (route.Surface == "library" && HasIdsQueryParam(context))
-            {
-                await next().ConfigureAwait(false);
-                return;
-            }
+            // /Items doubles as library list + search results. Resolve which
+            // logical surface this request maps to: searchTerm wins (FilterSearch
+            // gates), then fall back to library. Ids-bearing batch reads ARE
+            // filtered per-item — the per-item filter only strips entries that
+            // actually match a hide, so HC's own parent-series lookups against
+            // ?Ids= still resolve visible items correctly; hidden items in a
+            // mixed batch are stripped instead of leaking the whole batch.
+            var surface = (route.Surface == "library" && HasSearchTerm(context))
+                ? "search"
+                : route.Surface;
 
             var executed = await next().ConfigureAwait(false);
             try
             {
-                // /Items doubles as both the library list endpoint and the
-                // search results endpoint — searchTerm-bearing requests
-                // need the 'search' surface so FilterSearch (not
-                // FilterLibrary) gates them.
-                var surface = (route.Surface == "library" && HasSearchTerm(context))
-                    ? "search"
-                    : route.Surface;
                 route.Handler(executed, hide, surface, _logger);
             }
             catch (Exception ex)
@@ -130,14 +123,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // the response.
                 _logger.Error($"HC response filter handler failed for surface '{route.Surface}' — entries will pass through unfiltered for this request: {ex.Message}");
             }
-        }
-
-        /// <summary>True when the request has a non-empty <c>Ids</c> query parameter (exact-id metadata lookup, not a browse/search).</summary>
-        private static bool HasIdsQueryParam(ActionExecutingContext context)
-        {
-            var q = context.HttpContext?.Request?.Query;
-            if (q == null) return false;
-            return HasNonEmpty(q, "ids") || HasNonEmpty(q, "Ids");
         }
 
         /// <summary>True when the request has a non-empty <c>searchTerm</c> query parameter.</summary>
@@ -187,10 +172,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // matched MVC request and drowns the rest of the log.
                 if (_warnedReadFailure.TryAdd(userId, 0))
                 {
-                    _logger.Error($"HC response filter: failed to read hidden-content.json for user {userId} — entries will pass through unfiltered until the next plugin restart or admin fix: {ex.Message}");
+                    _logger.Error($"HC response filter: failed to read hidden-content.json for user {userId} — entries will pass through unfiltered until the file is repaired: {ex.Message}");
                 }
                 data = null;
             }
+
+            // Successful read after a previously-logged failure: re-arm
+            // the dedup so a future corruption emits a fresh log entry.
+            if (data != null) _warnedReadFailure.TryRemove(userId, out _);
 
             var ctx = HideContext.Build(data);
             httpContext.Items[CacheKey] = ctx;

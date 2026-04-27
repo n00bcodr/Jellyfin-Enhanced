@@ -1059,21 +1059,22 @@
 
     /**
      * Closes any open action sheet via dialog.close() / Escape; no synthetic
-     * mouse events (they reopen the sheet). Returns true when the close path
-     * confirmed the sheet is gone, false otherwise so callers don't show
-     * success state over a stuck dialog.
+     * mouse events (they reopen the sheet). Returns true when the close was
+     * dispatched without throwing — Jellyfin's actionsheet teardown completes
+     * asynchronously on the next animation frame, so a synchronous "did the
+     * sheet really close?" verification check would always read false.
      * @returns {boolean}
      */
     function closeOpenActionSheet() {
         try {
             const dialogs = document.querySelectorAll('dialog[open]');
-            let closedViaApi = false;
+            let dispatched = false;
             for (const dlg of dialogs) {
                 if (typeof dlg.close === 'function') {
-                    try { dlg.close(); closedViaApi = true; } catch (e) { /* not a real dialog */ }
+                    try { dlg.close(); dispatched = true; } catch (e) { /* not a real dialog */ }
                 }
             }
-            if (closedViaApi) return true;
+            if (dispatched) return true;
 
             // Fallback: target the action-sheet element with an Escape keydown.
             // Dispatching on `document` is captured by JE's global keyboard
@@ -1084,10 +1085,7 @@
                     key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
                     bubbles: true, cancelable: true
                 }));
-                // Best-effort verification: did the sheet actually close?
-                return !document.contains(sheet) || sheet.hasAttribute('hidden') || sheet.style.display === 'none';
             }
-            // No sheet to close — the user clicked from a non-sheet context (rare).
             return true;
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: action sheet close failed', err);
