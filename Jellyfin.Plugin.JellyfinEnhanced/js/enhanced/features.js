@@ -1046,30 +1046,52 @@
             } catch (e) { /* CSS.escape — non-fatal */ }
             return true;
         } catch (error) {
-            const errorMessage = error.responseJSON?.Message || error.statusText || JE.t('unknown_error');
+            // Controller emits { success, message } in lowercase; older
+            // Jellyfin core endpoints emit { Message } in PascalCase. Try both.
+            const errorMessage = error.responseJSON?.message
+                || error.responseJSON?.Message
+                || error.statusText
+                || JE.t('unknown_error');
             showNotification(JE.t('remove_continue_watching_error_api', { error: errorMessage }), "error");
             return false;
         }
     }
 
-    /** Closes any open action sheet via dialog.close() / Escape; no synthetic mouse events (they reopen the sheet). */
+    /**
+     * Closes any open action sheet via dialog.close() / Escape; no synthetic
+     * mouse events (they reopen the sheet). Returns true when the close path
+     * confirmed the sheet is gone, false otherwise so callers don't show
+     * success state over a stuck dialog.
+     * @returns {boolean}
+     */
     function closeOpenActionSheet() {
         try {
-            let closedViaApi = false;
             const dialogs = document.querySelectorAll('dialog[open]');
+            let closedViaApi = false;
             for (const dlg of dialogs) {
                 if (typeof dlg.close === 'function') {
                     try { dlg.close(); closedViaApi = true; } catch (e) { /* not a real dialog */ }
                 }
             }
-            if (!closedViaApi) {
-                document.dispatchEvent(new KeyboardEvent('keydown', {
+            if (closedViaApi) return true;
+
+            // Fallback: target the action-sheet element with an Escape keydown.
+            // Dispatching on `document` is captured by JE's global keyboard
+            // shortcuts before reaching the actionsheet's own handler.
+            const sheet = document.querySelector('.actionSheet, .actionsheet, dialog[open], .dialogContainer .dialog, .dialog.opened');
+            if (sheet) {
+                sheet.dispatchEvent(new KeyboardEvent('keydown', {
                     key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
                     bubbles: true, cancelable: true
                 }));
+                // Best-effort verification: did the sheet actually close?
+                return !document.contains(sheet) || sheet.hasAttribute('hidden') || sheet.style.display === 'none';
             }
+            // No sheet to close — the user clicked from a non-sheet context (rare).
+            return true;
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: action sheet close failed', err);
+            return false;
         }
     }
 
@@ -1138,9 +1160,15 @@
                 buttonTextElem.textContent = originalText;
                 buttonIconElem.textContent = originalIcon;
 
-                closeOpenActionSheet();
+                const closed = closeOpenActionSheet();
 
-                showNotification(JE.t('remove_continue_watching_success'), "success");
+                // Only claim success if the sheet actually closed; otherwise
+                // the user sees a stuck dialog covering the just-hidden card.
+                if (closed) {
+                    showNotification(JE.t('remove_continue_watching_success'), "success");
+                } else {
+                    showNotification(JE.t('remove_continue_watching_success'), "info");
+                }
 
                 // The optimistic DOM hide already removed the card; also
                 // tear down the section header / row container if this

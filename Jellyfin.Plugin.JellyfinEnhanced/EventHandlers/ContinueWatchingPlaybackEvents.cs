@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -47,6 +48,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         {
             try
             {
+                // Admin master switch: when HC is disabled plugin-wide, leave entries
+                // alone — auto-dropping them now would cause non-revertible state when
+                // admin re-enables HC (the user never asked to unhide).
+                if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled != true)
+                {
+                    return Task.CompletedTask;
+                }
+
                 var item = eventArgs?.Item;
                 var session = eventArgs?.Session;
                 if (item == null || session == null) return Task.CompletedTask;
@@ -142,21 +151,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
 
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
         {
-            try
-            {
-                var id = e?.Item?.Id ?? Guid.Empty;
-                if (id == Guid.Empty) return;
-                var idStr = id.ToString();
+            // Capture the id synchronously (the EventArgs object isn't safe to
+            // dereference once the event handler returns) but offload the
+            // per-user loop so a bulk library cleanup doesn't serialize sync
+            // I/O on the event-publisher thread.
+            var id = e?.Item?.Id ?? Guid.Empty;
+            if (id == Guid.Empty) return;
+            var idStr = id.ToString();
+            var userIds = _userManager.Users.Select(u => u.Id).ToArray();
 
-                foreach (var user in _userManager.Users)
-                {
-                    PruneOrphan(user.Id, idStr);
-                }
-            }
-            catch (Exception ex)
+            _ = Task.Run(() =>
             {
-                _logger.Warning($"CW: orphan-prune failed for removed item: {ex.Message}");
-            }
+                try
+                {
+                    foreach (var userId in userIds)
+                    {
+                        PruneOrphan(userId, idStr);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"CW: orphan-prune failed for removed item: {ex.Message}");
+                }
+            });
         }
 
         /// <summary>Removes any HC entries for <paramref name="userId"/> whose ItemId matches <paramref name="targetId"/>.</summary>

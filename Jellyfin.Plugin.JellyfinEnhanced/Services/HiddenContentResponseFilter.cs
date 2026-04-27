@@ -48,6 +48,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Surfaces we've already warned about for shape mismatch — keeps log noise to one entry per surface per process lifetime.</summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _warnedShapeMismatch = new();
 
+        /// <summary>Users we've already warned about for hidden-content read failures — one log per user per process lifetime so a corrupt file doesn't spam the log on every request.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _warnedReadFailure = new();
+
         private static void WarnShapeMismatchOnce(Logger logger, string surface, string handlerName, IActionResult? result)
         {
             if (!_warnedShapeMismatch.TryAdd(surface, 0)) return;
@@ -97,6 +100,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            // /Items?Ids=... is used by HC's own frontend for parent-series
+            // lookups and similar exact-id metadata reads. Filtering those
+            // would make hidden items invisible to HC's management code
+            // itself, breaking SeriesId resolution. Pass through unfiltered
+            // for the browse/search-shaped variants only.
+            if (route.Surface == "library" && HasIdsQueryParam(context))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
             var executed = await next().ConfigureAwait(false);
             try
             {
@@ -116,6 +130,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // the response.
                 _logger.Error($"HC response filter handler failed for surface '{route.Surface}' — entries will pass through unfiltered for this request: {ex.Message}");
             }
+        }
+
+        /// <summary>True when the request has a non-empty <c>Ids</c> query parameter (exact-id metadata lookup, not a browse/search).</summary>
+        private static bool HasIdsQueryParam(ActionExecutingContext context)
+        {
+            var q = context.HttpContext?.Request?.Query;
+            if (q == null) return false;
+            return HasNonEmpty(q, "ids") || HasNonEmpty(q, "Ids");
         }
 
         /// <summary>True when the request has a non-empty <c>searchTerm</c> query parameter.</summary>
@@ -159,11 +181,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // A failure here means hidden items will silently appear in the
-                // user's library / search / etc. Log at Error so an admin
-                // notices, even though we still fail open to keep the response
-                // serving rather than 500ing the whole library.
-                _logger.Error($"HC response filter: failed to read hidden-content.json for user {userId} — entries will pass through unfiltered: {ex.Message}");
+                // Hide silently leaks until admin fixes the file. Log at Error
+                // (not Warning) so it shows up, but dedup once per user per
+                // process — without dedup a corrupt file spams Error on every
+                // matched MVC request and drowns the rest of the log.
+                if (_warnedReadFailure.TryAdd(userId, 0))
+                {
+                    _logger.Error($"HC response filter: failed to read hidden-content.json for user {userId} — entries will pass through unfiltered until the next plugin restart or admin fix: {ex.Message}");
+                }
                 data = null;
             }
 
@@ -220,7 +245,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             or.Value = kept;
         }
 
-        /// <summary>Filters an <see cref="ObjectResult"/> wrapping <see cref="SearchHintResult"/>.</summary>
+        /// <summary>
+        /// Filters an <see cref="ObjectResult"/> wrapping <see cref="SearchHintResult"/>.
+        /// LIMITATION: <see cref="SearchHint"/> has no <c>SeriesId</c> field, so a
+        /// series-scope hide cannot suppress a child-episode hint here. Item-scope
+        /// hides still work via direct ID match. Backfilling the parent series via
+        /// per-hint API lookups would defeat the speed of /Search/Hints; the
+        /// /Items?searchTerm path (which DOES carry SeriesId) remains the
+        /// canonical search filter for series-scope cascade.
+        /// </summary>
         private static void FilterSearchHints(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not SearchHintResult sh)
@@ -369,7 +402,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 foreach (var entry in data.Items.Values)
                 {
-                    if (entry == null || string.IsNullOrEmpty(entry.ItemId)) continue;
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.ItemId)) continue;
                     var id = NormalizeId(entry.ItemId);
                     var scope = string.IsNullOrEmpty(entry.HideScope) ? "global" : entry.HideScope.ToLowerInvariant();
 

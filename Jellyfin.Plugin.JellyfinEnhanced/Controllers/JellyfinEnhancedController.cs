@@ -2675,13 +2675,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Shared lock with CW endpoints + event consumers.
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
                 {
+                    // Pre-write strict read — if the existing file is corrupt
+                    // (empty / whitespace / literal-null), trip the corruption
+                    // guard so we 503 + back up rather than silently letting
+                    // the bulk save overwrite a damaged file.
+                    _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                        authorizedUserId, "hidden-content.json");
+
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
                 }
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
+            }
+            catch (InvalidDataException)
+            {
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -2691,6 +2701,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
+
+        /// <summary>Merges an existing HC scope with the new <c>continuewatching</c> hide so the user's earlier wider intent isn't narrowed.</summary>
+        private static string MergeWithCwScope(string existing)
+        {
+            // Existing wider scopes already cover CW — keep them.
+            if (string.Equals(existing, "global", StringComparison.OrdinalIgnoreCase)) return "global";
+            if (string.Equals(existing, "homesections", StringComparison.OrdinalIgnoreCase)) return "homesections";
+            if (string.Equals(existing, "continuewatching", StringComparison.OrdinalIgnoreCase)) return "continuewatching";
+            // nextup + continuewatching = the union scope (homesections).
+            if (string.Equals(existing, "nextup", StringComparison.OrdinalIgnoreCase)) return "homesections";
+            // Any other / unknown value: don't narrow it.
+            return existing;
+        }
 
         /// <summary>Adds a <c>HideScope="continuewatching"</c> entry; idempotent.</summary>
         /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
@@ -2757,8 +2780,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
+                var keyN = itemGuid.ToString("N");
                 _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
-                    authorizedUserId, "hidden-content.json", h => { h.Items[key] = entry; return 1; });
+                    authorizedUserId, "hidden-content.json", h =>
+                    {
+                        // Merge with any existing entry rather than blindly
+                        // overwrite — a previous wider scope (global /
+                        // homesections / nextup) would otherwise be narrowed
+                        // to continuewatching, regressing the user's earlier
+                        // hide intent. Existing entries may live under either
+                        // hyphenated (this controller's canonical form) or
+                        // N-format keys (HC frontend's older convention).
+                        HiddenContentItem? existing = null;
+                        if (h.Items.TryGetValue(key, out var e1) && e1 != null) existing = e1;
+                        else if (h.Items.TryGetValue(keyN, out var e2) && e2 != null) existing = e2;
+
+                        if (existing != null && !string.IsNullOrEmpty(existing.HideScope))
+                        {
+                            entry.HideScope = MergeWithCwScope(existing.HideScope);
+                            // Preserve the earliest HiddenAt so the user's history
+                            // doesn't reset when they re-affirm a wider hide.
+                            if (!string.IsNullOrEmpty(existing.HiddenAt))
+                            {
+                                entry.HiddenAt = existing.HiddenAt;
+                            }
+                        }
+
+                        // Drop any duplicate key under the alternate format so we
+                        // don't end up with two entries for the same item.
+                        h.Items.Remove(keyN);
+                        h.Items[key] = entry;
+                        return 1;
+                    });
                 return Ok(new { success = true, key, entry });
             }
             catch (InvalidDataException)

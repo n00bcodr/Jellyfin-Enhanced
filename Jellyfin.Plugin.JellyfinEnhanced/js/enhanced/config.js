@@ -135,7 +135,10 @@
             : (pluginDefaults.DefaultLanguage || '');
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
 
-        // Admin → per-user default (camelCase merge loop above misses PascalCase keys from GetPublicConfig).
+        // Admin → per-user default (camelCase merge loop above misses PascalCase
+        // keys from GetPublicConfig). STICKY: once a user has explicitly chosen,
+        // their choice persists; the admin toggle is a fresh-install default,
+        // not a forced override.
         if (!userSettings.hasOwnProperty('removeContinueWatchingEnabled')
             && pluginDefaults.RemoveContinueWatchingEnabled === true) {
             mergedSettings.removeContinueWatchingEnabled = true;

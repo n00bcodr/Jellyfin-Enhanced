@@ -13,7 +13,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private readonly string _configBaseDir;
         private readonly Logger _logger;
 
-        /// <summary>Per-(user, file) lock pool used to serialize RMW writers.</summary>
+        /// <summary>
+        /// Per-(user, file) lock pool used to serialize RMW writers. MUST remain
+        /// <c>static</c> — the singleton-vs-scoped DI lifetimes of callers
+        /// (ResponseFilter is Singleton, IEventConsumer is Scoped) rely on a
+        /// process-wide pool to actually serialize across them.
+        /// </summary>
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
@@ -33,8 +38,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         private string GetUserConfigDir(string userId)
         {
-            var normalizedUserId = userId?.Replace("-", "") ?? "";
+            var normalizedUserId = userId?.Replace("-", "") ?? string.Empty;
             var userDir = Path.Combine(_configBaseDir, normalizedUserId);
+
+            // Defense-in-depth: every current caller passes a Guid-derived id,
+            // so the resolved path is always under _configBaseDir. Refuse
+            // anything outside it so a future caller that accidentally
+            // forwards untrusted input can't traverse out of the per-user
+            // configurations tree.
+            var fullBase = Path.GetFullPath(_configBaseDir + Path.DirectorySeparatorChar);
+            var fullUser = Path.GetFullPath(userDir);
+            if (!fullUser.StartsWith(fullBase, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Refusing user-config path outside base directory: '{userId}'");
+            }
+
             Directory.CreateDirectory(userDir);
             return userDir;
         }
@@ -163,7 +182,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 configPath = Path.Combine(GetUserConfigDir(userId), fileName);
-                tempPath = configPath + ".tmp";
+                // Per-call random suffix so two non-RMW writers (e.g. concurrent
+                // bookmark.json saves bypassing the lock) don't collide on a
+                // single shared `.tmp` and File.Move into a missing source.
+                tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
 
                 JToken token;
                 if (config is System.Text.Json.JsonElement jsonElement)
@@ -190,13 +212,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>Copies a corrupt file to <c>{path}.corrupt-{yyyyMMddHHmmss}</c> for forensic recovery.</summary>
+        /// <summary>Copies a corrupt file to <c>{path}.corrupt-{yyyyMMddHHmmssfff}</c> for forensic recovery; skip-and-log on collision.</summary>
         private void BackupCorruptFile(string filePath)
         {
             try
             {
-                var backupPath = filePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-                if (!File.Exists(backupPath)) File.Copy(filePath, backupPath);
+                // Millisecond resolution so two corruption events in the same
+                // UTC second still get distinct backups; if a collision still
+                // happens, branch the log instead of silently lying about a
+                // backup that didn't run.
+                var backupPath = filePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                if (File.Exists(backupPath))
+                {
+                    _logger.Warning($"Corrupt config backup already exists at {backupPath} — skipping new copy.");
+                    return;
+                }
+                File.Copy(filePath, backupPath);
                 _logger.Warning($"Corrupt config backed up to {backupPath}");
             }
             catch (Exception ex)
