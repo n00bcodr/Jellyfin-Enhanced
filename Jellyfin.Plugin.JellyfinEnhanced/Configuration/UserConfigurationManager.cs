@@ -139,6 +139,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>Locked read-modify-write: <see cref="GetUserFileLock"/> + strict-read + <paramref name="mutate"/> + save when the mutator returns &gt; 0.</summary>
+        /// <returns>The mutator's result (0 = no save).</returns>
+        public int RmwUserConfiguration<T>(string userId, string fileName, Func<T, int> mutate) where T : class, new()
+        {
+            lock (GetUserFileLock(userId, fileName))
+            {
+                var config = GetUserConfigurationStrict<T>(userId, fileName);
+                var changed = mutate(config);
+                if (changed > 0)
+                {
+                    SaveUserConfiguration(userId, fileName, config);
+                }
+                return changed;
+            }
+        }
+
         /// <summary>Atomic save via temp file + <see cref="File.Move(string,string,bool)"/>. RMW callers must hold <see cref="GetUserFileLock"/>.</summary>
         public void SaveUserConfiguration(string userId, string fileName, object config)
         {

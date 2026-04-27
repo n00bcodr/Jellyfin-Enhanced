@@ -2757,14 +2757,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
-                {
-                    var hidden = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
-                        authorizedUserId, "hidden-content.json");
-                    hidden.Items[key] = entry;
-                    _userConfigurationManager.SaveUserConfiguration(
-                        authorizedUserId, "hidden-content.json", hidden);
-                }
+                _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                    authorizedUserId, "hidden-content.json", h => { h.Items[key] = entry; return 1; });
                 return Ok(new { success = true, key, entry });
             }
             catch (InvalidDataException)
@@ -2803,23 +2797,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                var dropped = _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                    authorizedUserId, "hidden-content.json", h =>
                 {
-                    var hidden = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
-                        authorizedUserId, "hidden-content.json");
-                    if (hidden?.Items == null || hidden.Items.Count == 0)
-                    {
-                        return NotFound(new { success = false, message = "No matching hidden-content entry." });
-                    }
-
+                    if (h?.Items == null || h.Items.Count == 0) return 0;
                     var dropKeys = new List<string>();
-                    foreach (var kvp in hidden.Items)
+                    foreach (var kvp in h.Items)
                     {
                         var entry = kvp.Value;
                         if (entry == null) continue;
                         if (!string.Equals(entry.HideScope, "continuewatching", StringComparison.OrdinalIgnoreCase))
                             continue;
-
                         var entryId = entry.ItemId ?? string.Empty;
                         if (string.Equals(entryId, canonical, StringComparison.OrdinalIgnoreCase)
                             || string.Equals(entryId, canonicalN, StringComparison.OrdinalIgnoreCase))
@@ -2827,17 +2815,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             dropKeys.Add(kvp.Key);
                         }
                     }
+                    foreach (var k in dropKeys) h.Items.Remove(k);
+                    return dropKeys.Count;
+                });
 
-                    if (dropKeys.Count == 0)
-                    {
-                        return NotFound(new { success = false, message = "No matching hidden-content entry." });
-                    }
-
-                    foreach (var k in dropKeys) hidden.Items.Remove(k);
-                    _userConfigurationManager.SaveUserConfiguration(
-                        authorizedUserId, "hidden-content.json", hidden);
-                }
-
+                if (dropped == 0) return NotFound(new { success = false, message = "No matching hidden-content entry." });
                 return Ok(new { success = true });
             }
             catch (InvalidDataException)

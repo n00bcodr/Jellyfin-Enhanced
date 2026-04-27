@@ -59,26 +59,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                     ? ep.SeriesId.ToString()
                     : null;
 
-                var dropped = MutateUnderLock(userId, hidden =>
+                int dropped;
+                try
                 {
-                    var keysToDrop = new List<string>();
-                    foreach (var kvp in hidden.Items)
+                    dropped = _configManager.RmwUserConfiguration<UserHiddenContent>(
+                        userId.ToString("N"), "hidden-content.json", hidden =>
                     {
-                        var entry = kvp.Value;
-                        if (entry == null) continue;
-                        var scope = string.IsNullOrEmpty(entry.HideScope) ? "global" : entry.HideScope;
-                        if (!AutoRemoveScopes.Contains(scope)) continue;
-                        if (string.IsNullOrEmpty(entry.ItemId)) continue;
-
-                        if (CwEventHelpers.IdMatches(entry.ItemId, itemIdStr)
-                            || (seriesIdStr != null && CwEventHelpers.IdMatches(entry.ItemId, seriesIdStr)))
+                        if (hidden?.Items == null || hidden.Items.Count == 0) return 0;
+                        var keysToDrop = new List<string>();
+                        foreach (var kvp in hidden.Items)
                         {
-                            keysToDrop.Add(kvp.Key);
+                            var entry = kvp.Value;
+                            if (entry == null) continue;
+                            var scope = string.IsNullOrEmpty(entry.HideScope) ? "global" : entry.HideScope;
+                            if (!AutoRemoveScopes.Contains(scope)) continue;
+                            if (string.IsNullOrEmpty(entry.ItemId)) continue;
+
+                            if (CwEventHelpers.IdMatches(entry.ItemId, itemIdStr)
+                                || (seriesIdStr != null && CwEventHelpers.IdMatches(entry.ItemId, seriesIdStr)))
+                            {
+                                keysToDrop.Add(kvp.Key);
+                            }
                         }
-                    }
-                    foreach (var k in keysToDrop) hidden.Items.Remove(k);
-                    return keysToDrop.Count;
-                });
+                        foreach (var k in keysToDrop) hidden.Items.Remove(k);
+                        return keysToDrop.Count;
+                    });
+                }
+                catch (InvalidDataException ex)
+                {
+                    _logger.Warning($"CW: skipping playback drop for user {userId} due to corrupt hidden-content.json: {ex.Message}");
+                    return Task.CompletedTask;
+                }
 
                 if (dropped > 0)
                 {
@@ -87,41 +98,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             }
             catch (Exception ex)
             {
-                // Event consumers must not throw — Jellyfin would treat
-                // it as a plugin fault.
+                // Event consumers must not throw — Jellyfin treats it as a plugin fault.
                 _logger.Warning($"CW: playback-start consumer failed: {ex.Message}");
             }
 
             return Task.CompletedTask;
-        }
-
-        /// <summary>Lock + strict-read + <paramref name="mutate"/> + save if mutator returned > 0.</summary>
-        private int MutateUnderLock(Guid userId, Func<UserHiddenContent, int> mutate)
-        {
-            var userIdN = userId.ToString("N");
-            lock (_configManager.GetUserFileLock(userIdN, "hidden-content.json"))
-            {
-                UserHiddenContent hidden;
-                try
-                {
-                    hidden = _configManager.GetUserConfigurationStrict<UserHiddenContent>(
-                        userIdN, "hidden-content.json");
-                }
-                catch (InvalidDataException ex)
-                {
-                    _logger.Warning($"CW: skipping playback-consumer mutation for user {userId} due to corrupt hidden-content.json: {ex.Message}");
-                    return 0;
-                }
-
-                if (hidden?.Items == null || hidden.Items.Count == 0) return 0;
-
-                var changed = mutate(hidden);
-                if (changed > 0)
-                {
-                    _configManager.SaveUserConfiguration(userIdN, "hidden-content.json", hidden);
-                }
-                return changed;
-            }
         }
     }
 
@@ -183,23 +164,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         {
             try
             {
-                var userIdN = userId.ToString("N");
-                lock (_configManager.GetUserFileLock(userIdN, "hidden-content.json"))
+                _configManager.RmwUserConfiguration<UserHiddenContent>(
+                    userId.ToString("N"), "hidden-content.json", hidden =>
                 {
-                    UserHiddenContent hidden;
-                    try
-                    {
-                        hidden = _configManager.GetUserConfigurationStrict<UserHiddenContent>(
-                            userIdN, "hidden-content.json");
-                    }
-                    catch (InvalidDataException ex)
-                    {
-                        _logger.Warning($"CW: skipping orphan-prune for user {userId} due to corrupt hidden-content.json: {ex.Message}");
-                        return;
-                    }
-
-                    if (hidden?.Items == null || hidden.Items.Count == 0) return;
-
+                    if (hidden?.Items == null || hidden.Items.Count == 0) return 0;
                     var keysToDrop = new List<string>();
                     foreach (var kvp in hidden.Items)
                     {
@@ -207,11 +175,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                         if (entry == null) continue;
                         if (CwEventHelpers.IdMatches(entry.ItemId, targetId)) keysToDrop.Add(kvp.Key);
                     }
-
-                    if (keysToDrop.Count == 0) return;
                     foreach (var k in keysToDrop) hidden.Items.Remove(k);
-                    _configManager.SaveUserConfiguration(userIdN, "hidden-content.json", hidden);
-                }
+                    return keysToDrop.Count;
+                });
+            }
+            catch (InvalidDataException ex)
+            {
+                _logger.Warning($"CW: skipping orphan-prune for user {userId} due to corrupt hidden-content.json: {ex.Message}");
             }
             catch (Exception ex)
             {
