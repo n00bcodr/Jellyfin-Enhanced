@@ -73,6 +73,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            // Admin master switch: when the plugin's HiddenContentEnabled flag is off
+            // the HC frontend module isn't even loaded; the server-side filter mirrors
+            // that — leave responses untouched so an admin disable instantly clears
+            // all filtering for every user.
+            if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled != true)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
             var userId = UserHelper.GetCurrentUserId(context.HttpContext.User) ?? Guid.Empty;
             if (userId == Guid.Empty)
             {
@@ -90,7 +100,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var executed = await next().ConfigureAwait(false);
             try
             {
-                route.Handler(executed, hide, route.Surface, _logger);
+                // /Items doubles as both the library list endpoint and the
+                // search results endpoint — searchTerm-bearing requests
+                // need the 'search' surface so FilterSearch (not
+                // FilterLibrary) gates them.
+                var surface = (route.Surface == "library" && HasSearchTerm(context))
+                    ? "search"
+                    : route.Surface;
+                route.Handler(executed, hide, surface, _logger);
             }
             catch (Exception ex)
             {
@@ -100,6 +117,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Error($"HC response filter handler failed for surface '{route.Surface}' — entries will pass through unfiltered for this request: {ex.Message}");
             }
         }
+
+        /// <summary>True when the request has a non-empty <c>searchTerm</c> query parameter.</summary>
+        private static bool HasSearchTerm(ActionExecutingContext context)
+        {
+            var q = context.HttpContext?.Request?.Query;
+            if (q == null) return false;
+            // Jellyfin accepts both the canonical PascalCase and lowercase variants.
+            return HasNonEmpty(q, "searchTerm") || HasNonEmpty(q, "SearchTerm");
+        }
+
+        private static bool HasNonEmpty(IQueryCollection q, string key)
+            => q.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v.ToString());
 
         // ─── route gate ──────────────────────────────────────────────────────
 
