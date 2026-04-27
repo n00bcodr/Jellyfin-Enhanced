@@ -641,25 +641,86 @@
                             <div data-gated-by="hiddenContentEnabled">
                                 <h3 class="sectionTitle je-hc-defaults-h">Master toggles</h3>
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultEnabled" is="emby-checkbox" type="checkbox"/><span>Hidden Content enabled by default</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultEnabled">
+                                    <div class="fieldDescription">Default state of the per-user "Hidden Content enabled" toggle. When off, the user gets HC inactive out of the box and has to opt in from the user settings panel.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowHideButtons" is="emby-checkbox" type="checkbox"/><span>Show "Hide" buttons by default</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowHideButtons">
+                                    <div class="fieldDescription">Default state of the master "Show hide buttons" toggle in the user panel. When off, no "Hide" button appears anywhere; users can still see and unhide existing entries from the management page.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowHideConfirmation" is="emby-checkbox" type="checkbox"/><span>Show confirmation dialog before hiding</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowHideConfirmation">
+                                    <div class="fieldDescription">When on, clicking "Hide" prompts for confirmation. Turn off if your users prefer one-click hides and trust themselves to undo from the management page.</div>
+                                </div>
 
                                 <h3 class="sectionTitle je-hc-defaults-h">Show "Hide" button on</h3>
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonJellyseerr" is="emby-checkbox" type="checkbox"/><span>Jellyseerr / Seerr search results</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowButtonJellyseerr">
+                                    <div class="fieldDescription">Default for showing the "Hide" button on Seerr search and discover cards (lets users hide a TMDB ID before it ever exists in the library).</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonDetails" is="emby-checkbox" type="checkbox"/><span>Item details pages</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowButtonDetails">
+                                    <div class="fieldDescription">Default for showing the "Hide" button in the action bar on movie / show / episode detail pages.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonLibrary" is="emby-checkbox" type="checkbox"/><span>Library / home cards</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowButtonLibrary">
+                                    <div class="fieldDescription">Default for showing a small eye icon overlay on every library / home card so users can hide without opening the item. Off by default — turn on for power-user setups; some users find the per-card overlays noisy.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonCast" is="emby-checkbox" type="checkbox"/><span>Cast / actor cards</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowButtonCast">
+                                    <div class="fieldDescription">Default for showing the "Hide" button on cast / actor cards (hides every item that person appears in, until unhid).</div>
+                                </div>
 
                                 <h3 class="sectionTitle je-hc-defaults-h">Filter surfaces by default</h3>
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterLibrary" is="emby-checkbox" type="checkbox"/><span>Library &amp; details pages</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterLibrary">
+                                    <div class="fieldDescription">When on, hidden items are filtered from library browse views and details-page suggestion rows. Recommended on; turn off if users want to see hidden items in library browse.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterSearch" is="emby-checkbox" type="checkbox"/><span>Search results</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterSearch">
+                                    <div class="fieldDescription">When on, hidden items don't appear in search results. Off by default — most users want to be able to search up an item they hid in order to unhide it.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterContinueWatching" is="emby-checkbox" type="checkbox"/><span>Continue Watching</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterContinueWatching">
+                                    <div class="fieldDescription">When on, hidden items are stripped from the Continue Watching row. Required for "Remove from Continue Watching" to actually hide entries — turn off only if you don't want CW filtering at all.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterNextUp" is="emby-checkbox" type="checkbox"/><span>Next Up</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterNextUp">
+                                    <div class="fieldDescription">When on, hidden items are stripped from the Next Up row. Recommended on so series the user has chosen to hide don't keep reappearing as the next thing to watch.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterUpcoming" is="emby-checkbox" type="checkbox"/><span>Upcoming episodes</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterUpcoming">
+                                    <div class="fieldDescription">When on, hidden items are stripped from the upcoming-episodes list (Jellyfin's <code>/Shows/Upcoming</code> endpoint).</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterRecommendations" is="emby-checkbox" type="checkbox"/><span>Suggestions / recommendations</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterRecommendations">
+                                    <div class="fieldDescription">When on, hidden items are filtered from "Because you watched X" / "Suggested for you" rows on the home and details pages.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterDiscovery" is="emby-checkbox" type="checkbox"/><span>Discovery</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterDiscovery">
+                                    <div class="fieldDescription">When on, hidden items are filtered from JE's Discovery page surfaces (genre / similar / recommended). DOM-side filter; affects the Discovery feature only.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterCalendar" is="emby-checkbox" type="checkbox"/><span>Calendar</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterCalendar">
+                                    <div class="fieldDescription">When on, hidden series don't appear on the JE Calendar's upcoming-episode list.</div>
+                                </div>
+
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterRequests" is="emby-checkbox" type="checkbox"/><span>Requests page</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultFilterRequests">
+                                    <div class="fieldDescription">When on, hidden items are filtered out of the JE Requests page (Sonarr / Radarr / Seerr unified view).</div>
+                                </div>
 
                                 <h3 class="sectionTitle je-hc-defaults-h">Experimental</h3>
                                 <div class="checkboxContainer"><label><input id="hiddenContentDefaultExperimentalHideCollections" is="emby-checkbox" type="checkbox"/><span>Allow hiding collections, libraries, and playlists</span></label></div>
