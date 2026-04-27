@@ -102,14 +102,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // /Items doubles as library list + search results. Resolve which
             // logical surface this request maps to: searchTerm wins (FilterSearch
-            // gates), then fall back to library. Ids-bearing batch reads ARE
-            // filtered per-item — the per-item filter only strips entries that
-            // actually match a hide, so HC's own parent-series lookups against
-            // ?Ids= still resolve visible items correctly; hidden items in a
-            // mixed batch are stripped instead of leaking the whole batch.
+            // gates), then fall back to library.
             var surface = (route.Surface == "library" && HasSearchTerm(context))
                 ? "search"
                 : route.Surface;
+
+            // Pure metadata-resolver Ids calls (Ids set, no Recursive/ParentId)
+            // bypass the filter — JE's own batchCheckParentSeries cascade caches
+            // missing-from-response IDs as "deleted" forever, so filtering this
+            // path leaves cards permanently un-cascaded on surfaces NOT in the
+            // route table (custom plugin views, LibraryController.GetItems, etc.).
+            // Browsing-intent Ids calls (with Recursive=true or ParentId) still
+            // run through the filter so mixed batches don't leak.
+            if (surface == "library" && IsMetadataResolverIdsCall(context))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
 
             var executed = await next().ConfigureAwait(false);
             try
@@ -136,6 +145,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static bool HasNonEmpty(IQueryCollection q, string key)
             => q.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v.ToString());
+
+        /// <summary>True when the request looks like a pure metadata-resolver Ids call: Ids is set, with no library-browse signals (Recursive=true or ParentId).</summary>
+        private static bool IsMetadataResolverIdsCall(ActionExecutingContext context)
+        {
+            var q = context.HttpContext?.Request?.Query;
+            if (q == null) return false;
+            if (!HasNonEmpty(q, "Ids") && !HasNonEmpty(q, "ids")) return false;
+            if (IsRecursiveTrue(q, "Recursive") || IsRecursiveTrue(q, "recursive")) return false;
+            if (HasNonEmpty(q, "ParentId") || HasNonEmpty(q, "parentId")) return false;
+            return true;
+        }
+
+        private static bool IsRecursiveTrue(IQueryCollection q, string key)
+            => q.TryGetValue(key, out var v) && string.Equals(v.ToString().Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
         // ─── route gate ──────────────────────────────────────────────────────
 

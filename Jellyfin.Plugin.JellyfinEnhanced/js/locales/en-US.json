@@ -479,6 +479,7 @@
     "hidden_content_group_series": "Series",
     "hidden_content_group_cast": "Cast / Actors",
     "hidden_content_scope_badge": "Next Up / CW",
+    "hidden_content_scope_filter_button": "Scoped only",
     "hidden_content_expand_all": "Expand All",
     "hidden_content_collapse_all": "Collapse All",
     "hidden_content_entire_show": "Entire show",

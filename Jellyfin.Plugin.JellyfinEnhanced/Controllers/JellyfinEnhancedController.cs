@@ -2687,11 +2687,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             authorizedUserId, "hidden-content.json");
                     }
                     catch (Exception strictEx) when (strictEx is InvalidDataException
-                                                  || strictEx is Newtonsoft.Json.JsonException
-                                                  || strictEx is IOException)
+                                                  || strictEx is Newtonsoft.Json.JsonException)
                     {
-                        _logger.Warning($"hidden-content.json strict-read failed for {ResolveUserDisplay(authorizedUserId)} (file backed up): {strictEx.Message}");
+                        // Parse-shape corruption: BackupCorruptFile fired in the strict reader, file IS damaged.
+                        _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
                         return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+                    }
+                    catch (IOException ioEx)
+                    {
+                        // Transient I/O fault (locked file, AV scanner, permission) — file may not be corrupt and backup likely also failed.
+                        _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                        return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
                     }
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
@@ -2708,12 +2714,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
-        /// <summary>Picks the WIDER of two HC scopes (rank: global &gt; homesections &gt; {nextup, continuewatching} &gt; unknown &gt; null).</summary>
+        /// <summary>Picks the WIDER of two HC scopes (rank: global &gt; homesections &gt; {nextup, continuewatching} &gt; unknown &gt; null). Disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.</summary>
         private static string? WiderScope(string? a, string? b)
         {
             if (string.IsNullOrEmpty(a)) return b;
             if (string.IsNullOrEmpty(b)) return a;
-            return ScopeRank(a) >= ScopeRank(b) ? a : b;
+            var ra = ScopeRank(a);
+            var rb = ScopeRank(b);
+            if (ra == 2 && rb == 2 && !string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return "homesections";
+            return ra >= rb ? a : b;
         }
 
         private static int ScopeRank(string scope)

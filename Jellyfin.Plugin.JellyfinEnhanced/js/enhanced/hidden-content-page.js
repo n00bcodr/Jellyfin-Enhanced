@@ -27,6 +27,15 @@
 
   const logPrefix = '🪼 Jellyfin Enhanced: Hidden Content Page:';
 
+  /** Per-scope badge label — Continue Watching and Next Up are independent scopes (no longer joined as homesections). */
+  function scopeBadgeText(scope) {
+    const s = (scope || '').toLowerCase();
+    if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label') || 'Continue Watching only';
+    if (s === 'nextup')           return JE.t('hidden_content_scope_nextup_label') || 'Next Up only';
+    if (s === 'homesections')     return JE.t('hidden_content_scope_homesections_label') || 'Home sections only';
+    return '';
+  }
+
   /** Polling interval for detecting pushState navigations. */
   const LOCATION_WATCH_INTERVAL_MS = 150;
   /** Delay before removing a card after unhide animation. */
@@ -789,7 +798,7 @@
         badge.className = 'je-hidden-scoped-badge';
         badge.style.marginTop = '2px';
         badge.style.display = 'inline-block';
-        badge.textContent = JE.t('hidden_content_scope_badge');
+        badge.textContent = scopeBadgeText(mainItem.hideScope);
         detailDiv.appendChild(badge);
       }
       fragment.appendChild(detailDiv);
@@ -865,7 +874,7 @@
       if (item.hideScope && item.hideScope !== 'global') {
         const badge = document.createElement('span');
         badge.className = 'je-hidden-scoped-badge';
-        badge.textContent = JE.t('hidden_content_scope_badge');
+        badge.textContent = scopeBadgeText(item.hideScope);
         infoCol.appendChild(badge);
       }
 
@@ -1082,7 +1091,7 @@
 
     const scopedToggle = document.createElement("button");
     scopedToggle.className = 'je-hidden-scoped-filter' + (state.scopedOnly ? ' active' : '');
-    scopedToggle.textContent = JE.t('hidden_content_scope_badge');
+    scopedToggle.textContent = JE.t('hidden_content_scope_filter_button') || 'Scoped only';
     toolbar.appendChild(scopedToggle);
 
     const unhideAllBtn = document.createElement("button");
@@ -1139,7 +1148,7 @@
           const badge = document.createElement('span');
           badge.className = 'je-hidden-scoped-badge';
           badge.style.marginLeft = '6px';
-          badge.textContent = JE.t('hidden_content_scope_nextup');
+          badge.textContent = scopeBadgeText(item.hideScope);
           infoDiv.appendChild(badge);
         }
       }
