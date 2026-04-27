@@ -627,6 +627,46 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div class="je-info-banner-inline" data-gated-by="hiddenContentEnabled" style="margin-top: 15px;">
+                                <div class="je-info-banner-row">
+                                    <i class="material-icons je-info-icon">tune</i>
+                                    <div>
+                                        <strong>Default Hidden Content settings for users.</strong>
+                                        Applied when a user logs in for the first time, and when you click <em>Apply defaults to all users</em> at the top of the page. Existing users keep their current settings unless you click that button.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div data-gated-by="hiddenContentEnabled">
+                                <h3 class="sectionTitle je-hc-defaults-h">Master toggles</h3>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultEnabled" is="emby-checkbox" type="checkbox"/><span>Hidden Content enabled by default</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowHideButtons" is="emby-checkbox" type="checkbox"/><span>Show "Hide" buttons by default</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowHideConfirmation" is="emby-checkbox" type="checkbox"/><span>Show confirmation dialog before hiding</span></label></div>
+
+                                <h3 class="sectionTitle je-hc-defaults-h">Show "Hide" button on</h3>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonJellyseerr" is="emby-checkbox" type="checkbox"/><span>Jellyseerr / Seerr search results</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonDetails" is="emby-checkbox" type="checkbox"/><span>Item details pages</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonLibrary" is="emby-checkbox" type="checkbox"/><span>Library / home cards</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonCast" is="emby-checkbox" type="checkbox"/><span>Cast / actor cards</span></label></div>
+
+                                <h3 class="sectionTitle je-hc-defaults-h">Filter surfaces by default</h3>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterLibrary" is="emby-checkbox" type="checkbox"/><span>Library &amp; details pages</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterSearch" is="emby-checkbox" type="checkbox"/><span>Search results</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterContinueWatching" is="emby-checkbox" type="checkbox"/><span>Continue Watching</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterNextUp" is="emby-checkbox" type="checkbox"/><span>Next Up</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterUpcoming" is="emby-checkbox" type="checkbox"/><span>Upcoming episodes</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterRecommendations" is="emby-checkbox" type="checkbox"/><span>Suggestions / recommendations</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterDiscovery" is="emby-checkbox" type="checkbox"/><span>Discovery</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterCalendar" is="emby-checkbox" type="checkbox"/><span>Calendar</span></label></div>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultFilterRequests" is="emby-checkbox" type="checkbox"/><span>Requests page</span></label></div>
+
+                                <h3 class="sectionTitle je-hc-defaults-h">Experimental</h3>
+                                <div class="checkboxContainer"><label><input id="hiddenContentDefaultExperimentalHideCollections" is="emby-checkbox" type="checkbox"/><span>Allow hiding collections, libraries, and playlists</span></label></div>
+                                <div class="je-setting-description" data-desc-for="hiddenContentDefaultExperimentalHideCollections">
+                                    <div class="fieldDescription">Experimental: lets users hide entire collections / "My Media" libraries / playlists in addition to individual items.</div>
+                                </div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -3885,6 +3925,33 @@
                 var __hAuto = document.querySelector('#hiddenContentAutoCreateCustomTab');
                 if (__hAuto) __hAuto.checked = config.HiddenContentAutoCreateCustomTab === true;
 
+                // Hidden Content per-user defaults — same name as on the user side, prefixed HiddenContentDefault*.
+                var __hcDefaults = [
+                    ['hiddenContentDefaultEnabled', 'HiddenContentDefaultEnabled', true],
+                    ['hiddenContentDefaultShowHideButtons', 'HiddenContentDefaultShowHideButtons', true],
+                    ['hiddenContentDefaultShowHideConfirmation', 'HiddenContentDefaultShowHideConfirmation', true],
+                    ['hiddenContentDefaultShowButtonJellyseerr', 'HiddenContentDefaultShowButtonJellyseerr', true],
+                    ['hiddenContentDefaultShowButtonLibrary', 'HiddenContentDefaultShowButtonLibrary', false],
+                    ['hiddenContentDefaultShowButtonDetails', 'HiddenContentDefaultShowButtonDetails', true],
+                    ['hiddenContentDefaultShowButtonCast', 'HiddenContentDefaultShowButtonCast', false],
+                    ['hiddenContentDefaultFilterLibrary', 'HiddenContentDefaultFilterLibrary', true],
+                    ['hiddenContentDefaultFilterDiscovery', 'HiddenContentDefaultFilterDiscovery', true],
+                    ['hiddenContentDefaultFilterSearch', 'HiddenContentDefaultFilterSearch', false],
+                    ['hiddenContentDefaultFilterCalendar', 'HiddenContentDefaultFilterCalendar', true],
+                    ['hiddenContentDefaultFilterUpcoming', 'HiddenContentDefaultFilterUpcoming', true],
+                    ['hiddenContentDefaultFilterRecommendations', 'HiddenContentDefaultFilterRecommendations', true],
+                    ['hiddenContentDefaultFilterRequests', 'HiddenContentDefaultFilterRequests', true],
+                    ['hiddenContentDefaultFilterNextUp', 'HiddenContentDefaultFilterNextUp', true],
+                    ['hiddenContentDefaultFilterContinueWatching', 'HiddenContentDefaultFilterContinueWatching', true],
+                    ['hiddenContentDefaultExperimentalHideCollections', 'HiddenContentDefaultExperimentalHideCollections', false],
+                ];
+                __hcDefaults.forEach(function(t) {
+                    var el = document.querySelector('#' + t[0]);
+                    if (!el) return;
+                    var v = config[t[1]];
+                    el.checked = (v === undefined || v === null) ? t[2] : !!v;
+                });
+
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
@@ -4118,6 +4185,32 @@
             config.HiddenContentUseCustomTabs = document.querySelector('#hiddenContentUseCustomTabs').checked;
             var __hAutoSave = document.querySelector('#hiddenContentAutoCreateCustomTab');
             config.HiddenContentAutoCreateCustomTab = !!(__hAutoSave && __hAutoSave.checked);
+
+            // Hidden Content per-user defaults
+            [
+                'hiddenContentDefaultEnabled',
+                'hiddenContentDefaultShowHideButtons',
+                'hiddenContentDefaultShowHideConfirmation',
+                'hiddenContentDefaultShowButtonJellyseerr',
+                'hiddenContentDefaultShowButtonLibrary',
+                'hiddenContentDefaultShowButtonDetails',
+                'hiddenContentDefaultShowButtonCast',
+                'hiddenContentDefaultFilterLibrary',
+                'hiddenContentDefaultFilterDiscovery',
+                'hiddenContentDefaultFilterSearch',
+                'hiddenContentDefaultFilterCalendar',
+                'hiddenContentDefaultFilterUpcoming',
+                'hiddenContentDefaultFilterRecommendations',
+                'hiddenContentDefaultFilterRequests',
+                'hiddenContentDefaultFilterNextUp',
+                'hiddenContentDefaultFilterContinueWatching',
+                'hiddenContentDefaultExperimentalHideCollections',
+            ].forEach(function(id) {
+                var el = document.querySelector('#' + id);
+                if (!el) return;
+                var pascal = id.charAt(0).toUpperCase() + id.slice(1);
+                config[pascal] = !!el.checked;
+            });
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';

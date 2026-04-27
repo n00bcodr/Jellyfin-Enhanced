@@ -2653,8 +2653,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            // First-time init: seed Settings from admin defaults so a fresh user
+            // starts with the admin's chosen filter/show-button posture rather
+            // than the C# class-default constants.
+            if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json"))
+            {
+                var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+                if (defaultConfig != null)
+                {
+                    var seeded = new UserHiddenContent
+                    {
+                        Items = new System.Collections.Generic.Dictionary<string, HiddenContentItem>(),
+                        Settings = BuildHcDefaultSettings(defaultConfig),
+                    };
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", seeded);
+                    _logger.Info($"Seeded default hidden-content.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                }
+            }
+
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
             return Ok(userConfig);
+        }
+
+        /// <summary>Maps the admin's <c>HiddenContentDefault*</c> properties onto a per-user <see cref="HiddenContentSettings"/> snapshot.</summary>
+        private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
+        {
+            return new HiddenContentSettings
+            {
+                Enabled = src.HiddenContentDefaultEnabled,
+                ShowHideButtons = src.HiddenContentDefaultShowHideButtons,
+                ShowHideConfirmation = src.HiddenContentDefaultShowHideConfirmation,
+                ShowButtonJellyseerr = src.HiddenContentDefaultShowButtonJellyseerr,
+                ShowButtonLibrary = src.HiddenContentDefaultShowButtonLibrary,
+                ShowButtonDetails = src.HiddenContentDefaultShowButtonDetails,
+                ShowButtonCast = src.HiddenContentDefaultShowButtonCast,
+                FilterLibrary = src.HiddenContentDefaultFilterLibrary,
+                FilterDiscovery = src.HiddenContentDefaultFilterDiscovery,
+                FilterSearch = src.HiddenContentDefaultFilterSearch,
+                FilterCalendar = src.HiddenContentDefaultFilterCalendar,
+                FilterUpcoming = src.HiddenContentDefaultFilterUpcoming,
+                FilterRecommendations = src.HiddenContentDefaultFilterRecommendations,
+                FilterRequests = src.HiddenContentDefaultFilterRequests,
+                FilterNextUp = src.HiddenContentDefaultFilterNextUp,
+                FilterContinueWatching = src.HiddenContentDefaultFilterContinueWatching,
+                ExperimentalHideCollections = src.HiddenContentDefaultExperimentalHideCollections,
+            };
         }
 
         [HttpPost("user-settings/{userId}/hidden-content.json")]
@@ -3267,6 +3310,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
                 userCount++;
+
+                // Also push HC Settings — preserve each user's Items dict (their
+                // hidden-items list is data, not a default; only Settings defaults
+                // get reset).
+                try
+                {
+                    _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                        userId, "hidden-content.json", hc =>
+                        {
+                            hc.Settings = BuildHcDefaultSettings(defaultConfig);
+                            return 1;
+                        });
+                }
+                catch (System.IO.InvalidDataException ex)
+                {
+                    _logger.Warning($"Skipping HC settings reset for user {ResolveUserDisplay(userId)} due to corrupt hidden-content.json: {ex.Message}");
+                }
             }
 
             _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
