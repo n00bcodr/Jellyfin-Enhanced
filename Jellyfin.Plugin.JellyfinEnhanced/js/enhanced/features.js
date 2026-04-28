@@ -1043,7 +1043,12 @@
                         card.style.display = 'none';
                     }
                 });
-            } catch (e) { /* CSS.escape — non-fatal */ }
+            } catch (e) { /* CSS.escape, non-fatal */ }
+
+            // Mirror the server-side write into the local hidden-content cache so
+            // the management page (and anything else reading JE.userConfig.hiddenContent)
+            // sees the new entry without a manual page refresh.
+            try { await JE.hiddenContent?.refresh?.(); } catch (e) { /* non-fatal */ }
             return true;
         } catch (error) {
             // Controller emits { success, message } in lowercase; older

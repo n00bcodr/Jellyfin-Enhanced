@@ -440,6 +440,20 @@
 
     injectStyles();
 
+    // Auto-refresh listener runs in BOTH native and Plugin-Pages modes so that
+    // hiding an item from anywhere (Remove from CW on the home page, the bulk
+    // save endpoint, the playback consumer auto-clear) causes the management
+    // page to re-render without a manual page refresh. Gates on DOM presence
+    // of the container instead of state.pageVisible because state.pageVisible
+    // is only set by JE's native routing path — in Plugin Pages mode the page
+    // is mounted by Plugin Pages directly and that flag stays false forever.
+    window.addEventListener('je-hidden-content-changed', () => {
+      const container = document.getElementById('je-hidden-content-container');
+      if (container && document.contains(container)) {
+        renderPage(container);
+      }
+    });
+
     const usingPluginPages = pluginPagesExists && config.HiddenContentUsePluginPages;
     if (usingPluginPages) {
       console.log(`${logPrefix} Hidden content page is injected via Plugin Pages`);
@@ -455,12 +469,6 @@
     document.addEventListener("click", handleNavClick);
     window.addEventListener("hashchange", handleNavigation);
     window.addEventListener("popstate", handleNavigation);
-
-    window.addEventListener('je-hidden-content-changed', () => {
-      if (state.pageVisible) {
-        renderPage();
-      }
-    });
 
     handleNavigation();
 

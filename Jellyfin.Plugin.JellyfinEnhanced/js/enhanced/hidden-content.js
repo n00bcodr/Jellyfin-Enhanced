@@ -1867,6 +1867,35 @@
         }
     }
 
+    /**
+     * Re-fetches hidden-content.json from the server, updates the local cache,
+     * and emits a change event so subscribers (management page, etc.) re-render.
+     * Used after server-side writes that don't go through hideItem/unhideItem
+     * (e.g. the Remove-from-Continue-Watching POST endpoint).
+     * @returns {Promise<boolean>} `true` on success.
+     */
+    async function refresh() {
+        try {
+            const userId = ApiClient.getCurrentUserId();
+            if (!userId) return false;
+            const fresh = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+                dataType: 'json'
+            });
+            const camelCased = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
+            JE.userConfig = JE.userConfig || {};
+            JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
+            hiddenData = JE.userConfig.hiddenContent;
+            rebuildSets();
+            emitChange();
+            return true;
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to refresh hidden-content', e);
+            return false;
+        }
+    }
+
     // ============================================================
     // Public API
     // ============================================================
@@ -2130,7 +2159,8 @@
             createItemCard,
             unhideAll,
             addLibraryHideButtons,
-            removeLibraryHideButtons
+            removeLibraryHideButtons,
+            refresh
         };
 
         console.log(`🪼 Jellyfin Enhanced: Hidden Content initialized (${getHiddenCount()} items hidden)`);
