@@ -2888,11 +2888,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var keyN = itemGuid.ToString("N");
+                // Seed Settings from admin defaults when this RMW creates the
+                // hidden-content.json file for the first time (a user who
+                // clicks Remove-from-CW before ever opening any HC UI). Without
+                // this, the new file's Settings would be C# class defaults,
+                // diverging from any defaults the admin has customised.
+                var preExistedHc = _userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json");
+                var hcDefaults = JellyfinEnhanced.Instance?.Configuration;
+
                 _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
                     authorizedUserId, "hidden-content.json", h =>
                     {
+                        if (!preExistedHc && hcDefaults != null && h.Items.Count == 0)
+                        {
+                            h.Settings = BuildHcDefaultSettings(hcDefaults);
+                        }
+
                         // Merge with any existing entry rather than blindly
-                        // overwrite — a previous wider scope (global /
+                        // overwrite. A previous wider scope (global /
                         // homesections / nextup) would otherwise be narrowed
                         // to continuewatching. Existing entries may live under
                         // either the hyphenated (this controller's canonical)
