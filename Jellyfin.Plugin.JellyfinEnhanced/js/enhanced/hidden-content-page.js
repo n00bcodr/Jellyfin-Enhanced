@@ -36,6 +36,14 @@
     return '';
   }
 
+  /** Per-scope unhide-button label: "Add back to Continue Watching" for CW-scoped entries; plain "Unhide" otherwise. */
+  function scopeUnhideText(scope) {
+    if ((scope || '').toLowerCase() === 'continuewatching') {
+      return JE.t('hidden_content_add_back_to_cw') || 'Add back to Continue Watching';
+    }
+    return JE.t('hidden_content_unhide') || 'Unhide';
+  }
+
   /** Polling interval for detecting pushState navigations. */
   const LOCATION_WATCH_INTERVAL_MS = 150;
   /** Delay before removing a card after unhide animation. */
@@ -814,7 +822,7 @@
 
     const unhideBtn = document.createElement('button');
     unhideBtn.className = 'je-hidden-group-unhide';
-    unhideBtn.textContent = JE.t('hidden_content_unhide');
+    unhideBtn.textContent = scopeUnhideText(mainItem.hideScope);
     unhideBtn.addEventListener('click', () => {
       const itemLabel = hasEpisodes
         ? (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(mainItem)
@@ -890,7 +898,7 @@
 
       const unhideBtn = document.createElement('button');
       unhideBtn.className = 'je-hidden-group-item-unhide';
-      unhideBtn.textContent = JE.t('hidden_content_unhide');
+      unhideBtn.textContent = scopeUnhideText(item.hideScope);
       unhideBtn.addEventListener('click', (e) => {
         e.preventDefault();
         const rowLabel = (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(item);
