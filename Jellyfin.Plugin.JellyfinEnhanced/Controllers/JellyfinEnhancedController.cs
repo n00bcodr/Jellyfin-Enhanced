@@ -2655,19 +2655,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // First-time init: seed Settings from admin defaults so a fresh user
             // starts with the admin's chosen filter/show-button posture rather
-            // than the C# class-default constants.
-            if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json"))
+            // than the C# class-default constants. Done under the per-user file
+            // lock via RMW so a parallel CW hide creating the file at the same
+            // time can't be clobbered by an unlocked seed write.
+            var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+            if (defaultConfig != null
+                && !_userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json"))
             {
-                var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
-                if (defaultConfig != null)
+                try
                 {
-                    var seeded = new UserHiddenContent
-                    {
-                        Items = new System.Collections.Generic.Dictionary<string, HiddenContentItem>(),
-                        Settings = BuildHcDefaultSettings(defaultConfig),
-                    };
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", seeded);
-                    _logger.Info($"Seeded default hidden-content.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                    _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                        authorizedUserId, "hidden-content.json", hc =>
+                        {
+                            // Re-check inside the lock: another writer may have
+                            // created the file between the existence check above
+                            // and acquiring the lock. Items.Count > 0 or any
+                            // non-default Settings means the file exists with
+                            // real data; leave it alone.
+                            if (hc.Items.Count > 0) return 0;
+                            hc.Settings = BuildHcDefaultSettings(defaultConfig);
+                            _logger.Info($"Seeded default hidden-content.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                            return 1;
+                        });
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to seed hidden-content.json for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 }
             }
 
@@ -3304,16 +3317,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
 
             var userCount = 0;
+            var skippedSettings = new System.Collections.Generic.List<string>();
+            var skippedHc = new System.Collections.Generic.List<string>();
             // Get all user IDs from the UserConfigurationManager's known users
             var userIds = _userConfigurationManager.GetAllUserIds();
             foreach (var userId in userIds)
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
-                userCount++;
+                try
+                {
+                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    userCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Skipping settings.json reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    skippedSettings.Add(userId);
+                }
 
-                // Also push HC Settings — preserve each user's Items dict (their
+                // Also push HC Settings, preserving each user's Items dict (their
                 // hidden-items list is data, not a default; only Settings defaults
-                // get reset).
+                // get reset). Catch the same exception types the strict reader
+                // can throw so one bad user file doesn't abort the whole loop.
                 try
                 {
                     _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
@@ -3323,14 +3347,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             return 1;
                         });
                 }
-                catch (System.IO.InvalidDataException ex)
+                catch (Exception ex) when (ex is InvalidDataException
+                                        || ex is Newtonsoft.Json.JsonException
+                                        || ex is IOException
+                                        || ex is UnauthorizedAccessException)
                 {
-                    _logger.Warning($"Skipping HC settings reset for user {ResolveUserDisplay(userId)} due to corrupt hidden-content.json: {ex.Message}");
+                    _logger.Warning($"Skipping HC settings reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    skippedHc.Add(userId);
                 }
             }
 
-            _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
-            return Ok(new { success = true, userCount = userCount });
+            _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
+            return Ok(new
+            {
+                success = true,
+                userCount,
+                totalUsers = userIds.Count(),
+                skippedSettingsUserIds = skippedSettings,
+                skippedHcUserIds = skippedHc,
+            });
         }
 
         /// <summary>
