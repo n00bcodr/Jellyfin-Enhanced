@@ -58,11 +58,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return userDir;
         }
 
+        /// <summary>Resolves a per-user file path safely. Refuses absolute paths, path separators, or invalid filename chars in <paramref name="fileName"/> so a future caller that forwards untrusted input can't traverse out of the user's directory via Path.Combine's drop-earlier-args behavior.</summary>
+        private string ResolveUserFile(string userId, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName)
+                || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                || fileName.Contains('/') || fileName.Contains('\\')
+                || Path.IsPathRooted(fileName))
+            {
+                throw new ArgumentException($"Invalid user-config filename: '{fileName}'", nameof(fileName));
+            }
+            return Path.Combine(GetUserConfigDir(userId), fileName);
+        }
+
         public bool UserConfigurationExists(string userId, string fileName)
         {
             try
             {
-                var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+                var configPath = ResolveUserFile(userId, fileName);
                 return File.Exists(configPath);
             }
             catch (Exception ex)
@@ -75,7 +88,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Lenient read; returns <c>new T()</c> on missing/empty/unparseable. Use <see cref="GetUserConfigurationStrict{T}"/> on the write path.</summary>
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
         {
-            var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+            var configPath = ResolveUserFile(userId, fileName);
 
             if (File.Exists(configPath))
             {
@@ -112,7 +125,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <exception cref="InvalidDataException">File exists but is unreadable or empty.</exception>
         public T GetUserConfigurationStrict<T>(string userId, string fileName) where T : new()
         {
-            var configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+            var configPath = ResolveUserFile(userId, fileName);
             if (!File.Exists(configPath)) return new T();
 
             string json;
@@ -181,7 +194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             string tempPath = string.Empty;
             try
             {
-                configPath = Path.Combine(GetUserConfigDir(userId), fileName);
+                configPath = ResolveUserFile(userId, fileName);
                 // Per-call random suffix so two non-RMW writers (e.g. concurrent
                 // bookmark.json saves bypassing the lock) don't collide on a
                 // single shared `.tmp` and File.Move into a missing source.
