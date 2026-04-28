@@ -179,7 +179,7 @@
 
                             <div class="checkboxContainer"><label><input id="removeContinueWatchingEnabled" is="emby-checkbox" type="checkbox"/><span>Enable "Remove from Continue Watching"</span></label></div>
                             <div class="je-setting-description" data-desc-for="removeContinueWatchingEnabled">
-                                <div class="fieldDescription">Adds a "Remove from Continue Watching" option to the right-click / long-press context menu. Hides items non-destructively — playback position is preserved and entries appear in Hidden Content's management page (look for "Add back to Continue Watching" on each entry). Items also unhide automatically when you resume playback.</div>
+                                <div class="fieldDescription">Adds a "Remove from Continue Watching" option to the right-click / long-press context menu. Hides items non-destructively, so playback position is preserved and entries appear in Hidden Content's management page (look for "Add back to Continue Watching" on each entry). Items also unhide automatically when you resume playback.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -642,7 +642,7 @@
 
                                     <div class="checkboxContainer"><label><input id="hiddenContentDefaultEnabled" is="emby-checkbox" type="checkbox"/><span>Hidden Content enabled by default</span></label></div>
                                     <div class="je-setting-description" data-desc-for="hiddenContentDefaultEnabled">
-                                        <div class="fieldDescription">When on, Hidden Content starts active for new users — they can hide things straight away and the filtering takes effect immediately. When off, users have to turn it on themselves first.</div>
+                                        <div class="fieldDescription">When on, Hidden Content starts active for new users, so they can hide things straight away and the filtering takes effect immediately. When off, users have to turn it on themselves first.</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowHideButtons" is="emby-checkbox" type="checkbox"/><span>Show "Hide" buttons by default</span></label></div>
@@ -652,7 +652,7 @@
 
                                     <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowHideConfirmation" is="emby-checkbox" type="checkbox"/><span>Show confirmation dialog before hiding</span></label></div>
                                     <div class="je-setting-description" data-desc-for="hiddenContentDefaultShowHideConfirmation">
-                                        <div class="fieldDescription">When on, clicking Hide asks "are you sure?" first. Turn off for one-click hiding — items can always be brought back from the Hidden Content page.</div>
+                                        <div class="fieldDescription">When on, clicking Hide asks "are you sure?" first. Turn off for one-click hiding. Items can always be brought back from the Hidden Content page.</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="hiddenContentDefaultShowButtonJellyseerr" is="emby-checkbox" type="checkbox"/><span>Show "Hide" button on Jellyseerr / Seerr search results</span></label></div>
@@ -722,7 +722,7 @@
 
                                     <div class="checkboxContainer"><label><input id="hiddenContentDefaultExperimentalHideCollections" is="emby-checkbox" type="checkbox"/><span>Allow hiding collections, libraries, and playlists (experimental)</span></label></div>
                                     <div class="je-setting-description" data-desc-for="hiddenContentDefaultExperimentalHideCollections">
-                                        <div class="fieldDescription">Experimental — lets users hide whole collections, libraries, or playlists, not just individual movies and shows.</div>
+                                        <div class="fieldDescription">Experimental. Lets users hide whole collections, libraries, or playlists, not just individual movies and shows.</div>
                                     </div>
                                 </div>
                             </details>
@@ -3984,7 +3984,7 @@
                 var __hAuto = document.querySelector('#hiddenContentAutoCreateCustomTab');
                 if (__hAuto) __hAuto.checked = config.HiddenContentAutoCreateCustomTab === true;
 
-                // Hidden Content per-user defaults — same name as on the user side, prefixed HiddenContentDefault*.
+                // Hidden Content per-user defaults, same name as on the user side, prefixed HiddenContentDefault*.
                 var __hcDefaults = [
                     ['hiddenContentDefaultEnabled', 'HiddenContentDefaultEnabled', true],
                     ['hiddenContentDefaultShowHideButtons', 'HiddenContentDefaultShowHideButtons', true],
