@@ -76,11 +76,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Admin master switch: when the plugin's HiddenContentEnabled flag is off
-            // the HC frontend module isn't even loaded; the server-side filter mirrors
-            // that — leave responses untouched so an admin disable instantly clears
-            // all filtering for every user.
-            if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled != true)
+            var hcEnabled = JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled == true;
+            var rcwEnabled = JellyfinEnhanced.Instance?.Configuration?.RemoveContinueWatchingEnabled == true;
+
+            // /Items doubles as library list + search results. Resolve which
+            // logical surface this request maps to: searchTerm wins (FilterSearch
+            // gates), then fall back to library.
+            var surface = (route.Surface == "library" && HasSearchTerm(context))
+                ? "search"
+                : route.Surface;
+
+            // Admin master switches: HiddenContentEnabled gates every surface;
+            // RemoveContinueWatchingEnabled is its own admin feature that uses HC
+            // storage but should keep the CW surface filtered even when HC is
+            // off, so "Remove from Continue Watching" doesn't silently fail to
+            // remove items. Other surfaces still respect the HC kill switch.
+            if (!hcEnabled && !(rcwEnabled && string.Equals(surface, "continuewatching", StringComparison.OrdinalIgnoreCase)))
             {
                 await next().ConfigureAwait(false);
                 return;
@@ -99,13 +110,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 await next().ConfigureAwait(false);
                 return;
             }
-
-            // /Items doubles as library list + search results. Resolve which
-            // logical surface this request maps to: searchTerm wins (FilterSearch
-            // gates), then fall back to library.
-            var surface = (route.Surface == "library" && HasSearchTerm(context))
-                ? "search"
-                : route.Surface;
 
             // Pure metadata-resolver Ids calls (Ids set, no Recursive/ParentId)
             // bypass the filter — JE's own batchCheckParentSeries cascade caches
