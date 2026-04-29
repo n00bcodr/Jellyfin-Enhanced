@@ -1903,6 +1903,25 @@
     }
 
     /**
+     * Client-side mirror of the server's MergeWithCwScope (in
+     * JellyfinEnhancedController.cs). Keeps local + server scope decisions
+     * in sync when the local cache shadows a server-direct write.
+     * @param {string} existing Lower-case scope already on the item (or empty).
+     * @param {string} incoming Lower-case scope being added (currently always 'continuewatching').
+     * @returns {string} The merged scope.
+     */
+    function mergeCwScope(existing, incoming) {
+        const ex = (existing || '').toLowerCase();
+        const inc = (incoming || 'continuewatching').toLowerCase();
+        if (!ex) return inc;
+        if (ex === 'global' || ex === 'homesections') return ex;
+        if (ex === inc) return ex;
+        // Disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections;
+        // unknown future scopes also widen to homesections.
+        return 'homesections';
+    }
+
+    /**
      * Mirrors a server-side hide write (e.g. POST /continue-watching/hide/{id})
      * into the local cache without a refetch and without scheduling a save.
      * The server already wrote the canonical entry; this just makes the local
@@ -1910,33 +1929,41 @@
      * page reload. The next full page load picks up any server-enriched
      * metadata (Name, Type, SeriesId, etc.).
      *
-     * Avoids the bulk-save round-trip that refresh() would do, which would
-     * overwrite any concurrent server-side writes from other endpoints.
+     * Preserves any existing entry's metadata + earliest hiddenAt and merges
+     * scopes via mergeCwScope so the local snapshot agrees with the server's
+     * MergeWithCwScope decision. Without this merge, a stub overwrite would
+     * narrow the server's wider result (e.g. nextup→homesections widening
+     * gets clobbered back to continuewatching) once a pending debouncedSave
+     * fires the bulk-save.
+     *
      * @param {string} itemId Jellyfin item ID, hyphenated form.
      * @param {string} [scope='continuewatching'] HC scope.
      */
     function markScopedHidden(itemId, scope) {
         if (!itemId) return;
-        const _scope = scope || 'continuewatching';
+        const _scope = (scope || 'continuewatching').toLowerCase();
         const data = getHiddenData();
-        if (data.items && data.items[itemId] && data.items[itemId].hideScope === _scope) return;
+        const existing = data.items && data.items[itemId];
+        const finalScope = mergeCwScope(existing && existing.hideScope, _scope);
+        if (existing && existing.hideScope === finalScope) return;
+        const merged = {
+            itemId,
+            name: existing?.name || '',
+            type: existing?.type || '',
+            tmdbId: existing?.tmdbId || '',
+            hiddenAt: existing?.hiddenAt || new Date().toISOString(),
+            posterPath: existing?.posterPath || '',
+            seriesId: existing?.seriesId || '',
+            seriesName: existing?.seriesName || '',
+            seasonNumber: existing?.seasonNumber ?? null,
+            episodeNumber: existing?.episodeNumber ?? null,
+            hideScope: finalScope,
+        };
         hiddenData = {
             ...data,
             items: {
                 ...(data.items || {}),
-                [itemId]: {
-                    itemId,
-                    name: '',
-                    type: '',
-                    tmdbId: '',
-                    hiddenAt: new Date().toISOString(),
-                    posterPath: '',
-                    seriesId: '',
-                    seriesName: '',
-                    seasonNumber: null,
-                    episodeNumber: null,
-                    hideScope: _scope,
-                }
+                [itemId]: merged,
             }
         };
         JE.userConfig = JE.userConfig || {};
