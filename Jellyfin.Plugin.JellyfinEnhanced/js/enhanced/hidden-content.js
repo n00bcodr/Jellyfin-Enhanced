@@ -1872,9 +1872,27 @@
      * and emits a change event so subscribers (management page, etc.) re-render.
      * Used after server-side writes that don't go through hideItem/unhideItem
      * (e.g. the Remove-from-Continue-Watching POST endpoint).
+     *
+     * IMPORTANT: any pending debouncedSave is flushed FIRST so the server has
+     * the latest local state before we read it back. Without this flush, a
+     * concurrent hideItem/unhideItem (which schedules a debounced save) would
+     * be silently overwritten — refresh would replace `hiddenData` with the
+     * server's pre-debounce state, then the debounce would later save that
+     * stale state, losing the user's local hide/unhide.
      * @returns {Promise<boolean>} `true` on success.
      */
     async function refresh() {
+        // Flush any pending debouncedSave before we read the server state.
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+            try {
+                await JE.saveUserSettings('hidden-content.json', getHiddenData());
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: pre-refresh flush failed; continuing', e);
+            }
+        }
+
         try {
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return false;

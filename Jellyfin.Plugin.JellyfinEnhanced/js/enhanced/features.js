@@ -1045,10 +1045,13 @@
                 });
             } catch (e) { /* CSS.escape, non-fatal */ }
 
-            // Mirror the server-side write into the local hidden-content cache so
-            // the management page (and anything else reading JE.userConfig.hiddenContent)
-            // sees the new entry without a manual page refresh.
-            try { await JE.hiddenContent?.refresh?.(); } catch (e) { /* non-fatal */ }
+            // Mirror the server-side write into the local hidden-content cache
+            // so the management page (and anything else reading
+            // JE.userConfig.hiddenContent) sees the new entry without a manual
+            // page refresh. Fire-and-forget — the optimistic DOM hide above
+            // already gives the user instant feedback; the action sheet and
+            // success toast shouldn't wait on this extra GET round-trip.
+            JE.hiddenContent?.refresh?.()?.catch?.(() => { /* logged inside refresh() */ });
             return true;
         } catch (error) {
             // Controller emits { success, message } in lowercase; older

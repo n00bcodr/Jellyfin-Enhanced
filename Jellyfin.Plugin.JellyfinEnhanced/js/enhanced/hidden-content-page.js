@@ -455,6 +455,11 @@
     // of the container instead of state.pageVisible because state.pageVisible
     // is only set by JE's native routing path — in Plugin Pages mode the page
     // is mounted by Plugin Pages directly and that flag stays false forever.
+    // If the container is missing (e.g. user is on a different route mid-event),
+    // there's no need to track a pending re-render: both navigation paths
+    // (showPage and Plugin Pages re-mount) call renderPage() unconditionally
+    // when the page becomes visible, so the next visit reads the up-to-date
+    // local cache automatically.
     window.addEventListener('je-hidden-content-changed', () => {
       const container = document.getElementById('je-hidden-content-container');
       if (container && document.contains(container)) {

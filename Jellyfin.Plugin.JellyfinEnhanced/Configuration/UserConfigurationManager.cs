@@ -58,10 +58,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return userDir;
         }
 
-        /// <summary>Resolves a per-user file path safely. Refuses absolute paths, path separators, or invalid filename chars in <paramref name="fileName"/> so a future caller that forwards untrusted input can't traverse out of the user's directory via Path.Combine's drop-earlier-args behavior.</summary>
+        /// <summary>Resolves a per-user file path safely. Refuses absolute paths, path separators, dot-segment filenames, or invalid filename chars in <paramref name="fileName"/> so a future caller that forwards untrusted input can't traverse out of the user's directory via Path.Combine's drop-earlier-args behavior.</summary>
         private string ResolveUserFile(string userId, string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName)
+                || fileName == "." || fileName == ".."
                 || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
                 || fileName.Contains('/') || fileName.Contains('\\')
                 || Path.IsPathRooted(fileName))
