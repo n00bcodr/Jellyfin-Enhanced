@@ -1868,31 +1868,19 @@
     }
 
     /**
-     * Re-fetches hidden-content.json from the server, updates the local cache,
-     * and emits a change event so subscribers (management page, etc.) re-render.
-     * Used after server-side writes that don't go through hideItem/unhideItem
-     * (e.g. the Remove-from-Continue-Watching POST endpoint).
+     * Re-fetches hidden-content.json from the server, replaces the local
+     * cache, and emits a change event. Useful when the server-side state
+     * may have diverged from local (e.g. another tab made changes). Do NOT
+     * call this immediately after a server-direct write from THIS tab —
+     * use markScopedHidden() instead, which mirrors the just-written entry
+     * locally without round-tripping through the bulk-save endpoint.
      *
-     * IMPORTANT: any pending debouncedSave is flushed FIRST so the server has
-     * the latest local state before we read it back. Without this flush, a
-     * concurrent hideItem/unhideItem (which schedules a debounced save) would
-     * be silently overwritten — refresh would replace `hiddenData` with the
-     * server's pre-debounce state, then the debounce would later save that
-     * stale state, losing the user's local hide/unhide.
+     * Caveat: if a debouncedSave is pending (a recent local hideItem etc.),
+     * those local mutations would be replaced by server state. The caller
+     * accepts this trade-off when calling refresh() explicitly.
      * @returns {Promise<boolean>} `true` on success.
      */
     async function refresh() {
-        // Flush any pending debouncedSave before we read the server state.
-        if (saveTimeout) {
-            clearTimeout(saveTimeout);
-            saveTimeout = null;
-            try {
-                await JE.saveUserSettings('hidden-content.json', getHiddenData());
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: pre-refresh flush failed; continuing', e);
-            }
-        }
-
         try {
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return false;
@@ -1912,6 +1900,49 @@
             console.warn('🪼 Jellyfin Enhanced: Failed to refresh hidden-content', e);
             return false;
         }
+    }
+
+    /**
+     * Mirrors a server-side hide write (e.g. POST /continue-watching/hide/{id})
+     * into the local cache without a refetch and without scheduling a save.
+     * The server already wrote the canonical entry; this just makes the local
+     * cache reflect that fact so the management page renders it without a
+     * page reload. The next full page load picks up any server-enriched
+     * metadata (Name, Type, SeriesId, etc.).
+     *
+     * Avoids the bulk-save round-trip that refresh() would do, which would
+     * overwrite any concurrent server-side writes from other endpoints.
+     * @param {string} itemId Jellyfin item ID, hyphenated form.
+     * @param {string} [scope='continuewatching'] HC scope.
+     */
+    function markScopedHidden(itemId, scope) {
+        if (!itemId) return;
+        const _scope = scope || 'continuewatching';
+        const data = getHiddenData();
+        if (data.items && data.items[itemId] && data.items[itemId].hideScope === _scope) return;
+        hiddenData = {
+            ...data,
+            items: {
+                ...(data.items || {}),
+                [itemId]: {
+                    itemId,
+                    name: '',
+                    type: '',
+                    tmdbId: '',
+                    hiddenAt: new Date().toISOString(),
+                    posterPath: '',
+                    seriesId: '',
+                    seriesName: '',
+                    seasonNumber: null,
+                    episodeNumber: null,
+                    hideScope: _scope,
+                }
+            }
+        };
+        JE.userConfig = JE.userConfig || {};
+        JE.userConfig.hiddenContent = hiddenData;
+        rebuildSets();
+        emitChange();
     }
 
     // ============================================================
@@ -2178,7 +2209,8 @@
             unhideAll,
             addLibraryHideButtons,
             removeLibraryHideButtons,
-            refresh
+            refresh,
+            markScopedHidden
         };
 
         console.log(`🪼 Jellyfin Enhanced: Hidden Content initialized (${getHiddenCount()} items hidden)`);
