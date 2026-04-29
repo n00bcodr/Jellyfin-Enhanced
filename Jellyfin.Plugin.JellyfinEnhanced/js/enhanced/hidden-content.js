@@ -1910,6 +1910,10 @@
      * its own merge runs — without this, a pending debounce firing AFTER
      * the server-direct write would overwrite the file with stale local
      * state and clobber the just-written entry.
+     *
+     * On flush failure (transient network error, 5xx), the debounce is
+     * RE-SCHEDULED so the local change still gets saved eventually rather
+     * than being silently dropped because we cleared the timer.
      * @returns {Promise<void>} Resolves when flush completes (success or fail).
      */
     async function flushPendingSave() {
@@ -1919,7 +1923,10 @@
         try {
             await JE.saveUserSettings('hidden-content.json', getHiddenData());
         } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed', e);
+            console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; rescheduling debounce', e);
+            // Reschedule so the local change isn't lost. The next flush or
+            // natural debounce cycle will retry.
+            debouncedSave();
         }
     }
 
