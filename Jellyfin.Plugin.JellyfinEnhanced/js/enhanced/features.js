@@ -1027,6 +1027,13 @@
             return false;
         }
 
+        // Flush any pending hidden-content debouncedSave BEFORE the CW POST so
+        // the server reads our latest local state when it merges via
+        // RmwUserConfiguration. Without this, a debounce firing AFTER the
+        // POST would overwrite the file with the user's pre-POST snapshot
+        // and clobber the just-written CW entry.
+        try { await JE.hiddenContent?.flushPendingSave?.(); } catch (e) { /* non-fatal */ }
+
         try {
             await ApiClient.ajax({
                 type: 'POST',

@@ -1903,6 +1903,27 @@
     }
 
     /**
+     * Flushes any pending debouncedSave immediately. Returns once the
+     * bulk-save POST has completed (or returned an error). Used by callers
+     * about to issue a server-direct write (e.g. POST /continue-watching/
+     * hide/{id}) so the server reads the user's latest local state before
+     * its own merge runs — without this, a pending debounce firing AFTER
+     * the server-direct write would overwrite the file with stale local
+     * state and clobber the just-written entry.
+     * @returns {Promise<void>} Resolves when flush completes (success or fail).
+     */
+    async function flushPendingSave() {
+        if (!saveTimeout) return;
+        clearTimeout(saveTimeout);
+        saveTimeout = null;
+        try {
+            await JE.saveUserSettings('hidden-content.json', getHiddenData());
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed', e);
+        }
+    }
+
+    /**
      * Client-side mirror of the server's MergeWithCwScope (in
      * JellyfinEnhancedController.cs). Keeps local + server scope decisions
      * in sync when the local cache shadows a server-direct write.
@@ -2237,7 +2258,8 @@
             addLibraryHideButtons,
             removeLibraryHideButtons,
             refresh,
-            markScopedHidden
+            markScopedHidden,
+            flushPendingSave
         };
 
         console.log(`🪼 Jellyfin Enhanced: Hidden Content initialized (${getHiddenCount()} items hidden)`);
