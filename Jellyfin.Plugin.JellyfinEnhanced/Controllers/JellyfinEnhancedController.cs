@@ -2899,7 +2899,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     });
                 return Ok(new { success = true, key, entry });
             }
-            catch (InvalidDataException)
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
             {
                 return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
             }
@@ -2954,7 +2954,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (dropped == 0) return NotFound(new { success = false, message = "No matching hidden-content entry." });
                 return Ok(new { success = true });
             }
-            catch (InvalidDataException)
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
             {
                 return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
             }

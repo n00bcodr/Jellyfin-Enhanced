@@ -36,14 +36,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private delegate void ResponseHandler(ActionExecutedContext executed, HideContext hide, string surface, Logger logger);
 
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _warnedShapeMismatch = new();
+        // Re-warn at most once per hour so a real Jellyfin upgrade isn't permanently invisible after the first warn.
+        private static readonly TimeSpan ShapeMismatchReWarnInterval = TimeSpan.FromHours(1);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedShapeMismatchAt = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _warnedReadFailure = new();
 
         private static void WarnShapeMismatchOnce(Logger logger, string surface, string handlerName, IActionResult? result)
         {
-            if (!_warnedShapeMismatch.TryAdd(surface, 0)) return;
+            var now = DateTime.UtcNow;
+            // AddOrUpdate returns the stored value. Equality with `now` means our new timestamp won the slot — log.
+            var stored = _warnedShapeMismatchAt.AddOrUpdate(
+                surface,
+                now,
+                (_, last) => (now - last) >= ShapeMismatchReWarnInterval ? now : last);
+            if (stored != now) return;
             var actualType = result?.GetType().FullName ?? "(null)";
-            logger.Warning($"HC filter: {handlerName} for surface '{surface}' got an unexpected response shape ({actualType}); filter is no-op for this endpoint until plugin restart. Likely a Jellyfin upgrade changed the response type.");
+            logger.Warning($"HC filter: {handlerName} for surface '{surface}' got an unexpected response shape ({actualType}); filter is no-op for this endpoint. Likely a Jellyfin upgrade changed the response type. Re-warns hourly.");
         }
 
         private readonly UserConfigurationManager _configManager;

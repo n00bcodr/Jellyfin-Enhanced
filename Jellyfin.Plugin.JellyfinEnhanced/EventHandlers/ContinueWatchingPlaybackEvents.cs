@@ -44,8 +44,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         {
             try
             {
-                // Don't auto-drop while HC is plugin-wide disabled — admin re-enable would surface unintended unhides.
-                if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled != true)
+                // Mirror the response filter's HC + RCW gate (HiddenContentResponseFilter.cs). When admin runs
+                // RCW=on / HC=off, the filter still strips continuewatching-scope entries; without this branch
+                // resume would never auto-clear those entries and the user would see them stay hidden forever.
+                var cfg = JellyfinEnhanced.Instance?.Configuration;
+                var hcEnabled = cfg?.HiddenContentEnabled == true;
+                var rcwEnabled = cfg?.RemoveContinueWatchingEnabled == true;
+                if (!hcEnabled && !rcwEnabled)
                 {
                     return Task.CompletedTask;
                 }

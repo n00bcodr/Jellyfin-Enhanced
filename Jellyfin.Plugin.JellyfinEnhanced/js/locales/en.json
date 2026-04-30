@@ -226,6 +226,8 @@
     "audio_language_tooltip": "Audio Language(s)",
     "remove_continue_watching_error": "Could not remove item: User or Item ID not found.",
     "remove_continue_watching_error_api": "Unable to remove item: {error}",
+    "unknown_error": "Unknown error",
+    "hidden_content_save_failed_persistent": "Hidden Content changes could not be saved. Please reload and retry.",
     "remove_continue_watching_success": "Item removed from Continue Watching",
     "remove_button_text": "Remove",
     "remove_button_removing": "Removing…",

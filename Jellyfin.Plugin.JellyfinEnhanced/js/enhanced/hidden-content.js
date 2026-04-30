@@ -128,10 +128,19 @@
      */
     function debouncedSave() {
         if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
+        saveTimeout = setTimeout(async () => {
             saveTimeout = null;
-            const data = getHiddenData();
-            JE.saveUserSettings('hidden-content.json', data);
+            try {
+                // Route through directSaveHiddenContent (not JE.saveUserSettings) so a successful save can
+                // reconcile against any in-flight retry and a failure can re-enter the retry ladder.
+                // JE.saveUserSettings swallows errors, which would leave a pending retry firing later and
+                // clobbering server state.
+                const sent = await directSaveHiddenContent();
+                reconcileAfterSave(sent);
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: debouncedSave failed; scheduling background retry', e);
+                if (pendingRetryHandle == null) scheduleFlushRetry(0);
+            }
         }, SAVE_DEBOUNCE_MS);
     }
 
@@ -1886,21 +1895,108 @@
         }
     }
 
+    // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
+    // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
+    // whether the success acknowledgement still represents the latest local intent.
+    async function directSaveHiddenContent() {
+        const userId = ApiClient.getCurrentUserId();
+        if (!userId) throw new Error('no current user');
+        const snapshot = JSON.stringify(getHiddenData());
+        await ApiClient.ajax({
+            type: 'POST',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+            data: snapshot,
+            contentType: 'application/json'
+        });
+        return snapshot;
+    }
+
+    // After a successful save, decide whether the server is caught up.
+    // - Match: cancel any pending (non-in-flight) retry — server has the latest.
+    // - Mismatch: state moved during the await; schedule another save.
+    // The retry-timer body explicitly clears RETRY_INFLIGHT before calling this so a same-state mismatch
+    // doesn't leave the sentinel stuck; cancelPendingRetry refuses to clear an in-flight retry from another path.
+    function reconcileAfterSave(snapshotSent) {
+        if (snapshotSent === JSON.stringify(getHiddenData())) {
+            cancelPendingRetry();
+        } else {
+            debouncedSave();
+        }
+    }
+
+    // Bounded background retry of a failed flush. Cancelled on a successful save anywhere else so a
+    // server-side auto-clear (PlaybackStart consumer, ItemRemoved hook) isn't overwritten by a stale retry.
+    const FLUSH_RETRY_DELAYS_MS = [1000, 5000, 15000];
+    const RETRY_INFLIGHT = -1; // sentinel: retry timer fired and POST is in flight (handle no longer cancelable)
+    let pendingRetryHandle = null;
+
+    function cancelPendingRetry() {
+        // Don't unset RETRY_INFLIGHT — the timer body whose POST is in flight needs to manage its own
+        // lifecycle. Clearing it here would let a follow-up debouncedSave failure spawn a parallel ladder.
+        if (pendingRetryHandle === RETRY_INFLIGHT) return;
+        if (pendingRetryHandle != null) clearTimeout(pendingRetryHandle);
+        pendingRetryHandle = null;
+    }
+
+    function scheduleFlushRetry(attempt) {
+        if (attempt >= FLUSH_RETRY_DELAYS_MS.length) {
+            console.error('🪼 Jellyfin Enhanced: hidden-content save retries exhausted; local change may be lost on reload');
+            // User-visible toast — the bulk-save endpoint is genuinely down at this point.
+            try {
+                if (typeof JE?.toast === 'function') {
+                    const tr = JE.t && JE.t('hidden_content_save_failed_persistent');
+                    const msg = (tr && tr !== 'hidden_content_save_failed_persistent') ? tr : 'Hidden Content changes could not be saved. Please reload and retry.';
+                    JE.toast(msg, 5000);
+                }
+            } catch (_) { /* toast helper unavailable, console.error above is best-effort */ }
+            pendingRetryHandle = null;
+            return;
+        }
+        pendingRetryHandle = setTimeout(async () => {
+            pendingRetryHandle = RETRY_INFLIGHT; // mark in-flight so a concurrent debouncedSave failure doesn't spawn a parallel ladder
+            // Guard for ApiClient teardown / signed-out state during the window.
+            if (typeof ApiClient === 'undefined' || typeof ApiClient.getCurrentUserId !== 'function' || !ApiClient.getCurrentUserId()) {
+                console.error('🪼 Jellyfin Enhanced: abandoning hidden-content retry; ApiClient unavailable');
+                pendingRetryHandle = null;
+                return;
+            }
+            try {
+                const sent = await directSaveHiddenContent();
+                // Retry succeeded — clear the in-flight sentinel BEFORE reconcile so a state-mismatch
+                // reschedule via debouncedSave doesn't leave the sentinel stuck (cancelPendingRetry from
+                // other code paths intentionally refuses to clear RETRY_INFLIGHT).
+                if (pendingRetryHandle === RETRY_INFLIGHT) pendingRetryHandle = null;
+                reconcileAfterSave(sent);
+            } catch (err) {
+                console.warn(`🪼 Jellyfin Enhanced: hidden-content save retry ${attempt + 1} failed`, err);
+                scheduleFlushRetry(attempt + 1);
+            }
+        }, FLUSH_RETRY_DELAYS_MS[attempt]);
+    }
+
     // Flush pending debouncedSave so a following server-direct write sees the latest local state.
-    // On failure, reschedule the debounce so the local change isn't lost.
+    // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
     async function flushPendingSave() {
         if (!saveTimeout) return;
         clearTimeout(saveTimeout);
         saveTimeout = null;
         try {
-            await JE.saveUserSettings('hidden-content.json', getHiddenData());
+            const sent = await directSaveHiddenContent();
+            reconcileAfterSave(sent);
         } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; rescheduling debounce', e);
-            debouncedSave();
+            console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; scheduling background retry', e);
+            if (pendingRetryHandle == null) scheduleFlushRetry(0);
+            throw e;
         }
     }
 
-    // Client-side mirror of MergeWithCwScope in JellyfinEnhancedController.cs.
+    // Cancel pending retries on tab teardown so a stale snapshot can't overwrite server state after navigation.
+    // Only pagehide — visibilitychange fires on backgrounded tabs the user may return to within the retry window.
+    try {
+        window.addEventListener('pagehide', cancelPendingRetry);
+    } catch (_) { /* non-browser env, harmless */ }
+
+    // Client-side mirror of MergeWithCwScope in JellyfinEnhancedController.cs (CW-write specific).
     function mergeCwScope(existing, incoming) {
         const ex = (existing || '').toLowerCase();
         const inc = (incoming || 'continuewatching').toLowerCase();
@@ -1910,20 +2006,53 @@
         return 'homesections';
     }
 
+    // Rank-based widest-scope mirror of server's WiderScope — commutative max function for use in folds.
+    // Disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.
+    const SCOPE_RANK = { global: 4, homesections: 3, continuewatching: 2, nextup: 2 };
+    function widestScope(a, b) {
+        if (!a) return b || '';
+        if (!b) return a;
+        const la = a.toLowerCase();
+        const lb = b.toLowerCase();
+        const ra = SCOPE_RANK[la] ?? 1;
+        const rb = SCOPE_RANK[lb] ?? 1;
+        if (ra === 2 && rb === 2 && la !== lb) return 'homesections';
+        return ra >= rb ? la : lb;
+    }
+
     // Local-cache mirror of a server-side hide write — preserves existing metadata + merges scopes via mergeCwScope.
+    // Looks up under hyphenated AND N-format keys (server canonical is hyphenated; some callers pass N-format from data-id).
     function markScopedHidden(itemId, scope) {
         if (!itemId) return;
         const _scope = (scope || 'continuewatching').toLowerCase();
         const data = getHiddenData();
-        const existing = data.items && data.items[itemId];
-        const finalScope = mergeCwScope(existing && existing.hideScope, _scope);
-        if (existing && existing.hideScope === finalScope) return;
+        const items = (data.items) || {};
+        const noHyphen = itemId.replace(/-/g, '');
+        const hyphenated = noHyphen.length === 32
+            ? `${noHyphen.slice(0, 8)}-${noHyphen.slice(8, 12)}-${noHyphen.slice(12, 16)}-${noHyphen.slice(16, 20)}-${noHyphen.slice(20)}`
+            : itemId;
+        // Collect every variant present, fold the widest scope across all of them so duplicate keys with
+        // disjoint scopes (e.g. nextup + continuewatching = homesections) don't durably narrow on collapse.
+        // Uses widestScope (rank-based, commutative) for the fold so result is order-independent;
+        // mergeCwScope is asymmetric and biased to existing — wrong choice for a max-fold.
+        const variants = [items[itemId], items[hyphenated], items[noHyphen]].filter(Boolean);
+        const widestExisting = variants.reduce((acc, e) => widestScope(acc, e.hideScope), '');
+        const finalScope = mergeCwScope(widestExisting, _scope);
+        const existing = variants[0] || null;
+        const altPresent = (hyphenated !== itemId && items[hyphenated]) || (noHyphen !== itemId && items[noHyphen]);
+        if (items[itemId] && items[itemId].hideScope === finalScope && !altPresent) return;
+        // Pick the earliest hiddenAt across variants so re-affirming doesn't reset history.
+        let earliestHiddenAt = '';
+        for (const v of variants) {
+            if (!v?.hiddenAt) continue;
+            if (!earliestHiddenAt || v.hiddenAt < earliestHiddenAt) earliestHiddenAt = v.hiddenAt;
+        }
         const merged = {
             itemId,
             name: existing?.name || '',
             type: existing?.type || '',
             tmdbId: existing?.tmdbId || '',
-            hiddenAt: existing?.hiddenAt || new Date().toISOString(),
+            hiddenAt: earliestHiddenAt || new Date().toISOString(),
             posterPath: existing?.posterPath || '',
             seriesId: existing?.seriesId || '',
             seriesName: existing?.seriesName || '',
@@ -1931,13 +2060,10 @@
             episodeNumber: existing?.episodeNumber ?? null,
             hideScope: finalScope,
         };
-        hiddenData = {
-            ...data,
-            items: {
-                ...(data.items || {}),
-                [itemId]: merged,
-            }
-        };
+        const nextItems = { ...items, [itemId]: merged };
+        if (hyphenated !== itemId) delete nextItems[hyphenated];
+        if (noHyphen !== itemId) delete nextItems[noHyphen];
+        hiddenData = { ...data, items: nextItems };
         JE.userConfig = JE.userConfig || {};
         JE.userConfig.hiddenContent = hiddenData;
         rebuildSets();

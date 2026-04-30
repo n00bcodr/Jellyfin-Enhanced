@@ -1028,7 +1028,14 @@
         }
 
         // Flush pending HC save BEFORE the CW POST so a later debounce can't clobber the just-written entry.
-        try { await JE.hiddenContent?.flushPendingSave?.(); } catch (e) { /* non-fatal */ }
+        // If the flush fails the debounce is rescheduled inside flushPendingSave; abort the CW write so we
+        // don't proceed on top of stale server state.
+        try {
+            await JE.hiddenContent?.flushPendingSave?.();
+        } catch (e) {
+            showNotification(JE.t('remove_continue_watching_error_api', { error: e?.statusText || JE.t('unknown_error') }), "error");
+            return false;
+        }
 
         try {
             await ApiClient.ajax({
@@ -1046,10 +1053,16 @@
                         card.style.display = 'none';
                     }
                 });
-            } catch (e) { /* CSS.escape, non-fatal */ }
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: optimistic CW DOM-hide failed', e);
+            }
 
             // Local-cache mirror only — server already wrote the canonical entry; a refetch would risk a clobber.
-            try { JE.hiddenContent?.markScopedHidden?.(itemId, 'continuewatching'); } catch (e) { /* non-fatal */ }
+            try {
+                JE.hiddenContent?.markScopedHidden?.(itemId, 'continuewatching');
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: markScopedHidden mirror failed', e);
+            }
             return true;
         } catch (error) {
             const errorMessage = error.responseJSON?.message
