@@ -232,7 +232,7 @@
     "jellyseerr_report_unavailable_button": "Reporting Unavailable",
     "jellyseerr_report_unavailable_toast": "Reporting is unavailable for this item (no TMDB match)",
     "jellyseerr_report_issue_title": "Report Issue to Seerr",
-    "jellyseerr_report_issue_type": "Issue Type",
+    "jellyseerr_report_issue_type_label": "Issue Type",
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Audio",
     "jellyseerr_report_issue_type_subtitles": "Subtitles",

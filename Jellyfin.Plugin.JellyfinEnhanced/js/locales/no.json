@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Rapportering utilgjengelig",
     "jellyseerr_report_unavailable_toast": "Rapportering er utilgjengelig for dette elementet (ingen TMDB-match)",
     "jellyseerr_report_issue_title": "Rapporter problem til Seerr",
-    "jellyseerr_report_issue_type": "Problemtype",
+    "jellyseerr_report_issue_type_label": "Problemtype",
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Lyd",
     "jellyseerr_report_issue_type_subtitles": "Undertekster",

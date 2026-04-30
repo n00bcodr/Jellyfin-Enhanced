@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "الإبلاغ غير متاح",
     "jellyseerr_report_unavailable_toast": "الإبلاغ غير متاح لهذا العنصر (لا يوجد تطابق في TMDB)",
     "jellyseerr_report_issue_title": "الإبلاغ عن مشكلة إلى Seerr",
-    "jellyseerr_report_issue_type": "نوع المشكلة",
+    "jellyseerr_report_issue_type_label": "نوع المشكلة",
     "jellyseerr_report_issue_type_video": "فيديو",
     "jellyseerr_report_issue_type_audio": "صوت",
     "jellyseerr_report_issue_type_subtitles": "ترجمة",

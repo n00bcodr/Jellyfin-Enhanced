@@ -232,7 +232,7 @@
     "jellyseerr_report_unavailable_button": "Докладването не е налично",
     "jellyseerr_report_unavailable_toast": "Докладването не е налично за този елемент (няма съвпадение в TMDB)",
     "jellyseerr_report_issue_title": "Докладване на проблем към Seerr",
-    "jellyseerr_report_issue_type": "Тип на проблема",
+    "jellyseerr_report_issue_type_label": "Тип на проблема",
     "jellyseerr_report_issue_type_video": "Видео",
     "jellyseerr_report_issue_type_audio": "Аудио",
     "jellyseerr_report_issue_type_subtitles": "Субтитри",

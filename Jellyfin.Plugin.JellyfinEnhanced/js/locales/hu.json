@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Bejelentés nem érhető el",
     "jellyseerr_report_unavailable_toast": "A bejelentés nem elérhető erre az elemre (nincs TMDB egyezés)",
     "jellyseerr_report_issue_title": "Probléma bejelentése a Seerrhez",
-    "jellyseerr_report_issue_type": "Probléma típusa",
+    "jellyseerr_report_issue_type_label": "Probléma típusa",
     "jellyseerr_report_issue_type_video": "Videó",
     "jellyseerr_report_issue_type_audio": "Audió",
     "jellyseerr_report_issue_type_subtitles": "Feliratok",

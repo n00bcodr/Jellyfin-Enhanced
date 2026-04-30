@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Отчет недоступен",
     "jellyseerr_report_unavailable_toast": "Отчет недоступен для этого элемента (нет совпадения TMDB)",
     "jellyseerr_report_issue_title": "Сообщить о проблеме в Seerr",
-    "jellyseerr_report_issue_type": "Тип проблемы",
+    "jellyseerr_report_issue_type_label": "Тип проблемы",
     "jellyseerr_report_issue_type_video": "Видео",
     "jellyseerr_report_issue_type_audio": "Аудио",
     "jellyseerr_report_issue_type_subtitles": "Субтитры",

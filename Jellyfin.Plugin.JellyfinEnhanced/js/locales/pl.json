@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Zgłaszanie niedostępne",
     "jellyseerr_report_unavailable_toast": "Zgłaszanie jest niedostępne dla tego elementu (brak dopasowania TMDB)",
     "jellyseerr_report_issue_title": "Zgłoś problem do Seerr",
-    "jellyseerr_report_issue_type": "Typ problemu",
+    "jellyseerr_report_issue_type_label": "Typ problemu",
     "jellyseerr_report_issue_type_video": "Wideo",
     "jellyseerr_report_issue_type_audio": "Audio",
     "jellyseerr_report_issue_type_subtitles": "Napisy",

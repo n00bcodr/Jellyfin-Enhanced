@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Meldung nicht verfügbar",
     "jellyseerr_report_unavailable_toast": "Die Meldung ist für diesen Artikel nicht verfügbar (keine TMDB-Übereinstimmung)",
     "jellyseerr_report_issue_title": "Problem an Seerr melden",
-    "jellyseerr_report_issue_type": "Problemtyp",
+    "jellyseerr_report_issue_type_label": "Problemtyp",
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Audio",
     "jellyseerr_report_issue_type_subtitles": "Untertitel",

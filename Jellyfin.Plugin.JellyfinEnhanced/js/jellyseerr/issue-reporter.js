@@ -108,7 +108,7 @@
             </style>
             <div class="jellyseerr-issue-form">
                 <div class="jellyseerr-form-group">
-                    <label>${JE.t('jellyseerr_report_issue_type')}</label>
+                    <label>${JE.t('jellyseerr_report_issue_type_label')}</label>
                     <div class="jellyseerr-issue-radio-group">
                         ${ISSUE_TYPES.map(type => `
                             <label class="jellyseerr-radio-label">
