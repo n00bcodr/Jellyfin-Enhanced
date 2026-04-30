@@ -231,6 +231,7 @@
     "jellyseerr_report_issue_type_video": "Picture Problems",
     "jellyseerr_report_issue_type_audio": "Sound Problems",
     "jellyseerr_report_issue_type_subtitles": "Text Scroll Problems",
+    "jellyseerr_report_issue_type_one": "",
     "jellyseerr_report_issue_type_other": "Other Problems",
     "jellyseerr_report_issue_message": "Tell Us More (Optional)",
     "jellyseerr_report_issue_message_placeholder": "Describe what be wrong in detail…",
