@@ -231,8 +231,6 @@
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Zvuk",
     "jellyseerr_report_issue_type_subtitles": "Titulky",
-    "jellyseerr_report_issue_type_one": "",
-    "jellyseerr_report_issue_type_few": "",
     "jellyseerr_report_issue_type_other": "Jiné",
     "jellyseerr_report_issue_message": "Popis (Volitelné)",
     "jellyseerr_report_issue_message_placeholder": "Podrobně popište problém…",

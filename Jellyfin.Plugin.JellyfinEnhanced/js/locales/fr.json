@@ -231,8 +231,6 @@
     "jellyseerr_report_issue_type_video": "Vidéo",
     "jellyseerr_report_issue_type_audio": "Audio",
     "jellyseerr_report_issue_type_subtitles": "Sous-titres",
-    "jellyseerr_report_issue_type_one": "",
-    "jellyseerr_report_issue_type_many": "",
     "jellyseerr_report_issue_type_other": "Autre",
     "jellyseerr_report_issue_message": "Description (Facultatif)",
     "jellyseerr_report_issue_message_placeholder": "Décrivez le problème en détail…",
