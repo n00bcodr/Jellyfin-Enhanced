@@ -231,6 +231,7 @@
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Ljud",
     "jellyseerr_report_issue_type_subtitles": "Undertexter",
+    "jellyseerr_report_issue_type_one": "",
     "jellyseerr_report_issue_type_other": "Övrigt",
     "jellyseerr_report_issue_message": "Beskrivning (Valfritt)",
     "jellyseerr_report_issue_message_placeholder": "Beskriv problemet i detalj…",
