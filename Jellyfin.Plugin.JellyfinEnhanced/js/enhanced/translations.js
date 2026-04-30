@@ -209,10 +209,7 @@
 
             const langCodes = buildLanguageChain(lang);
 
-            // Always load English first so it's available as a per-key fallback
-            // for locales that haven't been backfilled with newly-added keys yet.
-            // Without this, JE.t() would return raw key names ("hidden_content_*")
-            // for any key the user's locale is missing.
+            // Load English first as a per-key fallback for locales missing newly-added keys.
             let englishTranslations = {};
             try {
                 const enResult = await tryLoadSingleLanguage('en', pluginVersion);
@@ -224,12 +221,10 @@
             }
 
             for (const code of langCodes) {
-                if (code === 'en') continue; // already loaded above
+                if (code === 'en') continue;
                 try {
                     const result = await tryLoadSingleLanguage(code, pluginVersion);
                     if (result && result.translations) {
-                        // Merge: English keys provide the floor, the user's
-                        // locale overrides them where present.
                         return Object.assign({}, englishTranslations, result.translations);
                     }
                 } catch (e) {
@@ -237,7 +232,6 @@
                 }
             }
 
-            // No user-locale match found, or user is on English. Return English.
             if (Object.keys(englishTranslations).length > 0) {
                 return englishTranslations;
             }

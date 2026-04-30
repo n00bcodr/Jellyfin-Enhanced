@@ -27,7 +27,6 @@
 
   const logPrefix = '🪼 Jellyfin Enhanced: Hidden Content Page:';
 
-  /** Per-scope badge label — Continue Watching and Next Up are independent scopes (no longer joined as homesections). */
   function scopeBadgeText(scope) {
     const s = (scope || '').toLowerCase();
     if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label') || 'Continue Watching only';
@@ -36,7 +35,6 @@
     return '';
   }
 
-  /** Per-scope unhide-button label: "Add back to Continue Watching" for CW-scoped entries; plain "Unhide" otherwise. */
   function scopeUnhideText(scope) {
     if ((scope || '').toLowerCase() === 'continuewatching') {
       return JE.t('hidden_content_add_back_to_cw') || 'Add back to Continue Watching';
@@ -448,18 +446,7 @@
 
     injectStyles();
 
-    // Auto-refresh listener runs in BOTH native and Plugin-Pages modes so that
-    // hiding an item from anywhere (Remove from CW on the home page, the bulk
-    // save endpoint, the playback consumer auto-clear) causes the management
-    // page to re-render without a manual page refresh. Gates on DOM presence
-    // of the container instead of state.pageVisible because state.pageVisible
-    // is only set by JE's native routing path — in Plugin Pages mode the page
-    // is mounted by Plugin Pages directly and that flag stays false forever.
-    // If the container is missing (e.g. user is on a different route mid-event),
-    // there's no need to track a pending re-render: both navigation paths
-    // (showPage and Plugin Pages re-mount) call renderPage() unconditionally
-    // when the page becomes visible, so the next visit reads the up-to-date
-    // local cache automatically.
+    // Re-render listener runs in BOTH native and Plugin-Pages modes; gated on container presence (state.pageVisible isn't set in Plugin-Pages mode).
     window.addEventListener('je-hidden-content-changed', () => {
       const container = document.getElementById('je-hidden-content-container');
       if (container && document.contains(container)) {

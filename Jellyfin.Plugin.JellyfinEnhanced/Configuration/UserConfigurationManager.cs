@@ -13,12 +13,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private readonly string _configBaseDir;
         private readonly Logger _logger;
 
-        /// <summary>
-        /// Per-(user, file) lock pool used to serialize RMW writers. MUST remain
-        /// <c>static</c> — the singleton-vs-scoped DI lifetimes of callers
-        /// (ResponseFilter is Singleton, IEventConsumer is Scoped) rely on a
-        /// process-wide pool to actually serialize across them.
-        /// </summary>
+        // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
@@ -28,7 +23,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             _logger = logger;
         }
 
-        /// <summary>Returns the per-(user, file) lock writers must hold across an RMW.</summary>
         public object GetUserFileLock(string userId, string fileName)
         {
             var normalized = userId?.Replace("-", "") ?? string.Empty;
@@ -41,11 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var normalizedUserId = userId?.Replace("-", "") ?? string.Empty;
             var userDir = Path.Combine(_configBaseDir, normalizedUserId);
 
-            // Defense-in-depth: every current caller passes a Guid-derived id,
-            // so the resolved path is always under _configBaseDir. Refuse
-            // anything outside it so a future caller that accidentally
-            // forwards untrusted input can't traverse out of the per-user
-            // configurations tree.
+            // Refuse paths outside _configBaseDir in case a future caller forwards untrusted input.
             var fullBase = Path.GetFullPath(_configBaseDir + Path.DirectorySeparatorChar);
             var fullUser = Path.GetFullPath(userDir);
             if (!fullUser.StartsWith(fullBase, StringComparison.Ordinal))
@@ -58,7 +48,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return userDir;
         }
 
-        /// <summary>Resolves a per-user file path safely. Refuses absolute paths, path separators, dot-segment filenames, or invalid filename chars in <paramref name="fileName"/> so a future caller that forwards untrusted input can't traverse out of the user's directory via Path.Combine's drop-earlier-args behavior.</summary>
         private string ResolveUserFile(string userId, string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName)
@@ -86,7 +75,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>Lenient read; returns <c>new T()</c> on missing/empty/unparseable. Use <see cref="GetUserConfigurationStrict{T}"/> on the write path.</summary>
+        // Lenient read; returns new T() on missing/empty/unparseable. Write path should use GetUserConfigurationStrict.
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
         {
             var configPath = ResolveUserFile(userId, fileName);
@@ -122,8 +111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return new T();
         }
 
-        /// <summary>Strict read for RMW; treats existing empty/null/garbage as corruption, backs up to <c>.corrupt-{ts}</c>, and throws.</summary>
-        /// <exception cref="InvalidDataException">File exists but is unreadable or empty.</exception>
+        // Strict read for RMW: existing empty/null/garbage is corruption; backs up to .corrupt-{ts} and throws.
         public T GetUserConfigurationStrict<T>(string userId, string fileName) where T : new()
         {
             var configPath = ResolveUserFile(userId, fileName);
@@ -172,8 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>Locked read-modify-write: <see cref="GetUserFileLock"/> + strict-read + <paramref name="mutate"/> + save when the mutator returns &gt; 0.</summary>
-        /// <returns>The mutator's result (0 = no save).</returns>
+        // Locked read-modify-write: holds GetUserFileLock, strict-reads, mutates, and saves when the mutator returns > 0.
         public int RmwUserConfiguration<T>(string userId, string fileName, Func<T, int> mutate) where T : class, new()
         {
             lock (GetUserFileLock(userId, fileName))
@@ -188,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>Atomic save via temp file + <see cref="File.Move(string,string,bool)"/>. RMW callers must hold <see cref="GetUserFileLock"/>.</summary>
+        // Atomic save via temp file + File.Move(overwrite). RMW callers must hold GetUserFileLock.
         public void SaveUserConfiguration(string userId, string fileName, object config)
         {
             string configPath = string.Empty;
@@ -196,9 +183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 configPath = ResolveUserFile(userId, fileName);
-                // Per-call random suffix so two non-RMW writers (e.g. concurrent
-                // bookmark.json saves bypassing the lock) don't collide on a
-                // single shared `.tmp` and File.Move into a missing source.
+                // Per-call random suffix avoids collisions between concurrent non-RMW writers on a shared .tmp.
                 tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
 
                 JToken token;
@@ -226,15 +211,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>Copies a corrupt file to <c>{path}.corrupt-{yyyyMMddHHmmssfff}</c> for forensic recovery; skip-and-log on collision.</summary>
         private void BackupCorruptFile(string filePath)
         {
             try
             {
-                // Millisecond resolution so two corruption events in the same
-                // UTC second still get distinct backups; if a collision still
-                // happens, branch the log instead of silently lying about a
-                // backup that didn't run.
+                // Millisecond resolution so two corruption events in the same UTC second get distinct backups.
                 var backupPath = filePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 if (File.Exists(backupPath))
                 {

@@ -1027,11 +1027,7 @@
             return false;
         }
 
-        // Flush any pending hidden-content debouncedSave BEFORE the CW POST so
-        // the server reads our latest local state when it merges via
-        // RmwUserConfiguration. Without this, a debounce firing AFTER the
-        // POST would overwrite the file with the user's pre-POST snapshot
-        // and clobber the just-written CW entry.
+        // Flush pending HC save BEFORE the CW POST so a later debounce can't clobber the just-written entry.
         try { await JE.hiddenContent?.flushPendingSave?.(); } catch (e) { /* non-fatal */ }
 
         try {
@@ -1052,19 +1048,10 @@
                 });
             } catch (e) { /* CSS.escape, non-fatal */ }
 
-            // Mirror the server-side write into the local hidden-content cache
-            // so the management page (and anything else reading
-            // JE.userConfig.hiddenContent) sees the new entry without a manual
-            // page refresh. Use markScopedHidden() rather than refresh(): the
-            // server already wrote the canonical entry, so a refetch would
-            // round-trip through the bulk-save endpoint and risk overwriting
-            // any concurrent server-side writes. Local cache is enough — full
-            // server-enriched metadata is picked up on the next page load.
+            // Local-cache mirror only — server already wrote the canonical entry; a refetch would risk a clobber.
             try { JE.hiddenContent?.markScopedHidden?.(itemId, 'continuewatching'); } catch (e) { /* non-fatal */ }
             return true;
         } catch (error) {
-            // Controller emits { success, message } in lowercase; older
-            // Jellyfin core endpoints emit { Message } in PascalCase. Try both.
             const errorMessage = error.responseJSON?.message
                 || error.responseJSON?.Message
                 || error.statusText
@@ -1074,14 +1061,7 @@
         }
     }
 
-    /**
-     * Closes any open action sheet via dialog.close() / Escape; no synthetic
-     * mouse events (they reopen the sheet). Returns true when the close was
-     * dispatched without throwing — Jellyfin's actionsheet teardown completes
-     * asynchronously on the next animation frame, so a synchronous "did the
-     * sheet really close?" verification check would always read false.
-     * @returns {boolean}
-     */
+    // Closes any open action sheet via dialog.close() / Escape; never synthetic mouse events (they reopen the sheet).
     function closeOpenActionSheet() {
         try {
             const dialogs = document.querySelectorAll('dialog[open]');
@@ -1093,9 +1073,7 @@
             }
             if (dispatched) return true;
 
-            // Fallback: target the action-sheet element with an Escape keydown.
-            // Dispatching on `document` is captured by JE's global keyboard
-            // shortcuts before reaching the actionsheet's own handler.
+            // Escape-keydown fallback targets the sheet directly — dispatching on `document` is intercepted by JE's global shortcuts.
             const sheet = document.querySelector('.actionSheet, .actionsheet, dialog[open], .dialogContainer .dialog, .dialog.opened');
             if (sheet) {
                 sheet.dispatchEvent(new KeyboardEvent('keydown', {
@@ -1167,29 +1145,14 @@
             const success = await removeFromContinueWatching(itemId);
 
             if (success) {
-                // Restore the button visuals BEFORE attempting to close the
-                // sheet — Jellyfin web sometimes leaves the action sheet
-                // open under unusual layouts/themes, and a stuck "Removing..."
-                // button is a worse UX than a fully restored one.
+                // Restore button visuals BEFORE close — a stuck sheet under odd themes is better than a stuck "Removing..." label.
                 button.disabled = false;
                 buttonTextElem.textContent = originalText;
                 buttonIconElem.textContent = originalIcon;
 
                 const closed = closeOpenActionSheet();
+                showNotification(JE.t('remove_continue_watching_success'), closed ? "success" : "info");
 
-                // Only claim success if the sheet actually closed; otherwise
-                // the user sees a stuck dialog covering the just-hidden card.
-                if (closed) {
-                    showNotification(JE.t('remove_continue_watching_success'), "success");
-                } else {
-                    showNotification(JE.t('remove_continue_watching_success'), "info");
-                }
-
-                // The optimistic DOM hide already removed the card; also
-                // tear down the section header / row container if this
-                // hide emptied the Continue Watching shelf, otherwise the
-                // "Continue Watching" title sits there alone until the
-                // next page navigation.
                 hideEmptyHomeSections();
             } else {
                 button.disabled = false;

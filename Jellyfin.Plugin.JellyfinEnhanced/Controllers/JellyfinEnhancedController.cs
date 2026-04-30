@@ -2653,11 +2653,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            // First-time init: seed Settings from admin defaults so a fresh user
-            // starts with the admin's chosen filter/show-button posture rather
-            // than the C# class-default constants. Done under the per-user file
-            // lock via RMW so a parallel CW hide creating the file at the same
-            // time can't be clobbered by an unlocked seed write.
+            // First-time init: seed Settings from admin defaults under RMW so a parallel CW hide can't clobber it.
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
             if (defaultConfig != null
                 && !_userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json"))
@@ -2667,11 +2663,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
                         authorizedUserId, "hidden-content.json", hc =>
                         {
-                            // Re-check inside the lock: another writer may have
-                            // created the file between the existence check above
-                            // and acquiring the lock. Items.Count > 0 or any
-                            // non-default Settings means the file exists with
-                            // real data; leave it alone.
+                            // Re-check inside the lock: another writer may have created the file in the meantime.
                             if (hc.Items.Count > 0) return 0;
                             hc.Settings = BuildHcDefaultSettings(defaultConfig);
                             _logger.Info($"Seeded default hidden-content.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -2688,7 +2680,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(userConfig);
         }
 
-        /// <summary>Maps the admin's <c>HiddenContentDefault*</c> properties onto a per-user <see cref="HiddenContentSettings"/> snapshot.</summary>
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
         {
             return new HiddenContentSettings
@@ -2733,10 +2724,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
                 {
-                    // Pre-write strict read — if the existing file is corrupt
-                    // (empty / whitespace / literal-null / unparseable), trip
-                    // the corruption guard so we 503 + back up rather than
-                    // silently letting the bulk save overwrite a damaged file.
+                    // Pre-write strict read so a corrupt existing file 503s + backs up instead of being overwritten.
                     try
                     {
                         _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
@@ -2745,13 +2733,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     catch (Exception strictEx) when (strictEx is InvalidDataException
                                                   || strictEx is Newtonsoft.Json.JsonException)
                     {
-                        // Parse-shape corruption: BackupCorruptFile fired in the strict reader, file IS damaged.
                         _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
                         return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
                     }
                     catch (IOException ioEx)
                     {
-                        // Transient I/O fault (locked file, AV scanner, permission) — file may not be corrupt and backup likely also failed.
                         _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
                         return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
                     }
@@ -2770,7 +2756,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
-        /// <summary>Picks the WIDER of two HC scopes (rank: global &gt; homesections &gt; {nextup, continuewatching} &gt; unknown &gt; null). Disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.</summary>
+        // Picks the WIDER of two HC scopes; disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.
         private static string? WiderScope(string? a, string? b)
         {
             if (string.IsNullOrEmpty(a)) return b;
@@ -2790,7 +2776,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return 1; // unknown / future
         }
 
-        /// <summary>Returns the earlier of two ISO-8601 timestamps; tolerates either being null/unparseable.</summary>
         private static string? EarliestHiddenAt(string? a, string? b)
         {
             DateTime? da = TryParseIso(a);
@@ -2807,28 +2792,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? (DateTime?)dt : null;
         }
 
-        /// <summary>Merges an existing HC scope with the new <c>continuewatching</c> hide so the user's earlier wider intent isn't narrowed.</summary>
+        // Merges an existing HC scope with a new continuewatching hide without narrowing the user's earlier wider intent.
         private static string MergeWithCwScope(string existing)
         {
-            // Existing wider scopes already cover CW — keep them.
             if (string.Equals(existing, "global", StringComparison.OrdinalIgnoreCase)) return "global";
             if (string.Equals(existing, "homesections", StringComparison.OrdinalIgnoreCase)) return "homesections";
             if (string.Equals(existing, "continuewatching", StringComparison.OrdinalIgnoreCase)) return "continuewatching";
-            // nextup + continuewatching = the union scope (homesections).
             if (string.Equals(existing, "nextup", StringComparison.OrdinalIgnoreCase)) return "homesections";
-            // Unknown / typo / future scope: widen to homesections so the CW
-            // intent is honored (better than silently leaving an unrecognized
-            // scope that downstream filters will ignore).
             return "homesections";
         }
 
-        /// <summary>Adds a <c>HideScope="continuewatching"</c> entry; idempotent.</summary>
-        /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
-        /// <response code="200">Entry written.</response>
-        /// <response code="400">Invalid itemId.</response>
-        /// <response code="403">Not authenticated.</response>
-        /// <response code="404">Item not accessible to this user.</response>
-        /// <response code="503">Store corrupt; backed up to <c>.corrupt-{ts}</c>.</response>
         [HttpPost("continue-watching/hide/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -2842,7 +2815,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Invalid itemId." });
             }
 
-            // Resolve under the user so library access is enforced.
             var user = _userManager.GetUserById(userId);
             if (user == null) return Forbid();
 
@@ -2881,18 +2853,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 HideScope = "continuewatching"
             };
 
-            // ItemId as the key matches HC's convention so its management UI shares the same slot.
             var key = entry.ItemId;
             var authorizedUserId = userId.ToString("N");
 
             try
             {
                 var keyN = itemGuid.ToString("N");
-                // Seed Settings from admin defaults when this RMW creates the
-                // hidden-content.json file for the first time (a user who
-                // clicks Remove-from-CW before ever opening any HC UI). Without
-                // this, the new file's Settings would be C# class defaults,
-                // diverging from any defaults the admin has customised.
+                // Seed Settings from admin defaults if this RMW creates the file (Remove-from-CW before any HC UI was opened).
                 var preExistedHc = _userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json");
                 var hcDefaults = JellyfinEnhanced.Instance?.Configuration;
 
@@ -2904,14 +2871,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             h.Settings = BuildHcDefaultSettings(hcDefaults);
                         }
 
-                        // Merge with any existing entry rather than blindly
-                        // overwrite. A previous wider scope (global /
-                        // homesections / nextup) would otherwise be narrowed
-                        // to continuewatching. Existing entries may live under
-                        // either the hyphenated (this controller's canonical)
-                        // or N-format key (HC frontend's older convention);
-                        // pick the WIDER existing scope from either, so a
-                        // hyphenated stub doesn't shadow an N-format wider entry.
+                        // Merge with existing entries (under either hyphenated or N-format key) — pick the wider scope.
                         h.Items.TryGetValue(key, out var hyphenEntry);
                         h.Items.TryGetValue(keyN, out var nEntry);
 
@@ -2924,9 +2884,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             entry.HideScope = MergeWithCwScope(existingScope);
                         }
 
-                        // Preserve the earliest HiddenAt across both possible
-                        // entries so re-affirming a wider hide doesn't reset
-                        // the user's history.
+                        // Preserve the earliest HiddenAt across both entries so re-affirming doesn't reset history.
                         var existingHiddenAt = EarliestHiddenAt(
                             hyphenEntry?.HiddenAt,
                             nEntry?.HiddenAt);
@@ -2935,7 +2893,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             entry.HiddenAt = existingHiddenAt;
                         }
 
-                        // Collapse to a single canonical (hyphenated) entry.
                         h.Items.Remove(keyN);
                         h.Items[key] = entry;
                         return 1;
@@ -2953,12 +2910,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        /// <summary>Removes the user's <c>continuewatching</c>-scope entry for <paramref name="itemId"/>; leaves other scopes alone.</summary>
-        /// <param name="itemId">Jellyfin item ID (hyphenated or N-format).</param>
-        /// <response code="200">Entry removed.</response>
-        /// <response code="400">Invalid itemId.</response>
-        /// <response code="404">No matching <c>continuewatching</c>-scope entry.</response>
-        /// <response code="503">Store corrupt; backed up to <c>.corrupt-{ts}</c>.</response>
         [HttpDelete("continue-watching/hide/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -3347,10 +3298,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     skippedSettings.Add(userId);
                 }
 
-                // Also push HC Settings, preserving each user's Items dict (their
-                // hidden-items list is data, not a default; only Settings defaults
-                // get reset). Catch the same exception types the strict reader
-                // can throw so one bad user file doesn't abort the whole loop.
+                // Push HC Settings only — user's Items dict is data, not a default. Per-user errors are skipped, not fatal.
                 try
                 {
                     _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(

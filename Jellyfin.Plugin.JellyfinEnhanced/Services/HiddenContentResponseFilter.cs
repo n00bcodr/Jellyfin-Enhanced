@@ -13,20 +13,11 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
-    /// <summary>
-    /// Post-routing filter that strips Hidden Content entries from every
-    /// native Jellyfin endpoint that surfaces user-facing item lists,
-    /// including <c>/UserItems/Resume</c>, <c>/Items</c>, <c>/Items/Latest</c>,
-    /// <c>/Shows/NextUp</c>, <c>/Shows/Upcoming</c>, <c>/Items/Suggestions</c>,
-    /// and <c>/Search/Hints</c>. Filtering is per-route via an internal table.
-    /// </summary>
     public sealed class HiddenContentResponseFilter : IAsyncActionFilter
     {
         private const string FileName = "hidden-content.json";
         private const string CacheKey = "__JE_HC_FILTER_CACHE";
 
-        // (controller, action) → (HC surface name, response-shape handler).
-        // Surface name maps to the user's HiddenContentSettings.
         private static readonly Dictionary<(string, string), (string Surface, ResponseHandler Handler)> _routes
             = new(KeyComparer.Instance)
         {
@@ -45,10 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private delegate void ResponseHandler(ActionExecutedContext executed, HideContext hide, string surface, Logger logger);
 
-        /// <summary>Surfaces we've already warned about for shape mismatch — keeps log noise to one entry per surface per process lifetime.</summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _warnedShapeMismatch = new();
-
-        /// <summary>Users we've already warned about for hidden-content read failures — one log per user per process lifetime so a corrupt file doesn't spam the log on every request.</summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _warnedReadFailure = new();
 
         private static void WarnShapeMismatchOnce(Logger logger, string surface, string handlerName, IActionResult? result)
@@ -67,7 +55,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             if (!TryGetRoute(context, out var route))
@@ -79,18 +66,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var hcEnabled = JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled == true;
             var rcwEnabled = JellyfinEnhanced.Instance?.Configuration?.RemoveContinueWatchingEnabled == true;
 
-            // /Items doubles as library list + search results. Resolve which
-            // logical surface this request maps to: searchTerm wins (FilterSearch
-            // gates), then fall back to library.
+            // /Items doubles as library list + search results — searchTerm wins, then fall back to library.
             var surface = (route.Surface == "library" && HasSearchTerm(context))
                 ? "search"
                 : route.Surface;
 
-            // Admin master switches: HiddenContentEnabled gates every surface;
-            // RemoveContinueWatchingEnabled is its own admin feature that uses HC
-            // storage but should keep the CW surface filtered even when HC is
-            // off, so "Remove from Continue Watching" doesn't silently fail to
-            // remove items. Other surfaces still respect the HC kill switch.
+            // RemoveContinueWatchingEnabled keeps CW filtering on even when HC's master switch is off.
             if (!hcEnabled && !(rcwEnabled && string.Equals(surface, "continuewatching", StringComparison.OrdinalIgnoreCase)))
             {
                 await next().ConfigureAwait(false);
@@ -111,13 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Pure metadata-resolver Ids calls (Ids set, no Recursive/ParentId)
-            // bypass the filter — JE's own batchCheckParentSeries cascade caches
-            // missing-from-response IDs as "deleted" forever, so filtering this
-            // path leaves cards permanently un-cascaded on surfaces NOT in the
-            // route table (custom plugin views, LibraryController.GetItems, etc.).
-            // Browsing-intent Ids calls (with Recursive=true or ParentId) still
-            // run through the filter so mixed batches don't leak.
+            // Pure metadata-resolver Ids calls bypass — JE's batchCheckParentSeries cascade caches missing IDs as deleted forever.
             if (surface == "library" && IsMetadataResolverIdsCall(context))
             {
                 await next().ConfigureAwait(false);
@@ -131,26 +106,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // Filter must not 500 user-facing library/search/etc. Logged at Error
-                // because a swallowed handler exception means hidden items leaked into
-                // the response.
                 _logger.Error($"HC response filter handler failed for surface '{route.Surface}' — entries will pass through unfiltered for this request: {ex.Message}");
             }
         }
 
-        /// <summary>True when the request has a non-empty <c>searchTerm</c> query parameter.</summary>
         private static bool HasSearchTerm(ActionExecutingContext context)
         {
             var q = context.HttpContext?.Request?.Query;
             if (q == null) return false;
-            // Jellyfin accepts both the canonical PascalCase and lowercase variants.
             return HasNonEmpty(q, "searchTerm") || HasNonEmpty(q, "SearchTerm");
         }
 
         private static bool HasNonEmpty(IQueryCollection q, string key)
             => q.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v.ToString());
 
-        /// <summary>True when the request looks like a pure metadata-resolver Ids call: Ids is set, with no library-browse signals (Recursive=true or ParentId).</summary>
         private static bool IsMetadataResolverIdsCall(ActionExecutingContext context)
         {
             var q = context.HttpContext?.Request?.Query;
@@ -164,8 +133,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool IsRecursiveTrue(IQueryCollection q, string key)
             => q.TryGetValue(key, out var v) && string.Equals(v.ToString().Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
-        // ─── route gate ──────────────────────────────────────────────────────
-
         private static bool TryGetRoute(ActionExecutingContext context, out (string Surface, ResponseHandler Handler) route)
         {
             route = default;
@@ -176,9 +143,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return _routes.TryGetValue((controller, action), out route);
         }
 
-        // ─── per-request hidden-content cache ────────────────────────────────
-
-        /// <summary>Loads the user's hidden content + settings, caching the parsed result on <see cref="HttpContext.Items"/> so repeated filters in the same request don't re-read the file.</summary>
         private HideContext LoadHideContext(HttpContext httpContext, Guid userId)
         {
             if (httpContext.Items.TryGetValue(CacheKey, out var cached) && cached is HideContext hit)
@@ -193,10 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // Hide silently leaks until admin fixes the file. Log at Error
-                // (not Warning) so it shows up, but dedup once per user per
-                // process — without dedup a corrupt file spams Error on every
-                // matched MVC request and drowns the rest of the log.
+                // Dedup once per user per process so a corrupt file doesn't spam Error on every matched request.
                 if (_warnedReadFailure.TryAdd(userId, 0))
                 {
                     _logger.Error($"HC response filter: failed to read hidden-content.json for user {userId} — entries will pass through unfiltered until the file is repaired: {ex.Message}");
@@ -204,8 +165,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 data = null;
             }
 
-            // Successful read after a previously-logged failure: re-arm
-            // the dedup so a future corruption emits a fresh log entry.
             if (data != null) _warnedReadFailure.TryRemove(userId, out _);
 
             var ctx = HideContext.Build(data);
@@ -213,9 +172,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return ctx;
         }
 
-        // ─── response-shape handlers ─────────────────────────────────────────
-
-        /// <summary>Filters an <see cref="ObjectResult"/> wrapping <see cref="QueryResult{BaseItemDto}"/>.</summary>
         private static void FilterQueryResult(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not QueryResult<BaseItemDto> qr)
@@ -241,7 +197,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 kept);
         }
 
-        /// <summary>Filters an <see cref="ObjectResult"/> wrapping <see cref="IEnumerable{BaseItemDto}"/> (e.g. /Items/Latest).</summary>
         private static void FilterEnumerable(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not IEnumerable<BaseItemDto> raw)
@@ -261,15 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             or.Value = kept;
         }
 
-        /// <summary>
-        /// Filters an <see cref="ObjectResult"/> wrapping <see cref="SearchHintResult"/>.
-        /// LIMITATION: <see cref="SearchHint"/> has no <c>SeriesId</c> field, so a
-        /// series-scope hide cannot suppress a child-episode hint here. Item-scope
-        /// hides still work via direct ID match. Backfilling the parent series via
-        /// per-hint API lookups would defeat the speed of /Search/Hints; the
-        /// /Items?searchTerm path (which DOES carry SeriesId) remains the
-        /// canonical search filter for series-scope cascade.
-        /// </summary>
+        // SearchHint has no SeriesId, so series-scope cascade falls back to the /Items?searchTerm path.
         private static void FilterSearchHints(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not SearchHintResult sh)
@@ -288,11 +235,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 kept.Add(hint);
             }
             if (dropped == 0) return;
-            // SearchHintResult is constructor-only; build a new one.
             or.Value = new SearchHintResult(kept, Math.Max(0, sh.TotalRecordCount - dropped));
         }
-
-        // ─── per-item hidden check ──────────────────────────────────────────
 
         private static bool IsHidden(BaseItemDto item, HideContext hide, string surface)
         {
@@ -301,18 +245,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 hide, surface);
         }
 
-        /// <summary>
-        /// Determines whether an item should be hidden on a given surface.
-        /// Per-surface scopes (continuewatching, nextup, homesections) are
-        /// always honored; <c>global</c> scope is gated on the user's
-        /// per-surface filter setting.
-        /// </summary>
         private static bool IsHiddenById(string itemIdStr, string? seriesIdStr, HideContext hide, string surface)
         {
             var itemId = NormalizeId(itemIdStr);
             var seriesId = seriesIdStr is null ? null : NormalizeId(seriesIdStr);
 
-            // 1) Item-scope hides — entry's ItemId matches this item.
             if (hide.ItemIdScopes.TryGetValue(itemId, out var scopes))
             {
                 foreach (var s in scopes)
@@ -321,7 +258,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // 2) Series-scope hides — entry has Type=Series and matches this item's parent.
             if (seriesId is not null && hide.SeriesIdScopes.TryGetValue(seriesId, out var sScopes))
             {
                 foreach (var s in sScopes)
@@ -330,9 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // 3) The item itself happens to be a Series whose entry was
-            //    keyed as series-scope — relevant when a Series row appears
-            //    in resume / next-up etc.
+            // Item is itself a Series row whose entry was keyed series-scope.
             if (hide.SeriesIdScopes.TryGetValue(itemId, out var selfSeriesScopes))
             {
                 foreach (var s in selfSeriesScopes)
@@ -344,13 +278,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return false;
         }
 
-        /// <summary>Whether a stored scope should hide the item on a given surface; gated through the per-surface setting to match hidden-content.js's <c>shouldFilterSurface</c> behavior.</summary>
         private static bool ScopeAppliesToSurface(string scope, string surface, HiddenContentSettings settings)
         {
-            // Master gate. Mirrors hidden-content.js — even explicit-scope hides
-            // are subject to the user's per-surface filter setting, so toggling
-            // "Filter Continue Watching" off cleanly suppresses ALL CW filtering
-            // (whether the entry is HideScope=continuewatching or HideScope=global).
+            // Per-surface gate — toggling "Filter Continue Watching" off suppresses ALL CW filtering, including explicit-scope hides.
             if (!ShouldFilterSurface(settings, surface)) return false;
 
             if (string.Equals(scope, surface, StringComparison.OrdinalIgnoreCase)) return true;
@@ -363,7 +293,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Mirrors the per-surface gate in hidden-content.js's <c>shouldFilterSurface</c>.</summary>
         private static bool ShouldFilterSurface(HiddenContentSettings s, string surface)
         {
             if (s == null || !s.Enabled) return false;
@@ -382,7 +311,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             };
         }
 
-        /// <summary>Lowercase-hyphenated form so hyphenated and N-format GUIDs match; non-GUIDs are lowercased.</summary>
         private static string NormalizeId(string id)
         {
             if (string.IsNullOrEmpty(id)) return string.Empty;
@@ -393,9 +321,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return id.ToLowerInvariant();
         }
 
-        // ─── computed per-user state ─────────────────────────────────────────
-
-        /// <summary>Pre-indexed snapshot of a user's hidden-content data — itemId/seriesId → set of scopes — built once per request.</summary>
         private sealed class HideContext
         {
             public static readonly HideContext Empty = new HideContext();
@@ -414,7 +339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var ctx = new HideContext { Settings = data.Settings ?? new HiddenContentSettings() };
-                if (!ctx.Settings.Enabled) return ctx; // empty, will short-circuit
+                if (!ctx.Settings.Enabled) return ctx;
 
                 foreach (var entry in data.Items.Values)
                 {
@@ -442,7 +367,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        /// <summary>Case-insensitive (controller, action) tuple comparer for the route table.</summary>
         private sealed class KeyComparer : IEqualityComparer<(string, string)>
         {
             public static readonly KeyComparer Instance = new();

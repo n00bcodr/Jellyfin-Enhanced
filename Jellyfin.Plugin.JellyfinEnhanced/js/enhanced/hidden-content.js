@@ -40,7 +40,7 @@
     /** Initial filter delay after module initialization. */
     const INIT_FILTER_DELAY_MS = 150;
 
-    /** Resolves <code>JE.t(key)</code> or returns <code>fallback</code> when the key is missing (JE.t returns the raw key on miss). */
+    // JE.t returns the raw key on miss; tFallback substitutes the inline English default instead.
     function tFallback(key, fallback) {
         const t = JE.t && JE.t(key);
         return (t && t !== key) ? t : fallback;
@@ -662,8 +662,7 @@
 
         const hasEpisodeChoice = !!dialogOptions.showEpisodeChoice;
 
-        // Surface-specific scoped label so a CW hide reads "Remove from
-        // Continue Watching" and a Next Up hide reads "Hide from Next Up only".
+        // Surface-specific label: CW hide → "Remove from Continue Watching", Next Up → "Hide from Next Up only".
         const scopedBtn = document.createElement('button');
         scopedBtn.className = 'je-hide-confirm-hide';
         scopedBtn.style.width = '100%';
@@ -1052,7 +1051,6 @@
         const metaDiv = document.createElement('div');
         metaDiv.className = 'je-hidden-item-meta';
         const hiddenDate = item.hiddenAt ? new Date(item.hiddenAt).toLocaleDateString() : '';
-        // Scope label tells global hides apart from CW-only / Next Up-only ones.
         const _scope = (item.hideScope || 'global').toLowerCase();
         const _scopeText =
             _scope === 'continuewatching' ? tFallback('hidden_content_scope_cw_label', 'Continue Watching only') :
@@ -1435,7 +1433,6 @@
         }
         requestAnimationFrame(() => {
             filterAllNativeCards();
-            // Drop the section title if its row just emptied.
             if (typeof JE.hideEmptyHomeSections === 'function') {
                 JE.hideEmptyHomeSections();
             }
@@ -1663,8 +1660,7 @@
      */
     async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState) {
         const itemData = { itemId, name: cardName };
-        // Pass surface through so the resulting hideScope stays bound to
-        // the row the user clicked (CW only / Next Up only, never both).
+        // Pass surface through so the hideScope stays bound to the row the user clicked.
         const dialogOpts = { surface };
 
         try {
@@ -1867,19 +1863,7 @@
         }
     }
 
-    /**
-     * Re-fetches hidden-content.json from the server, replaces the local
-     * cache, and emits a change event. Useful when the server-side state
-     * may have diverged from local (e.g. another tab made changes). Do NOT
-     * call this immediately after a server-direct write from THIS tab —
-     * use markScopedHidden() instead, which mirrors the just-written entry
-     * locally without round-tripping through the bulk-save endpoint.
-     *
-     * Caveat: if a debouncedSave is pending (a recent local hideItem etc.),
-     * those local mutations would be replaced by server state. The caller
-     * accepts this trade-off when calling refresh() explicitly.
-     * @returns {Promise<boolean>} `true` on success.
-     */
+    // Re-fetch from server and replace local cache. Don't call immediately after a server-direct write from THIS tab — use markScopedHidden().
     async function refresh() {
         try {
             const userId = ApiClient.getCurrentUserId();
@@ -1902,20 +1886,8 @@
         }
     }
 
-    /**
-     * Flushes any pending debouncedSave immediately. Returns once the
-     * bulk-save POST has completed (or returned an error). Used by callers
-     * about to issue a server-direct write (e.g. POST /continue-watching/
-     * hide/{id}) so the server reads the user's latest local state before
-     * its own merge runs — without this, a pending debounce firing AFTER
-     * the server-direct write would overwrite the file with stale local
-     * state and clobber the just-written entry.
-     *
-     * On flush failure (transient network error, 5xx), the debounce is
-     * RE-SCHEDULED so the local change still gets saved eventually rather
-     * than being silently dropped because we cleared the timer.
-     * @returns {Promise<void>} Resolves when flush completes (success or fail).
-     */
+    // Flush pending debouncedSave so a following server-direct write sees the latest local state.
+    // On failure, reschedule the debounce so the local change isn't lost.
     async function flushPendingSave() {
         if (!saveTimeout) return;
         clearTimeout(saveTimeout);
@@ -1924,49 +1896,21 @@
             await JE.saveUserSettings('hidden-content.json', getHiddenData());
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; rescheduling debounce', e);
-            // Reschedule so the local change isn't lost. The next flush or
-            // natural debounce cycle will retry.
             debouncedSave();
         }
     }
 
-    /**
-     * Client-side mirror of the server's MergeWithCwScope (in
-     * JellyfinEnhancedController.cs). Keeps local + server scope decisions
-     * in sync when the local cache shadows a server-direct write.
-     * @param {string} existing Lower-case scope already on the item (or empty).
-     * @param {string} incoming Lower-case scope being added (currently always 'continuewatching').
-     * @returns {string} The merged scope.
-     */
+    // Client-side mirror of MergeWithCwScope in JellyfinEnhancedController.cs.
     function mergeCwScope(existing, incoming) {
         const ex = (existing || '').toLowerCase();
         const inc = (incoming || 'continuewatching').toLowerCase();
         if (!ex) return inc;
         if (ex === 'global' || ex === 'homesections') return ex;
         if (ex === inc) return ex;
-        // Disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections;
-        // unknown future scopes also widen to homesections.
         return 'homesections';
     }
 
-    /**
-     * Mirrors a server-side hide write (e.g. POST /continue-watching/hide/{id})
-     * into the local cache without a refetch and without scheduling a save.
-     * The server already wrote the canonical entry; this just makes the local
-     * cache reflect that fact so the management page renders it without a
-     * page reload. The next full page load picks up any server-enriched
-     * metadata (Name, Type, SeriesId, etc.).
-     *
-     * Preserves any existing entry's metadata + earliest hiddenAt and merges
-     * scopes via mergeCwScope so the local snapshot agrees with the server's
-     * MergeWithCwScope decision. Without this merge, a stub overwrite would
-     * narrow the server's wider result (e.g. nextup→homesections widening
-     * gets clobbered back to continuewatching) once a pending debouncedSave
-     * fires the bulk-save.
-     *
-     * @param {string} itemId Jellyfin item ID, hyphenated form.
-     * @param {string} [scope='continuewatching'] HC scope.
-     */
+    // Local-cache mirror of a server-side hide write — preserves existing metadata + merges scopes via mergeCwScope.
     function markScopedHidden(itemId, scope) {
         if (!itemId) return;
         const _scope = (scope || 'continuewatching').toLowerCase();

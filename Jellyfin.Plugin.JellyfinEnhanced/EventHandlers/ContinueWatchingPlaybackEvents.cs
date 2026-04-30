@@ -12,10 +12,8 @@ using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
 {
-    /// <summary>Internal helpers shared by the Continue Watching event consumers.</summary>
     internal static class CwEventHelpers
     {
-        /// <summary>Compares two id strings, treating hyphenated and N-format GUIDs as equivalent.</summary>
         public static bool IdMatches(string entryId, string targetId)
         {
             if (string.IsNullOrEmpty(entryId) || string.IsNullOrEmpty(targetId)) return false;
@@ -28,7 +26,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         }
     }
 
-    /// <summary>Drops <c>continuewatching</c>/<c>homesections</c> HC entries on resume; global hides are left alone.</summary>
     public sealed class ContinueWatchingPlaybackConsumer : IEventConsumer<PlaybackStartEventArgs>
     {
         private static readonly HashSet<string> AutoRemoveScopes =
@@ -43,14 +40,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public Task OnEvent(PlaybackStartEventArgs eventArgs)
         {
             try
             {
-                // Admin master switch: when HC is disabled plugin-wide, leave entries
-                // alone — auto-dropping them now would cause non-revertible state when
-                // admin re-enables HC (the user never asked to unhide).
+                // Don't auto-drop while HC is plugin-wide disabled — admin re-enable would surface unintended unhides.
                 if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentEnabled != true)
                 {
                     return Task.CompletedTask;
@@ -91,11 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                                 continue;
                             }
 
-                            // homesections = nextup + continuewatching union.
-                            // Resuming an item only signals the user no longer
-                            // wants the CW filter for it — preserve the NextUp
-                            // half by demoting to nextup-only rather than
-                            // fully dropping the entry.
+                            // Resume signals the CW filter is unwanted; demote homesections to nextup rather than drop.
                             if (string.Equals(scope, "homesections", StringComparison.OrdinalIgnoreCase))
                             {
                                 keysToDemote.Add(kvp.Key);
@@ -126,7 +116,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             }
             catch (Exception ex)
             {
-                // Event consumers must not throw — Jellyfin treats it as a plugin fault.
                 _logger.Warning($"CW: playback-start consumer failed: {ex.Message}");
             }
 
@@ -134,7 +123,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         }
     }
 
-    /// <summary>Subscribes to <see cref="ILibraryManager.ItemRemoved"/> and prunes orphan HC entries.</summary>
     public sealed class ContinueWatchingLibraryHook : IHostedService
     {
         private readonly ILibraryManager _libraryManager;
@@ -154,14 +142,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _libraryManager.ItemRemoved += OnItemRemoved;
             return Task.CompletedTask;
         }
 
-        /// <inheritdoc />
         public Task StopAsync(CancellationToken cancellationToken)
         {
             _libraryManager.ItemRemoved -= OnItemRemoved;
@@ -176,11 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                 if (id == Guid.Empty) return;
                 var idStr = id.ToString();
 
-                // Capture user IDs synchronously — _userManager and the
-                // EventArgs aren't guaranteed to be safe to dereference
-                // once the event handler returns — but offload the per-user
-                // loop so a bulk library cleanup doesn't serialize sync I/O
-                // on the event-publisher thread.
+                // Snapshot users sync (EventArgs/userManager not safe past handler return); offload the per-user loop.
                 var userIds = _userManager.Users.Select(u => u.Id).ToArray();
 
                 _ = Task.Run(() =>
@@ -200,12 +182,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             }
             catch (Exception ex)
             {
-                // Belt-and-suspenders: never throw out of an event handler.
                 _logger.Warning($"CW: orphan-prune failed before scheduling: {ex.Message}");
             }
         }
 
-        /// <summary>Removes any HC entries for <paramref name="userId"/> whose ItemId matches <paramref name="targetId"/>.</summary>
         private void PruneOrphan(Guid userId, string targetId)
         {
             try
