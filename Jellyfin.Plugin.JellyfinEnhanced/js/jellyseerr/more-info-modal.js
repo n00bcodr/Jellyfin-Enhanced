@@ -1693,14 +1693,18 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     const myToken = ++_quotaRenderToken;
     actionMount.dataset.quotaRenderToken = String(myToken);
 
-    const quota = await JE.jellyseerrAPI?.fetchUserQuota?.();
-    if (!actionMount.isConnected) return;
-    if (actionMount.dataset.quotaRenderToken !== String(myToken)) return;
+    try {
+        const quota = await JE.jellyseerrAPI?.fetchUserQuota?.();
+        if (!actionMount.isConnected) return;
+        if (actionMount.dataset.quotaRenderToken !== String(myToken)) return;
 
-    const chip = JE.jellyseerrUI?.buildQuotaChip?.(quota, mediaType === 'tv' ? 'tv' : 'movie');
-    if (chip) {
-        chip.classList.add('je-more-info-quota-chip');
-        actionMount.insertBefore(chip, actionMount.firstChild);
+        const chip = JE.jellyseerrUI?.buildQuotaChip?.(quota, mediaType === 'tv' ? 'tv' : 'movie');
+        if (chip instanceof Element) {
+            chip.classList.add('je-more-info-quota-chip');
+            actionMount.insertBefore(chip, actionMount.firstChild);
+        }
+    } catch (err) {
+        console.debug(`${logPrefix} quota chip skipped:`, err);
     }
 }
 

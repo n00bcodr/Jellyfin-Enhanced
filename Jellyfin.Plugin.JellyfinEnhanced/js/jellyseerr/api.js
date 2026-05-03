@@ -686,7 +686,10 @@
         try {
             return await get('/quota', options);
         } catch (error) {
-            console.debug(`${logPrefix} Quota fetch failed:`, error);
+            // 404 = user not linked, 503 = Seerr disabled — both expected, debug only.
+            // Anything else (5xx, network, parse) is unexpected and admins need to see it.
+            const expected = error?.status === 404 || error?.status === 503;
+            (expected ? console.debug : console.warn)(`${logPrefix} Quota fetch failed:`, error);
             return null;
         }
     };

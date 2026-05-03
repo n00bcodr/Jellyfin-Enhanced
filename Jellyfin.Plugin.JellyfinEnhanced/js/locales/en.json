@@ -209,6 +209,7 @@
     "jellyseerr_quota_reset_in_minutes": "Next slot frees in about {minutes} min",
     "jellyseerr_quota_reset_in_hours": "Next slot frees in about {hours} h",
     "jellyseerr_quota_reset_in_days": "Next slot frees in about {days} days",
+    "jellyseerr_toast_collection_failed_count": "({count} failed)",
     "jellyseerr_seasons_available": "{count} seasons available",
     "jellyseerr_all_seasons": "All {count} seasons",
     "jellyseerr_seasons_accounted_for": "{count}/{total} accounted for",

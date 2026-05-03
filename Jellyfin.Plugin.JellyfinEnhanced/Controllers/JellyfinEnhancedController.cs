@@ -917,12 +917,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var seerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             var quotaResult = await ProxyJellyseerrRequest($"/api/v1/user/{seerrUserId}/quota", HttpMethod.Get);
 
-            // Reset-time enrichment is best-effort — failure must not break the response.
+            // Reset-time enrichment is best-effort — fall back to the un-enriched
+            // result on any failure (malformed body, Seerr admin shape, etc).
             if (quotaResult is ContentResult cr && cr.StatusCode is null or 200)
             {
-                var quota = JObject.Parse(cr.Content ?? "{}");
-                await EnrichQuotaWithResetAsync(quota, seerrUserId!, JellyfinEnhanced.Instance!.Configuration);
-                return Content(quota.ToString(Newtonsoft.Json.Formatting.None), "application/json");
+                try
+                {
+                    var quota = JObject.Parse(cr.Content ?? "{}");
+                    await EnrichQuotaWithResetAsync(quota, seerrUserId!, JellyfinEnhanced.Instance!.Configuration);
+                    return Content(quota.ToString(Newtonsoft.Json.Formatting.None), "application/json");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Quota enrichment skipped ({ex.GetType().Name}): {ex.Message}");
+                }
             }
 
             return quotaResult;
@@ -935,13 +943,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var tvTask = ComputeNextResetAsync(quota, "tv", seerrUserId, config);
             await Task.WhenAll(movieTask, tvTask);
 
-            if (movieTask.Result.HasValue)
+            // Seerr admins / no-policy users return {"movie":null,"tv":null}; cast safely.
+            if (movieTask.Result.HasValue && quota["movie"] is JObject mObj)
             {
-                ((JObject)quota["movie"]!)["nextResetAt"] = movieTask.Result.Value.ToString("o");
+                mObj["nextResetAt"] = movieTask.Result.Value.ToString("o");
             }
-            if (tvTask.Result.HasValue)
+            if (tvTask.Result.HasValue && quota["tv"] is JObject tObj)
             {
-                ((JObject)quota["tv"]!)["nextResetAt"] = tvTask.Result.Value.ToString("o");
+                tObj["nextResetAt"] = tvTask.Result.Value.ToString("o");
             }
         }
 

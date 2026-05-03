@@ -1916,9 +1916,16 @@
     const _quotaTFallbackWarned = new Set();
 
     // JE.t with a guaranteed inline English fallback (JE.t returns the raw key on miss).
+    // Wrapped in try/catch because a corrupt remote locale (cached from GitHub) can
+    // contain non-string values for a key, causing JE.t's internal text.replace to throw.
     function tWithFallback(key, fallback, params) {
-        const result = JE.t(key, params);
-        if (result !== key) return result;
+        let result;
+        try {
+            result = JE.t(key, params);
+        } catch (_) {
+            result = null;
+        }
+        if (typeof result === 'string' && result !== key) return result;
 
         if (!_quotaTFallbackWarned.has(key)) {
             _quotaTFallbackWarned.add(key);
@@ -2079,9 +2086,14 @@
         // Seerr message could contain HTML metacharacters.
         const message = lines.map(escapeHtml).join('<br><br>');
 
+        // Themes / forks can monkey-patch Dashboard with broken stubs; fall back to toast.
         if (typeof window.Dashboard?.alert === 'function') {
-            window.Dashboard.alert({ title, message });
-            return;
+            try {
+                window.Dashboard.alert({ title, message });
+                return;
+            } catch (err) {
+                console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);
+            }
         }
         JE.toast(escapeHtml(`${title}: ${lines.join(' — ')}`), 8000);
     }
@@ -2160,7 +2172,7 @@
                 if (chip && document.body.contains(modalElement)) {
                     bodyEl.insertBefore(chip, bodyEl.firstChild);
                 }
-            });
+            }).catch(err => console.debug(`${logPrefix} Quota chip skipped:`, err));
         }
 
         try {
@@ -2323,7 +2335,7 @@
                 if (chip && document.body.contains(modalInstance.modalElement)) {
                     tvBodyEl.insertBefore(chip, tvBodyEl.firstChild);
                 }
-            });
+            }).catch(err => console.debug(`${logPrefix} Quota chip skipped:`, err));
         }
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)
@@ -2698,7 +2710,9 @@
                     const total = selectedMovies.length;
                     let toastText = `${requestedLabel} ${successCount} of ${total} ${moviesLabel}`;
                     if (otherFailures > 0) {
-                        toastText += ` (${otherFailures} failed)`;
+                        toastText += ' ' + tWithFallback(
+                            'jellyseerr_toast_collection_failed_count',
+                            '({count} failed)', { count: otherFailures });
                     }
                     JE.toast(toastText, 4000);
                     if (quotaHitError) {
