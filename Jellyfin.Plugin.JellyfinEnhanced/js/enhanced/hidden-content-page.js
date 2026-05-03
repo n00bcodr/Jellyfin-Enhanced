@@ -29,17 +29,17 @@
 
   function scopeBadgeText(scope) {
     const s = (scope || '').toLowerCase();
-    if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label') || 'Continue Watching only';
-    if (s === 'nextup')           return JE.t('hidden_content_scope_nextup_label') || 'Next Up only';
-    if (s === 'homesections')     return JE.t('hidden_content_scope_homesections_label') || 'Home sections only';
+    if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label');
+    if (s === 'nextup')           return JE.t('hidden_content_scope_nextup_label');
+    if (s === 'homesections')     return JE.t('hidden_content_scope_homesections_label');
     return '';
   }
 
   function scopeUnhideText(scope) {
     if ((scope || '').toLowerCase() === 'continuewatching') {
-      return JE.t('hidden_content_add_back_to_cw') || 'Add back to Continue Watching';
+      return JE.t('hidden_content_add_back_to_cw');
     }
-    return JE.t('hidden_content_unhide') || 'Unhide';
+    return JE.t('hidden_content_unhide');
   }
 
   /** Polling interval for detecting pushState navigations. */
@@ -1099,7 +1099,7 @@
 
     const scopedToggle = document.createElement("button");
     scopedToggle.className = 'je-hidden-scoped-filter' + (state.scopedOnly ? ' active' : '');
-    scopedToggle.textContent = JE.t('hidden_content_scope_filter_button') || 'Scoped only';
+    scopedToggle.textContent = JE.t('hidden_content_scope_filter_button');
     toolbar.appendChild(scopedToggle);
 
     const unhideAllBtn = document.createElement("button");

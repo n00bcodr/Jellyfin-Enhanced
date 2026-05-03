@@ -40,12 +40,6 @@
     /** Initial filter delay after module initialization. */
     const INIT_FILTER_DELAY_MS = 150;
 
-    // JE.t returns the raw key on miss; tFallback substitutes the inline English default instead.
-    function tFallback(key, fallback) {
-        const t = JE.t && JE.t(key);
-        return (t && t !== key) ? t : fallback;
-    }
-
     /** Data attribute marking a card as already scanned. */
     const PROCESSED_ATTR = 'data-je-hidden-checked';
     /** Data attribute storing the parent series ID that caused hiding. */
@@ -677,9 +671,9 @@
         scopedBtn.style.width = '100%';
         scopedBtn.textContent =
             dialogOptions.surface === 'continuewatching'
-                ? tFallback('hidden_content_confirm_hide_cw_only', 'Remove from Continue Watching')
+                ? JE.t('hidden_content_confirm_hide_cw_only')
                 : dialogOptions.surface === 'nextup'
-                    ? tFallback('hidden_content_confirm_hide_nextup_only', 'Hide from Next Up only')
+                    ? JE.t('hidden_content_confirm_hide_nextup_only')
                     : JE.t('hidden_content_confirm_hide_scoped');
         scopedBtn.addEventListener('click', () => {
             closeDialog();
@@ -1062,9 +1056,9 @@
         const hiddenDate = item.hiddenAt ? new Date(item.hiddenAt).toLocaleDateString() : '';
         const _scope = (item.hideScope || 'global').toLowerCase();
         const _scopeText =
-            _scope === 'continuewatching' ? tFallback('hidden_content_scope_cw_label', 'Continue Watching only') :
-            _scope === 'nextup'           ? tFallback('hidden_content_scope_nextup_label', 'Next Up only') :
-            _scope === 'homesections'     ? tFallback('hidden_content_scope_homesections_label', 'Home sections only') :
+            _scope === 'continuewatching' ? JE.t('hidden_content_scope_cw_label') :
+            _scope === 'nextup'           ? JE.t('hidden_content_scope_nextup_label') :
+            _scope === 'homesections'     ? JE.t('hidden_content_scope_homesections_label') :
             '';
         metaDiv.textContent = [item.type, _scopeText, hiddenDate].filter(Boolean).join(' \u00B7 ');
         info.appendChild(metaDiv);
@@ -1072,7 +1066,7 @@
         const unhideBtn = document.createElement('button');
         unhideBtn.className = 'je-hidden-item-unhide';
         unhideBtn.textContent = _scope === 'continuewatching'
-            ? tFallback('hidden_content_add_back_to_cw', 'Add back to Continue Watching')
+            ? JE.t('hidden_content_add_back_to_cw')
             : JE.t('hidden_content_unhide');
         info.appendChild(unhideBtn);
 
@@ -1944,9 +1938,7 @@
             // User-visible toast — the bulk-save endpoint is genuinely down at this point.
             try {
                 if (typeof JE?.toast === 'function') {
-                    const tr = JE.t && JE.t('hidden_content_save_failed_persistent');
-                    const msg = (tr && tr !== 'hidden_content_save_failed_persistent') ? tr : 'Hidden Content changes could not be saved. Please reload and retry.';
-                    JE.toast(msg, 5000);
+                    JE.toast(JE.t('hidden_content_save_failed_persistent'), 5000);
                 }
             } catch (_) { /* toast helper unavailable, console.error above is best-effort */ }
             pendingRetryHandle = null;
