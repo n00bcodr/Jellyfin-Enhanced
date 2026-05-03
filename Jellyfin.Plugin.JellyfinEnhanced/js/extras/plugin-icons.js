@@ -227,6 +227,12 @@
                     selector: 'a[href*="File%20Transformation"]',
                     type: 'material',
                     icon: 'file_open'
+                },
+                {
+                    selector: 'a[href*="Jellyfin%20Helper"]',
+                    type: 'image',
+                    src: 'https://cdn.jsdelivr.net/gh/JellyPlugins/jellyfin-helper@2.0.0.2/media/favicon.ico',
+                    alt: 'Jellyfin Helper'
                 }
             ];
 
