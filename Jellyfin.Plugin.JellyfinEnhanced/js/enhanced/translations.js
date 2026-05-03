@@ -208,32 +208,15 @@
             cleanOldTranslationCache(pluginVersion);
 
             const langCodes = buildLanguageChain(lang);
-
-            // Load English first as a per-key fallback for locales missing newly-added keys.
-            let englishTranslations = {};
-            try {
-                const enResult = await tryLoadSingleLanguage('en', pluginVersion);
-                if (enResult && enResult.translations) {
-                    englishTranslations = enResult.translations;
-                }
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Failed to load English fallback translations', e);
-            }
-
             for (const code of langCodes) {
-                if (code === 'en') continue;
                 try {
                     const result = await tryLoadSingleLanguage(code, pluginVersion);
                     if (result && result.translations) {
-                        return Object.assign({}, englishTranslations, result.translations);
+                        return result.translations;
                     }
                 } catch (e) {
                     console.warn(`🪼 Jellyfin Enhanced: Failed to load translations for ${code}`, e);
                 }
-            }
-
-            if (Object.keys(englishTranslations).length > 0) {
-                return englishTranslations;
             }
 
             console.error('🪼 Jellyfin Enhanced: Failed to load translations from any source');
