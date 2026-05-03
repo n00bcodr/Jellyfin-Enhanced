@@ -1198,6 +1198,17 @@ function buildSingle4kButton(data) {
             await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
+            // Quota errors get a detailed themed dialog with usage + reset info.
+            // Restore the button to its idle state so the user can retry once the
+            // quota window rolls — the dialog already explains why this attempt
+            // failed, so no need to also paint the button red with the same
+            // message (would leave the button stuck even after the dialog dismisses).
+            if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                button.disabled = false;
+                button.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request_4k') || 'Request in 4K'}</span>`;
+                return;
+            }
             // Escape API error message before innerHTML to prevent reflected XSS
             const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
             button.disabled = false;
@@ -1252,6 +1263,14 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
                 mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
+                // Quota errors get a themed dialog; restore the button so the
+                // user can retry once the quota window rolls.
+                if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                    await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                    mainButton.disabled = false;
+                    mainButton.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                    return;
+                }
                 mainButton.disabled = false;
                 // Escape API error before innerHTML to prevent reflected XSS
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
@@ -1322,6 +1341,14 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                     mountRequestedChip(data, 'movie', true, response);
                     close4k();
                 } catch (error) {
+                    // Quota errors get a themed dialog; restore the option so the
+                    // user can retry once the quota window rolls.
+                    if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                        await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                        option.disabled = false;
+                        option.textContent = 'Request in 4K';
+                        return;
+                    }
                     option.disabled = false;
                     option.textContent = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
                 }
@@ -1359,6 +1386,14 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
                 mountRequestedChip(data, 'movie', false);
             } catch (error) {
+                // Quota errors get a themed dialog; restore the button so the
+                // user can retry once the quota window rolls.
+                if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                    await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                    requestButton.disabled = false;
+                    requestButton.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                    return;
+                }
                 requestButton.disabled = false;
                 // Escape API error before innerHTML to prevent reflected XSS
                 const errorMessage = error?.responseJSON?.message || JE.t('jellyseerr_btn_error');
@@ -1657,6 +1692,47 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
     return container;
 }
 
+// Monotonic counter stamped on actionMount before each renderActions call.
+// The async chip fetch reads this at start and re-checks at insert time so a
+// stale fetch from a previous render (user navigated to a different item)
+// can't insert a chip into the now-current item's actions panel. Without
+// this guard, the chip's media-type context could disagree with the visible
+// request buttons.
+let _quotaRenderToken = 0;
+
+/**
+ * Fetch the user's quota and prepend a quota chip to the more-info modal's
+ * actions panel so the user knows their usage before clicking Request.
+ * Best-effort: silently skipped if the API isn't available, the user has
+ * unlimited quota, the modal closes or re-renders mid-fetch, or the fetch
+ * fails. A user-visible failure here would be worse than no chip.
+ * @param {HTMLElement} actionMount
+ * @param {'movie'|'tv'} mediaType
+ */
+async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
+    const fetchUserQuota = JE.jellyseerrAPI?.fetchUserQuota;
+    const buildChip = JE.jellyseerrUI?.buildQuotaChip;
+    if (typeof fetchUserQuota !== 'function' || typeof buildChip !== 'function' || !actionMount) {
+        return;
+    }
+    const myToken = ++_quotaRenderToken;
+    actionMount.dataset.quotaRenderToken = String(myToken);
+    try {
+        const quota = await fetchUserQuota();
+        // Bail if the user has navigated to another item and renderActions
+        // has run again (token bumped) or the mount detached entirely.
+        if (!actionMount.isConnected) return;
+        if (actionMount.dataset.quotaRenderToken !== String(myToken)) return;
+        const chip = buildChip(quota, mediaType === 'tv' ? 'tv' : 'movie');
+        if (chip) {
+            chip.classList.add('je-more-info-quota-chip');
+            actionMount.insertBefore(chip, actionMount.firstChild);
+        }
+    } catch (err) {
+        console.warn(`${logPrefix} quota chip skipped:`, err);
+    }
+}
+
 function renderActions(data, mediaType) {
     if (!currentModal) return;
 
@@ -1712,12 +1788,14 @@ function renderActions(data, mediaType) {
             if (show4k && canRequest4k && actionMount) {
                 const followUp = buildSingle4kButton(data);
                 if (followUp) actionMount.appendChild(followUp);
+                maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
             }
             return;
         }
 
         const actions = buildMovieActions(data, actionMount, chipMount, show4k);
         if (actions && actionMount) actionMount.appendChild(actions);
+        maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
     } else {
         const mediaInfo = data.mediaInfo || {};
         const status = mediaInfo.status ?? 1;
@@ -1761,6 +1839,7 @@ function renderActions(data, mediaType) {
         if (canRequestNormal) {
             const actions = buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
+            maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
             return;
         }
 
@@ -1772,15 +1851,18 @@ function renderActions(data, mediaType) {
             if (hasDeletedStatus && actionMount) {
                 const requestMoreButton = buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                 if (requestMoreButton) actionMount.appendChild(requestMoreButton);
+                maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
                 return;
             }
             checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
                 if (hasUnrequestedSeasons && actionMount) {
                     const requestMoreButton = buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                     if (requestMoreButton) actionMount.appendChild(requestMoreButton);
+                    maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
                 } else if (show4kTv && canRequest4k && actionMount) {
                     const followUp4k = buildSingleTv4kButton(data);
                     if (followUp4k) actionMount.appendChild(followUp4k);
+                    maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
                 }
             });
             return;
@@ -1788,6 +1870,7 @@ function renderActions(data, mediaType) {
 
         const actions = buildTvActions(data);
         if (actions && actionMount) actionMount.appendChild(actions);
+        maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
     }
 }
 
@@ -2190,6 +2273,17 @@ function injectStyles() {
             align-items: stretch;
             border-radius: 8px;
             overflow: hidden;
+        }
+
+        /* Quota chip rendered above request buttons in the more-info modal.
+         * Inherits .jellyseerr-quota-chip palette from the season modal
+         * stylesheet but needs spacing tweaks to fit this layout. */
+        .je-more-info-modal .je-more-info-quota-chip {
+            margin: 0 0 0.5rem 0;
+            font-size: 0.85rem;
+            padding: 8px 12px;
+            border-radius: 8px;
+            order: -1;
         }
 
         .je-more-info-modal .je-downloads {

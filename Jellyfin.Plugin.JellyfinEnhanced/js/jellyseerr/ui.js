@@ -673,6 +673,12 @@
             .jellyseerr-modal-button-primary:hover:not(:disabled) { background: linear-gradient(135deg, #4338ca, #6d28d9); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4); }
             .jellyseerr-modal-button-secondary { background: rgba(71, 85, 105, 0.8); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.2); }
             .jellyseerr-modal-button-secondary:hover { background: rgba(71, 85, 105, 1); border-color: rgba(148, 163, 184, 0.3); }
+
+            /* Quota chip shown above request modals when a per-user limit applies. */
+            .jellyseerr-quota-chip { padding: 12px 16px; margin-bottom: 16px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; color: #cbd5e1; font-size: 0.9rem; font-weight: 500; line-height: 1.4; display: flex; flex-direction: column; gap: 4px; }
+            .jellyseerr-quota-chip-warning { background: rgba(180, 83, 9, 0.18); border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }
+            .jellyseerr-quota-chip-restricted { background: rgba(127, 29, 29, 0.25); border-color: rgba(248, 113, 113, 0.55); color: #fca5a5; }
+            .jellyseerr-quota-chip-sub { font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
         `;
         document.head.appendChild(style);
     };
@@ -1695,6 +1701,14 @@
                             mainButton.classList.add('jellyseerr-button-pending');
                         } catch (error) {
                             mainButton.disabled = false;
+                            // Quota errors get a themed dialog; restore the button to
+                            // the request state so the user can retry once the quota
+                            // window rolls. The dialog already conveyed the error.
+                            if (ui.isQuotaError && ui.isQuotaError(error)) {
+                                await ui.showQuotaErrorDialog(error, 'movie');
+                                mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                                return;
+                            }
                             let errorMessage = JE.t('jellyseerr_btn_error');
                             if (error.status === 404) {
                                 errorMessage = JE.t('jellyseerr_btn_user_not_found');
@@ -1773,6 +1787,13 @@
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
                         button.disabled = false;
+                        // Quota errors get a themed dialog; restore the button so
+                        // the user can retry once the quota window rolls.
+                        if (ui.isQuotaError && ui.isQuotaError(error)) {
+                            await ui.showQuotaErrorDialog(error, 'movie');
+                            button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                            return;
+                        }
                         let errorMessage = JE.t('jellyseerr_btn_error');
                         if (error.status === 404) {
                             errorMessage = JE.t('jellyseerr_btn_user_not_found');
@@ -1890,6 +1911,301 @@
 
 
 
+    // ================================
+    // QUOTA HELPERS
+    // ================================
+    //
+    // Seerr enforces a per-user, rolling-window request quota separate from
+    // permissions. When a user hits their limit Seerr returns 403 with
+    // {"message":"Movie Quota exceeded."} (or "Series Quota exceeded.").
+    // These helpers render a proactive quota chip in the request modal and
+    // a detailed dialog when a request is rejected for quota reasons.
+
+    // Track which keys we've already warned about for tWithFallback so a
+    // missing translation logs once, not on every modal open.
+    const _quotaTFallbackWarned = new Set();
+
+    /**
+     * JE.t with a guaranteed inline English fallback.
+     * `JE.t(key)` returns the raw key on miss (truthy), so the usual
+     * `JE.t('foo') || 'bar'` idiom never falls back. This helper detects
+     * `result === key` and substitutes `fallback` with safe param interpolation.
+     * @param {string} key
+     * @param {string} fallback - English text used if `key` isn't translated.
+     * @param {object} [params] - Tokens like `{count}` to interpolate.
+     * @returns {string}
+     */
+    function tWithFallback(key, fallback, params) {
+        let result;
+        try {
+            result = JE.t(key, params);
+        } catch (err) {
+            console.warn(`${logPrefix} JE.t('${key}') threw, using fallback:`, err);
+            result = null;
+        }
+        if (!result || result === key) {
+            if (!_quotaTFallbackWarned.has(key)) {
+                _quotaTFallbackWarned.add(key);
+                console.debug(`${logPrefix} Missing translation '${key}', using inline fallback.`);
+            }
+            let out = fallback;
+            if (params) {
+                for (const [k, v] of Object.entries(params)) {
+                    // Replacement function avoids $&/$1 backreference footguns
+                    // when a param value happens to contain $ characters.
+                    out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
+                }
+            }
+            return out;
+        }
+        return result;
+    }
+
+    /**
+     * Detect quota-exceeded errors from a Seerr request response.
+     * Seerr returns 403 with {"message":"Movie Quota exceeded."} or
+     * "Series Quota exceeded." — match conservatively so other 403s
+     * (no-permission, blocklisted) keep their original generic toast.
+     * @param {Error & {status?: number, responseJSON?: object}} error
+     * @returns {boolean}
+     */
+    function isQuotaError(error) {
+        if (!error) return false;
+        if (error.status !== 403) return false;
+        const message = error.responseJSON?.message;
+        if (typeof message !== 'string') return false;
+        return /quota\s+exceeded/i.test(message);
+    }
+
+    /**
+     * Format a Date as a human-readable "next slot frees in X" / "frees at HH:MM"
+     * line. Picks the most useful unit for the magnitude of the duration. Returns
+     * an empty string when the timestamp is missing or already in the past
+     * (caller can decide whether to show a "should be available now, retry" hint).
+     * @param {string|number|Date|null|undefined} resetAt - ISO string, ms, or Date.
+     * @returns {string}
+     */
+    function formatNextReset(resetAt) {
+        if (!resetAt) return '';
+        const ts = resetAt instanceof Date ? resetAt.getTime() : new Date(resetAt).getTime();
+        if (!Number.isFinite(ts)) return '';
+
+        const deltaMs = ts - Date.now();
+        if (deltaMs <= 0) {
+            // Slot should already be available — Seerr just hasn't refreshed.
+            return tWithFallback('jellyseerr_quota_reset_now',
+                'Next slot should be available — try again now.');
+        }
+
+        const minutes = Math.round(deltaMs / 60_000);
+        const hours = Math.round(deltaMs / 3_600_000);
+        const days = Math.round(deltaMs / 86_400_000);
+
+        // Choose the unit that gives a useful round number.
+        if (minutes < 60) {
+            return tWithFallback('jellyseerr_quota_reset_in_minutes',
+                'Next slot frees in about {minutes} min',
+                { minutes: Math.max(1, minutes) });
+        }
+        if (hours < 36) {
+            return tWithFallback('jellyseerr_quota_reset_in_hours',
+                'Next slot frees in about {hours} h',
+                { hours });
+        }
+        return tWithFallback('jellyseerr_quota_reset_in_days',
+            'Next slot frees in about {days} days',
+            { days });
+    }
+
+    /**
+     * Format a single quota line for the chip / dialog.
+     * - limit === 0 (or absent) → "Unlimited"
+     * - days absent → static "X of Y used"
+     * - days present → "X of Y used in last N days"
+     * @param {{days?: number, limit?: number, used?: number, remaining?: number, restricted?: boolean, nextResetAt?: string}} q
+     * @param {'movie'|'tv'} type
+     * @returns {{ text: string, restricted: boolean, unlimited: boolean, resetText: string }}
+     */
+    function formatQuotaLine(q, type) {
+        if (!q || typeof q !== 'object') {
+            return { text: '', restricted: false, unlimited: true, resetText: '' };
+        }
+        const limit = Number(q.limit) || 0;
+        const used = Number(q.used) || 0;
+        const days = Number(q.days) || 0;
+        const restricted = !!q.restricted;
+        const unlimited = limit <= 0;
+
+        const labelKey = type === 'tv' ? 'jellyseerr_quota_label_tv' : 'jellyseerr_quota_label_movie';
+        const labelFallback = type === 'tv' ? 'Series' : 'Movies';
+        const label = tWithFallback(labelKey, labelFallback);
+
+        if (unlimited) {
+            return {
+                text: tWithFallback('jellyseerr_quota_unlimited', '{label}: Unlimited', { label }),
+                restricted: false,
+                unlimited: true,
+                resetText: ''
+            };
+        }
+
+        const usagePart = days > 0
+            ? tWithFallback('jellyseerr_quota_usage_window',
+                '{label}: {used}/{limit} used in the last {days} days',
+                { label, used, limit, days })
+            : tWithFallback('jellyseerr_quota_usage', '{label}: {used}/{limit} used',
+                { label, used, limit });
+
+        return {
+            text: usagePart,
+            restricted,
+            unlimited: false,
+            resetText: formatNextReset(q.nextResetAt)
+        };
+    }
+
+    /**
+     * Build the inline quota chip element for the request modal.
+     * Returns null when there's no quota (Seerr disabled, user not linked,
+     * or both movie+tv unlimited) — the modal looks the same as before in
+     * those cases.
+     * @param {{movie?: object, tv?: object}|null} quota
+     * @param {'movie'|'tv'} mediaType - Which side of the quota to highlight.
+     * @returns {HTMLElement|null}
+     */
+    function buildQuotaChip(quota, mediaType) {
+        if (!quota || typeof quota !== 'object') return null;
+
+        // Show only the relevant side (movie or tv) — the other side is
+        // irrelevant to the action being taken in this modal.
+        const side = mediaType === 'tv' ? quota.tv : quota.movie;
+        const line = formatQuotaLine(side, mediaType === 'tv' ? 'tv' : 'movie');
+        if (!line.text || line.unlimited) return null;
+
+        const chip = document.createElement('div');
+        chip.className = 'jellyseerr-quota-chip';
+        if (line.restricted) chip.classList.add('jellyseerr-quota-chip-restricted');
+        else if (Number(side?.remaining) > 0 && Number(side?.remaining) <= 2) {
+            chip.classList.add('jellyseerr-quota-chip-warning');
+        }
+
+        // textContent here keeps the chip XSS-safe regardless of locale source.
+        // The main text is built from the localized usage line; the optional
+        // sub-line(s) below add the restricted hint and/or the "next slot frees
+        // in X" message when the backend supplied a nextResetAt timestamp.
+        chip.textContent = line.text;
+
+        if (line.restricted) {
+            const sub = document.createElement('div');
+            sub.className = 'jellyseerr-quota-chip-sub';
+            sub.textContent = tWithFallback(
+                'jellyseerr_quota_restricted_hint',
+                'Limit reached. New requests will be rejected until older ones age out of the window.'
+            );
+            chip.appendChild(sub);
+        }
+
+        if (line.resetText) {
+            const reset = document.createElement('div');
+            reset.className = 'jellyseerr-quota-chip-sub';
+            reset.textContent = line.resetText;
+            chip.appendChild(reset);
+        }
+
+        return chip;
+    }
+
+    /**
+     * Show a themed dialog with quota details after a quota-exceeded error.
+     * Falls back to a longer-duration toast if Dashboard.alert isn't available.
+     * @param {Error & {responseJSON?: object}} error
+     * @param {'movie'|'tv'} mediaType
+     */
+    async function showQuotaErrorDialog(error, mediaType) {
+        // Try to fetch fresh quota numbers so the dialog can show specifics.
+        // Skip the cache so the user sees their actual current state and the
+        // backend recomputes the next-slot reset time. Failure here is
+        // non-fatal: we still render the dialog with just the upstream
+        // message, but log so a misconfigured Seerr is visible to admins.
+        let quota = null;
+        try {
+            quota = await JE.jellyseerrAPI.fetchUserQuota({ skipCache: true });
+        } catch (err) {
+            console.warn(`${logPrefix} Failed to refresh quota for dialog:`, err);
+        }
+
+        const upstreamMessage = error?.responseJSON?.message || '';
+        const lines = [];
+        if (upstreamMessage) lines.push(upstreamMessage);
+
+        if (quota) {
+            const movieLine = formatQuotaLine(quota.movie, 'movie');
+            const tvLine = formatQuotaLine(quota.tv, 'tv');
+            // Lead with the side that actually got rejected so the user sees
+            // their relevant numbers first; the other side is informational.
+            if (mediaType === 'tv') {
+                if (tvLine.text) lines.push(tvLine.text);
+                if (tvLine.resetText) lines.push(tvLine.resetText);
+                if (movieLine.text) lines.push(movieLine.text);
+            } else {
+                if (movieLine.text) lines.push(movieLine.text);
+                if (movieLine.resetText) lines.push(movieLine.resetText);
+                if (tvLine.text) lines.push(tvLine.text);
+            }
+        }
+
+        lines.push(tWithFallback(
+            'jellyseerr_quota_dialog_hint',
+            'Older requests roll out of the window automatically — try again once one expires, or ask an admin to raise your limit.'
+        ));
+
+        const title = tWithFallback('jellyseerr_quota_dialog_title', 'Request limit reached');
+        const message = lines.join('\n\n');
+
+        if (window.Dashboard && typeof window.Dashboard.alert === 'function') {
+            try {
+                window.Dashboard.alert({ title, message });
+                return;
+            } catch (err) {
+                console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);
+            }
+        }
+
+        // Final fallback. Longer than the default 4s toast since the message
+        // is multi-line and users need time to read.
+        JE.toast(escapeHtml(`${title}: ${message}`), 8000);
+    }
+
+    /**
+     * Standard error handler for request modal save buttons. Shows a quota
+     * dialog on quota errors, otherwise a generic toast. Always re-enables
+     * the button.
+     * @param {Error} error
+     * @param {'movie'|'tv'} mediaType
+     * @param {HTMLButtonElement} requestBtn
+     * @param {string} resetLabel - Label to restore on the button.
+     */
+    async function handleRequestError(error, mediaType, requestBtn, resetLabel) {
+        if (isQuotaError(error)) {
+            await showQuotaErrorDialog(error, mediaType);
+        } else {
+            const upstream = error?.responseJSON?.message;
+            JE.toast(upstream ? escapeHtml(upstream) : JE.t('jellyseerr_modal_toast_request_fail'), 4000);
+        }
+        if (requestBtn) {
+            requestBtn.disabled = false;
+            requestBtn.textContent = resetLabel;
+        }
+    }
+
+    // Expose helpers that other Seerr modules (jellyseerr.js, more-info-modal.js)
+    // need so they can render the same quota dialog on simple-request flows
+    // and embed the quota chip in their own modals.
+    ui.isQuotaError = isQuotaError;
+    ui.showQuotaErrorDialog = showQuotaErrorDialog;
+    ui.tWithFallback = tWithFallback;
+    ui.buildQuotaChip = buildQuotaChip;
+
     /**
      * Shows the advanced request modal for movies.
      * @param {number} tmdbId - TMDB ID of the movie.
@@ -1898,7 +2214,7 @@
      */
     ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
+        const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
         const bodyHtml = createAdvancedOptionsHTML('movie');
         const { modalElement, show } = create({
@@ -1931,13 +2247,36 @@
                     }
                     closeFn();
                 } catch (error) {
-                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
-                    requestBtn.disabled = false;
-                    requestBtn.textContent = JE.t('jellyseerr_modal_request');
+                    await handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'));
                 }
             }
         });
         show();
+
+        // Render the quota chip above the advanced options once we know the
+        // user's current usage. Run in parallel with the advanced-options
+        // fetch so it doesn't slow modal open. fetchUserQuota returns null
+        // when Seerr isn't configured or the user isn't linked, which leaves
+        // the modal looking the same as before.
+        const bodyEl = modalElement.querySelector('.jellyseerr-modal-body');
+        if (typeof fetchUserQuota === 'function' && bodyEl) {
+            (async () => {
+                try {
+                    const quota = await fetchUserQuota();
+                    const chip = buildQuotaChip(quota, 'movie');
+                    if (chip && document.body.contains(modalElement)) {
+                        bodyEl.insertBefore(chip, bodyEl.firstChild);
+                    }
+                } catch (err) {
+                    // Quota chip is best-effort — never let a quota fetch
+                    // failure surface as an unhandled rejection or block the
+                    // modal. fetchUserQuota itself catches network errors,
+                    // but defend against future regressions.
+                    console.debug(`${logPrefix} Quota chip skipped:`, err);
+                }
+            })();
+        }
+
         try {
             const data = await fetchAdvancedRequestData('movie');
             populateAdvancedOptions(modalElement, data, 'movie');
@@ -2077,9 +2416,10 @@
                         }
                     }, 1000);
                 } catch (error) {
-                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
-                    requestBtn.disabled = false;
-                    requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
+                    const resetLabel = is4k
+                        ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')
+                        : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
+                    await handleRequestError(error, 'tv', requestBtn, resetLabel);
                 }
             }
         });
@@ -2088,6 +2428,23 @@
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
         modalInstance.show();
+
+        // Render the TV quota chip above the season list once we know the
+        // user's current usage. Run async so it doesn't block modal open.
+        const tvBodyEl = modalInstance.modalElement.querySelector('.jellyseerr-modal-body');
+        if (typeof JE.jellyseerrAPI?.fetchUserQuota === 'function' && tvBodyEl) {
+            (async () => {
+                try {
+                    const quota = await JE.jellyseerrAPI.fetchUserQuota();
+                    const chip = buildQuotaChip(quota, 'tv');
+                    if (chip && document.body.contains(modalInstance.modalElement)) {
+                        tvBodyEl.insertBefore(chip, tvBodyEl.firstChild);
+                    }
+                } catch (err) {
+                    console.debug(`${logPrefix} Quota chip skipped:`, err);
+                }
+            })();
+        }
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)
         const airDateCache = {};
@@ -2439,16 +2796,38 @@
                     }
 
                     let successCount = 0;
+                    let otherFailures = 0;
+                    let quotaHitError = null;
                     for (const tmdbId of selectedMovies) {
                         try {
                             await requestMedia(tmdbId, 'movie', settings, false, searchResultItem);
                             successCount++;
                         } catch (error) {
+                            // Quota errors break out — once the quota is exceeded
+                            // every remaining request will also fail. Save the
+                            // error and surface it after the loop. Other errors
+                            // (network blip, rate limit) get counted so the toast
+                            // can warn about partial failure.
+                            if (ui.isQuotaError && ui.isQuotaError(error)) {
+                                quotaHitError = error;
+                                break;
+                            }
+                            otherFailures++;
                             console.error(`Failed to request movie ${tmdbId}:`, error);
                         }
                     }
 
-                    JE.toast(`${JE.t('jellyseerr_toast_collection_requested') || 'Requested'} ${successCount} of ${selectedMovies.length} ${JE.t('jellyseerr_toast_movies') || 'movies'}`, 4000);
+                    const requestedLabel = JE.t('jellyseerr_toast_collection_requested') || 'Requested';
+                    const moviesLabel = JE.t('jellyseerr_toast_movies') || 'movies';
+                    const total = selectedMovies.length;
+                    let toastText = `${requestedLabel} ${successCount} of ${total} ${moviesLabel}`;
+                    if (otherFailures > 0) {
+                        toastText += ` (${otherFailures} failed)`;
+                    }
+                    JE.toast(toastText, 4000);
+                    if (quotaHitError) {
+                        await ui.showQuotaErrorDialog(quotaHitError, 'movie');
+                    }
                     closeFn();
 
                     // Refresh search results
