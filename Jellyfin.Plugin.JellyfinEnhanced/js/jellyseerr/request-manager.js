@@ -118,7 +118,12 @@
                     const text = await response.clone().text();
                     if (text) {
                         lastError.responseText = text;
-                        try { lastError.responseJSON = JSON.parse(text); } catch (_) {}
+                        try {
+                            lastError.responseJSON = JSON.parse(text);
+                        } catch (e) {
+                            // Body wasn't JSON (Seerr HTML challenge page, etc) — keep responseText.
+                            console.debug(`${logPrefix} Error body not JSON:`, e.message);
+                        }
                     }
                 } catch (readErr) {
                     if (readErr?.name === 'AbortError') throw readErr;

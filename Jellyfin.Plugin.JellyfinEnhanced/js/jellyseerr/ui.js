@@ -2172,7 +2172,7 @@
                 if (chip && document.body.contains(modalElement)) {
                     bodyEl.insertBefore(chip, bodyEl.firstChild);
                 }
-            }).catch(err => console.debug(`${logPrefix} Quota chip skipped:`, err));
+            }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
         }
 
         try {
@@ -2335,7 +2335,7 @@
                 if (chip && document.body.contains(modalInstance.modalElement)) {
                     tvBodyEl.insertBefore(chip, tvBodyEl.firstChild);
                 }
-            }).catch(err => console.debug(`${logPrefix} Quota chip skipped:`, err));
+            }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
         }
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)

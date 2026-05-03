@@ -1704,7 +1704,7 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
             actionMount.insertBefore(chip, actionMount.firstChild);
         }
     } catch (err) {
-        console.debug(`${logPrefix} quota chip skipped:`, err);
+        console.warn(`${logPrefix} quota chip render failed:`, err);
     }
 }
 
