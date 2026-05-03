@@ -29,7 +29,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // hit different folders, so per-user settings appeared to "drift" — see
             // PR #573 thread. Idempotent; cheap when there's nothing to migrate.
             try { MigrateCaseVariantUserDirs(); }
-            catch (Exception ex) { _logger.Error($"Per-user dir case-variant migration failed: {ex.Message}"); }
+            catch (Exception ex) { _logger.Error($"Per-user dir case-variant migration failed: {ex}"); }
         }
 
         public object GetUserFileLock(string userId, string fileName)
@@ -260,6 +260,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// folder is renamed to <c>{name}.migrated-{ts}</c> for forensic
         /// recovery rather than deleted outright.
         /// </summary>
+        /// <summary>
+        /// Per-instance unique suffix so multiple migration steps in the same
+        /// millisecond produce distinct backup / .migrated- names. Combined
+        /// with a millisecond timestamp this is collision-free in practice.
+        /// </summary>
+        private static string MigrationSuffix() =>
+            DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+
         private void MigrateCaseVariantUserDirs()
         {
             if (!Directory.Exists(_configBaseDir)) return;
@@ -267,6 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var allDirs = Directory.GetDirectories(_configBaseDir);
             var migrated = 0;
             var renamed  = 0;
+            var failed   = 0;
 
             foreach (var srcDir in allDirs)
             {
@@ -277,12 +286,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 if (string.IsNullOrEmpty(srcName)) continue;
                 // Already canonical — skip.
                 if (CanonicalGuidRe.IsMatch(srcName)) continue;
+                // Shape gate FIRST so 'foo.migrated-...', 'reviews.json',
+                // future top-level dirs, etc. never reach the strip+lower step.
+                if (!GuidShapeRe.IsMatch(srcName)) continue;
 
                 var stripped = srcName.Replace("-", "").ToLowerInvariant();
-                // Not a user GUID folder (could be Plethorafin / unrelated subdir).
                 if (!CanonicalGuidRe.IsMatch(stripped)) continue;
-                // Defense in depth — don't trust a name that looks weird.
-                if (!GuidShapeRe.IsMatch(srcName)) continue;
 
                 var dstDir = Path.Combine(_configBaseDir, stripped);
 
@@ -296,53 +305,101 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                         continue;
                     }
 
-                    // Both exist — merge per-file, newer mtime wins, older backed up.
+                    // Case-insensitive filesystem (Windows NTFS, default macOS APFS):
+                    // src and dst can resolve to the SAME physical directory even
+                    // though their string names differ. Don't try to merge — the
+                    // merge logic would Directory.Move the only data dir to .migrated-
+                    // and the canonical dir would vanish. Instead do a two-step
+                    // case-only rename: src -> src.tmp -> dst.
+                    var srcFull = Path.GetFullPath(srcDir);
+                    var dstFull = Path.GetFullPath(dstDir);
+                    if (string.Equals(srcFull, dstFull, StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(srcFull, dstFull, StringComparison.Ordinal))
+                    {
+                        var tmp = srcDir + ".case-rename-" + MigrationSuffix();
+                        Directory.Move(srcDir, tmp);
+                        Directory.Move(tmp, dstDir);
+                        renamed++;
+                        _logger.Info($"Case-only rename on case-insensitive FS: '{srcName}' -> '{stripped}'");
+                        continue;
+                    }
+
+                    // Both exist as distinct dirs — merge per-file, newer mtime wins,
+                    // older backed up. Each per-file step uses its own try/catch so
+                    // one bad file doesn't abort the whole dir's merge.
                     var srcFiles = Directory.GetFiles(srcDir);
                     foreach (var srcFile in srcFiles)
                     {
                         var fileName = Path.GetFileName(srcFile);
                         var dstFile  = Path.Combine(dstDir, fileName);
 
-                        if (!File.Exists(dstFile))
+                        try
                         {
-                            File.Copy(srcFile, dstFile);
-                            continue;
-                        }
+                            if (!File.Exists(dstFile))
+                            {
+                                File.Copy(srcFile, dstFile);
+                                continue;
+                            }
 
-                        var srcMtime = File.GetLastWriteTimeUtc(srcFile);
-                        var dstMtime = File.GetLastWriteTimeUtc(dstFile);
-                        if (srcMtime > dstMtime)
-                        {
-                            var ts = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-                            File.Copy(dstFile, dstFile + ".pre-case-merge-" + ts);
-                            File.Copy(srcFile, dstFile, overwrite: true);
-                            _logger.Info($"Merged '{fileName}' from '{srcName}' (newer) into '{stripped}'");
+                            var srcMtime = File.GetLastWriteTimeUtc(srcFile);
+                            var dstMtime = File.GetLastWriteTimeUtc(dstFile);
+                            if (srcMtime > dstMtime)
+                            {
+                                // ms-resolution + GUID suffix prevents collisions
+                                // when two case-variants of the same canonical GUID
+                                // both have a newer file in the same millisecond.
+                                var backup = dstFile + ".pre-case-merge-" + MigrationSuffix();
+                                File.Copy(dstFile, backup);
+                                File.Copy(srcFile, dstFile, overwrite: true);
+                                _logger.Info($"Merged '{fileName}' from '{srcName}' (newer) into '{stripped}'");
+                            }
+                            else
+                            {
+                                // Source data is dropped from the canonical dir but
+                                // preserved under '{srcName}.migrated-{ts}'. Warning
+                                // severity so the admin can spot it in logs.
+                                _logger.Warning($"Kept '{fileName}' from canonical '{stripped}' (newer than '{srcName}'); source-side copy preserved in '.migrated-' sibling");
+                            }
                         }
-                        else
+                        catch (Exception fileEx)
                         {
-                            _logger.Info($"Kept '{fileName}' from canonical '{stripped}' (newer than '{srcName}')");
+                            _logger.Error($"Failed to migrate file '{fileName}' in '{srcName}': {fileEx.Message}");
                         }
                     }
 
                     // Rename source rather than delete so forensic recovery is possible.
-                    var migratedName = srcDir + ".migrated-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                    var migratedName = srcDir + ".migrated-" + MigrationSuffix();
                     Directory.Move(srcDir, migratedName);
                     migrated++;
                     _logger.Info($"Merged user dir '{srcName}' into canonical '{stripped}', source preserved at '{Path.GetFileName(migratedName)}'");
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Failed to migrate user dir '{srcName}': {ex.Message}");
+                    failed++;
+                    _logger.Error($"Failed to migrate user dir '{srcName}': {ex}");
                 }
             }
 
-            if (renamed + migrated > 0)
+            if (renamed + migrated + failed > 0)
             {
-                _logger.Info($"User-dir case migration done: {renamed} renamed, {migrated} merged.");
+                if (failed > 0)
+                {
+                    _logger.Warning($"User-dir case migration done with errors: {renamed} renamed, {migrated} merged, {failed} failed (source dirs left intact).");
+                }
+                else
+                {
+                    _logger.Info($"User-dir case migration done: {renamed} renamed, {migrated} merged.");
+                }
             }
         }
 
-        /// Gets all user IDs that have configuration directories.
+        /// <summary>
+        /// Gets all canonical user IDs that have configuration directories.
+        /// Filters out non-user folders (e.g., <c>.migrated-{ts}</c> forensic
+        /// backups, <c>.case-rename-{ts}</c> in-flight rename artifacts)
+        /// so admin operations like "Reset to defaults" only iterate real
+        /// users.
+        /// </summary>
         public string[] GetAllUserIds()
         {
             try
@@ -353,14 +410,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
 
                 var userDirs = Directory.GetDirectories(_configBaseDir);
-                var userIds = new string[userDirs.Length];
+                var userIds = new System.Collections.Generic.List<string>(userDirs.Length);
 
-                for (int i = 0; i < userDirs.Length; i++)
+                foreach (var dir in userDirs)
                 {
-                    userIds[i] = Path.GetFileName(userDirs[i]);
+                    var name = Path.GetFileName(dir);
+                    if (string.IsNullOrEmpty(name)) continue;
+                    // Only canonical 32-hex lowercase directories are real users.
+                    // Anything else (.migrated-*, .case-rename-*, future top-level
+                    // dirs) is filtered out so callers like the Reset-to-defaults
+                    // admin endpoint don't iterate it and re-create stale layout.
+                    if (!CanonicalGuidRe.IsMatch(name)) continue;
+                    userIds.Add(name);
                 }
 
-                return userIds;
+                return userIds.ToArray();
             }
             catch (Exception ex)
             {
