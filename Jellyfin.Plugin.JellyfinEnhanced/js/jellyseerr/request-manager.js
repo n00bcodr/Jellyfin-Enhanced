@@ -111,6 +111,24 @@
 
                 lastStatus = response.status;
                 lastError = new Error(`HTTP ${response.status}`);
+                lastError.status = response.status;
+
+                // Capture body so callers can read structured error details (e.g. quota messages).
+                try {
+                    const text = await response.clone().text();
+                    if (text) {
+                        lastError.responseText = text;
+                        try {
+                            lastError.responseJSON = JSON.parse(text);
+                        } catch (e) {
+                            // Body wasn't JSON (Seerr HTML challenge page, etc) — keep responseText.
+                            console.debug(`${logPrefix} Error body not JSON:`, e.message);
+                        }
+                    }
+                } catch (readErr) {
+                    if (readErr?.name === 'AbortError') throw readErr;
+                    console.debug(`${logPrefix} Failed to read error body:`, readErr);
+                }
 
                 if (!isRetryable(null, response.status)) {
                     throw lastError;

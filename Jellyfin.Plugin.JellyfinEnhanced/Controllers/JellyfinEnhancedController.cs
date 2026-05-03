@@ -908,6 +908,134 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={filter}", HttpMethod.Get);
         }
 
+        // Returns the user's Seerr quota with a nextResetAt added per side.
+        [HttpGet("jellyseerr/quota")]
+        [Authorize]
+        public async Task<IActionResult> GetJellyseerrQuota()
+        {
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString() ?? "";
+            var seerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            var quotaResult = await ProxyJellyseerrRequest($"/api/v1/user/{seerrUserId}/quota", HttpMethod.Get);
+
+            // Reset-time enrichment is best-effort — fall back to the un-enriched
+            // result on any failure (malformed body, Seerr admin shape, etc).
+            if (quotaResult is ContentResult cr && cr.StatusCode is null or 200)
+            {
+                try
+                {
+                    var quota = JObject.Parse(cr.Content ?? "{}");
+                    await EnrichQuotaWithResetAsync(quota, seerrUserId!, JellyfinEnhanced.Instance!.Configuration);
+                    return Content(quota.ToString(Newtonsoft.Json.Formatting.None), "application/json");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Quota enrichment skipped ({ex.GetType().Name}): {ex.Message}");
+                }
+            }
+
+            return quotaResult;
+        }
+
+        private async Task EnrichQuotaWithResetAsync(JObject quota, string seerrUserId, PluginConfiguration config)
+        {
+            // Parallel: independent HTTP calls, sequential would double worst-case latency.
+            var movieTask = ComputeNextResetAsync(quota, "movie", seerrUserId, config);
+            var tvTask = ComputeNextResetAsync(quota, "tv", seerrUserId, config);
+            await Task.WhenAll(movieTask, tvTask);
+
+            // Seerr admins / no-policy users return {"movie":null,"tv":null}; cast safely.
+            if (movieTask.Result.HasValue && quota["movie"] is JObject mObj)
+            {
+                mObj["nextResetAt"] = movieTask.Result.Value.ToString("o");
+            }
+            if (tvTask.Result.HasValue && quota["tv"] is JObject tObj)
+            {
+                tObj["nextResetAt"] = tvTask.Result.Value.ToString("o");
+            }
+        }
+
+        private async Task<DateTime?> ComputeNextResetAsync(JObject quota, string mediaType, string seerrUserId, PluginConfiguration config)
+        {
+            var side = quota[mediaType] as JObject;
+            if (side == null) return null;
+
+            int limit = side["limit"]?.Value<int?>() ?? 0;
+            int used = side["used"]?.Value<int?>() ?? 0;
+            int days = side["days"]?.Value<int?>() ?? 0;
+
+            // limit=0 is unlimited; no requests means nothing to roll off.
+            if (limit <= 0 || used <= 0 || days <= 0) return null;
+
+            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(8);
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+            httpClient.DefaultRequestHeaders.Add("X-Api-User", seerrUserId);
+
+            // Iterate URLs for multi-instance failover, matching ProxyJellyseerrRequest.
+            foreach (var rawUrl in urls)
+            {
+                var trimmedUrl = rawUrl.Trim().TrimEnd('/');
+                try
+                {
+                    // sortDirection=asc returns oldest first; take=20 gives a margin for declined.
+                    var requestUri = $"{trimmedUrl}/api/v1/request" +
+                                     $"?take=20&skip=0&sortDirection=asc&requestedBy={seerrUserId}&mediaType={mediaType}";
+
+                    var response = await httpClient.GetAsync(requestUri);
+                    if (!response.IsSuccessStatusCode) continue;
+
+                    var content = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(content);
+                    if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    // Quota excludes DECLINED (status==3), so we do too.
+                    var windowStart = DateTime.UtcNow.AddDays(-days);
+                    DateTime? oldestCreatedAt = null;
+                    foreach (var req in results.EnumerateArray())
+                    {
+                        if (req.TryGetProperty("status", out var statusEl) &&
+                            statusEl.ValueKind == JsonValueKind.Number &&
+                            statusEl.GetInt32() == 3)
+                        {
+                            continue;
+                        }
+
+                        if (!req.TryGetProperty("createdAt", out var createdEl) ||
+                            createdEl.ValueKind != JsonValueKind.String)
+                        {
+                            continue;
+                        }
+
+                        if (!DateTime.TryParse(createdEl.GetString(), null,
+                            System.Globalization.DateTimeStyles.RoundtripKind, out var createdAt))
+                        {
+                            continue;
+                        }
+
+                        var createdAtUtc = createdAt.ToUniversalTime();
+                        if (createdAtUtc < windowStart) continue;
+
+                        if (oldestCreatedAt == null || createdAtUtc < oldestCreatedAt.Value)
+                        {
+                            oldestCreatedAt = createdAtUtc;
+                        }
+                    }
+
+                    return oldestCreatedAt?.AddDays(days);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"ComputeNextResetAsync({mediaType}) on {trimmedUrl} failed ({ex.GetType().Name}): {ex.Message}");
+                }
+            }
+
+            return null;
+        }
+
         [HttpGet("jellyseerr/tv/{tmdbId}")]
         [Authorize]
         public Task<IActionResult> GetTvShow(int tmdbId)
@@ -2082,6 +2210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrEnable4KTvRequests,
                 config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
+                config.JellyseerrShowQuotaInfo,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,
                 config.AddRequestedMediaToWatchlist,

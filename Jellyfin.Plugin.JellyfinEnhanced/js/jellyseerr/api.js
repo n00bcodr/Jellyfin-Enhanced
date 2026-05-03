@@ -160,7 +160,8 @@
             'jellyseerr:/discover/',
             // Request lists and watchlist views can reflect new state.
             'jellyseerr:/request?',
-            'jellyseerr:/watchlist?'
+            'jellyseerr:/watchlist?',
+            'jellyseerr:/quota'
         ];
 
         // Movie requests can affect collection rendering.
@@ -676,6 +677,22 @@
         }
     };
 
+
+    // Returns { movie, tv } quota with nextResetAt, or null when disabled / on failure.
+    api.fetchUserQuota = async function(options = {}) {
+        if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrShowQuotaInfo === false) {
+            return null;
+        }
+        try {
+            return await get('/quota', options);
+        } catch (error) {
+            // 404 = user not linked, 503 = Seerr disabled — both expected, debug only.
+            // Anything else (5xx, network, parse) is unexpected and admins need to see it.
+            const expected = error?.status === 404 || error?.status === 503;
+            (expected ? console.debug : console.warn)(`${logPrefix} Quota fetch failed:`, error);
+            return null;
+        }
+    };
 
     /**
      * Fetches Seerr request settings (partial requests + special episodes).

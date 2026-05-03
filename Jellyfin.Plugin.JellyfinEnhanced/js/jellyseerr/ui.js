@@ -673,6 +673,12 @@
             .jellyseerr-modal-button-primary:hover:not(:disabled) { background: linear-gradient(135deg, #4338ca, #6d28d9); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4); }
             .jellyseerr-modal-button-secondary { background: rgba(71, 85, 105, 0.8); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.2); }
             .jellyseerr-modal-button-secondary:hover { background: rgba(71, 85, 105, 1); border-color: rgba(148, 163, 184, 0.3); }
+
+            /* Quota chip — shown above request modals when a per-user limit applies. */
+            .jellyseerr-quota-chip { padding: 12px 16px; margin-bottom: 16px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; color: #cbd5e1; font-size: 0.9rem; font-weight: 500; line-height: 1.4; display: flex; flex-direction: column; gap: 4px; }
+            .jellyseerr-quota-chip-warning { background: rgba(180, 83, 9, 0.18); border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }
+            .jellyseerr-quota-chip-restricted { background: rgba(127, 29, 29, 0.25); border-color: rgba(248, 113, 113, 0.55); color: #fca5a5; }
+            .jellyseerr-quota-chip-sub { font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
         `;
         document.head.appendChild(style);
     };
@@ -1695,6 +1701,12 @@
                             mainButton.classList.add('jellyseerr-button-pending');
                         } catch (error) {
                             mainButton.disabled = false;
+                            // Quota errors get a themed dialog; restore button to idle.
+                            if (ui.isQuotaError && ui.isQuotaError(error)) {
+                                await ui.showQuotaErrorDialog(error, 'movie');
+                                mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                                return;
+                            }
                             let errorMessage = JE.t('jellyseerr_btn_error');
                             if (error.status === 404) {
                                 errorMessage = JE.t('jellyseerr_btn_user_not_found');
@@ -1773,6 +1785,12 @@
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
                         button.disabled = false;
+                        // Quota errors get a themed dialog; restore button to idle.
+                        if (ui.isQuotaError && ui.isQuotaError(error)) {
+                            await ui.showQuotaErrorDialog(error, 'movie');
+                            button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                            return;
+                        }
                         let errorMessage = JE.t('jellyseerr_btn_error');
                         if (error.status === 404) {
                             errorMessage = JE.t('jellyseerr_btn_user_not_found');
@@ -1890,6 +1908,215 @@
 
 
 
+    // QUOTA HELPERS
+    // Seerr enforces a per-user rolling-window request quota. When hit it returns
+    // 403 with {"message":"Movie Quota exceeded."} — these helpers render a
+    // proactive chip and a detailed dialog instead of a vanishing toast.
+
+    const _quotaTFallbackWarned = new Set();
+
+    // JE.t with a guaranteed inline English fallback (JE.t returns the raw key on miss).
+    // Wrapped in try/catch because a corrupt remote locale (cached from GitHub) can
+    // contain non-string values for a key, causing JE.t's internal text.replace to throw.
+    function tWithFallback(key, fallback, params) {
+        let result;
+        try {
+            result = JE.t(key, params);
+        } catch (_) {
+            result = null;
+        }
+        if (typeof result === 'string' && result !== key) return result;
+
+        if (!_quotaTFallbackWarned.has(key)) {
+            _quotaTFallbackWarned.add(key);
+            console.debug(`${logPrefix} Missing translation '${key}', using inline fallback.`);
+        }
+        let out = fallback;
+        if (params) {
+            for (const [k, v] of Object.entries(params)) {
+                // Replacement function avoids $&/$1 backreference footguns.
+                out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
+            }
+        }
+        return out;
+    }
+
+    // Detect Seerr quota-exceeded errors (403 with "Quota exceeded" message).
+    // Returns false when the admin has disabled quota info — falls back to the toast.
+    function isQuotaError(error) {
+        if (JE.pluginConfig?.JellyseerrShowQuotaInfo === false) return false;
+        if (error?.status !== 403) return false;
+        return /quota\s+exceeded/i.test(error.responseJSON?.message || '');
+    }
+
+    // Format a reset timestamp as "Next slot frees in about X min/h/days".
+    function formatNextReset(resetAt) {
+        if (!resetAt) return '';
+        const ts = new Date(resetAt).getTime();
+        if (!Number.isFinite(ts)) return '';
+
+        const deltaMs = ts - Date.now();
+        if (deltaMs <= 0) {
+            return tWithFallback('jellyseerr_quota_reset_now',
+                'Next slot should be available — try again now.');
+        }
+
+        const minutes = Math.round(deltaMs / 60_000);
+        const hours = Math.round(deltaMs / 3_600_000);
+        const days = Math.round(deltaMs / 86_400_000);
+
+        if (minutes < 60) {
+            return tWithFallback('jellyseerr_quota_reset_in_minutes',
+                'Next slot frees in about {minutes} min',
+                { minutes: Math.max(1, minutes) });
+        }
+        if (hours < 36) {
+            return tWithFallback('jellyseerr_quota_reset_in_hours',
+                'Next slot frees in about {hours} h',
+                { hours });
+        }
+        return tWithFallback('jellyseerr_quota_reset_in_days',
+            'Next slot frees in about {days} days',
+            { days });
+    }
+
+    function formatQuotaLine(q, type) {
+        if (!q) return { text: '', restricted: false, unlimited: true, resetText: '' };
+        const limit = Number(q.limit) || 0;
+        const used = Number(q.used) || 0;
+        const days = Number(q.days) || 0;
+        const restricted = !!q.restricted;
+        const unlimited = limit <= 0;
+
+        const labelKey = type === 'tv' ? 'jellyseerr_quota_label_tv' : 'jellyseerr_quota_label_movie';
+        const labelFallback = type === 'tv' ? 'Series' : 'Movies';
+        const label = tWithFallback(labelKey, labelFallback);
+
+        if (unlimited) {
+            return {
+                text: tWithFallback('jellyseerr_quota_unlimited', '{label}: Unlimited', { label }),
+                restricted: false,
+                unlimited: true,
+                resetText: ''
+            };
+        }
+
+        const usagePart = days > 0
+            ? tWithFallback('jellyseerr_quota_usage_window',
+                '{label}: {used}/{limit} used in the last {days} days',
+                { label, used, limit, days })
+            : tWithFallback('jellyseerr_quota_usage', '{label}: {used}/{limit} used',
+                { label, used, limit });
+
+        return {
+            text: usagePart,
+            restricted,
+            unlimited: false,
+            resetText: formatNextReset(q.nextResetAt)
+        };
+    }
+
+    // Returns the chip element for the relevant quota side, or null when unlimited.
+    function buildQuotaChip(quota, mediaType) {
+        if (!quota) return null;
+
+        const side = mediaType === 'tv' ? quota.tv : quota.movie;
+        const line = formatQuotaLine(side, mediaType === 'tv' ? 'tv' : 'movie');
+        if (!line.text || line.unlimited) return null;
+
+        const chip = document.createElement('div');
+        chip.className = 'jellyseerr-quota-chip';
+        if (line.restricted) chip.classList.add('jellyseerr-quota-chip-restricted');
+        else if (Number(side?.remaining) > 0 && Number(side?.remaining) <= 2) {
+            chip.classList.add('jellyseerr-quota-chip-warning');
+        }
+
+        chip.textContent = line.text;
+
+        if (line.restricted) {
+            const sub = document.createElement('div');
+            sub.className = 'jellyseerr-quota-chip-sub';
+            sub.textContent = tWithFallback(
+                'jellyseerr_quota_restricted_hint',
+                'Limit reached. New requests will be rejected until older ones age out of the window.'
+            );
+            chip.appendChild(sub);
+        }
+
+        if (line.resetText) {
+            const reset = document.createElement('div');
+            reset.className = 'jellyseerr-quota-chip-sub';
+            reset.textContent = line.resetText;
+            chip.appendChild(reset);
+        }
+
+        return chip;
+    }
+
+    // Show a themed dialog with quota numbers + reset hint after a quota error.
+    async function showQuotaErrorDialog(error, mediaType) {
+        const quota = await JE.jellyseerrAPI?.fetchUserQuota?.({ skipCache: true });
+        const upstreamMessage = error?.responseJSON?.message || '';
+        const lines = [];
+        if (upstreamMessage) lines.push(upstreamMessage);
+
+        if (quota) {
+            const movieLine = formatQuotaLine(quota.movie, 'movie');
+            const tvLine = formatQuotaLine(quota.tv, 'tv');
+            // Lead with the rejected side; the other side is informational.
+            if (mediaType === 'tv') {
+                if (tvLine.text) lines.push(tvLine.text);
+                if (tvLine.resetText) lines.push(tvLine.resetText);
+                if (movieLine.text) lines.push(movieLine.text);
+            } else {
+                if (movieLine.text) lines.push(movieLine.text);
+                if (movieLine.resetText) lines.push(movieLine.resetText);
+                if (tvLine.text) lines.push(tvLine.text);
+            }
+        }
+
+        lines.push(tWithFallback(
+            'jellyseerr_quota_dialog_hint',
+            'Older requests roll out of the window automatically — try again once one expires, or ask an admin to raise your limit.'
+        ));
+
+        const title = tWithFallback('jellyseerr_quota_dialog_title', 'Request limit reached');
+        // Dashboard.alert sanitizes message as HTML, collapsing \n. Use <br><br>
+        // for visible paragraph breaks; escape every line first since the upstream
+        // Seerr message could contain HTML metacharacters.
+        const message = lines.map(escapeHtml).join('<br><br>');
+
+        // Themes / forks can monkey-patch Dashboard with broken stubs; fall back to toast.
+        if (typeof window.Dashboard?.alert === 'function') {
+            try {
+                window.Dashboard.alert({ title, message });
+                return;
+            } catch (err) {
+                console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);
+            }
+        }
+        JE.toast(escapeHtml(`${title}: ${lines.join(' — ')}`), 8000);
+    }
+
+    async function handleRequestError(error, mediaType, requestBtn, resetLabel) {
+        if (isQuotaError(error)) {
+            await showQuotaErrorDialog(error, mediaType);
+        } else {
+            const upstream = error?.responseJSON?.message;
+            JE.toast(upstream ? escapeHtml(upstream) : JE.t('jellyseerr_modal_toast_request_fail'), 4000);
+        }
+        if (requestBtn) {
+            requestBtn.disabled = false;
+            requestBtn.textContent = resetLabel;
+        }
+    }
+
+    // Exposed so jellyseerr.js / more-info-modal.js can use the same dialog + chip.
+    ui.isQuotaError = isQuotaError;
+    ui.showQuotaErrorDialog = showQuotaErrorDialog;
+    ui.tWithFallback = tWithFallback;
+    ui.buildQuotaChip = buildQuotaChip;
+
     /**
      * Shows the advanced request modal for movies.
      * @param {number} tmdbId - TMDB ID of the movie.
@@ -1898,7 +2125,7 @@
      */
     ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
+        const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
         const bodyHtml = createAdvancedOptionsHTML('movie');
         const { modalElement, show } = create({
@@ -1931,13 +2158,23 @@
                     }
                     closeFn();
                 } catch (error) {
-                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
-                    requestBtn.disabled = false;
-                    requestBtn.textContent = JE.t('jellyseerr_modal_request');
+                    await handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'));
                 }
             }
         });
         show();
+
+        // Quota chip — runs in parallel with advanced-options fetch.
+        const bodyEl = modalElement.querySelector('.jellyseerr-modal-body');
+        if (bodyEl) {
+            fetchUserQuota().then(quota => {
+                const chip = buildQuotaChip(quota, 'movie');
+                if (chip && document.body.contains(modalElement)) {
+                    bodyEl.insertBefore(chip, bodyEl.firstChild);
+                }
+            }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
+        }
+
         try {
             const data = await fetchAdvancedRequestData('movie');
             populateAdvancedOptions(modalElement, data, 'movie');
@@ -2077,9 +2314,10 @@
                         }
                     }, 1000);
                 } catch (error) {
-                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail'), 4000);
-                    requestBtn.disabled = false;
-                    requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
+                    const resetLabel = is4k
+                        ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')
+                        : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
+                    await handleRequestError(error, 'tv', requestBtn, resetLabel);
                 }
             }
         });
@@ -2088,6 +2326,17 @@
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
         modalInstance.show();
+
+        // Quota chip — runs async so it doesn't block modal open.
+        const tvBodyEl = modalInstance.modalElement.querySelector('.jellyseerr-modal-body');
+        if (tvBodyEl) {
+            JE.jellyseerrAPI?.fetchUserQuota?.().then(quota => {
+                const chip = buildQuotaChip(quota, 'tv');
+                if (chip && document.body.contains(modalInstance.modalElement)) {
+                    tvBodyEl.insertBefore(chip, tvBodyEl.firstChild);
+                }
+            }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
+        }
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)
         const airDateCache = {};
@@ -2439,16 +2688,36 @@
                     }
 
                     let successCount = 0;
+                    let otherFailures = 0;
+                    let quotaHitError = null;
                     for (const tmdbId of selectedMovies) {
                         try {
                             await requestMedia(tmdbId, 'movie', settings, false, searchResultItem);
                             successCount++;
                         } catch (error) {
+                            // Once quota is hit every remaining request will also fail — break.
+                            if (ui.isQuotaError && ui.isQuotaError(error)) {
+                                quotaHitError = error;
+                                break;
+                            }
+                            otherFailures++;
                             console.error(`Failed to request movie ${tmdbId}:`, error);
                         }
                     }
 
-                    JE.toast(`${JE.t('jellyseerr_toast_collection_requested') || 'Requested'} ${successCount} of ${selectedMovies.length} ${JE.t('jellyseerr_toast_movies') || 'movies'}`, 4000);
+                    const requestedLabel = JE.t('jellyseerr_toast_collection_requested') || 'Requested';
+                    const moviesLabel = JE.t('jellyseerr_toast_movies') || 'movies';
+                    const total = selectedMovies.length;
+                    let toastText = `${requestedLabel} ${successCount} of ${total} ${moviesLabel}`;
+                    if (otherFailures > 0) {
+                        toastText += ' ' + tWithFallback(
+                            'jellyseerr_toast_collection_failed_count',
+                            '({count} failed)', { count: otherFailures });
+                    }
+                    JE.toast(toastText, 4000);
+                    if (quotaHitError) {
+                        await ui.showQuotaErrorDialog(quotaHitError, 'movie');
+                    }
                     closeFn();
 
                     // Refresh search results

@@ -527,14 +527,19 @@
                             }
                         }
                     } catch (error) {
-                        let errorMessage = 'Failed to request 4K version';
-                        if (error.status === 404) {
-                            errorMessage = 'User not found';
-                        } else if (error.responseJSON?.message) {
-                            errorMessage = error.responseJSON.message;
+                        // Quota errors get a themed dialog with usage + reset info.
+                        if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                        } else {
+                            let errorMessage = 'Failed to request 4K version';
+                            if (error.status === 404) {
+                                errorMessage = 'User not found';
+                            } else if (error.responseJSON?.message) {
+                                errorMessage = error.responseJSON.message;
+                            }
+                            // Escape API error before display to prevent reflected XSS
+                            JE.toast(escapeHtml(errorMessage), 4000);
                         }
-                        // Escape API error before display to prevent reflected XSS
-                        JE.toast(escapeHtml(errorMessage), 4000);
                         item.disabled = false;
                         item.innerHTML = `<span>Request in 4K</span>`;
                     }
@@ -580,11 +585,19 @@
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
                         button.disabled = false;
-                        let errorMessage = JE.t('jellyseerr_btn_error');
+                        // Quota errors get a themed dialog; restore button to idle.
+                        if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                            button.innerHTML = `${JE.jellyseerrUI.icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                            return;
+                        }
+                        let errorMessage;
                         if (error.status === 404) {
                             errorMessage = JE.t('jellyseerr_btn_user_not_found');
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
+                        } else {
+                            errorMessage = JE.t('jellyseerr_btn_error');
                         }
                         // Escape API error before innerHTML to prevent reflected XSS
                         button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUI.icons.error}`;
