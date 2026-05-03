@@ -161,9 +161,6 @@
             // Request lists and watchlist views can reflect new state.
             'jellyseerr:/request?',
             'jellyseerr:/watchlist?',
-            // The user's quota counts non-declined requests, so a successful
-            // request changes used / remaining / nextResetAt — drop the cache
-            // so the next modal opens with fresh numbers.
             'jellyseerr:/quota'
         ];
 
@@ -681,25 +678,14 @@
     };
 
 
-    /**
-     * Fetches the current user's Seerr request quota (movies + tv).
-     *
-     * Server returns:
-     *   { movie: {days, limit, used, remaining, restricted},
-     *     tv:    {days, limit, used, remaining, restricted} }
-     *
-     * limit === 0 (or absent) means unlimited. `used` for tv is season-count.
-     *
-     * @param {object} [options] - { skipCache } to force a refresh.
-     * @returns {Promise<object|null>} - The quota response, or null if the user
-     *   isn't linked to Seerr / Seerr isn't configured / the request fails.
-     */
+    // Returns { movie, tv } quota with nextResetAt, or null when disabled / on failure.
     api.fetchUserQuota = async function(options = {}) {
+        if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrShowQuotaInfo === false) {
+            return null;
+        }
         try {
             return await get('/quota', options);
         } catch (error) {
-            // 404 = user not linked, 503 = Seerr disabled. Treat as "no quota
-            // info available" rather than a hard error so the modal still opens.
             if (error?.status !== 404 && error?.status !== 503) {
                 console.warn(`${logPrefix} Failed to fetch user quota:`, error);
             }

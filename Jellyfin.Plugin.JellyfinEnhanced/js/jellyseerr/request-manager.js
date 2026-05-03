@@ -113,27 +113,15 @@
                 lastError = new Error(`HTTP ${response.status}`);
                 lastError.status = response.status;
 
-                // Capture the response body so callers can read structured error
-                // details (e.g. {"message":"Movie Quota exceeded."}) instead of a
-                // bare "HTTP 403". Use response.clone() to keep the original
-                // response usable. Body-read failures don't block the throw —
-                // we still want to surface the HTTP status — but we must
-                // re-throw AbortError so it propagates correctly through the
-                // outer try/catch (which has explicit AbortError handling).
+                // Capture body so callers can read structured error details (e.g. quota messages).
                 try {
                     const text = await response.clone().text();
                     if (text) {
                         lastError.responseText = text;
-                        try {
-                            lastError.responseJSON = JSON.parse(text);
-                        } catch (_parseErr) {
-                            // Body wasn't JSON; responseText is still attached.
-                        }
+                        try { lastError.responseJSON = JSON.parse(text); } catch (_) {}
                     }
                 } catch (readErr) {
-                    if (readErr?.name === 'AbortError') {
-                        throw readErr;
-                    }
+                    if (readErr?.name === 'AbortError') throw readErr;
                     console.debug(`${logPrefix} Failed to read error body:`, readErr);
                 }
 

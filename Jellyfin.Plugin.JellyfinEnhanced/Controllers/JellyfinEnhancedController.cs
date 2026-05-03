@@ -908,15 +908,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={filter}", HttpMethod.Get);
         }
 
-        /// <summary>
-        /// Returns the current user's Seerr request quota status (movie + tv: limit, used,
-        /// remaining, days, restricted) enriched with `nextResetAt` — an ISO-8601 timestamp
-        /// indicating when the oldest non-declined request within the rolling window ages
-        /// out and frees a slot. Used by the request modal to show how many requests the
-        /// user has left and by the quota-exceeded dialog so the user sees when they can
-        /// retry. The Seerr user id is resolved server-side from the authenticated
-        /// principal — never trust a client-supplied id.
-        /// </summary>
+        // Returns the user's Seerr quota with a nextResetAt added per side.
         [HttpGet("jellyseerr/quota")]
         [Authorize]
         public async Task<IActionResult> GetJellyseerrQuota()
@@ -941,9 +933,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var quotaResult = await ProxyJellyseerrRequest($"/api/v1/user/{seerrUserId}/quota", HttpMethod.Get);
 
-            // Best-effort reset-time enrichment: only attempted on success. Failure to
-            // compute reset times must NOT break the base quota response — the chip
-            // and dialog work fine without it, just less specific.
+            // Reset-time enrichment is best-effort — failure must not break the response.
             if (quotaResult is ContentResult cr && cr.StatusCode is null or 200)
             {
                 try
@@ -961,18 +951,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return quotaResult;
         }
 
-        /// <summary>
-        /// Adds a `nextResetAt` ISO timestamp to each side of the quota response that has
-        /// a configured limit and at least one request in the window. The timestamp is the
-        /// oldest non-declined request's createdAt plus the rolling window in days — that
-        /// is, when the oldest request rolls off and frees a slot. Returns silently on any
-        /// failure (network, parse, missing fields).
-        /// </summary>
         private async Task EnrichQuotaWithResetAsync(JObject quota, string seerrUserId, PluginConfiguration config)
         {
-            // Run movie + tv enrichment in parallel — they're independent HTTP
-            // calls so sequential awaits would double the worst-case latency
-            // (8s + 8s) for no benefit. Task.WhenAll caps it at ~8s.
+            // Parallel: independent HTTP calls, sequential would double worst-case latency.
             var movieTask = ComputeNextResetAsync(quota, "movie", seerrUserId, config);
             var tvTask = ComputeNextResetAsync(quota, "tv", seerrUserId, config);
             await Task.WhenAll(movieTask, tvTask);
@@ -999,8 +980,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             int used = side["used"]?.Value<int?>() ?? 0;
             int days = side["days"]?.Value<int?>() ?? 0;
 
-            // No reset time when quota isn't enforced (limit=0 means unlimited),
-            // when the user has no usage in the window, or when the window is undefined.
+            // limit=0 is unlimited; no requests means nothing to roll off.
             if (limit <= 0 || used <= 0 || days <= 0) return null;
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1011,20 +991,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
             httpClient.DefaultRequestHeaders.Add("X-Api-User", seerrUserId);
 
-            // Iterate the configured Seerr URLs the same way ProxyJellyseerrRequest
-            // does, so multi-instance failover works consistently. If one URL is
-            // unreachable but a fallback works, the chip should still get its
-            // reset timestamp.
+            // Iterate URLs for multi-instance failover, matching ProxyJellyseerrRequest.
             foreach (var rawUrl in urls)
             {
                 var trimmedUrl = rawUrl.Trim().TrimEnd('/');
                 try
                 {
-                    // sortDirection=asc with default sort (request.id) returns oldest first.
-                    // requestedBy={seerrUserId} ensures we only see this user's requests
-                    // (Seerr also enforces this via X-Api-User scoping).
-                    // mediaType filter narrows results to just movie or tv.
-                    // take=20 gives a margin in case some oldest entries are declined.
+                    // sortDirection=asc returns oldest first; take=20 gives a margin for declined.
                     var requestUri = $"{trimmedUrl}/api/v1/request" +
                                      $"?take=20&skip=0&sortDirection=asc&requestedBy={seerrUserId}&mediaType={mediaType}";
 
@@ -1038,9 +1011,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         continue;
                     }
 
-                    // Find the oldest non-declined request that falls within the rolling window.
-                    // Seerr's MediaRequestStatus.DECLINED == 3. We exclude declined because the
-                    // quota itself doesn't count them.
+                    // Quota excludes DECLINED (status==3), so we do too.
                     var windowStart = DateTime.UtcNow.AddDays(-days);
                     DateTime? oldestCreatedAt = null;
                     foreach (var req in results.EnumerateArray())
@@ -1077,11 +1048,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // Warning level (not Debug) so admins debugging "why no reset
-                    // time?" see this without bumping log level. Includes the
-                    // exception type because the custom Logger has no overload
-                    // that takes an Exception and the type is the cheapest hint
-                    // about whether this is a network, parse, or auth issue.
                     _logger.Warning($"ComputeNextResetAsync({mediaType}) on {trimmedUrl} failed ({ex.GetType().Name}): {ex.Message}");
                 }
             }
@@ -2263,6 +2229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrEnable4KTvRequests,
                 config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
+                config.JellyseerrShowQuotaInfo,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,
                 config.AddRequestedMediaToWatchlist,

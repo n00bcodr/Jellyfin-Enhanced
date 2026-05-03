@@ -674,7 +674,7 @@
             .jellyseerr-modal-button-secondary { background: rgba(71, 85, 105, 0.8); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.2); }
             .jellyseerr-modal-button-secondary:hover { background: rgba(71, 85, 105, 1); border-color: rgba(148, 163, 184, 0.3); }
 
-            /* Quota chip shown above request modals when a per-user limit applies. */
+            /* Quota chip — shown above request modals when a per-user limit applies. */
             .jellyseerr-quota-chip { padding: 12px 16px; margin-bottom: 16px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; color: #cbd5e1; font-size: 0.9rem; font-weight: 500; line-height: 1.4; display: flex; flex-direction: column; gap: 4px; }
             .jellyseerr-quota-chip-warning { background: rgba(180, 83, 9, 0.18); border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }
             .jellyseerr-quota-chip-restricted { background: rgba(127, 29, 29, 0.25); border-color: rgba(248, 113, 113, 0.55); color: #fca5a5; }
@@ -1701,9 +1701,7 @@
                             mainButton.classList.add('jellyseerr-button-pending');
                         } catch (error) {
                             mainButton.disabled = false;
-                            // Quota errors get a themed dialog; restore the button to
-                            // the request state so the user can retry once the quota
-                            // window rolls. The dialog already conveyed the error.
+                            // Quota errors get a themed dialog; restore button to idle.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
                                 await ui.showQuotaErrorDialog(error, 'movie');
                                 mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
@@ -1787,8 +1785,7 @@
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
                         button.disabled = false;
-                        // Quota errors get a themed dialog; restore the button so
-                        // the user can retry once the quota window rolls.
+                        // Quota errors get a themed dialog; restore button to idle.
                         if (ui.isQuotaError && ui.isQuotaError(error)) {
                             await ui.showQuotaErrorDialog(error, 'movie');
                             button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
@@ -1911,30 +1908,14 @@
 
 
 
-    // ================================
     // QUOTA HELPERS
-    // ================================
-    //
-    // Seerr enforces a per-user, rolling-window request quota separate from
-    // permissions. When a user hits their limit Seerr returns 403 with
-    // {"message":"Movie Quota exceeded."} (or "Series Quota exceeded.").
-    // These helpers render a proactive quota chip in the request modal and
-    // a detailed dialog when a request is rejected for quota reasons.
+    // Seerr enforces a per-user rolling-window request quota. When hit it returns
+    // 403 with {"message":"Movie Quota exceeded."} — these helpers render a
+    // proactive chip and a detailed dialog instead of a vanishing toast.
 
-    // Track which keys we've already warned about for tWithFallback so a
-    // missing translation logs once, not on every modal open.
     const _quotaTFallbackWarned = new Set();
 
-    /**
-     * JE.t with a guaranteed inline English fallback.
-     * `JE.t(key)` returns the raw key on miss (truthy), so the usual
-     * `JE.t('foo') || 'bar'` idiom never falls back. This helper detects
-     * `result === key` and substitutes `fallback` with safe param interpolation.
-     * @param {string} key
-     * @param {string} fallback - English text used if `key` isn't translated.
-     * @param {object} [params] - Tokens like `{count}` to interpolate.
-     * @returns {string}
-     */
+    // JE.t with a guaranteed inline English fallback (JE.t returns the raw key on miss).
     function tWithFallback(key, fallback, params) {
         let result;
         try {
@@ -1951,8 +1932,7 @@
             let out = fallback;
             if (params) {
                 for (const [k, v] of Object.entries(params)) {
-                    // Replacement function avoids $&/$1 backreference footguns
-                    // when a param value happens to contain $ characters.
+                    // Replacement function avoids $&/$1 backreference footguns.
                     out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
                 }
             }
@@ -1961,15 +1941,10 @@
         return result;
     }
 
-    /**
-     * Detect quota-exceeded errors from a Seerr request response.
-     * Seerr returns 403 with {"message":"Movie Quota exceeded."} or
-     * "Series Quota exceeded." — match conservatively so other 403s
-     * (no-permission, blocklisted) keep their original generic toast.
-     * @param {Error & {status?: number, responseJSON?: object}} error
-     * @returns {boolean}
-     */
+    // Detect Seerr quota-exceeded errors (403 with "Quota exceeded" message).
+    // Returns false when the admin has disabled quota info — falls back to the toast.
     function isQuotaError(error) {
+        if (JE.pluginConfig?.JellyseerrShowQuotaInfo === false) return false;
         if (!error) return false;
         if (error.status !== 403) return false;
         const message = error.responseJSON?.message;
@@ -1977,14 +1952,7 @@
         return /quota\s+exceeded/i.test(message);
     }
 
-    /**
-     * Format a Date as a human-readable "next slot frees in X" / "frees at HH:MM"
-     * line. Picks the most useful unit for the magnitude of the duration. Returns
-     * an empty string when the timestamp is missing or already in the past
-     * (caller can decide whether to show a "should be available now, retry" hint).
-     * @param {string|number|Date|null|undefined} resetAt - ISO string, ms, or Date.
-     * @returns {string}
-     */
+    // Format a reset timestamp as "Next slot frees in about X min/h/days".
     function formatNextReset(resetAt) {
         if (!resetAt) return '';
         const ts = resetAt instanceof Date ? resetAt.getTime() : new Date(resetAt).getTime();
@@ -1992,7 +1960,6 @@
 
         const deltaMs = ts - Date.now();
         if (deltaMs <= 0) {
-            // Slot should already be available — Seerr just hasn't refreshed.
             return tWithFallback('jellyseerr_quota_reset_now',
                 'Next slot should be available — try again now.');
         }
@@ -2001,7 +1968,6 @@
         const hours = Math.round(deltaMs / 3_600_000);
         const days = Math.round(deltaMs / 86_400_000);
 
-        // Choose the unit that gives a useful round number.
         if (minutes < 60) {
             return tWithFallback('jellyseerr_quota_reset_in_minutes',
                 'Next slot frees in about {minutes} min',
@@ -2017,15 +1983,6 @@
             { days });
     }
 
-    /**
-     * Format a single quota line for the chip / dialog.
-     * - limit === 0 (or absent) → "Unlimited"
-     * - days absent → static "X of Y used"
-     * - days present → "X of Y used in last N days"
-     * @param {{days?: number, limit?: number, used?: number, remaining?: number, restricted?: boolean, nextResetAt?: string}} q
-     * @param {'movie'|'tv'} type
-     * @returns {{ text: string, restricted: boolean, unlimited: boolean, resetText: string }}
-     */
     function formatQuotaLine(q, type) {
         if (!q || typeof q !== 'object') {
             return { text: '', restricted: false, unlimited: true, resetText: '' };
@@ -2064,20 +2021,10 @@
         };
     }
 
-    /**
-     * Build the inline quota chip element for the request modal.
-     * Returns null when there's no quota (Seerr disabled, user not linked,
-     * or both movie+tv unlimited) — the modal looks the same as before in
-     * those cases.
-     * @param {{movie?: object, tv?: object}|null} quota
-     * @param {'movie'|'tv'} mediaType - Which side of the quota to highlight.
-     * @returns {HTMLElement|null}
-     */
+    // Returns the chip element for the relevant quota side, or null when unlimited.
     function buildQuotaChip(quota, mediaType) {
         if (!quota || typeof quota !== 'object') return null;
 
-        // Show only the relevant side (movie or tv) — the other side is
-        // irrelevant to the action being taken in this modal.
         const side = mediaType === 'tv' ? quota.tv : quota.movie;
         const line = formatQuotaLine(side, mediaType === 'tv' ? 'tv' : 'movie');
         if (!line.text || line.unlimited) return null;
@@ -2089,10 +2036,6 @@
             chip.classList.add('jellyseerr-quota-chip-warning');
         }
 
-        // textContent here keeps the chip XSS-safe regardless of locale source.
-        // The main text is built from the localized usage line; the optional
-        // sub-line(s) below add the restricted hint and/or the "next slot frees
-        // in X" message when the backend supplied a nextResetAt timestamp.
         chip.textContent = line.text;
 
         if (line.restricted) {
@@ -2115,18 +2058,8 @@
         return chip;
     }
 
-    /**
-     * Show a themed dialog with quota details after a quota-exceeded error.
-     * Falls back to a longer-duration toast if Dashboard.alert isn't available.
-     * @param {Error & {responseJSON?: object}} error
-     * @param {'movie'|'tv'} mediaType
-     */
+    // Show a themed dialog with quota numbers + reset hint after a quota error.
     async function showQuotaErrorDialog(error, mediaType) {
-        // Try to fetch fresh quota numbers so the dialog can show specifics.
-        // Skip the cache so the user sees their actual current state and the
-        // backend recomputes the next-slot reset time. Failure here is
-        // non-fatal: we still render the dialog with just the upstream
-        // message, but log so a misconfigured Seerr is visible to admins.
         let quota = null;
         try {
             quota = await JE.jellyseerrAPI.fetchUserQuota({ skipCache: true });
@@ -2141,8 +2074,7 @@
         if (quota) {
             const movieLine = formatQuotaLine(quota.movie, 'movie');
             const tvLine = formatQuotaLine(quota.tv, 'tv');
-            // Lead with the side that actually got rejected so the user sees
-            // their relevant numbers first; the other side is informational.
+            // Lead with the rejected side; the other side is informational.
             if (mediaType === 'tv') {
                 if (tvLine.text) lines.push(tvLine.text);
                 if (tvLine.resetText) lines.push(tvLine.resetText);
@@ -2160,7 +2092,10 @@
         ));
 
         const title = tWithFallback('jellyseerr_quota_dialog_title', 'Request limit reached');
-        const message = lines.join('\n\n');
+        // Dashboard.alert sanitizes message as HTML, collapsing \n. Use <br><br>
+        // for visible paragraph breaks; escape every line first since the upstream
+        // Seerr message could contain HTML metacharacters.
+        const message = lines.map(escapeHtml).join('<br><br>');
 
         if (window.Dashboard && typeof window.Dashboard.alert === 'function') {
             try {
@@ -2170,21 +2105,9 @@
                 console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);
             }
         }
-
-        // Final fallback. Longer than the default 4s toast since the message
-        // is multi-line and users need time to read.
-        JE.toast(escapeHtml(`${title}: ${message}`), 8000);
+        JE.toast(escapeHtml(`${title}: ${lines.join(' — ')}`), 8000);
     }
 
-    /**
-     * Standard error handler for request modal save buttons. Shows a quota
-     * dialog on quota errors, otherwise a generic toast. Always re-enables
-     * the button.
-     * @param {Error} error
-     * @param {'movie'|'tv'} mediaType
-     * @param {HTMLButtonElement} requestBtn
-     * @param {string} resetLabel - Label to restore on the button.
-     */
     async function handleRequestError(error, mediaType, requestBtn, resetLabel) {
         if (isQuotaError(error)) {
             await showQuotaErrorDialog(error, mediaType);
@@ -2198,9 +2121,7 @@
         }
     }
 
-    // Expose helpers that other Seerr modules (jellyseerr.js, more-info-modal.js)
-    // need so they can render the same quota dialog on simple-request flows
-    // and embed the quota chip in their own modals.
+    // Exposed so jellyseerr.js / more-info-modal.js can use the same dialog + chip.
     ui.isQuotaError = isQuotaError;
     ui.showQuotaErrorDialog = showQuotaErrorDialog;
     ui.tWithFallback = tWithFallback;
@@ -2253,11 +2174,7 @@
         });
         show();
 
-        // Render the quota chip above the advanced options once we know the
-        // user's current usage. Run in parallel with the advanced-options
-        // fetch so it doesn't slow modal open. fetchUserQuota returns null
-        // when Seerr isn't configured or the user isn't linked, which leaves
-        // the modal looking the same as before.
+        // Quota chip — best-effort, runs in parallel with advanced-options fetch.
         const bodyEl = modalElement.querySelector('.jellyseerr-modal-body');
         if (typeof fetchUserQuota === 'function' && bodyEl) {
             (async () => {
@@ -2268,10 +2185,6 @@
                         bodyEl.insertBefore(chip, bodyEl.firstChild);
                     }
                 } catch (err) {
-                    // Quota chip is best-effort — never let a quota fetch
-                    // failure surface as an unhandled rejection or block the
-                    // modal. fetchUserQuota itself catches network errors,
-                    // but defend against future regressions.
                     console.debug(`${logPrefix} Quota chip skipped:`, err);
                 }
             })();
@@ -2429,8 +2342,7 @@
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
         modalInstance.show();
 
-        // Render the TV quota chip above the season list once we know the
-        // user's current usage. Run async so it doesn't block modal open.
+        // Quota chip — best-effort, runs async so it doesn't block modal open.
         const tvBodyEl = modalInstance.modalElement.querySelector('.jellyseerr-modal-body');
         if (typeof JE.jellyseerrAPI?.fetchUserQuota === 'function' && tvBodyEl) {
             (async () => {
@@ -2803,11 +2715,7 @@
                             await requestMedia(tmdbId, 'movie', settings, false, searchResultItem);
                             successCount++;
                         } catch (error) {
-                            // Quota errors break out — once the quota is exceeded
-                            // every remaining request will also fail. Save the
-                            // error and surface it after the loop. Other errors
-                            // (network blip, rate limit) get counted so the toast
-                            // can warn about partial failure.
+                            // Once quota is hit every remaining request will also fail — break.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
                                 quotaHitError = error;
                                 break;

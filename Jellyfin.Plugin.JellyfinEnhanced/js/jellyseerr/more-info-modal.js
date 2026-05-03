@@ -1198,11 +1198,7 @@ function buildSingle4kButton(data) {
             await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
-            // Quota errors get a detailed themed dialog with usage + reset info.
-            // Restore the button to its idle state so the user can retry once the
-            // quota window rolls — the dialog already explains why this attempt
-            // failed, so no need to also paint the button red with the same
-            // message (would leave the button stuck even after the dialog dismisses).
+            // Quota errors get a themed dialog; restore button to idle.
             if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                 await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
                 button.disabled = false;
@@ -1263,8 +1259,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
                 mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
-                // Quota errors get a themed dialog; restore the button so the
-                // user can retry once the quota window rolls.
+                // Quota errors get a themed dialog; restore button to idle.
                 if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                     await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
                     mainButton.disabled = false;
@@ -1341,8 +1336,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                     mountRequestedChip(data, 'movie', true, response);
                     close4k();
                 } catch (error) {
-                    // Quota errors get a themed dialog; restore the option so the
-                    // user can retry once the quota window rolls.
+                    // Quota errors get a themed dialog; restore option to idle.
                     if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                         await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
                         option.disabled = false;
@@ -1386,8 +1380,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
                 mountRequestedChip(data, 'movie', false);
             } catch (error) {
-                // Quota errors get a themed dialog; restore the button so the
-                // user can retry once the quota window rolls.
+                // Quota errors get a themed dialog; restore button to idle.
                 if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                     await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
                     requestButton.disabled = false;
@@ -1692,23 +1685,9 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
     return container;
 }
 
-// Monotonic counter stamped on actionMount before each renderActions call.
-// The async chip fetch reads this at start and re-checks at insert time so a
-// stale fetch from a previous render (user navigated to a different item)
-// can't insert a chip into the now-current item's actions panel. Without
-// this guard, the chip's media-type context could disagree with the visible
-// request buttons.
+// Token guards against stale chip insertion when the user navigates between items.
 let _quotaRenderToken = 0;
 
-/**
- * Fetch the user's quota and prepend a quota chip to the more-info modal's
- * actions panel so the user knows their usage before clicking Request.
- * Best-effort: silently skipped if the API isn't available, the user has
- * unlimited quota, the modal closes or re-renders mid-fetch, or the fetch
- * fails. A user-visible failure here would be worse than no chip.
- * @param {HTMLElement} actionMount
- * @param {'movie'|'tv'} mediaType
- */
 async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     const fetchUserQuota = JE.jellyseerrAPI?.fetchUserQuota;
     const buildChip = JE.jellyseerrUI?.buildQuotaChip;
@@ -1719,8 +1698,6 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     actionMount.dataset.quotaRenderToken = String(myToken);
     try {
         const quota = await fetchUserQuota();
-        // Bail if the user has navigated to another item and renderActions
-        // has run again (token bumped) or the mount detached entirely.
         if (!actionMount.isConnected) return;
         if (actionMount.dataset.quotaRenderToken !== String(myToken)) return;
         const chip = buildChip(quota, mediaType === 'tv' ? 'tv' : 'movie');
@@ -2275,9 +2252,7 @@ function injectStyles() {
             overflow: hidden;
         }
 
-        /* Quota chip rendered above request buttons in the more-info modal.
-         * Inherits .jellyseerr-quota-chip palette from the season modal
-         * stylesheet but needs spacing tweaks to fit this layout. */
+        /* Quota chip in more-info modal — tighter spacing than the season modal. */
         .je-more-info-modal .je-more-info-quota-chip {
             margin: 0 0 0.5rem 0;
             font-size: 0.85rem;

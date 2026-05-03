@@ -107,6 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrEnable4KRequests = false;
             JellyseerrEnable4KTvRequests = false;
             JellyseerrShowAdvanced = false;
+            JellyseerrShowQuotaInfo = true;
             JellyseerrShowSimilar = true;
             JellyseerrShowRecommended = true;
             JellyseerrShowRequestMoreOnSeries = true;
@@ -308,6 +309,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrEnable4KRequests { get; set; }
         public bool JellyseerrEnable4KTvRequests { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }
+        public bool JellyseerrShowQuotaInfo { get; set; } = true;
         public bool JellyseerrShowSimilar { get; set; }
         public bool JellyseerrShowRecommended { get; set; }
         public bool JellyseerrShowRequestMoreOnSeries { get; set; }

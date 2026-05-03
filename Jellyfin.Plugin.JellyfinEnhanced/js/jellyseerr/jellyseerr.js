@@ -527,8 +527,7 @@
                             }
                         }
                     } catch (error) {
-                        // Quota errors get a detailed themed dialog instead of
-                        // a 4-second toast so the user sees their usage + reset info.
+                        // Quota errors get a themed dialog with usage + reset info.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                             await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
                         } else {
@@ -542,9 +541,7 @@
                             JE.toast(escapeHtml(errorMessage), 4000);
                         }
                         item.disabled = false;
-                        const span4k = document.createElement('span');
-                        span4k.textContent = 'Request in 4K';
-                        item.replaceChildren(span4k);
+                        item.innerHTML = `<span>Request in 4K</span>`;
                     }
                 }
                 return;
@@ -588,9 +585,7 @@
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
                         button.disabled = false;
-                        // Quota errors get a themed dialog; restore the button to
-                        // the request state so the user can retry once the quota
-                        // window rolls. The dialog carries the full detail.
+                        // Quota errors get a themed dialog; restore button to idle.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                             await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
                             button.innerHTML = `${JE.jellyseerrUI.icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
