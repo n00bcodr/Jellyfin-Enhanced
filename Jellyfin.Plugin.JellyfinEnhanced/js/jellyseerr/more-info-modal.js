@@ -1689,24 +1689,18 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 let _quotaRenderToken = 0;
 
 async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
-    const fetchUserQuota = JE.jellyseerrAPI?.fetchUserQuota;
-    const buildChip = JE.jellyseerrUI?.buildQuotaChip;
-    if (typeof fetchUserQuota !== 'function' || typeof buildChip !== 'function' || !actionMount) {
-        return;
-    }
+    if (!actionMount) return;
     const myToken = ++_quotaRenderToken;
     actionMount.dataset.quotaRenderToken = String(myToken);
-    try {
-        const quota = await fetchUserQuota();
-        if (!actionMount.isConnected) return;
-        if (actionMount.dataset.quotaRenderToken !== String(myToken)) return;
-        const chip = buildChip(quota, mediaType === 'tv' ? 'tv' : 'movie');
-        if (chip) {
-            chip.classList.add('je-more-info-quota-chip');
-            actionMount.insertBefore(chip, actionMount.firstChild);
-        }
-    } catch (err) {
-        console.warn(`${logPrefix} quota chip skipped:`, err);
+
+    const quota = await JE.jellyseerrAPI?.fetchUserQuota?.();
+    if (!actionMount.isConnected) return;
+    if (actionMount.dataset.quotaRenderToken !== String(myToken)) return;
+
+    const chip = JE.jellyseerrUI?.buildQuotaChip?.(quota, mediaType === 'tv' ? 'tv' : 'movie');
+    if (chip) {
+        chip.classList.add('je-more-info-quota-chip');
+        actionMount.insertBefore(chip, actionMount.firstChild);
     }
 }
 

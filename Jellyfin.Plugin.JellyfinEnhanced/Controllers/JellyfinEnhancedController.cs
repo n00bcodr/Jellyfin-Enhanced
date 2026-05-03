@@ -913,39 +913,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetJellyseerrQuota()
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
-            {
-                return StatusCode(503, new { message = "Seerr integration is not configured or enabled." });
-            }
-
-            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
-            if (string.IsNullOrEmpty(jellyfinUserId))
-            {
-                return Forbid();
-            }
-
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString() ?? "";
             var seerrUserId = await GetJellyseerrUserId(jellyfinUserId);
-            if (string.IsNullOrEmpty(seerrUserId))
-            {
-                return NotFound(new { message = "Current Jellyfin user is not linked to a Seerr user." });
-            }
-
             var quotaResult = await ProxyJellyseerrRequest($"/api/v1/user/{seerrUserId}/quota", HttpMethod.Get);
 
             // Reset-time enrichment is best-effort — failure must not break the response.
             if (quotaResult is ContentResult cr && cr.StatusCode is null or 200)
             {
-                try
-                {
-                    var quota = JObject.Parse(cr.Content ?? "{}");
-                    await EnrichQuotaWithResetAsync(quota, seerrUserId, config);
-                    return Content(quota.ToString(Newtonsoft.Json.Formatting.None), "application/json");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Quota reset enrichment skipped ({ex.GetType().Name}): {ex.Message}");
-                }
+                var quota = JObject.Parse(cr.Content ?? "{}");
+                await EnrichQuotaWithResetAsync(quota, seerrUserId!, JellyfinEnhanced.Instance!.Configuration);
+                return Content(quota.ToString(Newtonsoft.Json.Formatting.None), "application/json");
             }
 
             return quotaResult;
@@ -958,16 +935,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var tvTask = ComputeNextResetAsync(quota, "tv", seerrUserId, config);
             await Task.WhenAll(movieTask, tvTask);
 
-            var movieReset = movieTask.Result;
-            if (movieReset.HasValue && quota["movie"] is JObject movieObj)
+            if (movieTask.Result.HasValue)
             {
-                movieObj["nextResetAt"] = movieReset.Value.ToString("o");
+                ((JObject)quota["movie"]!)["nextResetAt"] = movieTask.Result.Value.ToString("o");
             }
-
-            var tvReset = tvTask.Result;
-            if (tvReset.HasValue && quota["tv"] is JObject tvObj)
+            if (tvTask.Result.HasValue)
             {
-                tvObj["nextResetAt"] = tvReset.Value.ToString("o");
+                ((JObject)quota["tv"]!)["nextResetAt"] = tvTask.Result.Value.ToString("o");
             }
         }
 
@@ -984,8 +958,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (limit <= 0 || used <= 0 || days <= 0) return null;
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            if (urls.Length == 0) return null;
-
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(8);
             httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);

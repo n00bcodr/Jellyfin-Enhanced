@@ -1917,45 +1917,35 @@
 
     // JE.t with a guaranteed inline English fallback (JE.t returns the raw key on miss).
     function tWithFallback(key, fallback, params) {
-        let result;
-        try {
-            result = JE.t(key, params);
-        } catch (err) {
-            console.warn(`${logPrefix} JE.t('${key}') threw, using fallback:`, err);
-            result = null;
+        const result = JE.t(key, params);
+        if (result !== key) return result;
+
+        if (!_quotaTFallbackWarned.has(key)) {
+            _quotaTFallbackWarned.add(key);
+            console.debug(`${logPrefix} Missing translation '${key}', using inline fallback.`);
         }
-        if (!result || result === key) {
-            if (!_quotaTFallbackWarned.has(key)) {
-                _quotaTFallbackWarned.add(key);
-                console.debug(`${logPrefix} Missing translation '${key}', using inline fallback.`);
+        let out = fallback;
+        if (params) {
+            for (const [k, v] of Object.entries(params)) {
+                // Replacement function avoids $&/$1 backreference footguns.
+                out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
             }
-            let out = fallback;
-            if (params) {
-                for (const [k, v] of Object.entries(params)) {
-                    // Replacement function avoids $&/$1 backreference footguns.
-                    out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
-                }
-            }
-            return out;
         }
-        return result;
+        return out;
     }
 
     // Detect Seerr quota-exceeded errors (403 with "Quota exceeded" message).
     // Returns false when the admin has disabled quota info — falls back to the toast.
     function isQuotaError(error) {
         if (JE.pluginConfig?.JellyseerrShowQuotaInfo === false) return false;
-        if (!error) return false;
-        if (error.status !== 403) return false;
-        const message = error.responseJSON?.message;
-        if (typeof message !== 'string') return false;
-        return /quota\s+exceeded/i.test(message);
+        if (error?.status !== 403) return false;
+        return /quota\s+exceeded/i.test(error.responseJSON?.message || '');
     }
 
     // Format a reset timestamp as "Next slot frees in about X min/h/days".
     function formatNextReset(resetAt) {
         if (!resetAt) return '';
-        const ts = resetAt instanceof Date ? resetAt.getTime() : new Date(resetAt).getTime();
+        const ts = new Date(resetAt).getTime();
         if (!Number.isFinite(ts)) return '';
 
         const deltaMs = ts - Date.now();
@@ -1984,9 +1974,7 @@
     }
 
     function formatQuotaLine(q, type) {
-        if (!q || typeof q !== 'object') {
-            return { text: '', restricted: false, unlimited: true, resetText: '' };
-        }
+        if (!q) return { text: '', restricted: false, unlimited: true, resetText: '' };
         const limit = Number(q.limit) || 0;
         const used = Number(q.used) || 0;
         const days = Number(q.days) || 0;
@@ -2023,7 +2011,7 @@
 
     // Returns the chip element for the relevant quota side, or null when unlimited.
     function buildQuotaChip(quota, mediaType) {
-        if (!quota || typeof quota !== 'object') return null;
+        if (!quota) return null;
 
         const side = mediaType === 'tv' ? quota.tv : quota.movie;
         const line = formatQuotaLine(side, mediaType === 'tv' ? 'tv' : 'movie');
@@ -2060,13 +2048,7 @@
 
     // Show a themed dialog with quota numbers + reset hint after a quota error.
     async function showQuotaErrorDialog(error, mediaType) {
-        let quota = null;
-        try {
-            quota = await JE.jellyseerrAPI.fetchUserQuota({ skipCache: true });
-        } catch (err) {
-            console.warn(`${logPrefix} Failed to refresh quota for dialog:`, err);
-        }
-
+        const quota = await JE.jellyseerrAPI?.fetchUserQuota?.({ skipCache: true });
         const upstreamMessage = error?.responseJSON?.message || '';
         const lines = [];
         if (upstreamMessage) lines.push(upstreamMessage);
@@ -2097,13 +2079,9 @@
         // Seerr message could contain HTML metacharacters.
         const message = lines.map(escapeHtml).join('<br><br>');
 
-        if (window.Dashboard && typeof window.Dashboard.alert === 'function') {
-            try {
-                window.Dashboard.alert({ title, message });
-                return;
-            } catch (err) {
-                console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);
-            }
+        if (typeof window.Dashboard?.alert === 'function') {
+            window.Dashboard.alert({ title, message });
+            return;
         }
         JE.toast(escapeHtml(`${title}: ${lines.join(' — ')}`), 8000);
     }
@@ -2174,20 +2152,15 @@
         });
         show();
 
-        // Quota chip — best-effort, runs in parallel with advanced-options fetch.
+        // Quota chip — runs in parallel with advanced-options fetch.
         const bodyEl = modalElement.querySelector('.jellyseerr-modal-body');
-        if (typeof fetchUserQuota === 'function' && bodyEl) {
-            (async () => {
-                try {
-                    const quota = await fetchUserQuota();
-                    const chip = buildQuotaChip(quota, 'movie');
-                    if (chip && document.body.contains(modalElement)) {
-                        bodyEl.insertBefore(chip, bodyEl.firstChild);
-                    }
-                } catch (err) {
-                    console.debug(`${logPrefix} Quota chip skipped:`, err);
+        if (bodyEl) {
+            fetchUserQuota().then(quota => {
+                const chip = buildQuotaChip(quota, 'movie');
+                if (chip && document.body.contains(modalElement)) {
+                    bodyEl.insertBefore(chip, bodyEl.firstChild);
                 }
-            })();
+            });
         }
 
         try {
@@ -2342,20 +2315,15 @@
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
         modalInstance.show();
 
-        // Quota chip — best-effort, runs async so it doesn't block modal open.
+        // Quota chip — runs async so it doesn't block modal open.
         const tvBodyEl = modalInstance.modalElement.querySelector('.jellyseerr-modal-body');
-        if (typeof JE.jellyseerrAPI?.fetchUserQuota === 'function' && tvBodyEl) {
-            (async () => {
-                try {
-                    const quota = await JE.jellyseerrAPI.fetchUserQuota();
-                    const chip = buildQuotaChip(quota, 'tv');
-                    if (chip && document.body.contains(modalInstance.modalElement)) {
-                        tvBodyEl.insertBefore(chip, tvBodyEl.firstChild);
-                    }
-                } catch (err) {
-                    console.debug(`${logPrefix} Quota chip skipped:`, err);
+        if (tvBodyEl) {
+            JE.jellyseerrAPI?.fetchUserQuota?.().then(quota => {
+                const chip = buildQuotaChip(quota, 'tv');
+                if (chip && document.body.contains(modalInstance.modalElement)) {
+                    tvBodyEl.insertBefore(chip, tvBodyEl.firstChild);
                 }
-            })();
+            });
         }
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)

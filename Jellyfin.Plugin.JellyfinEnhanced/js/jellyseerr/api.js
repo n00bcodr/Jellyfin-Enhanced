@@ -686,9 +686,7 @@
         try {
             return await get('/quota', options);
         } catch (error) {
-            if (error?.status !== 404 && error?.status !== 503) {
-                console.warn(`${logPrefix} Failed to fetch user quota:`, error);
-            }
+            console.debug(`${logPrefix} Quota fetch failed:`, error);
             return null;
         }
     };
