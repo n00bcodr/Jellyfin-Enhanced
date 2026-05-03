@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Text.RegularExpressions;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -21,18 +22,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             _configBaseDir = Path.Combine(appPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
             Directory.CreateDirectory(_configBaseDir);
             _logger = logger;
+
+            // One-shot migration: pre-fix callers normalized user IDs case-sensitively
+            // (only stripped hyphens), so the same logical user could land in
+            // {abcd...}, {ABCD...}, AND {abcd-...} folders. Different request paths
+            // hit different folders, so per-user settings appeared to "drift" — see
+            // PR #573 thread. Idempotent; cheap when there's nothing to migrate.
+            try { MigrateCaseVariantUserDirs(); }
+            catch (Exception ex) { _logger.Error($"Per-user dir case-variant migration failed: {ex.Message}"); }
         }
 
         public object GetUserFileLock(string userId, string fileName)
         {
-            var normalized = userId?.Replace("-", "") ?? string.Empty;
+            var normalized = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
             var key = normalized + "|" + (fileName ?? string.Empty);
             return _userFileLocks.GetOrAdd(key, _ => new object());
         }
 
         private string GetUserConfigDir(string userId)
         {
-            var normalizedUserId = userId?.Replace("-", "") ?? string.Empty;
+            var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
             var userDir = Path.Combine(_configBaseDir, normalizedUserId);
 
             // Refuse paths outside _configBaseDir in case a future caller forwards untrusted input.
@@ -228,6 +237,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             catch (Exception ex)
             {
                 _logger.Error($"Failed to back up corrupt config: {ex.Message}");
+            }
+        }
+
+        // ─── Case-variant directory migration ────────────────────────────────────
+        // Until this fix, GetUserConfigDir / GetUserFileLock only stripped hyphens
+        // from the user ID without lowering case. Three call patterns existed:
+        //   • Guid.ToString("N")   → 32 hex, lowercase  ← canonical
+        //   • Guid.ToString()      → 36 hex, hyphenated lowercase
+        //   • {userId} from URL    → whatever case the client sent, sometimes UPPER
+        // Each landed in a separate physical folder for one user GUID. Settings
+        // written under one casing were invisible when read under another.
+
+        private static readonly Regex CanonicalGuidRe = new Regex("^[0-9a-f]{32}$", RegexOptions.Compiled);
+        private static readonly Regex GuidShapeRe    = new Regex("^[0-9a-fA-F-]{32,36}$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Scans <c>_configBaseDir</c> for case-variant or hyphenated user
+        /// folders and merges each into its canonical lowercase 32-hex
+        /// sibling. Idempotent; conflict files are kept (newer wins, older
+        /// backed up to <c>{file}.pre-case-merge-{ts}</c>) and the source
+        /// folder is renamed to <c>{name}.migrated-{ts}</c> for forensic
+        /// recovery rather than deleted outright.
+        /// </summary>
+        private void MigrateCaseVariantUserDirs()
+        {
+            if (!Directory.Exists(_configBaseDir)) return;
+
+            var allDirs = Directory.GetDirectories(_configBaseDir);
+            var migrated = 0;
+            var renamed  = 0;
+
+            foreach (var srcDir in allDirs)
+            {
+                string srcName;
+                try { srcName = Path.GetFileName(srcDir); }
+                catch { continue; }
+
+                if (string.IsNullOrEmpty(srcName)) continue;
+                // Already canonical — skip.
+                if (CanonicalGuidRe.IsMatch(srcName)) continue;
+
+                var stripped = srcName.Replace("-", "").ToLowerInvariant();
+                // Not a user GUID folder (could be Plethorafin / unrelated subdir).
+                if (!CanonicalGuidRe.IsMatch(stripped)) continue;
+                // Defense in depth — don't trust a name that looks weird.
+                if (!GuidShapeRe.IsMatch(srcName)) continue;
+
+                var dstDir = Path.Combine(_configBaseDir, stripped);
+
+                try
+                {
+                    if (!Directory.Exists(dstDir))
+                    {
+                        Directory.Move(srcDir, dstDir);
+                        renamed++;
+                        _logger.Info($"Migrated user dir '{srcName}' -> '{stripped}'");
+                        continue;
+                    }
+
+                    // Both exist — merge per-file, newer mtime wins, older backed up.
+                    var srcFiles = Directory.GetFiles(srcDir);
+                    foreach (var srcFile in srcFiles)
+                    {
+                        var fileName = Path.GetFileName(srcFile);
+                        var dstFile  = Path.Combine(dstDir, fileName);
+
+                        if (!File.Exists(dstFile))
+                        {
+                            File.Copy(srcFile, dstFile);
+                            continue;
+                        }
+
+                        var srcMtime = File.GetLastWriteTimeUtc(srcFile);
+                        var dstMtime = File.GetLastWriteTimeUtc(dstFile);
+                        if (srcMtime > dstMtime)
+                        {
+                            var ts = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                            File.Copy(dstFile, dstFile + ".pre-case-merge-" + ts);
+                            File.Copy(srcFile, dstFile, overwrite: true);
+                            _logger.Info($"Merged '{fileName}' from '{srcName}' (newer) into '{stripped}'");
+                        }
+                        else
+                        {
+                            _logger.Info($"Kept '{fileName}' from canonical '{stripped}' (newer than '{srcName}')");
+                        }
+                    }
+
+                    // Rename source rather than delete so forensic recovery is possible.
+                    var migratedName = srcDir + ".migrated-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                    Directory.Move(srcDir, migratedName);
+                    migrated++;
+                    _logger.Info($"Merged user dir '{srcName}' into canonical '{stripped}', source preserved at '{Path.GetFileName(migratedName)}'");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to migrate user dir '{srcName}': {ex.Message}");
+                }
+            }
+
+            if (renamed + migrated > 0)
+            {
+                _logger.Info($"User-dir case migration done: {renamed} renamed, {migrated} merged.");
             }
         }
 
