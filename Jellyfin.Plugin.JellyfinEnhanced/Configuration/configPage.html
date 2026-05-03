@@ -5,7 +5,12 @@
 </head>
 <body style="background: black;">
 <div class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-checkbox,emby-select" data-role="page" id="JellyfinEnhancedPage">
-    <link rel="stylesheet" href="/JellyfinEnhanced/Configuration/configPage.css">
+    <script>
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
+        document.head.appendChild(link);
+    </script>
     <div data-role="content">
         <div class="content-primary">
 
@@ -1037,7 +1042,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox"/><span>Show Collections in Seerr Results</span></label></div>
                             <div class="je-setting-description" data-desc-for="showCollectionsInSearch">
-                                <div class="fieldDescription je-field-desc-xl">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Seerr search results with an option to request the entire collection at once.<br/><br/><b>Requires TMDB API Key to be configured.</b></div>
+                                <div class="fieldDescription je-field-desc-xl">Display TMDB collections (e.g., Harry Potter, Marvel Cinematic Universe) in Seerr search results with an option to request the entire collection at once.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrEnable4kRequests" is="emby-checkbox" type="checkbox"/><span>Enable 4K Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrEnable4kRequests">
@@ -2596,7 +2601,9 @@
             { Name: "ResetPlaybackSpeed", Key: "R", Label: "Reset Playback Speed", Category: "Player" },
             { Name: "BookmarkCurrentTime", Key: "B", Label: "Bookmark Current Time", Category: "Player" },
             { Name: "OpenEpisodePreview", Key: "P", Label: "Open Episode Preview", Category: "Player" },
-            { Name: "SkipIntroOutro", Key: "O", Label: "Skip Intro/Outro", Category: "Player" }
+            { Name: "SkipIntroOutro", Key: "O", Label: "Skip Intro/Outro", Category: "Player" },
+            { Name: "FrameStepBack", Key: ",", Label: "Step Back One Frame", Category: "Player" },
+            { Name: "FrameStepForward", Key: ".", Label: "Step Forward One Frame", Category: "Player" }
         ];
 
         function renderOverrides() {
@@ -4905,7 +4912,6 @@
         var INDIVIDUAL_DEPS = [
             { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
-            { id: 'showCollectionsInSearch',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },

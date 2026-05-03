@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Relatório Indisponível",
     "jellyseerr_report_unavailable_toast": "O relatório não está disponível para este item (sem correspondência TMDB)",
     "jellyseerr_report_issue_title": "Reportar problema ao Seerr",
-    "jellyseerr_report_issue_type": "Tipo de Problema",
+    "jellyseerr_report_issue_type_label": "Tipo de Problema",
     "jellyseerr_report_issue_type_video": "Vídeo",
     "jellyseerr_report_issue_type_audio": "Áudio",
     "jellyseerr_report_issue_type_subtitles": "Legendas",

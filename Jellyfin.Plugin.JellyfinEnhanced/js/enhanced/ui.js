@@ -8,6 +8,26 @@
 
     const escapeHtml = JE.escapeHtml;
 
+    // JE.t returns the raw key on miss; substitute the inline fallback. Mirrors elsewhere/reviews.js.
+    const _tFallbackWarned = new Set();
+    function tWithFallback(key, fallback) {
+        let result;
+        try {
+            result = JE.t(key);
+        } catch (err) {
+            console.warn(`🪼 Jellyfin Enhanced: JE.t('${key}') threw, using fallback:`, err);
+            result = null;
+        }
+        if (!result || result === key) {
+            if (!_tFallbackWarned.has(key)) {
+                _tFallbackWarned.add(key);
+                console.warn(`🪼 Jellyfin Enhanced: missing translation key '${key}', using inline fallback`);
+            }
+            return fallback || key;
+        }
+        return result;
+    }
+
     /**
      * Helper function to determine if the current page is the video player.
      * @returns {boolean} True if the current page is the video player.
@@ -673,7 +693,7 @@
                                         <span class="shortcut-key" tabindex="0" data-action="${escapeHtml(action.Name)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(JE.state.activeShortcuts[action.Name] || '')}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
-                                            <span>${escapeHtml(JE.t('shortcut_' + action.Name))}</span>
+                                            <span>${escapeHtml(tWithFallback('shortcut_' + action.Name, action.Label))}</span>
                                         </div>
                                     </div>
                                 `).join('')}
@@ -682,15 +702,19 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_player')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro'].map(action => `
+                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward'].map(action => {
+                                    const a = (JE.pluginConfig.Shortcuts || []).find(s => s.Name === action);
+                                    const fallbackLabel = a?.Label || action;
+                                    return `
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
                                         <span class="shortcut-key" tabindex="0" data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(JE.state.activeShortcuts[action] || '')}</span>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
-                                            <span>${escapeHtml(JE.t('shortcut_' + action))}${action === 'OpenEpisodePreview' ? ' <span style="font-size: 11px; opacity: 0.7;" title="Requires InPlayerEpisodePreview plugin from https://github.com/Namo2/InPlayerEpisodePreview/">ⓘ</span>' : ''}</span>
+                                            <span>${escapeHtml(tWithFallback('shortcut_' + action, fallbackLabel))}${action === 'OpenEpisodePreview' ? ' <span style="font-size: 11px; opacity: 0.7;" title="Requires InPlayerEpisodePreview plugin from https://github.com/Namo2/InPlayerEpisodePreview/">ⓘ</span>' : ''}</span>
                                         </div>
                                     </div>
-                                `).join('')}
+                                `;
+                                }).join('')}
                                 <div style="display: flex; justify-content: space-between;">
                                     <span style="background:${kbdBackground}; padding:2px 8px; border-radius:3px;">0-9</span>
                                     <span>${JE.t('shortcut_JumpToPercentage')}</span>

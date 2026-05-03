@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "回报不可用",
     "jellyseerr_report_unavailable_toast": "此项目无法回报（没有 TMDB 对应）",
     "jellyseerr_report_issue_title": "向 Seerr 回报问题",
-    "jellyseerr_report_issue_type": "问题类型",
+    "jellyseerr_report_issue_type_label": "问题类型",
     "jellyseerr_report_issue_type_video": "影片",
     "jellyseerr_report_issue_type_audio": "音讯",
     "jellyseerr_report_issue_type_subtitles": "字幕",

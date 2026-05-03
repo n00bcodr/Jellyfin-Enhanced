@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Bildirim Kullanılamıyor",
     "jellyseerr_report_unavailable_toast": "Bu öğe için bildirim kullanılamıyor (TMDB eşleşmesi yok)",
     "jellyseerr_report_issue_title": "Seerr'e Sorunu Bildir",
-    "jellyseerr_report_issue_type": "Sorun Türü",
+    "jellyseerr_report_issue_type_label": "Sorun Türü",
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Ses",
     "jellyseerr_report_issue_type_subtitles": "Altyazılar",

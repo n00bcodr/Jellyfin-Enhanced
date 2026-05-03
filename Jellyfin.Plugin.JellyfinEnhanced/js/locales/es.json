@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Reporte no disponible",
     "jellyseerr_report_unavailable_toast": "El reporte no está disponible para este elemento (sin coincidencia TMDB)",
     "jellyseerr_report_issue_title": "Reportar problema a Seerr",
-    "jellyseerr_report_issue_type": "Tipo de problema",
+    "jellyseerr_report_issue_type_label": "Tipo de problema",
     "jellyseerr_report_issue_type_video": "Vídeo",
     "jellyseerr_report_issue_type_audio": "Audio",
     "jellyseerr_report_issue_type_subtitles": "Subtítulos",

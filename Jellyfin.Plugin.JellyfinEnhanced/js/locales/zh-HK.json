@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "回報不可用",
     "jellyseerr_report_unavailable_toast": "此項目無法回報（沒有 TMDB 對應）",
     "jellyseerr_report_issue_title": "向 Seerr 回報問題",
-    "jellyseerr_report_issue_type": "問題類型",
+    "jellyseerr_report_issue_type_label": "問題類型",
     "jellyseerr_report_issue_type_video": "影片",
     "jellyseerr_report_issue_type_audio": "音訊",
     "jellyseerr_report_issue_type_subtitles": "字幕",

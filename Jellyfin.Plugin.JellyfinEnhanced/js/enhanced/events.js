@@ -160,6 +160,16 @@
                 e.stopPropagation();
                 JE.skipIntroOutro();
                 break;
+            case activeShortcuts.FrameStepBack:
+                e.preventDefault();
+                e.stopPropagation();
+                JE.frameStep('back');
+                break;
+            case activeShortcuts.FrameStepForward:
+                e.preventDefault();
+                e.stopPropagation();
+                JE.frameStep('forward');
+                break;
         }
 
         if (key.match(/^[0-9]$/)) {

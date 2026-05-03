@@ -227,7 +227,7 @@
     "jellyseerr_report_unavailable_button": "Anmeldelse ikke tilgængelig",
     "jellyseerr_report_unavailable_toast": "Anmeldelse er ikke tilgængelig for dette element (intet TMDB match)",
     "jellyseerr_report_issue_title": "Anmeld problem til Seerr",
-    "jellyseerr_report_issue_type": "Problemtype",
+    "jellyseerr_report_issue_type_label": "Problemtype",
     "jellyseerr_report_issue_type_video": "Video",
     "jellyseerr_report_issue_type_audio": "Lyd",
     "jellyseerr_report_issue_type_subtitles": "Undertekster",
