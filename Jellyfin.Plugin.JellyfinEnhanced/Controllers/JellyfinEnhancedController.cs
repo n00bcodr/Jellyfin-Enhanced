@@ -2653,8 +2653,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            // First-time init: seed Settings from admin defaults under RMW so a parallel CW hide can't clobber it.
+            var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+            if (defaultConfig != null
+                && !_userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json"))
+            {
+                try
+                {
+                    _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                        authorizedUserId, "hidden-content.json", hc =>
+                        {
+                            // Re-check inside the lock: another writer may have created the file in the meantime.
+                            if (hc.Items.Count > 0) return 0;
+                            hc.Settings = BuildHcDefaultSettings(defaultConfig);
+                            _logger.Info($"Seeded default hidden-content.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                            return 1;
+                        });
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to seed hidden-content.json for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                }
+            }
+
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
             return Ok(userConfig);
+        }
+
+        private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
+        {
+            return new HiddenContentSettings
+            {
+                Enabled = src.HiddenContentDefaultEnabled,
+                ShowHideButtons = src.HiddenContentDefaultShowHideButtons,
+                ShowHideConfirmation = src.HiddenContentDefaultShowHideConfirmation,
+                ShowButtonJellyseerr = src.HiddenContentDefaultShowButtonJellyseerr,
+                ShowButtonLibrary = src.HiddenContentDefaultShowButtonLibrary,
+                ShowButtonDetails = src.HiddenContentDefaultShowButtonDetails,
+                ShowButtonCast = src.HiddenContentDefaultShowButtonCast,
+                FilterLibrary = src.HiddenContentDefaultFilterLibrary,
+                FilterDiscovery = src.HiddenContentDefaultFilterDiscovery,
+                FilterSearch = src.HiddenContentDefaultFilterSearch,
+                FilterCalendar = src.HiddenContentDefaultFilterCalendar,
+                FilterUpcoming = src.HiddenContentDefaultFilterUpcoming,
+                FilterRecommendations = src.HiddenContentDefaultFilterRecommendations,
+                FilterRequests = src.HiddenContentDefaultFilterRequests,
+                FilterNextUp = src.HiddenContentDefaultFilterNextUp,
+                FilterContinueWatching = src.HiddenContentDefaultFilterContinueWatching,
+                ExperimentalHideCollections = src.HiddenContentDefaultExperimentalHideCollections,
+            };
         }
 
         [HttpPost("user-settings/{userId}/hidden-content.json")]
@@ -2675,7 +2722,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                {
+                    // Pre-write strict read so a corrupt existing file 503s + backs up instead of being overwritten.
+                    try
+                    {
+                        _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                            authorizedUserId, "hidden-content.json");
+                    }
+                    catch (Exception strictEx) when (strictEx is InvalidDataException
+                                                  || strictEx is Newtonsoft.Json.JsonException)
+                    {
+                        _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
+                        return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+                    }
+                    catch (IOException ioEx)
+                    {
+                        _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                        return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+                    }
+
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                }
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
             }
@@ -2683,6 +2751,217 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
+
+        // Picks the WIDER of two HC scopes; disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.
+        private static string? WiderScope(string? a, string? b)
+        {
+            if (string.IsNullOrEmpty(a)) return b;
+            if (string.IsNullOrEmpty(b)) return a;
+            var ra = ScopeRank(a);
+            var rb = ScopeRank(b);
+            if (ra == 2 && rb == 2 && !string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return "homesections";
+            return ra >= rb ? a : b;
+        }
+
+        private static int ScopeRank(string scope)
+        {
+            if (string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase)) return 4;
+            if (string.Equals(scope, "homesections", StringComparison.OrdinalIgnoreCase)) return 3;
+            if (string.Equals(scope, "nextup", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scope, "continuewatching", StringComparison.OrdinalIgnoreCase)) return 2;
+            return 1; // unknown / future
+        }
+
+        private static string? EarliestHiddenAt(string? a, string? b)
+        {
+            DateTime? da = TryParseIso(a);
+            DateTime? db = TryParseIso(b);
+            if (da == null) return b ?? a;
+            if (db == null) return a;
+            return da <= db ? a : b;
+        }
+
+        private static DateTime? TryParseIso(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            return DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? (DateTime?)dt : null;
+        }
+
+        // Merges an existing HC scope with a new continuewatching hide without narrowing the user's earlier wider intent.
+        private static string MergeWithCwScope(string existing)
+        {
+            if (string.Equals(existing, "global", StringComparison.OrdinalIgnoreCase)) return "global";
+            if (string.Equals(existing, "homesections", StringComparison.OrdinalIgnoreCase)) return "homesections";
+            if (string.Equals(existing, "continuewatching", StringComparison.OrdinalIgnoreCase)) return "continuewatching";
+            if (string.Equals(existing, "nextup", StringComparison.OrdinalIgnoreCase)) return "homesections";
+            return "homesections";
+        }
+
+        [HttpPost("continue-watching/hide/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult HideFromContinueWatching(string itemId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
+            if (userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(itemId, out var itemGuid) && !Guid.TryParseExact(itemId, "N", out itemGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid itemId." });
+            }
+
+            var user = _userManager.GetUserById(userId);
+            if (user == null) return Forbid();
+
+            var jfItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(itemGuid, user);
+            if (jfItem == null)
+            {
+                return NotFound(new { success = false, message = "Item not found or not accessible." });
+            }
+
+            string? seriesId = null;
+            string? seriesName = null;
+            int? seasonNumber = null;
+            int? episodeNumber = null;
+            string typeName = jfItem.GetType().Name;
+
+            if (jfItem is MediaBrowser.Controller.Entities.TV.Episode ep)
+            {
+                seriesId = ep.SeriesId == Guid.Empty ? null : ep.SeriesId.ToString();
+                seriesName = ep.SeriesName;
+                seasonNumber = ep.ParentIndexNumber;
+                episodeNumber = ep.IndexNumber;
+            }
+
+            var entry = new HiddenContentItem
+            {
+                ItemId = itemGuid.ToString(),
+                Name = jfItem.Name ?? string.Empty,
+                Type = typeName,
+                TmdbId = string.Empty,
+                HiddenAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                PosterPath = string.Empty,
+                SeriesId = seriesId ?? string.Empty,
+                SeriesName = seriesName ?? string.Empty,
+                SeasonNumber = seasonNumber,
+                EpisodeNumber = episodeNumber,
+                HideScope = "continuewatching"
+            };
+
+            var key = entry.ItemId;
+            var authorizedUserId = userId.ToString("N");
+
+            try
+            {
+                var keyN = itemGuid.ToString("N");
+                // Seed Settings from admin defaults if this RMW creates the file (Remove-from-CW before any HC UI was opened).
+                var preExistedHc = _userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json");
+                var hcDefaults = JellyfinEnhanced.Instance?.Configuration;
+
+                _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                    authorizedUserId, "hidden-content.json", h =>
+                    {
+                        if (!preExistedHc && hcDefaults != null && h.Items.Count == 0)
+                        {
+                            h.Settings = BuildHcDefaultSettings(hcDefaults);
+                        }
+
+                        // Merge with existing entries (under either hyphenated or N-format key) — pick the wider scope.
+                        h.Items.TryGetValue(key, out var hyphenEntry);
+                        h.Items.TryGetValue(keyN, out var nEntry);
+
+                        var existingScope = WiderScope(
+                            hyphenEntry?.HideScope,
+                            nEntry?.HideScope);
+
+                        if (!string.IsNullOrEmpty(existingScope))
+                        {
+                            entry.HideScope = MergeWithCwScope(existingScope);
+                        }
+
+                        // Preserve the earliest HiddenAt across both entries so re-affirming doesn't reset history.
+                        var existingHiddenAt = EarliestHiddenAt(
+                            hyphenEntry?.HiddenAt,
+                            nEntry?.HiddenAt);
+                        if (!string.IsNullOrEmpty(existingHiddenAt))
+                        {
+                            entry.HiddenAt = existingHiddenAt;
+                        }
+
+                        h.Items.Remove(keyN);
+                        h.Items[key] = entry;
+                        return 1;
+                    });
+                return Ok(new { success = true, key, entry });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to add CW hide for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to hide from Continue Watching." });
+            }
+        }
+
+        [HttpDelete("continue-watching/hide/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult UnhideFromContinueWatching(string itemId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
+            if (userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(itemId, out var itemGuid) && !Guid.TryParseExact(itemId, "N", out itemGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid itemId." });
+            }
+
+            var authorizedUserId = userId.ToString("N");
+            var canonical = itemGuid.ToString();
+            var canonicalN = itemGuid.ToString("N");
+
+            try
+            {
+                var dropped = _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                    authorizedUserId, "hidden-content.json", h =>
+                {
+                    if (h?.Items == null || h.Items.Count == 0) return 0;
+                    var dropKeys = new List<string>();
+                    foreach (var kvp in h.Items)
+                    {
+                        var entry = kvp.Value;
+                        if (entry == null) continue;
+                        if (!string.Equals(entry.HideScope, "continuewatching", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        var entryId = entry.ItemId ?? string.Empty;
+                        if (string.Equals(entryId, canonical, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(entryId, canonicalN, StringComparison.OrdinalIgnoreCase))
+                        {
+                            dropKeys.Add(kvp.Key);
+                        }
+                    }
+                    foreach (var k in dropKeys) h.Items.Remove(k);
+                    return dropKeys.Count;
+                });
+
+                if (dropped == 0) return NotFound(new { success = false, message = "No matching hidden-content entry." });
+                return Ok(new { success = true });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to remove CW hide for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to unhide." });
             }
         }
 
@@ -3002,16 +3281,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
 
             var userCount = 0;
+            var skippedSettings = new System.Collections.Generic.List<string>();
+            var skippedHc = new System.Collections.Generic.List<string>();
             // Get all user IDs from the UserConfigurationManager's known users
             var userIds = _userConfigurationManager.GetAllUserIds();
             foreach (var userId in userIds)
             {
-                _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
-                userCount++;
+                try
+                {
+                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    userCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Skipping settings.json reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    skippedSettings.Add(userId);
+                }
+
+                // Push HC Settings only — user's Items dict is data, not a default. Per-user errors are skipped, not fatal.
+                try
+                {
+                    _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                        userId, "hidden-content.json", hc =>
+                        {
+                            hc.Settings = BuildHcDefaultSettings(defaultConfig);
+                            return 1;
+                        });
+                }
+                catch (Exception ex) when (ex is InvalidDataException
+                                        || ex is Newtonsoft.Json.JsonException
+                                        || ex is IOException
+                                        || ex is UnauthorizedAccessException)
+                {
+                    _logger.Warning($"Skipping HC settings reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    skippedHc.Add(userId);
+                }
             }
 
-            _logger.Info($"Reset settings for all {userCount} users to plugin defaults.");
-            return Ok(new { success = true, userCount = userCount });
+            _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
+            return Ok(new
+            {
+                success = true,
+                userCount,
+                totalUsers = userIds.Count(),
+                skippedSettingsUserIds = skippedSettings,
+                skippedHcUserIds = skippedHc,
+            });
         }
 
         /// <summary>

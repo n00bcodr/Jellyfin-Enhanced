@@ -233,6 +233,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentUseCustomTabs = false;
             HiddenContentAutoCreateCustomTab = false;
             HiddenContentCustomTabJeOwned = false;
+
+            // Hidden Content per-user defaults — applied when a user's
+            // hidden-content.json is created and via "Apply defaults to all users".
+            HiddenContentDefaultEnabled = true;
+            HiddenContentDefaultShowHideButtons = true;
+            HiddenContentDefaultShowHideConfirmation = true;
+            HiddenContentDefaultShowButtonJellyseerr = true;
+            HiddenContentDefaultShowButtonLibrary = false;
+            HiddenContentDefaultShowButtonDetails = true;
+            HiddenContentDefaultShowButtonCast = false;
+            HiddenContentDefaultFilterLibrary = true;
+            HiddenContentDefaultFilterDiscovery = true;
+            HiddenContentDefaultFilterSearch = false;
+            HiddenContentDefaultFilterCalendar = true;
+            HiddenContentDefaultFilterUpcoming = true;
+            HiddenContentDefaultFilterRecommendations = true;
+            HiddenContentDefaultFilterRequests = true;
+            HiddenContentDefaultFilterNextUp = true;
+            HiddenContentDefaultFilterContinueWatching = true;
+            HiddenContentDefaultExperimentalHideCollections = false;
         }
 
         // Jellyfin Enhanced Settings
@@ -461,6 +481,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentUseCustomTabs { get; set; }
         public bool HiddenContentAutoCreateCustomTab { get; set; }
         public bool HiddenContentCustomTabJeOwned { get; set; }
+
+        // Hidden Content per-user defaults
+        public bool HiddenContentDefaultEnabled { get; set; }
+        public bool HiddenContentDefaultShowHideButtons { get; set; }
+        public bool HiddenContentDefaultShowHideConfirmation { get; set; }
+        public bool HiddenContentDefaultShowButtonJellyseerr { get; set; }
+        public bool HiddenContentDefaultShowButtonLibrary { get; set; }
+        public bool HiddenContentDefaultShowButtonDetails { get; set; }
+        public bool HiddenContentDefaultShowButtonCast { get; set; }
+        public bool HiddenContentDefaultFilterLibrary { get; set; }
+        public bool HiddenContentDefaultFilterDiscovery { get; set; }
+        public bool HiddenContentDefaultFilterSearch { get; set; }
+        public bool HiddenContentDefaultFilterCalendar { get; set; }
+        public bool HiddenContentDefaultFilterUpcoming { get; set; }
+        public bool HiddenContentDefaultFilterRecommendations { get; set; }
+        public bool HiddenContentDefaultFilterRequests { get; set; }
+        public bool HiddenContentDefaultFilterNextUp { get; set; }
+        public bool HiddenContentDefaultFilterContinueWatching { get; set; }
+        public bool HiddenContentDefaultExperimentalHideCollections { get; set; }
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.

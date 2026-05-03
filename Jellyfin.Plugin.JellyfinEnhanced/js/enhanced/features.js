@@ -1016,9 +1016,9 @@
     );
 
     /**
-     * Resets the playback position of an item to 0, effectively removing it from "Continue Watching".
-     * @param {string} itemId The ID of the item to remove.
-     * @returns {Promise<boolean>} A promise that resolves to true on success, false on failure.
+     * Non-destructive "Remove from Continue Watching": POST + optimistic DOM hide. Position preserved.
+     * @param {string} itemId Jellyfin item ID.
+     * @returns {Promise<boolean>}
      */
     async function removeFromContinueWatching(itemId) {
         const userId = ApiClient.getCurrentUserId();
@@ -1027,20 +1027,105 @@
             return false;
         }
 
+        // Flush pending HC save BEFORE the CW POST so a later debounce can't clobber the just-written entry.
+        // If the flush fails the debounce is rescheduled inside flushPendingSave; abort the CW write so we
+        // don't proceed on top of stale server state.
+        try {
+            await JE.hiddenContent?.flushPendingSave?.();
+        } catch (e) {
+            showNotification(JE.t('remove_continue_watching_error_api', { error: e?.statusText || JE.t('unknown_error') }), "error");
+            return false;
+        }
+
         try {
             await ApiClient.ajax({
                 type: 'POST',
-                url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}/UserData`),
-                data: JSON.stringify({ PlaybackPositionTicks: 0 }),
+                url: ApiClient.getUrl(`/JellyfinEnhanced/continue-watching/hide/${itemId}`),
+                data: '{}',
+                contentType: 'application/json',
+                dataType: 'json',
                 headers: { 'Content-Type': 'application/json' }
             });
+
+            try {
+                document.querySelectorAll(`.card[data-id="${CSS.escape(itemId)}"]`).forEach(card => {
+                    if (card.hasAttribute('data-positionticks')) {
+                        card.style.display = 'none';
+                    }
+                });
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: optimistic CW DOM-hide failed', e);
+            }
+
+            // Local-cache mirror only — server already wrote the canonical entry; a refetch would risk a clobber.
+            try {
+                JE.hiddenContent?.markScopedHidden?.(itemId, 'continuewatching');
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: markScopedHidden mirror failed', e);
+            }
             return true;
         } catch (error) {
-            const errorMessage = error.responseJSON?.Message || error.statusText || JE.t('unknown_error');
+            const errorMessage = error.responseJSON?.message
+                || error.responseJSON?.Message
+                || error.statusText
+                || JE.t('unknown_error');
             showNotification(JE.t('remove_continue_watching_error_api', { error: errorMessage }), "error");
             return false;
         }
     }
+
+    // Closes any open action sheet via dialog.close() / Escape; never synthetic mouse events (they reopen the sheet).
+    function closeOpenActionSheet() {
+        try {
+            const dialogs = document.querySelectorAll('dialog[open]');
+            let dispatched = false;
+            for (const dlg of dialogs) {
+                if (typeof dlg.close === 'function') {
+                    try { dlg.close(); dispatched = true; } catch (e) { /* not a real dialog */ }
+                }
+            }
+            if (dispatched) return true;
+
+            // Escape-keydown fallback targets the sheet directly — dispatching on `document` is intercepted by JE's global shortcuts.
+            const sheet = document.querySelector('.actionSheet, .actionsheet, dialog[open], .dialogContainer .dialog, .dialog.opened');
+            if (sheet) {
+                sheet.dispatchEvent(new KeyboardEvent('keydown', {
+                    key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+                    bubbles: true, cancelable: true
+                }));
+            }
+            return true;
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: action sheet close failed', err);
+            return false;
+        }
+    }
+
+    /** Hides Continue Watching / Next Up rows whose visible-card count is zero so the title doesn't linger. */
+    function hideEmptyHomeSections() {
+        try {
+            const sections = document.querySelectorAll('.verticalSection, .section, .homeSection');
+            for (const section of sections) {
+                const titleEl = section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle');
+                const title = (titleEl?.textContent || '').toLowerCase().trim();
+                const isCW = title.startsWith('continue watching');
+                const isNextUp = title.startsWith('next up');
+                if (!isCW && !isNextUp) continue;
+
+                const cards = section.querySelectorAll('.card[data-positionticks], .card[data-id]');
+                let visibleCount = 0;
+                for (const card of cards) {
+                    if (card.classList.contains('je-hidden')) continue;
+                    if (card.style.display === 'none') continue;
+                    visibleCount++;
+                }
+                if (visibleCount === 0) section.style.display = 'none';
+            }
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: hideEmptyHomeSections failed', err);
+        }
+    }
+    JE.hideEmptyHomeSections = hideEmptyHomeSections;
 
     /**
      * Creates the "Remove" button for the context menu action sheet.
@@ -1073,9 +1158,15 @@
             const success = await removeFromContinueWatching(itemId);
 
             if (success) {
-                document.querySelector('.actionSheet.opened')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                showNotification(JE.t('remove_continue_watching_success'), "success");
-                setTimeout(() => window.Emby?.Page?.currentView?.refresh({ force: true }), 500);
+                // Restore button visuals BEFORE close — a stuck sheet under odd themes is better than a stuck "Removing..." label.
+                button.disabled = false;
+                buttonTextElem.textContent = originalText;
+                buttonIconElem.textContent = originalIcon;
+
+                const closed = closeOpenActionSheet();
+                showNotification(JE.t('remove_continue_watching_success'), closed ? "success" : "info");
+
+                hideEmptyHomeSections();
             } else {
                 button.disabled = false;
                 buttonTextElem.textContent = originalText;

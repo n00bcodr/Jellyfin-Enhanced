@@ -27,6 +27,21 @@
 
   const logPrefix = '🪼 Jellyfin Enhanced: Hidden Content Page:';
 
+  function scopeBadgeText(scope) {
+    const s = (scope || '').toLowerCase();
+    if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label');
+    if (s === 'nextup')           return JE.t('hidden_content_scope_nextup_label');
+    if (s === 'homesections')     return JE.t('hidden_content_scope_homesections_label');
+    return '';
+  }
+
+  function scopeUnhideText(scope) {
+    if ((scope || '').toLowerCase() === 'continuewatching') {
+      return JE.t('hidden_content_add_back_to_cw');
+    }
+    return JE.t('hidden_content_unhide');
+  }
+
   /** Polling interval for detecting pushState navigations. */
   const LOCATION_WATCH_INTERVAL_MS = 150;
   /** Delay before removing a card after unhide animation. */
@@ -431,6 +446,14 @@
 
     injectStyles();
 
+    // Re-render listener runs in BOTH native and Plugin-Pages modes; gated on container presence (state.pageVisible isn't set in Plugin-Pages mode).
+    window.addEventListener('je-hidden-content-changed', () => {
+      const container = document.getElementById('je-hidden-content-container');
+      if (container && document.contains(container)) {
+        renderPage(container);
+      }
+    });
+
     const usingPluginPages = pluginPagesExists && config.HiddenContentUsePluginPages;
     if (usingPluginPages) {
       console.log(`${logPrefix} Hidden content page is injected via Plugin Pages`);
@@ -446,12 +469,6 @@
     document.addEventListener("click", handleNavClick);
     window.addEventListener("hashchange", handleNavigation);
     window.addEventListener("popstate", handleNavigation);
-
-    window.addEventListener('je-hidden-content-changed', () => {
-      if (state.pageVisible) {
-        renderPage();
-      }
-    });
 
     handleNavigation();
 
@@ -789,7 +806,7 @@
         badge.className = 'je-hidden-scoped-badge';
         badge.style.marginTop = '2px';
         badge.style.display = 'inline-block';
-        badge.textContent = JE.t('hidden_content_scope_badge');
+        badge.textContent = scopeBadgeText(mainItem.hideScope);
         detailDiv.appendChild(badge);
       }
       fragment.appendChild(detailDiv);
@@ -797,7 +814,7 @@
 
     const unhideBtn = document.createElement('button');
     unhideBtn.className = 'je-hidden-group-unhide';
-    unhideBtn.textContent = JE.t('hidden_content_unhide');
+    unhideBtn.textContent = scopeUnhideText(mainItem.hideScope);
     unhideBtn.addEventListener('click', () => {
       const itemLabel = hasEpisodes
         ? (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(mainItem)
@@ -865,7 +882,7 @@
       if (item.hideScope && item.hideScope !== 'global') {
         const badge = document.createElement('span');
         badge.className = 'je-hidden-scoped-badge';
-        badge.textContent = JE.t('hidden_content_scope_badge');
+        badge.textContent = scopeBadgeText(item.hideScope);
         infoCol.appendChild(badge);
       }
 
@@ -873,7 +890,7 @@
 
       const unhideBtn = document.createElement('button');
       unhideBtn.className = 'je-hidden-group-item-unhide';
-      unhideBtn.textContent = JE.t('hidden_content_unhide');
+      unhideBtn.textContent = scopeUnhideText(item.hideScope);
       unhideBtn.addEventListener('click', (e) => {
         e.preventDefault();
         const rowLabel = (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(item);
@@ -1082,7 +1099,7 @@
 
     const scopedToggle = document.createElement("button");
     scopedToggle.className = 'je-hidden-scoped-filter' + (state.scopedOnly ? ' active' : '');
-    scopedToggle.textContent = JE.t('hidden_content_scope_badge');
+    scopedToggle.textContent = JE.t('hidden_content_scope_filter_button');
     toolbar.appendChild(scopedToggle);
 
     const unhideAllBtn = document.createElement("button");
@@ -1139,7 +1156,7 @@
           const badge = document.createElement('span');
           badge.className = 'je-hidden-scoped-badge';
           badge.style.marginLeft = '6px';
-          badge.textContent = JE.t('hidden_content_scope_nextup');
+          badge.textContent = scopeBadgeText(item.hideScope);
           infoDiv.appendChild(badge);
         }
       }
