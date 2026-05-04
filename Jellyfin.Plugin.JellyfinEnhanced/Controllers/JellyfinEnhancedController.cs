@@ -628,6 +628,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // Manually trigger Seerr's recently-added library scan against a single URL.
+        // Used by the admin "Trigger scan now" button so the test runs against the
+        // values currently in the form (which may not be saved yet), exactly like
+        // the validate endpoint above.
+        [HttpPost("jellyseerr/trigger-recently-added-scan")]
+        [Authorize]
+        public async Task<IActionResult> TriggerJellyseerrRecentlyAddedScan([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
+                return BadRequest(new { ok = false, message = "Missing url or apiKey" });
+
+            if (!IsAllowedUrl(url))
+                return BadRequest(new { ok = false, message = "Invalid URL" });
+
+            var http = _httpClientFactory.CreateClient();
+            http.DefaultRequestHeaders.Clear();
+            http.Timeout = TimeSpan.FromSeconds(15);
+
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{url.TrimEnd('/')}/api/v1/settings/jobs/jellyfin-recently-added-scan/run")
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("X-Api-Key", apiKey);
+
+                using var resp = await http.SendAsync(request);
+                if (resp.IsSuccessStatusCode)
+                {
+                    _logger.Info($"[SeerrScan] Manually triggered Seerr recently-added scan via admin button — {url}");
+                    return Ok(new { ok = true });
+                }
+
+                var body = await resp.Content.ReadAsStringAsync();
+                var snippet = body.Length > 256 ? body.Substring(0, 256) + "…" : body;
+                _logger.Warning($"[SeerrScan] Manual trigger failed for {url}: HTTP {(int)resp.StatusCode} — {snippet}");
+                return StatusCode((int)resp.StatusCode, new { ok = false, message = $"Seerr returned {(int)resp.StatusCode}" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[SeerrScan] Manual trigger threw for {url}: {ex.Message}");
+                return StatusCode(502, new { ok = false, message = "Unable to reach Seerr" });
+            }
+        }
+
         [HttpGet("jellyseerr/user-status")]
         [Authorize]
         public async Task<IActionResult> GetJellyseerrUserStatus()

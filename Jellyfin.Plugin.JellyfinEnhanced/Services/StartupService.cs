@@ -22,19 +22,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly AutoSeasonRequestMonitor _autoSeasonRequestMonitor;
         private readonly AutoMovieRequestMonitor _autoMovieRequestMonitor;
         private readonly WatchlistMonitor _watchlistMonitor;
+        private readonly SeerrScanTriggerService _seerrScanTriggerService;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Injects the Jellyfin Enhanced script using the File Transformation plugin and performs necessary cleanups.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, SeerrScanTriggerService seerrScanTriggerService)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
             _autoSeasonRequestMonitor = autoSeasonRequestMonitor;
             _autoMovieRequestMonitor = autoMovieRequestMonitor;
             _watchlistMonitor = watchlistMonitor;
+            _seerrScanTriggerService = seerrScanTriggerService;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -52,6 +54,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Initialize watchlist monitoring
                 _watchlistMonitor.Initialize();
+
+                // Initialize on-demand Seerr recently-added scan trigger
+                _seerrScanTriggerService.Initialize();
 
                 _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");
             }, cancellationToken);

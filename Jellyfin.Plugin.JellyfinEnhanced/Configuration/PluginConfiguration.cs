@@ -113,6 +113,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrDisableCache = false;
             JellyseerrResponseCacheTtlMinutes = 10;
             JellyseerrUserIdCacheTtlMinutes = 30;
+            TriggerSeerrScanOnItemAdded = false;
+            SeerrScanDebounceSeconds = 60;
 
             // Arr Links Settings
             ArrLinksEnabled = false;
@@ -287,6 +289,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string JellyseerrUrls { get; set; }
         public string JellyseerrApiKey { get; set; }
         public string JellyseerrUrlMappings { get; set; }
+
+        // On-demand library sync: POST {seerrUrl}/api/v1/settings/jobs/jellyfin-recently-added-scan/run
+        // when Jellyfin reports new items, debounced so a bulk import collapses to one call.
+        public bool TriggerSeerrScanOnItemAdded { get; set; }
+        public int SeerrScanDebounceSeconds { get; set; } = 60;
         public bool ShowCollectionsInSearch { get; set; }
         public bool JellyseerrDisableCache { get; set; }
         public int JellyseerrResponseCacheTtlMinutes { get; set; }

@@ -998,6 +998,38 @@
                         </div>
                     </fieldset>
                     <fieldset class="verticalSection-extrabottompadding">
+                        <legend class="sectionTitle"><h3>Library Sync to Seerr</h3></legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
+                                <label>
+                                    <input id="triggerSeerrScanOnItemAdded" is="emby-checkbox" type="checkbox"/>
+                                    <span>Trigger Seerr recently-added scan on Jellyfin item added</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom: 1.5em;">
+                                When Jellyfin reports new library items, POSTs to Seerr's <code>/api/v1/settings/jobs/jellyfin-recently-added-scan/run</code> endpoint so Seerr's "Available" status updates immediately instead of waiting for its 5-minute cron. Events are debounced — a bulk import collapses into a single trigger.
+                                <br><br>
+                                <strong>Tip:</strong> with this enabled, you can set Seerr's recently-added scan cron to a much longer interval (or disable it) to reduce noise.
+                            </div>
+                            <div class="inputContainer" style="margin-bottom: 0.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="seerrScanDebounceSeconds">Debounce (seconds):</label>
+                                <input id="seerrScanDebounceSeconds" is="emby-input" type="number" min="5" max="3600" step="1" style="width: 100px;"/>
+                                <div class="fieldDescription" style="margin-top: 0.5em; margin-bottom: 1em;">
+                                    Wait this many seconds after the LAST item added before firing the scan. Default 60. Range 5–3600.
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 1em;">
+                                <button id="triggerSeerrScanNowBtn" is="emby-button" type="button" class="raised" style="margin-right: 0.5em;">
+                                    <span>Trigger scan now</span>
+                                </button>
+                                <span id="triggerSeerrScanNowStatus" class="material-icons" style="vertical-align: middle; font-size: 22px;"></span>
+                                <div class="fieldDescription" style="margin-top: 0.5em;">
+                                    Uses the Seerr URL and API key entered in the Setup section above (does not require saving first). If multiple URLs are configured, the first reachable one is used.
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="verticalSection-extrabottompadding">
                         <legend class="sectionTitle"><h3>Watchlist Integration</h3></legend>
                         <div class="configSection">
                             <div class="checkboxContainer" style="margin-bottom: 0.5em !important;">
@@ -2598,6 +2630,8 @@
                 loadBlockedUsersList(config.JellyseerrImportBlockedUsers || '');
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
+                document.querySelector('#triggerSeerrScanOnItemAdded').checked = config.TriggerSeerrScanOnItemAdded === true;
+                document.querySelector('#seerrScanDebounceSeconds').value = config.SeerrScanDebounceSeconds || 60;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#bookmarksUsePluginPages').checked = config.BookmarksUsePluginPages === true;
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
@@ -2805,6 +2839,9 @@
 
             const retentionDays = parseInt(document.querySelector('#watchlistMemoryRetentionDays').value);
             config.WatchlistMemoryRetentionDays = isNaN(retentionDays) || retentionDays < 1 ? 365 : Math.min(retentionDays, 3650);
+            config.TriggerSeerrScanOnItemAdded = document.querySelector('#triggerSeerrScanOnItemAdded').checked;
+            const seerrScanDebounce = parseInt(document.querySelector('#seerrScanDebounceSeconds').value);
+            config.SeerrScanDebounceSeconds = isNaN(seerrScanDebounce) || seerrScanDebounce < 5 ? 60 : Math.min(seerrScanDebounce, 3600);
             config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
             config.BookmarksUsePluginPages = document.querySelector('#bookmarksUsePluginPages').checked;
             config.UseIcons = document.querySelector('#useIcons').checked;
@@ -3553,6 +3590,7 @@
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
+            { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
         ];
@@ -4016,6 +4054,54 @@
             }
         });
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+
+        async function triggerSeerrScanNow() {
+            const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
+            const apiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            const btn = document.querySelector('#triggerSeerrScanNowBtn');
+            const status = document.querySelector('#triggerSeerrScanNowStatus');
+
+            if (!urls.length || !apiKey) {
+                Dashboard.alert({ title: 'Missing Information', message: 'Please provide at least one Seerr URL and an API key in the Setup section above.' });
+                return;
+            }
+
+            btn.disabled = true;
+            status.textContent = 'sync';
+            status.className = 'material-icons status-check';
+            status.style.color = '#00a4dc';
+
+            let triggered = false;
+            let lastError = '';
+            for (const url of urls) {
+                try {
+                    const triggerUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/trigger-recently-added-scan', { url: url });
+                    const res = await ApiClient.ajax({ type: 'POST', url: triggerUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKey } });
+                    if (res && res.ok) {
+                        triggered = true;
+                        break;
+                    }
+                } catch (e) {
+                    console.error('Seerr scan trigger failed for ' + url + ':', e);
+                    lastError = connectionErrorMessage(e, 'Seerr', url);
+                }
+            }
+
+            btn.disabled = false;
+            status.classList.remove('status-check');
+
+            if (triggered) {
+                status.textContent = 'check_circle';
+                status.style.color = '#52b54b';
+                Dashboard.alert({ title: 'Scan Triggered', message: 'Seerr accepted the recently-added scan request.' });
+            } else {
+                status.textContent = 'error';
+                status.style.color = '#dc3545';
+                Dashboard.alert({ title: 'Trigger Failed', message: lastError || 'Could not trigger a scan against any provided URL.' });
+            }
+        }
+
+        document.querySelector('#triggerSeerrScanNowBtn').addEventListener('click', triggerSeerrScanNow);
 
         /**
          * Updates the blocked users count badge in the collapsible summary.
