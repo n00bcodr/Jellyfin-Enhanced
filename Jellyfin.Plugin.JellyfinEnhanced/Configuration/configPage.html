@@ -794,6 +794,84 @@
                             <div class="je-setting-description" data-desc-for="spoilerBlurIntensity" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">Gaussian blur sigma. Higher numbers blur more. 5 is mild, 40 is the recommended default, 100 is heavy. The silhouette and dominant colours stay visible at every level so users can still tell something is there.</div>
                             </div>
+
+                            <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
+                                <summary>Hide metadata on unwatched episodes</summary>
+                                <div class="je-details-body">
+                                    <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
+                                        <div class="je-info-banner-row">
+                                            <i class="material-icons je-info-icon">visibility_off</i>
+                                            <div>
+                                                When enabled, these fields are stripped from the response for any unwatched episode of a series the user has spoiler mode on for. Stripped server-side so every client benefits.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripOverview" is="emby-checkbox" type="checkbox"/><span>Hide episode descriptions</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripOverview">
+                                        <div class="fieldDescription">Replaces the episode synopsis with the placeholder text below. The single biggest spoiler vector — recommended on.</div>
+                                    </div>
+
+                                    <div class="inputContainer" data-gated-by="spoilerStripOverview">
+                                        <label class="inputLabel inputLabelUnfocused" for="spoilerOverviewPlaceholder">Placeholder text</label>
+                                        <input id="spoilerOverviewPlaceholder" type="text" is="emby-input"/>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="spoilerOverviewPlaceholder" data-gated-by="spoilerStripOverview">
+                                        <div class="fieldDescription">Shown in place of the description so the client doesn't render an empty section header. Default: "Spoiler mode activated".</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripTags" is="emby-checkbox" type="checkbox"/><span>Hide tags</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripTags">
+                                        <div class="fieldDescription">TMDB tags can include spoiler-y phrases like "Death of a main character". Recommended on.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripChapters" is="emby-checkbox" type="checkbox"/><span>Hide chapter names (keep timestamps)</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripChapters">
+                                        <div class="fieldDescription">Chapter names like "X dies" or "Y revealed" are major spoilers. Stripping the names keeps the timestamps intact so the player's seek bar still works. Recommended on.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripTaglines" is="emby-checkbox" type="checkbox"/><span>Hide taglines</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripTaglines">
+                                        <div class="fieldDescription">Marketing taglines like "Everything changes tonight" are pure spoiler bait. Recommended on.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripCommunityRating" is="emby-checkbox" type="checkbox"/><span>Hide community rating</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripCommunityRating">
+                                        <div class="fieldDescription">A "9.8/10" community rating implies a major event happens. Off by default; opt in if you find ratings spoiler-y.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripCriticRating" is="emby-checkbox" type="checkbox"/><span>Hide critic rating</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripCriticRating">
+                                        <div class="fieldDescription">Same rationale as community rating. Off by default.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripPremiereDate" is="emby-checkbox" type="checkbox"/><span>Hide air date</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripPremiereDate">
+                                        <div class="fieldDescription">A multi-month gap before an episode can imply "season finale". Off by default; opt in for paranoia mode.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerReplaceTitle" is="emby-checkbox" type="checkbox"/><span>Replace episode titles</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerReplaceTitle">
+                                        <div class="fieldDescription">Replaces episode names like "The Death of X" with "Season 2, Episode 6". Off by default — some clients use the title in navigation tooltips and breadcrumbs where the change can look jarring.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripCast" is="emby-checkbox" type="checkbox"/><span>Hide cast on unwatched episodes</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripCast">
+                                        <div class="fieldDescription">An unexpected guest star (or even regular cast not appearing) can spoil major reveals. Off by default; pick the scope below if you turn it on.</div>
+                                    </div>
+
+                                    <div class="selectContainer" data-gated-by="spoilerStripCast">
+                                        <label class="selectLabel" for="spoilerStripCastMode">Cast hiding scope</label>
+                                        <select id="spoilerStripCastMode" is="emby-select">
+                                            <option value="GuestStars">Guest stars only (recommended)</option>
+                                            <option value="All">Entire cast (regulars + guest stars)</option>
+                                        </select>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripCastMode" data-gated-by="spoilerStripCast">
+                                        <div class="fieldDescription">"Guest stars only" leaves the regular cast visible — they appear in every episode anyway, so they don't reveal anything new. "Entire cast" is the strict mode.</div>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
 
@@ -4226,6 +4304,28 @@
                 document.querySelector('#spoilerBlurEnabled').checked = config.SpoilerBlurEnabled === true;
                 var __sbSigma = document.querySelector('#spoilerBlurIntensity');
                 if (__sbSigma) __sbSigma.value = (config.SpoilerBlurIntensity >= 5 && config.SpoilerBlurIntensity <= 100) ? config.SpoilerBlurIntensity : 40;
+                // Field-strip toggles. Defaults match PluginConfiguration:
+                // Overview/Tags/Chapters/Taglines on; ratings/premiere/title/cast off.
+                [
+                    ['spoilerStripOverview',        'SpoilerStripOverview',        true],
+                    ['spoilerStripTags',            'SpoilerStripTags',            true],
+                    ['spoilerStripChapters',        'SpoilerStripChapters',        true],
+                    ['spoilerStripTaglines',        'SpoilerStripTaglines',        true],
+                    ['spoilerStripCommunityRating', 'SpoilerStripCommunityRating', false],
+                    ['spoilerStripCriticRating',    'SpoilerStripCriticRating',    false],
+                    ['spoilerStripPremiereDate',    'SpoilerStripPremiereDate',    false],
+                    ['spoilerReplaceTitle',         'SpoilerReplaceTitle',         false],
+                    ['spoilerStripCast',            'SpoilerStripCast',            false],
+                ].forEach(function (t) {
+                    var el = document.querySelector('#' + t[0]);
+                    if (!el) return;
+                    var v = config[t[1]];
+                    el.checked = (v === undefined || v === null) ? t[2] : !!v;
+                });
+                var __sbCastMode = document.querySelector('#spoilerStripCastMode');
+                if (__sbCastMode) __sbCastMode.value = config.SpoilerStripCastMode === 'All' ? 'All' : 'GuestStars';
+                var __sbPlaceholder = document.querySelector('#spoilerOverviewPlaceholder');
+                if (__sbPlaceholder) __sbPlaceholder.value = config.SpoilerOverviewPlaceholder || 'Spoiler mode activated';
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -4549,6 +4649,24 @@
                 if (!isFinite(__sbSigmaVal) || __sbSigmaVal < 5) __sbSigmaVal = 5;
                 if (__sbSigmaVal > 100) __sbSigmaVal = 100;
                 config.SpoilerBlurIntensity = __sbSigmaVal;
+            }
+            // Field-strip toggles
+            [
+                'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters',
+                'spoilerStripTaglines', 'spoilerStripCommunityRating',
+                'spoilerStripCriticRating', 'spoilerStripPremiereDate',
+                'spoilerReplaceTitle', 'spoilerStripCast',
+            ].forEach(function (id) {
+                var el = document.querySelector('#' + id);
+                if (!el) return;
+                var pascal = id.charAt(0).toUpperCase() + id.slice(1);
+                config[pascal] = !!el.checked;
+            });
+            var __sbCastModeSave = document.querySelector('#spoilerStripCastMode');
+            config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
+            var __sbPlaceholderSave = document.querySelector('#spoilerOverviewPlaceholder');
+            if (__sbPlaceholderSave) {
+                config.SpoilerOverviewPlaceholder = __sbPlaceholderSave.value || 'Spoiler mode activated';
             }
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
@@ -5413,7 +5531,9 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity'] }
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity', 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripCommunityRating', 'spoilerStripCriticRating', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast'] },
+            { parent: 'spoilerStripOverview', label: 'Hide episode descriptions', children: ['spoilerOverviewPlaceholder'] },
+            { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] }
         ];
 
         /**

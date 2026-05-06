@@ -278,6 +278,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // paths land on the same value.
             SpoilerBlurEnabled = false;
             SpoilerBlurIntensity = 40;
+
+            // Field-strip defaults — Overview / Tags / Chapters / Taglines on,
+            // ratings / premiere date / title replacement / cast off. Admins
+            // tune these in the configPage's Spoiler Blur section.
+            SpoilerStripOverview = true;
+            SpoilerStripTags = true;
+            SpoilerStripChapters = true;
+            SpoilerStripTaglines = true;
+            SpoilerStripCommunityRating = false;
+            SpoilerStripCriticRating = false;
+            SpoilerStripPremiereDate = false;
+            SpoilerReplaceTitle = false;
+            SpoilerStripCast = false;
+            SpoilerStripCastMode = "GuestStars";
+            SpoilerOverviewPlaceholder = "Spoiler mode activated";
         }
 
         // Jellyfin Enhanced Settings
@@ -561,6 +576,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // blurred, 100 = heavily blurred. Default 40 hides scene content
         // while keeping silhouettes and dominant colours visible.
         public int SpoilerBlurIntensity { get; set; } = 40;
+
+        // Field-strip toggles — when SpoilerBlurEnabled is on AND the
+        // requesting user has the parent series in their spoiler list AND
+        // the episode is unwatched, the plugin nulls out / replaces the
+        // following metadata fields in BaseItemDto responses. Each toggle
+        // is independent; admins enable the ones they consider spoilers.
+        // All apply server-side via an MVC action filter on the item-list
+        // endpoints, so every client benefits.
+        //
+        // Defaults reflect the bake-off proposal: Overview, Tags, Chapters,
+        // Taglines stripped by default; ratings, premiere date, title
+        // replacement, and cast handling are opt-in.
+        public bool SpoilerStripOverview { get; set; } = true;
+        public bool SpoilerStripTags { get; set; } = true;
+        public bool SpoilerStripChapters { get; set; } = true;
+        public bool SpoilerStripTaglines { get; set; } = true;
+        public bool SpoilerStripCommunityRating { get; set; } = false;
+        public bool SpoilerStripCriticRating { get; set; } = false;
+        public bool SpoilerStripPremiereDate { get; set; } = false;
+        // Title replacement: when on, episode names become "Season X,
+        // Episode Y" instead of leaking spoiler titles like "The Death
+        // of Y". Off by default because some clients use the title in
+        // navigation tooltips and breadcrumbs where the change is jarring.
+        public bool SpoilerReplaceTitle { get; set; } = false;
+        // Cast stripping. SpoilerStripCast = false → no cast stripping at
+        // all (default). When SpoilerStripCast = true, SpoilerStripCastMode
+        // chooses between "GuestStars" (only Type=GuestStar entries
+        // removed; regular cast retained) and "All" (every People entry
+        // removed). Most series leak via guest stars only, so the default
+        // when stripping is on is "GuestStars".
+        public bool SpoilerStripCast { get; set; } = false;
+        public string SpoilerStripCastMode { get; set; } = "GuestStars";
+        // Placeholder text shown in place of stripped Overview, so the
+        // client doesn't render "Description" header followed by blank.
+        // Configurable so admins can localise / personalise.
+        public string SpoilerOverviewPlaceholder { get; set; } = "Spoiler mode activated";
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.
