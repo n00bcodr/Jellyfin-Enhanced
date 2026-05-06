@@ -33,15 +33,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // HiddenContentResponseFilter).
     public sealed class SpoilerFieldStripFilter : IAsyncActionFilter
     {
+        // Action-name table built from live observation on Jellyfin 10.11.x:
+        // - /Items                        → Items.GetItems
+        // - /Items?<filter>               → Items.GetItems (same)
+        // - /Items/Resume                 → Items.GetResumeItems / GetResumeItemsLegacy
+        // - /Items/{id}                   → UserLibrary.GetItem
+        // - /Users/{uid}/Items/{id}       → UserLibrary.GetItemLegacy
+        // - /Items/Latest                 → UserLibrary.GetLatestMedia / Legacy
+        // - /Shows/{seriesId}/Episodes    → TvShows.GetEpisodes
+        // - /Shows/{seriesId}/Seasons     → TvShows.GetSeasons
+        // - /Shows/NextUp                 → TvShows.GetNextUp
+        // - /Shows/Upcoming               → TvShows.GetUpcomingEpisodes
+        // - /Shows/{seriesId}/Similar     → LibraryStructure / etc — covered by GetSimilar* if present
+        // - /Items?<search>               → Items.GetItems with searchTerm
+        // - /Search/Hints                 → Search.GetSearchHints
+        // - /Users/{uid}/Suggestions      → Suggestions.GetSuggestions / Legacy
         private static readonly Dictionary<(string, string), bool> _routes
             = new()
             {
                 { ("Items",       "GetItems"),               true },
                 { ("Items",       "GetItemsByUserIdLegacy"), true },
-                { ("Items",       "GetItem"),                true },
                 { ("Items",       "GetResumeItems"),         true },
                 { ("Items",       "GetResumeItemsLegacy"),   true },
                 { ("UserLibrary", "GetItem"),                true },
+                { ("UserLibrary", "GetItemLegacy"),          true },
                 { ("UserLibrary", "GetLatestMedia"),         true },
                 { ("UserLibrary", "GetLatestMediaLegacy"),   true },
                 { ("TvShows",     "GetEpisodes"),            true },
@@ -195,15 +210,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ApplyStripping(item, cfg);
         }
 
-        // Field-stripping body. This commit lands the framework — the
-        // per-field implementations are added in subsequent commits so
-        // each field's behaviour can be reviewed in isolation.
+        // Field-stripping body. Each block is gated on its own admin
+        // toggle; toggles default ON for Overview / Tags / Chapters /
+        // Taglines (the four highest-risk-leak-vs-lowest-UX-cost fields)
+        // and OFF for everything else.
         private static void ApplyStripping(BaseItemDto item, PluginConfiguration cfg)
         {
-            // Stripping implementations land in subsequent commits.
-            // Ordered roughly by risk-and-frequency.
-            _ = item;
-            _ = cfg;
+            // Overview (episode synopsis) — single biggest spoiler vector.
+            // Replace with the admin-configured placeholder so clients
+            // don't render an empty "Description" header. We *replace*
+            // rather than null because a literal null causes some clients
+            // to fall back to the series description, which can also leak
+            // ("the season everyone dies").
+            if (cfg.SpoilerStripOverview && !string.IsNullOrEmpty(item.Overview))
+            {
+                item.Overview = string.IsNullOrEmpty(cfg.SpoilerOverviewPlaceholder)
+                    ? "Spoiler mode activated"
+                    : cfg.SpoilerOverviewPlaceholder;
+            }
+
+            // Tags — TMDB tags often contain spoiler phrases like
+            // "Death of a main character" or "Wedding". Empty array
+            // (not null) matches what Jellyfin returns for an item
+            // legitimately without tags.
+            if (cfg.SpoilerStripTags && item.Tags != null && item.Tags.Length > 0)
+            {
+                item.Tags = Array.Empty<string>();
+            }
+
+            // Chapter NAMES — a chapter named "X reveals Y" is a major
+            // spoiler. Strip the name but KEEP the timestamp (StartPositionTicks)
+            // so the player's seek bar still shows the chapter divider; the
+            // user can navigate via timestamp without the spoiler text.
+            if (cfg.SpoilerStripChapters && item.Chapters != null)
+            {
+                foreach (var ch in item.Chapters)
+                {
+                    if (ch != null) ch.Name = null;
+                }
+            }
+
+            // Taglines — TMDB taglines like "Everything changes tonight"
+            // are pure spoiler bait. Empty array, same reasoning as Tags.
+            if (cfg.SpoilerStripTaglines && item.Taglines != null)
+            {
+                item.Taglines = Array.Empty<string>();
+            }
         }
 
         // Same per-request user-state cache pattern as SpoilerBlurImageFilter.
