@@ -317,7 +317,7 @@
     "reviews_delete_title": "Smazat recenzi",
     "reviews_admin_delete": "Smazat jako správce",
     "reviews_admin_delete_title": "Smazat recenzi (správce)",
-    "reviews_admin_delete_confirm": "Smazat tuto recenzi od {uživatel}? Toto nelze vrátit zpět.",
+    "reviews_admin_delete_confirm": "Smazat tuto recenzi od {user}? Toto nelze vrátit zpět.",
     "reviews_delete_error_title": "Smazání selhalo",
     "reviews_delete_error_body": "Recenze nemohla být smazána: {err}",
     "reviews_form_error_empty": "Před uložením přidejte hodnocení nebo napište recenzi.",
