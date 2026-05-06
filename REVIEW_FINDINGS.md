@@ -295,6 +295,26 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 12 review (2026-05-07) — post-R11 reviewer pass
+
+Sources: codex GPT-5.5 high (1 HIGH), security-reviewer (zero findings — convergence), silent-failure-hunter (zero findings — convergence).
+
+### HIGH
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R12-codex-H** | codex HIGH | **fixed** | `RouteParentIsSpoilerEpisode` only accepted `Episode` and `Season` parents; non-Episode/Season DTOs (Trailer/Video/Intro extras) hit the `else return false` path. `/Items/{trailerId}/PlaybackInfo` for an extra of a spoiler-list series bypassed the strip — leaking MediaSources/MediaStreams/attachments. Mirrors the R10-codex-H "extras" pattern. **Fix:** added extras branch using reflection to read `SeriesId` (or walking ParentId up to 4 hops to find the parent Series) — over-strip without watched check (no per-extra Played flag). |
+
+### Convergence status
+
+- 2/3 reviewers (security, silent-failure) returned ZERO new findings
+- 1/3 (codex) found one HIGH (now fixed)
+- All HIGH from rounds 1-12 are closed
+- Multiple MEDIUM/LOW deferred with documented rationale (R4-M2 single-item editor, R4-M3 in-place mutation, R5-L2/R7-I1 static dict reload, R6-L1 perf, R6-M3 series-rating fallback, R6-M4 corrupt-state, R7-L1 audit trail, R10-M4 disk persistence)
+- Structural recommendation (recursive response-body sweeper) documented in SECURITY.md as future work
+
+Round 13 verifies R12-codex-H fix; if zero new HIGH from any reviewer, **loop converges**.
+
 ## Round 11 review (2026-05-07) — post-R10 reviewer pass
 
 Sources: codex GPT-5.5 high (1 HIGH), security-reviewer (2 HIGH + structural recommendation), silent-failure-hunter (zero findings).

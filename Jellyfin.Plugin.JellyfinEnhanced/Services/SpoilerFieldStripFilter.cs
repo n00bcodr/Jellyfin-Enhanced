@@ -375,7 +375,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    return false;
+                    // R12-codex-H: extras (Trailer / Video / Intro / etc.)
+                    // attached to a spoiler-list series. Mirrors the
+                    // R10-codex-H isExtra path in StripItem. Use the
+                    // BaseItem's SeriesId (`SeriesPresentationUniqueKey`-
+                    // related — fall back to ParentId lookup if absent).
+                    Guid extraSeriesId = Guid.Empty;
+                    var hasSeriesProp = parent.GetType().GetProperty("SeriesId");
+                    if (hasSeriesProp != null
+                        && hasSeriesProp.GetValue(parent) is Guid sid
+                        && sid != Guid.Empty)
+                    {
+                        extraSeriesId = sid;
+                    }
+                    else if (parent.ParentId != Guid.Empty)
+                    {
+                        // Walk up the parent chain until we find a Series.
+                        var ancestor = _libraryManager.GetItemById(parent.ParentId);
+                        var hops = 0;
+                        while (ancestor != null && hops < 4)
+                        {
+                            if (ancestor is MediaBrowser.Controller.Entities.TV.Series ser)
+                            {
+                                extraSeriesId = ser.Id;
+                                break;
+                            }
+                            if (ancestor.ParentId == Guid.Empty) break;
+                            ancestor = _libraryManager.GetItemById(ancestor.ParentId);
+                            hops++;
+                        }
+                    }
+                    if (extraSeriesId == Guid.Empty) return false;
+                    seriesId = extraSeriesId;
+                    watchedCheck = false; // Extras have no per-extra watched flag — over-strip.
                 }
 
                 if (!seriesId.HasValue || seriesId.Value == Guid.Empty) return false;
