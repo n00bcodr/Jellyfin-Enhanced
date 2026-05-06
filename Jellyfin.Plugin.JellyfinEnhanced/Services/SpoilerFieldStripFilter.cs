@@ -632,6 +632,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     item.OriginalTitle = null;
                 }
             }
+
+            // R9-H1: when title replacement OR overview strip is on, also
+            // sanitize the title-bearing fields on MediaStreams /
+            // MediaSources / Path. Same leak family as R7-M1 / R8-M1
+            // (tag-data stub) but on the standard /Items endpoint
+            // surface. User-muxed mkvs (MakeMKV / Plex / Sonarr renamers)
+            // commonly carry the episode title in:
+            //   - MediaStreams[].Title (raw ffprobe metadata)
+            //   - MediaStreams[].DisplayTitle (getter prepends Title)
+            //   - MediaStreams[].Comment (free-form text)
+            //   - MediaSources[].Path (full filesystem path)
+            //   - MediaSources[].Name (display name)
+            //   - item.Path (top-level filesystem path)
+            // A client rendering "Versions" / "Streams" / inspect panel
+            // would surface these even when item.Name was synthesized.
+            if (cfg.SpoilerReplaceTitle || cfg.SpoilerStripOverview)
+            {
+                if (!string.IsNullOrEmpty(item.Path))
+                {
+                    item.Path = null;
+                }
+                if (item.MediaStreams != null)
+                {
+                    foreach (var s in item.MediaStreams)
+                    {
+                        if (s == null) continue;
+                        s.Title = null;
+                        s.Comment = null;
+                        // DisplayTitle is a read-only computed getter that
+                        // prepends Title — nulling Title makes the getter
+                        // fall back to format-only output ("4K H264 SDR")
+                        // which qualitytags.js parses for codec/HDR
+                        // detection. No explicit assign needed.
+                    }
+                }
+                if (item.MediaSources != null)
+                {
+                    foreach (var ms in item.MediaSources)
+                    {
+                        if (ms == null) continue;
+                        ms.Path = null;
+                        ms.Name = null;
+                    }
+                }
+            }
         }
 
     }

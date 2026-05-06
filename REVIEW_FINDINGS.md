@@ -295,6 +295,32 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 9 review (2026-05-07) — post-R8 reviewer pass
+
+Sources: codex GPT-5.5 high (1 MEDIUM), security-reviewer (1 HIGH), silent-failure-hunter (no findings).
+
+### HIGH
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R9-H1** | `Services/SpoilerFieldStripFilter.cs:ApplyStripping` | security HIGH + codex MEDIUM | **fixed** | Same family as R7-M1 / R8-M1 — but on the **/Items endpoint surface** (not the tag-data stub). `ApplyStripping` rewrote `Name` / `SortName` / `OriginalTitle` only; it left `item.Path`, `MediaStreams[].Title/Comment/DisplayTitle`, and `MediaSources[].Path/Name` unstripped. Clients rendering "Versions" / "Streams" / inspect panels would surface the raw episode title via these fields even though `Name` was synthesized. **Fix:** when `SpoilerReplaceTitle` OR `SpoilerStripOverview` is on, null `item.Path`, all `MediaStreams[].Title/Comment` (DisplayTitle is a read-only getter that derives from Title — nulling Title sanitizes it transitively), and all `MediaSources[].Path/Name`. |
+
+### MEDIUM
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R9-M1** | `Controllers/JellyfinEnhancedController.cs:GetTagCache` (StreamData unstripped) | codex MEDIUM | **fixed** | `TagCacheService.BuildEntryForItem` populates `StreamData.ItemName / ItemPath / Sources[].Path/Name / Streams[].DisplayTitle` from raw MediaSources. The R5/R6 tag-cache strip block only nulled StreamData when `SpoilerStripTags` was on — under rating-only strip + `SpoilerReplaceTitle` the title leaked via the cache pipeline. **Fix:** added `sanitizeTitleStreams = SpoilerReplaceTitle || SpoilerStripOverview` gate; when on and StreamData wasn't already wiped, clone StreamData with title-bearing fields nulled (mirrors R5-C1 cross-user mutation safety). |
+
+### Convergence
+
+R9 found two fixes in the same conceptual leak family that has now spread across 4 surfaces:
+- R7-M1: `GetTagData` stub MediaSources → fixed
+- R8-M1: `GetTagData` stub MediaStreams[].DisplayTitle → fixed
+- **R9-H1**: SpoilerFieldStripFilter standard /Items surface → fixed
+- **R9-M1**: TagCacheService stream-data → fixed
+
+Round 10 needed to confirm convergence per JE skill rule. The leak family was expanding in scope each round; if R10 surfaces yet another instance, the pattern suggests sweeping all DTO surfaces for title-bearing fields rather than per-surface fixes.
+
 ## Round 8 review (2026-05-07) — post-R7 reviewer pass
 
 Sources: codex GPT-5.5 high (no findings), code-reviewer (no findings), silent-failure-hunter (no findings), security-reviewer.

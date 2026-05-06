@@ -4207,7 +4207,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var stripGenresEnabled = spCfg?.SpoilerStripTags == true;
             var stripCommunityRatingEnabled = spCfg?.SpoilerStripCommunityRating == true;
             var stripCriticRatingEnabled = spCfg?.SpoilerStripCriticRating == true;
-            var anyStripEnabled = stripGenresEnabled || stripCommunityRatingEnabled || stripCriticRatingEnabled;
+            // R9-M1: title replacement on its own should ALSO trigger the
+            // tag-cache strip so the StreamData title-bearing fields don't
+            // leak the episode title via the tag-cache pipeline.
+            var sanitizeTitleStreams = spCfg?.SpoilerReplaceTitle == true || spCfg?.SpoilerStripOverview == true;
+            var anyStripEnabled = stripGenresEnabled || stripCommunityRatingEnabled || stripCriticRatingEnabled || sanitizeTitleStreams;
             if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
                 // R5-M7: strict-read so corruption is observable (rate-
@@ -4265,6 +4269,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                         if (stripCommunityRatingEnabled) stripped.CommunityRating = null;
                         if (stripCriticRatingEnabled) stripped.CriticRating = null;
+                        // R9-M1: when StreamData wasn't already wiped by the
+                        // tag-strip toggle but title replacement / overview
+                        // strip is on, sanitize the title-bearing fields
+                        // inside StreamData. Clone the StreamData to avoid
+                        // cross-user mutation (R5-C1 family). qualitytags.js
+                        // recomputes overlay text from Codec / Height /
+                        // VideoRangeType — losing DisplayTitle / ItemName /
+                        // ItemPath / Source Path/Name on stripped items is
+                        // the same trade-off as R7-M1 / R8-M1.
+                        if (sanitizeTitleStreams && stripped.StreamData != null && !stripGenresEnabled)
+                        {
+                            var sd = stripped.StreamData;
+                            var clonedSd = new Jellyfin.Plugin.JellyfinEnhanced.Model.TagStreamData
+                            {
+                                ItemName = null,
+                                ItemPath = null,
+                                Streams = sd.Streams?.Select(st => new Jellyfin.Plugin.JellyfinEnhanced.Model.TagMediaStream
+                                {
+                                    Type = st.Type,
+                                    Language = st.Language,
+                                    Codec = st.Codec,
+                                    CodecTag = st.CodecTag,
+                                    Profile = st.Profile,
+                                    Height = st.Height,
+                                    Channels = st.Channels,
+                                    ChannelLayout = st.ChannelLayout,
+                                    VideoRangeType = st.VideoRangeType,
+                                    DisplayTitle = null,
+                                }).ToList(),
+                                Sources = sd.Sources?.Select(_ => new Jellyfin.Plugin.JellyfinEnhanced.Model.TagMediaSource
+                                {
+                                    Path = null,
+                                    Name = null,
+                                }).ToList(),
+                            };
+                            stripped.StreamData = clonedSd;
+                        }
                         items[kvp.Key] = stripped;
                     }
                 }
