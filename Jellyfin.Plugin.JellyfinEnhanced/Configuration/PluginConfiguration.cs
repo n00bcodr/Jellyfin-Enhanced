@@ -271,6 +271,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentDefaultFilterNextUp = true;
             HiddenContentDefaultFilterContinueWatching = true;
             HiddenContentDefaultExperimentalHideCollections = false;
+
+            // Spoiler Blur — server-wide master switch for the per-show feature
+            // that blurs images of unwatched episodes via the Jellyfin image API.
+            // Defaults match property initializers; both must agree so XML upgrade
+            // paths land on the same value.
+            SpoilerBlurEnabled = false;
+            SpoilerBlurIntensity = 40;
         }
 
         // Jellyfin Enhanced Settings
@@ -542,6 +549,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentDefaultFilterNextUp { get; set; }
         public bool HiddenContentDefaultFilterContinueWatching { get; set; }
         public bool HiddenContentDefaultExperimentalHideCollections { get; set; }
+
+        // Spoiler Blur — when enabled by an admin AND opted into per-show by
+        // a user, the plugin replaces images of UNWATCHED episodes of those
+        // shows with a Gaussian-blurred version on the wire (SkiaSharp
+        // CreateBlur, sigma=Intensity, tile-mode Clamp). Done in an MVC
+        // action filter so every client (web, TV, iOS, Android) gets the
+        // blurred bytes natively.
+        public bool SpoilerBlurEnabled { get; set; } = false;
+        // Intensity is the Gaussian sigma value passed to Skia. 1 = barely
+        // blurred, 100 = heavily blurred. Default 40 hides scene content
+        // while keeping silhouettes and dominant colours visible.
+        public int SpoilerBlurIntensity { get; set; } = 40;
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.

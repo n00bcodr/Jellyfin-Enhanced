@@ -52,7 +52,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<HiddenContentResponseFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
-            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<HiddenContentResponseFilter>());
+
+            // Spoiler Blur: replaces image bytes for unaired episodes with a Gaussian-blurred
+            // version. Runs as an MVC action filter scoped to the Image controller so every
+            // client (web/TV/iOS/Android) gets the blurred bytes via the native image API.
+            serviceCollection.AddSingleton<ImageBlurService>();
+            serviceCollection.AddSingleton<SpoilerBlurImageFilter>();
+
+            serviceCollection.Configure<MvcOptions>(o =>
+            {
+                o.Filters.AddService<HiddenContentResponseFilter>();
+                o.Filters.AddService<SpoilerBlurImageFilter>();
+            });
         }
     }
 }

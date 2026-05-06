@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -64,6 +65,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string DisplayLanguage { get; set; } = string.Empty;
         public string CalendarDisplayMode { get; set; } = "list";
         public string CalendarDefaultViewMode { get; set; } = "agenda";
+    }
+
+    // Per-user spoiler-blur state. Stored in spoilerblur.json alongside
+    // bookmarks.json / hidden-content.json. Each entry marks a series the user
+    // has opted into spoiler blur for; the image filter blurs every UNWATCHED
+    // episode of that series (both already-aired-but-not-watched, and unaired).
+    public class SpoilerBlurSeriesEntry
+    {
+        public string SeriesId { get; set; } = string.Empty;
+        // Display name captured at enable time so the management UI doesn't
+        // need a separate library lookup per row. Updated opportunistically.
+        public string SeriesName { get; set; } = string.Empty;
+        // ISO 8601 timestamp.
+        public string EnabledAt { get; set; } = string.Empty;
+    }
+
+    public class UserSpoilerBlur
+    {
+        // Keyed by series ID in N format (no dashes), case-insensitive — matches
+        // how UserHiddenContent stores keys.
+        //
+        // Backing setter re-wraps incoming dictionaries with
+        // StringComparer.OrdinalIgnoreCase. System.Text.Json deserialization
+        // otherwise silently drops the OrdinalIgnoreCase comparer (it constructs
+        // a default-comparer Dictionary and assigns to the setter), which would
+        // break case-insensitive lookups for any code path that reads via STJ.
+        // Newtonsoft.Json (the manager's primary serializer) preserves the
+        // comparer when MissingMemberHandling is Ignore + ObjectCreationHandling
+        // is Auto — but we don't rely on that.
+        private Dictionary<string, SpoilerBlurSeriesEntry> _series
+            = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SpoilerBlurSeriesEntry> Series
+        {
+            get => _series;
+            set => _series = value == null
+                ? new Dictionary<string, SpoilerBlurSeriesEntry>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, SpoilerBlurSeriesEntry>(value, StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     public class UserShortcuts

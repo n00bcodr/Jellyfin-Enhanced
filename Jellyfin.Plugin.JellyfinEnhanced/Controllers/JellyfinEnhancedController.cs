@@ -2800,6 +2800,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentUsePluginPages,
                 config.HiddenContentUseCustomTabs,
 
+                // Spoiler Blur — frontend uses these to decide whether the per-show
+                // toggle should appear at all and (eventually) for client-side previews.
+                config.SpoilerBlurEnabled,
+                config.SpoilerBlurIntensity,
             });
         }
 
@@ -3405,6 +3409,184 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        // ─── Spoiler Blur ─── Per-user list of series IDs the user has opted
+        // into spoiler-mode for. The image filter (Services/SpoilerBlurImageFilter.cs)
+        // reads spoilerblur.json on every image request and blurs every UNWATCHED
+        // episode of any series in that list. Watched episodes pass through unblurred.
+
+        [HttpGet("spoiler-blur/series")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerBlurSeries()
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            var userKey = userId.Value.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+
+            // R2-M1: distinguish "file missing" (return empty + 200, normal
+            // first-time state) from "file unreadable / corrupt" (return 503
+            // with a backup-already-made hint). Lenient read silently returns
+            // empty on parse error, which would make the user think their
+            // spoiler list was wiped.
+            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+            {
+                return Ok(new UserSpoilerBlur());
+            }
+            try
+            {
+                var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                    userKey, fileName);
+                return Ok(state);
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+        }
+
+        [HttpPost("spoiler-blur/series/{seriesId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurForSeries(string seriesId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(seriesId, out var seriesGuid)
+                && !Guid.TryParseExact(seriesId, "N", out seriesGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid seriesId." });
+            }
+
+            // Confirm the item exists and is a series the user has access to.
+            // GetItemById<T>(id, user) returns null when the item is filtered
+            // out by library access — fail with 404 so we don't leak existence.
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+            var item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(seriesGuid, jUser);
+            if (item is not MediaBrowser.Controller.Entities.TV.Series series)
+            {
+                return NotFound(new { success = false, message = "Series not found or not accessible." });
+            }
+
+            var key = seriesGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                // M2: RmwUserConfiguration uses GetUserConfigurationStrict, which
+                // refuses corrupt JSON (and backs up to *.corrupt-<ts>) instead
+                // of silently returning empty + clobbering the user's other opt-ins.
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    // L6: preserve original EnabledAt when re-toggling an
+                    // already-enabled series. Update SeriesName opportunistically
+                    // (covers shows the user renamed in a metadata refresh).
+                    // R2-M2: return 0 (no-write) when truly unchanged so we
+                    // don't burn a disk write on every re-toggle of the same
+                    // series with the same name.
+                    if (state.Series.TryGetValue(key, out var existing))
+                    {
+                        var newName = series.Name ?? existing.SeriesName;
+                        if (string.Equals(existing.SeriesName, newName, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.SeriesName = newName;
+                        return 1;
+                    }
+                    state.Series[key] = new SpoilerBlurSeriesEntry
+                    {
+                        SeriesId = key,
+                        SeriesName = series.Name ?? string.Empty,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+                _logger.Info($"Spoiler blur enabled for series '{series.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, seriesId = key, name = series.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to enable spoiler blur for series {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        [HttpDelete("spoiler-blur/series/{seriesId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurForSeries(string seriesId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(seriesId, out var seriesGuid)
+                && !Guid.TryParseExact(seriesId, "N", out seriesGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid seriesId." });
+            }
+
+            var key = seriesGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                bool removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    removed = state.Series.Remove(key);
+                    return removed ? 1 : 0;
+                });
+                if (!removed)
+                {
+                    // R2-M3: log so a desync between client and server (two
+                    // tabs, stale local cache, etc.) is observable instead
+                    // of silently returning success.
+                    _logger.Info($"Spoiler blur disable was a no-op for series {key} by {ResolveUserDisplay(userKey)} — series was not in the user's spoiler-blur list.");
+                    return Ok(new { success = true, seriesId = key, removed = false });
+                }
+                _logger.Info($"Spoiler blur disabled for series {key} by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, seriesId = key, removed = true });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to disable spoiler blur for series {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
             }
         }
 

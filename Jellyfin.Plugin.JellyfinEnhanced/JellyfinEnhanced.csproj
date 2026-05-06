@@ -15,6 +15,12 @@
       <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" />
       <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" />
       <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+      <!--
+        Spoiler Blur uses SkiaSharp for the Gaussian blur. Jellyfin ships SkiaSharp.dll in /usr/lib/jellyfin/bin/ as its own thumbnail engine, so we compile against the package but exclude the runtime asset (Private=false + ExcludeAssets=runtime). The host's already-loaded copy wins. This keeps the plugin DLL deployment a single file with no native deps.
+      -->
+      <PackageReference Include="SkiaSharp" Version="3.116.1" PrivateAssets="all">
+        <ExcludeAssets>runtime</ExcludeAssets>
+      </PackageReference>
     </ItemGroup>
 
 

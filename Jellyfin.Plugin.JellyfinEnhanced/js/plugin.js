@@ -511,6 +511,7 @@
                 'enhanced/hidden-content.js',
                 'enhanced/hidden-content-page.js',
                 'enhanced/hidden-content-custom-tab.js',
+                'enhanced/spoiler-blur.js',
                 'enhanced/subtitles.js',
                 'enhanced/themer.js',
                 'enhanced/ui.js',
@@ -632,6 +633,8 @@
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
             // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
             if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
+            // Spoiler blur loads its per-user enabled-series list once at startup. The toggle button on series detail pages reads from that cache.
+            if (JE.pluginConfig?.SpoilerBlurEnabled && typeof JE.spoilerBlur?.init === 'function') JE.spoilerBlur.init();
 
             if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
                 JE.initializeColoredRatings();

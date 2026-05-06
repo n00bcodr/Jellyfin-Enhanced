@@ -771,6 +771,33 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">Spoiler Blur</legend>
+                        <div class="configSection">
+                            <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
+                                <div class="je-info-banner-row">
+                                    <i class="material-icons je-info-icon">blur_on</i>
+                                    <div>
+                                        <strong>Spoiler Blur</strong> blurs images of unaired episodes server-side, so the silhouette is still visible but content can't be seen. Works on every Jellyfin client (Web, Android TV, Roku, iOS Swiftfin, Android) because the blur happens on the wire, not in the browser. Each user opts in from their own settings panel; this section is the server-wide kill switch.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer je-main-feature"><label><input id="spoilerBlurEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Spoiler Blur</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerBlurEnabled">
+                                <div class="fieldDescription je-field-desc-xl">When off, the per-user toggle has no effect — no images are ever blurred. When on, users who enable spoiler blur in their settings will see future episode images blurred on every client.</div>
+                            </div>
+
+                            <div class="inputContainer" data-gated-by="spoilerBlurEnabled">
+                                <label class="inputLabel inputLabelUnfocused" for="spoilerBlurIntensity">Blur intensity</label>
+                                <input id="spoilerBlurIntensity" type="number" min="5" max="100" step="1" is="emby-input"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="spoilerBlurIntensity" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">Gaussian blur sigma. Higher numbers blur more. 5 is mild, 40 is the recommended default, 100 is heavy. The silhouette and dominant colours stay visible at every level so users can still tell something is there.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">Requests Page</legend>
                         <div class="configSection">
                             <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
@@ -4195,6 +4222,11 @@
                     el.checked = (v === undefined || v === null) ? t[2] : !!v;
                 });
 
+                // Spoiler Blur settings
+                document.querySelector('#spoilerBlurEnabled').checked = config.SpoilerBlurEnabled === true;
+                var __sbSigma = document.querySelector('#spoilerBlurIntensity');
+                if (__sbSigma) __sbSigma.value = (config.SpoilerBlurIntensity >= 5 && config.SpoilerBlurIntensity <= 100) ? config.SpoilerBlurIntensity : 40;
+
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
 
@@ -4508,6 +4540,16 @@
                 var pascal = id.charAt(0).toUpperCase() + id.slice(1);
                 config[pascal] = !!el.checked;
             });
+
+            // Spoiler Blur settings
+            config.SpoilerBlurEnabled = document.querySelector('#spoilerBlurEnabled').checked;
+            var __sbSigmaSave = document.querySelector('#spoilerBlurIntensity');
+            if (__sbSigmaSave) {
+                var __sbSigmaVal = parseInt(__sbSigmaSave.value, 10);
+                if (!isFinite(__sbSigmaVal) || __sbSigmaVal < 5) __sbSigmaVal = 5;
+                if (__sbSigmaVal > 100) __sbSigmaVal = 100;
+                config.SpoilerBlurIntensity = __sbSigmaVal;
+            }
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';
@@ -5370,7 +5412,8 @@
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
-            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
+            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity'] }
         ];
 
         /**
