@@ -170,7 +170,7 @@
     "jellyseerr_modal_cancel": "取消",
     "jellyseerr_modal_request": "申請",
     "jellyseerr_modal_toast_select_season": "{{icon:warning}} 請至少選擇一季",
-    "jellyseerr_modal_requesting": "申請中…",
+    "jellyseerr_modal_requesting": "申請中",
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} 已申請「{title}」的 {count} 季",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} 申請季度失敗",
     "jellyseerr_modal_title_movie": "申請電影",
