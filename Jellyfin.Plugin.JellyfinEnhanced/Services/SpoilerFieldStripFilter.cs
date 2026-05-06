@@ -280,6 +280,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 item.Taglines = Array.Empty<string>();
             }
 
+            // CommunityRating — a 9.8/10 rating on a specific episode
+            // implies a major event. Off by default; opt-in for users who
+            // find ratings spoiler-y. Setting to null is the right call —
+            // empty/zero would render as "0/10" in some clients.
+            if (cfg.SpoilerStripCommunityRating)
+            {
+                item.CommunityRating = null;
+            }
+
+            // CriticRating — same rationale.
+            if (cfg.SpoilerStripCriticRating)
+            {
+                item.CriticRating = null;
+            }
+
+            // PremiereDate (air date) — a multi-month gap before an episode
+            // can imply "season finale" / "long-anticipated reveal". Strict
+            // mode users opt in. Clearing this also helps with calendar
+            // surfaces that show "airs on YYYY-MM-DD" — though those
+            // surfaces are mostly unaired (i.e. the user has no chance to
+            // watch yet) and would not be in the spoiler list anyway.
+            if (cfg.SpoilerStripPremiereDate)
+            {
+                item.PremiereDate = null;
+            }
+
             // Cast stripping. Two modes:
             //   - "GuestStars" (default when SpoilerStripCast on): drop only
             //     People whose Type matches the GuestStar enum value.
