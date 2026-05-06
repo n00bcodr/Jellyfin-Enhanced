@@ -668,16 +668,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var hint in result.SearchHints)
             {
                 if (hint == null) continue;
-                if (hint.Type != Jellyfin.Data.Enums.BaseItemKind.Episode) continue;
+                var isEpisodeHint = hint.Type == Jellyfin.Data.Enums.BaseItemKind.Episode;
+                var isMovieHint = hint.Type == Jellyfin.Data.Enums.BaseItemKind.Movie;
+                if (!isEpisodeHint && !isMovieHint) continue;
                 if (hint.Id == Guid.Empty) continue;
 
-                // Look up the actual item to get SeriesId; cheap in-memory.
-                // R5-H1: when the lookup throws (transient DB hiccup,
-                // ObjectDisposedException during shutdown, etc.) the prior
-                // `continue` left the hint UNSTRIPPED — fail-OPEN. Mirror
-                // ResolvePlayedServerSide and fail-CLOSED: rate-limited
-                // warn + sanitize the hint name before continuing so the
-                // spoilery title doesn't leak through autocomplete.
+                // Look up the actual item. For Episodes we need SeriesId
+                // for spoiler-list membership; for Movies the hint.Id is
+                // the movie ID directly. R5-H1: lookup-throw fails-CLOSED.
                 MediaBrowser.Controller.Entities.BaseItem? actualItem;
                 try { actualItem = _libraryManager.GetItemById(hint.Id); }
                 catch (Exception ex)
@@ -686,28 +684,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         "searchhint-lookup:" + ex.GetType().FullName,
                         $"Spoiler field strip: SearchHint library lookup failed for {hint.Id}: {ex.Message}");
                     hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
+                    hint.MatchedTerm = null;
                     continue;
                 }
-                if (actualItem is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
-                if (ep.SeriesId == Guid.Empty) continue;
-                if (!userState.Series.ContainsKey(ep.SeriesId.ToString("N"))) continue;
 
-                if (ResolvePlayedServerSide(userId, hint.Id)) continue;
-
-                // Replace the title — SearchHints don't expose Overview / Tags
-                // so the title rewrite is the main spoiler vector here.
-                if (cfg.SpoilerReplaceTitle && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
+                if (isEpisodeHint)
                 {
-                    hint.Name = $"Season {hint.ParentIndexNumber.Value}, Episode {hint.IndexNumber.Value}";
+                    if (actualItem is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
+                    if (ep.SeriesId == Guid.Empty) continue;
+                    if (!userState.Series.ContainsKey(ep.SeriesId.ToString("N"))) continue;
+                    if (ResolvePlayedServerSide(userId, hint.Id)) continue;
+
+                    if (cfg.SpoilerReplaceTitle && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
+                    {
+                        hint.Name = $"Season {hint.ParentIndexNumber.Value}, Episode {hint.IndexNumber.Value}";
+                    }
+                    else if (cfg.SpoilerStripOverview)
+                    {
+                        hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
+                    }
                 }
-                else if (cfg.SpoilerStripOverview)
+                else
                 {
-                    // Even when SpoilerReplaceTitle is off, the existing
-                    // SpoilerStripOverview toggle implies "I want spoilers
-                    // hidden" — replace the search-result name with the
-                    // placeholder so spoilery titles like "The Death of X"
-                    // don't appear in autocomplete.
-                    hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
+                    // R16-M1: Movie hint path. Spoiler-list keyed by movie
+                    // ID directly; watched check via the same server-side
+                    // helper.
+                    if (actualItem is not MediaBrowser.Controller.Entities.Movies.Movie) continue;
+                    if (!userState.Movies.ContainsKey(hint.Id.ToString("N"))) continue;
+                    if (ResolvePlayedServerSide(userId, hint.Id)) continue;
+
+                    if (cfg.SpoilerReplaceTitle || cfg.SpoilerStripOverview)
+                    {
+                        // Movies have no Season/Episode index — fall back to
+                        // the admin placeholder either way.
+                        hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
+                    }
                 }
 
                 // R10-M3: MatchedTerm echoes the substring of the
@@ -715,7 +726,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // bypassing the Name rewrite. e.g. user searches
                 // "Optimus" → MatchedTerm = "Optimus" from the raw
                 // pre-strip title. Null it so autocomplete doesn't
-                // surface the substring.
+                // surface the substring. Applies to both Episode and
+                // Movie hints.
                 hint.MatchedTerm = null;
             }
         }

@@ -295,6 +295,23 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 16 (2026-05-07) — final convergence
+
+Sources: codex (1 MEDIUM, fixed), silent-failure-hunter (zero findings — explicit CONVERGENCE).
+
+### MEDIUM
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R16-M1** | codex MEDIUM | **fixed** | `StripSearchHints` only handled Episode hints; movie autocomplete leaked raw Name + MatchedTerm even when SpoilerReplaceTitle/Overview was on. **Fix:** added Movie branch — same library lookup + watched check, replaces Name with placeholder when title/overview strip applies, nulls MatchedTerm uniformly. |
+
+### Convergence — explicitly declared
+
+- silent-failure-hunter: "CONVERGENCE REACHED. Round 16 finds zero new HIGH/CRITICAL issues."
+- codex: R15 fix verified; only one MEDIUM (R16-M1, now fixed); no remaining early-bail movies-only gaps; movies-aware feature gates consistent across all five locations.
+
+After R16-M1: 0 CRITICAL, 0 HIGH, 0 MEDIUM open. Loop terminates per JE skill rule "one full parallel pass with zero new HIGH/P1/P2 findings". Branch is ready to merge.
+
 ## Round 15 review (2026-05-07) — post-R14 reviewer pass
 
 Sources: codex GPT-5.5 high (1 HIGH), security-reviewer (zero findings — convergence), silent-failure-hunter (zero findings — convergence).
