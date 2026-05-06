@@ -81,6 +81,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
+    // Per-movie spoiler-blur entry. Distinct from SpoilerBlurSeriesEntry
+    // so the storage shape is explicit and the management UI can render
+    // movies + series in separate sections without type-sniffing.
+    public class SpoilerBlurMovieEntry
+    {
+        public string MovieId { get; set; } = string.Empty;
+        public string MovieName { get; set; } = string.Empty;
+        public string EnabledAt { get; set; } = string.Empty;
+    }
+
     public class UserSpoilerBlur
     {
         // Keyed by series ID in N format (no dashes), case-insensitive — matches
@@ -102,6 +112,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             set => _series = value == null
                 ? new Dictionary<string, SpoilerBlurSeriesEntry>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, SpoilerBlurSeriesEntry>(value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        // Movies the user has opted into spoiler-blur for. Keyed the same
+        // way as Series — N-format movie GUID, case-insensitive. Existing
+        // spoilerblur.json files written before movie support deserialize
+        // with an empty dict (Newtonsoft default).
+        private Dictionary<string, SpoilerBlurMovieEntry> _movies
+            = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SpoilerBlurMovieEntry> Movies
+        {
+            get => _movies;
+            set => _movies = value == null
+                ? new Dictionary<string, SpoilerBlurMovieEntry>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, SpoilerBlurMovieEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
     }
 

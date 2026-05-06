@@ -12,20 +12,29 @@
 
         const logPrefix = '🪼 Jellyfin Enhanced: Reviews:';
 
-        // Suppress the reviews panel when the current Series has spoiler
-        // mode enabled by the user AND the admin has SpoilerStripReviews
-        // on. TMDB reviews routinely contain plot spoilers from arbitrary
-        // points in the show, and user-written reviews share that risk.
-        // Reviews only render on Movie / Series pages today; Movies don't
-        // have a per-item spoiler list, so the suppression only applies
-        // to Series.
-        function shouldSuppressForSpoilerMode(item, mediaType) {
+        // Suppress the reviews panel when the current Series OR Movie has
+        // spoiler mode enabled by the user AND the admin has
+        // SpoilerStripReviews on. TMDB reviews routinely contain plot
+        // spoilers, and user-written reviews share that risk.
+        // Async because the spoiler-blur module loads its state lazily;
+        // calling whenLoaded() ensures we have an authoritative answer
+        // even on a cold page load before the state XHR completes.
+        async function shouldSuppressForSpoilerMode(item, mediaType) {
             try {
-                if (mediaType !== 'Series') return false;
+                if (mediaType !== 'Series' && mediaType !== 'Movie') return false;
                 if (!JE.pluginConfig?.SpoilerBlurEnabled) return false;
-                if (!JE.pluginConfig?.SpoilerStripReviews) return false;
-                if (!JE.spoilerBlur?.isEnabledFor) return false;
-                return JE.spoilerBlur.isEnabledFor(item?.Id || '');
+                // Default-on if the field is missing (older plugin XML
+                // without the key — server returns the C# default true).
+                var stripReviews = JE.pluginConfig?.SpoilerStripReviews;
+                if (stripReviews === false) return false;
+                if (!JE.spoilerBlur) return false;
+                if (typeof JE.spoilerBlur.whenLoaded === 'function') {
+                    await JE.spoilerBlur.whenLoaded();
+                }
+                if (mediaType === 'Movie') {
+                    return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
+                }
+                return !!(JE.spoilerBlur.isEnabledFor && JE.spoilerBlur.isEnabledFor(item?.Id || ''));
             } catch (_) {
                 return false;
             }
@@ -797,7 +806,7 @@
                     : await ApiClient.getItem(userId, itemId);
                 const mediaType = item?.Type;
 
-                if (shouldSuppressForSpoilerMode(item, mediaType)) {
+                if (await shouldSuppressForSpoilerMode(item, mediaType)) {
                     removeReviewsSection(contextPage);
                     return;
                 }
@@ -1055,7 +1064,7 @@
                         : await ApiClient.getItem(userId, itemId);
                     const mediaType = item?.Type;
 
-                    if (shouldSuppressForSpoilerMode(item, mediaType)) {
+                    if (await shouldSuppressForSpoilerMode(item, mediaType)) {
                         removeReviewsSection(visiblePage);
                         return;
                     }

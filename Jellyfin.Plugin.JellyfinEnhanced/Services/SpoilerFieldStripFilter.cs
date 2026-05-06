@@ -432,6 +432,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (item == null) return;
 
+            // Movie path (added alongside Episode/Season): movies are tracked
+            // in their own dict by movie ID. Watched check via UserData.Played
+            // directly — no per-episode aggregation. Same field-strip body as
+            // Episode (Overview / Tags / Path / streams / etc).
+            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
+            {
+                if (item.Id == Guid.Empty) return;
+                if (!userState.Movies.ContainsKey(item.Id.ToString("N"))) return;
+                bool moviePlayed;
+                if (item.UserData != null) moviePlayed = item.UserData.Played;
+                else moviePlayed = ResolvePlayedServerSide(userId, item.Id);
+                if (moviePlayed) return;
+                ApplyStripping(item, cfg);
+                return;
+            }
+
             // R10-codex: trailer / intro / special-feature DTOs from
             // GetIntros / GetLocalTrailers / GetSpecialFeatures routes
             // arrive with Type=Trailer/Video and would prior have early-
@@ -831,6 +847,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     && item.IndexNumber.HasValue)
                 {
                     item.Name = $"Season {item.IndexNumber.Value}";
+                    item.SortName = null;
+                    item.OriginalTitle = null;
+                }
+                else if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
+                {
+                    // Movies have no Season/Episode index — fall back to
+                    // the admin-set placeholder string. SanitizePlaceholder
+                    // handles HTML / max-length already.
+                    item.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
                     item.SortName = null;
                     item.OriginalTitle = null;
                 }

@@ -3593,6 +3593,151 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        public class SpoilerBlurMovieRequest
+        {
+            public string? MovieName { get; set; }
+        }
+
+        // Per-movie spoiler-blur opt-in. Movies stored separately from
+        // Series in the same spoilerblur.json file (UserSpoilerBlur.Movies
+        // dict). Movie-level spoiler mode blurs the movie's own poster /
+        // backdrop and field-strips its metadata until the user marks the
+        // movie Played.
+        [HttpPost("spoiler-blur/movies/{movieId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurForMovie(string movieId, [FromBody] SpoilerBlurMovieRequest? body = null)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(movieId, out var movieGuid)
+                && !Guid.TryParseExact(movieId, "N", out movieGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid movieId." });
+            }
+
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+            var item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(movieGuid, jUser);
+            if (item is not MediaBrowser.Controller.Entities.Movies.Movie movie)
+            {
+                return NotFound(new { success = false, message = "Movie not found or not accessible." });
+            }
+
+            var key = movieGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            // Sanitize provided MovieName the same way the controller treats
+            // the SeriesName backup path: strip HTML, cap length. The display
+            // value is operator-visible only via management UI — defense-in-
+            // depth against a malicious client posting a stored-XSS gadget
+            // for a future innerHTML consumer.
+            string movieNameSanitized = (movie.Name ?? string.Empty);
+            if (body?.MovieName is string clientName && !string.IsNullOrEmpty(clientName))
+            {
+                var cleaned = System.Text.RegularExpressions.Regex.Replace(clientName, "<[^>]+>", string.Empty);
+                cleaned = cleaned.Replace("<", string.Empty).Replace(">", string.Empty)
+                    .Replace("\"", string.Empty).Replace("'", string.Empty).Replace("`", string.Empty);
+                if (cleaned.Length > 200) cleaned = cleaned.Substring(0, 200);
+                if (!string.IsNullOrWhiteSpace(cleaned)) movieNameSanitized = cleaned;
+            }
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    if (state.Movies.TryGetValue(key, out var existing))
+                    {
+                        if (string.Equals(existing.MovieName, movieNameSanitized, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.MovieName = movieNameSanitized;
+                        return 1;
+                    }
+                    state.Movies[key] = new SpoilerBlurMovieEntry
+                    {
+                        MovieId = key,
+                        MovieName = movieNameSanitized,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+                _logger.Info($"Spoiler blur enabled for movie '{movie.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, movieId = key, name = movie.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to enable spoiler blur for movie {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        [HttpDelete("spoiler-blur/movies/{movieId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurForMovie(string movieId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(movieId, out var movieGuid)
+                && !Guid.TryParseExact(movieId, "N", out movieGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid movieId." });
+            }
+
+            var key = movieGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                bool removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    removed = state.Movies.Remove(key);
+                    return removed ? 1 : 0;
+                });
+                if (!removed)
+                {
+                    _logger.Info($"Spoiler blur disable was a no-op for movie {key} by {ResolveUserDisplay(userKey)} — movie was not in the user's spoiler-blur list.");
+                    return Ok(new { success = true, movieId = key, removed = false });
+                }
+                _logger.Info($"Spoiler blur disabled for movie {key} by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, movieId = key, removed = true });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to disable spoiler blur for movie {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
         // Picks the WIDER of two HC scopes; disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.
@@ -4218,7 +4363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // limited warn) rather than silently passing through.
                 UserSpoilerBlur? spState = LoadSpoilerStateForTagStrip(userId);
 
-                if (spState != null && spState.Series.Count > 0)
+                if (spState != null && (spState.Series.Count > 0 || spState.Movies.Count > 0))
                 {
                     foreach (var kvp in items.ToList())
                     {
@@ -4226,9 +4371,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         if (entry == null) continue;
                         var isEpisode = string.Equals(entry.Type, "Episode", StringComparison.Ordinal);
                         var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
-                        if (!isEpisode && !isSeason) continue;
-                        if (string.IsNullOrEmpty(entry.SeriesId)) continue;
-                        if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
+                        var isMovie = string.Equals(entry.Type, "Movie", StringComparison.Ordinal);
+                        if (!isEpisode && !isSeason && !isMovie) continue;
+                        if (isMovie)
+                        {
+                            // Movie spoiler list keyed by movie ID directly,
+                            // not SeriesId. Skip to the movie-specific match.
+                            if (!spState.Movies.ContainsKey(kvp.Key)) continue;
+                        }
+                        else
+                        {
+                            if (string.IsNullOrEmpty(entry.SeriesId)) continue;
+                            if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
+                        }
 
                         // Look up played state via IUserDataManager (cached in
                         // memory, no disk hit). Avoids requiring a library
@@ -4247,6 +4402,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             if (entryItem != null)
                             {
                                 if (isEpisode)
+                                {
+                                    var ud = _userDataManager.GetUserData(user, entryItem);
+                                    if (ud?.Played == true) continue;
+                                }
+                                else if (isMovie)
                                 {
                                     var ud = _userDataManager.GetUserData(user, entryItem);
                                     if (ud?.Played == true) continue;
@@ -4530,6 +4690,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // R4-L6: align with field-strip filter (which sets
                             // Tags = Array.Empty<string>()).
                             Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
+                        });
+                        continue;
+                    }
+                }
+
+                // Movie-stub: when the item is a Movie the user has spoiler
+                // mode enabled for AND it's unwatched, return the same
+                // Id+Type stub shape so JE tag overlays don't render on the
+                // blurred poster. Mirrors the Episode stub.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.Movies.Movie spMovie
+                    && spoilerState.Movies.ContainsKey(spMovie.Id.ToString("N")))
+                {
+                    var spMovieUd = _userDataManager.GetUserData(user, spMovie);
+                    if (spMovieUd?.Played != true)
+                    {
+                        string? stubName = item.Name;
+                        if (spoilerCfg!.SpoilerReplaceTitle)
+                        {
+                            // Movies have no Season/Episode index — fall back
+                            // to the admin-set placeholder text.
+                            stubName = string.IsNullOrWhiteSpace(spoilerCfg.SpoilerOverviewPlaceholder)
+                                ? "Spoiler mode activated"
+                                : spoilerCfg.SpoilerOverviewPlaceholder;
+                        }
+
+                        List<object>? stubStreams = null;
+                        if (!spStripGenres)
+                        {
+                            var stubMs = spMovie.GetMediaSources(false);
+                            stubStreams = stubMs
+                                .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                                .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                                .Select(s => (object)new
+                                {
+                                    Type = s.Type.ToString(),
+                                    Language = s.Language,
+                                    Codec = s.Codec,
+                                    CodecTag = s.CodecTag,
+                                    Profile = s.Profile,
+                                    Height = s.Height,
+                                    Channels = s.Channels,
+                                    ChannelLayout = s.ChannelLayout,
+                                    VideoRangeType = s.VideoRangeType,
+                                    DisplayTitle = (string?)null,
+                                })
+                                .ToList();
+                        }
+
+                        results.Add(new
+                        {
+                            Id = item.Id,
+                            Type = kind.ToString(),
+                            Genres = spStripGenres ? Array.Empty<string>() : (spMovie.Genres ?? Array.Empty<string>()),
+                            CommunityRating = spStripCommunity ? (float?)null : spMovie.CommunityRating,
+                            CriticRating = spStripCritic ? (float?)null : spMovie.CriticRating,
+                            SeriesId = (Guid?)null,
+                            ProviderIds = (IDictionary<string, string>?)null,
+                            Name = stubName,
+                            Path = (string?)null,
+                            MediaStreams = stubStreams,
+                            MediaSources = (List<object>?)null,
+                            FirstEpisode = (object?)null,
+                            Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
                         });
                         continue;
                     }

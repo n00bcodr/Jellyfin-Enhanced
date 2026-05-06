@@ -295,9 +295,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var userState = _resolver.LoadUserState(context.HttpContext, userId.Value);
-            if (userState.Series.Count == 0)
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0)
             {
-                // User hasn't enabled spoiler mode for any show — pass through.
+                // User hasn't enabled spoiler mode for any show or movie — pass through.
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -310,30 +310,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Resolve the parent series ID for both Episode and Season items.
-            // Other item types pass through unchanged.
-            Guid seriesId;
-            switch (item)
-            {
-                case Episode ep:
-                    seriesId = ep.SeriesId;
-                    break;
-                case Season seasonItem:
-                    seriesId = seasonItem.SeriesId;
-                    break;
-                default:
-                    await next().ConfigureAwait(false);
-                    return;
-            }
-
-            if (seriesId == Guid.Empty
-                || !userState.Series.ContainsKey(seriesId.ToString("N")))
-            {
-                // Item's series isn't on the user's spoiler-blur list.
-                await next().ConfigureAwait(false);
-                return;
-            }
-
             var jUser = _userManager.GetUserById(userId.Value);
             if (jUser == null)
             {
@@ -341,49 +317,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Episode path: blur if not played; pass-through with no-store if played.
-            if (item is Episode episode)
+            // Movie path: blur the movie's own poster / backdrop until the
+            // user has marked it Played. No series concept; movie ID is the
+            // dict key directly.
+            if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
-                var userData = _userDataManager.GetUserData(jUser, episode);
-                if (userData?.Played == true)
+                if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
                 {
-                    // M3: pass-through, but force `no-store` so a watched episode's
-                    // image isn't cached permanently in the user's browser. If the
-                    // user later marks the episode unwatched again, the next fetch
-                    // must re-evaluate through this filter.
-                    //
-                    // R2-H2: register on Response.OnStarting BEFORE awaiting
-                    // next(). For streaming FileStreamResult paths the response
-                    // headers can be flushed inside next()'s execution, so a
-                    // post-next() header write would be a no-op.
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                var movieUd = _userDataManager.GetUserData(jUser, movie);
+                if (movieUd?.Played == true)
+                {
                     RegisterNoStoreOnStarting(context.HttpContext);
                     await next().ConfigureAwait(false);
                     return;
                 }
-                // Else fall through to blur path below.
+                // Fall through to blur.
             }
             else
             {
-                // Season path: blur if S2+ and the user has watched zero
-                // episodes from this season; pass-through otherwise.
-                var season = (Season)item;
-                var seasonNum = season.IndexNumber.GetValueOrDefault(int.MaxValue);
-                // Always show Season 1 (and Specials S0) so the user has some
-                // entry point. Future seasons get blurred until at least one
-                // episode is watched.
-                if (seasonNum <= 1)
+                // Episode / Season path: spoiler-list keyed by parent series.
+                Guid seriesId;
+                switch (item)
                 {
+                    case Episode ep:
+                        seriesId = ep.SeriesId;
+                        break;
+                    case Season seasonItem:
+                        seriesId = seasonItem.SeriesId;
+                        break;
+                    default:
+                        await next().ConfigureAwait(false);
+                        return;
+                }
+
+                if (seriesId == Guid.Empty
+                    || !userState.Series.ContainsKey(seriesId.ToString("N")))
+                {
+                    // Item's series isn't on the user's spoiler-blur list.
                     await next().ConfigureAwait(false);
                     return;
                 }
-                if (HasWatchedAnyEpisodeInSeason(jUser, season))
+
+                if (item is Episode episode)
                 {
-                    // User started this season — pass-through.
-                    RegisterNoStoreOnStarting(context.HttpContext);
-                    await next().ConfigureAwait(false);
-                    return;
+                    var userData = _userDataManager.GetUserData(jUser, episode);
+                    if (userData?.Played == true)
+                    {
+                        // M3: pass-through, but force `no-store` so a watched episode's
+                        // image isn't cached permanently in the user's browser. If the
+                        // user later marks the episode unwatched again, the next fetch
+                        // must re-evaluate through this filter.
+                        //
+                        // R2-H2: register on Response.OnStarting BEFORE awaiting
+                        // next(). For streaming FileStreamResult paths the response
+                        // headers can be flushed inside next()'s execution, so a
+                        // post-next() header write would be a no-op.
+                        RegisterNoStoreOnStarting(context.HttpContext);
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    // Else fall through to blur path below.
                 }
-                // Else fall through to blur path below.
+                else
+                {
+                    // Season path: blur if S2+ and the user has watched zero
+                    // episodes from this season; pass-through otherwise.
+                    var season = (Season)item;
+                    var seasonNum = season.IndexNumber.GetValueOrDefault(int.MaxValue);
+                    // Always show Season 1 (and Specials S0) so the user has some
+                    // entry point. Future seasons get blurred until at least one
+                    // episode is watched.
+                    if (seasonNum <= 1)
+                    {
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    if (HasWatchedAnyEpisodeInSeason(jUser, season))
+                    {
+                        // User started this season — pass-through.
+                        RegisterNoStoreOnStarting(context.HttpContext);
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    // Else fall through to blur path below.
+                }
             }
 
             // Stash the cache key so the post-action code doesn't recompute.

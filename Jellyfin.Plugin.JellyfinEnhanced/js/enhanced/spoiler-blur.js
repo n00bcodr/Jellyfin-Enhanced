@@ -8,7 +8,11 @@
     // runs on the server so cards that are already displayed will be re-fetched
     // on next navigation; this cache only drives the per-show toggle button UI.
     var enabledSeries = new Set();
+    var enabledMovies = new Set();
     var loaded = false;
+    // Tracks the in-flight loadState() promise so consumers
+    // (reviews.js, etc.) can await initial state without racing.
+    var statePromise = null;
 
     /**
      * Normalize a series ID to "N" format (no dashes, lowercase).
@@ -26,15 +30,21 @@
      * @returns {Promise<void>}
      */
     function loadState() {
-        return ApiClient.ajax({
+        statePromise = ApiClient.ajax({
             url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/series'),
             type: 'GET',
             dataType: 'json',
         }).then(function (data) {
             enabledSeries.clear();
+            enabledMovies.clear();
             if (data && data.Series) {
                 Object.keys(data.Series).forEach(function (key) {
                     enabledSeries.add(normalizeId(key));
+                });
+            }
+            if (data && data.Movies) {
+                Object.keys(data.Movies).forEach(function (key) {
+                    enabledMovies.add(normalizeId(key));
                 });
             }
             loaded = true;
@@ -42,6 +52,18 @@
             console.warn(logPrefix, 'Failed to load spoiler-blur state:', err);
             loaded = true;
         });
+        return statePromise;
+    }
+
+    /**
+     * Resolves once the initial spoiler-blur state has loaded.
+     * Consumers that need an authoritative isEnabledFor answer on a
+     * cold page load (reviews suppression, etc.) await this.
+     * @returns {Promise<void>}
+     */
+    function whenLoaded() {
+        if (loaded) return Promise.resolve();
+        return statePromise || loadState();
     }
 
     /**
@@ -85,6 +107,34 @@
         });
     }
 
+    function isMovieEnabledFor(movieId) {
+        return enabledMovies.has(normalizeId(movieId));
+    }
+
+    function enableForMovie(movieId, movieName) {
+        var normalized = normalizeId(movieId);
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/movies/' + encodeURIComponent(normalized)),
+            type: 'POST',
+            dataType: 'json',
+            data: JSON.stringify({ MovieName: movieName || '' }),
+            contentType: 'application/json',
+        }).then(function () {
+            enabledMovies.add(normalized);
+        });
+    }
+
+    function disableForMovie(movieId) {
+        var normalized = normalizeId(movieId);
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/movies/' + encodeURIComponent(normalized)),
+            type: 'DELETE',
+            dataType: 'json',
+        }).then(function () {
+            enabledMovies.delete(normalized);
+        });
+    }
+
     /**
      * Inserts a "Spoiler Mode" toggle button into a series detail page's
      * action button row. Idempotent: re-running on the same page reuses the
@@ -92,11 +142,13 @@
      * @param {string} itemId Series ID.
      * @param {HTMLElement} visiblePage The visible #itemDetailPage element.
      */
-    function addSpoilerBlurButton(itemId, visiblePage) {
+    function addSpoilerBlurButton(itemId, visiblePage, itemType) {
         // Admin-level kill switch.
         if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return;
         if (!itemId || !visiblePage) return;
         if (!loaded) return;
+
+        var isMovie = itemType === 'Movie';
 
         var existing = visiblePage.querySelector('.je-spoiler-blur-btn');
 
@@ -113,7 +165,7 @@
         }
         if (!container) return;
 
-        var enabled = isEnabledFor(itemId);
+        var enabled = isMovie ? isMovieEnabledFor(itemId) : isEnabledFor(itemId);
         var newState = enabled ? 'on' : 'off';
 
         if (!existing) {
@@ -125,9 +177,10 @@
             existing.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                onToggleClicked(existing, itemId);
+                onToggleClicked(existing, itemId, isMovie, visiblePage);
             });
             existing.setAttribute('data-je-spoiler-state', newState);
+            existing.setAttribute('data-je-spoiler-kind', isMovie ? 'movie' : 'series');
             renderButton(existing, enabled);
             return;
         }
@@ -139,6 +192,7 @@
         // spam reproduced via Playwright on 2026-05-06.)
         if (existing.getAttribute('data-je-spoiler-state') !== newState) {
             existing.setAttribute('data-je-spoiler-state', newState);
+            existing.setAttribute('data-je-spoiler-kind', isMovie ? 'movie' : 'series');
             renderButton(existing, enabled);
         }
     }
@@ -184,16 +238,49 @@
      * @param {HTMLButtonElement} button
      * @param {string} seriesId
      */
-    function onToggleClicked(button, seriesId) {
-        var willBeEnabled = !isEnabledFor(seriesId);
+    function onToggleClicked(button, itemId, isMovie, visiblePage) {
+        var willBeEnabled = isMovie ? !isMovieEnabledFor(itemId) : !isEnabledFor(itemId);
         button.disabled = true;
-        var promise = willBeEnabled ? enableForSeries(seriesId) : disableForSeries(seriesId);
+        var movieName = '';
+        if (isMovie && visiblePage) {
+            try {
+                var titleEl = visiblePage.querySelector('h1.itemName-name, h1.itemName, .itemName, h2.itemName-name');
+                if (titleEl && titleEl.textContent) movieName = titleEl.textContent.trim();
+            } catch (_) {}
+        }
+        var promise = isMovie
+            ? (willBeEnabled ? enableForMovie(itemId, movieName) : disableForMovie(itemId))
+            : (willBeEnabled ? enableForSeries(itemId) : disableForSeries(itemId));
         promise.then(function () {
             renderButton(button, willBeEnabled);
+            button.setAttribute('data-je-spoiler-state', willBeEnabled ? 'on' : 'off');
             var msg = willBeEnabled
                 ? JE.t('spoiler_blur_enabled_toast')
                 : JE.t('spoiler_blur_disabled_toast');
             if (JE.toast) JE.toast(msg);
+            // Bust the JE tag-pipeline server cache so freshly-eligible
+            // items lose their pre-toggle (unstripped) tag overlays
+            // immediately, instead of persisting until the next page
+            // reload. Without this, NextUp / home-rail cards show
+            // genre/quality/rating overlays for unwatched episodes of
+            // the just-enabled spoiler series until the user F5s.
+            try {
+                if (JE.tagPipeline && typeof JE.tagPipeline.invalidateServerCache === 'function') {
+                    JE.tagPipeline.invalidateServerCache();
+                }
+            } catch (_) {}
+            // Also remove any reviews section currently rendered for this
+            // series — if the user just enabled spoiler mode on the series
+            // page, the reviews panel is sitting in the DOM unsuppressed.
+            try {
+                if (!isMovie && willBeEnabled) {
+                    var existingReviews = document.querySelector('#itemDetailPage:not(.hide) .tmdb-reviews-section')
+                        || document.querySelector('.tmdb-reviews-section');
+                    if (existingReviews && JE.pluginConfig?.SpoilerStripReviews !== false) {
+                        existingReviews.parentNode && existingReviews.parentNode.removeChild(existingReviews);
+                    }
+                }
+            } catch (_) {}
         }).catch(function (err) {
             console.error(logPrefix, 'Toggle failed:', err);
             if (JE.toast) JE.toast(JE.t('spoiler_blur_error_toast'));
@@ -417,9 +504,14 @@
         init: init,
         addSpoilerBlurButton: addSpoilerBlurButton,
         isEnabledFor: isEnabledFor,
+        isMovieEnabledFor: isMovieEnabledFor,
         enableForSeries: enableForSeries,
         disableForSeries: disableForSeries,
+        enableForMovie: enableForMovie,
+        disableForMovie: disableForMovie,
+        whenLoaded: whenLoaded,
         // Used by tests / management UI.
         getEnabledSet: function () { return new Set(enabledSeries); },
+        getEnabledMovieSet: function () { return new Set(enabledMovies); },
     };
 })(window.JellyfinEnhanced);

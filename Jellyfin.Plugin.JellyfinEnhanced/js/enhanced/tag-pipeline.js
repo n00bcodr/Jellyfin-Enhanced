@@ -738,6 +738,28 @@
             firstEpisodeCache.clear();
             parentSeriesCache.clear();
         },
+        // Bust the server cache so the next scan re-fetches everything
+        // through the spoiler-strip pipeline. Used after toggling
+        // spoiler mode for a series/movie so newly-eligible items lose
+        // their cached unstripped tag data.
+        async invalidateServerCache() {
+            try {
+                serverCache = null;
+                serverCacheVersion = 0;
+                serverCacheTimestamp = 0;
+                processedCards = new WeakSet();
+                firstEpisodeCache.clear();
+                parentSeriesCache.clear();
+                if (typeof loadServerCache === 'function') {
+                    await loadServerCache();
+                }
+                if (typeof runScan === 'function') {
+                    runScan();
+                }
+            } catch (e) {
+                console.warn(`${logPrefix} invalidateServerCache failed:`, e);
+            }
+        },
         scheduleScan,
     };
 
