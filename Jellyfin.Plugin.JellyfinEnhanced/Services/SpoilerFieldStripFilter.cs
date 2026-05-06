@@ -178,7 +178,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var executed = await next().ConfigureAwait(false);
-            if (executed.Canceled || executed.Exception != null) return;
+            // R4-L5: surface (rate-limited) when the wrapped action threw —
+            // strip silently skipped and operator can correlate "Overview
+            // leaked but my toggle is on" reports with the underlying
+            // controller exception.
+            if (executed.Exception != null)
+            {
+                _resolver.WarnRateLimited(
+                    "fieldstrip-action-exception:" + executed.Exception.GetType().FullName,
+                    $"Spoiler field strip: wrapped action threw — strip not applied. {executed.Exception.GetType().Name}: {executed.Exception.Message}");
+                return;
+            }
+            if (executed.Canceled) return;
 
             try
             {
@@ -199,7 +210,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             PluginConfiguration cfg,
             Guid userId)
         {
-            if (result is not ObjectResult or || or.Value == null) return;
+            // R4-M4: ObjectResult covers most MVC return shapes, but a
+            // future Jellyfin upgrade swapping to JsonResult (a sibling
+            // ActionResult, not a subclass) would silently bypass strip.
+            // Surface that with hourly re-warn so it stays observable.
+            if (result == null) return;
+            if (result is not ObjectResult or)
+            {
+                if (result is JsonResult)
+                {
+                    _resolver.WarnRateLimited(
+                        "fieldstrip-shape:JsonResult",
+                        "Spoiler field strip: action returned JsonResult; strip is no-op for that shape. Likely a Jellyfin upgrade — switch to ObjectResult-aware extraction.");
+                }
+                return;
+            }
+            if (or.Value == null) return;
 
             switch (or.Value)
             {
@@ -478,17 +504,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    // GuestStars-only mode (default).
-                    var kept = new List<BaseItemPerson>(item.People.Length);
+                    // GuestStars-only mode (default). R4-M5: pre-scan for
+                    // any GuestStar entry before allocating — avoids list
+                    // allocation on every cast-bearing item when no
+                    // GuestStars are present (typical for cartoon series
+                    // like Bluey).
+                    bool hasGuest = false;
                     foreach (var p in item.People)
                     {
-                        if (p == null) continue;
-                        // PersonKind.GuestStar serializes as "GuestStar" in BaseItemDto.
-                        if (string.Equals(p.Type.ToString(), "GuestStar", StringComparison.Ordinal))
-                            continue;
-                        kept.Add(p);
+                        if (p != null && p.Type == Jellyfin.Data.Enums.PersonKind.GuestStar)
+                        {
+                            hasGuest = true;
+                            break;
+                        }
                     }
-                    item.People = kept.ToArray();
+                    if (hasGuest)
+                    {
+                        var kept = new List<BaseItemPerson>(item.People.Length);
+                        foreach (var p in item.People)
+                        {
+                            if (p == null) continue;
+                            if (p.Type == Jellyfin.Data.Enums.PersonKind.GuestStar) continue;
+                            kept.Add(p);
+                        }
+                        item.People = kept.ToArray();
+                    }
                 }
             }
 

@@ -535,11 +535,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             };
 
             // Periodic eviction so the dictionary doesn't grow unbounded
-            // across long server uptimes. Cheap O(N) scan when the cache
-            // grows beyond a small threshold.
+            // across long server uptimes. R4-L2: snapshot via ToArray so a
+            // concurrent insert during the scan can't trip
+            // InvalidOperationException — `ConcurrentDictionary` enumerator
+            // only guarantees stable iteration when snapshotted.
             if (_watchedCache.Count > 512)
             {
-                foreach (var kvp in _watchedCache)
+                foreach (var kvp in _watchedCache.ToArray())
                 {
                     if (kvp.Value.ExpiresAt < now) _watchedCache.TryRemove(kvp.Key, out _);
                 }
