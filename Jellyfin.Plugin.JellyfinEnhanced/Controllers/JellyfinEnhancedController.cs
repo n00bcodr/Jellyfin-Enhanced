@@ -4217,6 +4217,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "Maximum 200 items per request" });
             }
 
+            // Spoiler mode short-circuit: if the user has the plugin's
+            // master switch on, has SpoilerStripTags on, and has at least
+            // one series in their spoiler list, we'll need to skip tag data
+            // for unwatched episodes of those series. Loaded once per
+            // request to avoid 50× JSON reads on a typical home-page batch.
+            UserSpoilerBlur? spoilerState = null;
+            var spoilerCfg = JellyfinEnhanced.Instance?.Configuration;
+            var stripTagsEnabled = spoilerCfg?.SpoilerBlurEnabled == true
+                && spoilerCfg.SpoilerStripTags == true;
+            if (stripTagsEnabled)
+            {
+                try
+                {
+                    spoilerState = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
+                        userId.ToString("N"),
+                        Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Spoiler tag-strip: failed to load user state — passing through with tags. {ex.Message}");
+                    spoilerState = null;
+                }
+                // Empty list = nothing to strip. Treat as off for this request.
+                if (spoilerState == null || spoilerState.Series.Count == 0)
+                {
+                    stripTagsEnabled = false;
+                }
+            }
+
             var itemIds = ids;
             var results = new List<object>(itemIds.Length);
 
@@ -4232,6 +4261,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
+
+                // Spoiler-mode tag-strip: when the item is an Episode of a
+                // series the user has spoiler mode on for, AND the user
+                // hasn't watched it yet, return an Id+Type-only stub so
+                // the frontend tag renderers have nothing to draw. The
+                // pipeline still considers the item processed (no retry
+                // loop), it just produces zero overlays.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.TV.Episode spEp
+                    && spEp.SeriesId != Guid.Empty
+                    && spoilerState.Series.ContainsKey(spEp.SeriesId.ToString("N")))
+                {
+                    var spUd = _userDataManager.GetUserData(user, spEp);
+                    if (spUd?.Played != true)
+                    {
+                        results.Add(new
+                        {
+                            Id = item.Id,
+                            Type = kind.ToString(),
+                            // Empty arrays / nulls so each renderer's
+                            // isEnabled / hasData check returns "no data".
+                            Genres = Array.Empty<string>(),
+                            CommunityRating = (float?)null,
+                            CriticRating = (float?)null,
+                            SeriesId = (Guid?)spEp.SeriesId,
+                            ProviderIds = (IDictionary<string, string>?)null,
+                            Name = item.Name,
+                            Path = (string?)null,
+                            MediaStreams = (List<object>?)null,
+                            MediaSources = (List<object>?)null,
+                            FirstEpisode = (object?)null,
+                        });
+                        continue;
+                    }
+                }
 
                 // OPT-3: Only get media sources/streams for playable items (Movies, Episodes)
                 // Series and Season are containers with no media files — skip the expensive call
