@@ -295,6 +295,51 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 10 review (2026-05-07) — post-R9 reviewer pass
+
+Sources: codex GPT-5.5 high (1 HIGH + 1 MEDIUM), security-reviewer (5 HIGH + 4 MEDIUM), silent-failure-hunter (zero findings — convergence verified for R9-H1/M1 fixes).
+
+The "title-bearing field leak" family kept expanding each round; R10 surfaced 6 new HIGH from the same family across new DTO surfaces. Per security-reviewer's recommendation, applied **paradigm shift** — deny-by-default for all title-bearing fields under `SpoilerReplaceTitle || SpoilerStripOverview`.
+
+### HIGH
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R10-H1** | security HIGH | **fixed** | Nested `MediaSources[].MediaStreams[].Title/Comment` — separate property from top-level `BaseItemDto.MediaStreams`. Walk both arrays. |
+| **R10-H2** | security HIGH | **fixed** | `MediaSources[].MediaAttachments[].FileName/Comment` — mkv attachments routinely embed episode title. Walk + null. |
+| **R10-H3** | security HIGH | **fixed** | `BaseItemDto.RemoteTrailers` (`MediaUrl[]`) and `BaseItemDto.ExternalUrls` (`ExternalUrl[]`) carry titles in URL slugs and Name fields (TVDB/IMDB/TMDB/YouTube). Null both arrays. |
+| **R10-H4** | security HIGH | **fixed** | `People[].Role` (character name) is an episode-level spoiler regardless of cast strip mode. Null Role on every kept person. |
+| **R10-H5** | security HIGH | **fixed** | `ChapterInfo.ImagePath` (server filesystem path) commonly contains episode title. Strip ImagePath whenever title-strip is on, separate from `SpoilerStripChapters` Name strip. |
+| **R10-codex-H** | codex HIGH | **fixed** | Trailer/intro/special-feature DTOs returned by GetIntros / GetLocalTrailers / GetSpecialFeatures routes have `Type=Trailer/Video`; `StripItem` previously early-returned. Extended `StripItem` to detect non-Episode/Season DTOs whose `SeriesId` is in the spoiler list (extras of an unwatched-spoiler episode), apply aggressive strip. |
+
+### MEDIUM
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R10-M1** | security MEDIUM | **fixed** | `BaseItemDto.EpisodeTitle` (LiveTV/DVR field, distinct from `Name`) untouched. Null. |
+| **R10-M2** | security MEDIUM | **fixed** | `ForcedSortName` and `CustomRating` (free-text admin-set fields) untouched. Null both. |
+| **R10-M3** | security MEDIUM | **fixed** | `SearchHint.MatchedTerm` echoes the substring of the original Name that matched the user's query — bypassing the Name rewrite. Null in `StripSearchHints`. |
+| **R10-codex-M** | codex MEDIUM | **fixed** | `GetTagData` entry condition only fired when tag/rating toggles were on; admin enabling only `SpoilerReplaceTitle` left the per-batch endpoint leaking title via the non-stub projection (Path / MediaStreams DisplayTitle / MediaSources Path/Name). Added `spReplaceTitle || spStripOverview` to the entry-condition gate so the stub path also fires when only title strip is on. |
+
+### LOW
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R10-M4** | security MEDIUM | **deferred** | TagCacheService persists `StreamData.ItemPath` (filename containing episode title) to disk via `tag-cache.json`. Anyone with disk read access (admin sibling, backup snapshot) reads titles directly. Defense-in-depth concern; not a server-side leak. Documented as known limitation. |
+
+### Convergence approach: deny-by-default
+
+Per security review: the per-field whack-a-mole pattern would never converge. R10 applied a **paradigm shift** — under `SpoilerReplaceTitle || SpoilerStripOverview`:
+- All title-bearing string fields nulled (Path, EpisodeTitle, ForcedSortName, CustomRating)
+- All link arrays nulled (RemoteTrailers, ExternalUrls)
+- Top-level + nested MediaStreams Title/Comment nulled
+- MediaSources Path/Name + nested MediaStreams + nested MediaAttachments nulled
+- ChapterInfo.ImagePath nulled
+- People[].Role nulled
+- Code comment requires future BaseItemDto fields added by Jellyfin to be ASSUMED-LEAKY until proven otherwise.
+
+Round 11 needed to confirm the paradigm shift caught everything.
+
 ## Round 9 review (2026-05-07) — post-R8 reviewer pass
 
 Sources: codex GPT-5.5 high (1 MEDIUM), security-reviewer (1 HIGH), silent-failure-hunter (no findings).

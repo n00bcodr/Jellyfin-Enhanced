@@ -256,11 +256,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
             if (item == null) return;
+
+            // R10-codex: trailer / intro / special-feature DTOs from
+            // GetIntros / GetLocalTrailers / GetSpecialFeatures routes
+            // arrive with Type=Trailer/Video and would prior have early-
+            // returned. If their SeriesId is in the user's spoiler list,
+            // their Name/Overview/Path/MediaStreams can leak the parent
+            // episode's title. Apply aggressive strip to be safe — these
+            // DTOs are extras of an unwatched-spoiler episode.
             // Direct enum compare — faster than ToString("Episode") and
             // future-proof if Jellyfin renames any enum string forms.
-            if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode
-                && item.Type != Jellyfin.Data.Enums.BaseItemKind.Season)
+            var isEpisodeOrSeason = item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode
+                || item.Type == Jellyfin.Data.Enums.BaseItemKind.Season;
+            var isExtra = !isEpisodeOrSeason
+                && item.SeriesId.HasValue
+                && item.SeriesId.Value != Guid.Empty
+                && userState.Series.ContainsKey(item.SeriesId.Value.ToString("N"));
+            if (!isEpisodeOrSeason && !isExtra) return;
+
+            if (isExtra)
             {
+                // Extras (trailers / intros / specials) — we don't have a
+                // per-extra watched flag; apply strip unconditionally
+                // since the extra exists as part of an episode whose
+                // very metadata the user has opted into hiding.
+                ApplyStripping(item, cfg);
                 return;
             }
 
@@ -482,6 +502,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // don't appear in autocomplete.
                     hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
                 }
+
+                // R10-M3: MatchedTerm echoes the substring of the
+                // ORIGINAL Name that the search query matched —
+                // bypassing the Name rewrite. e.g. user searches
+                // "Optimus" → MatchedTerm = "Optimus" from the raw
+                // pre-strip title. Null it so autocomplete doesn't
+                // surface the substring.
+                hint.MatchedTerm = null;
             }
         }
 
@@ -633,26 +661,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // R9-H1: when title replacement OR overview strip is on, also
-            // sanitize the title-bearing fields on MediaStreams /
-            // MediaSources / Path. Same leak family as R7-M1 / R8-M1
-            // (tag-data stub) but on the standard /Items endpoint
-            // surface. User-muxed mkvs (MakeMKV / Plex / Sonarr renamers)
-            // commonly carry the episode title in:
-            //   - MediaStreams[].Title (raw ffprobe metadata)
-            //   - MediaStreams[].DisplayTitle (getter prepends Title)
-            //   - MediaStreams[].Comment (free-form text)
-            //   - MediaSources[].Path (full filesystem path)
-            //   - MediaSources[].Name (display name)
-            //   - item.Path (top-level filesystem path)
-            // A client rendering "Versions" / "Streams" / inspect panel
-            // would surface these even when item.Name was synthesized.
+            // R9-H1 + R10-batch: when title replacement OR overview
+            // strip is on, aggressively sanitize ALL title-bearing
+            // fields. The R7→R10 review loop kept finding new leak
+            // surfaces on the same DTO (MediaSources[].Path → tag-cache
+            // StreamData → /Items endpoint MediaStreams → nested
+            // MediaSources MediaStreams → MediaAttachments → RemoteTrailers
+            // → People[].Role → ChapterInfo.ImagePath → EpisodeTitle / ...).
+            // Per security review's paradigm-shift recommendation, treat
+            // this as deny-by-default: aggressively null every field
+            // that COULD carry the episode title. Future BaseItemDto
+            // fields added by Jellyfin must be assumed-leaky until
+            // proven otherwise. (R10-H1..H5 + R10-M1..M3)
             if (cfg.SpoilerReplaceTitle || cfg.SpoilerStripOverview)
             {
-                if (!string.IsNullOrEmpty(item.Path))
-                {
-                    item.Path = null;
-                }
+                // R10-M1/M2: top-level title-bearing string fields.
+                if (!string.IsNullOrEmpty(item.Path)) item.Path = null;
+                item.EpisodeTitle = null;
+                item.ForcedSortName = null;
+                item.CustomRating = null;
+
+                // R10-H3: external link arrays whose Url slug or Name
+                // commonly contains the episode title.
+                item.RemoteTrailers = null;
+                item.ExternalUrls = null;
+
+                // R9-H1 + R10-H1 + R10-H2: top-level + nested
+                // MediaStreams + MediaAttachments. ffprobe Title /
+                // Comment / attachment FileName all routinely carry
+                // the episode title on user-muxed mkvs.
                 if (item.MediaStreams != null)
                 {
                     foreach (var s in item.MediaStreams)
@@ -660,11 +697,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (s == null) continue;
                         s.Title = null;
                         s.Comment = null;
-                        // DisplayTitle is a read-only computed getter that
-                        // prepends Title — nulling Title makes the getter
-                        // fall back to format-only output ("4K H264 SDR")
-                        // which qualitytags.js parses for codec/HDR
-                        // detection. No explicit assign needed.
+                        // DisplayTitle is a read-only getter on the
+                        // MediaStream entity that derives from Title;
+                        // nulling Title sanitizes it transitively.
                     }
                 }
                 if (item.MediaSources != null)
@@ -674,6 +709,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (ms == null) continue;
                         ms.Path = null;
                         ms.Name = null;
+                        // R10-H1: MediaSources nests its OWN MediaStreams
+                        // array (separate from BaseItemDto.MediaStreams).
+                        // Strip it too.
+                        if (ms.MediaStreams != null)
+                        {
+                            foreach (var s in ms.MediaStreams)
+                            {
+                                if (s == null) continue;
+                                s.Title = null;
+                                s.Comment = null;
+                            }
+                        }
+                        // R10-H2: mkv attachments (chapters_*.xml,
+                        // subtitle_*.srt) frequently embed the episode
+                        // title in FileName / Comment.
+                        if (ms.MediaAttachments != null)
+                        {
+                            foreach (var att in ms.MediaAttachments)
+                            {
+                                if (att == null) continue;
+                                att.FileName = null;
+                                att.Comment = null;
+                            }
+                        }
+                    }
+                }
+
+                // R10-H4: People[].Role (the character name) is an
+                // episode-level spoiler regardless of cast strip mode.
+                // R5 cast strip toggles drop the array entirely or filter
+                // GuestStars; in BOTH cases this loop is a no-op (kept
+                // people are removed elsewhere) or strips Role on the
+                // remaining People to plug "recurring villain in role
+                // 'Resurrected Optimus'" leaks.
+                if (item.People != null)
+                {
+                    foreach (var p in item.People)
+                    {
+                        if (p == null) continue;
+                        p.Role = null;
+                    }
+                }
+
+                // R10-H5: ChapterInfo.ImagePath leaks server filesystem
+                // path commonly containing the episode title. Separate
+                // from the SpoilerStripChapters Name strip — applies
+                // whenever title-strip is on, even if admin left
+                // SpoilerStripChapters off.
+                if (item.Chapters != null)
+                {
+                    foreach (var ch in item.Chapters)
+                    {
+                        if (ch == null) continue;
+                        ch.ImagePath = null;
                     }
                 }
             }

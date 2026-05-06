@@ -4352,8 +4352,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var spStripGenres = spoilerCfg?.SpoilerStripTags == true;
             var spStripCommunity = spoilerCfg?.SpoilerStripCommunityRating == true;
             var spStripCritic = spoilerCfg?.SpoilerStripCriticRating == true;
+            // R10-codex: title replacement / overview strip MUST also enter
+            // the stub path. Otherwise the non-stub projection at line ~4097
+            // returns raw item.Path / MediaStreams[].DisplayTitle /
+            // MediaSources[].Path/Name even though the admin enabled
+            // SpoilerReplaceTitle. Same leak family as R7-M1 / R8-M1 /
+            // R9-H1 / R9-M1 — closing the per-batch endpoint as well.
+            var spReplaceTitle = spoilerCfg?.SpoilerReplaceTitle == true;
+            var spStripOverview = spoilerCfg?.SpoilerStripOverview == true;
             var stripTagsEnabled = spoilerCfg?.SpoilerBlurEnabled == true
-                && (spStripGenres || spStripCommunity || spStripCritic);
+                && (spStripGenres || spStripCommunity || spStripCritic || spReplaceTitle || spStripOverview);
             if (stripTagsEnabled)
             {
                 spoilerState = LoadSpoilerStateForTagStrip(userId);
