@@ -4187,6 +4187,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var items = _tagCacheService.GetCacheForUser(user, since);
 
+            // Spoiler-mode tag-strip: when the user has SpoilerBlur on with
+            // SpoilerStripTags, walk the cache and zero-out tag fields for
+            // unwatched episodes whose parent series is in the user's
+            // spoiler list. Without this, the JE tag-pipeline reads from
+            // serverCache BEFORE calling GetTagData (the per-batch
+            // endpoint), so card overlays would still render despite the
+            // SpoilerStripTags toggle being on. Mirrors the per-batch
+            // strip in GetTagData. (R4-codex-H1)
+            var spCfg = JellyfinEnhanced.Instance?.Configuration;
+            if (spCfg?.SpoilerBlurEnabled == true && spCfg.SpoilerStripTags == true)
+            {
+                UserSpoilerBlur? spState = null;
+                try
+                {
+                    spState = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
+                        userId.ToString("N"),
+                        Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Spoiler tag-cache strip: failed to load state — passing through. {ex.Message}");
+                }
+
+                if (spState != null && spState.Series.Count > 0)
+                {
+                    foreach (var kvp in items)
+                    {
+                        var entry = kvp.Value;
+                        if (entry == null) continue;
+                        if (!string.Equals(entry.Type, "Episode", StringComparison.Ordinal)) continue;
+                        if (string.IsNullOrEmpty(entry.SeriesId)) continue;
+                        if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
+
+                        // Look up played state via IUserDataManager (cached in
+                        // memory, no disk hit). Avoids requiring a library
+                        // lookup per entry — IUserDataManager works on
+                        // (user, itemId) directly.
+                        if (Guid.TryParseExact(kvp.Key, "N", out var entryGuid)
+                            || Guid.TryParse(kvp.Key, out entryGuid))
+                        {
+                            var entryItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid);
+                            if (entryItem != null)
+                            {
+                                var ud = _userDataManager.GetUserData(user, entryItem);
+                                if (ud?.Played == true) continue;
+                            }
+                        }
+
+                        // Strip the spoiler-y tag fields. Keep Type so the
+                        // pipeline still considers the item processed (no
+                        // retry loop), and keep SeriesId so the parent-
+                        // series rating fallback in tag-pipeline.js doesn't
+                        // re-render a series rating overlay (the original
+                        // GetTagData stub did the same — see R4-code-I6).
+                        entry.Genres = System.Array.Empty<string>();
+                        entry.CommunityRating = null;
+                        entry.CriticRating = null;
+                        entry.AudioLanguages = null;
+                        entry.StreamData = null;
+                    }
+                }
+            }
+
             return Ok(new
             {
                 version = _tagCacheService.Version,

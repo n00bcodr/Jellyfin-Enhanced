@@ -292,6 +292,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
+                // Capture parent series ID for Episodes/Seasons so the
+                // spoiler-blur filter can strip cache entries for unwatched
+                // episodes of spoiler-list series without doing a library
+                // lookup per cache entry on every GetTagCache request.
+                string? seriesIdN = null;
+                if (item is MediaBrowser.Controller.Entities.TV.Episode tcEp)
+                {
+                    if (tcEp.SeriesId != Guid.Empty) seriesIdN = tcEp.SeriesId.ToString("N");
+                }
+                else if (item is MediaBrowser.Controller.Entities.TV.Season tcSeason)
+                {
+                    if (tcSeason.SeriesId != Guid.Empty) seriesIdN = tcSeason.SeriesId.ToString("N");
+                }
+
                 var entry = new TagCacheEntry
                 {
                     Type = kind.ToString(),
@@ -299,7 +313,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
-                    LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    SeriesId = seriesIdN,
                 };
 
                 if (isContainer)

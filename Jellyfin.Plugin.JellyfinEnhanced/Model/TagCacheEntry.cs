@@ -22,6 +22,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? AudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
         public long LastUpdated { get; set; }
+        // Series ID in N format (no dashes, lowercase). Set for Episodes
+        // and Seasons; null for everything else. Used by the spoiler-blur
+        // filter to strip cache entries for unwatched episodes whose parent
+        // series is in the requesting user's spoiler list — avoids a
+        // per-request library lookup for every episode in a 1000-item
+        // cache.
+        public string? SeriesId { get; set; }
     }
 
     /// <summary>
