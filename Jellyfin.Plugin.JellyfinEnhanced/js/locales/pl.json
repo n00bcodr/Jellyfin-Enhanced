@@ -268,7 +268,6 @@
     "jellyseerr_report_issue_type_video": "Wideo",
     "jellyseerr_report_issue_type_audio": "Audio",
     "jellyseerr_report_issue_type_subtitles": "Napisy",
-    "jellyseerr_report_issue_type_other": "Inne",
     "jellyseerr_report_issue_message": "Opis (opcjonalnie)",
     "jellyseerr_report_issue_message_placeholder": "Opisz problem szczegółowo…",
     "jellyseerr_report_issue_season": "Sezon",
@@ -532,5 +531,6 @@
     "hidden_content_unknown_show": "Nieznany serial",
     "hidden_content_experimental_label": "Eksperymentalne",
     "active_streams_count": "{count} aktywny strumień|{count} aktywne strumienie",
-    "active_streams_none": "Brak aktywnych strumieni"
+    "active_streams_none": "Brak aktywnych strumieni",
+    "jellyseerr_report_issue_type_other": "Other"
 }

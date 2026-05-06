@@ -268,7 +268,6 @@
     "jellyseerr_report_issue_type_video": "Видео",
     "jellyseerr_report_issue_type_audio": "Аудио",
     "jellyseerr_report_issue_type_subtitles": "Субтитры",
-    "jellyseerr_report_issue_type_other": "Другое",
     "jellyseerr_report_issue_message": "Описание (дополнительно)",
     "jellyseerr_report_issue_message_placeholder": "Подробно опишите проблему…",
     "jellyseerr_report_issue_season": "Сезон",
@@ -532,5 +531,6 @@
     "hidden_content_unknown_show": "Неизвестный сериал",
     "hidden_content_experimental_label": "Экспериментально",
     "active_streams_count": "{count} активный поток|{count} активных потока",
-    "active_streams_none": "Нет активных потоков"
+    "active_streams_none": "Нет активных потоков",
+    "jellyseerr_report_issue_type_other": "Other"
 }
