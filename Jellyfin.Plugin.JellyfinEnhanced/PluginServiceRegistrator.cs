@@ -58,10 +58,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // client (web/TV/iOS/Android) gets the blurred bytes via the native image API.
             serviceCollection.AddSingleton<ImageBlurService>();
             serviceCollection.AddSingleton<SpoilerBlurImageFilter>();
+            // Spoiler Field Strip: removes spoiler-y metadata (Overview, Tags, Chapters,
+            // Taglines, ratings, premiere date, episode title, cast) from BaseItemDto
+            // responses for unwatched episodes whose series is in the user's spoiler list.
+            serviceCollection.AddSingleton<SpoilerFieldStripFilter>();
 
             serviceCollection.Configure<MvcOptions>(o =>
             {
+                // Order matters: HiddenContent runs first because it can DROP items
+                // entirely; SpoilerFieldStrip + SpoilerBlur edit items HC kept.
                 o.Filters.AddService<HiddenContentResponseFilter>();
+                o.Filters.AddService<SpoilerFieldStripFilter>();
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
         }
