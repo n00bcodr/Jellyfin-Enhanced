@@ -905,7 +905,7 @@
                                     <span style="font-weight: 600;">${JE.t('panel_settings_subtitles_position')}</span>
                                     <button id="subtitlePositionReset" style="font-family:inherit; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; display:flex; align-items:center;"><span class="material-icons" style="font-size:16px;">restart_alt</span></button>
                                 </div>
-                                <div id="subtitlePositionGrid" style="position:relative; width:12vw; height:12vh; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:6px; cursor:crosshair; user-select:none; overflow:hidden; margin: 0 auto;">
+                                <div id="subtitlePositionGrid" style="position:relative; width:min(60vw,280px); height:min(34vw,158px); background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:6px; cursor:crosshair; user-select:none; overflow:hidden; margin: 0 auto;">
                                     <!-- Crosshair guides -->
                                     <div style="position:absolute;inset:0;pointer-events:none;">
                                         <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.08);transform:translateX(-50%);"></div>
@@ -1703,13 +1703,10 @@
         const posPreview = document.getElementById('subtitlePositionPreview');
         const posResetBtn = document.getElementById('subtitlePositionReset');
 
-        if (posGrid && posDot) {
-            const updateDotPosition = (xPct, yPct) => {
-                // Clamp to grid bounds
+        if (posGrid) {
+            const updatePosition = (xPct, yPct) => {
                 xPct = Math.max(2, Math.min(98, xPct));
                 yPct = Math.max(2, Math.min(98, yPct));
-                posDot.style.left = `${xPct}%`;
-                posDot.style.top = `${yPct}%`;
                 if (posPreview) {
                     posPreview.style.left = `${xPct}%`;
                     posPreview.style.top = `${yPct}%`;
@@ -1731,51 +1728,40 @@
 
             let dragging = false;
 
-            posDot.addEventListener('mousedown', (e) => {
-                dragging = true;
-                posDot.style.cursor = 'grabbing';
-                e.preventDefault();
-            });
-
-            // Also allow clicking anywhere on the grid to jump the dot
             posGrid.addEventListener('mousedown', (e) => {
-                if (e.target === posDot) return;
                 const { x, y } = getPctFromEvent(e);
-                updateDotPosition(x, y);
+                updatePosition(x, y);
                 dragging = true;
-                posDot.style.cursor = 'grabbing';
                 e.preventDefault();
             });
 
             document.addEventListener('mousemove', (e) => {
                 if (!dragging) return;
                 const { x, y } = getPctFromEvent(e);
-                updateDotPosition(x, y);
+                updatePosition(x, y);
                 resetAutoCloseTimer();
             });
 
             document.addEventListener('mouseup', () => {
                 if (!dragging) return;
                 dragging = false;
-                posDot.style.cursor = 'grab';
                 JE.saveUserSettings('settings.json', JE.currentSettings);
             });
 
-            // Touch support
-            posDot.addEventListener('touchstart', (e) => { dragging = true; e.preventDefault(); }, { passive: false });
             posGrid.addEventListener('touchstart', (e) => {
-                if (e.target === posDot) return;
                 const { x, y } = getPctFromEvent(e);
-                updateDotPosition(x, y);
+                updatePosition(x, y);
                 dragging = true;
                 e.preventDefault();
             }, { passive: false });
+
             document.addEventListener('touchmove', (e) => {
                 if (!dragging) return;
                 const { x, y } = getPctFromEvent(e);
-                updateDotPosition(x, y);
+                updatePosition(x, y);
                 resetAutoCloseTimer();
             }, { passive: true });
+
             document.addEventListener('touchend', () => {
                 if (!dragging) return;
                 dragging = false;
@@ -1787,7 +1773,6 @@
             posResetBtn.addEventListener('click', () => {
                 JE.currentSettings.subtitleHorizontalPosition = 50;
                 JE.currentSettings.subtitleVerticalPosition = 85;
-                if (posDot) { posDot.style.left = '50%'; posDot.style.top = '85%'; }
                 if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = '85%'; }
                 if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
                 JE.saveUserSettings('settings.json', JE.currentSettings);
