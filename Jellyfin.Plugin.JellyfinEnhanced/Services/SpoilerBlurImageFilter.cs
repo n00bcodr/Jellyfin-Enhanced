@@ -125,6 +125,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case Series ser:
                     seriesId = ser.Id;
                     break;
+                // R14-H1 hygiene: explicit Movie no-op. The Movie image
+                // path doesn't use _watchedCache (it reads UserData.Played
+                // directly per request), so there's nothing to invalidate
+                // here. Listed for future-proofing — if a movie-level
+                // server cache is added later, this is the hook.
+                case MediaBrowser.Controller.Entities.Movies.Movie:
+                    return;
             }
 
             if (!seasonId.HasValue && !seriesId.HasValue) return;

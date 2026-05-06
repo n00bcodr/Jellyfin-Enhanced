@@ -35,8 +35,13 @@
                     return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
                 }
                 return !!(JE.spoilerBlur.isEnabledFor && JE.spoilerBlur.isEnabledFor(item?.Id || ''));
-            } catch (_) {
-                return false;
+            } catch (e) {
+                // R14-H2: fail-CLOSED. The "show reviews" path is the spoiler-
+                // leaking path; if any check above throws (cold-load network
+                // blip on whenLoaded, defensive bug in isEnabledFor, etc.),
+                // suppress the panel by default rather than render unsuppressed.
+                console.warn(`${logPrefix} spoiler-mode check failed; suppressing reviews:`, e);
+                return true;
             }
         }
 
@@ -49,7 +54,9 @@
                 const root = page || document.querySelector('#itemDetailPage:not(.hide)') || document;
                 const sec = root.querySelector('.tmdb-reviews-section');
                 if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-            } catch (_) {}
+            } catch (e) {
+                console.warn(`${logPrefix} removeReviewsSection failed:`, e);
+            }
         }
 
         function fetchReviews(tmdbId, mediaType) {

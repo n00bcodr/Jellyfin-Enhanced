@@ -3629,17 +3629,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
             var userKey = userId.Value.ToString("N");
 
-            // Sanitize provided MovieName the same way the controller treats
-            // the SeriesName backup path: strip HTML, cap length. The display
-            // value is operator-visible only via management UI — defense-in-
-            // depth against a malicious client posting a stored-XSS gadget
-            // for a future innerHTML consumer.
+            // Sanitize provided MovieName: strip HTML tags + angle brackets,
+            // cap length. R14-I1: do NOT strip apostrophes/quotes/backticks —
+            // movie titles legitimately contain them (e.g. "Don't Look Up",
+            // "Crocodile Dundee II") and stripping them mangles the
+            // management-UI display value. Consumers must render via
+            // textContent (not innerHTML); HTML/`<>` strip is enough
+            // defense-in-depth at the storage layer.
             string movieNameSanitized = (movie.Name ?? string.Empty);
             if (body?.MovieName is string clientName && !string.IsNullOrEmpty(clientName))
             {
                 var cleaned = System.Text.RegularExpressions.Regex.Replace(clientName, "<[^>]+>", string.Empty);
-                cleaned = cleaned.Replace("<", string.Empty).Replace(">", string.Empty)
-                    .Replace("\"", string.Empty).Replace("'", string.Empty).Replace("`", string.Empty);
+                cleaned = cleaned.Replace("<", string.Empty).Replace(">", string.Empty);
                 if (cleaned.Length > 200) cleaned = cleaned.Substring(0, 200);
                 if (!string.IsNullOrWhiteSpace(cleaned)) movieNameSanitized = cleaned;
             }
@@ -4561,7 +4562,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 spoilerState = LoadSpoilerStateForTagStrip(userId);
                 // Empty list = nothing to strip. Treat as off for this request.
-                if (spoilerState == null || spoilerState.Series.Count == 0)
+                // R14-C1: a movies-only user (no series in spoiler list)
+                // would short-circuit the strip entirely if we only checked
+                // Series.Count. Mirror the GetTagCache + image-filter checks.
+                if (spoilerState == null || (spoilerState.Series.Count == 0 && spoilerState.Movies.Count == 0))
                 {
                     stripTagsEnabled = false;
                 }

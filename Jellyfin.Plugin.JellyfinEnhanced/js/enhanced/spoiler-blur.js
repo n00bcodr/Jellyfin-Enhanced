@@ -246,7 +246,9 @@
             try {
                 var titleEl = visiblePage.querySelector('h1.itemName-name, h1.itemName, .itemName, h2.itemName-name');
                 if (titleEl && titleEl.textContent) movieName = titleEl.textContent.trim();
-            } catch (_) {}
+            } catch (e) {
+                console.warn(logPrefix, 'movie title scrape failed; falling back to server lookup:', e);
+            }
         }
         var promise = isMovie
             ? (willBeEnabled ? enableForMovie(itemId, movieName) : disableForMovie(itemId))
@@ -268,19 +270,24 @@
                 if (JE.tagPipeline && typeof JE.tagPipeline.invalidateServerCache === 'function') {
                     JE.tagPipeline.invalidateServerCache();
                 }
-            } catch (_) {}
-            // Also remove any reviews section currently rendered for this
-            // series — if the user just enabled spoiler mode on the series
-            // page, the reviews panel is sitting in the DOM unsuppressed.
+            } catch (e) {
+                console.warn(logPrefix, 'invalidateServerCache failed:', e);
+            }
+            // R14-M1: also remove any reviews section currently rendered
+            // for THIS detail page — works for both Series and Movie pages
+            // (movies were previously gated out and stayed visible until
+            // navigation/refresh after enabling spoiler mode).
             try {
-                if (!isMovie && willBeEnabled) {
+                if (willBeEnabled && JE.pluginConfig?.SpoilerStripReviews !== false) {
                     var existingReviews = document.querySelector('#itemDetailPage:not(.hide) .tmdb-reviews-section')
                         || document.querySelector('.tmdb-reviews-section');
-                    if (existingReviews && JE.pluginConfig?.SpoilerStripReviews !== false) {
-                        existingReviews.parentNode && existingReviews.parentNode.removeChild(existingReviews);
+                    if (existingReviews && existingReviews.parentNode) {
+                        existingReviews.parentNode.removeChild(existingReviews);
                     }
                 }
-            } catch (_) {}
+            } catch (e) {
+                console.warn(logPrefix, 'reviews section cleanup failed:', e);
+            }
         }).catch(function (err) {
             console.error(logPrefix, 'Toggle failed:', err);
             if (JE.toast) JE.toast(JE.t('spoiler_blur_error_toast'));

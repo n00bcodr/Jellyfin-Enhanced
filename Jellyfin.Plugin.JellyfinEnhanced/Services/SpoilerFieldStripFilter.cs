@@ -364,6 +364,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 Guid? seriesId = null;
                 bool watchedCheck = true;
+                // R14-H1: Movies path. Movie's spoiler-list membership is
+                // keyed by movie ID (not by SeriesId), and watched-state
+                // is the movie's own UserData.Played. Mirrors StripItem.
+                if (parent is MediaBrowser.Controller.Entities.Movies.Movie movieParent)
+                {
+                    if (!userState.Movies.ContainsKey(movieParent.Id.ToString("N"))) return false;
+                    if (ResolvePlayedServerSide(userId, itemId)) return false;
+                    return true;
+                }
                 if (parent is MediaBrowser.Controller.Entities.TV.Episode ep)
                 {
                     seriesId = ep.SeriesId;

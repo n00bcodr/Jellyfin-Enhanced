@@ -295,6 +295,42 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 14 review (2026-05-07) — post movies-support reviewer pass
+
+Sources: codex GPT-5.5 high (1 CRIT + 1 HIGH + 2 MED), code-reviewer (1 HIGH + 1 IMPORTANT), security-reviewer (1 HIGH), silent-failure-hunter (1 CRIT + 2 HIGH + 3 MED).
+
+### CRITICAL
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R14-C1** | codex + silent-failure | **fixed** | `GetTagData` early-bail at `:4139` checked only `Series.Count == 0`; movies-only spoiler users got zero strip on the per-batch endpoint — JE tag overlays rendered on top of blurred posters with full title/genre/rating data. **Fix:** mirror the GetTagCache + image-filter checks → `Series.Count == 0 && Movies.Count == 0`. |
+
+### HIGH
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R14-H1** | security + code-reviewer + codex | **fixed** | `RouteParentIsSpoilerEpisode` (the helper for R11-H1 / R11-H2) only handled Episode/Season parents; Movies have no SeriesId. `/Items/{movieId}/PlaybackInfo` and `/Items/{movieId}/Images` leaked `MediaSourceInfo.Path/Name`, stream paths, `MediaAttachments[].FileName`, and `ImageInfo.Path` for movies in the spoiler list. **Fix:** added Movie branch — `parent is Movie` → check `userState.Movies.ContainsKey(...)` + `ResolvePlayedServerSide` watched check, return true on hit. |
+| **R14-H2** | silent-failure | **fixed** | `shouldSuppressForSpoilerMode` catch returned `false` (don't suppress) on exception — fail-OPEN on cold-load XHR failures meant TMDB reviews rendered with spoilers. **Fix:** fail-CLOSED — `catch { console.warn(...); return true; }`. |
+
+### MEDIUM
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R14-M1** | codex | **fixed** | After movie-spoiler enable, the in-page reviews section stayed visible until next nav (gated `!isMovie`). Removed the gate so both Series and Movie pages strip on enable. |
+| **R14-M2** | codex | **fixed** | `invalidateServerCache` race: a body-MutationObserver-triggered `runScan()` during the await window could process cards against `serverCache=null` and mark them done. **Fix:** added `isInvalidating` flag (early-return in runScan), reset `processedCards` AFTER load too, clear `requestQueue` + bump `batchGeneration` to abort in-flight chunks. |
+| **R14-M3** | silent-failure | **fixed** | Empty catches in `onToggleClicked` (cache invalidate, reviews cleanup, movie title scrape) and `removeReviewsSection`. Converted to `console.warn` so future regressions are observable. |
+| **R14-I1** | code-reviewer | **fixed** | MovieName sanitizer mangled apostrophes/quotes in legitimate movie titles ("Don't Look Up" → "Dont Look Up"). Dropped the quote/apostrophe replacements; HTML-tag + angle-bracket strip is sufficient for the textContent display. |
+
+### Hygiene
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R14-Hygiene** | silent-failure | **addressed** | `OnUserDataSaved` switch lacked an explicit Movie case. Movies don't use `_watchedCache` so this wasn't an active leak, but added an explicit `case Movie:` no-op + comment so future readers don't have to re-derive the analysis. |
+
+### Convergence
+
+R14 is NOT yet convergent — significant new HIGH/CRITICAL surface from movies. Round 15 needed.
+
 ## Round 13 (2026-05-07) — CONVERGENCE
 
 Both reviewers explicitly declared convergence:
