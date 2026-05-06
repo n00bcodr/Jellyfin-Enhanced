@@ -7,6 +7,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
 using MediaBrowser.Model.Search;
 using Microsoft.AspNetCore.Mvc;
@@ -277,6 +278,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (cfg.SpoilerStripTaglines && item.Taglines != null)
             {
                 item.Taglines = Array.Empty<string>();
+            }
+
+            // Cast stripping. Two modes:
+            //   - "GuestStars" (default when SpoilerStripCast on): drop only
+            //     People whose Type matches the GuestStar enum value.
+            //     Leaves the regular cast in place — they appear in every
+            //     episode anyway, so they don't reveal anything new about
+            //     this one.
+            //   - "All": drop the entire People array. Strict mode for
+            //     paranoid spoiler-mode users; some shows leak via the
+            //     regular cast appearing or not appearing in a given
+            //     episode (e.g. a recurring villain return).
+            // Always uses BaseItemPerson.Type string comparison so we don't
+            // pull in a hard reference to PersonKind enum from elsewhere.
+            if (cfg.SpoilerStripCast && item.People != null && item.People.Length > 0)
+            {
+                if (string.Equals(cfg.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase))
+                {
+                    item.People = Array.Empty<BaseItemPerson>();
+                }
+                else
+                {
+                    // GuestStars-only mode (default).
+                    var kept = new List<BaseItemPerson>(item.People.Length);
+                    foreach (var p in item.People)
+                    {
+                        if (p == null) continue;
+                        // PersonKind.GuestStar serializes as "GuestStar" in BaseItemDto.
+                        if (string.Equals(p.Type.ToString(), "GuestStar", StringComparison.Ordinal))
+                            continue;
+                        kept.Add(p);
+                    }
+                    item.People = kept.ToArray();
+                }
             }
 
             // Title replacement — "The Death of X" → "Season 2, Episode 6".
