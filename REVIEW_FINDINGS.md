@@ -295,6 +295,22 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 8 review (2026-05-07) — post-R7 reviewer pass
+
+Sources: codex GPT-5.5 high (no findings), code-reviewer (no findings), silent-failure-hunter (no findings), security-reviewer.
+
+### MEDIUM
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R8-M1** | `Controllers/JellyfinEnhancedController.cs:3980` (stub stream DisplayTitle) | security MEDIUM | **fixed** | Same family as R7-M1. `MediaStream.DisplayTitle` getter prepends the raw `Title` field; user-muxed mkvs (MakeMKV / Plex / Sonarr renamers) commonly carry `Title="Episode Name"`. Under `SpoilerReplaceTitle`, the stub stream projection at `:3980` leaked the title via DisplayTitle even though `Name` was synthesized. **Fix:** null DisplayTitle in the stub projection. qualitytags.js recomputes overlay text from Codec / Height / VideoRangeType / Profile — none depend on Title. |
+
+### Convergence
+
+- 3/4 reviewers (codex, code-reviewer, silent-failure-hunter) returned **zero new findings**
+- security found **R8-M1** (one MEDIUM, fixed)
+- Round 9 needed to confirm R8-M1 fix doesn't regress, then convergence per JE skill rule
+
 ## Round 7 review (2026-05-06) — post-R6 reviewer pass
 
 Sources: codex GPT-5.5 high, code-reviewer, silent-failure-hunter, security-reviewer.

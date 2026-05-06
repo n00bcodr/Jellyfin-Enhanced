@@ -4402,7 +4402,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
-                                    DisplayTitle = s.DisplayTitle,
+                                    // R8-M1: DisplayTitle's GETTER prepends
+                                    // the raw `Title` field, which on user-
+                                    // muxed mkvs (MakeMKV / Plex / Sonarr
+                                    // renamers) commonly carries the episode
+                                    // name. Under SpoilerReplaceTitle, that
+                                    // would leak the title via the stream
+                                    // projection. Null it; qualitytags.js
+                                    // recomputes overlay text from Codec /
+                                    // Height / VideoRangeType / Profile —
+                                    // none of which depend on Title.
+                                    DisplayTitle = (string?)null,
                                 })
                                 .ToList();
                             // stubSources stays null — see comment above.
