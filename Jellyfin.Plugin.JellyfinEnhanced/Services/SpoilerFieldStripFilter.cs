@@ -78,6 +78,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("Library",     "GetSimilarMovies"),       true },
                 { ("Library",     "GetSimilarTrailers"),     true },
                 { ("Library",     "GetSimilarAlbums"),       true },
+                // R11-H1: /Items/{id}/Images returns IEnumerable<ImageInfo>
+                // whose Path is the raw server filesystem path (commonly
+                // contains the episode title in user-organized libraries).
+                { ("Image",       "GetItemImageInfos"),      true },
+                // R11-H2: /Items/{id}/PlaybackInfo returns
+                // PlaybackInfoResponse{MediaSources: MediaSourceInfo[]}.
+                // MediaSourceInfo carries the same title-bearing fields as
+                // BaseItemDto.MediaSources (Path, Name, MediaStreams,
+                // MediaAttachments) — emitted as a peer DTO not covered
+                // by the BaseItemDto-shape strip. Both GET and POST
+                // variants register here.
+                { ("MediaInfo",   "GetPlaybackInfo"),        true },
+                { ("MediaInfo",   "GetPostedPlaybackInfo"),  true },
             };
 
         private readonly SpoilerUserResolver _resolver;
@@ -193,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                StripIfApplicable(executed.Result, userState, cfg, userId);
+                StripIfApplicable(executed.Result, userState, cfg, userId, context);
             }
             catch (Exception ex)
             {
@@ -214,7 +227,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IActionResult? result,
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
-            Guid userId)
+            Guid userId,
+            ActionExecutingContext context)
         {
             // R4-M4 + R5-H2: ObjectResult covers most MVC return shapes,
             // but JsonResult / ContentResult / custom IActionResult are
@@ -248,6 +262,135 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case SearchHintResult shr:
                     StripSearchHints(shr, userState, cfg, userId);
                     break;
+                // R11-H1: ImageInfo[] from /Items/{id}/Images. Path is
+                // raw filesystem. Look up the parent itemId from the
+                // route to determine if its series is in the spoiler list.
+                case IEnumerable<MediaBrowser.Model.Dto.ImageInfo> imgs:
+                    StripImageInfos(imgs, userState, cfg, userId, context);
+                    break;
+                // R11-H2: PlaybackInfoResponse contains MediaSources[]
+                // with the same title-bearing fields as BaseItemDto's
+                // MediaSources.
+                case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi:
+                    StripPlaybackInfo(pbi, userState, cfg, userId, context);
+                    break;
+            }
+        }
+
+        // R11-H1: extractor for /Items/{id}/Images. ImageInfo doesn't carry
+        // SeriesId, so we look up the parent item via the route's `itemId`
+        // and check its series-list membership.
+        private void StripImageInfos(
+            IEnumerable<MediaBrowser.Model.Dto.ImageInfo> imgs,
+            UserSpoilerBlur userState,
+            PluginConfiguration cfg,
+            Guid userId,
+            ActionExecutingContext context)
+        {
+            if (!RouteParentIsSpoilerEpisode(context, userState, userId)) return;
+            if (!cfg.SpoilerReplaceTitle && !cfg.SpoilerStripOverview) return;
+
+            foreach (var info in imgs)
+            {
+                if (info == null) continue;
+                info.Path = null;
+            }
+        }
+
+        // R11-H2: extractor for /Items/{id}/PlaybackInfo. Walks
+        // PlaybackInfoResponse.MediaSources and applies the same
+        // MediaSourceInfo-level strip as ApplyStripping does for
+        // BaseItemDto.MediaSources.
+        private void StripPlaybackInfo(
+            MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi,
+            UserSpoilerBlur userState,
+            PluginConfiguration cfg,
+            Guid userId,
+            ActionExecutingContext context)
+        {
+            if (pbi.MediaSources == null) return;
+            if (!RouteParentIsSpoilerEpisode(context, userState, userId)) return;
+            if (!cfg.SpoilerReplaceTitle && !cfg.SpoilerStripOverview) return;
+
+            foreach (var ms in pbi.MediaSources)
+            {
+                if (ms == null) continue;
+                ms.Path = null;
+                ms.Name = null;
+                if (ms.MediaStreams != null)
+                {
+                    foreach (var s in ms.MediaStreams)
+                    {
+                        if (s == null) continue;
+                        s.Title = null;
+                        s.Comment = null;
+                        s.Path = null;
+                        s.DeliveryUrl = null;
+                    }
+                }
+                if (ms.MediaAttachments != null)
+                {
+                    foreach (var att in ms.MediaAttachments)
+                    {
+                        if (att == null) continue;
+                        att.FileName = null;
+                        att.Comment = null;
+                    }
+                }
+            }
+        }
+
+        // R11-H1/H2 helper: look up the parent item from the route's
+        // itemId value and confirm it's an Episode (or Season) of a
+        // spoiler-list series the user hasn't watched.
+        private bool RouteParentIsSpoilerEpisode(
+            ActionExecutingContext context,
+            UserSpoilerBlur userState,
+            Guid userId)
+        {
+            try
+            {
+                var routeValues = context.HttpContext.Request.RouteValues;
+                if (!routeValues.TryGetValue("itemId", out var idObj) || idObj == null)
+                {
+                    return false;
+                }
+                if (!Guid.TryParse(idObj.ToString(), out var itemId) || itemId == Guid.Empty)
+                {
+                    return false;
+                }
+                var parent = _libraryManager.GetItemById(itemId);
+                if (parent == null) return false;
+
+                Guid? seriesId = null;
+                bool watchedCheck = true;
+                if (parent is MediaBrowser.Controller.Entities.TV.Episode ep)
+                {
+                    seriesId = ep.SeriesId;
+                }
+                else if (parent is MediaBrowser.Controller.Entities.TV.Season s)
+                {
+                    seriesId = s.SeriesId;
+                    watchedCheck = false; // Season any-watched check is too costly here; over-strip.
+                }
+                else
+                {
+                    return false;
+                }
+
+                if (!seriesId.HasValue || seriesId.Value == Guid.Empty) return false;
+                if (!userState.Series.ContainsKey(seriesId.Value.ToString("N"))) return false;
+
+                if (watchedCheck && ResolvePlayedServerSide(userId, itemId)) return false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "fieldstrip-route-parent:" + ex.GetType().FullName,
+                    $"Spoiler field strip: parent-route lookup failed: {ex.Message}");
+                // Fail CLOSED: better to over-strip than leak.
+                return true;
             }
         }
 
@@ -697,6 +840,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (s == null) continue;
                         s.Title = null;
                         s.Comment = null;
+                        // R11-codex-H: external subtitle / audio stream
+                        // filenames mirror the episode title
+                        // ("S05E14 - The Death of X.en.srt"). Path is the
+                        // raw filesystem path; DeliveryUrl is the public
+                        // download URL — both leak.
+                        s.Path = null;
+                        s.DeliveryUrl = null;
                         // DisplayTitle is a read-only getter on the
                         // MediaStream entity that derives from Title;
                         // nulling Title sanitizes it transitively.
@@ -719,6 +869,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 if (s == null) continue;
                                 s.Title = null;
                                 s.Comment = null;
+                                // R11-codex-H: external file paths /
+                                // delivery URLs leak just like the
+                                // top-level streams.
+                                s.Path = null;
+                                s.DeliveryUrl = null;
                             }
                         }
                         // R10-H2: mkv attachments (chapters_*.xml,

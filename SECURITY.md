@@ -175,6 +175,27 @@ should ensure Jellyfin is fronted by HTTPS with no TLS-inspection
 intermediaries, which is the recommended baseline for any Jellyfin
 deployment.
 
+### Spoiler Blur — Title Strip is Best-Effort Across DTO Shapes
+
+`SpoilerReplaceTitle` and `SpoilerStripOverview` aggressively null
+title-bearing fields across every DTO shape we know about (R10/R11
+batches): top-level `Path`, `EpisodeTitle`, `ForcedSortName`,
+`CustomRating`, `RemoteTrailers`, `ExternalUrls`; top-level + nested
+`MediaStreams[].Title/Comment/Path/DeliveryUrl`; `MediaSources[].Path/Name`,
+`MediaSources[].MediaAttachments[].FileName/Comment`;
+`ChapterInfo.ImagePath`; `People[].Role`; `SearchHint.MatchedTerm`;
+`ImageInfo.Path` (`/Items/{id}/Images`);
+`PlaybackInfoResponse.MediaSources[]` (`/Items/{id}/PlaybackInfo`).
+
+Future Jellyfin upgrades may add new DTO fields or new DTO shapes that
+carry title-leaky content. The current architecture is **route-allowlist
++ DTO-shape switch** — a new shape silently bypasses strip until added
+to the allowlist. The recurring pattern observed across rounds 7–11 of
+review suggests a structural change to a recursive response-body
+property sweeper would be more durable. That work is a follow-up item;
+if you upgrade to a new Jellyfin version and notice unexpected spoiler
+leaks, file an issue.
+
 ### Spoiler Blur — Behaviour on Corrupt User State
 
 `spoilerblur.json` is read on every image request and on every tag-cache /

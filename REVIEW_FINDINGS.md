@@ -295,6 +295,28 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 11 review (2026-05-07) — post-R10 reviewer pass
+
+Sources: codex GPT-5.5 high (1 HIGH), security-reviewer (2 HIGH + structural recommendation), silent-failure-hunter (zero findings).
+
+### HIGH
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R11-codex-H** | codex HIGH | **fixed** | `MediaStream.Path` + `DeliveryUrl` left unstripped on both top-level and nested MediaStreams. External subtitle/audio filenames mirror episode title (`S05E14 - Death of X.en.srt`). Added Path+DeliveryUrl to both stream-strip loops. |
+| **R11-H1** | security HIGH | **fixed** | `/Items/{id}/Images` returns `IEnumerable<ImageInfo>` whose `Path` is the raw server filesystem path. Added `Image.GetItemImageInfos` to route allowlist + `StripImageInfos` extractor that nulls Path. Parent itemId resolved via route-values lookup; series-list + watched-state check via new `RouteParentIsSpoilerEpisode` helper. |
+| **R11-H2** | security HIGH | **fixed** | `/Items/{id}/PlaybackInfo` returns `PlaybackInfoResponse{MediaSources: MediaSourceInfo[]}` — same title-bearing fields as BaseItemDto.MediaSources, peer DTO. Added `MediaInfo.GetPlaybackInfo` + `GetPostedPlaybackInfo` to route allowlist + `StripPlaybackInfo` extractor that walks MediaSources, MediaStreams, MediaAttachments. |
+
+### Structural recommendation (deferred)
+
+Security review observed that the per-DTO whack-a-mole pattern keeps surfacing new shapes (R7-M1 → R8-M1 → R9-H1/M1 → R10 batch → R11-H1/H2). Future Jellyfin upgrades adding new DTO shapes will likely leak again. Recommended a STRUCTURAL change: response-body sweeper that walks every property recursively and nulls a hardcoded set of property names (Path, Title, Comment, FileName, Role, ImagePath, EpisodeTitle, ForcedSortName, CustomRating, MatchedTerm, DeliveryUrl) when the action emits a spoiler-list series-bound item.
+
+That's a significant rewrite and not worth blocking convergence on; documented as a future-work item in SECURITY.md (round 12 will add the doc).
+
+### Convergence
+
+R11 closed 3 new HIGH (1 codex + 2 security). Silent-failure verified convergent. Round 12 needed.
+
 ## Round 10 review (2026-05-07) — post-R9 reviewer pass
 
 Sources: codex GPT-5.5 high (1 HIGH + 1 MEDIUM), security-reviewer (5 HIGH + 4 MEDIUM), silent-failure-hunter (zero findings — convergence verified for R9-H1/M1 fixes).
