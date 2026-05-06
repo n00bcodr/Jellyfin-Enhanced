@@ -4367,11 +4367,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             stubName = $"Season {spEp.ParentIndexNumber.Value}, Episode {spEp.IndexNumber.Value}";
                         }
 
-                        // R6-H1: compute streams/sources here when the user
+                        // R6-H1 + R7-M1: compute MediaStreams here when the user
                         // hasn't enabled SpoilerStripTags so quality / language
                         // overlays still render under rating-only strip. Prior
                         // ternary was `null : null` (dead code) — every stub
                         // dropped streams unconditionally.
+                        //
+                        // MediaSources is intentionally LEFT NULL even when
+                        // streams are computed (codex R7-M1): MediaSources
+                        // exposes filename + display name which commonly leak
+                        // the raw episode title (e.g. "S05E14 - The Death of
+                        // Optimus Prime.mkv"). For an unwatched-spoiler episode
+                        // under SpoilerReplaceTitle that defeats the title
+                        // toggle entirely. The IMAX/3D/media-stub overlays
+                        // that consume MediaSources are tag-rendering features
+                        // — losing them on stripped episodes only is the
+                        // correct trade-off.
                         List<object>? stubStreams = null;
                         List<object>? stubSources = null;
                         if (!spStripGenres)
@@ -4394,13 +4405,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     DisplayTitle = s.DisplayTitle,
                                 })
                                 .ToList();
-                            stubSources = stubMediaSources
-                                .Select(s => (object)new
-                                {
-                                    Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
-                                    Name = s.Name,
-                                })
-                                .ToList();
+                            // stubSources stays null — see comment above.
                         }
 
                         // R5-M10: per-field strip. When a rating toggle is

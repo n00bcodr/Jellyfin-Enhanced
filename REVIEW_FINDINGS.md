@@ -295,6 +295,39 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 7 review (2026-05-06) — post-R6 reviewer pass
+
+Sources: codex GPT-5.5 high, code-reviewer, silent-failure-hunter, security-reviewer.
+
+### HIGH
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R7-H1** | `Services/SpoilerBlurImageFilter.cs:_pendingInvalidations` (per-user dedup too coarse) | codex HIGH | **fixed** | R6-M5's per-user gate dropped same-user events for *different* seasons; only one season's eviction ran per in-flight window — partial regression of R4-H7 (other seasons stay clear-when-should-blur for ≤30s). **Fix:** changed dedup key to `(userId, scopeId)` tuple where scopeId is seasonId for episode/season events and seriesId for series events. Cross-season events now each get their own dispatch; same-scope repeats coalesce. |
+
+### MEDIUM
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R7-M1** | `Controllers/JellyfinEnhancedController.cs:GetTagData stub MediaSources` | codex MEDIUM | **fixed** | R6-H1 restored MediaSources containing `Path.GetFileName(s.Path)` + `s.Name` — for unwatched-spoiler episode under rating-only strip + `SpoilerReplaceTitle`, the raw filename leaks the episode title (e.g. "S05E14 - The Death of Optimus Prime.mkv"). **Fix:** keep MediaStreams (quality/language overlays), but unconditionally null `stubSources`. Loses IMAX/3D detection on stripped episodes — correct trade-off. |
+| **R7-M2** | `Services/SpoilerBlurImageFilter.cs:OnUserDataSaved Task.Run` | silent-failure MEDIUM | **fixed** | If `Task.Run` throws synchronously (OOM, threadpool denial), the lambda's `finally { TryRemove }` never runs and the dedup key stays in `_pendingInvalidations` forever — that scope's events are silently dropped until process restart. **Fix:** wrapped dispatcher in try/catch; on synchronous failure, TryRemove the dedup key + rate-limited warn. |
+
+### LOW (deferred)
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R7-L1** | silent-failure LOW | **deferred** | `_pendingInvalidations` dropped events leave no audit trail. Optional: per-user dropped-count counter. Non-blocking visibility-only. |
+| **R7-I1** | security INFORMATIONAL | **deferred** | Static `_pendingInvalidations` survives plugin reload — pre-reload Task.Run lambdas still active until they complete. Bounded by lambda finally; no leak. |
+
+### Convergence
+
+- **CRITICAL: 0**
+- **HIGH: 0 open** (R7-H1 fixed)
+- **MEDIUM: 0 open** (R7-M1, R7-M2 fixed)
+- **LOW: 2 deferred** (visibility/perf only)
+
+Round 8 pass needed to confirm convergence per JE skill rule.
+
 ## Round 6 review (2026-05-06) — post-R5 reviewer pass
 
 Sources: codex GPT-5.5 high, code-reviewer, silent-failure-hunter, security-reviewer.

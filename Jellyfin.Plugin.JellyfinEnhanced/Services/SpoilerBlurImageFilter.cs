@@ -129,79 +129,104 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (!seasonId.HasValue && !seriesId.HasValue) return;
 
-            // R6-M5: per-user coalesce. Prior code spawned a Task.Run
-            // per UserDataSaved event; a "Mark season watched" sweep on a
-            // 24-episode season fires 24 events → 24 queued threadpool
-            // tasks all racing the same _watchedCache. Bound to one
-            // in-flight task per user. Subsequent events while a task is
-            // in flight are dropped — safe because a missed eviction
-            // self-heals via the 30s cache TTL, and the in-flight task
-            // covers all keys for that user via the series prefix scan
-            // (or just one key if it's a season event).
-            if (!_pendingInvalidations.TryAdd(userId, 0))
+            // R6-M5 + R7-H1: per-(user, scope) coalesce. Prior code spawned a
+            // Task.Run per UserDataSaved event; a "Mark season watched"
+            // sweep on a 24-episode season fires 24 events → 24 queued
+            // threadpool tasks all racing the same _watchedCache. R6-M5
+            // bounded that with a per-user gate, but THAT was too coarse
+            // (codex R7-H1): events for season A and season B for the
+            // same user collapsed to one dispatch, dropping season B's
+            // eviction. Now keyed by (userId, scopeId) where scopeId is
+            // seasonId for episode/season events and seriesId for series
+            // events. Same-season repeats coalesce; cross-season events
+            // each get their own dispatch.
+            var scopeId = seasonId.HasValue && seasonId.Value != Guid.Empty
+                ? seasonId.Value
+                : seriesId!.Value;
+            var dedupKey = (userId, scopeId);
+            if (!_pendingInvalidations.TryAdd(dedupKey, 0))
             {
                 return;
             }
 
-            // R6-L3: capture _disposed once so post-Dispose Task.Run
-            // lambdas no-op fast.
-            Task.Run(() =>
+            // R7-M2: protect the dispatcher itself. If Task.Run throws
+            // synchronously (OOM, threadpool denial-of-service), the
+            // lambda's `finally` never runs — the dedup key would stay
+            // in the dictionary forever and that scope's events would
+            // be silently dropped until process restart. Catch + remove.
+            try
             {
-                try
+                Task.Run(() =>
                 {
-                    if (_disposed) return;
-                    if (seasonId.HasValue && seasonId.Value != Guid.Empty)
+                    try
                     {
-                        var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
-                        // R5-M4: surface eviction-key-mismatch as a debug
-                        // breadcrumb. If a future refactor desyncs the
-                        // build-key from the read-key, evictions silently
-                        // become no-ops; counting the no-removal cases
-                        // makes that observable.
-                        if (!_watchedCache.TryRemove(key, out _))
+                        // R6-L3: instance-field _disposed read at execution
+                        // time so post-Dispose lambdas no-op fast.
+                        if (_disposed) return;
+                        if (seasonId.HasValue && seasonId.Value != Guid.Empty)
                         {
-                            // Hit may simply not exist (cold cache); not an
-                            // error. Logging at Debug, not Warning.
-                            // _logger.Info($"[SpoilerBlur] UserDataSaved: no cache entry for season key {key} (cold cache or already evicted).");
+                            var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
+                            // R5-M4: surface eviction-key-mismatch as a debug
+                            // breadcrumb. If a future refactor desyncs the
+                            // build-key from the read-key, evictions silently
+                            // become no-ops; counting the no-removal cases
+                            // makes that observable.
+                            if (!_watchedCache.TryRemove(key, out _))
+                            {
+                                // Hit may simply not exist (cold cache); not an
+                                // error. Logging at Debug, not Warning.
+                                // _logger.Info($"[SpoilerBlur] UserDataSaved: no cache entry for season key {key} (cold cache or already evicted).");
+                            }
+                        }
+                        else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
+                        {
+                            // Series-level event — invalidate every cached season
+                            // for this user under this series. Cache keys are
+                            // "{userN}:{seasonN}" so we'd have to iterate. Cheap
+                            // because the cache is small (≤512 entries) and this
+                            // event is rare.
+                            // R5-M5/L3: ToArray for symmetry with the eviction
+                            // site at the bottom of this file. ConcurrentDictionary.Keys
+                            // is a snapshot in current .NET but ToArray makes
+                            // intent explicit and survives framework changes.
+                            var prefix = userId.ToString("N") + ":";
+                            foreach (var k in _watchedCache.Keys.ToArray())
+                            {
+                                if (k.StartsWith(prefix, StringComparison.Ordinal))
+                                    _watchedCache.TryRemove(k, out _);
+                            }
                         }
                     }
-                    else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
+                    catch (Exception ex)
                     {
-                        // Series-level event — invalidate every cached season
-                        // for this user under this series. Cache keys are
-                        // "{userN}:{seasonN}" so we'd have to iterate. Cheap
-                        // because the cache is small (≤512 entries) and this
-                        // event is rare.
-                        // R5-M5/L3: ToArray for symmetry with the eviction
-                        // site at the bottom of this file. ConcurrentDictionary.Keys
-                        // is a snapshot in current .NET but ToArray makes
-                        // intent explicit and survives framework changes.
-                        var prefix = userId.ToString("N") + ":";
-                        foreach (var k in _watchedCache.Keys.ToArray())
-                        {
-                            if (k.StartsWith(prefix, StringComparison.Ordinal))
-                                _watchedCache.TryRemove(k, out _);
-                        }
+                        _resolver.WarnRateLimited(
+                            "userdata-saved-handler:" + ex.GetType().FullName,
+                            $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
                     }
-                }
-                catch (Exception ex)
-                {
-                    _resolver.WarnRateLimited(
-                        "userdata-saved-handler:" + ex.GetType().FullName,
-                        $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
-                }
-                finally
-                {
-                    _pendingInvalidations.TryRemove(userId, out _);
-                }
-            });
+                    finally
+                    {
+                        _pendingInvalidations.TryRemove(dedupKey, out _);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // Synchronous Task.Run failure (rare). Release the dedup
+                // slot so subsequent events for this scope can dispatch
+                // again, and surface the failure with rate-limited warn.
+                _pendingInvalidations.TryRemove(dedupKey, out _);
+                _resolver.WarnRateLimited(
+                    "userdata-saved-dispatch:" + ex.GetType().FullName,
+                    $"Spoiler blur: Task.Run dispatch threw synchronously: {ex.Message}");
+            }
         }
 
-        // R6-M5: per-user dedup gate for the OnUserDataSaved Task.Run
-        // dispatch. Static so a hot-reload preserves the dedup state
-        // across plugin instances (matches _watchedCache, _warnedShapeAt
-        // pattern in this file).
-        private static readonly ConcurrentDictionary<Guid, byte> _pendingInvalidations = new();
+        // R6-M5 + R7-H1: per-(user, scope) dedup gate for the
+        // OnUserDataSaved Task.Run dispatch. Scope is seasonId for
+        // episode/season events, seriesId for series events. Static so a
+        // hot-reload preserves the dedup state across plugin instances
+        // (matches _watchedCache, _warnedShapeAt pattern in this file).
+        private static readonly ConcurrentDictionary<(Guid, Guid), byte> _pendingInvalidations = new();
 
         // R5-H3 / R5-M9: this filter is a Singleton subscribed to
         // IUserDataManager.UserDataSaved. Without an unsubscribe path,
