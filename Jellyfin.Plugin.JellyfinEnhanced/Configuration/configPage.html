@@ -867,8 +867,13 @@
                                             <option value="All">Entire cast (regulars + guest stars)</option>
                                         </select>
                                     </div>
-                                    <div class="je-setting-description" data-desc-for="spoilerStripCastMode" data-gated-by="spoilerStripCast">
+                    <div class="je-setting-description" data-desc-for="spoilerStripCastMode" data-gated-by="spoilerStripCast">
                                         <div class="fieldDescription">"Guest stars only" leaves the regular cast visible — they appear in every episode anyway, so they don't reveal anything new. "Entire cast" is the strict mode.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripReviews" is="emby-checkbox" type="checkbox"/><span>Hide reviews on spoiler-mode series</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripReviews">
+                                        <div class="fieldDescription">Suppresses the JE Reviews panel on series detail pages where the user has spoiler mode enabled. TMDB reviews routinely contain plot spoilers from arbitrary points in the show — recommended on.</div>
                                     </div>
                                 </div>
                             </details>
@@ -4316,6 +4321,7 @@
                     ['spoilerStripPremiereDate',    'SpoilerStripPremiereDate',    false],
                     ['spoilerReplaceTitle',         'SpoilerReplaceTitle',         false],
                     ['spoilerStripCast',            'SpoilerStripCast',            false],
+                    ['spoilerStripReviews',         'SpoilerStripReviews',         true],
                 ].forEach(function (t) {
                     var el = document.querySelector('#' + t[0]);
                     if (!el) return;
@@ -4655,7 +4661,7 @@
                 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters',
                 'spoilerStripTaglines', 'spoilerStripCommunityRating',
                 'spoilerStripCriticRating', 'spoilerStripPremiereDate',
-                'spoilerReplaceTitle', 'spoilerStripCast',
+                'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerStripReviews',
             ].forEach(function (id) {
                 var el = document.querySelector('#' + id);
                 if (!el) return;

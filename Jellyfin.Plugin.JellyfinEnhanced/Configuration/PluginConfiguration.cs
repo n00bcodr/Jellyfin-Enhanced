@@ -292,6 +292,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerReplaceTitle = false;
             SpoilerStripCast = false;
             SpoilerStripCastMode = "GuestStars";
+            SpoilerStripReviews = true;
             SpoilerOverviewPlaceholder = "Spoiler mode activated";
         }
 
@@ -608,6 +609,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // when stripping is on is "GuestStars".
         public bool SpoilerStripCast { get; set; } = false;
         public string SpoilerStripCastMode { get; set; } = "GuestStars";
+        // Hide the JE Reviews panel on Series detail pages where the user
+        // has spoiler mode enabled. TMDB reviews routinely contain plot
+        // spoilers from arbitrary points in the show; user-written reviews
+        // do too. Default ON because the spoiler risk dwarfs the UX cost.
+        public bool SpoilerStripReviews { get; set; } = true;
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.

@@ -12,6 +12,37 @@
 
         const logPrefix = '🪼 Jellyfin Enhanced: Reviews:';
 
+        // Suppress the reviews panel when the current Series has spoiler
+        // mode enabled by the user AND the admin has SpoilerStripReviews
+        // on. TMDB reviews routinely contain plot spoilers from arbitrary
+        // points in the show, and user-written reviews share that risk.
+        // Reviews only render on Movie / Series pages today; Movies don't
+        // have a per-item spoiler list, so the suppression only applies
+        // to Series.
+        function shouldSuppressForSpoilerMode(item, mediaType) {
+            try {
+                if (mediaType !== 'Series') return false;
+                if (!JE.pluginConfig?.SpoilerBlurEnabled) return false;
+                if (!JE.pluginConfig?.SpoilerStripReviews) return false;
+                if (!JE.spoilerBlur?.isEnabledFor) return false;
+                return JE.spoilerBlur.isEnabledFor(item?.Id || '');
+            } catch (_) {
+                return false;
+            }
+        }
+
+        // When the suppression decision flips on between two visits to the
+        // same series page (e.g. user just enabled spoiler mode in this
+        // session), an existing reviews section may already be in the DOM.
+        // Strip it on suppress.
+        function removeReviewsSection(page) {
+            try {
+                const root = page || document.querySelector('#itemDetailPage:not(.hide)') || document;
+                const sec = root.querySelector('.tmdb-reviews-section');
+                if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
+            } catch (_) {}
+        }
+
         function fetchReviews(tmdbId, mediaType) {
             const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
             const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
@@ -766,6 +797,11 @@
                     : await ApiClient.getItem(userId, itemId);
                 const mediaType = item?.Type;
 
+                if (shouldSuppressForSpoilerMode(item, mediaType)) {
+                    removeReviewsSection(contextPage);
+                    return;
+                }
+
                 let tmdbKey = null;
                 let apiMediaType;
 
@@ -780,26 +816,26 @@
                     tmdbKey = String(tmdbId);
                     apiMediaType = 'tv';
                 } else if (mediaType === 'Season') {
-                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                        if (!seriesTmdbId && item?.SeriesId) {
-                            try {
-                                const series = await ApiClient.getItem(userId, item.SeriesId);
-                                seriesTmdbId = series?.ProviderIds?.Tmdb;
-                            } catch (_) {}
-                        }
-                        if (!seriesTmdbId || item?.IndexNumber == null) return;
-                        tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
-                        apiMediaType = 'tv';
-                    } else if (mediaType === 'Episode') {
-                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                        if (!seriesTmdbId && item?.SeriesId) {
-                            try {
-                                const series = await ApiClient.getItem(userId, item.SeriesId);
-                                seriesTmdbId = series?.ProviderIds?.Tmdb;
-                            } catch (_) {}
-                        }
-                        if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
-                        tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
+                    let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                    if (!seriesTmdbId && item?.SeriesId) {
+                        try {
+                            const series = await ApiClient.getItem(userId, item.SeriesId);
+                            seriesTmdbId = series?.ProviderIds?.Tmdb;
+                        } catch (_) {}
+                    }
+                    if (!seriesTmdbId || item?.IndexNumber == null) return;
+                    tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
+                    apiMediaType = 'tv';
+                } else if (mediaType === 'Episode') {
+                    let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                    if (!seriesTmdbId && item?.SeriesId) {
+                        try {
+                            const series = await ApiClient.getItem(userId, item.SeriesId);
+                            seriesTmdbId = series?.ProviderIds?.Tmdb;
+                        } catch (_) {}
+                    }
+                    if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
+                    tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
                     apiMediaType = 'tv';
                 } else {
                     return;
@@ -807,6 +843,9 @@
 
                 if (!tmdbKey) return;
 
+                // Fetch the current user fresh alongside the review data so
+                // admin status reflects the actual live session, not a
+                // potentially-stale JE.currentUser captured at plugin init.
                 const [tmdbReviews, userReviews, currentUser] = await Promise.all([
                     (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
                         ? fetchReviews(tmdbKey.split(':')[0], mediaType)
@@ -1016,6 +1055,11 @@
                         : await ApiClient.getItem(userId, itemId);
                     const mediaType = item?.Type;
 
+                    if (shouldSuppressForSpoilerMode(item, mediaType)) {
+                        removeReviewsSection(visiblePage);
+                        return;
+                    }
+
                     // Resolve tmdbKey and apiMediaType based on item type
                     let tmdbKey = null;
                     let apiMediaType;
@@ -1057,6 +1101,9 @@
                     }
 
                     if (tmdbKey) {
+                        // See refreshReviews for why we resolve currentUser here
+                        // instead of reading JE.currentUser — same race/staleness
+                        // reasoning.
                         const [tmdbReviews, userReviews, currentUser] = await Promise.all([
                             // TMDB reviews only available for top-level movie/tv, not seasons/episodes
                             (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
