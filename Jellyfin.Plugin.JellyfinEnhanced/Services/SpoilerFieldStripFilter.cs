@@ -86,6 +86,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
+            // Diagnostic: uncomment to log every controller/action this
+            // filter sees on item-listing routes. Used to discover the
+            // real route-value mappings (e.g. UserLibrary.GetItemLegacy
+            // for /Users/{uid}/Items/{id}). Kept commented for future
+            // route-discovery work — the route table above was built
+            // from this output.
+            //
+            // var rv = context.ActionDescriptor.RouteValues;
+            // string ctrl = "(none)", act = "(none)";
+            // if (rv != null)
+            // {
+            //     if (rv.TryGetValue("controller", out var c) && c != null) ctrl = c;
+            //     if (rv.TryGetValue("action", out var a) && a != null) act = a;
+            // }
+            // var path = context.HttpContext.Request.Path.Value ?? "";
+            // if (!path.Contains("/Images/") &&
+            //     (path.Contains("/Items") || path.Contains("/Shows")
+            //      || path.Contains("/Suggestions") || path.Contains("/Search")))
+            // {
+            //     _logger.Info($"[fieldstrip-diag] path={path} controller={ctrl} action={act}");
+            // }
+
             // Sync fast-path bail order — three short-circuit checks before
             // we touch anything expensive. Returns the original Task<>
             // unchanged so non-matching routes pay zero overhead.
@@ -255,6 +277,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (cfg.SpoilerStripTaglines && item.Taglines != null)
             {
                 item.Taglines = Array.Empty<string>();
+            }
+
+            // Title replacement — "The Death of X" → "Season 2, Episode 6".
+            // Off by default because some clients use Name in navigation
+            // tooltips, breadcrumbs, and "now playing" overlays where the
+            // synthesized title can look jarring. When IndexNumber or
+            // ParentIndexNumber is missing (rare; typically only for
+            // specials), fall back to leaving the name alone — a synthesized
+            // "Season ?, Episode ?" is worse than leaking a single title.
+            if (cfg.SpoilerReplaceTitle
+                && item.IndexNumber.HasValue
+                && item.ParentIndexNumber.HasValue)
+            {
+                item.Name = $"Season {item.ParentIndexNumber.Value}, Episode {item.IndexNumber.Value}";
+                // Some clients also render SortName / OriginalTitle if the
+                // primary Name is too generic — clear those so the user's
+                // chosen title doesn't bleed through via a fallback path.
+                item.SortName = null;
+                item.OriginalTitle = null;
             }
         }
 

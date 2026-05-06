@@ -611,6 +611,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             bool anyWatched = false;
+            // Diagnostic counters — kept (commented logger) for future
+            // troubleshooting if the season-watched cache produces
+            // unexpected blur/passthrough decisions. Uncomment the
+            // _logger.Info line below to surface per-call results.
+            int total = 0, withUd = 0;
             try
             {
                 // Enumerate the season's episodes; bail as soon as we find a
@@ -620,14 +625,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // waste iterations.
                 foreach (var child in season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
                 {
+                    total++;
                     if (child is not Episode ep) continue;
                     var ud = _userDataManager.GetUserData(user, ep);
+                    if (ud != null) withUd++;
                     if (ud?.Played == true)
                     {
                         anyWatched = true;
                         break;
                     }
                 }
+                // _logger.Info($"[seasondiag] season={season.Id} {season.Name} total={total} withUd={withUd} anyWatched={anyWatched}");
             }
             catch (Exception ex)
             {
