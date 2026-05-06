@@ -295,6 +295,20 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 13 (2026-05-07) — CONVERGENCE
+
+Both reviewers explicitly declared convergence:
+- **codex GPT-5.5 high**: "Convergence declared: zero new HIGH findings."
+- **security-reviewer**: "CONVERGENCE. R12-codex-H fix is sound: reflection is null-guarded, ParentId walk is bounded by `hops < 4` plus `Guid.Empty` and `null` exits, fail-closed catch over-strips on exception, watched check disabled for extras matches R10-codex-H privacy-positive pattern."
+
+Final state:
+- 0 CRITICAL, 0 HIGH open across rounds 1–13
+- ~12 MEDIUM/LOW deferred with documented rationale (none privacy-blocking)
+- Structural recommendation (recursive response-body sweeper) documented in SECURITY.md as future-work item
+- 13 commits on the feature branch since divergence from main
+
+Per JE skill rule "loop terminates when one full parallel pass produces zero new HIGH/P1/P2 findings" — **the loop is complete**.
+
 ## Round 12 review (2026-05-07) — post-R11 reviewer pass
 
 Sources: codex GPT-5.5 high (1 HIGH), security-reviewer (zero findings — convergence), silent-failure-hunter (zero findings — convergence).
