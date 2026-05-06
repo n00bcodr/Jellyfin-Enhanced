@@ -169,51 +169,90 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Read the item from Jellyfin's library. Cheap in-memory lookup.
             var item = _libraryManager.GetItemById(itemId);
-            if (item is not Episode episode)
+            if (item == null)
             {
                 await next().ConfigureAwait(false);
                 return;
             }
 
-            var seriesId = episode.SeriesId;
+            // Resolve the parent series ID for both Episode and Season items.
+            // Other item types pass through unchanged.
+            Guid seriesId;
+            switch (item)
+            {
+                case Episode ep:
+                    seriesId = ep.SeriesId;
+                    break;
+                case Season seasonItem:
+                    seriesId = seasonItem.SeriesId;
+                    break;
+                default:
+                    await next().ConfigureAwait(false);
+                    return;
+            }
+
             if (seriesId == Guid.Empty
                 || !userState.Series.ContainsKey(seriesId.ToString("N")))
             {
-                // Episode's series isn't on the user's spoiler-blur list.
+                // Item's series isn't on the user's spoiler-blur list.
                 await next().ConfigureAwait(false);
                 return;
             }
 
-            // Already-watched episodes pass through. We use IUserDataManager
-            // here rather than IsPlayed(user) directly — IsPlayed dispatches
-            // on item type for series/season aggregation, but for a leaf
-            // Episode it's equivalent to UserData.Played. Reading user data
-            // straight is cheaper and skips Jellyfin's unrelated null guards.
             var jUser = _userManager.GetUserById(userId.Value);
             if (jUser == null)
             {
                 await next().ConfigureAwait(false);
                 return;
             }
-            var userData = _userDataManager.GetUserData(jUser, episode);
-            if (userData?.Played == true)
+
+            // Episode path: blur if not played; pass-through with no-store if played.
+            if (item is Episode episode)
             {
-                // M3: pass-through, but force `no-store` so a watched episode's
-                // image isn't cached permanently in the user's browser. If the
-                // user later marks the episode unwatched again, the next fetch
-                // must re-evaluate through this filter.
-                //
-                // R2-H2: register on Response.OnStarting BEFORE awaiting
-                // next(). For streaming FileStreamResult paths the response
-                // headers can be flushed inside next()'s execution, so a
-                // post-next() header write would be a no-op.
-                RegisterNoStoreOnStarting(context.HttpContext);
-                await next().ConfigureAwait(false);
-                return;
+                var userData = _userDataManager.GetUserData(jUser, episode);
+                if (userData?.Played == true)
+                {
+                    // M3: pass-through, but force `no-store` so a watched episode's
+                    // image isn't cached permanently in the user's browser. If the
+                    // user later marks the episode unwatched again, the next fetch
+                    // must re-evaluate through this filter.
+                    //
+                    // R2-H2: register on Response.OnStarting BEFORE awaiting
+                    // next(). For streaming FileStreamResult paths the response
+                    // headers can be flushed inside next()'s execution, so a
+                    // post-next() header write would be a no-op.
+                    RegisterNoStoreOnStarting(context.HttpContext);
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Else fall through to blur path below.
+            }
+            else
+            {
+                // Season path: blur if S2+ and the user has watched zero
+                // episodes from this season; pass-through otherwise.
+                var season = (Season)item;
+                var seasonNum = season.IndexNumber.GetValueOrDefault(int.MaxValue);
+                // Always show Season 1 (and Specials S0) so the user has some
+                // entry point. Future seasons get blurred until at least one
+                // episode is watched.
+                if (seasonNum <= 1)
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                if (HasWatchedAnyEpisodeInSeason(jUser, season))
+                {
+                    // User started this season — pass-through.
+                    RegisterNoStoreOnStarting(context.HttpContext);
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Else fall through to blur path below.
             }
 
             // Stash the cache key so the post-action code doesn't recompute.
-            var cacheKey = BuildCacheKey(episode, imageType, context, pluginConfig.SpoilerBlurIntensity);
+            var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity);
 
             var executed = await next().ConfigureAwait(false);
             if (executed.Canceled || executed.Exception != null) return;
@@ -519,7 +558,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             "width", "height", "quality", "format",
         };
 
-        private static string BuildCacheKey(Episode episode, string imageType, ActionExecutingContext context, int sigma)
+        private static string BuildItemCacheKey(BaseItem item, string imageType, ActionExecutingContext context, int sigma)
         {
             string? tag = null;
             string? index = null;
@@ -541,7 +580,85 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return $"{episode.Id:N}|{imageType}|{index ?? "_"}|{tag ?? "_"}|{sigma}|{sizeKey}";
+            return $"{item.Id:N}|{imageType}|{index ?? "_"}|{tag ?? "_"}|{sigma}|{sizeKey}";
+        }
+
+        // Per-(user, season) "any episode watched?" cache. Home-page rows can
+        // request the same season's Primary + Backdrop + Thumb in quick
+        // succession; without caching we'd hit the library DB three times for
+        // the same answer. The cache TTL is short because a user marking an
+        // episode watched should flip the season's poster from blurred to
+        // clear on next page load — too long a TTL means stale state. 30s is
+        // long enough to cover a full home-page render but short enough that
+        // mark-watched → next-navigation roundtrips see fresh data.
+        private static readonly TimeSpan SeasonWatchedCacheTtl = TimeSpan.FromSeconds(30);
+
+        private sealed class WatchedCacheEntry
+        {
+            public required bool AnyWatched { get; init; }
+            public required DateTime ExpiresAt { get; init; }
+        }
+
+        private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
+
+        private bool HasWatchedAnyEpisodeInSeason(JUser user, Season season)
+        {
+            var key = user.Id.ToString("N") + ":" + season.Id.ToString("N");
+            var now = DateTime.UtcNow;
+            if (_watchedCache.TryGetValue(key, out var hit) && hit.ExpiresAt > now)
+            {
+                return hit.AnyWatched;
+            }
+
+            bool anyWatched = false;
+            try
+            {
+                // Enumerate the season's episodes; bail as soon as we find a
+                // played one. `shouldIncludeMissingEpisodes: false` skips
+                // episodes Jellyfin has metadata for but no media file —
+                // those obviously can't have been "played" so they'd just
+                // waste iterations.
+                foreach (var child in season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                {
+                    if (child is not Episode ep) continue;
+                    var ud = _userDataManager.GetUserData(user, ep);
+                    if (ud?.Played == true)
+                    {
+                        anyWatched = true;
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // On error, fail SAFE (assume watched → no blur). Spoiler-
+                // mode is opt-in for entertainment, not security; a transient
+                // DB glitch shouldn't surface a wrong-state blur. Pass-through
+                // is the conservative default.
+                WarnRateLimited(
+                    "season-watched:" + ex.GetType().FullName,
+                    $"Spoiler blur: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — passing through unblurred. {ex.Message}");
+                anyWatched = true;
+            }
+
+            _watchedCache[key] = new WatchedCacheEntry
+            {
+                AnyWatched = anyWatched,
+                ExpiresAt = now + SeasonWatchedCacheTtl,
+            };
+
+            // Periodic eviction so the dictionary doesn't grow unbounded
+            // across long server uptimes. Cheap O(N) scan when the cache
+            // grows beyond a small threshold.
+            if (_watchedCache.Count > 512)
+            {
+                foreach (var kvp in _watchedCache)
+                {
+                    if (kvp.Value.ExpiresAt < now) _watchedCache.TryRemove(kvp.Key, out _);
+                }
+            }
+
+            return anyWatched;
         }
 
         private async Task ReplaceWithBlurredAsync(ActionExecutedContext executed, int sigma, string cacheKey)
