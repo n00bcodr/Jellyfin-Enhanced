@@ -355,6 +355,10 @@
 
                     if (tmdb || critic !== null) {
                         applyRatingTag(el, rating);
+                        if (typeof JE.appendUserRatingToContainer === 'function') {
+                            const container = el.querySelector('.rating-overlay-container');
+                            if (container) JE.appendUserRatingToContainer(container, item);
+                        }
                     }
                 },
                 renderFromCache: function(el, itemId) {
@@ -364,6 +368,7 @@
                     const cached = getCachedEntry(itemId);
                     if (cached && (cached.tmdb || cached.critic !== null)) {
                         applyRatingTag(el, cached);
+                        // User rating needs the full item — skip here, pipeline will call render() with item
                         return true;
                     }
                     return false;
@@ -379,6 +384,7 @@
                         : null;
                     if (tmdb || critic !== null) {
                         applyRatingTag(el, { tmdb, critic });
+                        // User rating needs item provider IDs — not available in server cache entry
                     }
                 },
                 isEnabled: function() { return !!JE.currentSettings?.ratingTagsEnabled; },
