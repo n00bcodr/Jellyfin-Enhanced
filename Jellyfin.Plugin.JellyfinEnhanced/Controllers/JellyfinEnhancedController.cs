@@ -4224,7 +4224,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         var entry = kvp.Value;
                         if (entry == null) continue;
-                        if (!string.Equals(entry.Type, "Episode", StringComparison.Ordinal)) continue;
+                        var isEpisode = string.Equals(entry.Type, "Episode", StringComparison.Ordinal);
+                        var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
+                        if (!isEpisode && !isSeason) continue;
                         if (string.IsNullOrEmpty(entry.SeriesId)) continue;
                         if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
 
@@ -4234,13 +4236,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // (user, itemId) directly.
                         // R5-L7: Guid.TryParse already accepts the "N" form,
                         // so the prior TryParseExact was redundant.
+                        // Season post-fix: extends per-entry watched check —
+                        // for Episodes, ud?.Played == true skips the strip;
+                        // for Seasons, IndexNumber<=1 OR any-episode-watched
+                        // skips the strip (mirrors SpoilerBlurImageFilter
+                        // and SpoilerFieldStripFilter Season blur logic).
                         if (Guid.TryParse(kvp.Key, out var entryGuid))
                         {
                             var entryItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid);
                             if (entryItem != null)
                             {
-                                var ud = _userDataManager.GetUserData(user, entryItem);
-                                if (ud?.Played == true) continue;
+                                if (isEpisode)
+                                {
+                                    var ud = _userDataManager.GetUserData(user, entryItem);
+                                    if (ud?.Played == true) continue;
+                                }
+                                else if (isSeason
+                                    && entryItem is MediaBrowser.Controller.Entities.TV.Season seasonItem)
+                                {
+                                    var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
+                                    if (sNum <= 1) continue; // S0/S1 always pass.
+                                    // Any-episode-watched probe.
+                                    bool anyWatched = false;
+                                    try
+                                    {
+                                        foreach (var ep in seasonItem.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                                        {
+                                            if (ep == null) continue;
+                                            var ud = _userDataManager.GetUserData(user, ep);
+                                            if (ud?.Played == true) { anyWatched = true; break; }
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _spoilerResolver.WarnRateLimited(
+                                            "tagcache-season-probe:" + ex.GetType().FullName,
+                                            $"Spoiler tag-cache strip: season any-watched probe failed for {seasonItem.Id}: {ex.Message}");
+                                        // Fail-CLOSED: assume not watched, proceed to strip.
+                                    }
+                                    if (anyWatched) continue;
+                                }
                             }
                         }
                         else
@@ -4497,6 +4532,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
                         });
                         continue;
+                    }
+                }
+
+                // Season-poster bug-fix: when the item is a Season of a
+                // series the user has spoiler mode on for, AND no episode in
+                // that season has been watched, AND it's not S0/S1, return
+                // an Id+Type stub so the JE tag overlays don't render on
+                // the blurred season poster. Mirrors the field-strip
+                // filter's R4-H5 Season strip + the image filter's
+                // HasWatchedAnyEpisodeInSeason gate.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.TV.Season spSeason
+                    && spSeason.SeriesId != Guid.Empty
+                    && spoilerState.Series.ContainsKey(spSeason.SeriesId.ToString("N")))
+                {
+                    var sNum = spSeason.IndexNumber.GetValueOrDefault(int.MaxValue);
+                    if (sNum > 1)
+                    {
+                        bool anyWatched = false;
+                        try
+                        {
+                            foreach (var ep in spSeason.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                            {
+                                if (ep == null) continue;
+                                var ud = _userDataManager.GetUserData(user, ep);
+                                if (ud?.Played == true) { anyWatched = true; break; }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _spoilerResolver.WarnRateLimited(
+                                "tagdata-season-probe:" + ex.GetType().FullName,
+                                $"Spoiler tag-data: season any-watched probe failed for {spSeason.Id}: {ex.Message}");
+                            // Fail-CLOSED: assume not watched, proceed to stub.
+                        }
+
+                        if (!anyWatched)
+                        {
+                            string? stubName = item.Name;
+                            if (spoilerCfg!.SpoilerReplaceTitle && spSeason.IndexNumber.HasValue)
+                            {
+                                stubName = $"Season {spSeason.IndexNumber.Value}";
+                            }
+                            results.Add(new
+                            {
+                                Id = item.Id,
+                                Type = kind.ToString(),
+                                Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
+                                CommunityRating = spStripCommunity ? (float?)null : spSeason.CommunityRating,
+                                CriticRating = spStripCritic ? (float?)null : spSeason.CriticRating,
+                                SeriesId = (spStripCommunity || spStripCritic) ? (Guid?)null : spSeason.SeriesId,
+                                ProviderIds = (IDictionary<string, string>?)null,
+                                Name = stubName,
+                                Path = (string?)null,
+                                MediaStreams = (List<object>?)null,
+                                MediaSources = (List<object>?)null,
+                                FirstEpisode = (object?)null,
+                                Tags = spStripGenres ? Array.Empty<string>() : (spSeason.Tags ?? Array.Empty<string>()),
+                            });
+                            continue;
+                        }
                     }
                 }
 
