@@ -295,6 +295,22 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 15 review (2026-05-07) — post-R14 reviewer pass
+
+Sources: codex GPT-5.5 high (1 HIGH), security-reviewer (zero findings — convergence), silent-failure-hunter (zero findings — convergence).
+
+### HIGH
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R15-codex-H** | codex HIGH | **fixed** | Same family as R14-C1 — `RunFieldStripAsync` at `:187` had a series-only early-bail (`userState.Series.Count == 0`). For movies-only spoiler users, the entire field-strip pipeline short-circuited before reaching the R14 Movie branches in `StripItem` and `RouteParentIsSpoilerEpisode`. **Fix:** condition is now `userState.Series.Count == 0 && userState.Movies.Count == 0`. |
+
+### Convergence
+
+- 2/3 reviewers (security, silent-failure) returned ZERO new findings
+- 1/3 (codex) found one HIGH (now fixed) — the third instance of the "early-bail forgot Movies.Count" pattern (R14-C1 + R15-codex-H + the GetTagData fix)
+- Round 16 needed to confirm R15-codex-H fix doesn't regress
+
 ## Round 14 review (2026-05-07) — post movies-support reviewer pass
 
 Sources: codex GPT-5.5 high (1 CRIT + 1 HIGH + 2 MED), code-reviewer (1 HIGH + 1 IMPORTANT), security-reviewer (1 HIGH), silent-failure-hunter (1 CRIT + 2 HIGH + 3 MED).

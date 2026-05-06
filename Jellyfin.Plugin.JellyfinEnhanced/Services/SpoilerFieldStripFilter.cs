@@ -184,7 +184,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var userState = _resolver.LoadUserState(context.HttpContext, userId);
-            if (userState.Series.Count == 0)
+            // R15-codex-H: same family as R14-C1. A movies-only spoiler
+            // user (no series in their list) would short-circuit the
+            // entire field-strip pipeline here, leaving movie /Items,
+            // /Items/{id}/PlaybackInfo, and /Items/{id}/Images unstripped
+            // despite the Movie branches in StripItem +
+            // RouteParentIsSpoilerEpisode. Mirror the GetTagCache /
+            // GetTagData / image-filter checks.
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0)
             {
                 await next().ConfigureAwait(false);
                 return;
