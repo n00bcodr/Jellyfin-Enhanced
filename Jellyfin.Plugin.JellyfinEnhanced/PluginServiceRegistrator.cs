@@ -57,6 +57,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // version. Runs as an MVC action filter scoped to the Image controller so every
             // client (web/TV/iOS/Android) gets the blurred bytes via the native image API.
             serviceCollection.AddSingleton<ImageBlurService>();
+            // Shared user-resolution + state-load helper. One instance, both filters use it
+            // so the IPv6 / shared-IP / fail-closed logic stays in ONE place.
+            serviceCollection.AddSingleton<SpoilerUserResolver>();
             serviceCollection.AddSingleton<SpoilerBlurImageFilter>();
             // Spoiler Field Strip: removes spoiler-y metadata (Overview, Tags, Chapters,
             // Taglines, ratings, premiere date, episode title, cast) from BaseItemDto

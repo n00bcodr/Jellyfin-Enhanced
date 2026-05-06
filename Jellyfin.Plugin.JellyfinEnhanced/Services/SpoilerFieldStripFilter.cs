@@ -1,11 +1,7 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
-using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
-using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
@@ -69,19 +65,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("Search",      "GetSearchHints"),         true },
             };
 
-        private const string ContextKeyUserState = "__JE_SpoilerFieldStrip_UserState";
-
-        private readonly UserConfigurationManager _userConfigManager;
-        private readonly ISessionManager _sessionManager;
+        private readonly SpoilerUserResolver _resolver;
         private readonly Logger _logger;
 
         public SpoilerFieldStripFilter(
-            UserConfigurationManager userConfigManager,
-            ISessionManager sessionManager,
+            SpoilerUserResolver resolver,
             Logger logger)
         {
-            _userConfigManager = userConfigManager;
-            _sessionManager = sessionManager;
+            _resolver = resolver;
             _logger = logger;
         }
 
@@ -148,16 +139,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ActionExecutionDelegate next,
             PluginConfiguration cfg)
         {
-            var userId = UserHelper.GetCurrentUserId(context.HttpContext.User)
-                ?? ResolveUserIdFromSession(context.HttpContext)
-                ?? Guid.Empty;
+            var userId = _resolver.ResolveUserId(context.HttpContext) ?? Guid.Empty;
             if (userId == Guid.Empty)
             {
                 await next().ConfigureAwait(false);
                 return;
             }
 
-            var userState = LoadUserState(context.HttpContext, userId);
+            var userState = _resolver.LoadUserState(context.HttpContext, userId);
             if (userState.Series.Count == 0)
             {
                 await next().ConfigureAwait(false);
@@ -360,65 +349,5 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // Same per-request user-state cache pattern as SpoilerBlurImageFilter.
-        // When a list endpoint returns 50 episodes, we still only read the
-        // user's spoilerblur.json once.
-        private UserSpoilerBlur LoadUserState(Microsoft.AspNetCore.Http.HttpContext httpContext, Guid userId)
-        {
-            if (httpContext.Items.TryGetValue(ContextKeyUserState, out var cached)
-                && cached is UserSpoilerBlur hit)
-            {
-                return hit;
-            }
-
-            UserSpoilerBlur state;
-            try
-            {
-                state = _userConfigManager.GetUserConfiguration<UserSpoilerBlur>(
-                    userId.ToString("N"),
-                    SpoilerBlurImageFilter.SpoilerBlurFileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"Spoiler field strip: failed to load user state for {userId}: {ex.Message}");
-                state = new UserSpoilerBlur();
-            }
-            httpContext.Items[ContextKeyUserState] = state;
-            return state;
-        }
-
-        // Mirrors SpoilerBlurImageFilter.ResolveUserFromActiveSession but
-        // simpler — for metadata stripping we don't need ambiguity-window
-        // fail-closed because applying the wrong user's strip is a UX
-        // glitch (user sees "Spoiler mode activated" on an episode they
-        // haven't opted in for) rather than a privacy / spoiler leak.
-        // Falling back to "no strip" (return Empty) on any uncertainty is
-        // the conservative default.
-        private Guid? ResolveUserIdFromSession(Microsoft.AspNetCore.Http.HttpContext httpContext)
-        {
-            try
-            {
-                var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString();
-                if (string.IsNullOrEmpty(remoteIp)) return null;
-
-                SessionInfo? best = null;
-                foreach (var s in _sessionManager.Sessions)
-                {
-                    if (s.UserId == Guid.Empty) continue;
-                    var endpoint = s.RemoteEndPoint ?? string.Empty;
-                    if (!endpoint.StartsWith(remoteIp + ":", StringComparison.Ordinal)
-                        && !string.Equals(endpoint, remoteIp, StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-                    if (best == null || s.LastActivityDate > best.LastActivityDate) best = s;
-                }
-                return best?.UserId;
-            }
-            catch
-            {
-                return null;
-            }
-        }
     }
 }

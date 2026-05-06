@@ -64,28 +64,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // this, an FS hiccup or transient session-manager error would log a
         // warning on every image request — a TV grid produces hundreds of
         // identical lines per second.
-        private static readonly TimeSpan PerKeyWarnInterval = TimeSpan.FromHours(1);
-        private static readonly ConcurrentDictionary<string, DateTime> _warnedAt = new();
+        // Rate-limited warning helper now lives on SpoilerUserResolver.
 
-        private void WarnRateLimited(string key, string message)
-        {
-            var now = DateTime.UtcNow;
-            var stored = _warnedAt.AddOrUpdate(key, now,
-                (_, last) => (now - last) >= PerKeyWarnInterval ? now : last);
-            if (stored != now) return;
-            _logger.Warning(message);
-        }
-
-        // Cache the loaded user spoiler-blur state per HTTP request so a single
-        // image-grid request that resolves dozens of episode images doesn't
-        // re-read the JSON file dozens of times.
-        private const string ContextKeyUserState = "__JE_SpoilerBlur_UserState";
+        // Per-request user-state caching is now delegated to SpoilerUserResolver
+        // (single shared HttpContext.Items key across both filters).
 
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
-        private readonly ISessionManager _sessionManager;
-        private readonly UserConfigurationManager _userConfigManager;
+        private readonly SpoilerUserResolver _resolver;
         private readonly ImageBlurService _blurService;
         private readonly Logger _logger;
 
@@ -93,16 +80,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ILibraryManager libraryManager,
             IUserManager userManager,
             IUserDataManager userDataManager,
-            ISessionManager sessionManager,
-            UserConfigurationManager userConfigManager,
+            SpoilerUserResolver resolver,
             ImageBlurService blurService,
             Logger logger)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
-            _sessionManager = sessionManager;
-            _userConfigManager = userConfigManager;
+            _resolver = resolver;
             _blurService = blurService;
             _logger = logger;
         }
@@ -140,26 +125,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var userId = UserHelper.GetCurrentUserId(context.HttpContext.User);
+            // User identification — handles ClaimsPrincipal first, then falls
+            // back to session-by-IP for anonymous browser <img> requests and
+            // native-client image fetches. Fail-closed on shared-IP ambiguity.
+            // Lives in SpoilerUserResolver so the field-strip filter shares
+            // exactly the same logic.
+            var userId = _resolver.ResolveUserId(context.HttpContext);
             if (userId == null || userId == Guid.Empty)
             {
-                // Anonymous image request — common from native clients and the
-                // browser <img> loader because Jellyfin's image endpoint is
-                // public-accessible by design. Fall back to identifying the
-                // user via active sessions: native clients open a session at
-                // login time which records (UserId, RemoteEndPoint), and
-                // image fetches typically come from the same IP within
-                // milliseconds. We pick the most recently-active session
-                // matching the request IP.
-                userId = ResolveUserFromActiveSession(context.HttpContext);
-                if (userId == null || userId == Guid.Empty)
-                {
-                    await next().ConfigureAwait(false);
-                    return;
-                }
+                await next().ConfigureAwait(false);
+                return;
             }
 
-            var userState = LoadUserState(context.HttpContext, userId.Value);
+            var userState = _resolver.LoadUserState(context.HttpContext, userId.Value);
             if (userState.Series.Count == 0)
             {
                 // User hasn't enabled spoiler mode for any show — pass through.
@@ -292,7 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // when M3 cache-scrub silently fails for streaming results.
                     // Rate-limited so a misbehaving response shape doesn't
                     // spam logs on every image fetch.
-                    WarnRateLimited(
+                    _resolver.WarnRateLimited(
                         "no-store-already-started",
                         "Spoiler blur: ApplyNoStoreToResponse called after Response.HasStarted=true; cache headers NOT applied. M3 cache-scrub may not have taken effect for this code path. (For watched-pass-through, use RegisterNoStoreOnStarting BEFORE awaiting next() instead.)");
                     return;
@@ -351,139 +329,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // normalization, NOT string match — `[::1]:54321` vs `::1` and
         // `::ffff:192.0.2.1` vs `192.0.2.1` would otherwise miss.
         //
-        // R3-H1 / R3-M1: ambiguity window reduced from 60s to 5s. The longer
-        // window opened a denial-of-blur attack: any user with a valid
-        // account whose client polls heartbeats (Swiftfin, etc.) on the
-        // shared IP would perpetually trip ambiguity for everyone else,
-        // forcing pass-through unblurred for the victim. 5s is wide enough
-        // to catch the "two users login, image grid loads simultaneously"
-        // race but narrow enough that a background heartbeat doesn't keep
-        // it open.
-        private static readonly TimeSpan SharedIpAmbiguityWindow = TimeSpan.FromSeconds(5);
-
-        private Guid? ResolveUserFromActiveSession(Microsoft.AspNetCore.Http.HttpContext httpContext)
-        {
-            var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
-            if (remoteIpRaw == null) return null;
-            var remoteIp = NormalizeIp(remoteIpRaw);
-
-            try
-            {
-                // R3-M1 fix: collect ALL distinct UserIds with sessions whose
-                // LastActivityDate is within the ambiguity window. Previous
-                // pairwise comparison missed 3+ user scenarios and was
-                // sensitive to enumeration order.
-                SessionInfo? best = null;
-                Guid? bestUser = null;
-                var recentlyActiveUsers = new HashSet<Guid>();
-                var now = DateTime.UtcNow;
-
-                foreach (var s in _sessionManager.Sessions)
-                {
-                    if (s.UserId == Guid.Empty) continue;
-                    if (!RemoteEndpointIpEquals(s.RemoteEndPoint, remoteIp)) continue;
-
-                    if ((now - s.LastActivityDate) < SharedIpAmbiguityWindow)
-                    {
-                        recentlyActiveUsers.Add(s.UserId);
-                    }
-                    if (best == null || s.LastActivityDate > best.LastActivityDate)
-                    {
-                        best = s;
-                        bestUser = s.UserId;
-                    }
-                }
-
-                if (recentlyActiveUsers.Count > 1)
-                {
-                    // Multiple users recently active from the same IP — pick
-                    // none. Caller will pass through unblurred. Log via
-                    // rate-limited Info so operators can diagnose
-                    // "why isn't blur firing on our family TV setup".
-                    WarnRateLimited(
-                        "shared-ip:" + remoteIp.ToString(),
-                        $"Spoiler blur: ambiguous session-by-IP match for {remoteIp} — {recentlyActiveUsers.Count} distinct users active within {SharedIpAmbiguityWindow.TotalSeconds}s. Failing closed (pass-through unblurred). To resolve, configure Jellyfin's KnownProxies if behind a reverse proxy so the request IP reflects the actual client.");
-                    return null;
-                }
-
-                return best?.UserId;
-            }
-            catch (Exception ex)
-            {
-                // R2-M5: rate-limit by exception type — a malfunctioning
-                // session manager could otherwise spam the log on every
-                // anonymous image request.
-                WarnRateLimited(
-                    "session-lookup:" + ex.GetType().FullName,
-                    $"Spoiler blur: session-by-IP lookup failed for {remoteIp}: {ex.Message}");
-                return null;
-            }
-        }
-
-        // Returns the canonical IPAddress for comparison: IPv4-mapped-IPv6
-        // unwrapped to IPv4, scope IDs cleared.
-        private static System.Net.IPAddress NormalizeIp(System.Net.IPAddress addr)
-        {
-            if (addr.IsIPv4MappedToIPv6) return addr.MapToIPv4();
-            if (addr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && addr.ScopeId != 0)
-            {
-                return new System.Net.IPAddress(addr.GetAddressBytes());
-            }
-            return addr;
-        }
-
-        private void RemoteEndpointParseFailedWarn(string endpoint)
-        {
-            // R3-M3: rate-limited surface so a future Jellyfin format change
-            // is observable. Truncate the captured endpoint so a malicious
-            // session-name injection can't blow up the log.
-            var safe = endpoint.Length > 80 ? endpoint.Substring(0, 80) + "…" : endpoint;
-            WarnRateLimited(
-                "endpoint-parse",
-                $"Spoiler blur: unrecognized SessionInfo.RemoteEndPoint format '{safe}' — session-by-IP fallback offline. Likely a Jellyfin format change.");
-        }
-
-        private bool RemoteEndpointIpEquals(string? endpoint, System.Net.IPAddress remoteIp)
-        {
-            if (string.IsNullOrEmpty(endpoint)) return false;
-
-            // Try parsing as full IPEndPoint first (handles bracketed v6 +
-            // ip:port). Fall back to raw IPAddress (no port).
-            if (System.Net.IPEndPoint.TryParse(endpoint, out var parsed))
-            {
-                return NormalizeIp(parsed.Address).Equals(remoteIp);
-            }
-            if (System.Net.IPAddress.TryParse(endpoint, out var bare))
-            {
-                return NormalizeIp(bare).Equals(remoteIp);
-            }
-
-            // R3-codex-P1: `::1:1234` (raw IPv6 + port without brackets)
-            // parses as a *full* IPv6 address (`::0.1.18.52`), NOT as an
-            // endpoint. We have to detect this case and re-parse with the
-            // last `:port` segment stripped. Same for things like
-            // `::ffff:127.0.0.1:1234` which IPEndPoint.TryParse rejects
-            // entirely without brackets.
-            var lastColon = endpoint.LastIndexOf(':');
-            if (lastColon > 0 && lastColon < endpoint.Length - 1)
-            {
-                var portCandidate = endpoint.Substring(lastColon + 1);
-                if (int.TryParse(portCandidate, out _))
-                {
-                    var addressOnly = endpoint.Substring(0, lastColon);
-                    if (System.Net.IPAddress.TryParse(addressOnly, out var stripped))
-                    {
-                        return NormalizeIp(stripped).Equals(remoteIp);
-                    }
-                }
-            }
-
-            // Endpoint string is non-empty but didn't parse — log so a
-            // future Jellyfin format change becomes visible.
-            RemoteEndpointParseFailedWarn(endpoint);
-            return false;
-        }
-
         private static bool IsImageAction(ActionExecutingContext context)
         {
             var rv = context.ActionDescriptor.RouteValues;
@@ -518,33 +363,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Jellyfin's ImageType is an enum; ToString() yields the member name (Primary, Thumb, etc.).
             imageType = raw.ToString() ?? string.Empty;
             return imageType.Length > 0;
-        }
-
-        private UserSpoilerBlur LoadUserState(Microsoft.AspNetCore.Http.HttpContext httpContext, Guid userId)
-        {
-            if (httpContext.Items.TryGetValue(ContextKeyUserState, out var cached) && cached is UserSpoilerBlur hit)
-                return hit;
-
-            UserSpoilerBlur state;
-            try
-            {
-                state = _userConfigManager.GetUserConfiguration<UserSpoilerBlur>(
-                    userId.ToString("N"),
-                    SpoilerBlurFileName);
-            }
-            catch (Exception ex)
-            {
-                // R2-M4: rate-limit per user — image-grid loads can produce
-                // dozens of identical warnings if the file is genuinely
-                // unreadable. Hourly resurfacing keeps the operator informed.
-                WarnRateLimited(
-                    "userstate-load:" + userId.ToString("N"),
-                    $"Spoiler blur: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
-                state = new UserSpoilerBlur();
-            }
-
-            httpContext.Items[ContextKeyUserState] = state;
-            return state;
         }
 
         // Query params Jellyfin's image controller uses to shape the output
@@ -643,7 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // mode is opt-in for entertainment, not security; a transient
                 // DB glitch shouldn't surface a wrong-state blur. Pass-through
                 // is the conservative default.
-                WarnRateLimited(
+                _resolver.WarnRateLimited(
                     "season-watched:" + ex.GetType().FullName,
                     $"Spoiler blur: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — passing through unblurred. {ex.Message}");
                 anyWatched = true;
