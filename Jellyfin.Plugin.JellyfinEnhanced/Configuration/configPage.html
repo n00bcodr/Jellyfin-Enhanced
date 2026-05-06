@@ -814,7 +814,7 @@
 
                                     <div class="inputContainer" data-gated-by="spoilerStripOverview">
                                         <label class="inputLabel inputLabelUnfocused" for="spoilerOverviewPlaceholder">Placeholder text</label>
-                                        <input id="spoilerOverviewPlaceholder" type="text" is="emby-input"/>
+                                        <input id="spoilerOverviewPlaceholder" type="text" is="emby-input" maxlength="200"/>
                                     </div>
                                     <div class="je-setting-description" data-desc-for="spoilerOverviewPlaceholder" data-gated-by="spoilerStripOverview">
                                         <div class="fieldDescription">Shown in place of the description so the client doesn't render an empty section header. Default: "Spoiler mode activated".</div>
@@ -4666,7 +4666,13 @@
             config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
             var __sbPlaceholderSave = document.querySelector('#spoilerOverviewPlaceholder');
             if (__sbPlaceholderSave) {
-                config.SpoilerOverviewPlaceholder = __sbPlaceholderSave.value || 'Spoiler mode activated';
+                // R4-M1: strip HTML tags so a stored-XSS gadget via the
+                // placeholder can't reach a JE consumer that uses innerHTML
+                // on Overview. The server-side filter inserts this string
+                // verbatim into BaseItemDto.Overview; defense-in-depth.
+                var __raw = (__sbPlaceholderSave.value || 'Spoiler mode activated').slice(0, 200);
+                __raw = __raw.replace(/<\/?[^>]+>/g, '').replace(/[<>"'`]/g, '');
+                config.SpoilerOverviewPlaceholder = __raw || 'Spoiler mode activated';
             }
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;

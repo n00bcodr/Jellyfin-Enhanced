@@ -90,6 +90,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _resolver = resolver;
             _blurService = blurService;
             _logger = logger;
+
+            // R4-H7: when a user marks an episode (or season/series) played
+            // or unplayed, evict the per-(user, season) "any episode
+            // watched?" cache for that season so the next image fetch
+            // reflects the new state immediately. Without this, the 30-second
+            // TTL produces a stale-blur window in the wrong direction —
+            // marking an episode UN-played returns the cached "any-watched=
+            // true" entry and renders the season poster CLEAR for up to 30s,
+            // a privacy regression.
+            _userDataManager.UserDataSaved += OnUserDataSaved;
+        }
+
+        private void OnUserDataSaved(object? sender, MediaBrowser.Controller.Library.UserDataSaveEventArgs e)
+        {
+            try
+            {
+                if (e?.Item == null || e.UserId == Guid.Empty) return;
+
+                Guid? seasonId = null;
+                Guid? seriesId = null;
+                switch (e.Item)
+                {
+                    case Episode ep:
+                        seasonId = ep.SeasonId;
+                        seriesId = ep.SeriesId;
+                        break;
+                    case Season s:
+                        seasonId = s.Id;
+                        seriesId = s.SeriesId;
+                        break;
+                    case Series ser:
+                        seriesId = ser.Id;
+                        break;
+                }
+
+                if (seasonId.HasValue && seasonId.Value != Guid.Empty)
+                {
+                    var key = e.UserId.ToString("N") + ":" + seasonId.Value.ToString("N");
+                    _watchedCache.TryRemove(key, out _);
+                }
+                else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
+                {
+                    // Series-level event — invalidate every cached season
+                    // for this user under this series. Cache keys are
+                    // "{userN}:{seasonN}" so we'd have to iterate. Cheap
+                    // because the cache is small (≤512 entries) and this
+                    // event is rare.
+                    var prefix = e.UserId.ToString("N") + ":";
+                    foreach (var k in _watchedCache.Keys)
+                    {
+                        if (k.StartsWith(prefix, StringComparison.Ordinal))
+                            _watchedCache.TryRemove(k, out _);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "userdata-saved-handler:" + ex.GetType().FullName,
+                    $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
+            }
         }
 
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
@@ -56,6 +57,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("UserLibrary", "GetItemLegacy"),          true },
                 { ("UserLibrary", "GetLatestMedia"),         true },
                 { ("UserLibrary", "GetLatestMediaLegacy"),   true },
+                // R4-H4: more UserLibrary endpoints that emit episode DTOs.
+                { ("UserLibrary", "GetIntros"),              true },
+                { ("UserLibrary", "GetIntrosLegacy"),        true },
+                { ("UserLibrary", "GetLocalTrailers"),       true },
+                { ("UserLibrary", "GetLocalTrailersLegacy"), true },
+                { ("UserLibrary", "GetSpecialFeatures"),     true },
+                { ("UserLibrary", "GetSpecialFeaturesLegacy"),true },
                 { ("TvShows",     "GetEpisodes"),            true },
                 { ("TvShows",     "GetSeasons"),             true },
                 { ("TvShows",     "GetNextUp"),              true },
@@ -63,16 +71,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("Suggestions", "GetSuggestions"),         true },
                 { ("Suggestions", "GetSuggestionsLegacy"),   true },
                 { ("Search",      "GetSearchHints"),         true },
+                // R4-H4: "More Like This" rail emits BaseItemDto[] including
+                // episode-shaped items — strip those too.
+                { ("Library",     "GetSimilarItems"),        true },
+                { ("Library",     "GetSimilarShows"),        true },
+                { ("Library",     "GetSimilarMovies"),       true },
+                { ("Library",     "GetSimilarTrailers"),     true },
+                { ("Library",     "GetSimilarAlbums"),       true },
             };
 
         private readonly SpoilerUserResolver _resolver;
+        private readonly ILibraryManager _libraryManager;
+        private readonly IUserManager _userManager;
+        private readonly IUserDataManager _userDataManager;
         private readonly Logger _logger;
 
         public SpoilerFieldStripFilter(
             SpoilerUserResolver resolver,
+            ILibraryManager libraryManager,
+            IUserManager userManager,
+            IUserDataManager userDataManager,
             Logger logger)
         {
             _resolver = resolver;
+            _libraryManager = libraryManager;
+            _userManager = userManager;
+            _userDataManager = userDataManager;
             _logger = logger;
         }
 
@@ -158,7 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                StripIfApplicable(executed.Result, userState, cfg);
+                StripIfApplicable(executed.Result, userState, cfg, userId);
             }
             catch (Exception ex)
             {
@@ -169,57 +193,193 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Walks the action result and applies StripItem to every Episode
         // whose SeriesId is in the user's spoiler list AND whose
         // UserData.Played != true.
-        private static void StripIfApplicable(
+        private void StripIfApplicable(
             IActionResult? result,
             UserSpoilerBlur userState,
-            PluginConfiguration cfg)
+            PluginConfiguration cfg,
+            Guid userId)
         {
             if (result is not ObjectResult or || or.Value == null) return;
 
             switch (or.Value)
             {
                 case BaseItemDto single:
-                    StripItem(single, userState, cfg);
+                    StripItem(single, userState, cfg, userId);
                     break;
                 case QueryResult<BaseItemDto> qr:
                     if (qr.Items != null)
                     {
-                        foreach (var item in qr.Items) StripItem(item, userState, cfg);
+                        foreach (var item in qr.Items) StripItem(item, userState, cfg, userId);
                     }
                     break;
                 case IEnumerable<BaseItemDto> seq:
-                    foreach (var item in seq) StripItem(item, userState, cfg);
+                    foreach (var item in seq) StripItem(item, userState, cfg, userId);
                     break;
                 case SearchHintResult shr:
-                    // Search hints don't carry the same DTO shape — they're
-                    // a different model with limited fields. Stripping
-                    // those is out of scope for now (covered by the image
-                    // filter on the search results' thumbnails).
+                    StripSearchHints(shr, userState, cfg, userId);
                     break;
             }
         }
 
         // Per-item strip. Only Episodes are eligible. Mutates `item` in
         // place when applicable; no-op otherwise.
-        private static void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg)
+        private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
             if (item == null) return;
-            // Type-string check avoids a dependency on Jellyfin.Data.Enums
-            // here. BaseItemDto.Type is the BaseItemKind enum string-form.
-            if (!string.Equals(item.Type.ToString(), "Episode", StringComparison.Ordinal)) return;
+            // Direct enum compare — faster than ToString("Episode") and
+            // future-proof if Jellyfin renames any enum string forms.
+            if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode
+                && item.Type != Jellyfin.Data.Enums.BaseItemKind.Season)
+            {
+                return;
+            }
 
             var seriesId = item.SeriesId;
             if (seriesId == null || seriesId.Value == Guid.Empty) return;
             if (!userState.Series.ContainsKey(seriesId.Value.ToString("N"))) return;
 
-            // UserData.Played is what we use; if UserData is missing from
-            // the response shape (rare), fail-safe: treat as played, skip.
-            var played = item.UserData?.Played ?? true;
+            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season)
+            {
+                // R4-H5: Season DTOs leak Overview right next to a blurred
+                // Season poster. Strip them too — but mirror the image
+                // filter's "S1 always shows" + "any-played => pass-through"
+                // logic so the user has an entry point.
+                var sNum = item.IndexNumber.GetValueOrDefault(int.MaxValue);
+                if (sNum <= 1) return; // Season 0 (Specials) and Season 1 always pass.
+
+                // UserData.UnplayedItemCount is the simplest "any watched?"
+                // signal for a Season DTO. > 0 AND total > unplayed = some
+                // watched. When UserData is missing (enableUserData=false),
+                // fall back to the server-side helper used by the image
+                // filter via _libraryManager.GetItemById + iterate, but
+                // here we cheat: ResolvePlayedServerSide on the season itself
+                // returns the aggregated Played flag which Jellyfin sets to
+                // true when ALL episodes are played — different semantics.
+                // For seasons we want "any played?" so default-strip when
+                // we cannot determine (fail-closed, like episodes).
+                if (item.UserData != null)
+                {
+                    var unplayed = item.UserData.UnplayedItemCount.GetValueOrDefault(int.MaxValue);
+                    var totalIndicator = item.RecursiveItemCount.GetValueOrDefault(unplayed);
+                    if (totalIndicator > 0 && unplayed < totalIndicator) return; // some watched
+                }
+                ApplyStripping(item, cfg);
+                return;
+            }
+
+            // Episode path.
+            // R4-C1: prefer UserData.Played from the DTO; if absent (the
+            // client passed enableUserData=false), fall back to
+            // IUserDataManager server-side rather than fail-safe to
+            // "treat as played, skip strip" — that bypass let lite
+            // clients receive full episode metadata silently.
+            bool played;
+            if (item.UserData != null)
+            {
+                played = item.UserData.Played;
+            }
+            else
+            {
+                played = ResolvePlayedServerSide(userId, item.Id);
+            }
             if (played) return;
 
-            // Apply per-field stripping. Each gated independently on the
-            // admin's per-field toggle.
             ApplyStripping(item, cfg);
+        }
+
+        // R4-C1: server-side fallback when the response shape omits UserData.
+        // Checked exception types so a transient lookup failure doesn't kill
+        // the whole strip.
+        private bool ResolvePlayedServerSide(Guid userId, Guid itemId)
+        {
+            try
+            {
+                var jUser = _userManager.GetUserById(userId);
+                if (jUser == null) return false;
+                var item = _libraryManager.GetItemById(itemId);
+                if (item == null) return false;
+                var ud = _userDataManager.GetUserData(jUser, item);
+                return ud?.Played == true;
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "fieldstrip-resolveplayed:" + ex.GetType().FullName,
+                    $"Spoiler field strip: ResolvePlayedServerSide failed for item {itemId}: {ex.Message}");
+                // Fail CLOSED: when we can't determine played-state and the
+                // response would otherwise leak metadata, prefer the strip.
+                // Better to show "Spoiler mode activated" on a watched
+                // episode (UX glitch) than leak the synopsis (privacy).
+                return false;
+            }
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex _htmlTagRe
+            = new System.Text.RegularExpressions.Regex("<[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        // R4-M1: server-side sanitizer for the admin-supplied placeholder.
+        // The configPage JS already strips tags + brackets on save, but
+        // an admin who edited the XML config on disk would bypass that.
+        // Cap length too — admin can't make a 1MB placeholder amplify
+        // every response.
+        private static string SanitizePlaceholder(string? raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "Spoiler mode activated";
+            var trimmed = raw.Length > 200 ? raw.Substring(0, 200) : raw;
+            var stripped = _htmlTagRe.Replace(trimmed, string.Empty)
+                .Replace("<", string.Empty)
+                .Replace(">", string.Empty)
+                .Replace("\"", string.Empty)
+                .Replace("'", string.Empty)
+                .Replace("`", string.Empty);
+            return string.IsNullOrWhiteSpace(stripped) ? "Spoiler mode activated" : stripped;
+        }
+
+        // SearchHintResult shape is different from BaseItemDto: each
+        // SearchHint carries Id, Name, IndexNumber, ParentIndexNumber,
+        // Type (BaseItemKind enum), Series (series-name string), but
+        // NOT SeriesId. To check spoiler-list membership we have to look
+        // up the actual item.
+        //
+        // We strip episode hints whose series is in the user's spoiler
+        // list and that the user hasn't watched. Server-side, so all
+        // clients benefit. R4-H2.
+        private void StripSearchHints(SearchHintResult result, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        {
+            if (result?.SearchHints == null) return;
+
+            foreach (var hint in result.SearchHints)
+            {
+                if (hint == null) continue;
+                if (hint.Type != Jellyfin.Data.Enums.BaseItemKind.Episode) continue;
+                if (hint.Id == Guid.Empty) continue;
+
+                // Look up the actual item to get SeriesId; cheap in-memory.
+                MediaBrowser.Controller.Entities.BaseItem? actualItem;
+                try { actualItem = _libraryManager.GetItemById(hint.Id); }
+                catch { continue; }
+                if (actualItem is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
+                if (ep.SeriesId == Guid.Empty) continue;
+                if (!userState.Series.ContainsKey(ep.SeriesId.ToString("N"))) continue;
+
+                if (ResolvePlayedServerSide(userId, hint.Id)) continue;
+
+                // Replace the title — SearchHints don't expose Overview / Tags
+                // so the title rewrite is the main spoiler vector here.
+                if (cfg.SpoilerReplaceTitle && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
+                {
+                    hint.Name = $"Season {hint.ParentIndexNumber.Value}, Episode {hint.IndexNumber.Value}";
+                }
+                else if (cfg.SpoilerStripOverview)
+                {
+                    // Even when SpoilerReplaceTitle is off, the existing
+                    // SpoilerStripOverview toggle implies "I want spoilers
+                    // hidden" — replace the search-result name with the
+                    // placeholder so spoilery titles like "The Death of X"
+                    // don't appear in autocomplete.
+                    hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
+                }
+            }
         }
 
         // Field-stripping body. Each block is gated on its own admin
@@ -234,11 +394,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // rather than null because a literal null causes some clients
             // to fall back to the series description, which can also leak
             // ("the season everyone dies").
+            //
+            // R4-M1 defense-in-depth: sanitize the placeholder server-side
+            // even though the configPage save handler also strips tags.
+            // Defends against a config XML that was edited directly on disk
+            // bypassing the JS save path.
             if (cfg.SpoilerStripOverview && !string.IsNullOrEmpty(item.Overview))
             {
-                item.Overview = string.IsNullOrEmpty(cfg.SpoilerOverviewPlaceholder)
-                    ? "Spoiler mode activated"
-                    : cfg.SpoilerOverviewPlaceholder;
+                item.Overview = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
             }
 
             // Tags — TMDB tags often contain spoiler phrases like
@@ -329,23 +492,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // Title replacement — "The Death of X" → "Season 2, Episode 6".
-            // Off by default because some clients use Name in navigation
-            // tooltips, breadcrumbs, and "now playing" overlays where the
-            // synthesized title can look jarring. When IndexNumber or
-            // ParentIndexNumber is missing (rare; typically only for
-            // specials), fall back to leaving the name alone — a synthesized
-            // "Season ?, Episode ?" is worse than leaking a single title.
-            if (cfg.SpoilerReplaceTitle
-                && item.IndexNumber.HasValue
-                && item.ParentIndexNumber.HasValue)
+            // Title replacement — "The Death of X" → "Season 2, Episode 6"
+            // for Episodes; for Seasons, replace with "Season N" only when
+            // IndexNumber is set. Off by default because some clients use
+            // Name in navigation tooltips, breadcrumbs, and "now playing"
+            // overlays where the synthesized title can look jarring.
+            if (cfg.SpoilerReplaceTitle)
             {
-                item.Name = $"Season {item.ParentIndexNumber.Value}, Episode {item.IndexNumber.Value}";
-                // Some clients also render SortName / OriginalTitle if the
-                // primary Name is too generic — clear those so the user's
-                // chosen title doesn't bleed through via a fallback path.
-                item.SortName = null;
-                item.OriginalTitle = null;
+                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode
+                    && item.IndexNumber.HasValue
+                    && item.ParentIndexNumber.HasValue)
+                {
+                    item.Name = $"Season {item.ParentIndexNumber.Value}, Episode {item.IndexNumber.Value}";
+                    item.SortName = null;
+                    item.OriginalTitle = null;
+                }
+                else if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season
+                    && item.IndexNumber.HasValue)
+                {
+                    item.Name = $"Season {item.IndexNumber.Value}";
+                    item.SortName = null;
+                    item.OriginalTitle = null;
+                }
             }
         }
 

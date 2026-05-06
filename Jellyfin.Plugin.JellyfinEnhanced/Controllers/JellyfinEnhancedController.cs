@@ -4340,6 +4340,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var spUd = _userDataManager.GetUserData(user, spEp);
                     if (spUd?.Played != true)
                     {
+                        // R4-H6: when SpoilerReplaceTitle is on, the field-
+                        // strip filter rewrites Name to "Season X, Episode Y".
+                        // The tag-data stub must agree — leaking the raw
+                        // Name here defeats the whole point of the title
+                        // toggle.
+                        string? stubName = item.Name;
+                        if (spoilerCfg!.SpoilerReplaceTitle
+                            && spEp.IndexNumber.HasValue
+                            && spEp.ParentIndexNumber.HasValue)
+                        {
+                            stubName = $"Season {spEp.ParentIndexNumber.Value}, Episode {spEp.IndexNumber.Value}";
+                        }
+
                         results.Add(new
                         {
                             Id = item.Id,
@@ -4349,13 +4362,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Genres = Array.Empty<string>(),
                             CommunityRating = (float?)null,
                             CriticRating = (float?)null,
-                            SeriesId = (Guid?)spEp.SeriesId,
+                            // R4-L4: SeriesId nulled to suppress the rating
+                            // renderer's parent-series fallback — otherwise
+                            // the series-level rating would still render on
+                            // an unwatched-episode card.
+                            SeriesId = (Guid?)null,
                             ProviderIds = (IDictionary<string, string>?)null,
-                            Name = item.Name,
+                            Name = stubName,
                             Path = (string?)null,
                             MediaStreams = (List<object>?)null,
                             MediaSources = (List<object>?)null,
                             FirstEpisode = (object?)null,
+                            // R4-L6: align with field-strip filter (which sets
+                            // Tags = Array.Empty<string>()).
+                            Tags = Array.Empty<string>(),
                         });
                         continue;
                     }
