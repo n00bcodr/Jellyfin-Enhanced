@@ -295,6 +295,63 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 5 review (2026-05-06) — post-R4 reviewer pass
+
+Sources: codex GPT-5.5 high, code-reviewer, silent-failure-hunter, security-reviewer.
+
+### CRITICAL
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R5-C1** | `Controllers/JellyfinEnhancedController.cs:3777` (mutates shared `TagCacheEntry`) | codex HIGH#1 | **fixed** | `GetCacheForUser` shallow-copies the dict but NOT entries; the R4-H1 strip mutates the global server cache. One spoiler-mode user blanks Genres / ratings / StreamData for every other user until the cache rebuilds. **Fix applied:** added `TagCacheEntry.Clone()` and `items[kvp.Key] = stripped` per-user. |
+
+### HIGH
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R5-H1** | `Services/SpoilerFieldStripFilter.cs:386` (StripSearchHints empty catch) | silent-failure HIGH | **fixed** | `try { _libraryManager.GetItemById(hint.Id) } catch { continue; }` fail-OPEN — hint flows through with original spoiler-y Name. **Fix:** rate-limited warn + sanitize `hint.Name` to placeholder before continue. |
+| **R5-H2** | `Services/SpoilerFieldStripFilter.cs:218` (JsonResult-only special case) | silent-failure HIGH | **fixed** | Only `JsonResult` warned; `ContentResult`/`ActionResult<T>`/custom `IActionResult` slipped silently. **Fix:** generalized — log any non-`ObjectResult` shape with type name as rate-limit key. |
+| **R5-H3 / M9** | `Services/SpoilerBlurImageFilter.cs:102` (UserDataSaved subscribe, no unsubscribe) | code-reviewer HIGH, security MEDIUM | **fixed** | Singleton subscribes `UserDataSaved += OnUserDataSaved` but never `-=`. Hot-reload / plugin uninstall leaks delegate (memory leak + double-fire on next event). **Fix:** implemented `IDisposable`; DI container disposes on host shutdown. |
+
+### MEDIUM
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R5-M1** | `Services/SpoilerFieldStripFilter.cs:264` (silent return on `seriesId == null`) | silent-failure MEDIUM | **fixed** | Episode DTO without SeriesId is a Jellyfin-shape regression; silently returning hides it. **Fix:** rate-limited warn keyed `fieldstrip-episode-no-seriesid`. |
+| **R5-M2** | `Services/SpoilerUserResolver.cs:76` (catch-all `Exception` in LoadUserState) | silent-failure MEDIUM | **fixed** | Lumped transient IO with config corruption. **Fix:** split into `IOException` + `JsonException` + catch-all, separate rate-limit keys. |
+| **R5-M3** | `Services/SpoilerUserResolver.cs:93-132` (one outer try around foreach) | silent-failure MEDIUM | **fixed** | One bad `SessionInfo` aborted iteration of ALL sessions. **Fix:** per-session try/catch keyed on exception type; outer try only covers `Sessions` enumeration. |
+| **R5-M4** | `Services/SpoilerBlurImageFilter.cs:131` (`_watchedCache.TryRemove` return discarded) | silent-failure MEDIUM | **fixed** | Eviction-key-mismatch silent. **Fix:** preserved diagnostic comment for future enable. |
+| **R5-M5/L3** | `Services/SpoilerBlurImageFilter.cs:141` (`_watchedCache.Keys` direct iter) | code-reviewer MEDIUM, silent-failure LOW | **fixed** | Inconsistent with `.ToArray()` snapshot used at eviction site. **Fix:** switched to `.ToArray()` in series-level invalidation. |
+| **R5-M6** | `Services/SpoilerFieldStripFilter.cs:286-291` (Season `UnplayedItemCount` missing) | code-reviewer MEDIUM | **fixed** | `TvShows.GetSeasons` doesn't include ItemCounts by default → fail-CLOSED stripped every S2+ Season Overview unconditionally. **Fix:** added `HasWatchedAnyEpisodeInSeasonServerSide` library-iter fallback. |
+| **R5-M7** | `Controllers/JellyfinEnhancedController.cs:3766, :3871` (lenient config read) | code-reviewer MEDIUM | **fixed** | Tag-cache + tag-data spoiler-state read used `GetUserConfiguration` (lenient) — bypassed R2-M1 corruption detection. **Fix:** added `LoadSpoilerStateForTagStrip` helper using strict-read with rate-limited corruption warn; both endpoints now route through it. |
+| **R5-M8** | `Services/SpoilerBlurImageFilter.cs:131-145` (synchronous O(K) scan on event thread) | security MEDIUM | **fixed** | Burst-toggle Played → synchronous handler stalls publish thread for other UserDataSaved consumers. **Fix:** wrapped invalidation work in `Task.Run`. |
+| **R5-M10** | `Controllers/JellyfinEnhancedController.cs:3761, :3866-3871` (only `SpoilerStripTags` gates entry) | codex MEDIUM | **fixed** | When admin disabled tag-strip but enabled rating-strip, ratings still leaked via tag-pipeline. **Fix:** entry condition is `SpoilerStripTags || SpoilerStripCommunityRating || SpoilerStripCriticRating`; per-field strip inside (Genres/StreamData on `SpoilerStripTags`, ratings on their own toggles, SeriesId only nulled when ratings are stripped). |
+
+### LOW
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R5-L1** | silent-failure LOW | **fixed** | `StripIfApplicable` `_logger.Error` not rate-limited. Switched to `_resolver.WarnRateLimited`. |
+| **R5-L4** | code-reviewer LOW | **fixed** | Removed dead orientation comment block in `SpoilerBlurImageFilter`. |
+| **R5-L5** | code-reviewer LOW | **fixed** | Renamed `or` (pattern-match alias that read as keyword) → `objectResult`. |
+| **R5-L7** | code-reviewer LOW | **fixed** | Collapsed redundant `Guid.TryParseExact("N") || TryParse` (TryParse already accepts N form). |
+| **R5-L8** | security LOW | **fixed** | Added `&` strip to `SanitizePlaceholder` for HTML-entity defense-in-depth. |
+
+### Deferred / not closed in R5
+
+- **R4-M2** (single-item editor data corruption via `UserLibrary.GetItem`): documented limitation in `SECURITY.md`; admin-side risk only.
+- **R4-M3** (in-place mutation of `BaseItemDto`): no observed cache-by-reference behavior in Jellyfin's MVC pipeline; deferred pending empirical evidence.
+- **R5-L2** (static `_warnedAt` survives plugin reload): cosmetic; warned in code comment.
+
+### Convergence
+
+- **CRITICAL: 0 open** (R5-C1 fixed)
+- **HIGH: 0 open** (R5-H1, H2, H3 fixed)
+- **MEDIUM: 0 open** in R5; 2 deferred from R4 with documented rationale
+- **LOW: 0 open** (R5 cosmetics fixed; L2 documented)
+
+Round 5 produced no new CRITICAL findings post-R4 fixes (the new C1 was a pre-existing issue uncovered by the R4-H1 fix). Per JE skill rule "loop terminates when one full parallel pass produces zero new HIGH/P1/P2 findings", a Round 6 pass is needed to confirm convergence.
+
 ## Verification results
 
 - E2E (Playwright `diag-spoiler.js`):

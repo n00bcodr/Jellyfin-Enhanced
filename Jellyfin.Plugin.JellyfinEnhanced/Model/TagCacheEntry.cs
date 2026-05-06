@@ -29,6 +29,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         // per-request library lookup for every episode in a 1000-item
         // cache.
         public string? SeriesId { get; set; }
+
+        // Shallow copy. Required by per-user mutators (spoiler tag-strip)
+        // because the underlying TagCacheService stores ONE shared instance
+        // per item across ALL users. Mutating in place would leak one user's
+        // strip into every other user's cache response. Arrays are kept by
+        // reference; spoiler strip only ever REPLACES them (with empty/null),
+        // never mutates an existing array, so the shallow copy is safe.
+        public TagCacheEntry Clone() => new()
+        {
+            Type = Type,
+            Genres = Genres,
+            CommunityRating = CommunityRating,
+            CriticRating = CriticRating,
+            AudioLanguages = AudioLanguages,
+            StreamData = StreamData,
+            LastUpdated = LastUpdated,
+            SeriesId = SeriesId,
+        };
     }
 
     /// <summary>

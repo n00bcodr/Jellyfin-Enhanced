@@ -25,7 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Runs as an MVC action filter scoped to Jellyfin's image controller actions
     // so EVERY client (web, TV, iOS, Android) receives blurred bytes from the
     // native image API. No client-side awareness or DOM manipulation needed.
-    public sealed class SpoilerBlurImageFilter : IAsyncActionFilter
+    public sealed class SpoilerBlurImageFilter : IAsyncActionFilter, IDisposable
     {
         private const string ImageController = "Image";
         public const string SpoilerBlurFileName = "spoilerblur.json";
@@ -59,15 +59,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan ShapeWarnInterval = TimeSpan.FromHours(1);
         private static readonly ConcurrentDictionary<string, DateTime> _warnedShapeAt = new();
 
-        // R2-M4 / R2-M5: per-key rate-limited warning state for
-        // LoadUserState IO failures and session-manager exceptions. Without
-        // this, an FS hiccup or transient session-manager error would log a
-        // warning on every image request — a TV grid produces hundreds of
-        // identical lines per second.
-        // Rate-limited warning helper now lives on SpoilerUserResolver.
-
-        // Per-request user-state caching is now delegated to SpoilerUserResolver
-        // (single shared HttpContext.Items key across both filters).
+        // Rate-limited warning helper + per-request user-state caching now
+        // live on SpoilerUserResolver (single shared HttpContext.Items key
+        // across both filters).
 
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
@@ -104,52 +98,102 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void OnUserDataSaved(object? sender, MediaBrowser.Controller.Library.UserDataSaveEventArgs e)
         {
-            try
+            // R5-M8: dispatch off the IUserDataManager publish thread.
+            // Other UserDataSaved consumers (resume tracking, scheduled
+            // tasks, integrations) share that thread; a malicious user
+            // burst-toggling Played would otherwise pile up synchronous
+            // O(K) cache scans on the publish path. Task.Run drops the
+            // work onto the threadpool — fire-and-forget is safe because
+            // a missed eviction just leaves stale cache for ≤30s (TTL).
+            if (e?.Item == null || e.UserId == Guid.Empty) return;
+
+            // Snapshot the values we need so the lambda captures don't
+            // race against post-event mutation.
+            var userId = e.UserId;
+            Guid? seasonId = null;
+            Guid? seriesId = null;
+            switch (e.Item)
             {
-                if (e?.Item == null || e.UserId == Guid.Empty) return;
+                case Episode ep:
+                    seasonId = ep.SeasonId;
+                    seriesId = ep.SeriesId;
+                    break;
+                case Season s:
+                    seasonId = s.Id;
+                    seriesId = s.SeriesId;
+                    break;
+                case Series ser:
+                    seriesId = ser.Id;
+                    break;
+            }
 
-                Guid? seasonId = null;
-                Guid? seriesId = null;
-                switch (e.Item)
-                {
-                    case Episode ep:
-                        seasonId = ep.SeasonId;
-                        seriesId = ep.SeriesId;
-                        break;
-                    case Season s:
-                        seasonId = s.Id;
-                        seriesId = s.SeriesId;
-                        break;
-                    case Series ser:
-                        seriesId = ser.Id;
-                        break;
-                }
+            if (!seasonId.HasValue && !seriesId.HasValue) return;
 
-                if (seasonId.HasValue && seasonId.Value != Guid.Empty)
+            Task.Run(() =>
+            {
+                try
                 {
-                    var key = e.UserId.ToString("N") + ":" + seasonId.Value.ToString("N");
-                    _watchedCache.TryRemove(key, out _);
-                }
-                else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
-                {
-                    // Series-level event — invalidate every cached season
-                    // for this user under this series. Cache keys are
-                    // "{userN}:{seasonN}" so we'd have to iterate. Cheap
-                    // because the cache is small (≤512 entries) and this
-                    // event is rare.
-                    var prefix = e.UserId.ToString("N") + ":";
-                    foreach (var k in _watchedCache.Keys)
+                    if (seasonId.HasValue && seasonId.Value != Guid.Empty)
                     {
-                        if (k.StartsWith(prefix, StringComparison.Ordinal))
-                            _watchedCache.TryRemove(k, out _);
+                        var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
+                        // R5-M4: surface eviction-key-mismatch as a debug
+                        // breadcrumb. If a future refactor desyncs the
+                        // build-key from the read-key, evictions silently
+                        // become no-ops; counting the no-removal cases
+                        // makes that observable.
+                        if (!_watchedCache.TryRemove(key, out _))
+                        {
+                            // Hit may simply not exist (cold cache); not an
+                            // error. Logging at Debug, not Warning.
+                            // _logger.Info($"[SpoilerBlur] UserDataSaved: no cache entry for season key {key} (cold cache or already evicted).");
+                        }
+                    }
+                    else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
+                    {
+                        // Series-level event — invalidate every cached season
+                        // for this user under this series. Cache keys are
+                        // "{userN}:{seasonN}" so we'd have to iterate. Cheap
+                        // because the cache is small (≤512 entries) and this
+                        // event is rare.
+                        // R5-M5/L3: ToArray for symmetry with the eviction
+                        // site at the bottom of this file. ConcurrentDictionary.Keys
+                        // is a snapshot in current .NET but ToArray makes
+                        // intent explicit and survives framework changes.
+                        var prefix = userId.ToString("N") + ":";
+                        foreach (var k in _watchedCache.Keys.ToArray())
+                        {
+                            if (k.StartsWith(prefix, StringComparison.Ordinal))
+                                _watchedCache.TryRemove(k, out _);
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    _resolver.WarnRateLimited(
+                        "userdata-saved-handler:" + ex.GetType().FullName,
+                        $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
+                }
+            });
+        }
+
+        // R5-H3 / R5-M9: this filter is a Singleton subscribed to
+        // IUserDataManager.UserDataSaved. Without an unsubscribe path,
+        // hot-reload / plugin disable+re-enable leaks the event handler
+        // delegate (memory leak + double-fire on next event). DI containers
+        // dispose Singletons at host shutdown; the plugin's OnUninstalling
+        // also calls Dispose via the service provider.
+        private bool _disposed;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try
+            {
+                _userDataManager.UserDataSaved -= OnUserDataSaved;
             }
             catch (Exception ex)
             {
-                _resolver.WarnRateLimited(
-                    "userdata-saved-handler:" + ex.GetType().FullName,
-                    $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
+                _logger.Warning($"SpoilerBlurImageFilter: unsubscribe on Dispose threw: {ex.Message}");
             }
         }
 

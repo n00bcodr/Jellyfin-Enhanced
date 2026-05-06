@@ -73,11 +73,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     userId.ToString("N"),
                     SpoilerBlurImageFilter.SpoilerBlurFileName);
             }
+            catch (IOException ex)
+            {
+                // R5-M2: transient FS failures (lock contention, EBUSY).
+                // Rate-limited warn keyed by user; treat as no-spoiler-list
+                // for this request — if the file is real but locked, the
+                // next request will likely succeed.
+                WarnRateLimited(
+                    "userstate-io:" + userId.ToString("N"),
+                    $"Spoiler resolver: IO error reading user state for {userId} — passing through unblurred. {ex.Message}");
+                state = new UserSpoilerBlur();
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                // R5-M2: persistent corruption — separate log key so an
+                // operator scanning logs sees corruption distinct from a
+                // brief IO blip. The dedicated /spoiler-blur/series
+                // endpoint will return 503 next time the user hits it,
+                // surfacing the same fact to the UI.
+                WarnRateLimited(
+                    "userstate-corrupt:" + userId.ToString("N"),
+                    $"Spoiler resolver: spoilerblur.json corrupt for {userId} — passing through unblurred. Manual recovery may be needed. {ex.Message}");
+                state = new UserSpoilerBlur();
+            }
             catch (Exception ex)
             {
+                // Catch-all for unexpected exception types — keep keyed by
+                // exception type so a brand-new failure mode isn't silenced
+                // under the broader umbrella.
                 WarnRateLimited(
-                    "userstate-load:" + userId.ToString("N"),
-                    $"Spoiler resolver: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
+                    "userstate-load:" + ex.GetType().FullName,
+                    $"Spoiler resolver: unexpected error reading user state for {userId} — passing through unblurred. {ex.Message}");
                 state = new UserSpoilerBlur();
             }
             httpContext.Items[ContextKeyUserState] = state;
@@ -90,14 +116,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (remoteIpRaw == null) return null;
             var remoteIp = NormalizeIp(remoteIpRaw);
 
+            // R5-M3: per-session try/catch instead of one outer try around
+            // the whole iteration. Previously a single misbehaving SessionInfo
+            // (e.g. a corrupt RemoteEndPoint string) aborted iteration of
+            // ALL sessions; one bad row hid every healthy match. Now a
+            // per-session failure logs a rate-limited warn and continues.
+            SessionInfo? best = null;
+            Guid? bestUser = null;
+            var recentlyActiveUsers = new HashSet<Guid>();
+            var now = DateTime.UtcNow;
+
+            IEnumerable<SessionInfo> sessions;
             try
             {
-                SessionInfo? best = null;
-                Guid? bestUser = null;
-                var recentlyActiveUsers = new HashSet<Guid>();
-                var now = DateTime.UtcNow;
+                sessions = _sessionManager.Sessions;
+            }
+            catch (Exception ex)
+            {
+                WarnRateLimited(
+                    "session-list:" + ex.GetType().FullName,
+                    $"Spoiler resolver: ISessionManager.Sessions threw: {ex.Message}");
+                return null;
+            }
 
-                foreach (var s in _sessionManager.Sessions)
+            foreach (var s in sessions)
+            {
+                try
                 {
                     if (s.UserId == Guid.Empty) continue;
                     if (!RemoteEndpointIpEquals(s.RemoteEndPoint, remoteIp)) continue;
@@ -112,24 +156,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         bestUser = s.UserId;
                     }
                 }
-
-                if (recentlyActiveUsers.Count > 1)
+                catch (Exception ex)
                 {
                     WarnRateLimited(
-                        "shared-ip:" + remoteIp.ToString(),
-                        $"Spoiler resolver: ambiguous session-by-IP match for {remoteIp} — {recentlyActiveUsers.Count} distinct users active within {SharedIpAmbiguityWindow.TotalSeconds}s. Failing closed (pass-through unblurred). To resolve, configure Jellyfin's KnownProxies if behind a reverse proxy so the request IP reflects the actual client.");
-                    return null;
+                        "session-iter:" + ex.GetType().FullName,
+                        $"Spoiler resolver: skipped a session row during IP match: {ex.Message}");
+                    continue;
                 }
-
-                return best?.UserId;
             }
-            catch (Exception ex)
+
+            if (recentlyActiveUsers.Count > 1)
             {
                 WarnRateLimited(
-                    "session-lookup:" + ex.GetType().FullName,
-                    $"Spoiler resolver: session-by-IP lookup failed for {remoteIp}: {ex.Message}");
+                    "shared-ip:" + remoteIp.ToString(),
+                    $"Spoiler resolver: ambiguous session-by-IP match for {remoteIp} — {recentlyActiveUsers.Count} distinct users active within {SharedIpAmbiguityWindow.TotalSeconds}s. Failing closed (pass-through unblurred). To resolve, configure Jellyfin's KnownProxies if behind a reverse proxy so the request IP reflects the actual client.");
                 return null;
             }
+
+            return best?.UserId;
         }
 
         // Returns the canonical IPAddress for comparison: IPv4-mapped-IPv6

@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
         private readonly Services.TagCacheService _tagCacheService;
         private readonly MediaBrowser.Controller.Session.ISessionManager _sessionManager;
+        private readonly Services.SpoilerUserResolver _spoilerResolver;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -163,7 +164,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IItemRepository itemRepository,
             IDbContextFactory<JellyfinDbContext> dbContextFactory,
             Services.TagCacheService tagCacheService,
-            MediaBrowser.Controller.Session.ISessionManager sessionManager)
+            MediaBrowser.Controller.Session.ISessionManager sessionManager,
+            Services.SpoilerUserResolver spoilerResolver)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -176,6 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _dbContextFactory = dbContextFactory;
             _tagCacheService = tagCacheService;
             _sessionManager = sessionManager;
+            _spoilerResolver = spoilerResolver;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
@@ -4188,31 +4191,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var items = _tagCacheService.GetCacheForUser(user, since);
 
             // Spoiler-mode tag-strip: when the user has SpoilerBlur on with
-            // SpoilerStripTags, walk the cache and zero-out tag fields for
-            // unwatched episodes whose parent series is in the user's
-            // spoiler list. Without this, the JE tag-pipeline reads from
-            // serverCache BEFORE calling GetTagData (the per-batch
+            // any tag-relevant strip toggle, walk the cache and zero-out
+            // matching fields for unwatched episodes whose parent series is
+            // in the user's spoiler list. Without this, the JE tag-pipeline
+            // reads from serverCache BEFORE calling GetTagData (the per-batch
             // endpoint), so card overlays would still render despite the
-            // SpoilerStripTags toggle being on. Mirrors the per-batch
-            // strip in GetTagData. (R4-codex-H1)
+            // toggle being on. Mirrors the per-batch strip in GetTagData.
+            // (R4-codex-H1, R5-M10 split per-field)
             var spCfg = JellyfinEnhanced.Instance?.Configuration;
-            if (spCfg?.SpoilerBlurEnabled == true && spCfg.SpoilerStripTags == true)
+            // R5-M10: each downstream tag overlay has its own admin toggle;
+            // enter the strip block if ANY of them is on, then gate each
+            // field individually below. Previously gated only on
+            // SpoilerStripTags, which silently leaked ratings for users who
+            // turned on rating-strip but not tag-strip.
+            var stripGenresEnabled = spCfg?.SpoilerStripTags == true;
+            var stripCommunityRatingEnabled = spCfg?.SpoilerStripCommunityRating == true;
+            var stripCriticRatingEnabled = spCfg?.SpoilerStripCriticRating == true;
+            var anyStripEnabled = stripGenresEnabled || stripCommunityRatingEnabled || stripCriticRatingEnabled;
+            if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
-                UserSpoilerBlur? spState = null;
-                try
-                {
-                    spState = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
-                        userId.ToString("N"),
-                        Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Spoiler tag-cache strip: failed to load state — passing through. {ex.Message}");
-                }
+                // R5-M7: strict-read so corruption is observable (rate-
+                // limited warn) rather than silently passing through.
+                UserSpoilerBlur? spState = LoadSpoilerStateForTagStrip(userId);
 
                 if (spState != null && spState.Series.Count > 0)
                 {
-                    foreach (var kvp in items)
+                    foreach (var kvp in items.ToList())
                     {
                         var entry = kvp.Value;
                         if (entry == null) continue;
@@ -4224,8 +4228,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // memory, no disk hit). Avoids requiring a library
                         // lookup per entry — IUserDataManager works on
                         // (user, itemId) directly.
-                        if (Guid.TryParseExact(kvp.Key, "N", out var entryGuid)
-                            || Guid.TryParse(kvp.Key, out entryGuid))
+                        // R5-L7: Guid.TryParse already accepts the "N" form,
+                        // so the prior TryParseExact was redundant.
+                        if (Guid.TryParse(kvp.Key, out var entryGuid))
                         {
                             var entryItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid);
                             if (entryItem != null)
@@ -4235,17 +4240,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             }
                         }
 
-                        // Strip the spoiler-y tag fields. Keep Type so the
-                        // pipeline still considers the item processed (no
-                        // retry loop), and keep SeriesId so the parent-
-                        // series rating fallback in tag-pipeline.js doesn't
-                        // re-render a series rating overlay (the original
-                        // GetTagData stub did the same — see R4-code-I6).
-                        entry.Genres = System.Array.Empty<string>();
-                        entry.CommunityRating = null;
-                        entry.CriticRating = null;
-                        entry.AudioLanguages = null;
-                        entry.StreamData = null;
+                        // R5-C1: TagCacheService stores ONE shared
+                        // TagCacheEntry instance per item across ALL users.
+                        // Mutating in place would leak this user's strip
+                        // into every other user's cache response (and into
+                        // the user's OWN later watched-state response,
+                        // until the cache rebuilds). Clone before mutating.
+                        var stripped = entry.Clone();
+                        if (stripGenresEnabled)
+                        {
+                            stripped.Genres = System.Array.Empty<string>();
+                            stripped.AudioLanguages = null;
+                            stripped.StreamData = null;
+                        }
+                        if (stripCommunityRatingEnabled) stripped.CommunityRating = null;
+                        if (stripCriticRatingEnabled) stripped.CriticRating = null;
+                        items[kvp.Key] = stripped;
                     }
                 }
             }
@@ -4281,27 +4291,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             // Spoiler mode short-circuit: if the user has the plugin's
-            // master switch on, has SpoilerStripTags on, and has at least
-            // one series in their spoiler list, we'll need to skip tag data
-            // for unwatched episodes of those series. Loaded once per
-            // request to avoid 50× JSON reads on a typical home-page batch.
+            // master switch on, has any tag-relevant strip toggle on, and
+            // has at least one series in their spoiler list, we'll need to
+            // skip tag data for unwatched episodes of those series. Loaded
+            // once per request to avoid 50× JSON reads on a typical home-
+            // page batch. (R5-M10 split per-field, R5-M7 strict read)
             UserSpoilerBlur? spoilerState = null;
             var spoilerCfg = JellyfinEnhanced.Instance?.Configuration;
+            var spStripGenres = spoilerCfg?.SpoilerStripTags == true;
+            var spStripCommunity = spoilerCfg?.SpoilerStripCommunityRating == true;
+            var spStripCritic = spoilerCfg?.SpoilerStripCriticRating == true;
             var stripTagsEnabled = spoilerCfg?.SpoilerBlurEnabled == true
-                && spoilerCfg.SpoilerStripTags == true;
+                && (spStripGenres || spStripCommunity || spStripCritic);
             if (stripTagsEnabled)
             {
-                try
-                {
-                    spoilerState = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
-                        userId.ToString("N"),
-                        Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Spoiler tag-strip: failed to load user state — passing through with tags. {ex.Message}");
-                    spoilerState = null;
-                }
+                spoilerState = LoadSpoilerStateForTagStrip(userId);
                 // Empty list = nothing to strip. Treat as off for this request.
                 if (spoilerState == null || spoilerState.Series.Count == 0)
                 {
@@ -4353,29 +4357,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             stubName = $"Season {spEp.ParentIndexNumber.Value}, Episode {spEp.IndexNumber.Value}";
                         }
 
+                        // R5-M10: per-field strip. When a rating toggle is
+                        // OFF the stub preserves that field so the overlay
+                        // renders normally; when the toggle is ON the field
+                        // is nulled. SeriesId is only nulled when ratings
+                        // are stripped (it controls the rating-fallback to
+                        // parent series).
                         results.Add(new
                         {
                             Id = item.Id,
                             Type = kind.ToString(),
-                            // Empty arrays / nulls so each renderer's
-                            // isEnabled / hasData check returns "no data".
-                            Genres = Array.Empty<string>(),
-                            CommunityRating = (float?)null,
-                            CriticRating = (float?)null,
-                            // R4-L4: SeriesId nulled to suppress the rating
-                            // renderer's parent-series fallback — otherwise
-                            // the series-level rating would still render on
-                            // an unwatched-episode card.
-                            SeriesId = (Guid?)null,
+                            Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
+                            CommunityRating = spStripCommunity ? (float?)null : spEp.CommunityRating,
+                            CriticRating = spStripCritic ? (float?)null : spEp.CriticRating,
+                            // R4-L4 + R5-M10: only suppress the parent-
+                            // series rating fallback when a rating strip
+                            // is actually requested. Leaving SeriesId set
+                            // when the user only stripped tags lets the
+                            // rating overlay continue to render.
+                            SeriesId = (spStripCommunity || spStripCritic) ? (Guid?)null : spEp.SeriesId,
                             ProviderIds = (IDictionary<string, string>?)null,
                             Name = stubName,
                             Path = (string?)null,
-                            MediaStreams = (List<object>?)null,
-                            MediaSources = (List<object>?)null,
+                            MediaStreams = spStripGenres ? (List<object>?)null : null,
+                            MediaSources = spStripGenres ? (List<object>?)null : null,
                             FirstEpisode = (object?)null,
                             // R4-L6: align with field-strip filter (which sets
                             // Tags = Array.Empty<string>()).
-                            Tags = Array.Empty<string>(),
+                            Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
                         });
                         continue;
                     }
@@ -5392,6 +5401,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _pollLogDedup = new();
         private static readonly TimeSpan _pollLogInterval = TimeSpan.FromMinutes(5);
 
+        // R5-M7: tag-cache + tag-data both load the user's spoiler state.
+        // Use strict reads so corruption is detected (rate-limited warn);
+        // fall back to null so the strip silently no-ops rather than
+        // returning 503 for the unrelated tag-cache request. The user's
+        // actual /spoiler-blur/series endpoint will return 503 next call.
+        private UserSpoilerBlur? LoadSpoilerStateForTagStrip(Guid userId)
+        {
+            var userKey = userId.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+            {
+                return null;
+            }
+            try
+            {
+                return _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(userKey, fileName);
+            }
+            catch (InvalidDataException ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-corrupt:" + userKey,
+                    $"Spoiler tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                return null;
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-corrupt:" + userKey,
+                    $"Spoiler tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                return null;
+            }
+            catch (IOException ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-io:" + ex.GetType().FullName,
+                    $"Spoiler tag-strip: IO error reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Logs a high-frequency polling request, consolidating repeated identical calls into a
+        /// single summary line every <see cref="_pollLogInterval"/> rather than one line per poll.
+        /// </summary>
         private void LogPollingRequest(string userDisplay, string requestUri, string dedupKey)
         {
             var now = DateTime.UtcNow;

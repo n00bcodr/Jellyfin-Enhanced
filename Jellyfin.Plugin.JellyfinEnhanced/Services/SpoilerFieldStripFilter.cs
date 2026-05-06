@@ -197,7 +197,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"Spoiler field strip failed: {ex.Message}");
+                // R5-L1: rate-limit so a persistent strip bug on a 100-item
+                // batch doesn't produce 100 log lines. Pattern matches the
+                // rest of the filter (resolver.WarnRateLimited keyed by
+                // exception type).
+                _resolver.WarnRateLimited(
+                    "fieldstrip-apply:" + ex.GetType().FullName,
+                    $"Spoiler field strip failed: {ex.Message}");
             }
         }
 
@@ -210,24 +216,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             PluginConfiguration cfg,
             Guid userId)
         {
-            // R4-M4: ObjectResult covers most MVC return shapes, but a
-            // future Jellyfin upgrade swapping to JsonResult (a sibling
-            // ActionResult, not a subclass) would silently bypass strip.
-            // Surface that with hourly re-warn so it stays observable.
+            // R4-M4 + R5-H2: ObjectResult covers most MVC return shapes,
+            // but JsonResult / ContentResult / custom IActionResult are
+            // siblings (not subclasses). Generalize: log any non-null,
+            // non-ObjectResult shape with the type name as the rate-
+            // limit key so a future Jellyfin upgrade is observable.
             if (result == null) return;
-            if (result is not ObjectResult or)
+            if (result is not ObjectResult objectResult)
             {
-                if (result is JsonResult)
-                {
-                    _resolver.WarnRateLimited(
-                        "fieldstrip-shape:JsonResult",
-                        "Spoiler field strip: action returned JsonResult; strip is no-op for that shape. Likely a Jellyfin upgrade — switch to ObjectResult-aware extraction.");
-                }
+                _resolver.WarnRateLimited(
+                    "fieldstrip-shape:" + result.GetType().FullName,
+                    $"Spoiler field strip: action returned {result.GetType().Name}; strip is no-op for that shape. Likely a Jellyfin upgrade — switch to {result.GetType().Name}-aware extraction.");
                 return;
             }
-            if (or.Value == null) return;
+            if (objectResult.Value == null) return;
 
-            switch (or.Value)
+            switch (objectResult.Value)
             {
                 case BaseItemDto single:
                     StripItem(single, userState, cfg, userId);
@@ -261,7 +265,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var seriesId = item.SeriesId;
-            if (seriesId == null || seriesId.Value == Guid.Empty) return;
+            if (seriesId == null || seriesId.Value == Guid.Empty)
+            {
+                // R5-M1: Episode DTOs SHOULD always carry SeriesId.
+                // Silent return on null hides a Jellyfin DTO-shape regression.
+                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode)
+                {
+                    _resolver.WarnRateLimited(
+                        "fieldstrip-episode-no-seriesid",
+                        $"Spoiler field strip: Episode DTO {item.Id} has no SeriesId — strip cannot determine series membership. Possible Jellyfin DTO-shape change.");
+                }
+                return;
+            }
             if (!userState.Series.ContainsKey(seriesId.Value.ToString("N"))) return;
 
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season)
@@ -275,19 +290,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // UserData.UnplayedItemCount is the simplest "any watched?"
                 // signal for a Season DTO. > 0 AND total > unplayed = some
-                // watched. When UserData is missing (enableUserData=false),
-                // fall back to the server-side helper used by the image
-                // filter via _libraryManager.GetItemById + iterate, but
-                // here we cheat: ResolvePlayedServerSide on the season itself
-                // returns the aggregated Played flag which Jellyfin sets to
-                // true when ALL episodes are played — different semantics.
-                // For seasons we want "any played?" so default-strip when
-                // we cannot determine (fail-closed, like episodes).
-                if (item.UserData != null)
+                // watched. R5-M6: TvShows.GetSeasons does NOT include
+                // ItemCounts in its default fields, so UserData on a Season
+                // DTO often lacks UnplayedItemCount/RecursiveItemCount —
+                // fail-closed would over-strip every S2+. Fall back to the
+                // server-side helper that mirrors the image filter's logic
+                // (HasWatchedAnyEpisodeInSeason via library iteration).
+                if (item.UserData != null
+                    && item.UserData.UnplayedItemCount.HasValue
+                    && item.RecursiveItemCount.HasValue)
                 {
-                    var unplayed = item.UserData.UnplayedItemCount.GetValueOrDefault(int.MaxValue);
-                    var totalIndicator = item.RecursiveItemCount.GetValueOrDefault(unplayed);
+                    var unplayed = item.UserData.UnplayedItemCount.Value;
+                    var totalIndicator = item.RecursiveItemCount.Value;
                     if (totalIndicator > 0 && unplayed < totalIndicator) return; // some watched
+                }
+                else if (HasWatchedAnyEpisodeInSeasonServerSide(userId, item.Id))
+                {
+                    return; // some watched — fall through to no-strip
                 }
                 ApplyStripping(item, cfg);
                 return;
@@ -321,6 +340,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var jUser = _userManager.GetUserById(userId);
+                // R5-H4: comment-vs-code mismatch fixed — both branches
+                // return false, but for DIFFERENT reasons. When user/item
+                // are gone, "treat as unwatched → strip applies" is the
+                // safe default (we'd rather strip a non-existent ref than
+                // leak metadata).
                 if (jUser == null) return false;
                 var item = _libraryManager.GetItemById(itemId);
                 if (item == null) return false;
@@ -340,14 +364,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        // R5-M6: server-side "has the user watched ANY episode in this
+        // season?" probe. Used as a fallback when the Season DTO carries
+        // no ItemCounts (TvShows.GetSeasons strips them by default unless
+        // ?fields=ItemCounts is requested). Fail-closed on throw → return
+        // false so strip applies (privacy > UX glitch).
+        private bool HasWatchedAnyEpisodeInSeasonServerSide(Guid userId, Guid seasonId)
+        {
+            try
+            {
+                var jUser = _userManager.GetUserById(userId);
+                if (jUser == null) return false;
+                var seasonItem = _libraryManager.GetItemById(seasonId)
+                    as MediaBrowser.Controller.Entities.TV.Season;
+                if (seasonItem == null) return false;
+                foreach (var ep in seasonItem.GetEpisodes(jUser, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                {
+                    if (ep == null) continue;
+                    var ud = _userDataManager.GetUserData(jUser, ep);
+                    if (ud?.Played == true) return true;
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "fieldstrip-seasonprobe:" + ex.GetType().FullName,
+                    $"Spoiler field strip: season any-watched probe failed for season {seasonId}: {ex.Message}");
+                return false;
+            }
+        }
+
         private static readonly System.Text.RegularExpressions.Regex _htmlTagRe
             = new System.Text.RegularExpressions.Regex("<[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        // R4-M1: server-side sanitizer for the admin-supplied placeholder.
+        // R4-M1 + R5-L8: server-side sanitizer for the admin-supplied placeholder.
         // The configPage JS already strips tags + brackets on save, but
         // an admin who edited the XML config on disk would bypass that.
         // Cap length too — admin can't make a 1MB placeholder amplify
-        // every response.
+        // every response. Defense-in-depth: also strip HTML-entity
+        // sequences (`&#60;` / `&lt;` etc.) so a future consumer that
+        // switches to innerHTML doesn't materialize them as `<`.
         private static string SanitizePlaceholder(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return "Spoiler mode activated";
@@ -357,7 +414,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 .Replace(">", string.Empty)
                 .Replace("\"", string.Empty)
                 .Replace("'", string.Empty)
-                .Replace("`", string.Empty);
+                .Replace("`", string.Empty)
+                .Replace("&", string.Empty);
             return string.IsNullOrWhiteSpace(stripped) ? "Spoiler mode activated" : stripped;
         }
 
@@ -381,9 +439,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (hint.Id == Guid.Empty) continue;
 
                 // Look up the actual item to get SeriesId; cheap in-memory.
+                // R5-H1: when the lookup throws (transient DB hiccup,
+                // ObjectDisposedException during shutdown, etc.) the prior
+                // `continue` left the hint UNSTRIPPED — fail-OPEN. Mirror
+                // ResolvePlayedServerSide and fail-CLOSED: rate-limited
+                // warn + sanitize the hint name before continuing so the
+                // spoilery title doesn't leak through autocomplete.
                 MediaBrowser.Controller.Entities.BaseItem? actualItem;
                 try { actualItem = _libraryManager.GetItemById(hint.Id); }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    _resolver.WarnRateLimited(
+                        "searchhint-lookup:" + ex.GetType().FullName,
+                        $"Spoiler field strip: SearchHint library lookup failed for {hint.Id}: {ex.Message}");
+                    hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
+                    continue;
+                }
                 if (actualItem is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
                 if (ep.SeriesId == Guid.Empty) continue;
                 if (!userState.Series.ContainsKey(ep.SeriesId.ToString("N"))) continue;
