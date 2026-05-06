@@ -129,10 +129,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (!seasonId.HasValue && !seriesId.HasValue) return;
 
+            // R6-M5: per-user coalesce. Prior code spawned a Task.Run
+            // per UserDataSaved event; a "Mark season watched" sweep on a
+            // 24-episode season fires 24 events → 24 queued threadpool
+            // tasks all racing the same _watchedCache. Bound to one
+            // in-flight task per user. Subsequent events while a task is
+            // in flight are dropped — safe because a missed eviction
+            // self-heals via the 30s cache TTL, and the in-flight task
+            // covers all keys for that user via the series prefix scan
+            // (or just one key if it's a season event).
+            if (!_pendingInvalidations.TryAdd(userId, 0))
+            {
+                return;
+            }
+
+            // R6-L3: capture _disposed once so post-Dispose Task.Run
+            // lambdas no-op fast.
             Task.Run(() =>
             {
                 try
                 {
+                    if (_disposed) return;
                     if (seasonId.HasValue && seasonId.Value != Guid.Empty)
                     {
                         var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
@@ -173,8 +190,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         "userdata-saved-handler:" + ex.GetType().FullName,
                         $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
                 }
+                finally
+                {
+                    _pendingInvalidations.TryRemove(userId, out _);
+                }
             });
         }
+
+        // R6-M5: per-user dedup gate for the OnUserDataSaved Task.Run
+        // dispatch. Static so a hot-reload preserves the dedup state
+        // across plugin instances (matches _watchedCache, _warnedShapeAt
+        // pattern in this file).
+        private static readonly ConcurrentDictionary<Guid, byte> _pendingInvalidations = new();
 
         // R5-H3 / R5-M9: this filter is a Singleton subscribed to
         // IUserDataManager.UserDataSaved. Without an unsubscribe path,

@@ -295,6 +295,46 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 6 review (2026-05-06) — post-R5 reviewer pass
+
+Sources: codex GPT-5.5 high, code-reviewer, silent-failure-hunter, security-reviewer.
+
+### HIGH
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R6-H1** | `Controllers/JellyfinEnhancedController.cs:3957-3958` (stub `MediaStreams = null : null`) | code-reviewer + silent-failure | **fixed** | Both ternaries returned `null` regardless of `spStripGenres`; quality / language overlays disappeared even when admin only enabled rating-strip. **Fix:** compute trimmed streams + sources inside the stub when `!spStripGenres`, use them in the false branch. |
+| **R6-H2** | `Controllers/JellyfinEnhancedController.cs:LoadSpoilerStateForTagStrip` (catch-all gap) | silent-failure HIGH | **fixed** | Helper caught `IOException` / `InvalidDataException` / `JsonException` only. `UnauthorizedAccessException` etc. would escape and 500 the entire tag-cache request. **Fix:** added catch-all with rate-limited warn, returns null. |
+| **R6-H3** | `Services/SpoilerUserResolver.cs:142` (foreach enumerator escape) | silent-failure HIGH | **fixed** | `_sessionManager.Sessions` captured as live `IEnumerable`; `MoveNext` could throw "Collection was modified" `InvalidOperationException` escaping both inner per-session and outer property-access catches. **Fix:** `.ToArray()` snapshot inside outer try. |
+
+### MEDIUM
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R6-M1** | `Services/SpoilerUserResolver.cs:LoadUserState` (split catches unreachable) | codex MEDIUM | **fixed** | Codex caught that `GetUserConfiguration<T>` is the lenient path; it swallows IOException/JsonException internally and returns `new T()`. The R5-M2 split catches in `LoadUserState` were dead code. **Fix:** collapsed to single catch-all, comment explains lenient-path semantics. Strict-read with corruption observability lives on the dedicated `/spoiler-blur/series` endpoint and `LoadSpoilerStateForTagStrip`. |
+| **R6-M2** | `Controllers/JellyfinEnhancedController.cs:3795` (silent skip on `Guid.TryParse` fail) | silent-failure MEDIUM | **fixed** | Cache-key format drift would silently strip tag rails for every user. **Fix:** added `else { _spoilerResolver.WarnRateLimited(...) }`. |
+| **R6-M3** | `Controllers/JellyfinEnhancedController.cs:3953` (SeriesId preserved when only tags stripped) | silent-failure MEDIUM | **documented** | Stub keeps SeriesId when admin enabled only `SpoilerStripTags`; JE rating-renderer's parent-series fallback fires. Per security review (L1): series-level rating doesn't reveal episode-specific spoilers (visible on show poster anyway). Acceptable; comment at `:3948-3952` already documents intent. |
+| **R6-M4** | corrupt-config fail-OPEN | security MEDIUM | **documented** | Lenient resolver path returns empty `UserSpoilerBlur` on corruption → strip silently disables until user fixes file. Failing closed on the hot image-render path would brick rendering. **Fix:** documented trade-off in new `SECURITY.md` "Behaviour on Corrupt User State" section listing all 3 read paths and their failure modes. |
+| **R6-M5** | `Services/SpoilerBlurImageFilter.cs:OnUserDataSaved` (unbounded Task.Run) | code-reviewer MEDIUM | **fixed** | "Mark all played" sweep on a 100-episode season fired 100 Task.Run dispatches racing the same `_watchedCache`. **Fix:** added `_pendingInvalidations` per-user dedup gate (`ConcurrentDictionary<Guid, byte>.TryAdd` short-circuits when one is already in flight; `finally { TryRemove }` releases). |
+
+### LOW
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R6-L1** | code-reviewer LOW | **deferred** | `HasWatchedAnyEpisodeInSeasonServerSide` un-cached (24 lookups × N seasons per request). Library iteration is cheap in-memory; flagged for follow-up if perf becomes visible. |
+| **R6-L2** | silent-failure LOW | **documented** | Added comment on `TagCacheEntry.Clone()` warning future contributors that `StreamData` reference is shared and must be replaced (not mutated) across users. |
+| **R6-L3** | code-reviewer LOW | **fixed** | Added `_disposed` check at top of Task.Run lambda so post-Dispose lambdas no-op fast. |
+| **R6-L4** | security LOW | **documented** | Added comment to `SanitizePlaceholder` clarifying it is HTML-context defense, NOT script-eval-context. |
+
+### Convergence
+
+- **CRITICAL: 0**
+- **HIGH: 0 open** (R6-H1, H2, H3 fixed)
+- **MEDIUM: 0 open** (R6-M1, M2, M5 fixed; M3, M4 documented as accepted trade-offs)
+- **LOW: 0 open** (R6-L2, L3, L4 closed; L1 deferred for future perf work)
+
+Round 7 pass needed to confirm convergence per JE skill rule.
+
 ## Round 5 review (2026-05-06) — post-R4 reviewer pass
 
 Sources: codex GPT-5.5 high, code-reviewer, silent-failure-hunter, security-reviewer.

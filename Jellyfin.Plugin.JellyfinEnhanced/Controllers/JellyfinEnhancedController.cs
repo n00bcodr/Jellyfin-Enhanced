@@ -4239,6 +4239,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 if (ud?.Played == true) continue;
                             }
                         }
+                        else
+                        {
+                            // R6-M2: cache-key format drift would silently
+                            // strip every user's tag rail with no diagnostic.
+                            // Rate-limited warn so a future change to the
+                            // TagCacheService key format is observable.
+                            _spoilerResolver.WarnRateLimited(
+                                "tagcache-key-not-guid",
+                                $"Spoiler tag-cache strip: TagCacheService key '{kvp.Key}' did not parse as Guid; played-state check skipped. Possible cache-key format change.");
+                        }
 
                         // R5-C1: TagCacheService stores ONE shared
                         // TagCacheEntry instance per item across ALL users.
@@ -4357,6 +4367,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             stubName = $"Season {spEp.ParentIndexNumber.Value}, Episode {spEp.IndexNumber.Value}";
                         }
 
+                        // R6-H1: compute streams/sources here when the user
+                        // hasn't enabled SpoilerStripTags so quality / language
+                        // overlays still render under rating-only strip. Prior
+                        // ternary was `null : null` (dead code) — every stub
+                        // dropped streams unconditionally.
+                        List<object>? stubStreams = null;
+                        List<object>? stubSources = null;
+                        if (!spStripGenres)
+                        {
+                            var stubMediaSources = spEp.GetMediaSources(false);
+                            stubStreams = stubMediaSources
+                                .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                                .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                                .Select(s => (object)new
+                                {
+                                    Type = s.Type.ToString(),
+                                    Language = s.Language,
+                                    Codec = s.Codec,
+                                    CodecTag = s.CodecTag,
+                                    Profile = s.Profile,
+                                    Height = s.Height,
+                                    Channels = s.Channels,
+                                    ChannelLayout = s.ChannelLayout,
+                                    VideoRangeType = s.VideoRangeType,
+                                    DisplayTitle = s.DisplayTitle,
+                                })
+                                .ToList();
+                            stubSources = stubMediaSources
+                                .Select(s => (object)new
+                                {
+                                    Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
+                                    Name = s.Name,
+                                })
+                                .ToList();
+                        }
+
                         // R5-M10: per-field strip. When a rating toggle is
                         // OFF the stub preserves that field so the overlay
                         // renders normally; when the toggle is ON the field
@@ -4379,8 +4425,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             ProviderIds = (IDictionary<string, string>?)null,
                             Name = stubName,
                             Path = (string?)null,
-                            MediaStreams = spStripGenres ? (List<object>?)null : null,
-                            MediaSources = spStripGenres ? (List<object>?)null : null,
+                            MediaStreams = stubStreams,
+                            MediaSources = stubSources,
                             FirstEpisode = (object?)null,
                             // R4-L6: align with field-strip filter (which sets
                             // Tags = Array.Empty<string>()).
@@ -5437,6 +5483,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-io:" + ex.GetType().FullName,
                     $"Spoiler tag-strip: IO error reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // R6-H2: prior catches handled InvalidDataException /
+                // JsonException / IOException only. UnauthorizedAccessException
+                // (chmod-mangled config dir), SecurityException (host policy),
+                // PathTooLongException, DirectoryNotFoundException etc. would
+                // escape and 500 the entire tag-cache/tag-data request —
+                // breaking every client's tag rail on every poll. Catch-all
+                // returns null (skip strip) with rate-limited warn so a real
+                // failure mode is observable but doesn't take down the
+                // unrelated tag-cache surface.
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-unexpected:" + ex.GetType().FullName,
+                    $"Spoiler tag-strip: unexpected {ex.GetType().Name} reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
                 return null;
             }
         }

@@ -36,6 +36,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         // strip into every other user's cache response. Arrays are kept by
         // reference; spoiler strip only ever REPLACES them (with empty/null),
         // never mutates an existing array, so the shallow copy is safe.
+        //
+        // R6-L2 caveat: StreamData (TagStreamData object) is also reference-
+        // shared. Today's strip code replaces the reference (Stream Data =
+        // null) — safe. If a future feature mutates `clone.StreamData.Streams.Add(...)`
+        // or similar, every user's cache silently corrupts. Treat StreamData
+        // as immutable across users; replace the whole object, never mutate
+        // its fields.
         public TagCacheEntry Clone() => new()
         {
             Type = Type,

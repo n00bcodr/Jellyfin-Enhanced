@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Session;
@@ -73,37 +74,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     userId.ToString("N"),
                     SpoilerBlurImageFilter.SpoilerBlurFileName);
             }
-            catch (IOException ex)
-            {
-                // R5-M2: transient FS failures (lock contention, EBUSY).
-                // Rate-limited warn keyed by user; treat as no-spoiler-list
-                // for this request — if the file is real but locked, the
-                // next request will likely succeed.
-                WarnRateLimited(
-                    "userstate-io:" + userId.ToString("N"),
-                    $"Spoiler resolver: IO error reading user state for {userId} — passing through unblurred. {ex.Message}");
-                state = new UserSpoilerBlur();
-            }
-            catch (Newtonsoft.Json.JsonException ex)
-            {
-                // R5-M2: persistent corruption — separate log key so an
-                // operator scanning logs sees corruption distinct from a
-                // brief IO blip. The dedicated /spoiler-blur/series
-                // endpoint will return 503 next time the user hits it,
-                // surfacing the same fact to the UI.
-                WarnRateLimited(
-                    "userstate-corrupt:" + userId.ToString("N"),
-                    $"Spoiler resolver: spoilerblur.json corrupt for {userId} — passing through unblurred. Manual recovery may be needed. {ex.Message}");
-                state = new UserSpoilerBlur();
-            }
             catch (Exception ex)
             {
-                // Catch-all for unexpected exception types — keep keyed by
-                // exception type so a brand-new failure mode isn't silenced
-                // under the broader umbrella.
+                // R6-M1: GetUserConfiguration is the LENIENT path — it
+                // already swallows IOException + JsonException + parse
+                // failures internally and returns `new T()` (it logs at
+                // Error level via the config manager's own _logger, so the
+                // corruption fact is observable, just not under our
+                // namespace). The earlier R5-M2 split into IOException /
+                // JsonException / catch-all was dead code; only this
+                // outer catch-all fires, for exceptions that escape the
+                // lenient path (e.g. ResolveUserFile throwing on a bad
+                // userId). Rate-limited so a flood of bad requests
+                // doesn't spam logs. Strict-read with corruption-503 is
+                // available on the dedicated /spoiler-blur/series
+                // endpoint and via LoadSpoilerStateForTagStrip.
                 WarnRateLimited(
                     "userstate-load:" + ex.GetType().FullName,
-                    $"Spoiler resolver: unexpected error reading user state for {userId} — passing through unblurred. {ex.Message}");
+                    $"Spoiler resolver: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
                 state = new UserSpoilerBlur();
             }
             httpContext.Items[ContextKeyUserState] = state;
@@ -126,16 +114,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var recentlyActiveUsers = new HashSet<Guid>();
             var now = DateTime.UtcNow;
 
-            IEnumerable<SessionInfo> sessions;
+            // R6-H3: snapshot the live IEnumerable INSIDE the outer try.
+            // ISessionManager.Sessions can return a live view; foreach's
+            // MoveNext can throw InvalidOperationException ("Collection was
+            // modified") that would escape both inner per-session catches
+            // AND the outer property-access catch. ToArray() forces
+            // materialization here so the enumerator hazard is contained.
+            SessionInfo[] sessions;
             try
             {
-                sessions = _sessionManager.Sessions;
+                sessions = _sessionManager.Sessions.ToArray();
             }
             catch (Exception ex)
             {
                 WarnRateLimited(
                     "session-list:" + ex.GetType().FullName,
-                    $"Spoiler resolver: ISessionManager.Sessions threw: {ex.Message}");
+                    $"Spoiler resolver: ISessionManager.Sessions enumeration threw: {ex.Message}");
                 return null;
             }
 

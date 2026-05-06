@@ -175,6 +175,43 @@ should ensure Jellyfin is fronted by HTTPS with no TLS-inspection
 intermediaries, which is the recommended baseline for any Jellyfin
 deployment.
 
+### Spoiler Blur — Behaviour on Corrupt User State
+
+`spoilerblur.json` is read on every image request and on every tag-cache /
+tag-data poll. Three different read paths exist:
+
+1. The dedicated `/JellyfinEnhanced/spoiler-blur/series` endpoint uses
+   the **strict** read with corruption detection. A corrupt file backs
+   up to `.corrupt-{ts}` and returns HTTP 503; the user sees a hard
+   error in the UI and is forced to recover. This is the only path
+   that mutates the file (read-modify-write on toggle).
+
+2. The image filter (`SpoilerBlurImageFilter`) and the field-strip
+   filter (`SpoilerFieldStripFilter`) both call the **lenient** read
+   via `SpoilerUserResolver.LoadUserState`. The config manager catches
+   read/parse errors internally and returns an empty `UserSpoilerBlur`,
+   logging at Error level under the config-manager's namespace. The
+   spoiler list is treated as empty for the duration of the corruption,
+   so blur and field-strip silently disable until the user fixes the
+   file via the UI. **This is fail-OPEN** — privacy is degraded for
+   that one user until they recover. This trade-off is intentional:
+   failing closed (treating every episode as needing strip) on a hot
+   path would brick image rendering and be far more disruptive than
+   the metadata leak. The corruption fact remains observable through
+   the config manager's own log line.
+
+3. The tag-cache + tag-data endpoints use the strict read via
+   `LoadSpoilerStateForTagStrip`, but on corruption return `null` (skip
+   strip) with a rate-limited warn rather than HTTP 503 — the unrelated
+   tag-cache request stays usable. Behaviour is fail-OPEN, same caveat
+   as (2).
+
+If you operate a multi-user Jellyfin instance and want stronger
+guarantees against corrupt-config leakage, monitor the Jellyfin log for
+"Error deserializing 'spoilerblur.json'" lines and have an
+out-of-band remediation playbook (delete the corrupt file or restore
+from backup).
+
 ## Contact
 
 For security concerns that don't constitute a vulnerability, you can:

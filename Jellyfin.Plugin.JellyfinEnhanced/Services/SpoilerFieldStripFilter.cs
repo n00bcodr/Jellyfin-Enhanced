@@ -405,6 +405,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // every response. Defense-in-depth: also strip HTML-entity
         // sequences (`&#60;` / `&lt;` etc.) so a future consumer that
         // switches to innerHTML doesn't materialize them as `<`.
+        //
+        // R6-L4 scope: this sanitization is HTML-context defense only.
+        // It does NOT defend a JS-eval consumer (hex-escape sequences
+        // survive intact and are harmless in HTML context but would
+        // execute in a JS-eval context). No JE consumer evals Overview
+        // today; if that ever changes, the sanitizer must be re-evaluated.
         private static string SanitizePlaceholder(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return "Spoiler mode activated";
