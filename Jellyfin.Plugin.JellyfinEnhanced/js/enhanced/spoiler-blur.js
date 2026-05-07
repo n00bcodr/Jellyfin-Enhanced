@@ -135,6 +135,94 @@
         });
     }
 
+    // Tracks items whose chapter images we've already preloaded this
+    // session so navigating back to the same detail page doesn't
+    // re-fetch every chapter every visit.
+    var preloadedChapterItems = new Set();
+
+    /**
+     * Pre-fetch all chapter images for a movie/episode whose spoiler-list
+     * membership matches the current user. The browser caches each
+     * response under its URL; when the player later hovers the timeline
+     * and requests the same chapter image, the request hits the browser
+     * cache instantly instead of round-tripping (which produced a
+     * "gray box → image swap" jank during the network pending window).
+     *
+     * @param {string} itemId
+     * @param {string} itemType  'Movie' | 'Episode' | 'Series'
+     */
+    async function preloadChapterImages(itemId, itemType) {
+        try {
+            if (!itemId || !ApiClient || !ApiClient.getUrl) return;
+            // Only preload for items the user has spoiler mode on for.
+            // Series-detail page navigates don't usually open the player
+            // directly so skip; Episodes/Movies are the player surfaces
+            // where the timeline tooltip fires.
+            await whenLoaded();
+            var eligible = false;
+            if (itemType === 'Movie') {
+                eligible = isMovieEnabledFor(itemId);
+            } else if (itemType === 'Episode') {
+                // For an episode we'd need its series ID — caller can't
+                // know it without an extra lookup. Fetch the item and
+                // resolve via SeriesId.
+            }
+            if (itemType !== 'Movie' && itemType !== 'Episode') return;
+
+            var userId = ApiClient.getCurrentUserId && ApiClient.getCurrentUserId();
+            if (!userId) return;
+
+            // Get the chapter count via item lookup (Chapters field).
+            var item;
+            try {
+                if (JE.helpers && typeof JE.helpers.getItemCached === 'function') {
+                    item = await JE.helpers.getItemCached(itemId, { userId: userId });
+                } else {
+                    item = await ApiClient.getItem(userId, itemId);
+                }
+            } catch (e) {
+                return;
+            }
+            if (!item) return;
+
+            // For episodes, resolve eligibility now (after item fetch).
+            if (itemType === 'Episode') {
+                var sid = item.SeriesId;
+                if (!sid || !isEnabledFor(sid)) return;
+                // Episode's parent series is in the spoiler list — preload.
+                eligible = true;
+            }
+            if (!eligible) return;
+
+            var chapters = item.Chapters || [];
+            if (!Array.isArray(chapters) || chapters.length === 0) return;
+
+            // De-dup repeated visits to the same item within a session.
+            var dedupKey = itemId + ':' + chapters.length;
+            if (preloadedChapterItems.has(dedupKey)) return;
+            preloadedChapterItems.add(dedupKey);
+
+            // Match the size jellyfin-web's tooltip requests so the
+            // browser cache satisfies the player's hover-fetch on the
+            // first try. The player typically asks for fillWidth=320;
+            // including no other params keeps the cache key stable.
+            var token = (ApiClient.accessToken && ApiClient.accessToken()) || '';
+            for (var i = 0; i < chapters.length; i++) {
+                var u = ApiClient.getUrl('Items/' + itemId + '/Images/Chapter/' + i)
+                    + '?fillWidth=320'
+                    + (token ? '&api_key=' + encodeURIComponent(token) : '');
+                // Hidden Image() triggers GET and lets the browser cache
+                // the response. No need to attach to DOM or hold the
+                // reference; once the request completes the browser
+                // keeps the bytes in the HTTP cache for max-age=30.
+                var img = new Image();
+                img.src = u;
+            }
+        } catch (e) {
+            console.warn(logPrefix, 'preloadChapterImages failed:', e);
+        }
+    }
+
     /**
      * Inserts a "Spoiler Mode" toggle button into a series detail page's
      * action button row. Idempotent: re-running on the same page reuses the
@@ -517,6 +605,7 @@
         enableForMovie: enableForMovie,
         disableForMovie: disableForMovie,
         whenLoaded: whenLoaded,
+        preloadChapterImages: preloadChapterImages,
         // Used by tests / management UI.
         getEnabledSet: function () { return new Set(enabledSeries); },
         getEnabledMovieSet: function () { return new Set(enabledMovies); },
