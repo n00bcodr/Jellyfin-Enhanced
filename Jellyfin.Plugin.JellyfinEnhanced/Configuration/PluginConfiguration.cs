@@ -294,6 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerStripCastMode = "GuestStars";
             SpoilerStripReviews = true;
             SpoilerBlurMode = "blur";
+            SpoilerBlurArtwork = false;
             SpoilerOverviewPlaceholder = "Spoiler mode activated";
         }
 
@@ -621,6 +622,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // image content is fully hidden — useful for users who find
         // partial-blur "tease" worse than a clean placeholder.
         public string SpoilerBlurMode { get; set; } = "blur";
+        // When false (default), only Primary / Thumb / Screenshot images
+        // get blurred — Backdrop / Art (the wider aesthetic / collection
+        // artwork) pass through unblurred. Set true to also blur those.
+        // Posters typically convey plot (curated marketing art); backdrops
+        // are usually less specific, so the default scopes blur to the
+        // poster surface where most spoiler risk lives.
+        public bool SpoilerBlurArtwork { get; set; } = false;
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.

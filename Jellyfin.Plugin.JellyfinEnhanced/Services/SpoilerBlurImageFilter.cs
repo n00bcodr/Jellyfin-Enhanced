@@ -42,16 +42,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             "GetItemImage2",
         };
 
-        // Only blur image types that show episode content. Logos/banners are
-        // series-level or content-free; blurring them would just confuse users
-        // without protecting against spoilers.
-        private static readonly HashSet<string> _blurrableImageTypes = new(StringComparer.OrdinalIgnoreCase)
+        // Image-type allowlist split into two tiers.
+        //
+        // Always blur (poster surface — where most spoiler risk lives,
+        // typically curated marketing art that conveys plot):
+        //   Primary, Thumb, Screenshot
+        //
+        // Optional blur — admin-toggled via SpoilerBlurArtwork
+        // (default false). Backdrops/Art are wider aesthetic images
+        // shown on detail pages and collections; many users find blurring
+        // those over-aggressive, so they pass through by default.
+        private static readonly HashSet<string> _alwaysBlurImageTypes = new(StringComparer.OrdinalIgnoreCase)
         {
             "Primary",
             "Thumb",
+            "Screenshot",
+        };
+        private static readonly HashSet<string> _artworkImageTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
             "Backdrop",
             "Art",
-            "Screenshot",
         };
 
         // Re-warn at most once per hour per surface so a real Jellyfin upgrade
@@ -282,8 +292,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
 
             if (!TryGetItemId(context, out var itemId)
-                || !TryGetImageType(context, out var imageType)
-                || !_blurrableImageTypes.Contains(imageType))
+                || !TryGetImageType(context, out var imageType))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+            // Always-blur tier (poster surface) vs artwork tier (Backdrop/
+            // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
+            // banners, etc.) passes through unchanged.
+            var inAlways = _alwaysBlurImageTypes.Contains(imageType);
+            var inArtwork = !inAlways && _artworkImageTypes.Contains(imageType);
+            if (!inAlways && !inArtwork)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+            if (inArtwork && pluginConfig.SpoilerBlurArtwork != true)
             {
                 await next().ConfigureAwait(false);
                 return;

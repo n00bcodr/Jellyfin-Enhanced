@@ -448,6 +448,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (item == null) return;
 
+            // Series path: when the item is the Series itself (Series detail
+            // page = /Items/{seriesId}), strip cast / overview / tags / etc.
+            // for the series-level DTO when the user has spoiler mode on for
+            // it. Crucial for the Cast & Crew rail on series detail pages —
+            // an unexpected guest star or recurring villain on the series-
+            // level cast is a major spoiler. No watched-state check (a
+            // series doesn't have one), no Name rewrite (series titles are
+            // OK to surface — it's the per-item plot detail that spoils).
+            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Series)
+            {
+                if (item.Id == Guid.Empty) return;
+                if (!userState.Series.ContainsKey(item.Id.ToString("N"))) return;
+                ApplyStripping(item, cfg);
+                return;
+            }
+
             // Movie path (added alongside Episode/Season): movies are tracked
             // in their own dict by movie ID. Watched check via UserData.Played
             // directly — no per-episode aggregation. Same field-strip body as
@@ -709,16 +725,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // R16-M1: Movie hint path. Spoiler-list keyed by movie
                     // ID directly; watched check via the same server-side
                     // helper.
+                    // R17: movie hint Name NOT rewritten (MatchedTerm still
+                    // nulled below to suppress autocomplete substring leak
+                    // of any non-title-bearing match).
                     if (actualItem is not MediaBrowser.Controller.Entities.Movies.Movie) continue;
                     if (!userState.Movies.ContainsKey(hint.Id.ToString("N"))) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
-
-                    if (cfg.SpoilerReplaceTitle || cfg.SpoilerStripOverview)
-                    {
-                        // Movies have no Season/Episode index — fall back to
-                        // the admin placeholder either way.
-                        hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
-                    }
                 }
 
                 // R10-M3: MatchedTerm echoes the substring of the
@@ -767,11 +779,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // spoiler. Strip the name but KEEP the timestamp (StartPositionTicks)
             // so the player's seek bar still shows the chapter divider; the
             // user can navigate via timestamp without the spoiler text.
+            //
+            // R17 progressive-strip for Movies: only strip chapters whose
+            // StartPositionTicks is AFTER the user's current playback
+            // position. Already-watched chapters retain their names so a
+            // half-finished movie shows scene names + thumbnails up to the
+            // user's resume point, then hides everything after. For
+            // Episodes (binary watched/unwatched semantics) the full strip
+            // still applies — no "half-watched" episode mode.
             if (cfg.SpoilerStripChapters && item.Chapters != null)
             {
+                long? watchedThroughTicks = null;
+                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie
+                    && item.UserData != null)
+                {
+                    // PlaybackPositionTicks reflects the resume point.
+                    // When the movie is fully Played, treat as watched
+                    // through End so all chapter names show.
+                    if (item.UserData.Played)
+                    {
+                        watchedThroughTicks = long.MaxValue;
+                    }
+                    else if (item.UserData.PlaybackPositionTicks > 0)
+                    {
+                        watchedThroughTicks = item.UserData.PlaybackPositionTicks;
+                    }
+                }
+
                 foreach (var ch in item.Chapters)
                 {
-                    if (ch != null) ch.Name = null;
+                    if (ch == null) continue;
+                    if (watchedThroughTicks.HasValue
+                        && ch.StartPositionTicks <= watchedThroughTicks.Value)
+                    {
+                        // Pre-resume-point chapter — keep its name and
+                        // ImagePath visible.
+                        continue;
+                    }
+                    ch.Name = null;
                 }
             }
 
@@ -878,15 +923,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     item.SortName = null;
                     item.OriginalTitle = null;
                 }
-                else if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
-                {
-                    // Movies have no Season/Episode index — fall back to
-                    // the admin-set placeholder string. SanitizePlaceholder
-                    // handles HTML / max-length already.
-                    item.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
-                    item.SortName = null;
-                    item.OriginalTitle = null;
-                }
+                // R17: Movie titles intentionally NOT rewritten. Per user
+                // request: the movie title is OK to surface (it's already
+                // in URLs / library nav anyway), only the synopsis /
+                // chapter / cast / artwork content needs spoiler treatment
+                // for movies.
             }
 
             // R9-H1 + R10-batch: when title replacement OR overview
@@ -992,16 +1033,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                // R10-H5: ChapterInfo.ImagePath leaks server filesystem
-                // path commonly containing the episode title. Separate
-                // from the SpoilerStripChapters Name strip — applies
-                // whenever title-strip is on, even if admin left
-                // SpoilerStripChapters off.
+                // R10-H5 + R17: ChapterInfo.ImagePath leaks server
+                // filesystem path. Strip whenever title-strip is on,
+                // BUT respect the same progressive-strip carve-out for
+                // movies — already-watched chapter thumbnails stay
+                // visible (the user already saw those scenes).
                 if (item.Chapters != null)
                 {
+                    long? watchedThroughTicksForImg = null;
+                    if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie
+                        && item.UserData != null)
+                    {
+                        if (item.UserData.Played) watchedThroughTicksForImg = long.MaxValue;
+                        else if (item.UserData.PlaybackPositionTicks > 0)
+                            watchedThroughTicksForImg = item.UserData.PlaybackPositionTicks;
+                    }
                     foreach (var ch in item.Chapters)
                     {
                         if (ch == null) continue;
+                        if (watchedThroughTicksForImg.HasValue
+                            && ch.StartPositionTicks <= watchedThroughTicksForImg.Value)
+                        {
+                            continue;
+                        }
                         ch.ImagePath = null;
                     }
                 }

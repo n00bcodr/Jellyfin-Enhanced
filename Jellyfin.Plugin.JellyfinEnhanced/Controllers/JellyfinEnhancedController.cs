@@ -4764,15 +4764,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var spMovieUd = _userDataManager.GetUserData(user, spMovie);
                     if (spMovieUd?.Played != true)
                     {
+                        // R17: movie title NOT rewritten under SpoilerReplaceTitle
+                        // — the title remains visible in tag overlays and
+                        // tooltips (consistent with the field-strip filter's
+                        // movie-title carve-out).
                         string? stubName = item.Name;
-                        if (spoilerCfg!.SpoilerReplaceTitle)
-                        {
-                            // Movies have no Season/Episode index — fall back
-                            // to the admin-set placeholder text.
-                            stubName = string.IsNullOrWhiteSpace(spoilerCfg.SpoilerOverviewPlaceholder)
-                                ? "Spoiler mode activated"
-                                : spoilerCfg.SpoilerOverviewPlaceholder;
-                        }
 
                         List<object>? stubStreams = null;
                         if (!spStripGenres)
