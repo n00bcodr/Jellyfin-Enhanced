@@ -139,14 +139,36 @@
     // session so navigating back to the same detail page doesn't
     // re-fetch every chapter every visit.
     var preloadedChapterItems = new Set();
+    // Holds the AbortController for the in-flight preload run so a new
+    // detail-page navigation OR playback start can cancel any
+    // remaining requests immediately. Keeps slow-connection users from
+    // having chapter preloads compete with the video manifest /
+    // segments at the moment they click Play.
+    var activePreloadAbort = null;
+    var hashChangeListener = null;
 
     /**
-     * Pre-fetch all chapter images for a movie/episode whose spoiler-list
-     * membership matches the current user. The browser caches each
-     * response under its URL; when the player later hovers the timeline
-     * and requests the same chapter image, the request hits the browser
-     * cache instantly instead of round-tripping (which produced a
-     * "gray box → image swap" jank during the network pending window).
+     * Network-friendly chapter image preloader.
+     *
+     * What it does: for items the user has spoiler mode enabled for,
+     * fetch every chapter image at fillWidth=320 so the browser HTTP
+     * cache is warm by the time the player's timeline-hover tooltip
+     * tries to render one (eliminates the "gray box → image swap" jank
+     * on the first hover for each chapter).
+     *
+     * Why it's careful about bandwidth:
+     *   1. requestIdleCallback defers work until the browser reports
+     *      it's idle (or 1.5 s elapses, whichever first).
+     *   2. Sequential fetch (concurrency = 1) so we never spawn 30
+     *      parallel requests at once.
+     *   3. fetch() with `priority: 'low'` (Chrome / Edge — ignored on
+     *      browsers that don't support it) so even on a busy network
+     *      the chapter requests yield to higher-priority traffic.
+     *   4. ~80 ms gap between requests so the network always has
+     *      headroom for a foreground request to interrupt.
+     *   5. Hashchange listener — the moment the user clicks Play
+     *      (which navigates to the player URL) or browses elsewhere,
+     *      remaining preloads abort.
      *
      * @param {string} itemId
      * @param {string} itemType  'Movie' | 'Episode' | 'Series'
@@ -154,25 +176,13 @@
     async function preloadChapterImages(itemId, itemType) {
         try {
             if (!itemId || !ApiClient || !ApiClient.getUrl) return;
-            // Only preload for items the user has spoiler mode on for.
-            // Series-detail page navigates don't usually open the player
-            // directly so skip; Episodes/Movies are the player surfaces
-            // where the timeline tooltip fires.
-            await whenLoaded();
-            var eligible = false;
-            if (itemType === 'Movie') {
-                eligible = isMovieEnabledFor(itemId);
-            } else if (itemType === 'Episode') {
-                // For an episode we'd need its series ID — caller can't
-                // know it without an extra lookup. Fetch the item and
-                // resolve via SeriesId.
-            }
             if (itemType !== 'Movie' && itemType !== 'Episode') return;
+            await whenLoaded();
 
             var userId = ApiClient.getCurrentUserId && ApiClient.getCurrentUserId();
             if (!userId) return;
 
-            // Get the chapter count via item lookup (Chapters field).
+            // Eligibility — fetch item now to resolve SeriesId for episodes.
             var item;
             try {
                 if (JE.helpers && typeof JE.helpers.getItemCached === 'function') {
@@ -185,42 +195,106 @@
             }
             if (!item) return;
 
-            // For episodes, resolve eligibility now (after item fetch).
-            if (itemType === 'Episode') {
-                var sid = item.SeriesId;
-                if (!sid || !isEnabledFor(sid)) return;
-                // Episode's parent series is in the spoiler list — preload.
-                eligible = true;
+            var eligible = false;
+            if (itemType === 'Movie') eligible = isMovieEnabledFor(itemId);
+            else if (itemType === 'Episode') {
+                eligible = !!(item.SeriesId && isEnabledFor(item.SeriesId));
             }
             if (!eligible) return;
 
             var chapters = item.Chapters || [];
             if (!Array.isArray(chapters) || chapters.length === 0) return;
 
-            // De-dup repeated visits to the same item within a session.
             var dedupKey = itemId + ':' + chapters.length;
             if (preloadedChapterItems.has(dedupKey)) return;
             preloadedChapterItems.add(dedupKey);
 
-            // Match the size jellyfin-web's tooltip requests so the
-            // browser cache satisfies the player's hover-fetch on the
-            // first try. The player typically asks for fillWidth=320;
-            // including no other params keeps the cache key stable.
+            // Cancel any prior in-flight preload before starting this one
+            // (e.g. user navigated to a new item before the previous one
+            // finished). Also wires the hashchange abort.
+            cancelActivePreload();
+            var ctl = new AbortController();
+            activePreloadAbort = ctl;
+            hashChangeListener = function () { ctl.abort(); };
+            window.addEventListener('hashchange', hashChangeListener);
+
+            // Defer the actual work to an idle window so we don't compete
+            // with the detail-page render's own fetches. 1500 ms timeout
+            // ceiling so a permanently-busy main thread doesn't block us
+            // forever.
+            await idleDelay(1500);
+            if (ctl.signal.aborted) { unwirePreload(); return; }
+
             var token = (ApiClient.accessToken && ApiClient.accessToken()) || '';
+            var didError = false;
             for (var i = 0; i < chapters.length; i++) {
+                if (ctl.signal.aborted) break;
                 var u = ApiClient.getUrl('Items/' + itemId + '/Images/Chapter/' + i)
                     + '?fillWidth=320'
                     + (token ? '&api_key=' + encodeURIComponent(token) : '');
-                // Hidden Image() triggers GET and lets the browser cache
-                // the response. No need to attach to DOM or hold the
-                // reference; once the request completes the browser
-                // keeps the bytes in the HTTP cache for max-age=30.
-                var img = new Image();
-                img.src = u;
+                try {
+                    // priority: 'low' is a hint to Chromium-based
+                    // browsers to schedule the request behind any
+                    // higher-priority traffic. Ignored elsewhere — the
+                    // sequential + delayed pacing is the real throttle.
+                    await fetch(u, {
+                        signal: ctl.signal,
+                        priority: 'low',
+                        credentials: 'include',
+                        cache: 'force-cache',
+                    });
+                } catch (e) {
+                    if (e && e.name === 'AbortError') break;
+                    // A single chapter that fails to preload (404 on a
+                    // missing image, network blip) shouldn't kill the
+                    // rest. Stash a flag so we DON'T mark the dedup
+                    // key complete if a real error stream is happening
+                    // — re-attempt on next navigation.
+                    didError = true;
+                }
+                // Breathing gap between requests. Skip after the last
+                // chapter — no point waiting before unwiring.
+                if (i + 1 < chapters.length && !ctl.signal.aborted) {
+                    await sleep(80);
+                }
             }
+            if (didError && ctl.signal.aborted === false) {
+                preloadedChapterItems.delete(dedupKey);
+            }
+            unwirePreload();
         } catch (e) {
             console.warn(logPrefix, 'preloadChapterImages failed:', e);
         }
+    }
+
+    function cancelActivePreload() {
+        if (activePreloadAbort) {
+            try { activePreloadAbort.abort(); } catch (_) {}
+            activePreloadAbort = null;
+        }
+        if (hashChangeListener) {
+            try { window.removeEventListener('hashchange', hashChangeListener); } catch (_) {}
+            hashChangeListener = null;
+        }
+    }
+    function unwirePreload() {
+        if (hashChangeListener) {
+            try { window.removeEventListener('hashchange', hashChangeListener); } catch (_) {}
+            hashChangeListener = null;
+        }
+        activePreloadAbort = null;
+    }
+    function idleDelay(timeoutMs) {
+        return new Promise(function (resolve) {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(function () { resolve(); }, { timeout: timeoutMs });
+            } else {
+                setTimeout(resolve, Math.min(1000, timeoutMs));
+            }
+        });
+    }
+    function sleep(ms) {
+        return new Promise(function (resolve) { setTimeout(resolve, ms); });
     }
 
     /**
