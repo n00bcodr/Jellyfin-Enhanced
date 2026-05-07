@@ -407,7 +407,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 && chapter.StartPositionTicks < watchedThroughTicks.Value)
                             {
                                 // Pre-resume-point scene — pass through.
-                                RegisterNoStoreOnStarting(context.HttpContext);
+                                // Short-cache (30s) so timeline-hover scrubbing
+                                // doesn't round-trip every hover.
+                                RegisterNoStoreOnStarting(context.HttpContext, imageType);
                                 await next().ConfigureAwait(false);
                                 return;
                             }
@@ -523,11 +525,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (spoilerMode == "hide")
                 {
-                    await ReplaceWithStockCardAsync(executed, cacheKey).ConfigureAwait(false);
+                    await ReplaceWithStockCardAsync(executed, cacheKey, imageType).ConfigureAwait(false);
                 }
                 else
                 {
-                    await ReplaceWithBlurredAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey).ConfigureAwait(false);
+                    await ReplaceWithBlurredAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey, imageType).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -580,7 +582,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // immediately before MVC writes them. Use this for pass-through
         // paths that occur AFTER awaiting `next()` for streaming results
         // where the response may already be on its way out.
-        private void RegisterNoStoreOnStarting(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        private void RegisterNoStoreOnStarting(Microsoft.AspNetCore.Http.HttpContext httpContext, string imageType = "")
         {
             try
             {
@@ -590,7 +592,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 httpContext.Response.OnStarting(() =>
                 {
-                    try { ApplyNoStoreHeadersDirect(httpContext); }
+                    try { ApplyNoStoreHeadersDirect(httpContext, imageType); }
                     catch (Exception ex) { _logger.Warning($"OnStarting no-store override failed: {ex.Message}"); }
                     return Task.CompletedTask;
                 });
@@ -601,10 +603,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private static void ApplyNoStoreHeadersDirect(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        private static void ApplyNoStoreHeadersDirect(Microsoft.AspNetCore.Http.HttpContext httpContext, string imageType = "")
         {
             var headers = httpContext.Response.Headers;
-            headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate";
+            // Chapter / scene preview images render in a hover-tooltip on
+            // the player timeline. Strict no-store made every hover round-
+            // trip and produced a visible "gray box → image swap" jank as
+            // the browser had no cached copy. Allow a short private cache
+            // (30s) for chapter images so subsequent hovers within the
+            // same session are instant. Trade-off: a watched-state change
+            // (e.g. user advances past a chapter) re-renders within 30s
+            // instead of immediately — acceptable for spoiler-mode UX.
+            // Other image types keep strict no-store: posters / thumbs
+            // change blur status on a per-watch event, where caching past
+            // a state change would defeat the feature.
+            var isChapter = string.Equals(imageType, "Chapter", StringComparison.OrdinalIgnoreCase);
+            headers["Cache-Control"] = isChapter
+                ? "private, max-age=30, must-revalidate"
+                : "private, no-store, max-age=0, must-revalidate";
             headers.Remove("ETag");
             headers.Remove("Last-Modified");
         }
@@ -797,7 +813,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // a clean placeholder over a partial-blur "tease". Mirrors
         // ReplaceWithBlurredAsync's no-store header policy so the
         // placeholder doesn't cache past a watched-state change.
-        private async Task ReplaceWithStockCardAsync(ActionExecutedContext executed, string cacheKey)
+        private async Task ReplaceWithStockCardAsync(ActionExecutedContext executed, string cacheKey, string imageType = "")
         {
             if (executed.Result == null) return;
             if (string.Equals(executed.HttpContext.Request.Method, "HEAD", StringComparison.OrdinalIgnoreCase))
@@ -827,13 +843,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             executed.Result = new FileContentResult(stock, "image/jpeg");
             if (executed.HttpContext.Response.HasStarted) return;
-            var headers = executed.HttpContext.Response.Headers;
-            headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate";
-            headers.Remove("ETag");
-            headers.Remove("Last-Modified");
+            ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
         }
 
-        private async Task ReplaceWithBlurredAsync(ActionExecutedContext executed, int sigma, string cacheKey)
+        private async Task ReplaceWithBlurredAsync(ActionExecutedContext executed, int sigma, string cacheKey, string imageType = "")
         {
             if (executed.Result == null) return;
 
@@ -869,13 +882,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // content type explicitly. Cache-Control: private, no-store keeps
             // clients from holding the blurred copy after the user marks the
             // episode watched or disables spoiler mode for the series.
+            // Chapter images get a short browser-cache window via
+            // ApplyNoStoreHeadersDirect so timeline-hover preview thumbs
+            // don't round-trip on every cursor move.
             executed.Result = new FileContentResult(blurred, "image/jpeg");
 
             if (executed.HttpContext.Response.HasStarted) return;
-            var headers = executed.HttpContext.Response.Headers;
-            headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate";
-            headers.Remove("ETag");
-            headers.Remove("Last-Modified");
+            ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
         }
 
         private static async Task<(byte[]? Bytes, string? ContentType)> ExtractBytesAsync(IActionResult result)
