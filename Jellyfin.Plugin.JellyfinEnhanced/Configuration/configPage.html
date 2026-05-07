@@ -787,12 +787,23 @@
                                 <div class="fieldDescription je-field-desc-xl">When off, the per-user toggle has no effect — no images are ever blurred. When on, users who enable spoiler blur in their settings will see future episode images blurred on every client.</div>
                             </div>
 
+                            <div class="selectContainer" data-gated-by="spoilerBlurEnabled">
+                                <label class="selectLabel" for="spoilerBlurMode">Image replacement mode</label>
+                                <select id="spoilerBlurMode" is="emby-select">
+                                    <option value="blur">Blur images (default)</option>
+                                    <option value="hide">Show stock cards (hide images entirely)</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="spoilerBlurMode" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">"Blur images" runs a Gaussian on the original — silhouettes and dominant colours stay visible. "Show stock cards" replaces the image with a flat dark-grey placeholder so the content is fully hidden; useful when partial-blur feels like a tease.</div>
+                            </div>
+
                             <div class="inputContainer" data-gated-by="spoilerBlurEnabled">
                                 <label class="inputLabel inputLabelUnfocused" for="spoilerBlurIntensity">Blur intensity</label>
                                 <input id="spoilerBlurIntensity" type="number" min="5" max="100" step="1" is="emby-input"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurIntensity" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">Gaussian blur sigma. Higher numbers blur more. 5 is mild, 40 is the recommended default, 100 is heavy. The silhouette and dominant colours stay visible at every level so users can still tell something is there.</div>
+                                <div class="fieldDescription">Gaussian blur sigma. Higher numbers blur more. 5 is mild, 40 is the recommended default, 100 is heavy. The silhouette and dominant colours stay visible at every level so users can still tell something is there. (Ignored when "Show stock cards" is selected above.)</div>
                             </div>
 
                             <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
@@ -4309,6 +4320,8 @@
                 document.querySelector('#spoilerBlurEnabled').checked = config.SpoilerBlurEnabled === true;
                 var __sbSigma = document.querySelector('#spoilerBlurIntensity');
                 if (__sbSigma) __sbSigma.value = (config.SpoilerBlurIntensity >= 5 && config.SpoilerBlurIntensity <= 100) ? config.SpoilerBlurIntensity : 40;
+                var __sbMode = document.querySelector('#spoilerBlurMode');
+                if (__sbMode) __sbMode.value = (config.SpoilerBlurMode === 'hide') ? 'hide' : 'blur';
                 // Field-strip toggles. Defaults match PluginConfiguration:
                 // Overview/Tags/Chapters/Taglines on; ratings/premiere/title/cast off.
                 [
@@ -4670,6 +4683,8 @@
             });
             var __sbCastModeSave = document.querySelector('#spoilerStripCastMode');
             config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
+            var __sbModeSave = document.querySelector('#spoilerBlurMode');
+            config.SpoilerBlurMode = (__sbModeSave && __sbModeSave.value === 'hide') ? 'hide' : 'blur';
             var __sbPlaceholderSave = document.querySelector('#spoilerOverviewPlaceholder');
             if (__sbPlaceholderSave) {
                 // R4-M1: strip HTML tags so a stored-XSS gadget via the

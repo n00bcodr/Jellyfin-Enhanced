@@ -414,14 +414,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Stash the cache key so the post-action code doesn't recompute.
-            var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity);
+            // Cache key incorporates the blur mode so toggling between
+            // "blur" and "hide" doesn't serve stale entries from the
+            // wrong mode.
+            var spoilerMode = string.Equals(pluginConfig.SpoilerBlurMode, "hide", StringComparison.OrdinalIgnoreCase)
+                ? "hide" : "blur";
+            var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity)
+                + ":" + spoilerMode;
 
             var executed = await next().ConfigureAwait(false);
             if (executed.Canceled || executed.Exception != null) return;
 
             try
             {
-                await ReplaceWithBlurredAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey).ConfigureAwait(false);
+                if (spoilerMode == "hide")
+                {
+                    await ReplaceWithStockCardAsync(executed, cacheKey).ConfigureAwait(false);
+                }
+                else
+                {
+                    await ReplaceWithBlurredAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
@@ -671,6 +684,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return anyWatched;
+        }
+
+        // Stock-card replacement path. Returns a flat dark-grey JPEG sized
+        // to the original image so the client's card layout doesn't shift.
+        // Used when SpoilerBlurMode == "hide" — admins/users who prefer
+        // a clean placeholder over a partial-blur "tease". Mirrors
+        // ReplaceWithBlurredAsync's no-store header policy so the
+        // placeholder doesn't cache past a watched-state change.
+        private async Task ReplaceWithStockCardAsync(ActionExecutedContext executed, string cacheKey)
+        {
+            if (executed.Result == null) return;
+            if (string.Equals(executed.HttpContext.Request.Method, "HEAD", StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            var (originalBytes, originalContentType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (originalBytes == null || originalBytes.Length == 0)
+            {
+                MaybeWarnShapeMismatch(executed.Result);
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            var stock = _blurService.StockCard(originalBytes, cacheKey);
+            if (stock == null)
+            {
+                // Stock-card render failed — return the original bytes
+                // (we already consumed the source stream). Same fallback
+                // posture as the blur path.
+                executed.Result = new FileContentResult(originalBytes, originalContentType ?? "image/jpeg");
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            executed.Result = new FileContentResult(stock, "image/jpeg");
+            if (executed.HttpContext.Response.HasStarted) return;
+            var headers = executed.HttpContext.Response.Headers;
+            headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate";
+            headers.Remove("ETag");
+            headers.Remove("Last-Modified");
         }
 
         private async Task ReplaceWithBlurredAsync(ActionExecutedContext executed, int sigma, string cacheKey)

@@ -293,6 +293,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerStripCast = false;
             SpoilerStripCastMode = "GuestStars";
             SpoilerStripReviews = true;
+            SpoilerBlurMode = "blur";
             SpoilerOverviewPlaceholder = "Spoiler mode activated";
         }
 
@@ -614,6 +615,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // spoilers from arbitrary points in the show; user-written reviews
         // do too. Default ON because the spoiler risk dwarfs the UX cost.
         public bool SpoilerStripReviews { get; set; } = true;
+        // Image-replacement mode. "blur" (default) runs the SkiaSharp
+        // Gaussian on the original bytes so silhouettes / dominant colours
+        // remain visible. "hide" returns a flat dark-grey card so the
+        // image content is fully hidden — useful for users who find
+        // partial-blur "tease" worse than a clean placeholder.
+        public string SpoilerBlurMode { get; set; } = "blur";
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.

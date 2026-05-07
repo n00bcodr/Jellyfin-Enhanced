@@ -49,6 +49,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // should uniquely identify the source image+sigma; pass null/empty to skip cache.
         // Returns null on any decode/encode failure — caller should fall back to the
         // original bytes rather than serve a broken image.
+        // Returns a tiny solid-grey JPEG sized to the input (or default
+        // 600x900 poster ratio if input bytes can't be decoded). Used by
+        // SpoilerBlurMode == "hide" — instead of blurring the actual
+        // image, we return a generic placeholder so the user sees a
+        // blank card. Cheap (~1 KB output), no per-image variation.
+        // Output is a flat #1f1f1f rectangle so it visually matches
+        // typical Jellyfin dark-theme card backgrounds.
+        public byte[]? StockCard(byte[] input, string? cacheKey)
+        {
+            if (!string.IsNullOrEmpty(cacheKey)
+                && _cache.TryGetValue(cacheKey, out var cached))
+            {
+                Interlocked.Exchange(ref cached.LastAccessTicks, DateTime.UtcNow.Ticks);
+                return cached.Bytes;
+            }
+
+            int width = 600;
+            int height = 900;
+            try
+            {
+                if (input != null && input.Length > 0)
+                {
+                    using var probe = SKBitmap.Decode(input);
+                    if (probe != null && probe.Width > 0 && probe.Height > 0)
+                    {
+                        width = probe.Width;
+                        height = probe.Height;
+                        var longEdge = Math.Max(width, height);
+                        if (longEdge > MaxDecodeEdgePx)
+                        {
+                            var ratio = (float)MaxDecodeEdgePx / longEdge;
+                            width = Math.Max(1, (int)(width * ratio));
+                            height = Math.Max(1, (int)(height * ratio));
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fall through with default dims; not worth a log line.
+            }
+
+            byte[]? output;
+            try
+            {
+                using var surface = SKSurface.Create(new SKImageInfo(width, height));
+                if (surface == null) return null;
+                surface.Canvas.Clear(new SKColor(0x1f, 0x1f, 0x1f));
+                using var image = surface.Snapshot();
+                using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 70);
+                if (encoded == null) return null;
+                output = encoded.ToArray();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Spoiler stock-card render failed: {ex.Message}");
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(cacheKey))
+            {
+                StoreInCache(cacheKey, output);
+            }
+            return output;
+        }
+
         public byte[]? Blur(byte[] input, float requestedSigma, string? cacheKey)
         {
             if (input == null || input.Length == 0) return null;

@@ -4373,12 +4373,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var isEpisode = string.Equals(entry.Type, "Episode", StringComparison.Ordinal);
                         var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
                         var isMovie = string.Equals(entry.Type, "Movie", StringComparison.Ordinal);
-                        if (!isEpisode && !isSeason && !isMovie) continue;
+                        var isSeries = string.Equals(entry.Type, "Series", StringComparison.Ordinal);
+                        if (!isEpisode && !isSeason && !isMovie && !isSeries) continue;
                         if (isMovie)
                         {
                             // Movie spoiler list keyed by movie ID directly,
                             // not SeriesId. Skip to the movie-specific match.
                             if (!spState.Movies.ContainsKey(kvp.Key)) continue;
+                        }
+                        else if (isSeries)
+                        {
+                            // Series-level entry: only strip when the user has
+                            // spoiler mode on for THIS series (key == series ID).
+                            // Covers home-rail cards bound to seriesId — e.g. when
+                            // "Use episode images in Next Up / Continue Watching"
+                            // is OFF in Jellyfin's Display settings, the cards use
+                            // series posters and the JE tag pipeline asks for
+                            // series-level tag data.
+                            if (!spState.Series.ContainsKey(kvp.Key)) continue;
                         }
                         else
                         {
@@ -4697,6 +4709,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         });
                         continue;
                     }
+                }
+
+                // Series-stub: when the item is a Series the user has
+                // spoiler mode enabled for, return the strip stub. Covers
+                // home-rail cards bound to seriesId — e.g. NextUp /
+                // Continue Watching with "Use episode images" turned OFF
+                // in Jellyfin's Display settings, where the cards display
+                // the series poster and the JE tag pipeline fetches
+                // series-level tag data.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.TV.Series spSeries
+                    && spoilerState.Series.ContainsKey(spSeries.Id.ToString("N")))
+                {
+                    string? stubName = item.Name;
+                    if (spoilerCfg!.SpoilerReplaceTitle)
+                    {
+                        // Series titles are rarely spoilery on their own; only
+                        // replace under explicit title-strip toggle to match
+                        // the field-strip filter's behaviour.
+                        stubName = string.IsNullOrWhiteSpace(spoilerCfg.SpoilerOverviewPlaceholder)
+                            ? "Spoiler mode activated"
+                            : spoilerCfg.SpoilerOverviewPlaceholder;
+                    }
+                    results.Add(new
+                    {
+                        Id = item.Id,
+                        Type = kind.ToString(),
+                        Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
+                        CommunityRating = spStripCommunity ? (float?)null : spSeries.CommunityRating,
+                        CriticRating = spStripCritic ? (float?)null : spSeries.CriticRating,
+                        SeriesId = (Guid?)null,
+                        ProviderIds = (IDictionary<string, string>?)null,
+                        Name = stubName,
+                        Path = (string?)null,
+                        MediaStreams = (List<object>?)null,
+                        MediaSources = (List<object>?)null,
+                        FirstEpisode = (object?)null,
+                        Tags = spStripGenres ? Array.Empty<string>() : (spSeries.Tags ?? Array.Empty<string>()),
+                    });
+                    continue;
                 }
 
                 // Movie-stub: when the item is a Movie the user has spoiler
