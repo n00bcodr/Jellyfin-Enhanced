@@ -295,6 +295,28 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 19 (2026-05-07) — Scenes-rail feature convergence
+
+Sources: silent-failure-hunter (zero findings — explicit convergence), code-reviewer (zero findings — "Branch ready to merge"), security-reviewer (zero findings — "Convergence declared"), codex (output cut off mid-investigation, no findings emitted).
+
+### What was reviewed
+
+Two commits added since R18 convergence:
+- **`c355076`** — added `Chapter` to `_alwaysBlurImageTypes`. Movie path reads `imageIndex`, looks up the chapter via `IChapterManager.GetChapter(itemId, idx)`. Pre-resume scenes pass through with no-store; post-resume scenes blur. Episodes get unconditional Chapter blur (existing flow). New `IChapterManager` DI dep + `TryGetImageIndex` helper.
+- **`b734587`** — replaced `ch.Name = null` with `ch.Name = $"Chapter {N}"` (1-based counter incremented in foreach). Web client was rendering `null` as the literal string "undefined".
+
+### Verification highlights
+
+- Movie chapter path fail-CLOSED on `IChapterManager.GetChapter` throw (rate-limited warn, falls through to blur).
+- `TryGetImageIndex` parse failure → `chapterIdx` unused → falls through to blur. Correct.
+- Strict-less-than `<` boundary preserved (R17-codex-M1).
+- Counter increments for ALL chapters (including progressive-skipped ones), so "Chapter 5" stays "Chapter 5" even when 1-4 had original names retained.
+- `IChapterManager` is a Jellyfin host-registered service; plugin DI inherits cleanly. Same pattern as `IUserManager` / `ILibraryManager` siblings.
+
+### Convergence
+
+**0 CRITICAL, 0 HIGH, 0 MEDIUM** open across rounds 1-19. Branch ready to merge.
+
 ## Round 17 review (2026-05-07) — post-movies-UX-refinements pass
 
 Sources: codex GPT-5.5 high (1 HIGH + 2 MEDIUM), security-reviewer (2 LOW doc-only), silent-failure-hunter (zero findings).
