@@ -850,9 +850,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
+                int chapterNumber = 0;
                 foreach (var ch in item.Chapters)
                 {
                     if (ch == null) continue;
+                    chapterNumber++;
                     // R17-codex-M1: strict-less-than. At the exact resume
                     // boundary, the chapter that STARTS at that tick has
                     // not been watched yet — its name is still a future
@@ -865,7 +867,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // ImagePath visible.
                         continue;
                     }
-                    ch.Name = null;
+                    // Replace with a generic number rather than null.
+                    // Some Jellyfin clients render `null` Name as the
+                    // literal string "undefined" (web client's chapter
+                    // rail observed). "Chapter N" gives the user a stable
+                    // label without leaking the original spoilery name.
+                    ch.Name = $"Chapter {chapterNumber}";
                 }
             }
 
