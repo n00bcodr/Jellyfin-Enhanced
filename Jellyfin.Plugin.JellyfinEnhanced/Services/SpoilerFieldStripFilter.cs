@@ -460,7 +460,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (item.Id == Guid.Empty) return;
                 if (!userState.Series.ContainsKey(item.Id.ToString("N"))) return;
-                ApplyStripping(item, cfg);
+                ApplyStripping(item, cfg, userId);
                 return;
             }
 
@@ -476,7 +476,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (item.UserData != null) moviePlayed = item.UserData.Played;
                 else moviePlayed = ResolvePlayedServerSide(userId, item.Id);
                 if (moviePlayed) return;
-                ApplyStripping(item, cfg);
+                ApplyStripping(item, cfg, userId);
                 return;
             }
 
@@ -503,7 +503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // per-extra watched flag; apply strip unconditionally
                 // since the extra exists as part of an episode whose
                 // very metadata the user has opted into hiding.
-                ApplyStripping(item, cfg);
+                ApplyStripping(item, cfg, userId);
                 return;
             }
 
@@ -551,7 +551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     return; // some watched — fall through to no-strip
                 }
-                ApplyStripping(item, cfg);
+                ApplyStripping(item, cfg, userId);
                 return;
             }
 
@@ -572,7 +572,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             if (played) return;
 
-            ApplyStripping(item, cfg);
+            ApplyStripping(item, cfg, userId);
         }
 
         // R4-C1: server-side fallback when the response shape omits UserData.
@@ -604,6 +604,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Better to show "Spoiler mode activated" on a watched
                 // episode (UX glitch) than leak the synopsis (privacy).
                 return false;
+            }
+        }
+
+        // R17-codex-M2: server-side fallback for the watched-through tick
+        // used by progressive movie chapter strip. Returns long.MaxValue
+        // when the movie is fully Played (so all chapters show); the
+        // raw PlaybackPositionTicks otherwise; or null if neither could
+        // be resolved (caller treats null as fail-CLOSED → strip all).
+        // Used when the DTO's UserData is missing (enableUserData=false
+        // on lite clients).
+        private long? ResolveWatchedThroughTicksServerSide(Guid userId, Guid itemId)
+        {
+            try
+            {
+                var jUser = _userManager.GetUserById(userId);
+                if (jUser == null) return null;
+                var item = _libraryManager.GetItemById(itemId);
+                if (item == null) return null;
+                var ud = _userDataManager.GetUserData(jUser, item);
+                if (ud == null) return null;
+                if (ud.Played) return long.MaxValue;
+                if (ud.PlaybackPositionTicks > 0) return ud.PlaybackPositionTicks;
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "fieldstrip-resolvethroughticks:" + ex.GetType().FullName,
+                    $"Spoiler field strip: ResolveWatchedThroughTicksServerSide failed for item {itemId}: {ex.Message}");
+                return null;
             }
         }
 
@@ -748,7 +778,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // toggle; toggles default ON for Overview / Tags / Chapters /
         // Taglines (the four highest-risk-leak-vs-lowest-UX-cost fields)
         // and OFF for everything else.
-        private static void ApplyStripping(BaseItemDto item, PluginConfiguration cfg)
+        // R17-codex-M2: instance (was static) so it can call the
+        // server-side fallback for PlaybackPositionTicks when
+        // item.UserData is null (enableUserData=false response shape).
+        // The userId arg is used only by that fallback path.
+        private void ApplyStripping(BaseItemDto item, PluginConfiguration cfg, Guid userId)
         {
             // Overview (episode synopsis) — single biggest spoiler vector.
             // Replace with the admin-configured placeholder so clients
@@ -790,27 +824,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (cfg.SpoilerStripChapters && item.Chapters != null)
             {
                 long? watchedThroughTicks = null;
-                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie
-                    && item.UserData != null)
+                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
                 {
-                    // PlaybackPositionTicks reflects the resume point.
-                    // When the movie is fully Played, treat as watched
-                    // through End so all chapter names show.
-                    if (item.UserData.Played)
+                    if (item.UserData != null)
                     {
-                        watchedThroughTicks = long.MaxValue;
+                        // PlaybackPositionTicks reflects the resume point.
+                        // When the movie is fully Played, treat as watched
+                        // through End so all chapter names show.
+                        if (item.UserData.Played)
+                        {
+                            watchedThroughTicks = long.MaxValue;
+                        }
+                        else if (item.UserData.PlaybackPositionTicks > 0)
+                        {
+                            watchedThroughTicks = item.UserData.PlaybackPositionTicks;
+                        }
                     }
-                    else if (item.UserData.PlaybackPositionTicks > 0)
+                    else
                     {
-                        watchedThroughTicks = item.UserData.PlaybackPositionTicks;
+                        // R17-codex-M2: UserData omitted (lite client with
+                        // enableUserData=false). Server-side fallback so a
+                        // half-watched movie still shows pre-resume-point
+                        // chapter names instead of stripping all of them.
+                        watchedThroughTicks = ResolveWatchedThroughTicksServerSide(userId, item.Id);
                     }
                 }
 
                 foreach (var ch in item.Chapters)
                 {
                     if (ch == null) continue;
+                    // R17-codex-M1: strict-less-than. At the exact resume
+                    // boundary, the chapter that STARTS at that tick has
+                    // not been watched yet — its name is still a future
+                    // spoiler. Use `<` so the current chapter is hidden
+                    // until playback advances past its start.
                     if (watchedThroughTicks.HasValue
-                        && ch.StartPositionTicks <= watchedThroughTicks.Value)
+                        && ch.StartPositionTicks < watchedThroughTicks.Value)
                     {
                         // Pre-resume-point chapter — keep its name and
                         // ImagePath visible.
@@ -1041,18 +1090,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (item.Chapters != null)
                 {
                     long? watchedThroughTicksForImg = null;
-                    if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie
-                        && item.UserData != null)
+                    if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
                     {
-                        if (item.UserData.Played) watchedThroughTicksForImg = long.MaxValue;
-                        else if (item.UserData.PlaybackPositionTicks > 0)
-                            watchedThroughTicksForImg = item.UserData.PlaybackPositionTicks;
+                        if (item.UserData != null)
+                        {
+                            if (item.UserData.Played) watchedThroughTicksForImg = long.MaxValue;
+                            else if (item.UserData.PlaybackPositionTicks > 0)
+                                watchedThroughTicksForImg = item.UserData.PlaybackPositionTicks;
+                        }
+                        else
+                        {
+                            // R17-codex-M2: server-side fallback.
+                            watchedThroughTicksForImg = ResolveWatchedThroughTicksServerSide(userId, item.Id);
+                        }
                     }
                     foreach (var ch in item.Chapters)
                     {
                         if (ch == null) continue;
+                        // R17-codex-M1: strict-less-than (boundary).
                         if (watchedThroughTicksForImg.HasValue
-                            && ch.StartPositionTicks <= watchedThroughTicksForImg.Value)
+                            && ch.StartPositionTicks < watchedThroughTicksForImg.Value)
                         {
                             continue;
                         }

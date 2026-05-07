@@ -307,11 +307,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 await next().ConfigureAwait(false);
                 return;
             }
-            if (inArtwork && pluginConfig.SpoilerBlurArtwork != true)
-            {
-                await next().ConfigureAwait(false);
-                return;
-            }
+            // R17-codex-H: do NOT short-circuit Backdrop/Art on
+            // SpoilerBlurArtwork=false here — we still need the
+            // eligibility check below so spoiler-list artwork can be
+            // served with `no-store`. Otherwise Jellyfin's default
+            // long-lived public cache headers would let a browser/proxy
+            // hold the unblurred bytes; if the admin later toggles
+            // SpoilerBlurArtwork on, the client never re-fetches and
+            // never sees the blurred response.
+            //
+            // Decision is deferred to the post-eligibility branch:
+            //   inAlways                          → blur (existing path)
+            //   inArtwork && SpoilerBlurArtwork   → blur
+            //   inArtwork && !SpoilerBlurArtwork  → pass-through w/ no-store
 
             // User identification — handles ClaimsPrincipal first, then falls
             // back to session-by-IP for anonymous browser <img> requests and
@@ -435,6 +443,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     // Else fall through to blur path below.
                 }
+            }
+
+            // R17-codex-H: artwork tier with the toggle OFF — pass
+            // through the original bytes BUT with no-store so the
+            // browser/proxy can't keep them past a future toggle-on.
+            // We still want spoiler-list artwork to re-evaluate through
+            // this filter on every request.
+            if (inArtwork && pluginConfig.SpoilerBlurArtwork != true)
+            {
+                RegisterNoStoreOnStarting(context.HttpContext);
+                await next().ConfigureAwait(false);
+                return;
             }
 
             // Stash the cache key so the post-action code doesn't recompute.
