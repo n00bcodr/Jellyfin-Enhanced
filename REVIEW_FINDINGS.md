@@ -295,7 +295,44 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
-## Round 16 (2026-05-07) — final convergence
+## Round 17 review (2026-05-07) — post-movies-UX-refinements pass
+
+Sources: codex GPT-5.5 high (1 HIGH + 2 MEDIUM), security-reviewer (2 LOW doc-only), silent-failure-hunter (zero findings).
+
+### HIGH
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R17-codex-H** | codex HIGH | **fixed** | `SpoilerBlurArtwork=false` short-circuited Backdrop/Art BEFORE user-eligibility was checked. Jellyfin's default long-lived public-cache headers let the browser/proxy hold clear bytes; a future `SpoilerBlurArtwork=true` toggle never re-fetched. **Fix:** moved the toggle gate to AFTER eligibility — eligible spoiler-list artwork on toggle-OFF now passes through with `Cache-Control: private, no-store`, so a later toggle-on always re-evaluates. |
+
+### MEDIUM
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R17-codex-M1** | codex MEDIUM | **fixed** | Progressive chapter reveal used `<=` boundary. At an exact resume tick, the chapter STARTING at that tick hadn't been watched but its Name + ImagePath were exposed. **Fix:** strict `<` in both Name + ImagePath loops. |
+| **R17-codex-M2** | codex MEDIUM | **fixed** | Progressive chapter strip only read `item.UserData`. Lite clients with `enableUserData=false` got UserData==null → all chapters stripped (regression of progressive UX). **Fix:** new `ResolveWatchedThroughTicksServerSide` server-side fallback (mirrors `ResolvePlayedServerSide` shape); `ApplyStripping` made instance method + takes `userId` so it can call the fallback. |
+
+### LOW (docs)
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R17-L1, L2** | security LOW | **documented** | Movie titles intentionally surfaced + `SpoilerBlurArtwork=false` default. Added "Movie Titles + Backdrop Art Are Intentionally Surfaced" section to SECURITY.md. |
+
+## Round 18 (2026-05-07) — FINAL CONVERGENCE
+
+Both reviewers explicitly declared convergence:
+- **codex**: "R18 convergence verification complete. Findings: none."
+- **silent-failure-hunter**: "Zero new HIGH/CRITICAL. Loop converges per JE skill rule. Branch ready to merge."
+
+R17 codex fixes mechanically verified:
+- Artwork no-store branch runs after every prior pass-through return
+- Strict-less-than `<` boundary applied in both chapter loops
+- Server-side `ResolveWatchedThroughTicksServerSide` fail-CLOSED on null/throw
+- `ApplyStripping` static→instance + userId param, all 5 call sites updated
+
+Branch is ready to merge.
+
+## Round 16 (2026-05-07) — convergence (rolled forward to R18 after movies UX iteration)
 
 Sources: codex (1 MEDIUM, fixed), silent-failure-hunter (zero findings — explicit CONVERGENCE).
 

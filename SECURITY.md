@@ -175,6 +175,30 @@ should ensure Jellyfin is fronted by HTTPS with no TLS-inspection
 intermediaries, which is the recommended baseline for any Jellyfin
 deployment.
 
+### Spoiler Blur — Movie Titles + Backdrop Art Are Intentionally Surfaced
+
+Two scoped carve-outs deliberately leave content visible:
+
+1. **Movie titles** (`item.Name`, `SearchHint.Name`, tag-data stub `Name`)
+   are NOT rewritten under `SpoilerReplaceTitle`. Movie titles are
+   library-evident from URLs, navigation breadcrumbs, and folder layouts
+   anyway — the synopsis / chapters / cast are the actual spoiler
+   surface for movies. The filesystem `Path` / `MediaSources[].Path` /
+   `MediaStreams[].Title` strip remains active under `SpoilerReplaceTitle
+   || SpoilerStripOverview`.
+
+2. **Backdrop / Art images** pass through unblurred by default. Set
+   `SpoilerBlurArtwork=true` in plugin config to also blur those wider
+   aesthetic images. Default is opt-in scope-narrowing: backdrops are
+   typically studio art (less plot-bearing than the curated Primary /
+   Thumb posters where most spoiler risk lives).
+
+Spoiler-list artwork (Backdrop / Art) is still served with
+`Cache-Control: private, no-store` even when the toggle is off — so a
+later `SpoilerBlurArtwork=true` flip immediately re-evaluates on the
+next request, instead of letting the browser/proxy keep cached clear
+bytes.
+
 ### Spoiler Blur — Title Strip is Best-Effort Across DTO Shapes
 
 `SpoilerReplaceTitle` and `SpoilerStripOverview` aggressively null
