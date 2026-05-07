@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -57,6 +58,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             "Primary",
             "Thumb",
             "Screenshot",
+            // Chapter thumbnails — the Scenes rail in jellyfin-web's
+            // movie/episode detail pages. For movies these are
+            // progressive-revealed below in the Movie path (chapters past
+            // PlaybackPositionTicks blur, before pass through). For
+            // episodes the entire chapter set blurs alongside the rest
+            // of the unwatched-episode metadata.
+            "Chapter",
         };
         private static readonly HashSet<string> _artworkImageTypes = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -74,6 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // across both filters).
 
         private readonly ILibraryManager _libraryManager;
+        private readonly IChapterManager _chapterManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
         private readonly SpoilerUserResolver _resolver;
@@ -84,6 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ILibraryManager libraryManager,
             IUserManager userManager,
             IUserDataManager userDataManager,
+            IChapterManager chapterManager,
             SpoilerUserResolver resolver,
             ImageBlurService blurService,
             Logger logger)
@@ -91,6 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
+            _chapterManager = chapterManager;
             _resolver = resolver;
             _blurService = blurService;
             _logger = logger;
@@ -373,6 +384,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     await next().ConfigureAwait(false);
                     return;
                 }
+                // Progressive chapter ("Scenes" rail) blur for unwatched
+                // movies in the spoiler list: chapters whose
+                // StartPositionTicks are BEFORE the user's resume point
+                // pass through unblurred (they've already seen those
+                // scenes); chapters at-or-after the resume point blur.
+                if (string.Equals(imageType, "Chapter", StringComparison.OrdinalIgnoreCase)
+                    && TryGetImageIndex(context, out var chapterIdx))
+                {
+                    long? watchedThroughTicks = null;
+                    if (movieUd != null)
+                    {
+                        if (movieUd.Played) watchedThroughTicks = long.MaxValue;
+                        else if (movieUd.PlaybackPositionTicks > 0) watchedThroughTicks = movieUd.PlaybackPositionTicks;
+                    }
+                    if (watchedThroughTicks.HasValue)
+                    {
+                        try
+                        {
+                            var chapter = _chapterManager.GetChapter(movie.Id, chapterIdx);
+                            if (chapter != null
+                                && chapter.StartPositionTicks < watchedThroughTicks.Value)
+                            {
+                                // Pre-resume-point scene — pass through.
+                                RegisterNoStoreOnStarting(context.HttpContext);
+                                await next().ConfigureAwait(false);
+                                return;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Lookup failure — fail-CLOSED (blur all chapters
+                            // by falling through). Rate-limited warn so a
+                            // future Jellyfin API change is observable.
+                            _resolver.WarnRateLimited(
+                                "image-chapter-lookup:" + ex.GetType().FullName,
+                                $"Spoiler blur: chapter lookup failed for movie {movie.Id} idx {chapterIdx}: {ex.Message}");
+                        }
+                    }
+                }
                 // Fall through to blur.
             }
             else
@@ -604,6 +654,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Jellyfin's ImageType is an enum; ToString() yields the member name (Primary, Thumb, etc.).
             imageType = raw.ToString() ?? string.Empty;
             return imageType.Length > 0;
+        }
+
+        // Read the imageIndex action argument used by chapter image
+        // requests (`/Items/{id}/Images/Chapter/{index}`). Returns false
+        // when the parameter is missing or non-integer.
+        private static bool TryGetImageIndex(ActionExecutingContext context, out int imageIndex)
+        {
+            imageIndex = 0;
+            if (!context.ActionArguments.TryGetValue("imageIndex", out var raw) || raw == null) return false;
+            if (raw is int i) { imageIndex = i; return true; }
+            return int.TryParse(raw.ToString(), out imageIndex);
         }
 
         // Query params Jellyfin's image controller uses to shape the output
