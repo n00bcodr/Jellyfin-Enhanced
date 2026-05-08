@@ -322,6 +322,7 @@
     "reviews_delete_error_body": "Could not delete the review: {err}",
     "reviews_form_error_empty": "Please add a rating or write a review before saving.",
     "reviews_form_error_save": "Failed to save review. Please try again.",
+    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
     "panel_settings_language": "Language Settings",
     "panel_settings_language_display": "Display Language",
     "panel_settings_language_display_desc": "Select the language for Jellyfin Enhanced interface. Changes take effect after page refresh.",

@@ -537,7 +537,7 @@
                     const chip = document.createElement('div');
                     chip.className = 'mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip';
                     chip.title = tWithFallback('reviews_avg_rating_tooltip',
-                        '{count} user rating(s)', { count: ratingsWithValue.length });
+                        'Average rating from {count} user(s)', { count: ratingsWithValue.length });
                     chip.innerHTML = `<span class="material-icons starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
 
                     // Insert after starRatingContainer, or after mediaInfoCriticRating if present,
