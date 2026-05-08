@@ -767,7 +767,7 @@
                 const mediaType = item?.Type;
 
                 let tmdbKey = null;
-                let apiMediaType = 'movie';
+                let apiMediaType;
 
                 if (mediaType === 'Movie') {
                     const tmdbId = item?.ProviderIds?.Tmdb;
