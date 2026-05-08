@@ -334,6 +334,10 @@
                         if (cached.tmdb || cached.critic !== null) {
                             applyRatingTag(el, cached);
                         }
+                        // Still need to append user rating even on cache hit
+                        if (typeof JE.appendUserRatingToContainer === 'function') {
+                            JE.appendUserRatingToContainer(el, item, extras);
+                        }
                         return;
                     }
 
@@ -351,10 +355,22 @@
                         : null;
 
                     const rating = { tmdb, critic };
-                    setCachedEntry(itemId, rating);
+                    // Store tmdbId in cache entry so renderFromCache can call appendUserRatingToContainer
+                    const tmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb || null;
+                    const seriesTmdbId = extras?.parentSeries?.ProviderIds?.Tmdb || extras?.parentSeries?.ProviderIds?.tmdb || null;
+                    const tmdbMediaType = item.Type === 'Series' ? 'tv' : 'movie';
+                    setCachedEntry(itemId, { ...rating, tmdbId, seriesTmdbId, tmdbMediaType,
+                        seasonNumber: item.IndexNumber ?? null,
+                        episodeNumber: item.Type === 'Episode' ? item.IndexNumber : null,
+                        parentSeasonNumber: item.Type === 'Episode' ? item.ParentIndexNumber : null });
 
                     if (tmdb || critic !== null) {
                         applyRatingTag(el, rating);
+                        if (typeof JE.appendUserRatingToContainer === 'function') {
+                            JE.appendUserRatingToContainer(el, item, extras);
+                        }
+                    } else if (typeof JE.appendUserRatingToContainer === 'function') {
+                        JE.appendUserRatingToContainer(el, item, extras);
                     }
                 },
                 renderFromCache: function(el, itemId) {
@@ -362,11 +378,30 @@
                     if (shouldIgnoreElement(el)) return true;
                     if (el.closest('.je-hidden')) return true;
                     const cached = getCachedEntry(itemId);
-                    if (cached && (cached.tmdb || cached.critic !== null)) {
+                    if (!cached) return false;
+                    if (cached.tmdb || cached.critic !== null) {
                         applyRatingTag(el, cached);
-                        return true;
                     }
-                    return false;
+                    if (typeof JE.appendUserRatingToContainer === 'function' && (cached.tmdbId || cached.seriesTmdbId)) {
+                        const syntheticItem = {
+                            Type: cached.tmdbMediaType === 'tv' ? 'Series' : 'Movie',
+                            ProviderIds: cached.tmdbId ? { Tmdb: cached.tmdbId } : {},
+                            SeriesProviderIds: cached.seriesTmdbId ? { Tmdb: cached.seriesTmdbId } : {},
+                            IndexNumber: cached.seasonNumber,
+                            ParentIndexNumber: cached.parentSeasonNumber,
+                        };
+                        // Refine Type for Season/Episode based on available data
+                        if (cached.seriesTmdbId && cached.episodeNumber != null) {
+                            syntheticItem.Type = 'Episode';
+                            syntheticItem.IndexNumber = cached.episodeNumber;
+                            syntheticItem.ParentIndexNumber = cached.parentSeasonNumber;
+                        } else if (cached.seriesTmdbId && cached.seasonNumber != null) {
+                            syntheticItem.Type = 'Season';
+                            syntheticItem.IndexNumber = cached.seasonNumber;
+                        }
+                        JE.appendUserRatingToContainer(el, syntheticItem);
+                    }
+                    return !!(cached.tmdb || cached.critic !== null);
                 },
                 renderFromServerCache: function(el, entry) {
                     if (isCardAlreadyTagged(el)) return;
@@ -380,7 +415,22 @@
                     if (tmdb || critic !== null) {
                         applyRatingTag(el, { tmdb, critic });
                     }
-                },
+                    if (typeof JE.appendUserRatingToContainer === 'function') {
+                        // Build a synthetic item so resolveTmdbKey can derive the correct key
+                        // for Movie/Series (TmdbId) and Season/Episode (SeriesTmdbId + numbers)
+                        const syntheticItem = {
+                            Type: entry.Type,
+                            ProviderIds: entry.TmdbId ? { Tmdb: entry.TmdbId } : {},
+                            SeriesProviderIds: entry.SeriesTmdbId ? { Tmdb: entry.SeriesTmdbId } : {},
+                            IndexNumber: entry.SeasonNumber,
+                            ParentIndexNumber: entry.SeasonNumber,
+                            // For Episode, SeasonNumber is ParentIndexNumber and EpisodeNumber is IndexNumber
+                            ...(entry.Type === 'Episode' ? { ParentIndexNumber: entry.SeasonNumber, IndexNumber: entry.EpisodeNumber } : {})
+                        };
+                        if (entry.TmdbId || entry.SeriesTmdbId) {
+                            JE.appendUserRatingToContainer(el, syntheticItem, null);
+                        }
+                    }                },
                 isEnabled: function() { return !!JE.currentSettings?.ratingTagsEnabled; },
                 needsFirstEpisode: false,
                 needsParentSeries: false,

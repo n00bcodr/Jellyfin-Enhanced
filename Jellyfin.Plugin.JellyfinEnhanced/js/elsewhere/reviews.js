@@ -32,8 +32,8 @@
          * Fetches all user-written reviews for a TMDB item (aggregated across all users).
          */
         function fetchUserReviews(tmdbId, mediaType) {
-            const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${apiMediaType}/${tmdbId}`);
+            // mediaType is already in API format ('movie' or 'tv') — no conversion needed
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
             return fetch(url, {
                 headers: { "X-Emby-Token": ApiClient.accessToken() }
             })
@@ -311,7 +311,7 @@
             }) : '';
 
             const rating = review.author_details?.rating;
-            const ratingDisplay = rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${rating}/10</span>` : '';
+            const ratingDisplay = rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${rating}</span>` : '';
 
             reviewCard.innerHTML = `
                 <div class="tmdb-review-header">
@@ -521,6 +521,37 @@
             const existingSection = contextPage.querySelector('.tmdb-reviews-section');
             if (existingSection) {
                 existingSection.remove();
+            }
+
+            // Inject average user rating chip next to the TMDB/RT rating chips
+            if (userReviewsEnabled && userReviews.length > 0) {
+                const ratingsWithValue = userReviews.filter(r => r.rating);
+                if (ratingsWithValue.length > 0) {
+                    const avg = ratingsWithValue.reduce((sum, r) => sum + r.rating, 0) / ratingsWithValue.length;
+                    const raw = avg * 2; // convert 1-5 → raw out of 10
+                    const avgDisplay = Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`;
+
+                    // Remove any existing chip first
+                    contextPage.querySelector('.je-avg-user-rating-chip')?.remove();
+
+                    const chip = document.createElement('div');
+                    chip.className = 'mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip';
+                    chip.title = tWithFallback('reviews_avg_rating_tooltip',
+                        'Average rating from {count} user(s)', { count: ratingsWithValue.length });
+                    chip.innerHTML = `<span class="material-icons starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
+
+                    // Insert after starRatingContainer, or after mediaInfoCriticRating if present,
+                    // falling back to appending to the mediaInfoItems container
+                    const criticRating = contextPage.querySelector('.mediaInfoCriticRating');
+                    const starRating = contextPage.querySelector('.starRatingContainer');
+                    const anchor = criticRating || starRating;
+                    if (anchor && anchor.parentNode) {
+                        anchor.parentNode.insertBefore(chip, anchor.nextSibling);
+                    } else {
+                        const container = contextPage.querySelector('.mediaInfoItems');
+                        if (container) container.appendChild(chip);
+                    }
+                }
             }
 
             // `currentUser` is resolved fresh by the caller (processPage /
@@ -733,22 +764,64 @@
                 const item = JE.helpers?.getItemCached
                     ? await JE.helpers.getItemCached(itemId, { userId })
                     : await ApiClient.getItem(userId, itemId);
-                const tmdbId = item?.ProviderIds?.Tmdb;
                 const mediaType = item?.Type;
-                if (!tmdbId || !(mediaType === 'Movie' || mediaType === 'Series')) return;
 
-                const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-                // Fetch the current user fresh alongside the review data so
-                // admin status reflects the actual live session, not a
-                // potentially-stale JE.currentUser captured at plugin init.
+                let tmdbKey = null;
+                let apiMediaType;
+
+                if (mediaType === 'Movie') {
+                    const tmdbId = item?.ProviderIds?.Tmdb;
+                    if (!tmdbId) return;
+                    tmdbKey = String(tmdbId);
+                    apiMediaType = 'movie';
+                } else if (mediaType === 'Series') {
+                    const tmdbId = item?.ProviderIds?.Tmdb;
+                    if (!tmdbId) return;
+                    tmdbKey = String(tmdbId);
+                    apiMediaType = 'tv';
+                } else if (mediaType === 'Season') {
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
+                        if (!seriesTmdbId || item?.IndexNumber == null) return;
+                        tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
+                        apiMediaType = 'tv';
+                    } else if (mediaType === 'Episode') {
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
+                        if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
+                        tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
+                    apiMediaType = 'tv';
+                } else {
+                    return;
+                }
+
+                if (!tmdbKey) return;
+
                 const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                    tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
-                    userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
+                    (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
+                        ? fetchReviews(tmdbKey.split(':')[0], mediaType)
+                        : Promise.resolve(null),
+                    userReviewsEnabled ? fetchUserReviews(tmdbKey, apiMediaType) : Promise.resolve([]),
                     ApiClient.getCurrentUser().catch(() => null),
                 ]);
 
                 const page = document.querySelector('#itemDetailPage:not(.hide)') || contextPage;
-                addReviewsToPage(tmdbReviews, userReviews, page, tmdbId, apiMediaType, currentUser);
+                addReviewsToPage(tmdbReviews, userReviews, page, tmdbKey, apiMediaType, currentUser);
+
+                // Bust the poster tag cache for this item so the overlay updates
+                if (typeof JE.invalidateUserReviewTagCache === 'function') {
+                    JE.invalidateUserReviewTagCache(tmdbKey);
+                }
             } catch (err) {
                 console.error(`${logPrefix} Failed to refresh reviews:`, err);
             }
@@ -919,6 +992,11 @@
                 .je-review-submit-btn:hover { background: rgba(94, 213, 95, 0.15); }
                 .je-review-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
                 .je-review-form-error { color: rgb(244, 67, 54); font-size: 0.85em; min-height: 1em; }
+
+                /* Average user rating chip in item details */
+                .je-avg-user-rating-chip .starIcon { color: #e91e8c !important; }
+                /* Remove the padding coming from using critic rating container */
+                .je-avg-user-rating-chip { padding-left: 0 !important; }
             `;
             document.head.appendChild(style);
         }
@@ -936,20 +1014,58 @@
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
                         : await ApiClient.getItem(userId, itemId);
-                    const tmdbId = item?.ProviderIds?.Tmdb;
                     const mediaType = item?.Type;
 
-                    if (tmdbId && mediaType && (mediaType === 'Movie' || mediaType === 'Series')) {
-                        const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-                        // See refreshReviews for why we resolve currentUser here
-                        // instead of reading JE.currentUser — same race/staleness
-                        // reasoning.
+                    // Resolve tmdbKey and apiMediaType based on item type
+                    let tmdbKey = null;
+                    let apiMediaType;
+
+                    if (mediaType === 'Movie') {
+                        const tmdbId = item?.ProviderIds?.Tmdb;
+                        if (!tmdbId) return;
+                        tmdbKey = String(tmdbId);
+                        apiMediaType = 'movie';
+                    } else if (mediaType === 'Series') {
+                        const tmdbId = item?.ProviderIds?.Tmdb;
+                        if (!tmdbId) return;
+                        tmdbKey = String(tmdbId);
+                        apiMediaType = 'tv';
+                    } else if (mediaType === 'Season') {
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
+                        if (!seriesTmdbId || item?.IndexNumber == null) return;
+                        tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
+                        apiMediaType = 'tv';
+                    } else if (mediaType === 'Episode') {
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
+                        if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
+                        tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
+                        apiMediaType = 'tv';
+                    } else {
+                        return;
+                    }
+
+                    if (tmdbKey) {
                         const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                            tmdbReviewsEnabled ? fetchReviews(tmdbId, mediaType) : Promise.resolve(null),
-                            userReviewsEnabled ? fetchUserReviews(tmdbId, mediaType) : Promise.resolve([]),
+                            // TMDB reviews only available for top-level movie/tv, not seasons/episodes
+                            (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
+                                ? fetchReviews(tmdbKey.split(':')[0], mediaType)
+                                : Promise.resolve(null),
+                            userReviewsEnabled ? fetchUserReviews(tmdbKey, apiMediaType) : Promise.resolve([]),
                             ApiClient.getCurrentUser().catch(() => null),
                         ]);
-                        addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbId, apiMediaType, currentUser);
+                        addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbKey, apiMediaType, currentUser);
                     }
                 }
             } catch (error) {

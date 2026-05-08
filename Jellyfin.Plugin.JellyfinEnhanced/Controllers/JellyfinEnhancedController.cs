@@ -2226,6 +2226,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ReviewsExpandedByDefault,
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
+                config.ShowUserRatingOnPosters,
+                config.ShowUserRatingDash,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
@@ -3179,6 +3181,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly System.Text.RegularExpressions.Regex _tmdbIdRegex =
             new System.Text.RegularExpressions.Regex(@"^\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+        // Extended key for season/episode reviews: {tmdbId}:s{n} or {tmdbId}:s{n}e{n}
+        private static readonly System.Text.RegularExpressions.Regex _tmdbIdExtendedRegex =
+            new System.Text.RegularExpressions.Regex(@"^\d+(:s\d+(:e\d+)?)?$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static bool IsValidTmdbKey(string tmdbId) =>
+            !string.IsNullOrWhiteSpace(tmdbId) && _tmdbIdExtendedRegex.IsMatch(tmdbId);
+
         /// <summary>
         /// Returns all user-written reviews for a specific TMDB item,
         /// enriched with each reviewer's display name.
@@ -3191,7 +3200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { message = "MediaType must be 'movie' or 'tv'." });
 
-            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+            if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { message = "Invalid TmdbId." });
 
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -3318,7 +3327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+            if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             if (payload == null)
@@ -3365,7 +3374,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+            if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
@@ -3400,7 +3409,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (string.IsNullOrWhiteSpace(tmdbId) || !_tmdbIdRegex.IsMatch(tmdbId))
+            if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             if (string.IsNullOrWhiteSpace(userIdN) || !Guid.TryParseExact(userIdN, "N", out _))

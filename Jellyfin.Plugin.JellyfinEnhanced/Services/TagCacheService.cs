@@ -295,6 +295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var entry = new TagCacheEntry
                 {
                     Type = kind.ToString(),
+                    TmdbId = item.ProviderIds?.TryGetValue("Tmdb", out var tmdbId) == true ? tmdbId : null,
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
@@ -335,6 +336,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             }
                         }
                     }
+
+                    // For Season: store parent series TMDB ID + season number for user review key
+                    if (kind == BaseItemKind.Season && item is MediaBrowser.Controller.Entities.TV.Season season)
+                    {
+                        var series = GetParentSeries(item);
+                        if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
+                            entry.SeriesTmdbId = seriesTmdb;
+                        entry.SeasonNumber = season.IndexNumber;
+                    }
                 }
                 else
                 {
@@ -356,6 +366,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             entry.CommunityRating = series.CommunityRating;
                             entry.CriticRating = series.CriticRating;
                         }
+                    }
+
+                    // For Episode: store parent series TMDB ID + season/episode numbers for user review key
+                    if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
+                    {
+                        var series = GetParentSeries(item);
+                        if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
+                            entry.SeriesTmdbId = seriesTmdb;
+                        entry.SeasonNumber = ep.ParentIndexNumber;
+                        entry.EpisodeNumber = ep.IndexNumber;
                     }
                 }
 
