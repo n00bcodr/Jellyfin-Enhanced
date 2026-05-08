@@ -1018,7 +1018,7 @@
 
                     // Resolve tmdbKey and apiMediaType based on item type
                     let tmdbKey = null;
-                    let apiMediaType = 'movie';
+                    let apiMediaType;
 
                     if (mediaType === 'Movie') {
                         const tmdbId = item?.ProviderIds?.Tmdb;
