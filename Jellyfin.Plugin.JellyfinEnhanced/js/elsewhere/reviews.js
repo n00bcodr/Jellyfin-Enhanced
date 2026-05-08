@@ -32,8 +32,8 @@
          * Fetches all user-written reviews for a TMDB item (aggregated across all users).
          */
         function fetchUserReviews(tmdbId, mediaType) {
-            const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${apiMediaType}/${tmdbId}`);
+            // mediaType is already in API format ('movie' or 'tv') — no conversion needed
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
             return fetch(url, {
                 headers: { "X-Emby-Token": ApiClient.accessToken() }
             })
@@ -311,7 +311,7 @@
             }) : '';
 
             const rating = review.author_details?.rating;
-            const ratingDisplay = rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${rating}/10</span>` : '';
+            const ratingDisplay = rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${rating}</span>` : '';
 
             reviewCard.innerHTML = `
                 <div class="tmdb-review-header">
@@ -528,21 +528,29 @@
                 const ratingsWithValue = userReviews.filter(r => r.rating);
                 if (ratingsWithValue.length > 0) {
                     const avg = ratingsWithValue.reduce((sum, r) => sum + r.rating, 0) / ratingsWithValue.length;
-                    const avgDisplay = (avg * 2).toFixed(1); // convert 1-5 → /10
+                    const raw = avg * 2; // convert 1-5 → raw out of 10
+                    const avgDisplay = Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`;
 
                     // Remove any existing chip first
                     contextPage.querySelector('.je-avg-user-rating-chip')?.remove();
 
                     const chip = document.createElement('div');
-                    chip.className = 'mediaInfoItem je-avg-user-rating-chip';
+                    chip.className = 'mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip';
                     chip.title = tWithFallback('reviews_avg_rating_tooltip',
                         '{count} user rating(s)', { count: ratingsWithValue.length });
-                    chip.innerHTML = `<span class="material-icons" style="font-size:16px;vertical-align:middle;color:#e91e8c;margin-right:3px;">person_heart</span><span>${avgDisplay}/10</span>`;
+                    chip.innerHTML = `<span class="material-icons starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
 
-                    // Insert into starRatingContainer if present, else mediaInfoItems
-                    const ratingContainer = contextPage.querySelector('.starRatingContainer') ||
-                        contextPage.querySelector('.mediaInfoItems');
-                    if (ratingContainer) ratingContainer.appendChild(chip);
+                    // Insert after starRatingContainer, or after mediaInfoCriticRating if present,
+                    // falling back to appending to the mediaInfoItems container
+                    const criticRating = contextPage.querySelector('.mediaInfoCriticRating');
+                    const starRating = contextPage.querySelector('.starRatingContainer');
+                    const anchor = criticRating || starRating;
+                    if (anchor && anchor.parentNode) {
+                        anchor.parentNode.insertBefore(chip, anchor.nextSibling);
+                    } else {
+                        const container = contextPage.querySelector('.mediaInfoItems');
+                        if (container) container.appendChild(chip);
+                    }
                 }
             }
 
@@ -772,14 +780,26 @@
                     tmdbKey = String(tmdbId);
                     apiMediaType = 'tv';
                 } else if (mediaType === 'Season') {
-                    const seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                    if (!seriesTmdbId || item?.IndexNumber == null) return;
-                    tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
-                    apiMediaType = 'tv';
-                } else if (mediaType === 'Episode') {
-                    const seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                    if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
-                    tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
+                        if (!seriesTmdbId || item?.IndexNumber == null) return;
+                        tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
+                        apiMediaType = 'tv';
+                    } else if (mediaType === 'Episode') {
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
+                        if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
+                        tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
                     apiMediaType = 'tv';
                 } else {
                     return;
@@ -974,15 +994,9 @@
                 .je-review-form-error { color: rgb(244, 67, 54); font-size: 0.85em; min-height: 1em; }
 
                 /* Average user rating chip in item details */
-                .je-avg-user-rating-chip {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 2px;
-                    color: #e91e8c;
-                    font-size: 0.9em;
-                    font-weight: 600;
-                    cursor: default;
-                }
+                .je-avg-user-rating-chip .starIcon { color: #e91e8c !important; }
+                /* Remove the padding coming from using critic rating container */
+                .je-avg-user-rating-chip { padding-left: 0 !important; }
             `;
             document.head.appendChild(style);
         }
@@ -1017,12 +1031,24 @@
                         tmdbKey = String(tmdbId);
                         apiMediaType = 'tv';
                     } else if (mediaType === 'Season') {
-                        const seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
                         if (!seriesTmdbId || item?.IndexNumber == null) return;
                         tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
                         apiMediaType = 'tv';
                     } else if (mediaType === 'Episode') {
-                        const seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
+                        if (!seriesTmdbId && item?.SeriesId) {
+                            try {
+                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                seriesTmdbId = series?.ProviderIds?.Tmdb;
+                            } catch (_) {}
+                        }
                         if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
                         tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
                         apiMediaType = 'tv';

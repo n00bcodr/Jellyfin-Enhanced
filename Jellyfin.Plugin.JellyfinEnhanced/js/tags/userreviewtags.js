@@ -1,7 +1,7 @@
 // /js/tags/userreviewtags.js
 // Adds the current user's personal rating (person_heart icon) to the rating
 // tag overlay on poster cards. Piggybacks on the ratingTagsEnabled setting —
-// no separate toggle needed. Shows X/10 when rated, "—" when not (unless
+// no separate toggle needed. Shows X when rated, "—" when not (unless
 // ShowUserRatingDash is false in admin config).
 (function(JE) {
     'use strict';
@@ -14,8 +14,8 @@
     const _inFlight = new Map();
 
     /**
-     * Fetch the current user's rating for a given tmdbKey.
-     * Returns null if no review exists or reviews are disabled.
+     * Fetch the average rating across all users for a given tmdbKey.
+     * Returns null if no reviews with ratings exist.
      */
     async function fetchUserRating(tmdbKey, mediaType) {
         if (!JE.pluginConfig?.ShowUserReviews) return null;
@@ -33,13 +33,15 @@
                     return null;
                 }
                 const data = await response.json();
-                const currentUserId = (ApiClient.getCurrentUserId() || '').replace(/-/g, '');
-                const ownReview = (data.reviews || []).find(r =>
-                    (r.userId || '').replace(/-/g, '') === currentUserId
-                );
-                const rating = ownReview?.rating ?? null;
-                _reviewCache.set(tmdbKey, rating);
-                return rating;
+                const rated = (data.reviews || []).filter(r => r.rating);
+                if (rated.length === 0) {
+                    _reviewCache.set(tmdbKey, null);
+                    return null;
+                }
+                // Average across all users, stored as a 1-5 float
+                const avg = rated.reduce((sum, r) => sum + r.rating, 0) / rated.length;
+                _reviewCache.set(tmdbKey, avg);
+                return avg;
             } catch (e) {
                 _reviewCache.set(tmdbKey, null);
                 return null;
@@ -53,21 +55,24 @@
     }
 
     /**
-     * Append a person_heart chip to an existing rating overlay container.
-     * @param {HTMLElement} container - The .rating-overlay-container element.
-     * @param {number|null} rating - 1-5 star rating, or null if unrated.
+     * Append a person_heart chip to a rating overlay container.
+     * Uses the same .rating-tag + .rating-tag-critic structure as the tomato chip,
+     * with a material icon instead of the SVG background.
      */
     function appendUserRatingChip(container, rating) {
-        // Remove any existing chip first
         container.querySelector('.je-userreview-tag')?.remove();
 
-        const showDash = JE.pluginConfig?.ShowUserRatingDash !== false; // default true
+        const showDash = JE.pluginConfig?.ShowUserRatingDash !== false;
         if (rating === null && !showDash) return;
 
-        const displayText = rating !== null ? `${rating * 2}/10` : '—';
+        // rating is a 1-5 float average — convert to /10, drop trailing .0
+        const raw = rating !== null ? rating * 2 : null;
+        const displayText = raw !== null
+            ? (Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`)
+            : '—';
 
         const tag = document.createElement('div');
-        tag.className = 'rating-tag je-userreview-tag';
+        tag.className = 'rating-tag rating-tag-critic je-userreview-tag';
 
         const icon = document.createElement('span');
         icon.className = 'material-icons je-userreview-icon';
@@ -85,8 +90,10 @@
     /**
      * Resolve the tmdbKey and mediaType for a Jellyfin item.
      * Returns null if the item type is unsupported or TMDB ID is missing.
+     * @param {object} item - Jellyfin item from tag pipeline batch response.
+     * @param {object} [extras] - Pipeline extras containing parentSeries.
      */
-    function resolveTmdbKey(item) {
+    function resolveTmdbKey(item, extras) {
         const type = item.Type || '';
         if (type === 'Movie') {
             const id = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb;
@@ -96,17 +103,19 @@
             const id = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb;
             return id ? { tmdbKey: String(id), mediaType: 'tv' } : null;
         }
-        if (type === 'Season') {
-            const id = item.SeriesProviderIds?.Tmdb || item.SeriesProviderIds?.tmdb;
-            return (id && item.IndexNumber != null)
-                ? { tmdbKey: `${id}:s${item.IndexNumber}`, mediaType: 'tv' }
-                : null;
-        }
-        if (type === 'Episode') {
-            const id = item.SeriesProviderIds?.Tmdb || item.SeriesProviderIds?.tmdb;
-            return (id && item.ParentIndexNumber != null && item.IndexNumber != null)
-                ? { tmdbKey: `${id}:s${item.ParentIndexNumber}:e${item.IndexNumber}`, mediaType: 'tv' }
-                : null;
+        if (type === 'Season' || type === 'Episode') {
+            // SeriesProviderIds is not in the tag-data response — use parentSeries from extras
+            const series = extras?.parentSeries;
+            const seriesTmdbId = series?.ProviderIds?.Tmdb || series?.ProviderIds?.tmdb;
+            if (!seriesTmdbId) return null;
+
+            if (type === 'Season') {
+                if (item.IndexNumber == null) return null;
+                return { tmdbKey: `${seriesTmdbId}:s${item.IndexNumber}`, mediaType: 'tv' };
+            } else {
+                if (item.ParentIndexNumber == null || item.IndexNumber == null) return null;
+                return { tmdbKey: `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`, mediaType: 'tv' };
+            }
         }
         return null;
     }
@@ -116,12 +125,15 @@
             console.log(`${logPrefix} User reviews disabled, skipping.`);
             return;
         }
+        if (!JE.pluginConfig?.ShowUserRatingOnPosters) {
+            console.log(`${logPrefix} User rating on posters disabled, skipping.`);
+            return;
+        }
         if (!JE.currentSettings?.ratingTagsEnabled) {
             console.log(`${logPrefix} Rating tags disabled, skipping.`);
             return;
         }
 
-        // Inject CSS for the person_heart chip (reuses .rating-tag base styles)
         const styleId = 'je-userreview-tags-css';
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
@@ -132,6 +144,7 @@
                     font-size: 14px !important;
                     line-height: 1;
                     color: #e91e8c !important;
+                    vertical-align: middle;
                 }
             `;
             document.head.appendChild(style);
@@ -141,20 +154,36 @@
     };
 
     /**
-     * Called by ratingtags.js after it applies a rating overlay to a card.
-     * Appends the user rating chip to the existing container.
-     * @param {HTMLElement} container - The .rating-overlay-container element.
+     * Called by ratingtags.js after applying a rating overlay, OR directly
+     * for items with no TMDB/RT rating. Creates the overlay container if needed.
+     * @param {HTMLElement} containerOrEl - .rating-overlay-container or cardImageContainer.
      * @param {object} item - The Jellyfin item object.
+     * @param {object} [extras] - Pipeline extras (parentSeries, etc.).
      */
-    JE.appendUserRatingToContainer = async function(container, item) {
+    JE.appendUserRatingToContainer = async function(containerOrEl, item, extras) {
         if (!JE.pluginConfig?.ShowUserReviews) return;
+        if (!JE.pluginConfig?.ShowUserRatingOnPosters) return;
         if (!JE.currentSettings?.ratingTagsEnabled) return;
 
-        const resolved = resolveTmdbKey(item);
+        const resolved = resolveTmdbKey(item, extras);
         if (!resolved) return;
 
         const { tmdbKey, mediaType } = resolved;
         const rating = await fetchUserRating(tmdbKey, mediaType);
+
+        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
+
+        // Accept either the overlay container itself or the cardImageContainer
+        let container = containerOrEl;
+        if (!container.classList.contains('rating-overlay-container')) {
+            container = containerOrEl.querySelector('.rating-overlay-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'rating-overlay-container';
+                containerOrEl.appendChild(container);
+            }
+        }
+
         appendUserRatingChip(container, rating);
     };
 

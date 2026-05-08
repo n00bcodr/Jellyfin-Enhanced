@@ -9,6 +9,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
     public class TagCacheEntry
     {
         public string? Type { get; set; }
+        public string? TmdbId { get; set; }
+        /// <summary>For Season/Episode: the parent Series TMDB ID.</summary>
+        public string? SeriesTmdbId { get; set; }
+        /// <summary>For Season/Episode: season number for building the review key.</summary>
+        public int? SeasonNumber { get; set; }
+        /// <summary>For Episode: episode number for building the review key.</summary>
+        public int? EpisodeNumber { get; set; }
         public string[]? Genres { get; set; }
         public float? CommunityRating { get; set; }
         public float? CriticRating { get; set; }

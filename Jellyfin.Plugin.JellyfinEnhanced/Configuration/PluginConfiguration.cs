@@ -55,6 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ReviewsExpandedByDefault = false;
             HideReviewsFromHiddenUsers = true;
             HideReviewsFromDisabledUsers = true;
+            ShowUserRatingOnPosters = false;
             ShowUserRatingDash = true;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
@@ -312,6 +313,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ReviewsExpandedByDefault { get; set; }
         public bool HideReviewsFromHiddenUsers { get; set; } = true;
         public bool HideReviewsFromDisabledUsers { get; set; } = true;
+        public bool ShowUserRatingOnPosters { get; set; } = false;
         /// <summary>
         /// When true (default), shows a "—" on poster cards for items the user hasn't rated yet.
         /// When false, the person_heart chip is hidden entirely for unrated items.

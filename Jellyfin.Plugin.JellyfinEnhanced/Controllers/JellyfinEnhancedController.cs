@@ -2226,6 +2226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ReviewsExpandedByDefault,
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
+                config.ShowUserRatingOnPosters,
                 config.ShowUserRatingDash,
                 config.PauseScreenEnabled,
                 config.QualityTagsEnabled,
