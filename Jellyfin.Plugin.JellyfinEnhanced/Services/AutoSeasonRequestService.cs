@@ -99,22 +99,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var urls = GetConfiguredUrls(config.JellyseerrUrls);
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Clear();
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
                 foreach (var url in urls)
                 {
                     try
                     {
                         var requestUrl = $"{url}/api/v1/tv/{tmdbId}";
-                        var response = await httpClient.GetAsync(requestUrl);
-                        if (!response.IsSuccessStatusCode)
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                        using var response = await httpClient.SendAsync(request);
+                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
+                        if (error != null)
                         {
-                            _logger.Debug($"[Auto-Season-Request] Jellyseerr returned {response.StatusCode} for TMDB {tmdbId}");
+                            _logger.Debug($"[Auto-Season-Request] Series details fetch for TMDB {tmdbId} failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
                             continue;
                         }
 
-                        return await response.Content.ReadAsStringAsync();
+                        return content;
                     }
                     catch (Exception ex)
                     {
@@ -310,6 +311,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (nextSeasonEpisodeCount == null || nextSeasonEpisodeCount <= 0)
             {
                 _logger.Info($"[Auto-Season-Request] Season {nextSeasonNumber} has not started yet (0 episodes) - not requesting");
+                // Audit V49: drop the sentinel so the next check actually
+                // re-evaluates instead of being stuck for an hour even after
+                // TMDB updates with the new season's data.
+                lock (_requestCacheLock)
+                {
+                    _requestedSeasons.Remove(cacheKey);
+                }
                 return;
             }
 
@@ -319,6 +327,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (jellyseerrStatus == null)
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} does not exist for '{series.Name}' (not available on TMDB)");
+                lock (_requestCacheLock)
+                {
+                    _requestedSeasons.Remove(cacheKey);
+                }
                 return;
             }
 
@@ -426,8 +438,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var urls = GetConfiguredUrls(config.JellyseerrUrls);
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Clear();
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
                 string? content = null;
                 foreach (var url in urls)
@@ -435,14 +445,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     try
                     {
                         var requestUrl = $"{url}/api/v1/tv/{tmdbId}";
-                        var response = await httpClient.GetAsync(requestUrl);
-                        if (!response.IsSuccessStatusCode)
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                        using var response = await httpClient.SendAsync(request);
+                        var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
+                        if (error != null)
                         {
-                            _logger.Debug($"[Auto-Season-Request] Jellyseerr returned {response.StatusCode} for TMDB {tmdbId} (status check)");
+                            _logger.Debug($"[Auto-Season-Request] Status check for TMDB {tmdbId} failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
                             continue;
                         }
 
-                        content = await response.Content.ReadAsStringAsync();
+                        content = body;
                         break;
                     }
                     catch (Exception ex)
@@ -585,8 +598,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
-            httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
 
             foreach (var url in urls)
             {
@@ -602,19 +613,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     };
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
-                    using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                    using var response = await httpClient.PostAsync(requestUri, content);
-                    var responseContent = await response.Content.ReadAsStringAsync();
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUserId, jsonContent);
+                    using var response = await httpClient.SendAsync(request);
+                    var (responseContent, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                    if (response.IsSuccessStatusCode)
+                    if (error == null)
                     {
                         return true;
                     }
-                    else
-                    {
-                        _logger.Warning($"[Auto-Season-Request] Jellyseerr returned {response.StatusCode}: {responseContent}");
-                    }
+                    _logger.Warning($"[Auto-Season-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
                 catch (Exception ex)
                 {
@@ -647,18 +656,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
             {
                 try
                 {
                     var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
-                    var response = await httpClient.GetAsync(requestUri);
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                    if (response.IsSuccessStatusCode)
+                    if (error == null && content != null)
                     {
-                        var content = await response.Content.ReadAsStringAsync();
                         var usersResponse = JsonSerializer.Deserialize<JsonElement>(content);
 
                         if (usersResponse.TryGetProperty("results", out var usersArray))
@@ -689,9 +699,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             _logger.Warning($"[Auto-Season-Request] No Jellyseerr user found for Jellyfin user {jellyfinUserId}");
                         }
                     }
-                    else
+                    else if (error != null)
                     {
-                        _logger.Warning($"[Auto-Season-Request] Failed to fetch users from Jellyseerr: {response.StatusCode}");
+                        _logger.Warning($"[Auto-Season-Request] Failed to fetch users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                     }
                 }
                 catch (Exception ex)

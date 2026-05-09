@@ -165,10 +165,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userCacheLock)
                 {
-                    if (_userCache.TryGetValue(jellyfinUserId, out var cached) &&
-                        DateTime.UtcNow - cached.CachedAt < GetUserIdCacheTtl())
+                    if (_userCache.TryGetValue(jellyfinUserId, out var cached))
                     {
-                        return cached.User;
+                        // Negative entries use a much shorter TTL so transient
+                        // failures don't poison discovery for 30 min after
+                        // recovery. Audit CRIT-3.
+                        var ttl = cached.User == null ? TimeSpan.FromSeconds(60) : GetUserIdCacheTtl();
+                        if (DateTime.UtcNow - cached.CachedAt < ttl)
+                        {
+                            return cached.User;
+                        }
                     }
                 }
             }
@@ -177,53 +183,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(15);
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
             {
+                var trimmedUrl = url.Trim();
+                var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/user?take=1000"; // Fetch all users to find a match
                 try
                 {
-                    var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000"; // Fetch all users to find a match
-                    // _logger.Info($"Requesting users from Seerr URL: {requestUri}");
-                    var response = await httpClient.GetAsync(requestUri);
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                    if (response.IsSuccessStatusCode)
+                    if (error != null)
                     {
-                        var content = await response.Content.ReadAsStringAsync();
-                        var usersResponse = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(content);
-                        if (usersResponse.TryGetProperty("results", out var usersArray))
-                        {
-                            var users = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
-                            // _logger.Info($"Found {users?.Count ?? 0} users at {url.Trim()}");
-                            var normalizedJellyfinUserId = jellyfinUserId.Replace("-", "");
-                            var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedJellyfinUserId, StringComparison.OrdinalIgnoreCase));
-                            if (user != null)
-                            {
-                                if (cacheEnabled)
-                                {
-                                    lock (_userCacheLock)
-                                    {
-                                        _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
-                                    }
-                                }
-                                // _logger.Info($"Found Seerr user ID {user.Id} for Jellyfin user ID {jellyfinUserId} at {url.Trim()}");
-                                return user;
-                            }
-                            else
-                            {
-                                _logger.Info($"No matching Jellyfin User ID found in the {users?.Count ?? 0} users from {url.Trim()}");
-                            }
-                        }
+                        // Distinct error logging by class lets admins triage
+                        // (HTML response = reverse proxy, 401 = key wrong, etc.)
+                        _logger.Warning($"Failed to fetch users from Seerr at {trimmedUrl}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+                        continue;
                     }
-                    else
+
+                    var usersResponse = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(json!);
+                    if (usersResponse.TryGetProperty("results", out var usersArray))
                     {
-                        var errorContent = await response.Content.ReadAsStringAsync();
-                        _logger.Warning($"Failed to fetch users from Seerr at {url}. Status: {response.StatusCode}. Response: {errorContent}");
+                        var users = System.Text.Json.JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
+                        var normalizedJellyfinUserId = jellyfinUserId.Replace("-", "");
+                        var user = users?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedJellyfinUserId, StringComparison.OrdinalIgnoreCase));
+                        if (user != null)
+                        {
+                            if (cacheEnabled)
+                            {
+                                lock (_userCacheLock)
+                                {
+                                    _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
+                                }
+                            }
+                            return user;
+                        }
+                        _logger.Info($"No matching Jellyfin User ID found in the {users?.Count ?? 0} users from {trimmedUrl}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Exception while trying to get Seerr user ID from {url}: {ex.Message}");
+                    _logger.Error($"Exception while trying to get Seerr user ID from {trimmedUrl}: {ex.Message}");
                 }
             }
 
@@ -277,6 +279,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
         {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var apiKey = config?.JellyseerrApiKey ?? string.Empty;
+
             // Jellyseerr requires dashless UUIDs — dashed format causes empty email and UNIQUE constraint errors
             var normalizedUserId = jellyfinUserId.Replace("-", "");
 
@@ -290,31 +295,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var importUri = $"{url.Trim().TrimEnd('/')}/api/v1/user/import-from-jellyfin";
                     var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = new[] { normalizedUserId } });
-                    using var importContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
-                    var importResponse = await httpClient.PostAsync(importUri, importContent);
+                    using var importRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Post, importUri, apiKey, bodyJson: requestBody);
+                    using var importResponse = await httpClient.SendAsync(importRequest);
                     reachedJellyseerr = true;
+                    var (importJson, importError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(importResponse, importUri);
 
-                    if (!importResponse.IsSuccessStatusCode)
+                    if (importError != null)
                     {
-                        var errorContent = await importResponse.Content.ReadAsStringAsync();
-
                         // Email collision is a definite failure — a renamed/deleted Jellyfin user left
                         // an orphaned Jellyseerr account with the same email. Won't resolve on retry.
-                        if (errorContent.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
+                        if (!string.IsNullOrEmpty(importError.Message)
+                            && importError.Message.Contains("UNIQUE constraint failed: user.email", StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.Warning($"Could not auto-import Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)}: an existing Jellyseerr account has a conflicting email (possibly from a previous user that was renamed or deleted). Remove the conflicting user in Jellyseerr to resolve this.");
                             return (null, true);
                         }
 
-                        _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}. Status: {importResponse.StatusCode}. Response: {errorContent}");
+                        _logger.Warning($"Failed to auto-import user to Jellyseerr at {url}: code={importError.Code} status={importError.HttpStatus} cf-ray={importError.CfRay} — {importError.Message}");
                         continue;
                     }
 
                     // The import endpoint returns an array of newly created users.
                     // Parse it directly to avoid a second API call.
-                    var responseContent = await importResponse.Content.ReadAsStringAsync();
-                    var importedUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(responseContent);
+                    var importedUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(importJson!);
                     var user = importedUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
                     if (user != null)
                     {
@@ -326,12 +331,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // but wasn't in the import response). Fall back to a full user list query to find them.
                     _logger.Info($"Import succeeded at {url.Trim()} but user not in response. Doing fresh lookup...");
                     var lookupUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
-                    var lookupResponse = await httpClient.GetAsync(lookupUri);
-                    if (lookupResponse.IsSuccessStatusCode)
+                    using var lookupRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, lookupUri, apiKey);
+                    using var lookupResponse = await httpClient.SendAsync(lookupRequest);
+                    var (lookupJson, lookupError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(lookupResponse, lookupUri);
+                    if (lookupError == null && lookupJson != null)
                     {
-                        var lookupContent = await lookupResponse.Content.ReadAsStringAsync();
-                        var lookupJson = JsonSerializer.Deserialize<JsonElement>(lookupContent);
-                        if (lookupJson.TryGetProperty("results", out var usersArray))
+                        var lookupRoot = JsonSerializer.Deserialize<JsonElement>(lookupJson);
+                        if (lookupRoot.TryGetProperty("results", out var usersArray))
                         {
                             var allUsers = JsonSerializer.Deserialize<List<JellyseerrUser>>(usersArray.ToString());
                             var found = allUsers?.FirstOrDefault(u => string.Equals(u.JellyfinUserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
@@ -341,6 +348,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 return (found, true);
                             }
                         }
+                    }
+                    else if (lookupError != null)
+                    {
+                        _logger.Debug($"Fresh lookup at {url.Trim()} failed: code={lookupError.Code} status={lookupError.HttpStatus} cf-ray={lookupError.CfRay}");
                     }
 
                     // Import succeeded and fresh lookup found nothing — user is genuinely not importable
@@ -388,6 +399,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Flush every Seerr-related cache. Called from
+        /// <see cref="JellyfinEnhanced.UpdateConfiguration"/> when admin saves
+        /// plugin settings — without this, fixing a bad URL/key/blocklist takes
+        /// 10-30 minutes to take effect because of the user-id, user, response,
+        /// and TMDB-enrichment caches. Audit CRIT-3 / B5 / D2.
+        /// </summary>
+        public static void ClearAllSeerrCachesOnConfigChange()
+        {
+            ClearUserCaches();
+            lock (_responseCacheLock)
+            {
+                _responseCache.Clear();
+            }
+            lock (_tmdbEnrichmentCacheLock)
+            {
+                _tmdbEnrichmentCache.Clear();
+            }
+            // Avatar cache may reference the OLD Seerr URL — clear it too.
+            _avatarCache.Clear();
+        }
+
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -420,12 +453,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return jellyseerrUserId;
         }
 
+        // Audit C01-HIGH-17: include companies/networks/watch-providers/keywords/
+        // original-language so user-picked filters in the discovery UI aren't
+        // silently dropped when the frontend forwards them.
         private static readonly string[] DiscoverFilterParams = {
             "sortBy", "primaryReleaseDateGte", "primaryReleaseDateLte",
             "firstAirDateGte", "firstAirDateLte",
             "voteAverageGte", "voteAverageLte",
             "withRuntimeGte", "withRuntimeLte",
-            "certification", "watchRegion", "language"
+            "certification", "watchRegion", "language",
+            "withCompanies", "withNetworks", "withWatchProviders",
+            "withOriginalLanguage", "withKeywords", "studio", "network"
         };
 
         /// <summary>
@@ -514,13 +552,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 return StatusCode(403, new { code = "no_issue_permission", message = "You do not have permission to report issues in Seerr." });
                         }
 
-                        // GET /api/v1/issue — view issues list
+                        // GET /api/v1/issue — view issues list (any of: ?query, exact, /id)
+                        // The /api/v1/issue/{id} path was previously not gated by this
+                        // check (audit F23) — non-admin without VIEW_ISSUES could
+                        // fetch any issue by id by guessing.
                         if (method == HttpMethod.Get && (apiPath.StartsWith("/api/v1/issue?", StringComparison.OrdinalIgnoreCase)
+                            || apiPath.StartsWith("/api/v1/issue/", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(apiPath, "/api/v1/issue", StringComparison.OrdinalIgnoreCase)))
                         {
                             if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
                                 JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
+                        }
+
+                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id},
+                        // /api/v1/overrideRule — these expose admin-context Seerr data
+                        // (instance lists, quality profiles, root folders, override rules)
+                        // used by the "advanced request" modal. Require REQUEST_ADVANCED
+                        // to match Seerr's own permission model for this feature
+                        // (audit V3).
+                        if (method == HttpMethod.Get && (
+                            apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
+                            || apiPath.StartsWith("/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
+                                JellyseerrPermission.REQUEST_ADVANCED | JellyseerrPermission.MANAGE_REQUESTS))
+                                return StatusCode(403, new { code = "no_advanced_permission", message = "You do not have permission to use advanced request options." });
                         }
                     }
                 }
@@ -544,52 +601,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(15);
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
-            httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
 
-            int lastStatusCode = 500;
-            string lastErrorContent = "Could not connect to any configured Jellyseerr instance.";
+            int lastStatusCode = 502;
+            object lastErrorBody = new { error = true, code = "unreachable", message = "Could not connect to any configured Jellyseerr instance." };
 
             foreach (var url in urls)
             {
                 var trimmedUrl = url.Trim();
+                var requestUri = $"{trimmedUrl.TrimEnd('/')}{apiPath}";
+                bool isQuietEndpoint = apiPath.Contains("/similar") || apiPath.Contains("/recommendations") || apiPath.Contains("/discover/");
+                bool isIssuePolling = apiPath.Contains("/issue?");
+
+                if (!isQuietEndpoint)
+                {
+                    var userDisplay = ResolveUserDisplay(jellyfinUserId);
+                    if (isIssuePolling)
+                        LogPollingRequest(userDisplay, requestUri, $"{jellyfinUserId}:{apiPath}");
+                    else
+                        _logger.Info($"Proxying Seerr request for user {userDisplay} to: {requestUri}");
+                }
+
                 try
                 {
-                    var requestUri = $"{trimmedUrl.TrimEnd('/')}{apiPath}";
-                    // Skip logging for high-frequency discovery/search endpoints entirely
-                    bool isQuietEndpoint = apiPath.Contains("/similar") || apiPath.Contains("/recommendations") || apiPath.Contains("/discover/");
-                    // Issue polling fires every 30s per open tab — consolidate into a summary line
-                    bool isIssuePolling = apiPath.Contains("/issue?");
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
+                    if (content != null) _logger.Debug($"Request body: {content}");
 
-                    if (!isQuietEndpoint)
+                    using var response = await httpClient.SendAsync(request);
+                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+
+                    if (error == null && json != null)
                     {
-                        var userDisplay = ResolveUserDisplay(jellyfinUserId);
-                        if (isIssuePolling)
-                            LogPollingRequest(userDisplay, requestUri, $"{jellyfinUserId}:{apiPath}");
-                        else
-                            _logger.Info($"Proxying Seerr request for user {userDisplay} to: {requestUri}");
-                    }
-
-                    var request = new HttpRequestMessage(method, requestUri);
-                    if (content != null)
-                    {
-                        _logger.Debug($"Request body: {content}");
-                        request.Content = new StringContent(content, Encoding.UTF8, "application/json");
-                    }
-
-                    var response = await httpClient.SendAsync(request);
-                    var responseContent = await response.Content.ReadAsStringAsync();
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        // Cache successful responses for cacheable endpoints
+                        // Cache only verified-JSON 2xx responses. The Content-Type
+                        // guard inside ReadResponseAsync prevents HTML challenge
+                        // pages from being cached as JSON for 10 min — audit
+                        // CRIT-2 cluster.
                         if (isCacheable)
                         {
                             lock (_responseCacheLock)
                             {
-                                _responseCache[cacheKey] = (responseContent, DateTime.UtcNow);
+                                _responseCache[cacheKey] = (json, DateTime.UtcNow);
 
-                                // Evict stale entries periodically (every 50 writes or when over capacity)
                                 if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
                                 {
                                     var staleKeys = _responseCache
@@ -601,29 +653,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 }
                             }
                         }
-
-                        return Content(responseContent, "application/json");
+                        return Content(json, "application/json");
                     }
 
-                    _logger.Warning($"Request to Seerr for user {ResolveUserDisplay(jellyfinUserId)} failed. URL: {trimmedUrl}, Path: {apiPath}, Status: {response.StatusCode}, Response: {responseContent}");
-                    lastStatusCode = (int)response.StatusCode;
-                    try
+                    _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+
+                    // Map structured error → HTTP status + structured envelope.
+                    // The frontend can switch on `code` to display a meaningful
+                    // banner instead of "discovery silently disappeared".
+                    lastStatusCode = error.Code switch
                     {
-                        JsonDocument.Parse(responseContent);
-                        lastErrorContent = responseContent;
-                    }
-                    catch (JsonException)
-                    {
-                        lastErrorContent = System.Text.Json.JsonSerializer.Serialize(new { message = $"Upstream error from Jellyseerr: {response.ReasonPhrase}" });
-                    }
+                        Helpers.Jellyseerr.SeerrErrorCode.HtmlResponse => 502,
+                        Helpers.Jellyseerr.SeerrErrorCode.UpstreamRedirect => 502,
+                        Helpers.Jellyseerr.SeerrErrorCode.Cloudflare5xx => 502,
+                        Helpers.Jellyseerr.SeerrErrorCode.Unauthorized => 401,
+                        Helpers.Jellyseerr.SeerrErrorCode.Forbidden => 403,
+                        _ => error.HttpStatus > 0 ? error.HttpStatus : 502,
+                    };
+                    lastErrorBody = error.ToResponseShape();
                 }
                 catch (Exception ex)
                 {
                     _logger.Error($"Failed to connect to Seerr URL for user {ResolveUserDisplay(jellyfinUserId)}: {trimmedUrl}. Error: {ex.Message}");
+                    lastErrorBody = new { error = true, code = "unreachable", message = $"Failed to reach {trimmedUrl}: {ex.Message}" };
                 }
             }
 
-            return StatusCode(lastStatusCode, lastErrorContent);
+            return StatusCode(lastStatusCode, lastErrorBody);
         }
 
         [HttpGet("jellyseerr/status")]
@@ -639,18 +695,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(15);
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
             {
+                var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/status";
                 try
                 {
-                    var response = await httpClient.GetAsync($"{url.Trim().TrimEnd('/')}/api/v1/status");
-                    if (response.IsSuccessStatusCode)
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    if (error == null)
                     {
                         // _logger.Info($"Successfully connected to Seerr at {url}. Status is active.");
                         return Ok(new { active = true });
                     }
+                    _logger.Warning($"Seerr status check failed at {url}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
                 catch
                 {
@@ -751,28 +811,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetJellyseerrUserStatus()
         {
+            // Audit CRIT-1: report a typed `reason` so the frontend can display
+            // a meaningful banner instead of silently hiding discovery sections.
+            // Possible reasons: disabled, no_user, blocked, unlinked, unreachable.
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled ||
                 string.IsNullOrEmpty(config.JellyseerrApiKey) ||
                 string.IsNullOrEmpty(config.JellyseerrUrls))
             {
-                return Ok(new { active = false, userFound = false });
+                return Ok(new { active = false, userFound = false, reason = "disabled" });
             }
 
             var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
             if (string.IsNullOrEmpty(jellyfinUserId))
-                return Ok(new { active = false, userFound = false });
+                return Ok(new { active = false, userFound = false, reason = "no_user" });
+
+            if (IsJellyseerrImportBlocked(jellyfinUserId, config))
+            {
+                return Ok(new { active = true, userFound = false, reason = "blocked" });
+            }
 
             // GetSeerrUserId uses the user ID cache (30-min TTL).
             // A successful user lookup implicitly proves Seerr is reachable.
             var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
-                return Ok(new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId });
+                return Ok(new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked" });
             }
 
-            // User not found - could be server unreachable or user not linked.
-            // Do a lightweight /status check to distinguish.
+            // User not found — could be server unreachable, HTML challenge from
+            // proxy, or user genuinely not linked. Probe /status to distinguish
+            // "unreachable" from "unlinked".
             var statusResult = await GetJellyseerrStatus() as OkObjectResult;
             bool active = false;
             if (statusResult?.Value is not null)
@@ -782,7 +851,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (doc.RootElement.TryGetProperty("active", out var a))
                     active = a.GetBoolean();
             }
-            return Ok(new { active, userFound = false });
+            return Ok(new
+            {
+                active,
+                userFound = false,
+                reason = active ? "unlinked" : "unreachable"
+            });
         }
 
         /// <summary>
@@ -915,8 +989,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("jellyseerr/search")]
         [Authorize]
-        public Task<IActionResult> JellyseerrSearch([FromQuery] string query, [FromQuery] int page = 1, [FromQuery] string? language = null)
+        public Task<IActionResult> JellyseerrSearch([FromQuery] string? query, [FromQuery] int page = 1, [FromQuery] string? language = null)
         {
+            // Audit V10: previously returned ASP.NET model-binding's RFC9110-link
+            // error envelope when `query` was null/empty. Now we return a clean
+            // structured BadRequest matching the rest of the API.
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new
+                {
+                    error = true,
+                    code = "missing_query",
+                    message = "Search query is required."
+                }));
+            }
+            // Clamp pathological inputs. Use UTF-16 surrogate-safe truncation so
+            // we don't split a high/low surrogate pair (audit NB-8) — important
+            // for emoji or extended-CJK searches.
+            if (query.Length > 256)
+            {
+                var cut = 256;
+                if (cut > 0 && char.IsHighSurrogate(query[cut - 1])) cut--;
+                query = query.Substring(0, cut);
+            }
+            if (page < 1) page = 1;
+
             var path = $"/api/v1/search?query={Uri.EscapeDataString(query)}&page={page}";
             if (!string.IsNullOrEmpty(language))
                 path += $"&language={Uri.EscapeDataString(language)}";
@@ -1019,8 +1116,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(8);
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
-            httpClient.DefaultRequestHeaders.Add("X-Api-User", seerrUserId);
 
             // Iterate URLs for multi-instance failover, matching ProxyJellyseerrRequest.
             foreach (var rawUrl in urls)
@@ -1032,11 +1127,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var requestUri = $"{trimmedUrl}/api/v1/request" +
                                      $"?take=20&skip=0&sortDirection=asc&requestedBy={seerrUserId}&mediaType={mediaType}";
 
-                    var response = await httpClient.GetAsync(requestUri);
-                    if (!response.IsSuccessStatusCode) continue;
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, config.JellyseerrApiKey, seerrUserId);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    if (error != null)
+                    {
+                        _logger.Debug($"ComputeNextResetAsync({mediaType}) on {trimmedUrl} failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
+                        continue;
+                    }
 
-                    var content = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(content);
+                    using var doc = JsonDocument.Parse(content!);
                     if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
                     {
                         continue;
@@ -1581,6 +1682,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> GetJellyseerrUsers([FromQuery] int take = 1000)
         {
+            // Admin-only: this proxies Seerr's full user list, which includes
+            // every Seerr user's email, username, plexUsername, permissions,
+            // and userType. Without this gate any authenticated Jellyfin user
+            // could harvest the entire Seerr roster (audit V1).
+            if (!IsAdminUser())
+            {
+                return Task.FromResult<IActionResult>(Forbid());
+            }
             return ProxyJellyseerrRequest($"/api/v1/user?take={take}", HttpMethod.Get);
         }
 
@@ -1756,22 +1865,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     .ToList();
                 _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
 
-                var importedCount = await Helpers.Jellyseerr.JellyseerrUserImportHelper.BulkImportAsync(
+                var importResult = await Helpers.Jellyseerr.JellyseerrUserImportHelper.BulkImportAsync(
                     userIds, urls, config.JellyseerrApiKey, _httpClientFactory, _logger);
-                if (importedCount >= 0)
+
+                // Audit CRIT-4: only flush user caches when at least one user
+                // was actually imported. Previously a 0-imported "success" (all
+                // email-collisioned) would wipe every healthy cache entry,
+                // forcing a stampede on next request.
+                if (importResult.Reached && importResult.Imported > 0)
                 {
                     ClearUserCaches();
-                    _logger.Info($"[Manual User Import] Completed. {importedCount} new user(s) imported.");
+                }
+
+                // Reset the throttle slot when nothing was imported AND we got
+                // any kind of error, so the admin can fix Seerr-side issues
+                // and retry without waiting 30s.
+                if (importResult.Imported == 0 && importResult.Errors.Count > 0)
+                {
+                    lock (_importThrottleLock)
+                    {
+                        _lastManualImport = DateTime.MinValue;
+                    }
+                }
+
+                if (importResult.Reached)
+                {
+                    _logger.Info($"[Manual User Import] Completed. {importResult.Imported} new user(s) imported out of {userIds.Count} sent. Errors: {importResult.Errors.Count}");
                     return Ok(new
                     {
                         success = true,
-                        usersImported = importedCount,
-                        totalUsers = userIds.Count
+                        usersImported = importResult.Imported,
+                        totalUsers = userIds.Count,
+                        errors = importResult.Errors,
                     });
                 }
                 else
                 {
-                    return StatusCode(502, new { error = "Import failed on all configured Jellyseerr URLs. Check server logs for details." });
+                    return StatusCode(502, new
+                    {
+                        error = "Import failed on all configured Jellyseerr URLs.",
+                        errors = importResult.Errors,
+                    });
                 }
             }
             catch (HttpRequestException ex)
@@ -1798,7 +1932,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
                 foreach (var url in urls)
                 {
@@ -1806,11 +1939,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     try
                     {
                         var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/user/{userId}/watchlist";
-                        var response = await httpClient.GetAsync(requestUri);
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                        using var response = await httpClient.SendAsync(request);
+                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                        if (response.IsSuccessStatusCode)
+                        if (error == null && content != null)
                         {
-                            var content = await response.Content.ReadAsStringAsync();
                             var json = JsonDocument.Parse(content);
 
                             if (json.RootElement.TryGetProperty("results", out var results))
@@ -1830,6 +1965,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 }
                                 return items;
                             }
+                        }
+                        else if (error != null)
+                        {
+                            _logger.Warning($"Failed to get watchlist from {trimmedUrl}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                         }
                     }
                     catch (Exception ex)
@@ -1859,7 +1998,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
                 foreach (var url in urls)
                 {
@@ -1867,17 +2005,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     try
                     {
                         var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/request?take=500&skip=0&sort=added";
-                        httpClient.DefaultRequestHeaders.Remove("X-Api-User");
-                        httpClient.DefaultRequestHeaders.Add("X-Api-User", userId);
-
-                        var response = await httpClient.GetAsync(requestUri);
-                        if (!response.IsSuccessStatusCode)
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUri, config.JellyseerrApiKey, userId);
+                        using var response = await httpClient.SendAsync(request);
+                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                        if (error != null)
                         {
+                            _logger.Warning($"Failed to get requests from {trimmedUrl}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                             continue;
                         }
 
-                        var content = await response.Content.ReadAsStringAsync();
-                        var json = JsonDocument.Parse(content);
+                        var json = JsonDocument.Parse(content!);
 
                         if (!json.RootElement.TryGetProperty("results", out var results))
                         {
@@ -2025,7 +2163,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
             {
@@ -2035,10 +2172,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/settings/main";
                     _logger.Info($"Fetching Seerr partial requests setting from: {requestUri}");
 
-                    var response = await httpClient.GetAsync(requestUri);
-                    var responseContent = await response.Content.ReadAsStringAsync();
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (responseContent, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                    if (response.IsSuccessStatusCode)
+                    if (error == null && responseContent != null)
                     {
                         using var settings = JsonDocument.Parse(responseContent);
                         var partialRequestsEnabled = false;
@@ -2057,7 +2196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Ok(new { partialRequestsEnabled, enableSpecialEpisodes });
                     }
 
-                    _logger.Warning($"Failed to fetch Seerr settings. URL: {trimmedUrl}, Status: {response.StatusCode}");
+                    _logger.Warning($"Failed to fetch Seerr settings from {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
                 catch (Exception ex)
                 {
@@ -2073,6 +2212,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ValidateTmdb([FromQuery] string apiKey)
         {
+            // Admin-only: validates an arbitrary API key against TMDB. Any
+            // authenticated user could otherwise use this as a free oracle
+            // for testing leaked TMDB keys, matching the pattern in every
+            // sibling validate endpoint (arr/validate/sonarr|radarr,
+            // jellyseerr/validate). See audit V2.
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 return BadRequest(new { ok = false, message = "API key is missing" });
@@ -2081,7 +2230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var httpClient = _httpClientFactory.CreateClient();
             try
             {
-                var requestUri = $"https://api.themoviedb.org/3/configuration?api_key={apiKey}";
+                var requestUri = $"https://api.themoviedb.org/3/configuration?api_key={Uri.EscapeDataString(apiKey)}";
                 var response = await httpClient.GetAsync(requestUri);
 
                 if (response.IsSuccessStatusCode)
@@ -2110,6 +2259,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // Config-page stylesheet lives in Configuration/ next to configPage.html.
         [HttpGet("Configuration/configPage.css")]
         public ActionResult GetConfigPageStylesheet() => GetScriptResource("Configuration/configPage.css");
+        // [AllowAnonymous]: version is loaded by translations.js cache-buster pre-login.
+        // Information disclosure of the plugin version is acceptable — Jellyfin core
+        // exposes its own version pre-auth too. CVEs against JE are tracked publicly
+        // so attackers do not need this endpoint to fingerprint a vulnerable version.
         [HttpGet("version")]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
@@ -2156,6 +2309,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
             });
         }
+        // [AllowAnonymous]: public-config is loaded by `loadLoginImageEarly` before
+        // the user logs in, so we cannot gate the whole endpoint on [Authorize].
+        // Instead, sensitive Seerr fields (BaseUrl, UrlMappings) are REDACTED for
+        // unauthenticated callers — they only need login-screen toggles like
+        // EnableLoginImage. Authenticated callers (any Jellyfin user) get the full
+        // payload so client-side "Open in Seerr" deep links still work.
         [HttpGet("public-config")]
         public ActionResult GetPublicConfig()
         {
@@ -2170,21 +2329,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Reviews and Elsewhere without leaking the actual API key.
             var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
 
-            // Resolve the first configured Seerr URL for client-side deep links.
-            // Only the base URL is exposed (not the API key), so non-admin users
-            // can generate "Open in Seerr" links from search results.
+            // Only authenticated callers see internal Seerr URLs — they're used by
+            // client-side deep links and would otherwise leak network topology to
+            // unauthenticated visitors hitting the login page.
+            bool isAuthed = User?.Identity?.IsAuthenticated == true;
+
             string jellyseerrBaseUrl = string.Empty;
-            try
+            string jellyseerrUrlMappings = string.Empty;
+            if (isAuthed)
             {
-                if (!string.IsNullOrWhiteSpace(config.JellyseerrUrls))
+                try
                 {
-                    jellyseerrBaseUrl = config.JellyseerrUrls
-                        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(u => u.Trim())
-                        .FirstOrDefault() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(config.JellyseerrUrls))
+                    {
+                        jellyseerrBaseUrl = config.JellyseerrUrls
+                            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(u => u.Trim())
+                            .FirstOrDefault() ?? string.Empty;
+                    }
                 }
+                catch { /* ignore */ }
+                jellyseerrUrlMappings = config.JellyseerrUrlMappings ?? string.Empty;
             }
-            catch { /* ignore */ }
 
             return new JsonResult(new
             {
@@ -2291,7 +2457,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrExcludeBlocklistedItems,
                 config.JellyseerrDisableCache,
                 JellyseerrBaseUrl = jellyseerrBaseUrl,
-                config.JellyseerrUrlMappings,
+                JellyseerrUrlMappings = jellyseerrUrlMappings,
 
                 // Bookmarks Settings
                 config.BookmarksEnabled,
@@ -4918,7 +5084,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 var jellyseerrUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim().TrimEnd('/');
                 var client = _httpClientFactory.CreateClient();
-                client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
                 client.Timeout = TimeSpan.FromSeconds(15);
                 bool hasRequestViewPermission = false;
 
@@ -4964,15 +5129,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     filterParam += $"&requestedBy={jellyseerrUser.Id}";
                 }
 
-                var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/request?take={take}&skip={skip}{filterParam}");
-                if (!response.IsSuccessStatusCode)
+                var requestsUri = $"{jellyseerrUrl}/api/v1/request?take={take}&skip={skip}{filterParam}";
+                using var requestsRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Get, requestsUri, config.JellyseerrApiKey);
+                using var response = await client.SendAsync(requestsRequest);
+                var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestsUri);
+                if (error != null)
                 {
-                    _logger.Warning($"Seerr request failed with status {response.StatusCode}");
+                    _logger.Warning($"Seerr requests fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                     return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
                 }
 
-                var json = await response.Content.ReadAsStringAsync();
-                var data = JObject.Parse(json);
+                var data = JObject.Parse(json!);
 
                 var requests = new List<object>();
                 var results = data["results"] as JArray;
@@ -5002,7 +5170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
                         {
-                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl);
+                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl, config.JellyseerrApiKey);
                             title = enrichedData.Title;
                             year = enrichedData.Year;
                             posterUrl = enrichedData.PosterUrl;
@@ -5179,8 +5347,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
+                // Audit C01-HIGH-24: previously every error returned 200+empty,
+                // making the requests page indistinguishable from "no requests".
+                // Now we surface a structured 502 so the frontend can render a
+                // banner (and the user knows to fix their config rather than
+                // assume they have no requests).
                 _logger.Warning($"Failed to fetch Seerr requests: {ex.Message}");
-                return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
+                return StatusCode(502, new
+                {
+                    error = true,
+                    code = "requests_fetch_failed",
+                    message = $"Failed to fetch requests from Jellyseerr: {ex.Message}",
+                    requests = new List<object>(),
+                    totalPages = 0,
+                    totalResults = 0,
+                });
             }
         }
 
@@ -5220,6 +5401,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (endDate < startDate)
             {
                 (startDate, endDate) = (endDate, startDate);
+            }
+
+            // Audit C01-MED-48: cap the requested range to prevent an authed
+            // user from passing start=1900..end=2099 and triggering 200 years
+            // worth of arr-side calendar fetches + dedup loops.
+            const int maxCalendarRangeDays = 365;
+            var requestedRange = (endDate - startDate).TotalDays;
+            if (requestedRange > maxCalendarRangeDays)
+            {
+                _logger.Info($"Calendar range capped from {(int)requestedRange} days to {maxCalendarRangeDays} days.");
+                endDate = startDate.AddDays(maxCalendarRangeDays);
             }
 
             var startIso = startDate.ToUniversalTime().ToString("o");
@@ -5387,19 +5579,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             //   2. HasFile=true (if one instance has the file downloaded, show that).
             // The losing candidate's InstanceName is preserved in AlsoInInstances so the UI
             // can show "also in: X, Y" context instead of silently erasing other instances.
+            // Audit C01-HIGH-22 / V6: normalize ReleaseDate to a calendar-day
+            // bucket before using it in the dedup key. Different Sonarr/Radarr
+            // versions emit different precision (`...000Z` vs `Z`, airDate vs
+            // airDateUtc fallbacks with TZ drift); using the raw string fails
+            // dedup and surfaces duplicate events on a per-instance basis.
+            static string NormalizeDateForDedup(string? raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+                if (DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                        out var dto))
+                {
+                    return dto.UtcDateTime.ToString("yyyy-MM-dd");
+                }
+                // Fallback: strip everything after the first 10 chars when it
+                // already looks like an ISO date prefix.
+                return raw.Length >= 10 ? raw.Substring(0, 10) : raw;
+            }
+
             var deduped = new Dictionary<string, ArrItem>();
             foreach (var evt in events)
             {
                 string dedupeKey;
+                var normalizedDate = NormalizeDateForDedup(evt.ReleaseDate);
                 if (evt.Source == nameof(ArrType.Sonarr))
                 {
                     var seriesKey = evt.TvdbId?.ToString() ?? $"title:{evt.Title}";
-                    dedupeKey = $"sonarr|{seriesKey}|S{evt.SeasonNumber}E{evt.EpisodeNumber}|{evt.ReleaseDate}";
+                    dedupeKey = $"sonarr|{seriesKey}|S{evt.SeasonNumber}E{evt.EpisodeNumber}|{normalizedDate}";
                 }
                 else
                 {
                     var movieKey = evt.TmdbId?.ToString() ?? $"title:{evt.Title}";
-                    dedupeKey = $"radarr|{movieKey}|{evt.ReleaseType}|{evt.ReleaseDate}";
+                    dedupeKey = $"radarr|{movieKey}|{evt.ReleaseType}|{normalizedDate}";
                 }
 
                 if (!deduped.TryGetValue(dedupeKey, out var existing))
@@ -5765,7 +5977,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// For movies: title, year, poster, digitalReleaseDate, theatricalReleaseDate
         /// For TV shows: title, year, poster, initialAirDate (first air date), nextAirDate (next episode air date)
         /// </summary>
-        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl)
+        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey)
         {
             var cacheKey = $"{(type == "movie" ? "movie" : "tv")}:{tmdbId}";
             var cacheTtl = GetTmdbEnrichmentCacheTtl();
@@ -5789,14 +6001,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var endpoint = type == "movie" ? "movie" : "tv";
-                    var response = await client.GetAsync($"{jellyseerrUrl}/api/v1/{endpoint}/{tmdbId}");
+                    var enrichUri = $"{jellyseerrUrl}/api/v1/{endpoint}/{tmdbId}";
+                    using var enrichRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, enrichUri, apiKey);
+                    using var response = await client.SendAsync(enrichRequest);
+                    var (content, enrichError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, enrichUri);
 
-                    if (!response.IsSuccessStatusCode)
+                    if (enrichError != null || content == null)
                     {
                         return new TmdbEnrichmentResult();
                     }
 
-                    var content = await response.Content.ReadAsStringAsync();
                     var data = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
 
                     string? title = null;
@@ -6001,10 +6216,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
+                // Audit V19: include the resolved Seerr URL in the cache key
+                // so that switching to a different Seerr instance with the same
+                // avatar path doesn't serve stale bytes from the old instance.
+                var cacheKey = $"{jellyseerrUrl}|{avatarPath}";
+
                 // Check server-side cache first to avoid hitting upstream Seerr
                 // on every request. This is critical for large avatars (e.g., animated
                 // GIFs) that would otherwise be re-downloaded on every conditional request.
-                if (_avatarCache.TryGetValue(avatarPath, out var cached)
+                if (_avatarCache.TryGetValue(cacheKey, out var cached)
                     && DateTime.UtcNow - cached.CachedAt < _avatarCacheDuration)
                 {
                     // Serve 304 if client already has this version
@@ -6024,17 +6244,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = TimeSpan.FromSeconds(10);
 
-                var response = await client.GetAsync($"{jellyseerrUrl}{avatarPath}");
+                using var avatarRequest = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"{jellyseerrUrl}{avatarPath}");
+                // Audit V20: explicit User-Agent + Accept so Cloudflare's bot
+                // mode doesn't return an HTML challenge page that we'd try to
+                // serve as an image.
+                avatarRequest.Headers.UserAgent.ParseAdd(Helpers.Jellyseerr.SeerrHttpHelper.UserAgent);
+                avatarRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("image/*"));
+                var response = await client.SendAsync(avatarRequest);
                 if (!response.IsSuccessStatusCode)
                 {
                     return NotFound();
                 }
 
-                // Only serve image responses to prevent the proxy from being abused
-                // to relay arbitrary content types (defence-in-depth against SSRF).
+                // Closed-set MIME whitelist. Audit C01-HIGH-14: previously
+                // accepted `image/svg+xml`, so a compromised Seerr could serve
+                // an SVG with embedded `<script>` that we'd cache for 1 hour.
+                // SVG is intentionally excluded — TMDB avatars are always
+                // raster formats.
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
-                if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                var allowedAvatarTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
+                    "image/png", "image/jpeg", "image/jpg", "image/gif",
+                    "image/webp", "image/avif", "image/bmp"
+                };
+                if (!allowedAvatarTypes.Contains(contentType))
+                {
+                    _logger.Debug($"ProxyAvatar rejected unsafe content-type: {contentType}");
                     return NotFound();
                 }
 
@@ -6045,7 +6280,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var etag = $"\"{Convert.ToHexString(hash)}\"";
 
                 // Store in server-side cache and evict expired entries periodically
-                _avatarCache[avatarPath] = (content, contentType, etag, DateTime.UtcNow);
+                _avatarCache[cacheKey] = (content, contentType, etag, DateTime.UtcNow);
                 if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
                 {
                     foreach (var key in _avatarCache

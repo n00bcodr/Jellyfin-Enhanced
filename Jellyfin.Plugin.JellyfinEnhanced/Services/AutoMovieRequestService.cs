@@ -260,8 +260,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var urls = GetConfiguredUrls(config.JellyseerrUrls);
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Clear();
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
                 foreach (var url in urls)
                 {
@@ -270,15 +268,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     try
                     {
-                        var response = await httpClient.GetAsync(requestUrl);
-                        if (!response.IsSuccessStatusCode)
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                        using var response = await httpClient.SendAsync(request);
+                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
+                        if (error != null)
                         {
-                            _logger.Debug($"[Auto-Movie-Request] Jellyseerr returned {response.StatusCode} for collection {collectionId}");
+                            _logger.Debug($"[Auto-Movie-Request] Jellyseerr collection fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
                             continue;
                         }
 
-                        var content = await response.Content.ReadAsStringAsync();
-                        using (JsonDocument doc = JsonDocument.Parse(content))
+                        using (JsonDocument doc = JsonDocument.Parse(content!))
                         {
                             var root = doc.RootElement;
 
@@ -378,23 +378,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Clear();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
             {
                 try
                 {
                     var requestUrl = $"{url}/api/v1/movie/{tmdbId}";
-                    using var response = await httpClient.GetAsync(requestUrl);
-                    if (!response.IsSuccessStatusCode)
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
+                    if (error != null)
                     {
-                        _logger.Debug($"[Auto-Movie-Request] Jellyseerr returned {response.StatusCode} for movie {tmdbId} (quality profile lookup)");
+                        _logger.Debug($"[Auto-Movie-Request] Quality profile lookup for movie {tmdbId} failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
                         continue;
                     }
 
-                    var content = await response.Content.ReadAsStringAsync();
-                    using (JsonDocument doc = JsonDocument.Parse(content))
+                    using (JsonDocument doc = JsonDocument.Parse(content!))
                     {
                         var root = doc.RootElement;
                         if (root.TryGetProperty("mediaInfo", out var mediaInfo) &&
@@ -549,8 +549,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
-            httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
 
             foreach (var url in urls)
             {
@@ -577,19 +575,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
-                    using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                    using var response = await httpClient.PostAsync(requestUri, content);
-                    var responseContent = await response.Content.ReadAsStringAsync();
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUserId, jsonContent);
+                    using var response = await httpClient.SendAsync(request);
+                    var (responseContent, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                    if (response.IsSuccessStatusCode)
+                    if (error == null)
                     {
                         return true;
                     }
-                    else
-                    {
-                        _logger.Warning($"[Auto-Movie-Request] Jellyseerr returned {response.StatusCode}: {responseContent}");
-                    }
+                    _logger.Warning($"[Auto-Movie-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
                 catch (Exception ex)
                 {
@@ -622,18 +618,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
             foreach (var url in urls)
             {
                 try
                 {
                     var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
-                    var response = await httpClient.GetAsync(requestUri);
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                    if (response.IsSuccessStatusCode)
+                    if (error == null && content != null)
                     {
-                        var content = await response.Content.ReadAsStringAsync();
                         var usersResponse = JsonSerializer.Deserialize<JsonElement>(content);
 
                         if (usersResponse.TryGetProperty("results", out var usersArray))
@@ -664,9 +661,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             _logger.Warning($"[Auto-Movie-Request] No Jellyseerr user found for Jellyfin user {jellyfinUserId}");
                         }
                     }
-                    else
+                    else if (error != null)
                     {
-                        _logger.Warning($"[Auto-Movie-Request] Failed to fetch users from Jellyseerr: {response.StatusCode}");
+                        _logger.Warning($"[Auto-Movie-Request] Failed to fetch users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                     }
                 }
                 catch (Exception ex)

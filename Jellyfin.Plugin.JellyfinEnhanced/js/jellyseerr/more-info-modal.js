@@ -183,16 +183,34 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
  * Fetch ratings from Jellyseerr API
  */
 async function fetchRatings(tmdbId, mediaType) {
+    // Audit C02-#3: prefer request-manager (retry, dedup, abort, cache, cf-ray
+    // logging) over raw ApiClient.ajax. Falls back to ApiClient.ajax only if
+    // request-manager hasn't loaded yet (early page navigations).
     try {
         const endpoint = mediaType === 'tv'
             ? `/tv/${tmdbId}/ratings`
             : `/movie/${tmdbId}/ratingscombined`;
-        const response = await ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${endpoint}`),
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-            dataType: 'json'
-        });
+        const url = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${endpoint}`);
+        let response;
+        const JE = window.JellyfinEnhanced;
+        if (JE && JE.requestManager) {
+            const httpResponse = await JE.requestManager.fetchWithRetry(url, {
+                method: 'GET',
+                headers: {
+                    'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
+                    'X-Emby-Token': ApiClient.accessToken(),
+                    'Accept': 'application/json'
+                }
+            });
+            response = await httpResponse.json();
+        } else {
+            response = await ApiClient.ajax({
+                type: 'GET',
+                url,
+                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+                dataType: 'json'
+            });
+        }
         if (mediaType === 'tv') {
             return response ? { rt: response } : null;
         }
@@ -204,10 +222,16 @@ async function fetchRatings(tmdbId, mediaType) {
 }
 
 /**
- * Fetch media details from Jellyseerr API via proxy
+ * Fetch media details from Jellyseerr API via proxy. Audit C02-#3.
  */
 async function fetchMediaDetails(tmdbId, mediaType) {
     try {
+        const JE = window.JellyfinEnhanced;
+        if (JE && JE.jellyseerrAPI) {
+            return mediaType === 'movie'
+                ? await JE.jellyseerrAPI.fetchMovieDetails(tmdbId)
+                : await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+        }
         const endpoint = mediaType === 'movie'
             ? `/movie/${tmdbId}`
             : `/tv/${tmdbId}`;

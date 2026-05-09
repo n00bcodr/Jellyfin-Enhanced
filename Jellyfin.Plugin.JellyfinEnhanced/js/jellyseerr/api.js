@@ -5,8 +5,14 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr API:';
     const api = {};
 
-    // Cache for user status (shared across all modules)
+    // Cache for user status (shared across all modules).
+    // Audit C02-CRIT-1: caching the failure result with no TTL caused discovery
+    // sections to disappear for the entire SPA session after a single transient
+    // error. Now we keep success results for the SPA session but only cache
+    // negatives for 60 seconds so transient blips recover automatically.
     let cachedUserStatus = null;
+    let cachedUserStatusAt = 0;
+    const NEGATIVE_USER_STATUS_TTL_MS = 60 * 1000;
 
     // Cache for override rules
     let cachedOverrideRules = null;
@@ -197,26 +203,79 @@
      */
     api.checkUserStatus = async function() {
         if (cachedUserStatus !== null) {
-            return cachedUserStatus;
+            // Successful result is sticky for the SPA session.
+            if (cachedUserStatus.active && cachedUserStatus.userFound) {
+                return cachedUserStatus;
+            }
+            // Negative result expires after 60s so a transient outage doesn't
+            // permanently hide discovery (audit C02-CRIT-1).
+            if (Date.now() - cachedUserStatusAt < NEGATIVE_USER_STATUS_TTL_MS) {
+                return cachedUserStatus;
+            }
         }
 
         try {
-            const status = await get('/user-status');
+            const status = await get('/user-status', { skipCache: true });
             cachedUserStatus = status;
+            cachedUserStatusAt = Date.now();
+            // Surface the typed reason as a banner so users aren't left staring
+            // at silently-hidden discovery sections (audit CRIT-1 cluster).
+            api.surfaceUserStatusBanner(status);
             return status;
         } catch (error) {
             console.warn(`${logPrefix} Status check failed:`, error);
-            const fallback = { active: false, userFound: false };
+            const fallback = {
+                active: false,
+                userFound: false,
+                reason: error?.responseJSON?.code || 'unreachable',
+                message: error?.responseJSON?.message
+            };
             cachedUserStatus = fallback;
+            cachedUserStatusAt = Date.now();
+            api.surfaceUserStatusBanner(fallback);
             return fallback;
         }
     };
 
     /**
+     * Surfaces a one-time banner toast describing why Seerr discovery is not
+     * available. Skipped on success and on the "disabled" reason (no Seerr
+     * configured, nothing to surface).
+     */
+    api.surfaceUserStatusBanner = function(status) {
+        try {
+            if (!status || (status.active && status.userFound)) return;
+            if (status.reason === 'disabled') return;
+            // Don't double-surface within a single session.
+            if (window.__JE_userStatusBannerShown === status.reason) return;
+            window.__JE_userStatusBannerShown = status.reason;
+
+            const reasons = {
+                blocked: 'Your Jellyfin user is in the Seerr import blocklist. Ask the admin to remove you to enable Seerr discovery.',
+                unlinked: 'Seerr is reachable but no Seerr account is linked to this Jellyfin user. Sign into Seerr at least once.',
+                unreachable: 'Could not reach Seerr. Check your network or reverse-proxy configuration.',
+                no_user: 'Could not resolve your Jellyfin user. Try logging out and back in.'
+            };
+            const msg = status.message || reasons[status.reason] || 'Seerr discovery is currently unavailable.';
+            if (typeof JE !== 'undefined' && typeof JE.toast === 'function') {
+                JE.toast(`Seerr: ${msg}`, 6000);
+            } else {
+                console.warn(`${logPrefix} ${msg}`);
+            }
+        } catch (e) {
+            // Banner is best-effort; never break callers.
+            console.debug(`${logPrefix} surfaceUserStatusBanner threw:`, e);
+        }
+    };
+
+    /**
      * Clears the cached user status (called when user logs out or on page refresh).
+     * Now also wired to navigation/hashchange so transient SPA-session blips
+     * don't outlive the page they happened on.
      */
     api.clearUserStatusCache = function() {
         cachedUserStatus = null;
+        cachedUserStatusAt = 0;
     };
 
     /**

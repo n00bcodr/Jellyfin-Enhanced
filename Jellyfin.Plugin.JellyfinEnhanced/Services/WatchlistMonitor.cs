@@ -157,10 +157,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
                 // Fetch all requests at once (no X-Api-User header = all requests)
-                var allRequests = await GetAllJellyseerrRequests(httpClient, jellyseerrUrl);
+                var allRequests = await GetAllJellyseerrRequests(httpClient, jellyseerrUrl, config.JellyseerrApiKey);
                 if (allRequests == null || allRequests.Count == 0)
                 {
                     return;
@@ -258,7 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Get ALL requests from Jellyseerr in a single API call
-        private async Task<List<RequestItemWithUser>?> GetAllJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl)
+        private async Task<List<RequestItemWithUser>?> GetAllJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string apiKey)
         {
             var cacheKey = jellyseerrUrl.TrimEnd('/');
             var cacheTtl = GetRequestsCacheTtl();
@@ -278,15 +277,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     var requestUri = $"{cacheKey}/api/v1/request?take=1000&skip=0&sort=added&filter=all";
 
-                    var response = await httpClient.GetAsync(requestUri);
-                    if (!response.IsSuccessStatusCode)
+                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, apiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    if (error != null)
                     {
-                        _logger.Warning($"[Watchlist] Failed to fetch requests from Jellyseerr: {response.StatusCode}");
+                        _logger.Warning($"[Watchlist] Failed to fetch requests from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                         return null;
                     }
 
-                    var content = await response.Content.ReadAsStringAsync();
-                    var json = JsonSerializer.Deserialize<JsonElement>(content);
+                    var json = JsonSerializer.Deserialize<JsonElement>(content!);
 
                     if (!json.TryGetProperty("results", out var resultsArray))
                     {

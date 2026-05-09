@@ -45,12 +45,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
 
             host = uri.Host.TrimEnd('.').ToLowerInvariant();
+            if (string.IsNullOrEmpty(host)) return false;
             if (_blockedHosts.Contains(host)) return false;
 
             if (IPAddress.TryParse(host, out var literalIp))
-                return !_blockedIPs.Contains(literalIp);
+            {
+                // Audit C04-HIGH-F15: normalize IPv6-mapped IPv4 so the block
+                // list still catches `[::ffff:169.254.169.254]`.
+                if (literalIp.IsIPv4MappedToIPv6)
+                {
+                    literalIp = literalIp.MapToIPv4();
+                }
+                return !IsBlockedIp(literalIp);
+            }
 
             return null;  // need DNS
+        }
+
+        /// <summary>
+        /// Centralized IP-block check. Covers the explicit cloud-metadata IPs
+        /// AND every IPv4 link-local address (169.254.0.0/16) including the
+        /// non-AWS ones the original list missed (audit C04-HIGH-F13).
+        /// </summary>
+        private static bool IsBlockedIp(IPAddress addr)
+        {
+            if (_blockedIPs.Contains(addr)) return true;
+            // 169.254.0.0/16 — AWS metadata + Windows APIPA + ECS metadata + custom probes
+            var bytes = addr.GetAddressBytes();
+            if (bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254) return true;
+            return false;
         }
 
         /// <summary>
@@ -68,7 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 var addresses = Dns.GetHostAddresses(host);
                 foreach (var addr in addresses)
                 {
-                    if (_blockedIPs.Contains(addr))
+                    if (IsBlockedIp(addr))
                         return false;
                 }
             }
@@ -100,7 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 var addresses = await Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
                 foreach (var addr in addresses)
                 {
-                    if (_blockedIPs.Contains(addr))
+                    if (IsBlockedIp(addr))
                         return false;
                 }
             }

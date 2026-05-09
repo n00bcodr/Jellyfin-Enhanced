@@ -2006,7 +2006,7 @@
                             src="about:blank"
                             loading="lazy"
                             referrerpolicy="no-referrer"
-                            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+                            sandbox="allow-scripts allow-same-origin"></iframe>
                 </div>
 
                 <div class="je-apply-hint">
@@ -4319,8 +4319,39 @@
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
-            config.JellyseerrUrls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
-            config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            // Audit A2: validate scheme on save. Lines that don't parse as
+            // http(s) are dropped with a warning so we never persist garbage
+            // like "seerr.local" (no scheme) — which downstream string-concats
+            // produce malformed URIs and a confusing UriFormatException buried
+            // in logs. Empty textarea remains valid (Seerr can be disabled).
+            (function () {
+                const raw = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
+                const valid = [];
+                const invalid = [];
+                for (const line of raw) {
+                    try {
+                        const u = new URL(line);
+                        if (u.protocol === 'http:' || u.protocol === 'https:') {
+                            valid.push(line);
+                        } else {
+                            invalid.push(line);
+                        }
+                    } catch (_) {
+                        invalid.push(line);
+                    }
+                }
+                if (invalid.length > 0) {
+                    console.warn('Jellyfin Enhanced: dropping invalid Seerr URL(s) on save (must start with http:// or https://):', invalid);
+                    if (typeof Dashboard !== 'undefined' && Dashboard.alert) {
+                        Dashboard.alert({
+                            title: 'Invalid Seerr URL(s)',
+                            message: 'These lines were dropped because they do not start with http:// or https://:\n\n' + invalid.join('\n')
+                        });
+                    }
+                }
+                config.JellyseerrUrls = valid.join('\n');
+            })();
+            config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').replace(/\s/g, '');
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
             config.TMDB_API_KEY = document.querySelector('#jellyseerr_TMDB_API_KEY').value;
             config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
@@ -5058,12 +5089,35 @@
         }
 
         /**
+         * Returns true iff at least one configured Seerr URL parses as an
+         * http(s) URL. A non-empty textarea full of garbage like "seerr.local"
+         * (no scheme) used to evaluate truthy here, so the dependency banner
+         * would hide and Seerr feature toggles would unlock — features that
+         * could never actually work. Audit A19.
+         */
+        function hasAtLeastOneValidSeerrUrl(value) {
+            if (!value) return false;
+            const lines = String(value).split('\n').map(s => s.trim()).filter(Boolean);
+            for (const line of lines) {
+                try {
+                    const u = new URL(line);
+                    if (u.protocol === 'http:' || u.protocol === 'https:') {
+                        return true;
+                    }
+                } catch (_) {
+                    // not a valid URL — try next line
+                }
+            }
+            return false;
+        }
+
+        /**
          * Checks whether Jellyseerr is enabled with both a URL and API key configured.
          * @returns {boolean} True if Jellyseerr is fully configured
          */
         function hasJellyseerrConfigured() {
             return document.querySelector('#jellyseerrEnabled').checked
-                && document.querySelector('#jellyseerrUrls').value.trim().length > 0
+                && hasAtLeastOneValidSeerrUrl(document.querySelector('#jellyseerrUrls').value)
                 && document.querySelector('#JellyseerrApiKey').value.trim().length > 0;
         }
 
@@ -6975,12 +7029,18 @@
          * Pre-checks users whose IDs appear in the saved blocklist config.
          * @param {string} blockedIdsString - Comma-separated dashless user IDs to pre-select.
          */
+        // Tracks whether the most recent loadBlockedUsersList successfully rendered
+        // checkboxes. If /Users API fails, syncBlockedUsersToHiddenInput must not
+        // run — otherwise it would wipe the entire blocklist on save (audit A18).
+        let _blockedUsersLoaded = false;
+
         async function loadBlockedUsersList(blockedIdsString) {
             const container = document.getElementById('blockedUsersContainer');
             const blockedSet = new Set(
                 (blockedIdsString || '').split(/[,\r\n]+/).map(id => id.trim().replace(/-/g, '').toLowerCase()).filter(Boolean)
             );
 
+            _blockedUsersLoaded = false;
             try {
                 const users = await ApiClient.getUsers();
                 container.textContent = '';
@@ -7009,6 +7069,7 @@
                     container.appendChild(div);
                 });
                 updateBlockedUsersCount();
+                _blockedUsersLoaded = true;
 
                 // Show scroll hint if content overflows, hide it once user scrolls to bottom
                 const scrollHint = document.getElementById('blockedUsersScrollHint');
@@ -7024,13 +7085,20 @@
             } catch (e) {
                 container.textContent = 'Could not load users.';
                 console.error('Failed to load users for blocklist:', e);
+                _blockedUsersLoaded = false;
             }
         }
 
         /**
          * Syncs checked blocked-user checkboxes into the hidden input for config save.
+         * Skipped if loadBlockedUsersList failed — otherwise we'd wipe the whole
+         * blocklist on save (audit A18 — data-loss bug).
          */
         function syncBlockedUsersToHiddenInput() {
+            if (!_blockedUsersLoaded) {
+                console.warn('Jellyfin Enhanced: skipping blocklist sync — user list failed to load. Existing config preserved.');
+                return;
+            }
             const checkboxes = document.querySelectorAll('.blockedUserCheckbox:checked');
             const ids = Array.from(checkboxes).map(cb => cb.dataset.userid);
             document.querySelector('#jellyseerrImportBlockedUsers').value = ids.join(',');
@@ -7081,14 +7149,50 @@
                 const totalUsers = Number(payload && payload.totalUsers);
                 const importedCount = Number.isFinite(usersImported) ? usersImported : 0;
                 const totalCount = Number.isFinite(totalUsers) ? totalUsers : 0;
+                const errors = Array.isArray(payload && payload.errors) ? payload.errors : [];
 
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = 'Imported ' + importedCount + ' new user(s) out of ' + totalCount + ' total.';
-                resultDiv.style.color = '#4caf50';
+                // Audit NB-4: surface backend errors[] so the admin sees WHY
+                // partial imports failed (email collision, 401, etc.) instead
+                // of a flat "Imported 0 new users" with no diagnosis.
+                while (resultDiv.firstChild) resultDiv.removeChild(resultDiv.firstChild);
+                const summary = document.createElement('div');
+                summary.textContent = 'Imported ' + importedCount + ' new user(s) out of ' + totalCount + ' total.';
+                summary.style.color = errors.length > 0 ? '#ff9800' : '#4caf50';
+                resultDiv.appendChild(summary);
+                if (errors.length > 0) {
+                    const list = document.createElement('ul');
+                    list.style.marginTop = '6px';
+                    list.style.color = '#f44336';
+                    list.style.fontSize = '0.9em';
+                    for (const err of errors) {
+                        const li = document.createElement('li');
+                        li.textContent = String(err);
+                        list.appendChild(li);
+                    }
+                    resultDiv.appendChild(list);
+                }
             } catch (e) {
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = 'Import failed. Check Seerr configuration and API key permissions.';
-                resultDiv.style.color = '#f44336';
+                while (resultDiv.firstChild) resultDiv.removeChild(resultDiv.firstChild);
+                const msg = document.createElement('div');
+                msg.textContent = 'Import failed. Check Seerr configuration and API key permissions.';
+                msg.style.color = '#f44336';
+                resultDiv.appendChild(msg);
+                // Show response.errors[] when the server returned 502 with structured errors.
+                const detailErrors = e && e.responseJSON && Array.isArray(e.responseJSON.errors) ? e.responseJSON.errors : [];
+                if (detailErrors.length > 0) {
+                    const list = document.createElement('ul');
+                    list.style.marginTop = '6px';
+                    list.style.color = '#f44336';
+                    list.style.fontSize = '0.9em';
+                    for (const err of detailErrors) {
+                        const li = document.createElement('li');
+                        li.textContent = String(err);
+                        list.appendChild(li);
+                    }
+                    resultDiv.appendChild(list);
+                }
                 console.error('User import failed:', e);
             } finally {
                 btn.disabled = false;

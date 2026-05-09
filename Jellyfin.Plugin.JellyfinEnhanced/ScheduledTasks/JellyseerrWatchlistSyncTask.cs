@@ -94,9 +94,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
-            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl);
+            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl, config.JellyseerrApiKey);
             if (jellyseerrUserMap.Count == 0)
             {
                 _logger.Warning("[Jellyseerr Watchlist Sync] Unable to build Jellyseerr user map.");
@@ -138,12 +137,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     // Get watchlist from Jellyseerr
-                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
+                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
 
                     var requestItems = new List<WatchlistItem>();
                     if (config.AddRequestedMediaToWatchlist)
                     {
-                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
+                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
                     }
 
                     // Log consolidated summary
@@ -240,23 +239,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return string.IsNullOrEmpty(userId) ? string.Empty : userId.Replace("-", string.Empty);
         }
 
-        private async Task<Dictionary<string, string>> GetJellyseerrUserMap(HttpClient httpClient, string jellyseerrUrl)
+        private async Task<Dictionary<string, string>> GetJellyseerrUserMap(HttpClient httpClient, string jellyseerrUrl, string apiKey)
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
                 var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user?take=1000";
-                var response = await httpClient.GetAsync(requestUri);
+                using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Get, requestUri, apiKey);
+                using var response = await httpClient.SendAsync(request);
+                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                if (!response.IsSuccessStatusCode)
+                if (error != null)
                 {
-                    _logger.Warning($"[Jellyseerr Watchlist Sync] Failed to get users from Jellyseerr. Status: {response.StatusCode}");
+                    _logger.Warning($"[Jellyseerr Watchlist Sync] Failed to get users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                     return result;
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
-                var usersResponse = JsonSerializer.Deserialize<JsonElement>(content);
+                var usersResponse = JsonSerializer.Deserialize<JsonElement>(content!);
 
                 if (!usersResponse.TryGetProperty("results", out var usersArray))
                 {
@@ -288,19 +289,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return result;
         }
 
-        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlist(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId)
+        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlist(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
         {
             try
             {
                 var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/{jellyseerrUserId}/watchlist";
-                httpClient.DefaultRequestHeaders.Remove("X-Api-User");
-                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
+                using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Get, requestUri, apiKey, jellyseerrUserId);
+                using var response = await httpClient.SendAsync(request);
+                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                var response = await httpClient.GetAsync(requestUri);
-
-                if (response.IsSuccessStatusCode)
+                if (error == null && content != null)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
                     var watchlistResponse = JsonSerializer.Deserialize<JsonElement>(content);
 
                     var items = new List<WatchlistItem>();
@@ -332,6 +332,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     return items;
                 }
+                else if (error != null)
+                {
+                    _logger.Debug($"[Jellyseerr Watchlist Sync] Watchlist fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
+                }
             }
             catch (Exception ex)
             {
@@ -341,24 +345,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return null;
         }
 
-        private async Task<List<WatchlistItem>?> GetJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId)
+        private async Task<List<WatchlistItem>?> GetJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
         {
             try
             {
                 var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/request?take=500&skip=0&sort=added&filter=all";
-                httpClient.DefaultRequestHeaders.Remove("X-Api-User");
-                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
+                using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Get, requestUri, apiKey, jellyseerrUserId);
+                using var response = await httpClient.SendAsync(request);
+                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                var response = await httpClient.GetAsync(requestUri);
-
-                if (!response.IsSuccessStatusCode)
+                if (error != null)
                 {
-                    _logger.Debug($"[Jellyseerr Watchlist Sync] Requests fetch failed with {response.StatusCode}");
+                    _logger.Debug($"[Jellyseerr Watchlist Sync] Requests fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                     return null;
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
-                var json = JsonSerializer.Deserialize<JsonElement>(content);
+                var json = JsonSerializer.Deserialize<JsonElement>(content!);
 
                 if (!json.TryGetProperty("results", out var resultsArray))
                 {
