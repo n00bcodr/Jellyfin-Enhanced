@@ -98,7 +98,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             async Task<string?> FetchAsync()
             {
                 var urls = GetConfiguredUrls(config.JellyseerrUrls);
-                var httpClient = _httpClientFactory.CreateClient();
+                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
                 foreach (var url in urls)
                 {
@@ -437,7 +437,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var urls = GetConfiguredUrls(config.JellyseerrUrls);
-                var httpClient = _httpClientFactory.CreateClient();
+                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
                 string? content = null;
                 foreach (var url in urls)
@@ -597,7 +597,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
-            var httpClient = _httpClientFactory.CreateClient();
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
             foreach (var url in urls)
             {
@@ -655,7 +655,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
-            var httpClient = _httpClientFactory.CreateClient();
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
             foreach (var url in urls)
             {

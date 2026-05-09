@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.EventHandlers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
@@ -17,6 +18,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         {
             serviceCollection.AddSingleton<StartupService>();
             serviceCollection.AddHttpClient();
+
+            // Audit L2-3: a named HttpClient with AllowAutoRedirect=false so
+            // forward-auth proxies (Authelia / Pangolin / Authentik) returning
+            // 302 to a login URL are detected as `UpstreamRedirect` instead of
+            // silently followed and producing a 200 + login HTML body.
+            // SeerrHttpHelper.UseClientName(name) selects this for outbound
+            // Seerr/TMDB calls.
+            serviceCollection.AddHttpClient(Helpers.Jellyseerr.SeerrHttpHelper.NamedClient)
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                {
+                    AllowAutoRedirect = false
+                });
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
             serviceCollection.AddSingleton<AutoSeasonRequestService>();

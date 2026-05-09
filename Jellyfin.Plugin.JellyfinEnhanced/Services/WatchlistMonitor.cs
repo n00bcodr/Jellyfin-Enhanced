@@ -156,7 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
-                var httpClient = _httpClientFactory.CreateClient();
+                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
                 // Fetch all requests at once (no X-Api-User header = all requests)
                 var allRequests = await GetAllJellyseerrRequests(httpClient, jellyseerrUrl, config.JellyseerrApiKey);

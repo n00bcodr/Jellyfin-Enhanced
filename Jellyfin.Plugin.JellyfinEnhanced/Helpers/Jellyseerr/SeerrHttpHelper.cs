@@ -43,14 +43,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
         public string? CfRay { get; set; }
         public string? Url { get; set; }
 
+        /// <summary>
+        /// Default response shape for non-admin callers. Internal Seerr URL is
+        /// stripped (audit L3-3 / A5/A6 — F33 redacts JellyseerrBaseUrl from
+        /// unauth /public-config; the typed error path must apply the same
+        /// redaction to non-admin error responses).
+        /// </summary>
         public object ToResponseShape() => new
+        {
+            error = true,
+            code = Code.ToString(),
+            httpStatus = HttpStatus,
+            message = SanitizeMessage(Message),
+            cfRay = CfRay,
+        };
+
+        /// <summary>
+        /// Admin response shape — keeps the full message + URL for diagnostics.
+        /// Audit A6: admins clicking "Test connection" want to see the actual
+        /// upstream URL that was probed.
+        /// </summary>
+        public object ToAdminResponseShape() => new
         {
             error = true,
             code = Code.ToString(),
             httpStatus = HttpStatus,
             message = Message,
             cfRay = CfRay,
+            url = Url,
         };
+
+        /// <summary>
+        /// Strips internal Seerr URLs out of human-readable error messages so
+        /// non-admin callers don't see network topology. Audit B-A5-1: the
+        /// previous regex put `.` in the negated class, which made it stop at
+        /// the first dot of every domain — leaving the rest of the hostname
+        /// and full path leaked. The fix:
+        ///   - greedy on every non-whitespace, non-bracket, non-quote, non-angle
+        ///     char (incl. dots, slashes, ports, query strings)
+        ///   - then strip a trailing `.,;:!?)]"'` off the matched group so a
+        ///     URL at the end of a sentence doesn't swallow the period.
+        /// </summary>
+        public static string SanitizeMessage(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return message;
+            return System.Text.RegularExpressions.Regex.Replace(
+                message,
+                @"https?://[^\s)\]""'<>]+?(?=[.,;:!?)\]""'>]*(?:\s|$))",
+                "<seerr-url>"
+            );
+        }
     }
 
     /// <summary>
@@ -63,6 +105,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     {
         // Set once at plugin load so logs and the upstream see a stable identity.
         public static string UserAgent { get; set; } = "JellyfinEnhanced/unknown";
+
+        // Named HttpClient registered in PluginServiceRegistrator with
+        // AllowAutoRedirect=false. Use via CreateClient() below to make sure
+        // 3xx → login redirects are surfaced as UpstreamRedirect (audit L2-3)
+        // instead of silently followed by HttpClient's default behaviour.
+        public const string NamedClient = "JellyfinEnhancedSeerr";
+
+        /// <summary>
+        /// Creates a Seerr-bound HttpClient with the redirect-disabled handler.
+        /// Falls back to the default client if the factory doesn't yet know
+        /// about <see cref="NamedClient"/> (e.g. unit-test fixtures without
+        /// service registration).
+        /// </summary>
+        public static HttpClient CreateClient(IHttpClientFactory factory)
+        {
+            try { return factory.CreateClient(NamedClient); }
+            catch { return factory.CreateClient(); }
+        }
 
         private const int MaxBodyBytes = 8 * 1024 * 1024; // 8 MB safety cap
 

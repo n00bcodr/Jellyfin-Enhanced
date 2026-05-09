@@ -158,25 +158,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<DispatchResult> PostScanTrigger(string url, string apiKey)
         {
+            // Audit A3: previously reported `Success = response.IsSuccessStatusCode`,
+            // which is true for a 200 + Cloudflare HTML challenge body — the
+            // background trigger logged "scan dispatched" when the request was
+            // actually intercepted by a reverse-proxy auth challenge. Use the
+            // helper so HTML responses are classified as failures.
             var endpoint = $"{url.TrimEnd('/')}/api/v1/settings/jobs/{ScanJobId}/run";
             try
             {
-                var http = _httpClientFactory.CreateClient();
+                var http = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
                 http.Timeout = TimeSpan.FromSeconds(15);
-                using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-                {
-                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
-                };
-                request.Headers.Add("X-Api-Key", apiKey);
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Post, endpoint, apiKey, bodyJson: "{}");
 
                 using var response = await http.SendAsync(request).ConfigureAwait(false);
-                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, endpoint).ConfigureAwait(false);
                 return new DispatchResult
                 {
                     Url = url,
-                    Success = response.IsSuccessStatusCode,
-                    StatusCode = (int)response.StatusCode,
-                    Body = Truncate(body, 256)
+                    Success = error == null,
+                    StatusCode = error?.HttpStatus ?? (int)response.StatusCode,
+                    Body = Truncate(error?.Message ?? (json ?? string.Empty), 256)
                 };
             }
             catch (Exception ex)

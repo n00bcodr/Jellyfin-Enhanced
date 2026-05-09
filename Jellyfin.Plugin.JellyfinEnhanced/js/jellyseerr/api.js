@@ -256,11 +256,18 @@
                 unreachable: 'Could not reach Seerr. Check your network or reverse-proxy configuration.',
                 no_user: 'Could not resolve your Jellyfin user. Try logging out and back in.'
             };
-            const msg = status.message || reasons[status.reason] || 'Seerr discovery is currently unavailable.';
+            // Audit L3-4: JE.toast renders via innerHTML. Server-derived
+            // strings (status.message comes from SeerrHttpHelper which now
+            // sanitizes upstream URLs but could still echo HTTP reason-
+            // phrases) must be HTML-escaped before being placed into the DOM.
+            const rawMsg = status.message || reasons[status.reason] || 'Seerr discovery is currently unavailable.';
+            const msg = (typeof JE !== 'undefined' && typeof JE.escapeHtml === 'function')
+                ? JE.escapeHtml(rawMsg)
+                : String(rawMsg).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];});
             if (typeof JE !== 'undefined' && typeof JE.toast === 'function') {
                 JE.toast(`Seerr: ${msg}`, 6000);
             } else {
-                console.warn(`${logPrefix} ${msg}`);
+                console.warn(`${logPrefix} ${rawMsg}`);
             }
         } catch (e) {
             // Banner is best-effort; never break callers.

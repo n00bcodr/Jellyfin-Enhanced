@@ -6397,10 +6397,20 @@
          * @returns {string} Human-readable error message
          */
         function connectionErrorMessage(error, serviceName, url) {
+            // Round 3 e2e: surface backend's typed code/cf-ray so admins
+            // see actionable messages (HtmlResponse, Cloudflare5xx, etc.)
+            // instead of "API key rejected" for everything.
+            var body = error && error.responseJSON;
+            if (body && body.code && body.message) {
+                var prefix = body.cfRay ? '[' + serviceName + ' cf-ray=' + body.cfRay + '] ' : '';
+                return prefix + body.message;
+            }
             if (error.status === 502) return 'Could not reach ' + url + '. Check the URL is correct and ' + serviceName + ' is running.';
             if (error.status === 504) return 'Connection timed out. The server may be unreachable.';
-            if (error.status === 401 || error.status === 403) return 'The API key was rejected. Check the key is correct.';
+            if (error.status === 401) return 'The API key was rejected. Check the key is correct.';
+            if (error.status === 403) return 'Permission denied. Check the API key has the correct permissions, or that CSRF protection is not enabled in ' + serviceName + '.';
             if (error.status === 400) return 'Missing URL or API key.';
+            if (error.status === 404) return 'The URL responded but did not look like a valid ' + serviceName + ' instance (HTTP 404 on /api/v1/user). It may be a reverse-proxy auth challenge.';
             return 'Connection to ' + serviceName + ' failed (error ' + (error.status || 'unknown') + ').';
         }
 

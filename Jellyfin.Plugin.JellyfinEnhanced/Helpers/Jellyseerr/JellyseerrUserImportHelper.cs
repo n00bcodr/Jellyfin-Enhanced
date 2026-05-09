@@ -59,7 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             CancellationToken cancellationToken = default)
         {
             var result = new BulkImportResult();
-            var httpClient = httpClientFactory.CreateClient();
+            var httpClient = SeerrHttpHelper.CreateClient(httpClientFactory);
             httpClient.Timeout = TimeSpan.FromSeconds(30);
 
             var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = userIds });
