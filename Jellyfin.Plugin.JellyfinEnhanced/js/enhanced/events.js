@@ -170,6 +170,11 @@
                 e.stopPropagation();
                 JE.frameStep('forward');
                 break;
+            case activeShortcuts.JumpToLastPosition:
+                e.preventDefault();
+                e.stopPropagation();
+                JE.jumpToLastPosition();
+                break;
         }
 
         if (key.match(/^[0-9]$/)) {
@@ -186,6 +191,9 @@
                 JE.addOsdSettingsButton();
                 JE.initializeAutoSkipObserver();
                 JE.applySavedStylesWhenReady();
+                // Attach seek tracker to the video element as soon as it exists
+                const video = document.querySelector('video');
+                if (video) JE.attachSeekTracker(video);
             } else {
                 JE.stopAutoSkip();
             }
@@ -391,6 +399,8 @@
         document.addEventListener('visibilitychange', () => {
             const video = document.querySelector('video');
             if (!video) return;
+
+            JE.attachSeekTracker(video);
 
             if (document.hidden) {
                 if (!video.paused && JE.currentSettings.autoPauseEnabled) {

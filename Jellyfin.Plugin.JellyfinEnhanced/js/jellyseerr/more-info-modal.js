@@ -427,7 +427,7 @@ function showModal(data, mediaType) {
 
     // Add event listeners
     modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
+        if (e.target === modal || e.target.classList.contains('modal-overlay')) {
             moreInfoModal.close();
         }
     });
@@ -1047,8 +1047,15 @@ function buildTvActions(data, show4kOption = false) {
     const status = mediaInfo.status ?? 1;
     const status4k = mediaInfo.status4k ?? 1;
 
+    // If Seerr reports Available (5) but the item has no Jellyfin media ID,
+    // the library was wiped and Seerr's status is stale — treat as requestable.
+    const jellyfinMediaId = mediaInfo.jellyfinMediaId || null;
+    const jellyfinMediaId4k = mediaInfo.jellyfinMediaId4k || null;
+    const effectiveStatus = (status === 5 && !jellyfinMediaId) ? 7 : status;
+    const effectiveStatus4k = (status4k === 5 && !jellyfinMediaId4k) ? 7 : status4k;
+
     // Only skip when the normal TV request is not requestable.
-    if (status && status !== 1 && status !== 7) {
+    if (effectiveStatus && effectiveStatus !== 1 && effectiveStatus !== 7) {
         return null;
     }
 
@@ -1557,15 +1564,14 @@ async function checkForUnrequestedSeasons(data) {
 
         // Check if any TMDB season is unrequested. Status 0/undefined and 1
         // (Unknown) mean it has never been requested. Status 7 (Deleted) means
-        // a prior request was removed and the season can be re-requested —
-        // this matches the canRequest checks elsewhere in this file
-        // (e.g. canRequestMain = !status || status === 1 || status === 7).
-        // Without the status 7 case, shows that previously had requests but
-        // had them deleted (e.g. Futurama with most seasons in deleted state)
-        // would never get a "Request More" button.
+        // a prior request was removed and the season can be re-requested.
+        // Status 5 (Available) with no jellyfinMediaId means the library was
+        // wiped and Seerr's status is stale — treat as requestable too.
+        const jellyfinMediaId = data.mediaInfo?.jellyfinMediaId || null;
         for (const tmdbSeason of tmdbSeasons) {
             const status = statusMap[tmdbSeason.seasonNumber];
-            if (!status || status === 1 || status === 7) {
+            const isStaleAvailable = status === 5 && !jellyfinMediaId;
+            if (!status || status === 1 || status === 7 || isStaleAvailable) {
                 return true;
             }
         }
@@ -1756,8 +1762,13 @@ function renderActions(data, mediaType) {
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
-        const canRequestNormal = !status || status === 1 || status === 7;
-        const canRequest4k = !status4k || status4k === 1 || status4k === 7;
+        // If Seerr reports Available (5) but the item has no Jellyfin media ID,
+        // the library was wiped and Seerr's status is stale — treat as requestable.
+        const effectiveMovieStatus = (status === 5 && !jellyfinMediaId) ? 7 : status;
+        const effectiveMovieStatus4k = (status4k === 5 && !jellyfinMediaId4k) ? 7 : status4k;
+
+        const canRequestNormal = !effectiveMovieStatus || effectiveMovieStatus === 1 || effectiveMovieStatus === 7;
+        const canRequest4k = !effectiveMovieStatus4k || effectiveMovieStatus4k === 1 || effectiveMovieStatus4k === 7;
 
         if (!canRequestNormal) {
             if (show4k && canRequest4k && actionMount) {
@@ -1809,8 +1820,13 @@ function renderActions(data, mediaType) {
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
-        const canRequestNormal = !status || status === 1 || status === 7;
-        const canRequest4k = !status4k || status4k === 1 || status4k === 7;
+        // If Seerr reports Available (5) but the item has no Jellyfin media ID,
+        // the library was wiped and Seerr's status is stale — treat as requestable.
+        const effectiveStatus = (status === 5 && !jellyfinMediaId) ? 7 : status;
+        const effectiveStatus4k = (status4k === 5 && !jellyfinMediaId4k) ? 7 : status4k;
+
+        const canRequestNormal = !effectiveStatus || effectiveStatus === 1 || effectiveStatus === 7;
+        const canRequest4k = !effectiveStatus4k || effectiveStatus4k === 1 || effectiveStatus4k === 7;
         if (canRequestNormal) {
             const actions = buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
@@ -1819,7 +1835,7 @@ function renderActions(data, mediaType) {
         }
 
         const hasStatus = hasNormalStatus || has4kStatus;
-        const hasDeletedStatus = status === 7 || status4k === 7;
+        const hasDeletedStatus = effectiveStatus === 7 || effectiveStatus4k === 7;
 
         // Check if there are unrequested seasons
         if (hasStatus) {

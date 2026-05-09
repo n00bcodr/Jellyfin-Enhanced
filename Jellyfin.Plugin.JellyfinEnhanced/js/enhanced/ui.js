@@ -784,7 +784,7 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_player')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward'].map(action => {
+                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward', 'JumpToLastPosition'].map(action => {
                                     const a = (JE.pluginConfig.Shortcuts || []).find(s => s.Name === action);
                                     const fallbackLabel = a?.Label || action;
                                     return `
@@ -900,6 +900,21 @@
                             </div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
+                            <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <span style="font-weight: 600;">${JE.t('panel_settings_subtitles_position')}</span>
+                                    <button id="subtitlePositionReset" style="font-family:inherit; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; display:flex; align-items:center;"><span class="material-icons" style="font-size:16px;">restart_alt</span></button>
+                                </div>
+                                <div id="subtitlePositionGrid" style="position:relative; width:min(60vw,280px); height:min(34vw,158px); background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:6px; cursor:crosshair; user-select:none; overflow:hidden; margin: 0 auto;">
+                                    <!-- Crosshair guides -->
+                                    <div style="position:absolute;inset:0;pointer-events:none;">
+                                        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.08);transform:translateX(-50%);"></div>
+                                        <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.08);transform:translateY(-50%);"></div>
+                                    </div>
+                                    <!-- Subtitle preview text -->
+                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translate(-50%,-50%); pointer-events:none; white-space:nowrap; font-size:clamp(8px,1.5vw,13px); font-weight:600; color:${JE.currentSettings.customSubtitleTextColor?.substring(0,7) || '#ffffff'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:0 0 4px #000; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; top:${JE.currentSettings.subtitleVerticalPosition ?? 85}%;">AaBbCcDd</div>
+                                </div>
+                            </div>
                         </div>
                     </details>
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
@@ -1682,6 +1697,88 @@
         if (customTextAlpha) customTextAlpha.addEventListener('input', updateCustomSubtitleColors);
         if (customBgColorPicker) customBgColorPicker.addEventListener('input', updateCustomSubtitleColors);
         if (customBgAlpha) customBgAlpha.addEventListener('input', updateCustomSubtitleColors);
+
+        // --- Subtitle position drag grid ---
+        const posGrid = document.getElementById('subtitlePositionGrid');
+        const posPreview = document.getElementById('subtitlePositionPreview');
+        const posResetBtn = document.getElementById('subtitlePositionReset');
+
+        if (posGrid) {
+            const updatePosition = (xPct, yPct) => {
+                xPct = Math.max(2, Math.min(98, xPct));
+                yPct = Math.max(2, Math.min(98, yPct));
+                if (posPreview) {
+                    posPreview.style.left = `${xPct}%`;
+                    posPreview.style.top = `${yPct}%`;
+                }
+                JE.currentSettings.subtitleHorizontalPosition = Math.round(xPct);
+                JE.currentSettings.subtitleVerticalPosition = Math.round(yPct);
+                if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
+            };
+
+            const getPctFromEvent = (e) => {
+                const rect = posGrid.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: ((clientX - rect.left) / rect.width) * 100,
+                    y: ((clientY - rect.top) / rect.height) * 100
+                };
+            };
+
+            let dragging = false;
+
+            posGrid.addEventListener('mousedown', (e) => {
+                const { x, y } = getPctFromEvent(e);
+                updatePosition(x, y);
+                dragging = true;
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                const { x, y } = getPctFromEvent(e);
+                updatePosition(x, y);
+                resetAutoCloseTimer();
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+            });
+
+            posGrid.addEventListener('touchstart', (e) => {
+                const { x, y } = getPctFromEvent(e);
+                updatePosition(x, y);
+                dragging = true;
+                e.preventDefault();
+            }, { passive: false });
+
+            document.addEventListener('touchmove', (e) => {
+                if (!dragging) return;
+                const { x, y } = getPctFromEvent(e);
+                updatePosition(x, y);
+                resetAutoCloseTimer();
+            }, { passive: true });
+
+            document.addEventListener('touchend', () => {
+                if (!dragging) return;
+                dragging = false;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+            });
+        }
+
+        if (posResetBtn) {
+            posResetBtn.addEventListener('click', () => {
+                JE.currentSettings.subtitleHorizontalPosition = 50;
+                JE.currentSettings.subtitleVerticalPosition = 85;
+                if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = '85%'; }
+                if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                resetAutoCloseTimer();
+            });
+        }
 
         // ============================================================
         // Hidden Content — settings panel event listeners

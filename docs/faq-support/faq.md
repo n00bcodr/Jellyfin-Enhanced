@@ -475,6 +475,8 @@ Yes, via Enhanced panel settings:
 | Seerr search not working | Enable "Jellyfin Sign-In" in Seerr. Then either enable plugin auto import and run "Import Users Now", or import users manually in Seerr. Also verify user is not in blocked users list. |
 | Tags not appearing | Enable in settings, clear cache, verify metadata exists |
 | Bookmarks not saving | Check server logs, verify user data folder permissions |
+| Admin config page tabs not switching | May be caused by Cloudflare Rocket Loader — try disabling it for your Jellyfin domain. See [troubleshooting](../installation/troubleshooting.md#admin-config-page-tabs-not-switching) |
+| Calendar/Requests custom tab shows blank screen | Disable Cloudflare Rocket Loader for your Jellyfin domain. See [arr troubleshooting](../arr/troubleshooting-support.md#calendar-not-loading) |
 
 ### Plugin conflicts?
 

@@ -3,7 +3,7 @@ name: Bug
 about: Create a report to help us improve
 title: "\U0001F41B[BUG]"
 labels: bug
-assignees: 
+assignees:
 
 ---
 
@@ -17,12 +17,13 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Jellyfin Environment (please complete the following information):**
- - Server Version: [e.g. 10.9.9, 10.10.7]
+ - Server Version: [e.g. 10.11.1, 10.10.7]
  - Plugin Version: [e.g. 5.1.0.0, 6.0.0.0]
  - Jellyfin Installation Method: [e.g. Docker, Linux, etc.]
  - Device: [e.g. Jellyfin Android App, Jellyfin Web on Firefox, etc.,]
  - External Access Method: [eg. Tailscale, Cloudflare, Caddy, etc.] (only needed when the issue is seen on external networks)
  - Theme being used: [e.g. Jellyfish, Zesty, etc.,]
+ - [ ] [FileTransformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) Installed
 
 
 **Logs**

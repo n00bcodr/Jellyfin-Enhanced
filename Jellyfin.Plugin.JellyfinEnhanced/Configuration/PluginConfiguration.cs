@@ -55,6 +55,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ReviewsExpandedByDefault = false;
             HideReviewsFromHiddenUsers = true;
             HideReviewsFromDisabledUsers = true;
+            ShowUserRatingOnPosters = false;
+            ShowUserRatingDash = true;
             PauseScreenEnabled = true;
             QualityTagsEnabled = false;
             ShowResolutionTag = true;
@@ -108,7 +110,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "OpenEpisodePreview", Key = "P", Label = "Open Episode Preview", Category = "Player" },
                 new Shortcut { Name = "SkipIntroOutro", Key = "O", Label = "Skip Intro/Outro", Category = "Player" },
                 new Shortcut { Name = "FrameStepBack", Key = ",", Label = "Step Back One Frame", Category = "Player" },
-                new Shortcut { Name = "FrameStepForward", Key = ".", Label = "Step Forward One Frame", Category = "Player" }
+                new Shortcut { Name = "FrameStepForward", Key = ".", Label = "Step Forward One Frame", Category = "Player" },
+                new Shortcut { Name = "JumpToLastPosition", Key = "Z", Label = "Jump to Last Position", Category = "Player" }
             };
 
             // Seerr Search Settings
@@ -310,6 +313,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ReviewsExpandedByDefault { get; set; }
         public bool HideReviewsFromHiddenUsers { get; set; } = true;
         public bool HideReviewsFromDisabledUsers { get; set; } = true;
+        public bool ShowUserRatingOnPosters { get; set; } = false;
+        /// <summary>
+        /// When true (default), shows a "—" on poster cards for items the user hasn't rated yet.
+        /// When false, the person_heart chip is hidden entirely for unrated items.
+        /// </summary>
+        public bool ShowUserRatingDash { get; set; } = true;
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public int PauseScreenDelaySeconds { get; set; } = 5;

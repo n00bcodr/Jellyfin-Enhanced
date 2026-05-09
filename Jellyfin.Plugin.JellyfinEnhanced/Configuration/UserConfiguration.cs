@@ -20,6 +20,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CustomSubtitleTextColor { get; set; } = "#FFFFFFFF";
         public string CustomSubtitleBgColor { get; set; } = "#00000000";
         public bool UsingCustomColors { get; set; }
+        public int SubtitleVerticalPosition { get; set; } = 85;
+        public int SubtitleHorizontalPosition { get; set; } = 50;
         public bool RandomButtonEnabled { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
         public bool RandomIncludeMovies { get; set; }

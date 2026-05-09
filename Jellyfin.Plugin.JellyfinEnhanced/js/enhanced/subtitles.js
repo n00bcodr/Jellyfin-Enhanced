@@ -46,6 +46,88 @@
     ];
 
     /**
+     * Applies subtitle position to the .videoSubtitles container element.
+     * xPct and yPct are percentages (0-100) representing the center anchor point
+     * of the subtitle text within the video area.
+     * Using top+transform(translate -50%,-50%) means the anchor is always the
+     * center of the text, so font size changes don't shift the visual position.
+     * When disableCustomSubtitleStyles is true, removes JE position overrides entirely.
+     */
+    function applySubtitlePosition() {
+        const containers = document.querySelectorAll('.videoSubtitles');
+        if (!containers.length) return;
+
+        const disabled = JE.currentSettings.disableCustomSubtitleStyles;
+
+        containers.forEach(container => {
+            if (disabled) {
+                // Remove JE overrides — let vanilla Jellyfin control position
+                container.style.removeProperty('position');
+                container.style.removeProperty('left');
+                container.style.removeProperty('top');
+                container.style.removeProperty('bottom');
+                container.style.removeProperty('transform');
+                container.style.removeProperty('width');
+                container.style.removeProperty('text-align');
+            } else {
+                const xPct = JE.currentSettings.subtitleHorizontalPosition ?? 50;
+                const yPct = JE.currentSettings.subtitleVerticalPosition ?? 85;
+                // Position the container so its center sits at (xPct, yPct) of the video
+                container.style.setProperty('position', 'absolute', 'important');
+                container.style.setProperty('left', `${xPct}%`, 'important');
+                container.style.setProperty('top', `${yPct}%`, 'important');
+                container.style.setProperty('bottom', 'auto', 'important');
+                container.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+                container.style.setProperty('text-align', 'center', 'important');
+            }
+        });
+    }
+
+    /**
+     * Removes all JE-injected subtitle styles from existing elements.
+     * Called when the user disables custom subtitle styles.
+     */
+    function removeInjectedStyles() {
+        document.querySelectorAll('.videoSubtitlesInner').forEach(el => {
+            el.style.removeProperty('background-color');
+            el.style.removeProperty('color');
+            el.style.removeProperty('font-size');
+            el.style.removeProperty('font-family');
+            el.style.removeProperty('text-shadow');
+            el.style.removeProperty('border-radius');
+            el.style.removeProperty('padding');
+            el.style.removeProperty('font-weight');
+            el.style.removeProperty('font-style');
+            el.style.removeProperty('font-variant');
+        });
+        document.querySelectorAll('.videoSubtitles').forEach(container => {
+            container.style.removeProperty('position');
+            container.style.removeProperty('left');
+            container.style.removeProperty('top');
+            container.style.removeProperty('bottom');
+            container.style.removeProperty('transform');
+            container.style.removeProperty('width');
+            container.style.removeProperty('max-width');
+            container.style.removeProperty('text-align');
+        });
+        // Remove legacy ::cue overrides
+        const styleElement = document.getElementById('je-html-videoplayer-cuestyle');
+        if (styleElement?.sheet) {
+            try {
+                while (styleElement.sheet.cssRules.length > 0) styleElement.sheet.deleteRule(0);
+            } catch (e) { /* ignore */ }
+        }
+        // Stop the observer — no point watching when styles are disabled
+        if (subtitleObserver) {
+            subtitleObserver.unsubscribe();
+            subtitleObserver = null;
+        }
+    }
+
+    // Expose so the position observer (started in startSubtitleObserver) can reapply on new containers
+    JE.applySubtitlePosition = applySubtitlePosition;
+
+    /**
      * Directly modifies the inline style of a subtitle element to ensure overrides.
      * This function is the core of the fix for Jellyfin 10.11+.
      */
@@ -68,6 +150,11 @@
         } else {
             element.style.setProperty('padding', '0', 'important');
         }
+
+        // Explicitly reset vanilla Jellyfin properties that could conflict with our styling
+        element.style.setProperty('font-weight', 'normal', 'important');
+        element.style.setProperty('font-style', 'normal', 'important');
+        element.style.setProperty('font-variant', 'normal', 'important');
     }
 
     /**
@@ -85,6 +172,10 @@
                             const inner = node.querySelector('.videoSubtitlesInner');
                             if (inner) forceApplyInlineStyles(inner);
                         }
+                        // Also reapply position whenever a subtitle container appears
+                        if (node.classList.contains('videoSubtitles') || node.querySelector?.('.videoSubtitles')) {
+                            applySubtitlePosition();
+                        }
                     }
                 }
             }
@@ -101,6 +192,9 @@
         // Force-apply to any subtitle elements that might already exist
         document.querySelectorAll('.videoSubtitlesInner').forEach(forceApplyInlineStyles);
 
+        // Apply position to the container
+        applySubtitlePosition();
+
         // Start the observer to catch any new subtitle elements
         startSubtitleObserver();
 
@@ -113,7 +207,7 @@
                 styleElement.id = 'je-html-videoplayer-cuestyle'
                 document.head.appendChild(styleElement)
             }
-		  
+
             try {
                 while (styleElement.sheet.cssRules.length > 0) styleElement.sheet.deleteRule(0);
                 if (JE.currentSettings.disableCustomSubtitleStyles) return;
@@ -134,6 +228,7 @@
 
     /**
      * Loads saved settings and triggers the style application.
+     * When custom styles are disabled, removes all JE-injected styles cleanly.
      */
     JE.applySavedStylesWhenReady = () => {
         if (!document.querySelector('video')) {
@@ -141,6 +236,11 @@
                 subtitleObserver.unsubscribe();
                 subtitleObserver = null;
             }
+            return;
+        }
+
+        if (JE.currentSettings.disableCustomSubtitleStyles) {
+            removeInjectedStyles();
             return;
         }
 

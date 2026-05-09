@@ -2440,10 +2440,19 @@
             }
 
             const apiStatus = seasonStatusMap[seasonNumber];
-            const canRequest = !apiStatus || apiStatus === 1 || apiStatus === 7;
+
+            // If Seerr reports Available (5) but the show has no Jellyfin media ID
+            // for this mode, the library was wiped and Seerr's status is stale —
+            // treat the season as requestable.
+            const showJellyfinId = is4kMode
+                ? (tvDetails.mediaInfo?.jellyfinMediaId4k || null)
+                : (tvDetails.mediaInfo?.jellyfinMediaId || null);
+            const effectiveApiStatus = (apiStatus === 5 && !showJellyfinId) ? 7 : apiStatus;
+
+            const canRequest = !effectiveApiStatus || effectiveApiStatus === 1 || effectiveApiStatus === 7;
 
             let statusText = JE.t('jellyseerr_season_status_not_requested'), statusClass = 'not-requested';
-            switch (apiStatus) {
+            switch (effectiveApiStatus) {
                 case 2:
                 case 3: statusText = JE.t('jellyseerr_season_status_requested'); statusClass = 'processing'; break;
                 case 4: statusText = JE.t('jellyseerr_season_status_partial'); statusClass = 'partially-available'; break;
@@ -2451,7 +2460,7 @@
             }
 
             const modeDownloads = is4kMode ? (tvDetails.mediaInfo?.downloadStatus4k || []) : (tvDetails.mediaInfo?.downloadStatus || []);
-            if ((apiStatus === 2 || apiStatus === 3) && modeDownloads.some(ds => ds.episode?.seasonNumber === seasonNumber)) {
+            if ((effectiveApiStatus === 2 || effectiveApiStatus === 3) && modeDownloads.some(ds => ds.episode?.seasonNumber === seasonNumber)) {
                 statusText = JE.t('jellyseerr_season_status_processing');
             }
 
@@ -2492,7 +2501,7 @@
             const existingProgress = seasonItem.querySelector('.jellyseerr-inline-progress');
             if (existingProgress) existingProgress.remove();
 
-            if ((apiStatus === 2 || apiStatus === 3) && modeDownloads.length > 0) {
+            if ((effectiveApiStatus === 2 || effectiveApiStatus === 3) && modeDownloads.length > 0) {
                 const seasonDownloads = modeDownloads.filter(ds => ds.episode?.seasonNumber === seasonNumber);
                 if (seasonDownloads.length > 0) {
                     const totalSize = seasonDownloads.reduce((sum, ds) => sum + (ds.size || 0), 0);

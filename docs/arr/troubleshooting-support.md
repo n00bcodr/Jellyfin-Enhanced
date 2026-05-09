@@ -38,6 +38,21 @@
 3. *arr instances accessible
 4. Calendar page enabled
 
+**Blank Screen / "Cannot find module" Error (Cloudflare Rocket Loader):**
+
+If the Calendar or Requests page shows a blank screen and the browser console shows `Cannot find module './'`, this may be caused by **Cloudflare Rocket Loader** interfering with Jellyfin's JavaScript module system. Rocket Loader rewrites and defers script loading in a way that can break dynamic module imports.
+
+**Solution:** Disable Rocket Loader for your Jellyfin domain in Cloudflare:
+
+1. Log in to the [Cloudflare dashboard](https://dash.cloudflare.com)
+2. Select your domain
+3. Go to **Speed** → **Optimization** → **Content Optimization**
+4. Toggle **Rocket Loader** off
+
+Alternatively, disable it for specific pages using a Page Rule or Configuration Rule targeting your Jellyfin URL.
+
+See [GitHub issue #570](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/570) for more context.
+
 **Check Logs:**
 
 - Browser console for client errors

@@ -1707,6 +1707,14 @@
                             <div class="je-setting-description" data-desc-for="hideReviewsFromDisabledUsers">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">When enabled, reviews written by Jellyfin users marked as "Disable this user" are hidden from non-admin viewers. Admins always see all reviews.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="showUserRatingOnPosters" is="emby-checkbox" type="checkbox"/><span>Show average user rating on poster cards</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showUserRatingOnPosters">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="material-icons" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="showUserRatingDash" is="emby-checkbox" type="checkbox"/><span>Show "—" on posters for unrated items</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showUserRatingDash">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="material-icons" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
+                            </div>
                         </div>
                     </fieldset>
                 </div>
@@ -2676,7 +2684,8 @@
             { Name: "OpenEpisodePreview", Key: "P", Label: "Open Episode Preview", Category: "Player" },
             { Name: "SkipIntroOutro", Key: "O", Label: "Skip Intro/Outro", Category: "Player" },
             { Name: "FrameStepBack", Key: ",", Label: "Step Back One Frame", Category: "Player" },
-            { Name: "FrameStepForward", Key: ".", Label: "Step Forward One Frame", Category: "Player" }
+            { Name: "FrameStepForward", Key: ".", Label: "Step Forward One Frame", Category: "Player" },
+            { Name: "JumpToLastPosition", Key: "Z", Label: "Jump to Last Position", Category: "Player" }
         ];
 
         function renderOverrides() {
@@ -4013,6 +4022,8 @@
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
                 document.querySelector('#hideReviewsFromDisabledUsers').checked = config.HideReviewsFromDisabledUsers !== false;
+                document.querySelector('#showUserRatingDash').checked = config.ShowUserRatingDash !== false;
+                document.querySelector('#showUserRatingOnPosters').checked = config.ShowUserRatingOnPosters === true;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
                 document.querySelector('#jellyseerrShowSearchResults').checked = config.JellyseerrShowSearchResults !== false;
@@ -4282,6 +4293,8 @@
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;
             config.HideReviewsFromDisabledUsers = document.querySelector('#hideReviewsFromDisabledUsers').checked;
+            config.ShowUserRatingDash = document.querySelector('#showUserRatingDash').checked;
+            config.ShowUserRatingOnPosters = document.querySelector('#showUserRatingOnPosters').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;
             config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
@@ -5273,7 +5286,7 @@
         var PARENT_DEPS = [
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
-            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers'] },
+            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
@@ -6739,7 +6752,7 @@
             if (triggered) {
                 status.textContent = 'check_circle';
                 status.style.color = '#52b54b';
-                Dashboard.alert({ title: 'Scan Triggered', message: 'Seerr accepted the recently-added scan request.' });
+                Dashboard.alert({ title: 'Scan Triggered', message: 'Triggered "Jellyfin Recently Added Scan" in Seerr' });
             } else {
                 status.textContent = 'error';
                 status.style.color = '#dc3545';
