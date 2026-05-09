@@ -2842,6 +2842,13 @@
                     }
                 } catch (e) {
                     console.error(`Seerr validation failed for ${url}:`, e);
+                    // Jellyfin's ApiClient.ajax rejects with the Response object
+                    // (modern fetch), which doesn't expose responseText/responseJSON.
+                    // Read the body asynchronously so connectionErrorMessage can
+                    // surface the typed code/cfRay/message envelope.
+                    if (e && typeof e.json === 'function') {
+                        try { e.responseJSON = await e.clone().json(); } catch (_) { /* not JSON */ }
+                    }
                     lastError = connectionErrorMessage(e, 'Seerr', url);
                 }
             }
@@ -6400,7 +6407,17 @@
             // Round 3 e2e: surface backend's typed code/cf-ray so admins
             // see actionable messages (HtmlResponse, Cloudflare5xx, etc.)
             // instead of "API key rejected" for everything.
-            var body = error && error.responseJSON;
+            // Jellyfin's ApiClient.ajax errors don't expose responseJSON;
+            // they expose responseText. Parse it ourselves.
+            var body = error && (error.responseJSON || (function () {
+                try {
+                    var txt = error.responseText || (error.response && error.response.text) || '';
+                    if (typeof txt === 'string' && txt.length > 0 && txt.trim().charAt(0) === '{') {
+                        return JSON.parse(txt);
+                    }
+                } catch (_) { /* not JSON, fall through */ }
+                return null;
+            })());
             if (body && body.code && body.message) {
                 var prefix = body.cfRay ? '[' + serviceName + ' cf-ray=' + body.cfRay + '] ' : '';
                 return prefix + body.message;
