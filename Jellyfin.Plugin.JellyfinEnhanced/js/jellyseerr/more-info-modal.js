@@ -183,7 +183,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
  * Fetch ratings from Jellyseerr API
  */
 async function fetchRatings(tmdbId, mediaType) {
-    // Audit C02-#3: prefer request-manager (retry, dedup, abort, cache, cf-ray
+    // prefer request-manager (retry, dedup, abort, cache, cf-ray
     // logging) over raw ApiClient.ajax. Falls back to ApiClient.ajax only if
     // request-manager hasn't loaded yet (early page navigations).
     try {
@@ -222,8 +222,7 @@ async function fetchRatings(tmdbId, mediaType) {
 }
 
 /**
- * Fetch media details from Jellyseerr API via proxy. Audit C02-#3.
- */
+ * Fetch media details from Jellyseerr API via proxy.  */
 async function fetchMediaDetails(tmdbId, mediaType) {
     try {
         const JE = window.JellyfinEnhanced;

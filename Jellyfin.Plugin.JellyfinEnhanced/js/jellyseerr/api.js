@@ -6,7 +6,7 @@
     const api = {};
 
     // Cache for user status (shared across all modules).
-    // Audit C02-CRIT-1: caching the failure result with no TTL caused discovery
+    // caching the failure result with no TTL caused discovery
     // sections to disappear for the entire SPA session after a single transient
     // error. Now we keep success results for the SPA session but only cache
     // negatives for 60 seconds so transient blips recover automatically.
@@ -208,7 +208,7 @@
                 return cachedUserStatus;
             }
             // Negative result expires after 60s so a transient outage doesn't
-            // permanently hide discovery (audit C02-CRIT-1).
+            // permanently hide discovery.
             if (Date.now() - cachedUserStatusAt < NEGATIVE_USER_STATUS_TTL_MS) {
                 return cachedUserStatus;
             }
@@ -219,7 +219,7 @@
             cachedUserStatus = status;
             cachedUserStatusAt = Date.now();
             // Surface the typed reason as a banner so users aren't left staring
-            // at silently-hidden discovery sections (audit CRIT-1 cluster).
+            // at silently-hidden discovery sections.
             api.surfaceUserStatusBanner(status);
             return status;
         } catch (error) {
@@ -256,7 +256,7 @@
                 unreachable: 'Can\'t reach Seerr right now. Please try again in a moment.',
                 no_user: 'Couldn\'t load your account. Try signing out and back in.'
             };
-            // Audit L3-4: JE.toast renders via innerHTML. status.message comes
+            // JE.toast renders via innerHTML. status.message comes
             // from SeerrHttpHelper.ToResponseShape, which uses UserMessage
             // (plain English, no URLs / cf-ray / proxy product names). Still
             // HTML-escape it before insertion as defence-in-depth.
@@ -764,7 +764,7 @@
      * Fetches Seerr request settings (partial requests + special episodes).
      * @returns {Promise<{partialRequestsEnabled: boolean, enableSpecialEpisodes: boolean}>}
      */
-    // Audit HIGH-2: keep last-known good settings across a Seerr outage so
+    // keep last-known good settings across a Seerr outage so
     // the request modal doesn't silently flip to whole-season UI when admin
     // had partial requests enabled. The backend now returns 503 on outage
     // (was 200+false). Cache the last successful response in module scope.

@@ -177,7 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     .GroupBy(user => NormalizeUserId(user.Id.ToString()), StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
-                // Audit HIGH-3 / C01-HIGH-26: filter out users in the import
+                // filter out users in the import
                 // blocklist so a blocked user's existing requests don't keep
                 // syncing to their Jellyfin watchlist (defeats admin intent).
                 var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper

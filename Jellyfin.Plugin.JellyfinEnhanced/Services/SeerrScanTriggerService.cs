@@ -158,7 +158,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<DispatchResult> PostScanTrigger(string url, string apiKey)
         {
-            // Audit A3: previously reported `Success = response.IsSuccessStatusCode`,
+            // previously reported `Success = response.IsSuccessStatusCode`,
             // which is true for a 200 + Cloudflare HTML challenge body — the
             // background trigger logged "scan dispatched" when the request was
             // actually intercepted by a reverse-proxy auth challenge. Use the

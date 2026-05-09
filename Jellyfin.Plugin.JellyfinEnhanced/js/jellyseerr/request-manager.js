@@ -388,7 +388,7 @@
     // Note: Individual modules handle their own cleanup on hashchange
     // to ensure proper timing (new requests created AFTER abort).
     //
-    // Audit V11: also abort all in-flight Seerr requests on SPA navigation
+    // also abort all in-flight Seerr requests on SPA navigation
     // so that mid-fetch results from page A don't land on page B with stale
     // state. Modules continue to do their own per-section cleanup; this is a
     // belt-and-braces global handler.

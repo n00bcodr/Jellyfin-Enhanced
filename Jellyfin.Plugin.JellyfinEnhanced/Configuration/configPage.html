@@ -2464,7 +2464,7 @@
                     // the parent — e.g. a <summary> with space-between
                     // would spread the <mark> to the start and the
                     // trailing text to the end, splitting "Auto Season
-                    // Requests" into "Auto Sea" ... "son Requests" on a
+                    // Requests" into "Auto Sea" . "son Requests" on a
                     // search for "auto sea". Wrap in an inline span so
                     // the parent still sees a single child.
                     //
@@ -4326,7 +4326,7 @@
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
-            // Audit A2: validate scheme on save. Lines that don't parse as
+            // validate scheme on save. Lines that don't parse as
             // http(s) are dropped with a warning so we never persist garbage
             // like "seerr.local" (no scheme) — which downstream string-concats
             // produce malformed URIs and a confusing UriFormatException buried
@@ -5100,8 +5100,7 @@
          * http(s) URL. A non-empty textarea full of garbage like "seerr.local"
          * (no scheme) used to evaluate truthy here, so the dependency banner
          * would hide and Seerr feature toggles would unlock — features that
-         * could never actually work. Audit A19.
-         */
+         * could never actually work.          */
         function hasAtLeastOneValidSeerrUrl(value) {
             if (!value) return false;
             const lines = String(value).split('\n').map(s => s.trim()).filter(Boolean);
@@ -6404,7 +6403,7 @@
          * @returns {string} Human-readable error message
          */
         function connectionErrorMessage(error, serviceName, url) {
-            // Round 3 e2e: surface backend's typed code/cf-ray so admins
+            // surface backend's typed code/cf-ray so admins
             // see actionable messages (HtmlResponse, Cloudflare5xx, etc.)
             // instead of "API key rejected" for everything.
             // Jellyfin's ApiClient.ajax errors don't expose responseJSON;
@@ -7058,7 +7057,7 @@
          */
         // Tracks whether the most recent loadBlockedUsersList successfully rendered
         // checkboxes. If /Users API fails, syncBlockedUsersToHiddenInput must not
-        // run — otherwise it would wipe the entire blocklist on save (audit A18).
+        // run — otherwise it would wipe the entire blocklist on save.
         let _blockedUsersLoaded = false;
 
         async function loadBlockedUsersList(blockedIdsString) {
@@ -7119,7 +7118,7 @@
         /**
          * Syncs checked blocked-user checkboxes into the hidden input for config save.
          * Skipped if loadBlockedUsersList failed — otherwise we'd wipe the whole
-         * blocklist on save (audit A18 — data-loss bug).
+         * blocklist on save.
          */
         function syncBlockedUsersToHiddenInput() {
             if (!_blockedUsersLoaded) {
@@ -7179,7 +7178,7 @@
                 const errors = Array.isArray(payload && payload.errors) ? payload.errors : [];
 
                 resultDiv.style.display = 'block';
-                // Audit NB-4: surface backend errors[] so the admin sees WHY
+                // surface backend errors[] so the admin sees WHY
                 // partial imports failed (email collision, 401, etc.) instead
                 // of a flat "Imported 0 new users" with no diagnosis.
                 while (resultDiv.firstChild) resultDiv.removeChild(resultDiv.firstChild);
@@ -7358,13 +7357,13 @@
                     resultDiv.style.display = 'block';
                 } catch (err) {
                     // Build the error node with createElement + textContent so any
-                    // server-supplied message can't smuggle HTML into the audit panel.
+                    // server-supplied message can't smuggle HTML into the page.
                     var errEl = document.createElement('div');
                     errEl.className = 'je-audit-error';
                     errEl.textContent = 'Audit failed: ' + ((err && err.message) || 'Check server logs.');
                     resultDiv.appendChild(errEl);
                     resultDiv.style.display = 'block';
-                    console.error('[JE] Permission audit failed:', err);
+                    console.error('[JE] Permission ', err);
                 } finally {
                     btn.disabled = false;
                     setBtnLabel('Run Audit');

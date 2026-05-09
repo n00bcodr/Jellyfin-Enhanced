@@ -19,7 +19,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<StartupService>();
             serviceCollection.AddHttpClient();
 
-            // Audit L2-3: a named HttpClient with AllowAutoRedirect=false so
+            // a named HttpClient with AllowAutoRedirect=false so
             // forward-auth proxies (Authelia / Pangolin / Authentik) returning
             // 302 to a login URL are detected as `UpstreamRedirect` instead of
             // silently followed and producing a 200 + login HTML body.

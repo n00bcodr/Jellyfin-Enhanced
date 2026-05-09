@@ -102,7 +102,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             // Get all Jellyfin users, then filter out the JellyseerrImportBlockedUsers
-            // so blocked users don't get watchlist sync (audit HIGH-3 / C01-HIGH-29).
+            // so blocked users don't get watchlist sync.
             var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper
                 .GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
             var allUsers = _userManager.Users.ToList();
@@ -254,7 +254,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            // Audit HIGH-4 / C01-HIGH-28: paginate beyond take=1000. Without
+            // paginate beyond take=1000. Without
             // this, deployments with >1000 Seerr users silently lose the tail
             // and those users get "no Jellyseerr account linked" warnings.
             const int pageSize = 1000;

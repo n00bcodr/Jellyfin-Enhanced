@@ -11,9 +11,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 {
     public static class JellyseerrUserImportHelper
     {
-        /// <summary>
-        /// Parse the blocked user IDs config string into a normalized HashSet (dashless, case-insensitive).
-        /// </summary>
         public static HashSet<string> GetBlockedUserIds(string? blockedUsersConfig)
         {
             if (string.IsNullOrEmpty(blockedUsersConfig))
@@ -28,13 +25,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// Result of a bulk import attempt. <see cref="Imported"/> is the count
-        /// of users that Seerr created; <see cref="Errors"/> is per-URL error
-        /// messages (or single "all unreachable" entry on full network failure).
-        /// <see cref="Reached"/> is true if at least one URL responded with
-        /// HTTP — the throttle/cache should NOT fire on a full network outage.
-        /// </summary>
         public class BulkImportResult
         {
             public int Imported { get; set; }
@@ -42,14 +32,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             public List<string> Errors { get; set; } = new();
         }
 
-        /// <summary>
-        /// Bulk-import user IDs into Jellyseerr, trying each configured URL.
-        /// Audit CRIT-4: previously returned just an int that conflated
-        /// "0 imported because all collided" with "0 imported because nothing
-        /// to do" with "all URLs failed." Now reports each cause distinctly
-        /// so the controller can decide whether to flush caches and consume
-        /// the throttle slot.
-        /// </summary>
         public static async Task<BulkImportResult> BulkImportAsync(
             List<string> userIds,
             string[] urls,

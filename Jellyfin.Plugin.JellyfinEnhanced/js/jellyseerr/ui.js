@@ -1037,7 +1037,7 @@
      */
     function createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound) {
         const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
-        // Audit C02-#26: validate posterPath before interpolating into a CSS
+        // validate posterPath before interpolating into a CSS
         // url() context. Anything other than a leading-slash relative path
         // (TMDB always returns this shape, e.g. "/abc.jpg") is rejected so a
         // hostile poster path can't break out of the url() literal.

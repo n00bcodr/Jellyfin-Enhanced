@@ -37,8 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
-            // empty UA as bot — audit C04-HIGH-F4.
-            Helpers.Jellyseerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
+            // empty UA as bot �            Helpers.Jellyseerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
@@ -163,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         // Without this, fixing a bad URL/key/blocklist takes 10-30 minutes to
         // take effect because of the user-id and response caches — admins see
         // "still broken" after their fix and assume it didn't work
-        // (audit CRIT-3 / B5 / D2).
+        //.
         public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
             base.UpdateConfiguration(configuration);

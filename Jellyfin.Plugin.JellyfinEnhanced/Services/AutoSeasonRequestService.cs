@@ -311,7 +311,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (nextSeasonEpisodeCount == null || nextSeasonEpisodeCount <= 0)
             {
                 _logger.Info($"[Auto-Season-Request] Season {nextSeasonNumber} has not started yet (0 episodes) - not requesting");
-                // Audit V49: drop the sentinel so the next check actually
+                // drop the sentinel so the next check actually
                 // re-evaluates instead of being stuck for an hour even after
                 // TMDB updates with the new season's data.
                 lock (_requestCacheLock)
