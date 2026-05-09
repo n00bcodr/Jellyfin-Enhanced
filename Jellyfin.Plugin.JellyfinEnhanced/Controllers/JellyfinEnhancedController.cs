@@ -875,10 +875,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Get, requestUri, config.JellyseerrApiKey);
                     using var response = await httpClient.SendAsync(request);
-                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
                     if (error == null)
                     {
-                        // _logger.Info($"Successfully connected to Seerr at {url}. Status is active.");
                         return Ok(new { active = true });
                     }
                     _logger.Warning($"Seerr status check failed at {url}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
@@ -922,7 +921,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                     HttpMethod.Get, requestUri, apiKey);
                 using var resp = await http.SendAsync(request);
-                var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(resp, requestUri);
+                var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(resp, requestUri);
                 if (error == null) return Ok(new { ok = true });
 
                 _logger.Warning($"Seerr validate failed for {url}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
@@ -983,7 +982,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                     HttpMethod.Post, requestUri, apiKey, bodyJson: "{}");
                 using var resp = await http.SendAsync(request);
-                var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(resp, requestUri);
+                var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(resp, requestUri);
                 if (error == null)
                 {
                     _logger.Info($"[SeerrScan] Manually triggered Seerr recently-added scan via admin button — {url}");
