@@ -101,9 +101,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 _logger.Warning("[Jellyseerr Watchlist Sync] Unable to build Jellyseerr user map.");
             }
 
-            // Get all Jellyfin users
-            var jellyfinUsers = _userManager.Users.ToList();
-            _logger.Info($"[Jellyseerr Watchlist Sync] Found {jellyfinUsers.Count} Jellyfin users");
+            // Get all Jellyfin users, then filter out the JellyseerrImportBlockedUsers
+            // so blocked users don't get watchlist sync (audit HIGH-3 / C01-HIGH-29).
+            var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper
+                .GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
+            var allUsers = _userManager.Users.ToList();
+            var jellyfinUsers = allUsers
+                .Where(u => !blockedIds.Contains(u.Id.ToString().Replace("-", ""), StringComparer.OrdinalIgnoreCase))
+                .ToList();
+            var skippedBlocked = allUsers.Count - jellyfinUsers.Count;
+            if (skippedBlocked > 0)
+            {
+                _logger.Info($"[Jellyseerr Watchlist Sync] Skipping {skippedBlocked} blocked user(s) per JellyseerrImportBlockedUsers");
+            }
+            _logger.Info($"[Jellyseerr Watchlist Sync] Found {jellyfinUsers.Count} Jellyfin users (of {allUsers.Count} total)");
 
             var totalUsers = jellyfinUsers.Count;
             var processedUsers = 0;
@@ -243,42 +254,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+            // Audit HIGH-4 / C01-HIGH-28: paginate beyond take=1000. Without
+            // this, deployments with >1000 Seerr users silently lose the tail
+            // and those users get "no Jellyseerr account linked" warnings.
+            const int pageSize = 1000;
+            int skip = 0;
+            int reportedTotal = -1;
             try
             {
-                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user?take=1000";
-                using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                    HttpMethod.Get, requestUri, apiKey);
-                using var response = await httpClient.SendAsync(request);
-                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
-
-                if (error != null)
+                while (true)
                 {
-                    _logger.Warning($"[Jellyseerr Watchlist Sync] Failed to get users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
-                    return result;
-                }
+                    var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user?take={pageSize}&skip={skip}";
+                    using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, apiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                var usersResponse = JsonSerializer.Deserialize<JsonElement>(content!);
-
-                if (!usersResponse.TryGetProperty("results", out var usersArray))
-                {
-                    return result;
-                }
-
-                foreach (var user in usersArray.EnumerateArray())
-                {
-                    if (!user.TryGetProperty("jellyfinUserId", out var jfUserId) ||
-                        !user.TryGetProperty("id", out var id))
+                    if (error != null)
                     {
-                        continue;
+                        _logger.Warning($"[Jellyseerr Watchlist Sync] Failed to get users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+                        return result;
                     }
 
-                    var normalizedJellyfinUserId = NormalizeUserId(jfUserId.GetString());
-                    if (string.IsNullOrEmpty(normalizedJellyfinUserId))
+                    var usersResponse = JsonSerializer.Deserialize<JsonElement>(content!);
+
+                    if (!usersResponse.TryGetProperty("results", out var usersArray))
                     {
-                        continue;
+                        return result;
                     }
 
-                    result[normalizedJellyfinUserId] = id.GetInt32().ToString();
+                    int pageCount = 0;
+                    foreach (var user in usersArray.EnumerateArray())
+                    {
+                        pageCount++;
+                        if (!user.TryGetProperty("jellyfinUserId", out var jfUserId) ||
+                            !user.TryGetProperty("id", out var id))
+                        {
+                            continue;
+                        }
+
+                        var normalizedJellyfinUserId = NormalizeUserId(jfUserId.GetString());
+                        if (string.IsNullOrEmpty(normalizedJellyfinUserId))
+                        {
+                            continue;
+                        }
+
+                        result[normalizedJellyfinUserId] = id.GetInt32().ToString();
+                    }
+
+                    // Try to read the upstream's total to know when to stop
+                    if (reportedTotal < 0
+                        && usersResponse.TryGetProperty("pageInfo", out var pageInfo)
+                        && pageInfo.TryGetProperty("results", out var totalEl)
+                        && totalEl.ValueKind == JsonValueKind.Number)
+                    {
+                        reportedTotal = totalEl.GetInt32();
+                    }
+
+                    skip += pageCount;
+                    if (pageCount < pageSize) break;          // last page
+                    if (reportedTotal >= 0 && skip >= reportedTotal) break;
+                    if (skip >= 100000) { _logger.Warning("[Jellyseerr Watchlist Sync] Pagination safety cap hit at 100000 users"); break; }
                 }
             }
             catch (Exception ex)

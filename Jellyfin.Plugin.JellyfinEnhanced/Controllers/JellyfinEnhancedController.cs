@@ -539,8 +539,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // it for 10 min would mean: user adds movie → next watchlist GET
             // still returns the old payload until TTL expires. /api/v1/issue
             // is also mutable (status changes on assignment / resolution).
+            // Audit B-FINAL-2: tightened to /api/v1/issue prefix to avoid
+            // accidentally matching future endpoints with "issue" in the name.
             if (apiPath.Contains("/discover/watchlist", StringComparison.OrdinalIgnoreCase)) return false;
-            if (apiPath.Contains("/issue", StringComparison.OrdinalIgnoreCase)) return false;
+            if (apiPath.StartsWith("/api/v1/issue", StringComparison.OrdinalIgnoreCase)) return false;
 
             // Audit L2-1: include /search/keyword (typeahead spam) and item-detail
             // endpoints (movie/tv/season — fetched repeatedly by more-info-modal).
@@ -554,6 +556,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                    apiPath.Contains("/search") ||
                    apiPath.StartsWith("/api/v1/movie/", StringComparison.OrdinalIgnoreCase) ||
                    apiPath.StartsWith("/api/v1/tv/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Identifies Seerr API paths that return content NOT scoped to the
+        /// caller. Public-scope responses are cached under a shared key so a
+        /// 100-user fleet doesn't issue 100 identical upstream requests after
+        /// a Seerr restart. Per-user paths (movie/tv detail with requestedBy
+        /// info, watchlist, search-with-language) keep the per-user key.
+        /// Audit HIGH-7 / C01-CRIT-4.
+        /// </summary>
+        private static bool IsPublicScopeApiPath(string apiPath)
+        {
+            // Genre slider, network/studio/keyword discovery — pure TMDB
+            // metadata, identical across users.
+            if (apiPath.Contains("/discover/genreslider/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.Contains("/discover/movies/genre/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.Contains("/discover/tv/genre/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.Contains("/discover/movies/keyword/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.Contains("/discover/tv/keyword/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.Contains("/discover/movies/studio/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.Contains("/discover/tv/network/", StringComparison.OrdinalIgnoreCase)) return true;
+            // Genre lists, person directory.
+            if (apiPath.StartsWith("/api/v1/genres/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.StartsWith("/api/v1/person/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (apiPath.StartsWith("/api/v1/keyword", StringComparison.OrdinalIgnoreCase)) return true;
+            // Per-user response includes mediaInfo.requestedBy filtered to
+            // the calling user's perspective and 4K availability based on
+            // user permission, so KEEP per-user for movie/{id}, tv/{id},
+            // collection/{id}, similar/recommendations, search.
+            return false;
         }
 
         /// <summary>
@@ -612,7 +644,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
-            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            // Audit HIGH-5: resolve the Seerr user ONCE up-front and reuse for
+            // both ID-extraction and the non-admin permission check below.
+            // Previously made TWO calls (and TWO Seerr round-trips when
+            // JellyseerrDisableCache=true), doubling load on debugging admins.
+            var seerrUser = await GetJellyseerrUser(jellyfinUserId);
+            var jellyseerrUserId = seerrUser?.Id.ToString();
             if (string.IsNullOrEmpty(jellyseerrUserId))
             {
                 _logger.Warning($"Could not find a Jellyseerr user for Jellyfin user {ResolveUserDisplay(jellyfinUserId)}. Aborting request.");
@@ -657,7 +694,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // letting Seerr reject the request with a generic error.
             if (!IsAdminUser())
             {
-                var seerrUser = await GetJellyseerrUser(jellyfinUserId);
+                // Audit HIGH-5: reuse the Seerr user we already resolved at
+                // line ~647 — no second GetJellyseerrUser call.
                 if (seerrUser != null)
                 {
                     var perms = seerrUser.Permissions;
@@ -712,9 +750,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // Check server-side response cache for cacheable endpoints
+            // Check server-side response cache for cacheable endpoints.
+            // Audit HIGH-7 / C01-CRIT-4: bifurcate cache key. Public discovery
+            // endpoints return identical content for all users, so include the
+            // user-id in the key only for endpoints whose response actually
+            // varies per-user (mediaInfo.requests, watchlist, partial-requests
+            // setting, requested-by-me filters, etc).
             bool isCacheable = IsCacheableApiPath(apiPath, method) && !config.JellyseerrDisableCache;
-            var cacheKey = $"{jellyfinUserId}:{apiPath}";
+            bool isPublicScope = IsPublicScopeApiPath(apiPath);
+            var cacheKey = isPublicScope
+                ? $"public:{apiPath}"
+                : $"{jellyfinUserId}:{apiPath}";
             if (isCacheable)
             {
                 lock (_responseCacheLock)
@@ -1919,6 +1965,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> RequestTvSeasons(int tmdbId, [FromBody] JsonElement requestBody)
         {
+            // Audit C01-HIGH-19 + C01-HIGH-43: enforce that the body's mediaType
+            // is "tv" and the body's mediaId matches the route's tmdbId, so
+            // logging/audit trails are consistent and a user with REQUEST_TV
+            // (but not REQUEST_MOVIE) can't piggyback a movie request through
+            // this route. Seerr would re-validate but JE's permission gate at
+            // line ~620 only sees apiPath="/api/v1/request".
+            if (tmdbId <= 0)
+            {
+                return BadRequest(new { error = true, code = "invalid_tmdb_id", message = "TMDB id must be positive." });
+            }
+            try
+            {
+                if (requestBody.TryGetProperty("mediaType", out var mtEl)
+                    && mtEl.ValueKind == JsonValueKind.String
+                    && !string.Equals(mtEl.GetString(), "tv", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { error = true, code = "media_type_mismatch", message = "Body mediaType must be 'tv' on the seasons route." });
+                }
+                if (requestBody.TryGetProperty("mediaId", out var midEl) && midEl.ValueKind == JsonValueKind.Number)
+                {
+                    if (midEl.GetInt32() != tmdbId)
+                    {
+                        return BadRequest(new { error = true, code = "media_id_mismatch", message = "Body mediaId must match the {tmdbId} in the URL." });
+                    }
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // requestBody not a JSON object — let downstream Seerr return its own validation error.
+            }
             return await ProxyJellyseerrRequest($"/api/v1/request", HttpMethod.Post, requestBody.ToString());
         }
 
@@ -2386,8 +2462,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
+                // Audit HIGH-2: previously returned 200+false, which made the
+                // frontend silently flip the request modal to whole-season
+                // mode. Returns 503 with structured `code` so the frontend
+                // can keep its last-known state instead of regressing.
                 _logger.Warning("Seerr integration is not configured or enabled.");
-                return Ok(new { partialRequestsEnabled = false, enableSpecialEpisodes = false });
+                return StatusCode(503, new { error = true, code = "disabled", message = "Seerr integration not configured." });
             }
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -2433,8 +2513,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            _logger.Warning("Could not fetch Seerr settings from any URL, defaulting to false");
-            return Ok(new { partialRequestsEnabled = false, enableSpecialEpisodes = false });
+            // Audit HIGH-2: don't silently default to false on outage — that
+            // hides admin-configured "partial requests off" UX state. Return
+            // 503 so the frontend can keep last-known state.
+            _logger.Warning("Could not fetch Seerr settings from any URL — surfacing as 503 unreachable");
+            return StatusCode(503, new
+            {
+                error = true,
+                code = "unreachable",
+                message = "Could not reach Seerr to read partial-requests setting."
+            });
         }
 
         [HttpGet("tmdb/validate")]
@@ -2908,7 +2996,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return null;
         }
 
-        private bool IsAdminUser() => User.IsInRole("Administrator");
+        // Audit MED-42: previously a single `User.IsInRole("Administrator")`
+        // magic-string check. Cross-check against the IUserManager-resolved
+        // Jellyfin user's actual `IsAdministrator` permission so a future
+        // Jellyfin core role-name rename can't silently downgrade JE's
+        // admin gates. Falls back to the role claim if the user lookup
+        // fails (which would be a programmer error since `[Authorize]`
+        // gates every admin endpoint).
+        private bool IsAdminUser()
+        {
+            if (User.IsInRole("Administrator")) return true;
+            try
+            {
+                var jfUserId = UserHelper.GetCurrentUserId(User);
+                if (!jfUserId.HasValue) return false;
+                var u = _userManager.GetUserById(jfUserId.Value);
+                return u != null && u.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
+            }
+            catch { return false; }
+        }
 
         /// <summary>
         /// Best-effort URL validation for outbound requests. Blocks non-HTTP schemes
@@ -5375,8 +5481,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestsUri);
                 if (error != null)
                 {
+                    // Audit HIGH-1: previously silently 200+empty, indistinguishable
+                    // from "no requests." Now surfaces a structured 502 so the
+                    // frontend can render a banner instead of misleading empty state.
                     _logger.Warning($"Seerr requests fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
-                    return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
+                    int httpCode = error.Code switch
+                    {
+                        Helpers.Jellyseerr.SeerrErrorCode.HtmlResponse => 502,
+                        Helpers.Jellyseerr.SeerrErrorCode.UpstreamRedirect => 502,
+                        Helpers.Jellyseerr.SeerrErrorCode.Cloudflare5xx => 502,
+                        _ => error.HttpStatus > 0 ? error.HttpStatus : 502,
+                    };
+                    return StatusCode(httpCode, new
+                    {
+                        error = true,
+                        code = error.Code.ToString(),
+                        cfRay = error.CfRay,
+                        message = IsAdminUser() ? error.Message : Helpers.Jellyseerr.SeerrError.SanitizeMessage(error.Message),
+                        requests = new List<object>(),
+                        totalPages = 0,
+                        totalResults = 0
+                    });
                 }
 
                 var data = JObject.Parse(json!);
@@ -5987,7 +6112,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return items;
                 },
                 emptyResult: new List<ArrItem>(),
-                timeout: TimeSpan.FromSeconds(30),
+                // Audit V7: aligned with Radarr (15s) — was 30s, which doubled
+                // the worst-case calendar latency under one slow instance.
+                timeout: TimeSpan.FromSeconds(15),
                 contextLabel: "Sonarr calendar",
                 ct: ct);
         }
@@ -6077,7 +6204,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return items;
                 },
                 emptyResult: new List<ArrItem>(),
-                timeout: TimeSpan.FromSeconds(10),
+                // Audit V7: aligned with Sonarr (15s) — was 10s, which timed
+                // out busy Radarr instances behind slow proxies.
+                timeout: TimeSpan.FromSeconds(15),
                 contextLabel: "Radarr calendar",
                 ct: ct);
         }
@@ -6356,19 +6485,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _tmdbEnrichmentInFlight.TryRemove(cacheKey, out _);
                 }
 
-                lock (_tmdbEnrichmentCacheLock)
+                // Audit HIGH-6 / C01-MED-37: don't cache empty enrichment
+                // results from upstream failures. Otherwise a Cloudflare-blip
+                // pollutes the cache with null titles/posters for the full TTL
+                // (default 10 min) — even after Seerr recovers and the user
+                // refreshes the requests page, posters stay missing.
+                bool isEmpty = result == null
+                    || (string.IsNullOrEmpty(result.Title)
+                        && result.Year == null
+                        && string.IsNullOrEmpty(result.PosterUrl));
+                if (!isEmpty)
                 {
-                    _tmdbEnrichmentCache[cacheKey] = (result, DateTime.UtcNow);
-
-                    if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
+                    lock (_tmdbEnrichmentCacheLock)
                     {
-                        var staleKeys = _tmdbEnrichmentCache
-                            .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > cacheTtl)
-                            .Select(kv => kv.Key)
-                            .ToList();
-                        foreach (var staleKey in staleKeys)
+                        _tmdbEnrichmentCache[cacheKey] = (result!, DateTime.UtcNow);
+
+                        if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
                         {
-                            _tmdbEnrichmentCache.Remove(staleKey);
+                            var staleKeys = _tmdbEnrichmentCache
+                                .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > cacheTtl)
+                                .Select(kv => kv.Key)
+                                .ToList();
+                            foreach (var staleKey in staleKeys)
+                            {
+                                _tmdbEnrichmentCache.Remove(staleKey);
+                            }
                         }
                     }
                 }
@@ -6378,6 +6519,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 result = await FetchEnrichmentAsync();
             }
 
+            result ??= new TmdbEnrichmentResult();
             return (result.Title, result.Year, result.PosterUrl, result.DigitalReleaseDate, result.TheatricalReleaseDate, result.InitialAirDate, result.NextAirDate);
         }
 

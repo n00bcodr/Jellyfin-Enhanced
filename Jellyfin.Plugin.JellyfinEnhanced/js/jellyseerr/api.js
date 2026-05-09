@@ -764,15 +764,25 @@
      * Fetches Seerr request settings (partial requests + special episodes).
      * @returns {Promise<{partialRequestsEnabled: boolean, enableSpecialEpisodes: boolean}>}
      */
+    // Audit HIGH-2: keep last-known good settings across a Seerr outage so
+    // the request modal doesn't silently flip to whole-season UI when admin
+    // had partial requests enabled. The backend now returns 503 on outage
+    // (was 200+false). Cache the last successful response in module scope.
+    let _lastRequestSettings = null;
     api.fetchRequestSettings = async function() {
         try {
-            const result = await get('/settings/partial-requests');
-            return {
+            const result = await get('/settings/partial-requests', { skipCache: true });
+            const settings = {
                 partialRequestsEnabled: !!(result && result.partialRequestsEnabled),
                 enableSpecialEpisodes: !!(result && result.enableSpecialEpisodes)
             };
+            _lastRequestSettings = settings;
+            return settings;
         } catch (error) {
             console.warn(`${logPrefix} Failed to fetch request settings:`, error);
+            // Return last known good if we have one — better than flipping the
+            // UI to "no partial requests" when Seerr is briefly unreachable.
+            if (_lastRequestSettings) return _lastRequestSettings;
             return { partialRequestsEnabled: false, enableSpecialEpisodes: false };
         }
     };
