@@ -295,6 +295,49 @@ After landing the field-strip filter, season-poster blur, and tag-data short-cir
 
 Top-priority next batch (will fix in order): R4-C1 (enableUserData bypass), R4-H3 (session-by-IP regression — share helper), R4-H4 (missing routes), R4-H5 (Season Overview leak), R4-H7 (cache invalidation on UserDataSaved), R4-H2 (SearchHints).
 
+## Round 20 (2026-05-10) — External API + 5h black-box testing pass
+
+### New surface
+
+Six new endpoints + 1 doc file landed: `/spoiler-blur/info`,
+`/spoiler-blur/config`, `/spoiler-blur/state`, `/spoiler-blur/movies`,
+`/spoiler-blur/check/{itemId}`, `/spoiler-blur/evaluate` (batch).
+SPOILER_BLUR_API.md at repo root is the integration spec for external
+clients (Streamyfin / Findroid / Swiftfin / custom apps).
+
+### Bugs found + fixed
+
+| ID | Source | Status | Summary |
+|---|---|---|---|
+| **R20-H1** | round-1 black-box | **fixed** | `POST /spoiler-blur/series/{id}` and `POST /spoiler-blur/movies/{id}` returned `500` instead of `404` when given a syntactically-valid GUID for a non-existent item — `_libraryManager.GetItemById<BaseItem>` throws `InvalidOperationException` ("Cannot deserialize unknown type") for some IDs that hit a partially-stored library row. Added try/catch around both lookups; treat any throw as item-not-found → existing 404 path fires. |
+
+### Verified-clean (no bugs found across rounds)
+
+| Round | Coverage | Result |
+|---|---|---|
+| 1 | Endpoint reachability, anonymous /info, auth-required gates, shape sanity, malformed/empty/oversize batches, valid+invalid mixed batch, series toggle round-trip, plugin version | 26/26 pass |
+| 2 | Multi-user isolation (admin DELETE doesn't affect TestAdmin), Episode shape, Movie shape (replaceName=null carve-out), idempotent POST, 200-batch sizing, /check ≡ /evaluate single-item | 9/9 pass (2 test-script bugs noted, not real) |
+| 3 | Real Movie via Recursive=true, idempotent POST/DELETE, Episode S/E numbers, Series replaceName=null per design, /state ≡ /series, /info pluginVersion stable, master-OFF→shouldBlur=false | 15/15 pass |
+| 4 | Master-switch flipping via plugin config endpoint, end-to-end strip via /Items, image bytes <50KB after blur, no-store cache headers, watched→pass-through, movie-in-list shouldBlur=true, movie name preserved (R17 carve-out), movie Overview stripped | 17/17 pass (after correcting test setup) |
+| 5 | Non-admin user access, dashed/uppercase GUIDs, weird/XSS-shape IDs return null entries, concurrent POST burst (10 parallel), POST/DELETE storm, /info concurrent identical, /state config keys complete, path-traversal IDs, no-auth/bad-token=401, DELETE unknown=200, DELETE malformed=400 | 19/19 pass |
+| 6 | Search hints stripping (Name + MatchedTerm absent), PlaybackInfo Path stripped, GuestStars filter, image-burst cache consistency (≤2 unique sizes for 30 parallel) | 7/9 pass; 2 test-bugs (`MatchedTerm` absent vs null literal — same effect, test assertion was overly strict; master-flip used stale baseline) |
+
+### Coverage observations
+
+- ✓ Auth: all endpoints correctly require Bearer except `/info` which is intentionally anonymous for capability discovery
+- ✓ HTTP semantics: 400 for malformed input, 404 for unknown item, 401 for missing/bad token, 200 for idempotent operations
+- ✓ Concurrent access: dict-keyed by user, no cross-user contamination under burst
+- ✓ Versioning: `apiVersion=1` on /info; field additions are non-breaking
+- ✓ End-to-end strip: /Items/{id} response shows Overview→placeholder, Name replaced, Tags=[], People filtered
+- ✓ Image filter: blur cached server-side (≤2 unique sizes across 30 parallel), no-store header set
+- ✓ Search hints: episode names rewritten to "Season X, Episode Y", MatchedTerm not in response
+- ✓ PlaybackInfo: MediaSourceInfo.Path stripped (R11-H2 still holds)
+- ✓ Master-switch: flipping the admin toggle via /Plugins/{id}/Configuration immediately propagates (no restart needed) — /info reflects new state on next call
+
+### Final state
+
+22 commits on `features/spoiler-blur-images` post-R19 → R20 lands the 6 endpoints + docs + 1 fix. Branch ready to merge.
+
 ## Round 19 (2026-05-07) — Scenes-rail feature convergence
 
 Sources: silent-failure-hunter (zero findings — explicit convergence), code-reviewer (zero findings — "Branch ready to merge"), security-reviewer (zero findings — "Convergence declared"), codex (output cut off mid-investigation, no findings emitted).
