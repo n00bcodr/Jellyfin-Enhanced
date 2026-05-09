@@ -75,22 +75,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
         /// <summary>
         /// Strips internal Seerr URLs out of human-readable error messages so
-        /// non-admin callers don't see network topology. Audit B-A5-1: the
-        /// previous regex put `.` in the negated class, which made it stop at
-        /// the first dot of every domain — leaving the rest of the hostname
-        /// and full path leaked. The fix:
-        ///   - greedy on every non-whitespace, non-bracket, non-quote, non-angle
-        ///     char (incl. dots, slashes, ports, query strings)
-        ///   - then strip a trailing `.,;:!?)]"'` off the matched group so a
-        ///     URL at the end of a sentence doesn't swallow the period.
+        /// non-admin callers don't see network topology. Audit B-A5-1.
+        /// Match shape (each branch covers a host form, then any path/query):
+        ///   - bracketed IPv6 host: `[::ffff:169.254.169.254]`
+        ///   - regular host: any non-whitespace, non-quote, non-angle, non-paren char
+        /// Then any path/query bytes up to a trailing punctuation/whitespace boundary.
+        /// `IgnoreCase` so `HTTPS://internal/...` is also stripped.
         /// </summary>
         public static string SanitizeMessage(string message)
         {
             if (string.IsNullOrEmpty(message)) return message;
             return System.Text.RegularExpressions.Regex.Replace(
                 message,
-                @"https?://[^\s)\]""'<>]+?(?=[.,;:!?)\]""'>]*(?:\s|$))",
-                "<seerr-url>"
+                @"https?://(?:\[[^\]\s]+\]|[^\s)\]""'<>/]+)(?:[^\s)\]""'<>]*?)(?=[.,;:!?)\]""'>]*(?:\s|$))",
+                "<seerr-url>",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
             );
         }
     }

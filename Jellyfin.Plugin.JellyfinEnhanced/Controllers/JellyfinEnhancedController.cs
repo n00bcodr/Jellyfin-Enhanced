@@ -1296,6 +1296,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> GetServiceDetails(string type, int serverId)
         {
+            // Allowlist the type segment so only known Seerr service routes are reachable —
+            // `/api/v1/service/{type}/{serverId}` is interpolated into the upstream URL, so
+            // any user-supplied value would be passed through. Today Seerr only knows
+            // sonarr/radarr; reject anything else with 400.
+            if (type != "sonarr" && type != "radarr")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_service_type", message = "Service type must be 'sonarr' or 'radarr'." }));
+            }
             return ProxyJellyseerrRequest($"/api/v1/service/{type}/{serverId}", HttpMethod.Get);
         }
 
@@ -4851,10 +4859,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var url = instance.Url.TrimEnd('/');
-                var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
-                // Do NOT use DefaultRequestHeaders for the API key — CreateClient() may return a
-                // pooled/shared instance and DefaultRequestHeaders mutations are not thread-safe
-                // across concurrent fan-out calls. Use a per-request HttpRequestMessage instead.
+                // Arr (Sonarr/Radarr) instances are commonly fronted by reverse proxies that
+                // 301/302 between http↔https or trailing-slash variants. Use the default
+                // factory client so redirects are followed — the Seerr-specific named client
+                // (SeerrHttpHelper.NamedClient, AllowAutoRedirect=false) is only appropriate
+                // for Seerr where a 302 to a login URL is a security signal, not a normal
+                // canonicalization.
+                // DefaultRequestHeaders mutations remain thread-unsafe for pooled instances,
+                // so the API key continues to be set per-request via HttpRequestMessage below.
+                var client = _httpClientFactory.CreateClient();
                 client.Timeout = timeout;
 
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{url}{endpointPath}");
