@@ -675,11 +675,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (!reachable)
                 {
+                    // Admins get a pointer to the JE log (which carries the
+                    // full code=Cloudflare5xx status=... cf-ray=... line);
+                    // non-admins get plain copy.
+                    var unreachableMsg = IsAdminUser()
+                        ? "Can't reach Seerr. Check the JE log for cf-ray / Content-Type / status details."
+                        : "Can't reach Seerr right now. Please try again in a moment.";
                     return StatusCode(502, new
                     {
                         error = true,
                         code = "unreachable",
-                        message = "Can't reach Seerr right now. Please try again in a moment."
+                        message = unreachableMsg
                     });
                 }
                 if (IsJellyseerrImportBlocked(jellyfinUserId, JellyfinEnhanced.Instance?.Configuration ?? new Configuration.PluginConfiguration()))
