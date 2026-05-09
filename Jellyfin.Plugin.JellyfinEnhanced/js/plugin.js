@@ -524,9 +524,9 @@
                 'elsewhere/reviews.js',
 
                 // jellyseerr
+                'jellyseerr/request-manager.js',
                 'jellyseerr/api.js',
                 'jellyseerr/jellyseerr.js',
-                'jellyseerr/request-manager.js',
                 'jellyseerr/ui.js',
                 'jellyseerr/modal.js',
                 'jellyseerr/more-info-modal.js',
