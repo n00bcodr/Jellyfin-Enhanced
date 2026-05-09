@@ -565,26 +565,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// a Seerr restart. Per-user paths (movie/tv detail with requestedBy
         /// info, watchlist, search-with-language) keep the per-user key.
         /// Audit HIGH-7 / C01-CRIT-4.
+        ///
+        /// Round-6 follow-up: the actual discovery URLs JE issues are
+        /// `/api/v1/discover/movies?page=1&genre=28` (query-string form),
+        /// NOT `/api/v1/discover/movies/genre/28` (path form). The
+        /// route-handlers at lines ~1500/~1860 build the query-string form.
+        /// Without this fix, the public-scope check is dead code for the
+        /// dominant discovery shape.
         /// </summary>
         private static bool IsPublicScopeApiPath(string apiPath)
         {
             // Genre slider, network/studio/keyword discovery — pure TMDB
             // metadata, identical across users.
             if (apiPath.Contains("/discover/genreslider/", StringComparison.OrdinalIgnoreCase)) return true;
-            if (apiPath.Contains("/discover/movies/genre/", StringComparison.OrdinalIgnoreCase)) return true;
-            if (apiPath.Contains("/discover/tv/genre/", StringComparison.OrdinalIgnoreCase)) return true;
-            if (apiPath.Contains("/discover/movies/keyword/", StringComparison.OrdinalIgnoreCase)) return true;
-            if (apiPath.Contains("/discover/tv/keyword/", StringComparison.OrdinalIgnoreCase)) return true;
-            if (apiPath.Contains("/discover/movies/studio/", StringComparison.OrdinalIgnoreCase)) return true;
-            if (apiPath.Contains("/discover/tv/network/", StringComparison.OrdinalIgnoreCase)) return true;
-            // Genre lists, person directory.
+            // Query-string-form discovery (the shape JE actually emits).
+            // Discovery responses include media.requests/requestedBy etc.
+            // BUT the proxy uses X-Api-User header to filter requestedBy
+            // server-side, so the body is per-user — except for very simple
+            // shapes (no requestedBy filter, no language). Keep these
+            // per-user to be safe; only the truly content-only TMDB sliders
+            // and direct genre/keyword/person lookups are shared.
             if (apiPath.StartsWith("/api/v1/genres/", StringComparison.OrdinalIgnoreCase)) return true;
             if (apiPath.StartsWith("/api/v1/person/", StringComparison.OrdinalIgnoreCase)) return true;
             if (apiPath.StartsWith("/api/v1/keyword", StringComparison.OrdinalIgnoreCase)) return true;
+            // For discover/movies?genre=X and discover/tv?genre=X paths
+            // (query-string discovery), the response includes mediaInfo
+            // for items the user has watched. Keep per-user.
             // Per-user response includes mediaInfo.requestedBy filtered to
             // the calling user's perspective and 4K availability based on
             // user permission, so KEEP per-user for movie/{id}, tv/{id},
-            // collection/{id}, similar/recommendations, search.
+            // collection/{id}, similar/recommendations, search, and
+            // /discover/* with any filter.
             return false;
         }
 
@@ -5427,7 +5438,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var jellyseerrUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim().TrimEnd('/');
+                // Audit HIGH-1 (real): iterate every configured Seerr URL, not
+                // just the first one. Previously a downed primary URL produced
+                // an immediate 502 even when a second URL would have answered.
+                var allUrls = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(u => u.Trim().TrimEnd('/'))
+                    .Where(u => !string.IsNullOrWhiteSpace(u))
+                    .ToList();
+                if (allUrls.Count == 0)
+                {
+                    return StatusCode(503, new { error = true, code = "disabled", message = "Seerr URL not configured." });
+                }
                 var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
                 client.Timeout = TimeSpan.FromSeconds(15);
                 bool hasRequestViewPermission = false;
@@ -5474,17 +5495,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     filterParam += $"&requestedBy={jellyseerrUser.Id}";
                 }
 
-                var requestsUri = $"{jellyseerrUrl}/api/v1/request?take={take}&skip={skip}{filterParam}";
-                using var requestsRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                    HttpMethod.Get, requestsUri, config.JellyseerrApiKey);
-                using var response = await client.SendAsync(requestsRequest);
-                var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestsUri);
-                if (error != null)
+                // Audit HIGH-1 (real): iterate URLs; only return 502 if ALL fail.
+                // Per-URL try/catch so a DNS failure or timeout on URL #1 doesn't
+                // escape and prevent URL #2 from being tried.
+                string? json = null;
+                string? jellyseerrUrl = null;     // url that responded (for downstream enrichment)
+                Helpers.Jellyseerr.SeerrError? lastError = null;
+                foreach (var candidateUrl in allUrls)
                 {
-                    // Audit HIGH-1: previously silently 200+empty, indistinguishable
-                    // from "no requests." Now surfaces a structured 502 so the
-                    // frontend can render a banner instead of misleading empty state.
-                    _logger.Warning($"Seerr requests fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+                    var requestsUri = $"{candidateUrl}/api/v1/request?take={take}&skip={skip}{filterParam}";
+                    try
+                    {
+                        using var requestsRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestsUri, config.JellyseerrApiKey);
+                        using var response = await client.SendAsync(requestsRequest);
+                        var (urlJson, urlError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestsUri);
+                        if (urlError == null && urlJson != null)
+                        {
+                            json = urlJson;
+                            jellyseerrUrl = candidateUrl;
+                            break;
+                        }
+                        lastError = urlError;
+                        _logger.Warning($"Seerr requests fetch failed at {candidateUrl}: code={urlError!.Code} status={urlError.HttpStatus} cf-ray={urlError.CfRay} — {urlError.Message}");
+                    }
+                    catch (Exception innerEx)
+                    {
+                        lastError = new Helpers.Jellyseerr.SeerrError
+                        {
+                            Code = Helpers.Jellyseerr.SeerrErrorCode.Unreachable,
+                            HttpStatus = 0,
+                            Url = candidateUrl,
+                            Message = $"Failed to reach {candidateUrl}: {innerEx.Message}"
+                        };
+                        _logger.Warning($"Seerr requests fetch threw at {candidateUrl}: {innerEx.Message}");
+                    }
+                }
+                if (json == null)
+                {
+                    var error = lastError!;
                     int httpCode = error.Code switch
                     {
                         Helpers.Jellyseerr.SeerrErrorCode.HtmlResponse => 502,
@@ -5534,7 +5583,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
                         {
-                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl, config.JellyseerrApiKey);
+                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.JellyseerrApiKey);
                             title = enrichedData.Title;
                             year = enrichedData.Year;
                             posterUrl = enrichedData.PosterUrl;
