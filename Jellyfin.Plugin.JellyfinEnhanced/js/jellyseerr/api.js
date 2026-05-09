@@ -251,16 +251,16 @@
             window.__JE_userStatusBannerShown = status.reason;
 
             const reasons = {
-                blocked: 'Your Jellyfin user is in the Seerr import blocklist. Ask the admin to remove you to enable Seerr discovery.',
-                unlinked: 'Seerr is reachable but no Seerr account is linked to this Jellyfin user. Sign into Seerr at least once.',
-                unreachable: 'Could not reach Seerr. Check your network or reverse-proxy configuration.',
-                no_user: 'Could not resolve your Jellyfin user. Try logging out and back in.'
+                blocked: 'Your administrator has disabled Seerr for your account.',
+                unlinked: 'Your Seerr account isn\'t linked yet. Sign in to Seerr once to enable requests.',
+                unreachable: 'Can\'t reach Seerr right now. Please try again in a moment.',
+                no_user: 'Couldn\'t load your account. Try signing out and back in.'
             };
-            // Audit L3-4: JE.toast renders via innerHTML. Server-derived
-            // strings (status.message comes from SeerrHttpHelper which now
-            // sanitizes upstream URLs but could still echo HTTP reason-
-            // phrases) must be HTML-escaped before being placed into the DOM.
-            const rawMsg = status.message || reasons[status.reason] || 'Seerr discovery is currently unavailable.';
+            // Audit L3-4: JE.toast renders via innerHTML. status.message comes
+            // from SeerrHttpHelper.ToResponseShape, which uses UserMessage
+            // (plain English, no URLs / cf-ray / proxy product names). Still
+            // HTML-escape it before insertion as defence-in-depth.
+            const rawMsg = status.message || reasons[status.reason] || 'Seerr is unavailable right now.';
             const msg = (typeof JE !== 'undefined' && typeof JE.escapeHtml === 'function')
                 ? JE.escapeHtml(rawMsg)
                 : String(rawMsg).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];});

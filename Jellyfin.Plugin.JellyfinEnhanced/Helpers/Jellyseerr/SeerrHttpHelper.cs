@@ -34,34 +34,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
     /// <summary>
     /// Structured error envelope. JSON-serializable so frontend can read .code.
+    /// `Message` carries the technical, log-friendly text (URLs, cf-ray, status
+    /// codes, proxy product names). `UserMessage` carries the plain-English
+    /// version for the banner. Admins see `Message`; non-admins see
+    /// `UserMessage` — never the raw technical text.
     /// </summary>
     public class SeerrError
     {
         public SeerrErrorCode Code { get; set; }
         public int HttpStatus { get; set; }
         public string Message { get; set; } = string.Empty;
+        public string UserMessage { get; set; } = string.Empty;
         public string? CfRay { get; set; }
         public string? Url { get; set; }
 
         /// <summary>
-        /// Default response shape for non-admin callers. Internal Seerr URL is
-        /// stripped (audit L3-3 / A5/A6 — F33 redacts JellyseerrBaseUrl from
-        /// unauth /public-config; the typed error path must apply the same
-        /// redaction to non-admin error responses).
+        /// Default response shape for non-admin callers. Internal URL stripped,
+        /// cf-ray stripped, copy is plain English. Audit L3-3 / A5/A6.
         /// </summary>
         public object ToResponseShape() => new
         {
             error = true,
             code = Code.ToString(),
             httpStatus = HttpStatus,
-            message = SanitizeMessage(Message),
-            cfRay = CfRay,
+            message = !string.IsNullOrEmpty(UserMessage) ? UserMessage : DefaultUserMessage(Code),
         };
 
         /// <summary>
-        /// Admin response shape — keeps the full message + URL for diagnostics.
-        /// Audit A6: admins clicking "Test connection" want to see the actual
-        /// upstream URL that was probed.
+        /// Admin response shape — keeps the technical message + URL + cf-ray
+        /// for diagnostics. Audit A6: admins clicking "Test connection" want
+        /// to see the actual upstream URL that was probed.
         /// </summary>
         public object ToAdminResponseShape() => new
         {
@@ -71,6 +73,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             message = Message,
             cfRay = CfRay,
             url = Url,
+        };
+
+        /// <summary>
+        /// Fallback plain-English copy for any error site that didn't set
+        /// UserMessage explicitly. Keep it neutral — no proxy product names,
+        /// no HTTP jargon, no URLs.
+        /// </summary>
+        private static string DefaultUserMessage(SeerrErrorCode code) => code switch
+        {
+            SeerrErrorCode.Unreachable       => "Can't reach Seerr right now. Please try again in a moment.",
+            SeerrErrorCode.Unauthorized      => "Seerr couldn't sign in. Ask your administrator to check the Seerr settings.",
+            SeerrErrorCode.Forbidden         => "Seerr declined the request. Ask your administrator to check your account permissions.",
+            SeerrErrorCode.UserUnlinked      => "Your Seerr account isn't linked yet. Sign in to Seerr once to enable requests.",
+            SeerrErrorCode.UserBlocked       => "Your administrator has disabled Seerr for your account.",
+            SeerrErrorCode.HtmlResponse      => "Seerr is unreachable. Ask your administrator to check the connection.",
+            SeerrErrorCode.UpstreamRedirect  => "Seerr is unreachable. Ask your administrator to check the connection.",
+            SeerrErrorCode.Cloudflare5xx     => "Seerr is having connection issues. Please try again in a moment.",
+            SeerrErrorCode.UpstreamError     => "Seerr returned an error. Please try again in a moment.",
+            SeerrErrorCode.ParseError        => "Got an unexpected response from Seerr. Please try again in a moment.",
+            SeerrErrorCode.Timeout           => "Seerr took too long to respond. Please try again in a moment.",
+            SeerrErrorCode.UrlNotAllowed     => "Seerr is not configured correctly. Ask your administrator to check the Seerr URL.",
+            SeerrErrorCode.ConfigInvalid     => "Seerr is not configured. Ask your administrator to set it up.",
+            _                                => "Seerr is unavailable right now.",
         };
 
         /// <summary>
@@ -189,7 +214,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     HttpStatus = status,
                     CfRay = cfRay,
                     Url = url,
-                    Message = $"Cloudflare returned {status} for {url}. Check Cloudflare logs (cf-ray={cfRay ?? "n/a"})."
+                    Message = $"Cloudflare returned {status} for {url}. Check Cloudflare logs (cf-ray={cfRay ?? "n/a"}).",
+                    UserMessage = "Seerr is having connection issues. Please try again in a moment."
                 });
             }
 
@@ -205,7 +231,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     HttpStatus = status,
                     CfRay = cfRay,
                     Url = url,
-                    Message = $"Got redirect to {response.Headers.Location} — likely a reverse-proxy auth challenge. Configure your proxy to bypass auth for the Jellyfin server's IP."
+                    Message = $"Got redirect to {response.Headers.Location} — likely a reverse-proxy auth challenge. Configure your proxy to bypass auth for the Jellyfin server's IP.",
+                    UserMessage = "Seerr is unreachable. Ask your administrator to check the connection."
                 });
             }
 
@@ -238,7 +265,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     HttpStatus = status,
                     CfRay = cfRay,
                     Url = url,
-                    Message = $"Seerr returned non-JSON response (Content-Type: {response.Content.Headers.ContentType?.MediaType ?? "n/a"}). This usually means Cloudflare, Pangolin, or another reverse-proxy intercepted the request. Configure your proxy to bypass auth challenges for the Jellyfin server's IP."
+                    Message = $"Seerr returned non-JSON response (Content-Type: {response.Content.Headers.ContentType?.MediaType ?? "n/a"}). This usually means Cloudflare, Pangolin, or another reverse-proxy intercepted the request. Configure your proxy to bypass auth challenges for the Jellyfin server's IP.",
+                    UserMessage = "Seerr is unreachable. Ask your administrator to check the connection."
                 });
             }
 
@@ -255,7 +283,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     HttpStatus = 401,
                     CfRay = cfRay,
                     Url = url,
-                    Message = "Seerr rejected the API key. Check the key has not been rotated and matches the Seerr install."
+                    Message = "Seerr rejected the API key. Check the key has not been rotated and matches the Seerr install.",
+                    UserMessage = "Seerr couldn't sign in. Ask your administrator to check the Seerr settings."
                 });
             }
             if (status == 403)
@@ -266,7 +295,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     HttpStatus = 403,
                     CfRay = cfRay,
                     Url = url,
-                    Message = "Seerr returned 403. Common causes: API key rotated, user lacks permission, or CSRF protection enabled in Seerr."
+                    Message = "Seerr returned 403. Common causes: API key rotated, user lacks permission, or CSRF protection enabled in Seerr.",
+                    UserMessage = "Seerr declined the request. Ask your administrator to check your account permissions."
                 });
             }
 
@@ -276,7 +306,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 HttpStatus = status,
                 CfRay = cfRay,
                 Url = url,
-                Message = $"Seerr returned {status} from {url}."
+                Message = $"Seerr returned {status} from {url}.",
+                UserMessage = "Seerr returned an error. Please try again in a moment."
             });
         }
 
@@ -299,7 +330,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     Code = SeerrErrorCode.ParseError,
                     HttpStatus = 0,
                     Url = url,
-                    Message = $"Failed to parse Seerr response as {typeof(T).Name}: {ex.Message}"
+                    Message = $"Failed to parse Seerr response as {typeof(T).Name}: {ex.Message}",
+                    UserMessage = "Got an unexpected response from Seerr. Please try again in a moment."
                 });
             }
         }

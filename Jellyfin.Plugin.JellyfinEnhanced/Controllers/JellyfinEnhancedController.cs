@@ -679,7 +679,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         error = true,
                         code = "unreachable",
-                        message = "Could not reach Seerr — check JE log for cf-ray / Content-Type details (e.g. reverse-proxy auth challenge or upstream HTML response)."
+                        message = "Can't reach Seerr right now. Please try again in a moment."
                     });
                 }
                 if (IsJellyseerrImportBlocked(jellyfinUserId, JellyfinEnhanced.Instance?.Configuration ?? new Configuration.PluginConfiguration()))
@@ -688,7 +688,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         error = true,
                         code = "blocked",
-                        message = "Your Jellyfin user is in the Seerr import blocklist."
+                        message = "Your administrator has disabled Seerr for your account."
                     });
                 }
                 return NotFound(new
@@ -789,7 +789,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             httpClient.Timeout = TimeSpan.FromSeconds(15);
 
             int lastStatusCode = 502;
-            object lastErrorBody = new { error = true, code = "unreachable", message = "Could not connect to any configured Jellyseerr instance." };
+            object lastErrorBody = new { error = true, code = "unreachable", message = "Can't reach Seerr right now. Please try again in a moment." };
 
             foreach (var url in urls)
             {
@@ -892,7 +892,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     else
                     {
-                        lastErrorBody = new { error = true, code = "unreachable", message = "Failed to reach Seerr." };
+                        lastErrorBody = new { error = true, code = "unreachable", message = "Can't reach Seerr right now. Please try again in a moment." };
                     }
                 }
             }
@@ -5539,7 +5539,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Code = Helpers.Jellyseerr.SeerrErrorCode.Unreachable,
                             HttpStatus = 0,
                             Url = candidateUrl,
-                            Message = $"Failed to reach {candidateUrl}: {innerEx.Message}"
+                            Message = $"Failed to reach {candidateUrl}: {innerEx.Message}",
+                            UserMessage = "Can't reach Seerr right now. Please try again in a moment."
                         };
                         _logger.Warning($"Seerr requests fetch threw at {candidateUrl}: {innerEx.Message}");
                     }
