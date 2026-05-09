@@ -3478,9 +3478,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Confirm the item exists and is a series the user has access to.
             // GetItemById<T>(id, user) returns null when the item is filtered
             // out by library access — fail with 404 so we don't leak existence.
+            //
+            // Test-bug fix: arbitrary GUIDs that hit a partially-stored
+            // library row throw InvalidOperationException from Jellyfin's
+            // deserializer ("Cannot deserialize unknown type"). Treat any
+            // lookup throw as 404 — the user can't act on something that
+            // isn't a valid item anyway.
             var jUser = _userManager.GetUserById(userId.Value);
             if (jUser == null) return Forbid();
-            var item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(seriesGuid, jUser);
+            MediaBrowser.Controller.Entities.BaseItem? item = null;
+            try
+            {
+                item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(seriesGuid, jUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"GetItemById<BaseItem> threw for {seriesGuid}: {ex.GetType().Name}: {ex.Message}");
+            }
             if (item is not MediaBrowser.Controller.Entities.TV.Series series)
             {
                 return NotFound(new { success = false, message = "Series not found or not accessible." });
@@ -3621,9 +3635,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Invalid movieId." });
             }
 
+            // Same protection as the Series endpoint: bogus GUID can throw
+            // InvalidOperationException from Jellyfin's deserializer.
             var jUser = _userManager.GetUserById(userId.Value);
             if (jUser == null) return Forbid();
-            var item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(movieGuid, jUser);
+            MediaBrowser.Controller.Entities.BaseItem? item = null;
+            try
+            {
+                item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(movieGuid, jUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"GetItemById<BaseItem> threw for {movieGuid}: {ex.GetType().Name}: {ex.Message}");
+            }
             if (item is not MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
                 return NotFound(new { success = false, message = "Movie not found or not accessible." });
