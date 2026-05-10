@@ -298,6 +298,7 @@ text and replacement name.
 | `replaceName` | When non-null, replace `item.Name` with this string. Movies: always `null` (movie titles are not hidden, per design). |
 | `placeholder` | Admin-set placeholder string for stripped descriptions. |
 | `chaptersToHideName` | For movies under progressive strip: 0-based chapter indexes whose names/thumbnails should be hidden. Empty means show all (or strip all if `shouldStripMetadata && stripChapters`). |
+| `imageCacheToken` | 8-hex-char hash that **changes whenever the image bytes for this item would change** (watched-state, blur mode, intensity, master-switch). Append it to image URLs as `?_v={token}` to defeat aggressive native image caches. See [Image cache busting](#image-cache-busting). |
 
 **`fieldsToStrip` keys:**
 
@@ -387,6 +388,60 @@ When `true`, episodes / seasons get a generic `Name`:
 - **Movies are never renamed** even with this on (titles surface in URLs / nav anyway; per-design carve-out).
 
 ---
+
+## Image cache busting
+
+**Problem:** Native image cache libraries (Glide, Coil, SDWebImage,
+ImageKit, etc.) cache image bytes strictly **by URL** and routinely
+ignore HTTP `Cache-Control` headers. When the user marks an episode
+watched, the server happily serves the unblurred bytes — but the
+client never asks because it has the blurred copy cached under the
+exact same URL. The only "fix" was clearing the app's image cache
+manually.
+
+**Two automatic solutions, no opt-in needed:**
+
+### 1. Server-side ImageTags mutation (zero integration)
+
+The plugin's field-strip filter mutates `BaseItemDto.ImageTags` for
+items in the user's spoiler list. The tag becomes
+`sb-{stateHash}-{originalTag}`. Native clients build image URLs
+using `?tag={ImageTags["Primary"]}`, so:
+
+- Unwatched: URL is `/Items/{id}/Images/Primary?tag=sb-abc12345-deadbeef`
+- Watched: URL becomes `/Items/{id}/Images/Primary?tag=sb-99887766-deadbeef` (different state hash)
+
+Native client cache keys by URL → cache miss → fresh fetch → unblurred
+bytes appear immediately. **Works without any client code changes.**
+
+### 2. `imageCacheToken` (when you want explicit control)
+
+For clients that construct image URLs themselves rather than reading
+`ImageTags` from the DTO, the `/check` and `/evaluate` endpoints
+return an `imageCacheToken`. Append it to your image URLs:
+
+```ts
+const eval_ = await fetch(`${jf}/JellyfinEnhanced/spoiler-blur/check/${itemId}`,
+  { headers: { 'X-Emby-Token': token } }).then(r => r.json());
+
+const imgUrl = `${jf}/Items/${itemId}/Images/Primary?fillWidth=320&_v=${eval_.imageCacheToken}`;
+```
+
+Both approaches use the **same hash function**, so a client that mixes
+them (some images from `ImageTags`, some constructed manually) ends
+up with consistent URLs.
+
+The hash inputs:
+- itemId
+- server-wide `enabled`
+- per-item `shouldBlur` decision (function of in-list + watched)
+- `blurMode` ("blur" / "hide" → different output bytes)
+- `blurIntensity` (different sigma → different bytes)
+- `blurArtwork` (gates Backdrop/Art tier)
+- `playbackPositionTicks` (movies — chapter image reveal advances)
+
+Token format: 8 hex chars (32 bits). Collision probability across
+typical libraries is negligible.
 
 ## Recommended client patterns
 

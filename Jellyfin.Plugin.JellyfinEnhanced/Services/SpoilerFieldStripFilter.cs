@@ -460,6 +460,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (item.Id == Guid.Empty) return;
                 if (!userState.Series.ContainsKey(item.Id.ToString("N"))) return;
+                // R20-cache-bust: mutate ImageTags so native client image
+                // caches refetch on state change. Series has no per-watched
+                // semantics so just hash the in-list state.
+                MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
                 ApplyStripping(item, cfg, userId);
                 return;
             }
@@ -473,8 +477,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (item.Id == Guid.Empty) return;
                 if (!userState.Movies.ContainsKey(item.Id.ToString("N"))) return;
                 bool moviePlayed;
-                if (item.UserData != null) moviePlayed = item.UserData.Played;
-                else moviePlayed = ResolvePlayedServerSide(userId, item.Id);
+                long moviePlayPos = 0;
+                if (item.UserData != null)
+                {
+                    moviePlayed = item.UserData.Played;
+                    moviePlayPos = item.UserData.PlaybackPositionTicks;
+                }
+                else
+                {
+                    moviePlayed = ResolvePlayedServerSide(userId, item.Id);
+                }
+                // R20-cache-bust: mutate ImageTags BEFORE the watched-skip.
+                // We want the URL to flip on watched-state change so an
+                // already-cached blurred image gets re-fetched once the user
+                // marks the movie played.
+                MutateImageTagsForCacheBust(item, cfg, moviePlayed, moviePlayPos);
                 if (moviePlayed) return;
                 ApplyStripping(item, cfg, userId);
                 return;
@@ -503,6 +520,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // per-extra watched flag; apply strip unconditionally
                 // since the extra exists as part of an episode whose
                 // very metadata the user has opted into hiding.
+                MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
                 ApplyStripping(item, cfg, userId);
                 return;
             }
@@ -539,18 +557,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // fail-closed would over-strip every S2+. Fall back to the
                 // server-side helper that mirrors the image filter's logic
                 // (HasWatchedAnyEpisodeInSeason via library iteration).
+                bool seasonAnyWatched = false;
                 if (item.UserData != null
                     && item.UserData.UnplayedItemCount.HasValue
                     && item.RecursiveItemCount.HasValue)
                 {
                     var unplayed = item.UserData.UnplayedItemCount.Value;
                     var totalIndicator = item.RecursiveItemCount.Value;
-                    if (totalIndicator > 0 && unplayed < totalIndicator) return; // some watched
+                    if (totalIndicator > 0 && unplayed < totalIndicator) seasonAnyWatched = true;
                 }
                 else if (HasWatchedAnyEpisodeInSeasonServerSide(userId, item.Id))
                 {
-                    return; // some watched — fall through to no-strip
+                    seasonAnyWatched = true;
                 }
+                // R20-cache-bust: mutate ImageTags BEFORE the watched-skip
+                // so the URL flips when the user starts the season.
+                MutateImageTagsForCacheBust(item, cfg, seasonAnyWatched, playbackPositionTicks: 0);
+                if (seasonAnyWatched) return;
                 ApplyStripping(item, cfg, userId);
                 return;
             }
@@ -570,6 +593,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 played = ResolvePlayedServerSide(userId, item.Id);
             }
+            // R20-cache-bust: same logic — mutate before watched-skip so
+            // the URL flips on watched-state change. Episode has no
+            // playback-position-affects-image (chapter rail belongs to the
+            // movie path), so pass 0.
+            MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
             if (played) return;
 
             ApplyStripping(item, cfg, userId);
@@ -772,6 +800,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Movie hints.
                 hint.MatchedTerm = null;
             }
+        }
+
+        // R20-cache-bust: mutate the DTO's `ImageTags` so the URL the
+        // client constructs differs whenever the user's spoiler-state for
+        // this item changes. Native image caches (Glide, Coil,
+        // SDWebImage) cache strictly by URL and routinely ignore
+        // Cache-Control: no-store. By tying the tag to a state-hash, a
+        // watched-state flip immediately invalidates the cached blurred
+        // image without the user having to clear app cache.
+        //
+        // Called from EVERY StripItem branch (not just ApplyStripping)
+        // because we want the cache-bust even when no field-strip toggles
+        // are on — the user opted into spoiler-blur, the image bytes
+        // depend on watched-state, the URL must reflect that.
+        public static void MutateImageTagsForCacheBust(
+            BaseItemDto item,
+            PluginConfiguration cfg,
+            bool watched,
+            long playbackPositionTicks)
+        {
+            if (item?.ImageTags == null || item.ImageTags.Count == 0) return;
+
+            // Hash the inputs that affect blur OUTPUT bytes. Same shape
+            // as the API's imageCacheToken so a client integrating with
+            // the API ends up with the SAME URL as one that doesn't.
+            var inputs = $"{item.Id:N}|{cfg?.SpoilerBlurEnabled == true}|{watched}|{cfg?.SpoilerBlurMode ?? "blur"}|{cfg?.SpoilerBlurIntensity ?? 40}|{cfg?.SpoilerBlurArtwork == true}|{playbackPositionTicks}";
+            var token = ShortHash(inputs);
+
+            // Prefix the existing tag rather than replace it — preserves
+            // Jellyfin's own image-version semantics (tag changes when
+            // image bytes change). Final URL: ?tag={our-token}-{jellyfin-tag}
+            var keys = item.ImageTags.Keys.ToArray();
+            foreach (var k in keys)
+            {
+                var orig = item.ImageTags[k] ?? string.Empty;
+                if (!orig.StartsWith("sb-", StringComparison.Ordinal))
+                {
+                    item.ImageTags[k] = "sb-" + token + "-" + orig;
+                }
+            }
+        }
+
+        // 8-hex-char SHA1 prefix. Sub-microsecond per call; fine for
+        // 200-item batches.
+        private static string ShortHash(string s)
+        {
+            using var sha = System.Security.Cryptography.SHA1.Create();
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(s));
+            return Convert.ToHexString(bytes).Substring(0, 8).ToLowerInvariant();
         }
 
         // Field-stripping body. Each block is gated on its own admin

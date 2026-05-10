@@ -4155,6 +4155,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
 
+                // imageCacheToken: deterministic 8-hex-char hash of the
+                // inputs that change the blur OUTPUT for this item. Native
+                // clients (Glide, Coil, SDWebImage, etc.) cache image bytes
+                // by URL and often ignore HTTP Cache-Control. Appending
+                // this token as a query param (`?_v={token}`) forces the
+                // cache to treat blurred-vs-unblurred-vs-stock-card as
+                // different resources, so marking an episode watched is
+                // immediately visible without manual cache clear.
+                //
+                // Inputs hashed:
+                //   - itemId (so collisions across items are impossible)
+                //   - serverEnabled (master switch)
+                //   - shouldBlur decision (function of inList + watched)
+                //   - blurMode ("blur" or "hide" → different bytes)
+                //   - blurIntensity (different sigma → different bytes)
+                //   - blurArtwork (gates Backdrop/Art tier)
+                //   - playbackPositionTicks (movies — chapter image
+                //     reveal advances as user watches)
+                var imageCacheToken = ComputeImageCacheToken(
+                    itemId,
+                    cfg?.SpoilerBlurEnabled == true,
+                    shouldBlur,
+                    cfg?.SpoilerBlurMode ?? "blur",
+                    cfg?.SpoilerBlurIntensity ?? 40,
+                    cfg?.SpoilerBlurArtwork == true,
+                    playbackPositionTicks);
+
                 return new
                 {
                     itemId = itemId.ToString("N"),
@@ -4171,6 +4198,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     seasonNumber = seasonNumber,
                     episodeNumber = episodeNumber,
                     chaptersToHideName = chaptersThatStripName,
+                    imageCacheToken = imageCacheToken,
                 };
             }
             catch (Exception ex)
@@ -4178,6 +4206,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"EvaluateItemForSpoiler failed for {itemId}: {ex.Message}");
                 return null;
             }
+        }
+
+        // R20-cache-bust: shared helper. The same shape lives in
+        // SpoilerFieldStripFilter.MutateImageTagsForCacheBust so a client
+        // integrating with the API ends up with the SAME `?_v=` token
+        // value as the server-injected ImageTag prefix — no integration
+        // ambiguity. 8-hex-char SHA1 prefix, sub-microsecond per call.
+        private static string ComputeImageCacheToken(
+            Guid itemId,
+            bool serverEnabled,
+            bool shouldBlur,
+            string blurMode,
+            int blurIntensity,
+            bool blurArtwork,
+            long playbackPositionTicks)
+        {
+            var inputs = $"{itemId:N}|{serverEnabled}|{shouldBlur}|{blurMode}|{blurIntensity}|{blurArtwork}|{playbackPositionTicks}";
+            using var sha = System.Security.Cryptography.SHA1.Create();
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(inputs));
+            return Convert.ToHexString(bytes).Substring(0, 8).ToLowerInvariant();
         }
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
