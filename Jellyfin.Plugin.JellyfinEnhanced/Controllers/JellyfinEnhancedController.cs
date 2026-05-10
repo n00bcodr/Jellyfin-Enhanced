@@ -4545,13 +4545,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
                         var isMovie = string.Equals(entry.Type, "Movie", StringComparison.Ordinal);
                         var isSeries = string.Equals(entry.Type, "Series", StringComparison.Ordinal);
-                        var isBoxSet = string.Equals(entry.Type, "BoxSet", StringComparison.Ordinal);
-                        if (!isEpisode && !isSeason && !isMovie && !isSeries && !isBoxSet) continue;
+                        if (!isEpisode && !isSeason && !isMovie && !isSeries) continue;
                         if (isMovie)
                         {
-                            // Movie spoiler list keyed by movie ID directly,
-                            // not SeriesId. Skip to the movie-specific match.
-                            if (!spState.Movies.ContainsKey(kvp.Key)) continue;
+                            // R23-collections-redesign: a movie is in scope
+                            // if directly in Movies dict OR a child of an
+                            // opted-in collection (BoxSet).
+                            if (!Guid.TryParse(kvp.Key, out var mGuid)) continue;
+                            if (!IsMovieIdInSpoilerScope(spState, mGuid)) continue;
                         }
                         else if (isSeries)
                         {
@@ -4563,13 +4564,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // series posters and the JE tag pipeline asks for
                             // series-level tag data.
                             if (!spState.Series.ContainsKey(kvp.Key)) continue;
-                        }
-                        else if (isBoxSet)
-                        {
-                            // Collection (BoxSet) keyed by collection ID; mirrors
-                            // the Series path so JE tag overlays don't render on
-                            // a blurred collection card.
-                            if (!spState.Collections.ContainsKey(kvp.Key)) continue;
                         }
                         else
                         {
@@ -4938,7 +4932,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (stripTagsEnabled
                     && spoilerState != null
                     && item is MediaBrowser.Controller.Entities.Movies.Movie spMovie
-                    && spoilerState.Movies.ContainsKey(spMovie.Id.ToString("N")))
+                    && IsMovieIdInSpoilerScope(spoilerState, spMovie.Id))
                 {
                     var spMovieUd = _userDataManager.GetUserData(user, spMovie);
                     if (spMovieUd?.Played != true)
@@ -4992,34 +4986,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
 
-                // R22-H1 Collection-stub: when the item is a BoxSet the user
-                // has spoiler mode enabled for, return the strip stub. Mirrors
-                // the Series-stub above — collections have no watched-state
-                // and no Name rewrite (collection name is the entry point
-                // the user just clicked, same as Series).
-                if (stripTagsEnabled
-                    && spoilerState != null
-                    && item is MediaBrowser.Controller.Entities.Movies.BoxSet spBoxSet
-                    && spoilerState.Collections.ContainsKey(spBoxSet.Id.ToString("N")))
-                {
-                    results.Add(new
-                    {
-                        Id = item.Id,
-                        Type = kind.ToString(),
-                        Genres = spStripGenres ? Array.Empty<string>() : (spBoxSet.Genres ?? Array.Empty<string>()),
-                        CommunityRating = spStripCommunity ? (float?)null : spBoxSet.CommunityRating,
-                        CriticRating = spStripCritic ? (float?)null : spBoxSet.CriticRating,
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
-                        Name = item.Name,
-                        Path = (string?)null,
-                        MediaStreams = (List<object>?)null,
-                        MediaSources = (List<object>?)null,
-                        FirstEpisode = (object?)null,
-                        Tags = spStripGenres ? Array.Empty<string>() : (spBoxSet.Tags ?? Array.Empty<string>()),
-                    });
-                    continue;
-                }
+                // R23-collections-redesign: BoxSet (Collection) DTOs pass
+                // through unstripped from the tag-data endpoint. The
+                // collection's own art is the entry point the user just
+                // clicked (like Series); blurring it would spoil the user's
+                // own navigation. The Movie-stub above already handles
+                // movies inside opted-in collections via IsMovieIdInSpoilerScope.
 
                 // Season-poster bug-fix: when the item is a Season of a
                 // series the user has spoiler mode on for, AND no episode in
@@ -6099,6 +6071,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // fall back to null so the strip silently no-ops rather than
         // returning 503 for the unrelated tag-cache request. The user's
         // actual /spoiler-blur/series endpoint will return 503 next call.
+        // R23-collections-redesign: see SpoilerFieldStripFilter.IsMovieIdInSpoilerScope.
+        // Same semantics: direct membership OR via opted-in BoxSet's LinkedChildren.
+        private bool IsMovieIdInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
+        {
+            if (movieId == Guid.Empty) return false;
+            if (userState.Movies.ContainsKey(movieId.ToString("N"))) return true;
+            if (userState.Collections.Count == 0) return false;
+            try
+            {
+                foreach (var collKeyN in userState.Collections.Keys)
+                {
+                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                    var bs = _libraryManager.GetItemById(collGuid)
+                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                    if (bs == null) continue;
+                    foreach (var child in bs.GetLinkedChildren())
+                    {
+                        if (child != null && child.Id == movieId) return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-movie-collection:" + ex.GetType().FullName,
+                    $"Spoiler tag-strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
+            }
+            return false;
+        }
+
         private UserSpoilerBlur? LoadSpoilerStateForTagStrip(Guid userId)
         {
             var userKey = userId.ToString("N");

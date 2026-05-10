@@ -270,7 +270,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     break;
                 case IEnumerable<BaseItemDto> seq:
-                    foreach (var item in seq) StripItem(item, userState, cfg, userId);
+                    // R23-H1: many controllers (e.g. UserLibrary.GetLatestMedia,
+                    // Items.GetItems via .Select projections) return a lazy
+                    // LINQ Select iterator that materializes a NEW BaseItemDto
+                    // on every enumeration. If we just iterate-and-mutate,
+                    // MVC re-iterates at serialization time and gets a fresh
+                    // unstripped DTO — our mutations are lost. Materialize
+                    // and write back so MVC serializes our stripped copies.
+                    var list = seq is List<BaseItemDto> alreadyList
+                        ? alreadyList
+                        : seq.ToList();
+                    foreach (var item in list) StripItem(item, userState, cfg, userId);
+                    if (!ReferenceEquals(list, seq))
+                    {
+                        objectResult.Value = list;
+                    }
                     break;
                 case SearchHintResult shr:
                     StripSearchHints(shr, userState, cfg, userId);
@@ -392,7 +406,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // is the movie's own UserData.Played. Mirrors StripItem.
                 if (parent is MediaBrowser.Controller.Entities.Movies.Movie movieParent)
                 {
-                    if (!userState.Movies.ContainsKey(movieParent.Id.ToString("N"))) return false;
+                    if (!IsMovieIdInSpoilerScope(userState, movieParent.Id)) return false;
                     if (ResolvePlayedServerSide(userId, itemId)) return false;
                     return true;
                 }
@@ -484,27 +498,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // BoxSet (Collection) path: collections are user/admin-curated
-            // groupings whose own Overview/Tags can spoil the contents.
-            // Same as Series — no watched-state, no Name rewrite (the
-            // collection name is the entry point the user just clicked).
-            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.BoxSet)
-            {
-                if (item.Id == Guid.Empty) return;
-                if (!userState.Collections.ContainsKey(item.Id.ToString("N"))) return;
-                MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
-                ApplyStripping(item, cfg, userId);
-                return;
-            }
+            // R23-collections-redesign: BoxSet (Collection) DTOs pass through
+            // unstripped. The collection itself is the entry point the user
+            // just clicked (like Series); blurring its art/Overview would
+            // spoil the user's own navigation. The collection toggle's effect
+            // is on the MOVIES inside (handled in the Movie arm via
+            // IsMovieInSpoilerScope / IsMovieIdInSpoilerScope).
 
-            // Movie path (added alongside Episode/Season): movies are tracked
-            // in their own dict by movie ID. Watched check via UserData.Played
-            // directly — no per-episode aggregation. Same field-strip body as
-            // Episode (Overview / Tags / Path / streams / etc).
+            // Movie path: a movie is in spoiler scope when either it's
+            // directly opted in (Movies dict) OR it's a child of a
+            // collection (BoxSet) the user has opted in (Collections dict).
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
             {
                 if (item.Id == Guid.Empty) return;
-                if (!userState.Movies.ContainsKey(item.Id.ToString("N"))) return;
+                if (!IsMovieIdInSpoilerScope(userState, item.Id)) return;
                 bool moviePlayed;
                 long moviePlayPos = 0;
                 if (item.UserData != null)
@@ -635,6 +642,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // R4-C1: server-side fallback when the response shape omits UserData.
         // Checked exception types so a transient lookup failure doesn't kill
         // the whole strip.
+        // R23-collections-redesign: a movie ID is "in spoiler scope" when
+        // either (a) it's directly in the user's Movies dict, OR (b) it's
+        // a member of a BoxSet (collection) the user has opted in. BoxSets
+        // are NOT direct parents in Jellyfin's data model — they reference
+        // movies via LinkedChildren.
+        private bool IsMovieIdInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
+        {
+            if (movieId == Guid.Empty) return false;
+            if (userState.Movies.ContainsKey(movieId.ToString("N"))) return true;
+            if (userState.Collections.Count == 0) return false;
+            try
+            {
+                foreach (var collKeyN in userState.Collections.Keys)
+                {
+                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                    var bs = _libraryManager.GetItemById(collGuid)
+                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                    if (bs == null) continue;
+                    foreach (var child in bs.GetLinkedChildren())
+                    {
+                        if (child != null && child.Id == movieId) return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "fieldstrip-movie-collection:" + ex.GetType().FullName,
+                    $"Spoiler field strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
+            }
+            return false;
+        }
+
         private bool ResolvePlayedServerSide(Guid userId, Guid itemId)
         {
             try
@@ -816,7 +856,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // nulled below to suppress autocomplete substring leak
                     // of any non-title-bearing match).
                     if (actualItem is not MediaBrowser.Controller.Entities.Movies.Movie) continue;
-                    if (!userState.Movies.ContainsKey(hint.Id.ToString("N"))) continue;
+                    if (!IsMovieIdInSpoilerScope(userState, hint.Id)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
                 }
 

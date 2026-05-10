@@ -367,22 +367,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Collection (BoxSet) path: blur the collection's own art when
-            // the user has opted that collection in. No watched-state
-            // concept here — collections aren't "played"; the toggle is
-            // a manual flip the user controls from the collection page.
-            if (item is MediaBrowser.Controller.Entities.Movies.BoxSet boxSet)
+            // R23-collections-redesign: Collections are now a SHORTCUT for
+            // "blur all movies in this collection" — the collection's own
+            // art and Overview pass through clear (it's the entry point
+            // the user just clicked, same model as Series). The blur is
+            // applied per-movie based on each movie's individual watched
+            // state.
+            if (item is MediaBrowser.Controller.Entities.Movies.BoxSet)
             {
-                if (!userState.Collections.ContainsKey(boxSet.Id.ToString("N")))
-                {
-                    await next().ConfigureAwait(false);
-                    return;
-                }
-                // Fall through to blur.
+                // Collection's own art: pass through unconditionally.
+                await next().ConfigureAwait(false);
+                return;
             }
             else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
-                if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
+                if (!IsMovieInSpoilerScope(userState, movie))
                 {
                     await next().ConfigureAwait(false);
                     return;
@@ -746,6 +745,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
+
+        // R23-collections-redesign: a movie is "in spoiler scope" when
+        // either (a) the user has it directly opted in via the per-movie
+        // toggle, OR (b) the movie is a member of a collection (BoxSet)
+        // the user has opted in. BoxSets are NOT direct parents of their
+        // member movies in Jellyfin's data model — they reference movies
+        // via LinkedChildren. So we iterate opted-in collections, check
+        // whether each contains the movie ID.
+        private bool IsMovieInSpoilerScope(UserSpoilerBlur userState, MediaBrowser.Controller.Entities.Movies.Movie movie)
+        {
+            if (movie == null) return false;
+            var key = movie.Id.ToString("N");
+            if (userState.Movies.ContainsKey(key)) return true;
+            if (userState.Collections.Count == 0) return false;
+            try
+            {
+                foreach (var collKeyN in userState.Collections.Keys)
+                {
+                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                    var bs = _libraryManager.GetItemById(collGuid)
+                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                    if (bs == null) continue;
+                    foreach (var child in bs.GetLinkedChildren())
+                    {
+                        if (child != null && child.Id == movie.Id) return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "movie-in-collection:" + ex.GetType().FullName,
+                    $"Spoiler blur: IsMovieInSpoilerScope linked-children walk failed for {movie.Id}: {ex.Message}");
+            }
+            return false;
+        }
 
         private bool HasWatchedAnyEpisodeInSeason(JUser user, Season season)
         {
