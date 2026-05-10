@@ -777,7 +777,87 @@ Trigger: post-merge of collection (BoxSet) support (commit 6d5a9b9), R21 native-
 
 Per the JE skill stopping rule, R22 is the final round: a full parallel review pass on the fix diffs returned zero new HIGH/P1 findings.
 
+## Round 23 stress run (2026-05-10) — black-box harness + native client + reverse-proxy
+
+This is a stress / integration round, not a code-review round. Goal: prove the
+spoiler-blur feature works end-to-end across configs, users, surfaces, native
+clients, and reverse-proxy deployments — and find any bugs the parallel code
+review missed.
+
+### Methodology
+
+Three lanes, run sequentially:
+
+**(1) Backend stress harness** — `/tmp/r23-harness.py`. Loops indefinitely:
+each iteration randomizes the plugin config (`SpoilerBlurMode` blur/hide,
+`SpoilerBlurIntensity` 1/20/40/60/100, `SpoilerBlurArtwork` on/off, all 9 strip
+toggles independently random), randomly picks one of 3 users (admin / TestAdmin
+/ Test), randomly picks a spoiler-list shape from 7 options
+(empty / series-only / movie-only / coll-only / pairs / all-three),
+and probes 12 surfaces in random order: `UserLibrary.GetItem` for series/movie/
+collection, `Image.Primary` for series/movie/collection, `Image.Backdrop` for
+collection, `Search.GetSearchHints`, `TvShows.GetNextUp`, `TvShows.GetEpisodes`,
+`JE.tag-data`, `MediaInfo.GetPlaybackInfo`. Each probe asserts HTTP success,
+correct strip semantics, image-cache-bust prefix, and `no-store` on blurred
+responses. Failures logged to `/tmp/r23-failures.jsonl`.
+
+**(2) SHIELD AndroidTV native client** — physical NVIDIA SHIELD device on user's
+LAN, fresh install of `jellyfin-androidtv-v0.19.9-debug.apk` (latest as of
+2026-05-09). Driven via `adb shell uiautomator dump` for state inspection +
+`adb shell am start -a VIEW -d <UUID>` deep-links for navigation. Logcat captured
+across all interactions. Cache-bust mechanism verified empirically: mark a movie
+played via API, re-deep-link without clearing app cache, observe the previously-
+blurred image flip to clear (confirming the URL-keyed Glide/Coil cache misses on
+the new `sb-{newHash}-` URL).
+
+**(3) Reverse-proxy lane** — set `BaseUrl=/jf` on jellyfin-dev, spin up
+`nginx:alpine` in the same Docker network proxying `:8099 → jellyfin-dev:8096/jf/`,
+re-run all spoiler-blur surfaces through the proxy. Compare bytes against direct
+calls.
+
+### Results
+
+- **Harness:** 1157 iterations, 13879 probes, **0 failures**. `/tmp/r23-summary.txt`:
+  ```
+  By user:    admin pass=4908   TestAdmin pass=4080   Test pass=4891
+  By surface: Image.Backdrop=1156, Image.Primary=3469, JE.tag-data=1157,
+              MediaInfo.GetPlaybackInfo=1157, Search.GetSearchHints=1157,
+              TvShows.GetEpisodes=1156, TvShows.GetNextUp=1157, UserLibrary.GetItem=3470
+  ```
+  All probes pass. Baseline config restored on harness exit.
+
+- **SHIELD AndroidTV:**
+  - APK install + Quick Connect API authorize → instant login (no manual password).
+  - Series detail (Bluey): `Spoiler mode activated` overview, episode tile blurred
+    (hide-mode renders black tile in NextUp rail).
+  - Collection detail (Back to the Future Collection): `Spoiler mode activated`
+    overview rendered correctly.
+  - **R20 cache-bust verified empirically through native client:**
+    movie poster shows hide-mode placeholder when unwatched →
+    `POST /Users/{uid}/PlayedItems/{movieId}` →
+    re-deep-link without app cache clear → poster flips to clear bytes.
+    `ImageTags.Primary` flipped from `sb-ac38ff6f-...` (445 B blurred) to
+    `sb-22ec0ec7-...` (4255 B clear).
+  - Logcat clean across all interactions (no `FATAL`, no
+    `AndroidRuntime`, no spoiler-blur-related warnings). Only benign Coil
+    keyer + RecyclerView lifecycle warnings.
+
+- **Reverse-proxy:** all spoiler-blur endpoints (POST/DELETE for series,
+  movies, collections; GET state list; field-strip on `UserLibrary.GetItem`;
+  image filter on `Items/{id}/Images/Primary`; `JE.tag-data` stub) round-trip
+  through nginx with byte-identical responses to direct calls. No JS URL-
+  emission bug surfaced (all client URLs correctly wrapped in
+  `ApiClient.getUrl`).
+
+### Convergence
+
+Zero issues found in this stress round. R22's code-review convergence holds
+under randomized real-traffic load and on a real native client.
+
+See `CLIENT_COMPATIBILITY.md` for the per-client surface support matrix.
+
 ## Companion docs
 
 - `SPOILER_BLUR_APPROACHES.md` — 5 candidate algorithms before bake-off.
 - `SPOILER_BLUR_FINDINGS.md` — bake-off results / why Skia won.
+- `CLIENT_COMPATIBILITY.md` — per-client surface support, R20 cache-bust empirical proof, R23 stress-run summary.
