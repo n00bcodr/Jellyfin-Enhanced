@@ -4535,7 +4535,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // limited warn) rather than silently passing through.
                 UserSpoilerBlur? spState = LoadSpoilerStateForTagStrip(userId);
 
-                if (spState != null && (spState.Series.Count > 0 || spState.Movies.Count > 0))
+                if (spState != null && (spState.Series.Count > 0 || spState.Movies.Count > 0 || spState.Collections.Count > 0))
                 {
                     foreach (var kvp in items.ToList())
                     {
@@ -4545,7 +4545,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
                         var isMovie = string.Equals(entry.Type, "Movie", StringComparison.Ordinal);
                         var isSeries = string.Equals(entry.Type, "Series", StringComparison.Ordinal);
-                        if (!isEpisode && !isSeason && !isMovie && !isSeries) continue;
+                        var isBoxSet = string.Equals(entry.Type, "BoxSet", StringComparison.Ordinal);
+                        if (!isEpisode && !isSeason && !isMovie && !isSeries && !isBoxSet) continue;
                         if (isMovie)
                         {
                             // Movie spoiler list keyed by movie ID directly,
@@ -4562,6 +4563,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // series posters and the JE tag pipeline asks for
                             // series-level tag data.
                             if (!spState.Series.ContainsKey(kvp.Key)) continue;
+                        }
+                        else if (isBoxSet)
+                        {
+                            // Collection (BoxSet) keyed by collection ID; mirrors
+                            // the Series path so JE tag overlays don't render on
+                            // a blurred collection card.
+                            if (!spState.Collections.ContainsKey(kvp.Key)) continue;
                         }
                         else
                         {
@@ -4748,7 +4756,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // R14-C1: a movies-only user (no series in spoiler list)
                 // would short-circuit the strip entirely if we only checked
                 // Series.Count. Mirror the GetTagCache + image-filter checks.
-                if (spoilerState == null || (spoilerState.Series.Count == 0 && spoilerState.Movies.Count == 0))
+                if (spoilerState == null || (spoilerState.Series.Count == 0 && spoilerState.Movies.Count == 0 && spoilerState.Collections.Count == 0))
                 {
                     stripTagsEnabled = false;
                 }
@@ -4982,6 +4990,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         });
                         continue;
                     }
+                }
+
+                // R22-H1 Collection-stub: when the item is a BoxSet the user
+                // has spoiler mode enabled for, return the strip stub. Mirrors
+                // the Series-stub above — collections have no watched-state
+                // and no Name rewrite (collection name is the entry point
+                // the user just clicked, same as Series).
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.Movies.BoxSet spBoxSet
+                    && spoilerState.Collections.ContainsKey(spBoxSet.Id.ToString("N")))
+                {
+                    results.Add(new
+                    {
+                        Id = item.Id,
+                        Type = kind.ToString(),
+                        Genres = spStripGenres ? Array.Empty<string>() : (spBoxSet.Genres ?? Array.Empty<string>()),
+                        CommunityRating = spStripCommunity ? (float?)null : spBoxSet.CommunityRating,
+                        CriticRating = spStripCritic ? (float?)null : spBoxSet.CriticRating,
+                        SeriesId = (Guid?)null,
+                        ProviderIds = (IDictionary<string, string>?)null,
+                        Name = item.Name,
+                        Path = (string?)null,
+                        MediaStreams = (List<object>?)null,
+                        MediaSources = (List<object>?)null,
+                        FirstEpisode = (object?)null,
+                        Tags = spStripGenres ? Array.Empty<string>() : (spBoxSet.Tags ?? Array.Empty<string>()),
+                    });
+                    continue;
                 }
 
                 // Season-poster bug-fix: when the item is a Season of a

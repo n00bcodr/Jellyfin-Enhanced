@@ -748,6 +748,35 @@ Round 5 produced no new CRITICAL findings post-R4 fixes (the new C1 was a pre-ex
   blurred 3000 bytes for unwatched.
 - Plugin loads cleanly on jellyfin-dev startup. Build 0/0.
 
+## Round 22 review (2026-05-10) — final pre-PR pass after collection support
+
+Sources: codex GPT-5 high, code-reviewer (pr-review-toolkit), silent-failure-hunter, security-reviewer.
+
+Trigger: post-merge of collection (BoxSet) support (commit 6d5a9b9), R21 native-client coverage (21dc1cc), API revert (2c5a7bb). Three Claude reviewers signed off "convergence plausibly reached" but missed pre-existing code regions that needed updating to handle the new `Collections` dict — codex caught all three.
+
+### HIGH
+
+| ID | File:line | Source | Status | Summary |
+|---|---|---|---|---|
+| **R22-H1** | `Controllers/JellyfinEnhancedController.cs:4100, :4108-4110, :4326, :~4570` | codex HIGH | **fixed** | Tag-cache (`GetTagCache`) and tag-data (`GetTagData`) endpoints ignored `spState.Collections` in their entry-condition checks AND had no `BoxSet` discriminator in the strip loop. Result: a user with only collections in their spoiler list saw JE genre/quality/rating overlays render over blurred collection art on home rails — the per-DTO image-filter blur worked, but the tag-pipeline overlays bypassed the strip entirely. **Fix:** added `Collections.Count > 0` to both bail conditions, added `isBoxSet` branch in the GetTagCache loop, added a Collection-stub block in GetTagData mirroring the Series-stub (Path=null, Genres=[], ratings nulled, Name preserved). |
+| **R22-H2** | `Services/SpoilerFieldStripFilter.cs:160` | codex HIGH | **fixed** | `MutateImageTagsForCacheBust` was gated behind `AnyStripToggleOn(cfg)`; users with `SpoilerBlurEnabled=true` but ALL strip toggles OFF saw the cache-bust mutation skipped, leaving native-client image caches stale on watched-state flips. **Fix:** removed the early-return; `ApplyStripping` is internally per-toggle gated already, so when no strip toggle is on it's a no-op past the cache-bust mutation. Deleted now-unused `AnyStripToggleOn` helper. Per-DTO cost for the all-toggles-off case: one ImageTags null/empty check; SHA1 only runs when ImageTags is non-empty. |
+| **R22-H3** | `js/enhanced/spoiler-blur.js:386` | codex HIGH | **fixed** | Click handler closed over `itemId`/`kind`/`visiblePage` at button creation. Jellyfin reuses `#itemDetailPage` across SPA navigations, so an existing `.je-spoiler-blur-btn` could be re-bound for a new item but its handler still toggled the previous item. **Fix:** handler now reads `data-je-item-id` and `data-je-spoiler-kind` from the button live; `data-je-item-id` is set unconditionally (not just on first creation); re-render fires on either state-change OR identity-change. `livePage` falls back to the closure `visiblePage` if the page node was removed mid-session. |
+
+### Verifications passed (no new findings)
+
+- Silent-failure hunter: collection endpoints fully mirror the Movie pattern's layered exception ladder (`InvalidDataException` / `JsonException` → 503; generic `Exception` → 500); `GetItemById<BaseItem>(g, jUser)` returns null on access-denied (per Jellyfin contract) so the 404 doesn't mask 403s; loadState parser correctly guards `if (data && data.Collections)`.
+- Security reviewer: `[Authorize]` + `UserHelper.GetCurrentUserId` non-empty checks present; per-user isolation enforced (`userKey` is server-derived); `CollectionName` HTML-tag/`<>`/length sanitization sufficient; SHA1-truncated `ShortHash` is cache-bust only, not security-load-bearing; hash inputs are server-controlled or per-authenticated-user.
+- Code reviewer (fix re-review): `isBoxSet` discriminator placement correct (between `isSeries` and the trailing `SeriesId`-requiring `else`); Collection-stub `continue` prevents fall-through; `MutateImageTagsForCacheBust` early-bail on empty ImageTags keeps the all-toggles-off floor cheap; JS data-attr fallback safe (`existing.closest()` from a live click can never return undefined).
+
+### Convergence
+
+- **CRITICAL: 0 open**
+- **HIGH: 0 open** (R22-H1, H2, H3 all fixed; codex + code-reviewer re-pass confirms)
+- **MEDIUM: 0 open**
+- **LOW: 0 open**
+
+Per the JE skill stopping rule, R22 is the final round: a full parallel review pass on the fix diffs returned zero new HIGH/P1 findings.
+
 ## Companion docs
 
 - `SPOILER_BLUR_APPROACHES.md` — 5 candidate algorithms before bake-off.

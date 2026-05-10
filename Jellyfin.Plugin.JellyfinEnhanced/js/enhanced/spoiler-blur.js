@@ -383,25 +383,43 @@
             existing.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             existing.type = 'button';
             container.appendChild(existing);
+            // R22-H3: read itemId/kind live from data-attrs, not closure.
+            // Jellyfin reuses the #itemDetailPage element across SPA
+            // navigations, so an existing button can be re-used for a
+            // different item; closure-captured values would fire toggles
+            // against the previous item.
             existing.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                onToggleClicked(existing, itemId, kind, visiblePage);
+                var liveId = existing.getAttribute('data-je-item-id') || '';
+                var liveKind = existing.getAttribute('data-je-spoiler-kind') || 'series';
+                var livePage = existing.closest('#itemDetailPage:not(.hide)') || visiblePage;
+                onToggleClicked(existing, liveId, liveKind, livePage);
             });
+            existing.setAttribute('data-je-item-id', itemId);
             existing.setAttribute('data-je-spoiler-state', newState);
             existing.setAttribute('data-je-spoiler-kind', kind);
             renderButton(existing, enabled);
             return;
         }
 
-        // Idempotent: skip the DOM mutation when state hasn't changed.
-        // Otherwise the body MutationObserver retriggers handleItemDetails
-        // on every fired mutation, which re-enters this function and
-        // re-renders, producing an unbounded loop. (See series-page network
-        // spam reproduced via Playwright on 2026-05-06.)
-        if (existing.getAttribute('data-je-spoiler-state') !== newState) {
+        // Always refresh data-attrs (cheap) so a button reused across SPA
+        // detail-page navigations targets the CURRENT item / kind.
+        var prevId = existing.getAttribute('data-je-item-id');
+        var prevKind = existing.getAttribute('data-je-spoiler-kind');
+        if (prevId !== itemId) existing.setAttribute('data-je-item-id', itemId);
+        if (prevKind !== kind) existing.setAttribute('data-je-spoiler-kind', kind);
+
+        // Re-render when state OR identity changed. Otherwise skip the
+        // DOM mutation — the body MutationObserver retriggers
+        // handleItemDetails on every fired mutation, which re-enters
+        // this function; an unconditional render would produce an
+        // unbounded loop. (See series-page network spam reproduced via
+        // Playwright on 2026-05-06.)
+        var stateChanged = existing.getAttribute('data-je-spoiler-state') !== newState;
+        var identityChanged = prevId !== itemId || prevKind !== kind;
+        if (stateChanged || identityChanged) {
             existing.setAttribute('data-je-spoiler-state', newState);
-            existing.setAttribute('data-je-spoiler-kind', kind);
             renderButton(existing, enabled);
         }
     }

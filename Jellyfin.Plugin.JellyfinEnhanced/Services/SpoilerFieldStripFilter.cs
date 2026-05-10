@@ -157,7 +157,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.SpoilerBlurEnabled != true) return next();
-            if (!AnyStripToggleOn(cfg)) return next();
+            // R22-H2: do NOT short-circuit on AnyStripToggleOn. The
+            // pipeline's cache-bust pass (MutateImageTagsForCacheBust)
+            // must run on EVERY DTO whenever spoiler blur is enabled, so
+            // native-client image caches re-fetch when the user flips
+            // watched-state or toggles spoiler-mode itself. ApplyStripping
+            // is internally per-toggle gated, so when no strip toggle is
+            // on it's a no-op past the cache-bust mutation.
 
             return RunFieldStripAsync(context, next, cfg);
         }
@@ -169,19 +175,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!rv.TryGetValue("controller", out var controller) || controller == null) return false;
             if (!rv.TryGetValue("action", out var action) || action == null) return false;
             return _routes.ContainsKey((controller, action));
-        }
-
-        private static bool AnyStripToggleOn(PluginConfiguration cfg)
-        {
-            return cfg.SpoilerStripOverview
-                || cfg.SpoilerStripTags
-                || cfg.SpoilerStripChapters
-                || cfg.SpoilerStripTaglines
-                || cfg.SpoilerStripCommunityRating
-                || cfg.SpoilerStripCriticRating
-                || cfg.SpoilerStripPremiereDate
-                || cfg.SpoilerReplaceTitle
-                || cfg.SpoilerStripCast;
         }
 
         private async Task RunFieldStripAsync(
