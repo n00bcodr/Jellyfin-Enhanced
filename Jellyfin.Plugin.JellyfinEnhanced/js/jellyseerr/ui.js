@@ -1037,7 +1037,15 @@
      */
     function createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound) {
         const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
-        const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w400${item.posterPath}` : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
+        // validate posterPath before interpolating into a CSS
+        // url() context. Anything other than a leading-slash relative path
+        // (TMDB always returns this shape, e.g. "/abc.jpg") is rejected so a
+        // hostile poster path can't break out of the url() literal.
+        const isSafePosterPath = (p) => typeof p === 'string'
+            && /^\/[A-Za-z0-9_\-\.]+\.(jpg|jpeg|png|webp|avif)$/i.test(p);
+        const posterUrl = isSafePosterPath(item.posterPath)
+            ? `https://image.tmdb.org/t/p/w400${item.posterPath}`
+            : 'https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png';
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
         // Escape API-sourced values before interpolation into search card HTML
         const titleText = escapeHtml(item.title || item.name);

@@ -79,13 +79,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             _logger.Info($"[Jellyseerr User Import] Found {jellyfinUsers.Count} Jellyfin users ({userIds.Count} after excluding {blockedIds.Count} blocked).");
             progress?.Report(25);
 
-            var importedCount = await JellyseerrUserImportHelper.BulkImportAsync(
+            cancellationToken.ThrowIfCancellationRequested();
+            var importResult = await JellyseerrUserImportHelper.BulkImportAsync(
                 userIds, urls, config.JellyseerrApiKey, _httpClientFactory, _logger, cancellationToken);
 
-            if (importedCount >= 0)
+            if (importResult.Reached && importResult.Imported > 0)
             {
-                JellyfinEnhancedController.ClearUserCaches();
-                _logger.Info($"[Jellyseerr User Import] Completed. {importedCount} new user(s) imported out of {userIds.Count} sent.");
+                // Only flush caches when at least one user was actually
+                // imported — otherwise a 0-imported partial-failure run wipes
+                // every healthy cache entry..                 JellyfinEnhancedController.ClearUserCaches();
+            }
+
+            if (importResult.Reached)
+            {
+                _logger.Info($"[Jellyseerr User Import] Completed. {importResult.Imported} new user(s) imported out of {userIds.Count} sent. Errors: {importResult.Errors.Count}");
             }
             else
             {

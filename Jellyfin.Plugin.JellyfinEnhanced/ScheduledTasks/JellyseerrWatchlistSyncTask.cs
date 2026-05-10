@@ -93,18 +93,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
-            var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
-            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl);
+            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl, config.JellyseerrApiKey);
             if (jellyseerrUserMap.Count == 0)
             {
                 _logger.Warning("[Jellyseerr Watchlist Sync] Unable to build Jellyseerr user map.");
             }
 
-            // Get all Jellyfin users
-            var jellyfinUsers = _userManager.Users.ToList();
-            _logger.Info($"[Jellyseerr Watchlist Sync] Found {jellyfinUsers.Count} Jellyfin users");
+            // Get all Jellyfin users, then filter out the JellyseerrImportBlockedUsers
+            // so blocked users don't get watchlist sync.
+            var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper
+                .GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
+            var allUsers = _userManager.Users.ToList();
+            var jellyfinUsers = allUsers
+                .Where(u => !blockedIds.Contains(u.Id.ToString().Replace("-", ""), StringComparer.OrdinalIgnoreCase))
+                .ToList();
+            var skippedBlocked = allUsers.Count - jellyfinUsers.Count;
+            if (skippedBlocked > 0)
+            {
+                _logger.Info($"[Jellyseerr Watchlist Sync] Skipping {skippedBlocked} blocked user(s) per JellyseerrImportBlockedUsers");
+            }
+            _logger.Info($"[Jellyseerr Watchlist Sync] Found {jellyfinUsers.Count} Jellyfin users (of {allUsers.Count} total)");
 
             var totalUsers = jellyfinUsers.Count;
             var processedUsers = 0;
@@ -138,12 +148,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     // Get watchlist from Jellyseerr
-                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
+                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
 
                     var requestItems = new List<WatchlistItem>();
                     if (config.AddRequestedMediaToWatchlist)
                     {
-                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId) ?? new List<WatchlistItem>();
+                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
                     }
 
                     // Log consolidated summary
@@ -240,44 +250,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return string.IsNullOrEmpty(userId) ? string.Empty : userId.Replace("-", string.Empty);
         }
 
-        private async Task<Dictionary<string, string>> GetJellyseerrUserMap(HttpClient httpClient, string jellyseerrUrl)
+        private async Task<Dictionary<string, string>> GetJellyseerrUserMap(HttpClient httpClient, string jellyseerrUrl, string apiKey)
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+            // paginate beyond take=1000. Without
+            // this, deployments with >1000 Seerr users silently lose the tail
+            // and those users get "no Jellyseerr account linked" warnings.
+            const int pageSize = 1000;
+            int skip = 0;
+            int reportedTotal = -1;
             try
             {
-                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user?take=1000";
-                var response = await httpClient.GetAsync(requestUri);
-
-                if (!response.IsSuccessStatusCode)
+                while (true)
                 {
-                    _logger.Warning($"[Jellyseerr Watchlist Sync] Failed to get users from Jellyseerr. Status: {response.StatusCode}");
-                    return result;
-                }
+                    var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user?take={pageSize}&skip={skip}";
+                    using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                        HttpMethod.Get, requestUri, apiKey);
+                    using var response = await httpClient.SendAsync(request);
+                    var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                var content = await response.Content.ReadAsStringAsync();
-                var usersResponse = JsonSerializer.Deserialize<JsonElement>(content);
-
-                if (!usersResponse.TryGetProperty("results", out var usersArray))
-                {
-                    return result;
-                }
-
-                foreach (var user in usersArray.EnumerateArray())
-                {
-                    if (!user.TryGetProperty("jellyfinUserId", out var jfUserId) ||
-                        !user.TryGetProperty("id", out var id))
+                    if (error != null)
                     {
-                        continue;
+                        _logger.Warning($"[Jellyseerr Watchlist Sync] Failed to get users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+                        return result;
                     }
 
-                    var normalizedJellyfinUserId = NormalizeUserId(jfUserId.GetString());
-                    if (string.IsNullOrEmpty(normalizedJellyfinUserId))
+                    var usersResponse = JsonSerializer.Deserialize<JsonElement>(content!);
+
+                    if (!usersResponse.TryGetProperty("results", out var usersArray))
                     {
-                        continue;
+                        return result;
                     }
 
-                    result[normalizedJellyfinUserId] = id.GetInt32().ToString();
+                    int pageCount = 0;
+                    foreach (var user in usersArray.EnumerateArray())
+                    {
+                        pageCount++;
+                        if (!user.TryGetProperty("jellyfinUserId", out var jfUserId) ||
+                            !user.TryGetProperty("id", out var id))
+                        {
+                            continue;
+                        }
+
+                        var normalizedJellyfinUserId = NormalizeUserId(jfUserId.GetString());
+                        if (string.IsNullOrEmpty(normalizedJellyfinUserId))
+                        {
+                            continue;
+                        }
+
+                        result[normalizedJellyfinUserId] = id.GetInt32().ToString();
+                    }
+
+                    // Try to read the upstream's total to know when to stop
+                    if (reportedTotal < 0
+                        && usersResponse.TryGetProperty("pageInfo", out var pageInfo)
+                        && pageInfo.TryGetProperty("results", out var totalEl)
+                        && totalEl.ValueKind == JsonValueKind.Number)
+                    {
+                        reportedTotal = totalEl.GetInt32();
+                    }
+
+                    skip += pageCount;
+                    if (pageCount < pageSize) break;          // last page
+                    if (reportedTotal >= 0 && skip >= reportedTotal) break;
+                    if (skip >= 100000) { _logger.Warning("[Jellyseerr Watchlist Sync] Pagination safety cap hit at 100000 users"); break; }
                 }
             }
             catch (Exception ex)
@@ -288,19 +325,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return result;
         }
 
-        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlist(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId)
+        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlist(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
         {
             try
             {
                 var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/{jellyseerrUserId}/watchlist";
-                httpClient.DefaultRequestHeaders.Remove("X-Api-User");
-                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
+                using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Get, requestUri, apiKey, jellyseerrUserId);
+                using var response = await httpClient.SendAsync(request);
+                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                var response = await httpClient.GetAsync(requestUri);
-
-                if (response.IsSuccessStatusCode)
+                if (error == null && content != null)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
                     var watchlistResponse = JsonSerializer.Deserialize<JsonElement>(content);
 
                     var items = new List<WatchlistItem>();
@@ -332,6 +368,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     return items;
                 }
+                else if (error != null)
+                {
+                    _logger.Debug($"[Jellyseerr Watchlist Sync] Watchlist fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
+                }
             }
             catch (Exception ex)
             {
@@ -341,24 +381,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return null;
         }
 
-        private async Task<List<WatchlistItem>?> GetJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId)
+        private async Task<List<WatchlistItem>?> GetJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
         {
             try
             {
                 var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/request?take=500&skip=0&sort=added&filter=all";
-                httpClient.DefaultRequestHeaders.Remove("X-Api-User");
-                httpClient.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId);
+                using var request = Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                    HttpMethod.Get, requestUri, apiKey, jellyseerrUserId);
+                using var response = await httpClient.SendAsync(request);
+                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
-                var response = await httpClient.GetAsync(requestUri);
-
-                if (!response.IsSuccessStatusCode)
+                if (error != null)
                 {
-                    _logger.Debug($"[Jellyseerr Watchlist Sync] Requests fetch failed with {response.StatusCode}");
+                    _logger.Debug($"[Jellyseerr Watchlist Sync] Requests fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                     return null;
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
-                var json = JsonSerializer.Deserialize<JsonElement>(content);
+                var json = JsonSerializer.Deserialize<JsonElement>(content!);
 
                 if (!json.TryGetProperty("results", out var resultsArray))
                 {

@@ -7,13 +7,6 @@ using System.Threading.Tasks;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 {
-    /// <summary>
-    /// Shared best-effort URL guard for outbound requests to user-supplied Sonarr/Radarr URLs.
-    /// Blocks non-HTTP schemes, known cloud metadata DNS names, and unspecified IPs.
-    /// Loopback (127.0.0.1 / ::1) and private/LAN IPs are intentionally allowed because
-    /// arr services commonly run on the same host or local network as Jellyfin.
-    /// All callers must be admin-gated — this is not a full SSRF control.
-    /// </summary>
     public static class ArrUrlGuard
     {
         private static readonly HashSet<string> _blockedHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -32,11 +25,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             IPAddress.IPv6Any
         };
 
-        /// <summary>
-        /// Runs the scheme + blocklist + IP-literal checks synchronously. Returns a definitive
-        /// `false` for those cases, `true` when the host needs DNS resolution to decide, or `true`
-        /// for a valid IP-literal host that isn't blocked. A `null` result means "need async DNS".
-        /// </summary>
         private static bool? TrySyncChecks(string? url, out string host)
         {
             host = string.Empty;
@@ -45,19 +33,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
 
             host = uri.Host.TrimEnd('.').ToLowerInvariant();
+            if (string.IsNullOrEmpty(host)) return false;
             if (_blockedHosts.Contains(host)) return false;
 
             if (IPAddress.TryParse(host, out var literalIp))
-                return !_blockedIPs.Contains(literalIp);
+            {
+                // normalize IPv6-mapped IPv4 so the block
+                // list still catches `[::ffff:169.254.169.254]`.
+                if (literalIp.IsIPv4MappedToIPv6)
+                {
+                    literalIp = literalIp.MapToIPv4();
+                }
+                return !IsBlockedIp(literalIp);
+            }
 
             return null;  // need DNS
         }
 
-        /// <summary>
-        /// Synchronous guard, kept for non-request-path callers where blocking on DNS is fine
-        /// (e.g., config validation). Request-path callers should prefer <see cref="IsAllowedUrlAsync"/>
-        /// so the sync DNS call doesn't serialize the fan-out prelude on the request thread.
-        /// </summary>
+        private static bool IsBlockedIp(IPAddress addr)
+        {
+            if (_blockedIPs.Contains(addr)) return true;
+            // 169.254.0.0/16 — AWS metadata + Windows APIPA + ECS metadata + custom probes
+            var bytes = addr.GetAddressBytes();
+            if (bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254) return true;
+            return false;
+        }
+
         public static bool IsAllowedUrl(string? url)
         {
             var sync = TrySyncChecks(url, out var host);
@@ -68,7 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 var addresses = Dns.GetHostAddresses(host);
                 foreach (var addr in addresses)
                 {
-                    if (_blockedIPs.Contains(addr))
+                    if (IsBlockedIp(addr))
                         return false;
                 }
             }
@@ -85,11 +86,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             return true;
         }
 
-        /// <summary>
-        /// Async variant for request-path callers. Uses <see cref="Dns.GetHostAddressesAsync"/>
-        /// so the guard check yields the thread instead of blocking — avoids serializing DNS
-        /// for N instances across the sync prelude of each Fetch* helper (Codex pass-3 P2).
-        /// </summary>
         public static async Task<bool> IsAllowedUrlAsync(string? url, CancellationToken ct = default)
         {
             var sync = TrySyncChecks(url, out var host);
@@ -100,7 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 var addresses = await Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
                 foreach (var addr in addresses)
                 {
-                    if (_blockedIPs.Contains(addr))
+                    if (IsBlockedIp(addr))
                         return false;
                 }
             }
