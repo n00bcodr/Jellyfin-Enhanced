@@ -88,7 +88,7 @@
     document.head.appendChild(style);
   }
 
-  function injectRating(osdRoot, rating) {
+  function injectRating(osdRoot, rating, itemId) {
     if (!osdRoot || (!rating.tmdb && rating.critic === null)) return;
     ensureStyles();
 
@@ -99,6 +99,7 @@
 
     const container = document.createElement('span');
     container.id = CONTAINER_ID;
+    container.dataset.itemId = itemId;
 
     if (rating.critic !== null) {
       const criticChip = document.createElement('span');
@@ -145,23 +146,28 @@
     const osdRoot = document.querySelector('.videoOsdBottom');
     if (!osdRoot) return;
 
-    if (osdRoot.querySelector(`#${CONTAINER_ID}`)) return;
-
     const userId = ApiClient.getCurrentUserId?.();
     const itemId = getCurrentItemId();
     if (!userId || !itemId) return;
 
+    // Skip re-injection only if the container already shows the correct item
+    const existing = osdRoot.querySelector(`#${CONTAINER_ID}`);
+    if (existing && existing.dataset.itemId === itemId) return;
+
+    // Remove stale container from previous episode before injecting new one
+    if (existing) existing.remove();
+
     // Serve from cache if available (including null-rating to avoid refetch loops)
     if (ratingCache.has(itemId)) {
       const cached = ratingCache.get(itemId);
-      if (cached && (cached.tmdb || cached.critic !== null)) injectRating(osdRoot, cached);
+      if (cached && (cached.tmdb || cached.critic !== null)) injectRating(osdRoot, cached, itemId);
       return;
     }
 
     // Reuse in-flight fetch
     if (pendingRatings.has(itemId)) {
       const rating = await pendingRatings.get(itemId);
-      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating);
+      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating, itemId);
       return;
     }
 
@@ -175,7 +181,7 @@
 
     try {
       const rating = await promise;
-      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating);
+      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating, itemId);
     } finally {
       pendingRatings.delete(itemId);
     }
