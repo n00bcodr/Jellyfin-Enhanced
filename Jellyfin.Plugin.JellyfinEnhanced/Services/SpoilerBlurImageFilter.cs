@@ -345,9 +345,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var userState = _resolver.LoadUserState(context.HttpContext, userId.Value);
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0)
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0)
             {
-                // User hasn't enabled spoiler mode for any show or movie — pass through.
+                // User hasn't enabled spoiler mode for any show, movie, or collection — pass through.
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -367,10 +367,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Movie path: blur the movie's own poster / backdrop until the
-            // user has marked it Played. No series concept; movie ID is the
-            // dict key directly.
-            if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
+            // Collection (BoxSet) path: blur the collection's own art when
+            // the user has opted that collection in. No watched-state
+            // concept here — collections aren't "played"; the toggle is
+            // a manual flip the user controls from the collection page.
+            if (item is MediaBrowser.Controller.Entities.Movies.BoxSet boxSet)
+            {
+                if (!userState.Collections.ContainsKey(boxSet.Id.ToString("N")))
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Fall through to blur.
+            }
+            else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
                 if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
                 {

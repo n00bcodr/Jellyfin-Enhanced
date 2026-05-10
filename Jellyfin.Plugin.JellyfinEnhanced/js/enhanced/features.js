@@ -978,10 +978,11 @@
             }
 
             // Spoiler Blur — Series detail page (toggle blurs all unwatched
-            // episode images via the server-side filter) AND Movie detail
+            // episode images via the server-side filter), Movie detail
             // page (toggle blurs the movie's own poster/backdrop until the
-            // user has marked it Played).
-            if ((lastDetailsItemType === 'Series' || lastDetailsItemType === 'Movie')
+            // user has marked it Played), AND Collection (BoxSet) detail
+            // page (toggle blurs the collection's own art).
+            if ((lastDetailsItemType === 'Series' || lastDetailsItemType === 'Movie' || lastDetailsItemType === 'BoxSet')
                 && JE.spoilerBlur
                 && typeof JE.spoilerBlur.addSpoilerBlurButton === 'function') {
                 JE.spoilerBlur.addSpoilerBlurButton(itemId, visiblePage, lastDetailsItemType);

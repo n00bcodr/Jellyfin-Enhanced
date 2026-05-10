@@ -9,6 +9,7 @@
     // on next navigation; this cache only drives the per-show toggle button UI.
     var enabledSeries = new Set();
     var enabledMovies = new Set();
+    var enabledCollections = new Set();
     var loaded = false;
     // Tracks the in-flight loadState() promise so consumers
     // (reviews.js, etc.) can await initial state without racing.
@@ -37,6 +38,7 @@
         }).then(function (data) {
             enabledSeries.clear();
             enabledMovies.clear();
+            enabledCollections.clear();
             if (data && data.Series) {
                 Object.keys(data.Series).forEach(function (key) {
                     enabledSeries.add(normalizeId(key));
@@ -45,6 +47,11 @@
             if (data && data.Movies) {
                 Object.keys(data.Movies).forEach(function (key) {
                     enabledMovies.add(normalizeId(key));
+                });
+            }
+            if (data && data.Collections) {
+                Object.keys(data.Collections).forEach(function (key) {
+                    enabledCollections.add(normalizeId(key));
                 });
             }
             loaded = true;
@@ -132,6 +139,34 @@
             dataType: 'json',
         }).then(function () {
             enabledMovies.delete(normalized);
+        });
+    }
+
+    function isCollectionEnabledFor(collectionId) {
+        return enabledCollections.has(normalizeId(collectionId));
+    }
+
+    function enableForCollection(collectionId, collectionName) {
+        var normalized = normalizeId(collectionId);
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/collections/' + encodeURIComponent(normalized)),
+            type: 'POST',
+            dataType: 'json',
+            data: JSON.stringify({ CollectionName: collectionName || '' }),
+            contentType: 'application/json',
+        }).then(function () {
+            enabledCollections.add(normalized);
+        });
+    }
+
+    function disableForCollection(collectionId) {
+        var normalized = normalizeId(collectionId);
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/collections/' + encodeURIComponent(normalized)),
+            type: 'DELETE',
+            dataType: 'json',
+        }).then(function () {
+            enabledCollections.delete(normalized);
         });
     }
 
@@ -304,13 +339,25 @@
      * @param {string} itemId Series ID.
      * @param {HTMLElement} visiblePage The visible #itemDetailPage element.
      */
+    function kindOf(itemType) {
+        if (itemType === 'Movie') return 'movie';
+        if (itemType === 'BoxSet') return 'collection';
+        return 'series';
+    }
+
+    function isEnabledForKind(kind, id) {
+        if (kind === 'movie') return isMovieEnabledFor(id);
+        if (kind === 'collection') return isCollectionEnabledFor(id);
+        return isEnabledFor(id);
+    }
+
     function addSpoilerBlurButton(itemId, visiblePage, itemType) {
         // Admin-level kill switch.
         if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return;
         if (!itemId || !visiblePage) return;
         if (!loaded) return;
 
-        var isMovie = itemType === 'Movie';
+        var kind = kindOf(itemType);
 
         var existing = visiblePage.querySelector('.je-spoiler-blur-btn');
 
@@ -327,7 +374,7 @@
         }
         if (!container) return;
 
-        var enabled = isMovie ? isMovieEnabledFor(itemId) : isEnabledFor(itemId);
+        var enabled = isEnabledForKind(kind, itemId);
         var newState = enabled ? 'on' : 'off';
 
         if (!existing) {
@@ -339,10 +386,10 @@
             existing.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                onToggleClicked(existing, itemId, isMovie, visiblePage);
+                onToggleClicked(existing, itemId, kind, visiblePage);
             });
             existing.setAttribute('data-je-spoiler-state', newState);
-            existing.setAttribute('data-je-spoiler-kind', isMovie ? 'movie' : 'series');
+            existing.setAttribute('data-je-spoiler-kind', kind);
             renderButton(existing, enabled);
             return;
         }
@@ -354,7 +401,7 @@
         // spam reproduced via Playwright on 2026-05-06.)
         if (existing.getAttribute('data-je-spoiler-state') !== newState) {
             existing.setAttribute('data-je-spoiler-state', newState);
-            existing.setAttribute('data-je-spoiler-kind', isMovie ? 'movie' : 'series');
+            existing.setAttribute('data-je-spoiler-kind', kind);
             renderButton(existing, enabled);
         }
     }
@@ -400,32 +447,40 @@
      * @param {HTMLButtonElement} button
      * @param {string} seriesId
      */
-    function onToggleClicked(button, itemId, isMovie, visiblePage) {
-        var willBeEnabled = isMovie ? !isMovieEnabledFor(itemId) : !isEnabledFor(itemId);
+    function onToggleClicked(button, itemId, kind, visiblePage) {
+        var willBeEnabled = !isEnabledForKind(kind, itemId);
         button.disabled = true;
-        var movieName = '';
-        if (isMovie && visiblePage) {
+        var displayName = '';
+        if ((kind === 'movie' || kind === 'collection') && visiblePage) {
             try {
                 var titleEl = visiblePage.querySelector('h1.itemName-name, h1.itemName, .itemName, h2.itemName-name');
-                if (titleEl && titleEl.textContent) movieName = titleEl.textContent.trim();
+                if (titleEl && titleEl.textContent) displayName = titleEl.textContent.trim();
             } catch (e) {
-                console.warn(logPrefix, 'movie title scrape failed; falling back to server lookup:', e);
+                console.warn(logPrefix, kind + ' title scrape failed; falling back to server lookup:', e);
             }
         }
-        var promise = isMovie
-            ? (willBeEnabled ? enableForMovie(itemId, movieName) : disableForMovie(itemId))
-            : (willBeEnabled ? enableForSeries(itemId) : disableForSeries(itemId));
+        var promise;
+        if (kind === 'movie') {
+            promise = willBeEnabled ? enableForMovie(itemId, displayName) : disableForMovie(itemId);
+        } else if (kind === 'collection') {
+            promise = willBeEnabled ? enableForCollection(itemId, displayName) : disableForCollection(itemId);
+        } else {
+            promise = willBeEnabled ? enableForSeries(itemId) : disableForSeries(itemId);
+        }
         promise.then(function () {
             renderButton(button, willBeEnabled);
             button.setAttribute('data-je-spoiler-state', willBeEnabled ? 'on' : 'off');
-            // Movie-specific toast wording when the toggle is on a movie
-            // detail page — the series version mentions "unwatched
-            // episodes" which doesn't fit a movie surface.
+            // Per-kind toast wording: series mentions "unwatched
+            // episodes"; movie/collection don't fit that phrasing.
             var msg;
             if (willBeEnabled) {
-                msg = isMovie ? JE.t('spoiler_blur_enabled_movie_toast') : JE.t('spoiler_blur_enabled_toast');
+                if (kind === 'movie') msg = JE.t('spoiler_blur_enabled_movie_toast');
+                else if (kind === 'collection') msg = JE.t('spoiler_blur_enabled_collection_toast');
+                else msg = JE.t('spoiler_blur_enabled_toast');
             } else {
-                msg = isMovie ? JE.t('spoiler_blur_disabled_movie_toast') : JE.t('spoiler_blur_disabled_toast');
+                if (kind === 'movie') msg = JE.t('spoiler_blur_disabled_movie_toast');
+                else if (kind === 'collection') msg = JE.t('spoiler_blur_disabled_collection_toast');
+                else msg = JE.t('spoiler_blur_disabled_toast');
             }
             if (JE.toast) JE.toast(msg);
             // Bust the JE tag-pipeline server cache so freshly-eligible
@@ -680,14 +735,18 @@
         addSpoilerBlurButton: addSpoilerBlurButton,
         isEnabledFor: isEnabledFor,
         isMovieEnabledFor: isMovieEnabledFor,
+        isCollectionEnabledFor: isCollectionEnabledFor,
         enableForSeries: enableForSeries,
         disableForSeries: disableForSeries,
         enableForMovie: enableForMovie,
         disableForMovie: disableForMovie,
+        enableForCollection: enableForCollection,
+        disableForCollection: disableForCollection,
         whenLoaded: whenLoaded,
         preloadChapterImages: preloadChapterImages,
         // Used by tests / management UI.
         getEnabledSet: function () { return new Set(enabledSeries); },
         getEnabledMovieSet: function () { return new Set(enabledMovies); },
+        getEnabledCollectionSet: function () { return new Set(enabledCollections); },
     };
 })(window.JellyfinEnhanced);

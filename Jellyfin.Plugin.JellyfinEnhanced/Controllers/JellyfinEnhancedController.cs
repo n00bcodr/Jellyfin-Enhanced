@@ -3763,6 +3763,153 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        public class SpoilerBlurCollectionRequest
+        {
+            public string? CollectionName { get; set; }
+        }
+
+        // Per-collection spoiler-blur opt-in. Collections (BoxSet) are
+        // user/admin-curated groupings; toggling here blurs the
+        // collection's own art and applies field-strip to its DTO.
+        // Items WITHIN the collection retain their own per-item state
+        // (separate dicts).
+        [HttpPost("spoiler-blur/collections/{collectionId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurForCollection(string collectionId, [FromBody] SpoilerBlurCollectionRequest? body = null)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(collectionId, out var collGuid)
+                && !Guid.TryParseExact(collectionId, "N", out collGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid collectionId." });
+            }
+
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+            MediaBrowser.Controller.Entities.BaseItem? item = null;
+            try
+            {
+                item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(collGuid, jUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"GetItemById<BaseItem> threw for {collGuid}: {ex.GetType().Name}: {ex.Message}");
+            }
+            if (item is not MediaBrowser.Controller.Entities.Movies.BoxSet boxSet)
+            {
+                return NotFound(new { success = false, message = "Collection not found or not accessible." });
+            }
+
+            var key = collGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            string collNameSanitized = (boxSet.Name ?? string.Empty);
+            if (body?.CollectionName is string clientName && !string.IsNullOrEmpty(clientName))
+            {
+                var cleaned = System.Text.RegularExpressions.Regex.Replace(clientName, "<[^>]+>", string.Empty);
+                cleaned = cleaned.Replace("<", string.Empty).Replace(">", string.Empty);
+                if (cleaned.Length > 200) cleaned = cleaned.Substring(0, 200);
+                if (!string.IsNullOrWhiteSpace(cleaned)) collNameSanitized = cleaned;
+            }
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    if (state.Collections.TryGetValue(key, out var existing))
+                    {
+                        if (string.Equals(existing.CollectionName, collNameSanitized, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.CollectionName = collNameSanitized;
+                        return 1;
+                    }
+                    state.Collections[key] = new SpoilerBlurCollectionEntry
+                    {
+                        CollectionId = key,
+                        CollectionName = collNameSanitized,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+                _logger.Info($"Spoiler blur enabled for collection '{boxSet.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, collectionId = key, name = boxSet.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to enable spoiler blur for collection {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        [HttpDelete("spoiler-blur/collections/{collectionId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurForCollection(string collectionId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(collectionId, out var collGuid)
+                && !Guid.TryParseExact(collectionId, "N", out collGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid collectionId." });
+            }
+
+            var key = collGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                bool removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    removed = state.Collections.Remove(key);
+                    return removed ? 1 : 0;
+                });
+                if (!removed)
+                {
+                    _logger.Info($"Spoiler blur disable was a no-op for collection {key} by {ResolveUserDisplay(userKey)} — collection was not in the user's spoiler-blur list.");
+                    return Ok(new { success = true, collectionId = key, removed = false });
+                }
+                _logger.Info($"Spoiler blur disabled for collection {key} by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, collectionId = key, removed = true });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to disable spoiler blur for collection {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
         // Picks the WIDER of two HC scopes; disjoint rank-2 scopes (continuewatching ⊕ nextup) compose to homesections.

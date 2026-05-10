@@ -91,6 +91,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
+    // Per-collection spoiler-blur entry. Collections (BoxSet) are
+    // user/admin-curated groupings of movies/series; toggling spoiler-
+    // blur on a collection blurs the collection art itself + applies
+    // strip to its DTO. Items WITHIN the collection retain their own
+    // per-item toggle state (separate from this dict).
+    public class SpoilerBlurCollectionEntry
+    {
+        public string CollectionId { get; set; } = string.Empty;
+        public string CollectionName { get; set; } = string.Empty;
+        public string EnabledAt { get; set; } = string.Empty;
+    }
+
     public class UserSpoilerBlur
     {
         // Keyed by series ID in N format (no dashes), case-insensitive — matches
@@ -126,6 +138,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             set => _movies = value == null
                 ? new Dictionary<string, SpoilerBlurMovieEntry>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, SpoilerBlurMovieEntry>(value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        // Collections (BoxSet) the user has opted into spoiler-blur for.
+        // Same N-format key, case-insensitive comparer.
+        private Dictionary<string, SpoilerBlurCollectionEntry> _collections
+            = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SpoilerBlurCollectionEntry> Collections
+        {
+            get => _collections;
+            set => _collections = value == null
+                ? new Dictionary<string, SpoilerBlurCollectionEntry>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, SpoilerBlurCollectionEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
     }
 

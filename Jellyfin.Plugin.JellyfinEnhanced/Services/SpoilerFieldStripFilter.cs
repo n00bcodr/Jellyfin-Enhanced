@@ -204,7 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // despite the Movie branches in StripItem +
             // RouteParentIsSpoilerEpisode. Mirror the GetTagCache /
             // GetTagData / image-filter checks.
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0)
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0)
             {
                 await next().ConfigureAwait(false);
                 return;
@@ -486,6 +486,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // R20-cache-bust: mutate ImageTags so native client image
                 // caches refetch on state change. Series has no per-watched
                 // semantics so just hash the in-list state.
+                MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
+                ApplyStripping(item, cfg, userId);
+                return;
+            }
+
+            // BoxSet (Collection) path: collections are user/admin-curated
+            // groupings whose own Overview/Tags can spoil the contents.
+            // Same as Series — no watched-state, no Name rewrite (the
+            // collection name is the entry point the user just clicked).
+            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.BoxSet)
+            {
+                if (item.Id == Guid.Empty) return;
+                if (!userState.Collections.ContainsKey(item.Id.ToString("N"))) return;
                 MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
                 ApplyStripping(item, cfg, userId);
                 return;
