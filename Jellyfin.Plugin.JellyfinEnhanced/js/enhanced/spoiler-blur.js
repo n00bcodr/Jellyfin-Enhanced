@@ -418,9 +418,15 @@
         promise.then(function () {
             renderButton(button, willBeEnabled);
             button.setAttribute('data-je-spoiler-state', willBeEnabled ? 'on' : 'off');
-            var msg = willBeEnabled
-                ? JE.t('spoiler_blur_enabled_toast')
-                : JE.t('spoiler_blur_disabled_toast');
+            // Movie-specific toast wording when the toggle is on a movie
+            // detail page — the series version mentions "unwatched
+            // episodes" which doesn't fit a movie surface.
+            var msg;
+            if (willBeEnabled) {
+                msg = isMovie ? JE.t('spoiler_blur_enabled_movie_toast') : JE.t('spoiler_blur_enabled_toast');
+            } else {
+                msg = isMovie ? JE.t('spoiler_blur_disabled_movie_toast') : JE.t('spoiler_blur_disabled_toast');
+            }
             if (JE.toast) JE.toast(msg);
             // Bust the JE tag-pipeline server cache so freshly-eligible
             // items lose their pre-toggle (unstripped) tag overlays
