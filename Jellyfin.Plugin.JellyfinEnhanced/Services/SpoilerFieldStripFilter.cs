@@ -91,6 +91,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // variants register here.
                 { ("MediaInfo",   "GetPlaybackInfo"),        true },
                 { ("MediaInfo",   "GetPostedPlaybackInfo"),  true },
+                // R21 native-client research: surfaces commonly hit by
+                // Streamyfin / Findroid / Swiftfin / Jellyfin Android TV
+                // that previously bypassed the strip.
+                //
+                // Movies.GetMovieRecommendations powers the "Recommended for
+                // You" rail on home screens — wraps BaseItemDto[] inside
+                // a RecommendationDto, requires a custom switch arm.
+                { ("Movies",      "GetMovieRecommendations"), true },
+                // Playlists.GetPlaylistItems returns QueryResult<BaseItemDto>
+                // — user-created playlists can include spoiler-list
+                // episodes/movies (e.g. "Watch later"), so the items need
+                // the same strip as a regular library list.
+                { ("Playlists",   "GetPlaylistItems"),       true },
             };
 
         private readonly SpoilerUserResolver _resolver;
@@ -274,6 +287,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // route to determine if its series is in the spoiler list.
                 case IEnumerable<MediaBrowser.Model.Dto.ImageInfo> imgs:
                     StripImageInfos(imgs, userState, cfg, userId, context);
+                    break;
+                // R21: Movies.GetMovieRecommendations returns a list of
+                // RecommendationDto wrappers, each holding a BaseItemDto[].
+                // Walk both layers.
+                case IEnumerable<MediaBrowser.Model.Dto.RecommendationDto> recs:
+                    foreach (var rec in recs)
+                    {
+                        if (rec?.Items == null) continue;
+                        foreach (var item in rec.Items) StripItem(item, userState, cfg, userId);
+                    }
                     break;
                 // R11-H2: PlaybackInfoResponse contains MediaSources[]
                 // with the same title-bearing fields as BaseItemDto's

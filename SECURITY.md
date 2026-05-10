@@ -175,6 +175,63 @@ should ensure Jellyfin is fronted by HTTPS with no TLS-inspection
 intermediaries, which is the recommended baseline for any Jellyfin
 deployment.
 
+### Spoiler Blur — Native-Client Coverage
+
+External clients (Streamyfin, Findroid, Swiftfin, Jellyfin Android TV
+app, Symfonium) talk to Jellyfin's API directly rather than rendering
+in the web view, so they don't pick up any client-side filtering the
+JE web bundle does. The plugin's image filter and field-strip MVC
+filter run server-side on the listed routes below — anything served
+from those routes is stripped before the client ever sees it.
+
+**Server-side filter coverage (always on, no client integration
+required):**
+
+| Surface | Route | Native UI rail / use |
+|---|---|---|
+| Standard item lists | `Items.GetItems`, `Items.GetItemsByUserIdLegacy`, `Items.GetResumeItems` | Continue Watching, library browse, search-as-you-type |
+| Single item | `UserLibrary.GetItem`, `UserLibrary.GetItemLegacy` | Item detail page |
+| Latest rail | `UserLibrary.GetLatestMedia` | "Latest" home rail |
+| Episode/season grid | `TvShows.GetEpisodes`, `TvShows.GetSeasons` | Show detail page |
+| Up Next | `TvShows.GetNextUp`, `TvShows.GetUpcomingEpisodes` | Up Next home rail |
+| Suggestions | `Suggestions.GetSuggestions` | Home recommendations |
+| Search | `Search.GetSearchHints` | Autocomplete |
+| Similar items | `Library.GetSimilarItems/Shows/Movies/Trailers/Albums` | "More Like This" rail |
+| Extras | `UserLibrary.GetIntros/GetLocalTrailers/GetSpecialFeatures` | "Extras" / "Trailers" tabs |
+| Image metadata | `Image.GetItemImageInfos` | "Edit Images" admin path; ImageInfo.Path |
+| Playback negotiation | `MediaInfo.GetPlaybackInfo/GetPostedPlaybackInfo` | Pre-play info request |
+| **Movie recommendations** | `Movies.GetMovieRecommendations` | Home "Recommended For You" rail (R21) |
+| **Playlist contents** | `Playlists.GetPlaylistItems` | User-created playlists (R21) |
+| Image bytes | `Image.GetItemImage/GetItemImageByIndex/GetItemImage2` | Every poster, thumb, scene preview |
+
+**Image cache busting (no client integration needed):**
+
+`BaseItemDto.ImageTags` is mutated to `sb-{stateHash}-{originalTag}`
+for items in the user's spoiler list. Native image cache libraries
+(Glide, Coil, SDWebImage) cache by URL and the URL embeds the tag, so
+when the user marks watched the URL flips and the cache evicts
+automatically. No "clear app cache" needed.
+
+**Known limitations (inherent, no fix planned):**
+
+- **Trickplay tile previews** (`/Videos/{id}/Trickplay/...`) are
+  served by Jellyfin's video controller, not the image controller.
+  Each tile is a sparse-sampled frame from the entire movie; blurring
+  them defeats trickplay scrubbing entirely. They pass through
+  unblurred. If this is a deal-breaker, disable trickplay generation
+  for spoiler-list movies.
+- **Subtitle file content** can describe scenes. Subtitle file
+  fetches happen during playback (when the user is committed to
+  watching). Out of scope.
+- **In-memory client cache.** Some clients hold the previously-fetched
+  `BaseItemDto` in memory for a session; subsequent renders use that
+  cached object even after the user enables spoiler mode. The next
+  page nav / back-foreground transition triggers a re-fetch which
+  picks up the strip. Server can't force this.
+- **Push notifications** for "new episode available" can carry the
+  raw episode title. Sent by Jellyfin's notification system, not the
+  plugin.
+
 ### Spoiler Blur — Movie Titles + Backdrop Art Are Intentionally Surfaced
 
 Two scoped carve-outs deliberately leave content visible:
