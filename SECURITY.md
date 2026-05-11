@@ -314,6 +314,80 @@ guarantees against corrupt-config leakage, monitor the Jellyfin log for
 out-of-band remediation playbook (delete the corrupt file or restore
 from backup).
 
+### Why `api_key=` is appended to web image URLs
+
+The web URL patcher (`js/enhanced/spoiler-blur.js → patchImageUrlsForAuth`)
+rewrites every `/Items/{id}/Images/{type}` URL that the web client emits
+to include `?api_key=<accessToken>`. This is necessary for spoiler-blur
+to work in the browser, and is **not a new credential exposure surface**
+relative to what Jellyfin already does for other assets.
+
+**Why it's required.** Jellyfin's image endpoint is anonymous-friendly by
+design — `<img src="/Items/.../Images/Primary">` works without auth so
+the browser can issue plain image requests (HTML/CSS image fetches don't
+carry custom `Authorization` headers). For un-modified Jellyfin this is
+fine because image bytes are item-level metadata, not per-user. But the
+spoiler filter needs to know **which user** is requesting each image to
+look up that user's per-spoiler-list and decide blur vs. clear. With no
+token, the filter has no user → defaults to pass-through → unblurred
+image leaks. Adding `api_key=<token>` to image URLs gives the filter the
+identity it needs.
+
+**Why this is safe.** The token used is the **session access token** the
+page already has in `ApiClient.accessToken()` and sends as
+`Authorization: Bearer …` on every JSON request. It is *not* a long-lived
+API key. It's tied to the user's current device/login session; expires
+on logout or token rotation. Leak blast radius = that user's current
+session.
+
+Jellyfin already emits this same token in URL query strings for several
+asset types — `?api_key=…` shows up on `/Videos/{id}/stream.*`, HLS
+playlists (`master.m3u8`), HLS segments, DASH manifests, subtitle
+downloads, and many native-client image URLs (AndroidTV's SDK includes
+it automatically). Image URLs joining this list does not change the
+risk profile.
+
+**Where the token can end up (already-true vs. new):**
+
+| Surface | Already exposed in Jellyfin pre-plugin? | New under spoiler-blur? |
+|---|---|---|
+| Browser HTTP cache index (URL is cache key) | Yes — HLS segments, etc. | Image URLs join the same pattern |
+| Server access logs (Jellyfin + reverse-proxy) | Yes — streaming URL lines | Same: image-request log lines now carry it |
+| Browser DevTools Network tab | Yes — every authenticated request | No additional rows |
+| HTTP `Referer` header to third party | No — Referer only carries the page URL | No |
+| Browser address bar / history | No — only page URLs go there | No |
+
+**Where the token does NOT leak (with rationale):**
+
+1. **Third-party origins.** The URL patcher has an explicit same-origin
+   guard in `shouldPatchUrl(url)` — the candidate URL is parsed and its
+   `origin` is compared against the Jellyfin server's origin captured at
+   patch-install time. Foreign URLs that coincidentally match the
+   `/Items/{guid}/Images/` regex never receive the token. (This was a
+   findings-driven defense — security finding H1 / H3 from earlier
+   review rounds.)
+
+2. **Already-authed URLs.** `HAS_KEY_RE` short-circuits when a URL
+   already carries `api_key=` (or `ApiKey=`), so native-client URLs that
+   include the token via Jellyfin's own SDK don't get double-appended.
+
+3. **Cross-origin image embeds.** Same as (1) — the origin check
+   prevents inadvertent token bleed to external image hosts.
+
+4. **HTTPS-protected wire.** Over HTTPS the URL query string is encrypted
+   between client and server, same as headers. Over plain HTTP the
+   token was already exposed in every `Authorization` header for JSON
+   requests — image URLs aren't worse.
+
+**Native clients are unaffected** by the web patcher. AndroidTV's Glide
+loader constructs URLs via `ApiClient.getImageUrl()` which already
+includes the token. Other native clients (Findroid, Streamyfin,
+Swiftfin) use similar SDK-level URL construction.
+
+**If a user wants to invalidate any exposed session token immediately:**
+Dashboard → Devices → revoke the affected device. New navigations will
+re-authenticate with a fresh token.
+
 ## Contact
 
 For security concerns that don't constitute a vulnerability, you can:
