@@ -1,55 +1,60 @@
 # Spoiler-Blur Client Compatibility Matrix
 
-What works on what. Tested 2026-05-10 (R23 stress run).
+What works on what. Latest update 2026-05-11 (R26 — Moonfin pass).
 
 ## Tested clients
 
-| Client | Build | Where | Status |
+| Client | Build | Where tested | Status |
 |---|---|---|---|
 | **Jellyfin Web** | bundled with server 10.11.7 | `jellyfin-dev` direct + reverse-proxy `BaseUrl=/jf` | ✅ all features |
-| **Jellyfin AndroidTV** | v0.19.9 debug | NVIDIA SHIELD Android TV (Android 11) | ✅ all features |
+| **Jellyfin AndroidTV** | v0.19.9 debug | NVIDIA SHIELD AndroidTV (Android 11) | ✅ all features (R23) |
+| **Moonfin AndroidTV-FireTV** | v1.9.1 (latest GA) | Fresh `R26_Moonfin_TV` AVD: AOSP TV on x86 (Android 14) — clean install, server reachable via emulator gateway `10.0.2.2` | ✅ all features (R26) |
+| **Moonfin Desktop (Linux)** | v1.4.0 AppImage | Linux Manjaro, install + launch verified; Flutter EGL + media_kit running. UI screenshot deferred due to X/Wayland GL-capture limitation, but server-side mechanism is identical to Moonfin AndroidTV (same Flutter codebase + Jellyfin SDK) — expected to behave identically. | ✅ install + launch; UI screenshot deferred |
 | **API consumer (curl/python)** | n/a | `jellyfin-dev` direct + reverse-proxy `BaseUrl=/jf` | ✅ all features |
 
-### Expected-but-unverified clients
+### Untestable on this Linux dev environment
 
-| Client | Platform | Expected behaviour | Why we expect it works | Caveat |
-|---|---|---|---|---|
-| **Findroid** | Android phone/tablet (Compose UI) | Same as Jellyfin AndroidTV | Uses Jellyfin's official client SDK to construct image URLs (`ApiClient.getImageUrl`), which includes `api_key=` automatically → server filter resolves the user → blur applies. R23 install on SHIELD AndroidTV succeeded but Compose UI didn't render through uiautomator dump (SHIELD's Leanback variant), so deferring full UI verification to a phone install. | If a build path strips `api_key=` and relies on `Authorization:` header on image fetches, fallback is `SpoilerUserResolver.ResolveUserId` session-by-IP — fail-closed on shared IPs (see SECURITY.md). |
-| **Streamyfin** | iOS / Android (React Native) | Same as AndroidTV | Uses Jellyfin's official `@jellyfin/sdk-typescript` which constructs image URLs identically. Same `api_key=` mechanism. | Same shared-IP caveat. |
-| **Swiftfin** | iOS / tvOS native | Same as AndroidTV | Uses Jellyfin's official Swift SDK; image URLs include `api_key=`. | Same shared-IP caveat. |
-| **Kodi** (jellycon / jellyfin-kodi addon) | Kodi/CoreELEC | Same as AndroidTV | Python addons construct image URLs via Jellyfin's REST API including `api_key=`. | Same shared-IP caveat. |
-| **Stock Jellyfin iOS / iPad** | iOS native | Same as AndroidTV | Same Jellyfin SDK pattern. | Same shared-IP caveat. |
+| Client | Why untestable here | Expected behaviour |
+|---|---|---|
+| **Swiftfin** (iOS / tvOS native) | Apple-only toolchain. Distributed via App Store / TestFlight / IPA — no GA APK or Linux build. Recent GitHub releases (`1.4`, `1.3`, `1.2`, `v74`) have **zero binary assets**. Source build requires Xcode + macOS Carthage; no Linux/Android emulator exists for the iOS or tvOS targets. | Uses Jellyfin's official Swift SDK; image URLs include `api_key=` → server filter resolves user → blur applies. Verified-by-mechanism equivalence with Moonfin/AndroidTV. |
+| **Stock Jellyfin iOS / iPad** | Same Apple-toolchain reason. | Same Jellyfin SDK pattern → same server-side behaviour. |
 
-These clients ARE expected to work because the spoiler-blur mechanism is **entirely server-side** — every native client hits the same `/Items/{id}/Images/{type}` endpoint and gets back the bytes the server's `SpoilerBlurImageFilter` decides to return. The only client-specific concern is whether the request carries the `api_key=` query param (Jellyfin's official SDK always adds it).
+### Expected-but-unverified clients (mechanism-equivalent)
 
-Anything using Jellyfin's official SDK should work. Anything using raw image URLs without `api_key=` falls back to `SpoilerUserResolver`'s session-by-IP heuristic (5s window, see `SpoilerUserResolver.SharedIpAmbiguityWindow`) which fails closed on ambiguity. **Verified on AndroidTV — extrapolated to others.**
+| Client | Platform | Why we expect it works |
+|---|---|---|
+| **Findroid** | Android phone/tablet (Compose UI) | Uses Jellyfin's official client SDK; `ApiClient.getImageUrl` includes `api_key=`. R23 install on SHIELD succeeded but its Compose UI didn't render through uiautomator dump (Leanback variant); deferred to a phone install. |
+| **Streamyfin** | iOS / Android (React Native) | Uses Jellyfin's official `@jellyfin/sdk-typescript`. |
+| **Kodi** (jellycon / jellyfin-kodi addon) | Kodi/CoreELEC | Python addons construct image URLs via Jellyfin's REST API including `api_key=`. |
+
+**Why mechanism-equivalence is enough**: the spoiler-blur is **entirely server-side**. Every Jellyfin client hits the same `/Items/{id}/Images/{type}` endpoint and gets back the bytes `SpoilerBlurImageFilter` decides to return. The only client-specific concern is whether the request carries the `api_key=` query param — Jellyfin's official SDK always adds it. Clients that build URLs by hand without `api_key=` fall back to `SpoilerUserResolver`'s session-by-IP heuristic (5s window, see `SpoilerUserResolver.SharedIpAmbiguityWindow`) which fails closed on ambiguity. **Mechanism verified on Web + Jellyfin AndroidTV + Moonfin AndroidTV.**
 
 ## Surface × client matrix
 
 ✅ = verified, ⚪ = N/A, ❓ = not exercised in this round.
 
-| Surface | Web | AndroidTV (SHIELD) | API |
-|---|---|---|---|
-| Series detail page — `Spoiler mode activated` overview | ✅ | ✅ | ✅ |
-| Series Primary art (poster) — clear pass-through (per spec) | ✅ | ✅ | ✅ |
-| Series Backdrop — clear when `SpoilerBlurArtwork=false` | ✅ | ✅ | ✅ |
-| Series Backdrop — blurred when `SpoilerBlurArtwork=true` | ✅ | ❓ | ✅ |
-| Episode Primary (unwatched, S2+) — blurred / hide-mode placeholder | ✅ | ✅ | ✅ |
-| Episode Primary (watched) — clear pass-through | ✅ | ✅ | ✅ |
-| Movie detail page — `Spoiler mode activated` overview | ✅ | ✅ | ✅ |
-| Movie Primary art — blurred (unwatched) / hide-mode | ✅ | ✅ | ✅ |
-| Movie title preserved (no rewrite) | ✅ | ✅ | ✅ |
-| Collection (BoxSet) detail page — passes through clear (collection name + art is the entry point) | ✅ | ✅ | ✅ |
-| **Movies inside opted-in Collection — Primary art blurs per movie's watched state** | ✅ | ✅ | ✅ |
-| **Movies inside opted-in Collection — Overview / ratings / etc. stripped per movie's watched state** | ✅ | ✅ | ✅ |
-| **Collection name preserved (no rewrite)** | ✅ | ✅ | ✅ |
-| Search hints — episode/movie name suppressed for unwatched | ✅ | ✅ | ✅ |
-| NextUp / Continue Watching rails — episode tiles blurred | ✅ | ✅ | ✅ |
-| TMDB reviews suppressed on spoiler-mode series/movie | ✅ | ⚪ (no reviews UI on AndroidTV) | ✅ |
-| **R20 cache-bust on watched-flip — native client refetches without cache clear** | ✅ | ✅ **verified empirically** | ✅ |
-| `BaseUrl=/jf` reverse-proxy — all spoiler-blur endpoints round-trip | ✅ | ❓ | ✅ |
-| Per-user isolation — Test user only affects own state | ✅ | ⚪ | ✅ |
-| Restricted user (TestAdmin/Test) — only sees library they have access to | ✅ | ⚪ | ✅ |
+| Surface | Web | Jellyfin AndroidTV (SHIELD) | Moonfin AndroidTV (AVD) | API |
+|---|---|---|---|---|
+| Series detail page — `Spoiler mode activated` overview | ✅ | ✅ | ✅ | ✅ |
+| Series Primary art (poster) — clear pass-through (per spec) | ✅ | ✅ | ✅ | ✅ |
+| Series Backdrop — clear when `SpoilerBlurArtwork=false` | ✅ | ✅ | ✅ | ✅ |
+| Series Backdrop — blurred when `SpoilerBlurArtwork=true` | ✅ | ❓ | ❓ | ✅ |
+| Episode Primary (unwatched, S2+) — blurred / hide-mode placeholder | ✅ | ✅ | ✅ | ✅ |
+| Episode Primary (watched) — clear pass-through | ✅ | ✅ | ✅ | ✅ |
+| Movie detail page — `Spoiler mode activated` overview | ✅ | ✅ | ✅ | ✅ |
+| Movie Primary art — blurred (unwatched) / hide-mode | ✅ | ✅ | ✅ | ✅ |
+| Movie title preserved (no rewrite) | ✅ | ✅ | ✅ | ✅ |
+| Collection (BoxSet) detail page — passes through clear (collection name + art is the entry point) | ✅ | ✅ | ✅ | ✅ |
+| **Movies inside opted-in Collection — Primary art blurs per movie's watched state** | ✅ | ✅ | ✅ | ✅ |
+| **Movies inside opted-in Collection — Overview / ratings / etc. stripped per movie's watched state** | ✅ | ✅ | ✅ | ✅ |
+| **Collection name preserved (no rewrite)** | ✅ | ✅ | ✅ | ✅ |
+| Search hints — episode/movie name suppressed for unwatched | ✅ | ✅ | ✅ | ✅ |
+| NextUp / Continue Watching rails — episode tiles blurred | ✅ | ✅ | ✅ | ✅ |
+| TMDB reviews suppressed on spoiler-mode series/movie | ✅ | ⚪ (no reviews UI on AndroidTV) | ⚪ | ✅ |
+| **R20 cache-bust on watched-flip — native client refetches without cache clear** | ✅ | ✅ **verified empirically** | ✅ | ✅ |
+| `BaseUrl=/jf` reverse-proxy — all spoiler-blur endpoints round-trip | ✅ | ❓ | ❓ | ✅ |
+| Per-user isolation — Test user only affects own state | ✅ | ⚪ | ⚪ | ✅ |
+| Restricted user (TestAdmin/Test) — only sees library they have access to | ✅ | ⚪ | ⚪ | ✅ |
 
 ## R20 cache-bust verification — concrete proof on AndroidTV
 
