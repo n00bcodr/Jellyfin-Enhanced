@@ -534,7 +534,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (spoilerMode == "hide")
                 {
-                    await ReplaceWithStockCardAsync(executed, cacheKey, imageType).ConfigureAwait(false);
+                    await ReplaceWithStockCardAsync(executed, cacheKey, imageType, item, userState).ConfigureAwait(false);
                 }
                 else
                 {
@@ -852,13 +852,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return anyWatched;
         }
 
-        // Stock-card replacement path. Returns a flat dark-grey JPEG sized
-        // to the original image so the client's card layout doesn't shift.
-        // Used when SpoilerBlurMode == "hide" — admins/users who prefer
-        // a clean placeholder over a partial-blur "tease". Mirrors
-        // ReplaceWithBlurredAsync's no-store header policy so the
-        // placeholder doesn't cache past a watched-state change.
-        private async Task ReplaceWithStockCardAsync(ActionExecutedContext executed, string cacheKey, string imageType = "")
+        // Stock-card replacement path. Used when SpoilerBlurMode == "hide".
+        // R25: instead of returning a flat dark-grey rectangle, try the
+        // parent's Primary image first (Series Primary for unwatched
+        // episodes/seasons; Collection Primary for movies opted-in via a
+        // collection). The user gets a visually-consistent grid of "this
+        // show / this franchise" art rather than a sea of blank dark
+        // cards. Movies directly opted-in have no safe parent fallback
+        // (their own Primary IS the spoiler) → fall back to dark-grey.
+        // Mirrors ReplaceWithBlurredAsync's no-store header policy.
+        private async Task ReplaceWithStockCardAsync(
+            ActionExecutedContext executed,
+            string cacheKey,
+            string imageType,
+            MediaBrowser.Controller.Entities.BaseItem item,
+            UserSpoilerBlur userState)
         {
             if (executed.Result == null) return;
             if (string.Equals(executed.HttpContext.Request.Method, "HEAD", StringComparison.OrdinalIgnoreCase))
@@ -875,12 +883,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            // Try parent Primary first.
+            var parentBytes = TryGetParentPrimaryBytes(item, userState, originalBytes, cacheKey + ":pp");
+            if (parentBytes != null && parentBytes.Length > 0)
+            {
+                executed.Result = new FileContentResult(parentBytes, "image/jpeg");
+                if (executed.HttpContext.Response.HasStarted) return;
+                ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+                return;
+            }
+
             var stock = _blurService.StockCard(originalBytes, cacheKey);
             if (stock == null)
             {
-                // Stock-card render failed — return the original bytes
-                // (we already consumed the source stream). Same fallback
-                // posture as the blur path.
                 executed.Result = new FileContentResult(originalBytes, originalContentType ?? "image/jpeg");
                 ApplyNoStoreToResponse(executed.HttpContext);
                 return;
@@ -889,6 +904,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             executed.Result = new FileContentResult(stock, "image/jpeg");
             if (executed.HttpContext.Response.HasStarted) return;
             ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+        }
+
+        // R25: returns the bytes of a "safe parent" Primary image scaled
+        // to roughly match the original-image dimensions. Returns null
+        // when no safe parent exists (e.g. movie directly opted in, no
+        // collection fallback). The returned bytes are JPEG-encoded and
+        // suitable for FileContentResult.
+        private byte[]? TryGetParentPrimaryBytes(
+            MediaBrowser.Controller.Entities.BaseItem item,
+            UserSpoilerBlur userState,
+            byte[] originalBytes,
+            string cacheKey)
+        {
+            try
+            {
+                Guid parentId = Guid.Empty;
+                if (item is Episode ep) parentId = ep.SeriesId;
+                else if (item is Season s) parentId = s.SeriesId;
+                else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
+                {
+                    // Movie directly opted-in has no safe parent (its own
+                    // Primary IS the spoiler). For collection-opted movies,
+                    // fall back to the collection's Primary art.
+                    if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
+                    {
+                        foreach (var collKeyN in userState.Collections.Keys)
+                        {
+                            if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                            var bs = _libraryManager.GetItemById(collGuid)
+                                as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                            if (bs == null) continue;
+                            foreach (var child in bs.GetLinkedChildren())
+                            {
+                                if (child != null && child.Id == movie.Id)
+                                {
+                                    parentId = collGuid;
+                                    break;
+                                }
+                            }
+                            if (parentId != Guid.Empty) break;
+                        }
+                    }
+                }
+
+                if (parentId == Guid.Empty) return null;
+                var parent = _libraryManager.GetItemById(parentId);
+                if (parent == null) return null;
+
+                var imgInfo = parent.GetImageInfo(MediaBrowser.Model.Entities.ImageType.Primary, 0);
+                if (imgInfo == null || string.IsNullOrEmpty(imgInfo.Path)) return null;
+                if (!System.IO.File.Exists(imgInfo.Path)) return null;
+
+                // Cache via the same LRU as StockCard — same cacheKey
+                // shape so successive identical requests are free.
+                var fileBytes = System.IO.File.ReadAllBytes(imgInfo.Path);
+                if (fileBytes == null || fileBytes.Length == 0) return null;
+
+                // Resize to roughly match the original dimensions so the
+                // card layout doesn't shift. Use the original's probe
+                // dimensions; cap at MaxDecodeEdgePx via ImageBlurService.
+                return _blurService.ResizeToMatch(fileBytes, originalBytes, cacheKey);
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "parent-primary:" + ex.GetType().FullName,
+                    $"Spoiler blur: parent-Primary fallback failed for item {item?.Id}: {ex.Message}");
+                return null;
+            }
         }
 
         private async Task ReplaceWithBlurredAsync(ActionExecutedContext executed, int sigma, string cacheKey, string imageType = "")

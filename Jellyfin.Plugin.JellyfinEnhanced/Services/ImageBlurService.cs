@@ -115,6 +115,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return output;
         }
 
+        // R25: re-encode `source` JPEG bytes resized to match the
+        // dimensions of `referenceBytes` (or, if the source is much
+        // larger than the reference, scale it down). Used by the
+        // hide-mode parent-Primary fallback so the placeholder card
+        // doesn't shift the client's grid layout. Cached in the same
+        // LRU as Blur/StockCard.
+        public byte[]? ResizeToMatch(byte[] source, byte[] referenceBytes, string? cacheKey)
+        {
+            if (source == null || source.Length == 0) return null;
+
+            if (!string.IsNullOrEmpty(cacheKey)
+                && _cache.TryGetValue(cacheKey, out var cached))
+            {
+                Interlocked.Exchange(ref cached.LastAccessTicks, DateTime.UtcNow.Ticks);
+                return cached.Bytes;
+            }
+
+            int targetW = 600, targetH = 900;
+            try
+            {
+                if (referenceBytes != null && referenceBytes.Length > 0)
+                {
+                    using var probe = SKBitmap.Decode(referenceBytes);
+                    if (probe != null && probe.Width > 0 && probe.Height > 0)
+                    {
+                        targetW = probe.Width;
+                        targetH = probe.Height;
+                    }
+                }
+            }
+            catch { /* keep defaults */ }
+
+            byte[]? output;
+            try
+            {
+                using var srcBitmap = SKBitmap.Decode(source);
+                if (srcBitmap == null) return null;
+
+                int srcW = srcBitmap.Width;
+                int srcH = srcBitmap.Height;
+                if (srcW <= 0 || srcH <= 0) return null;
+
+                // Cap target at MaxDecodeEdgePx so we don't blow memory
+                // on a huge poster fed through a small thumbnail request.
+                var longEdge = Math.Max(targetW, targetH);
+                if (longEdge > MaxDecodeEdgePx)
+                {
+                    var ratio = (float)MaxDecodeEdgePx / longEdge;
+                    targetW = Math.Max(1, (int)(targetW * ratio));
+                    targetH = Math.Max(1, (int)(targetH * ratio));
+                }
+
+                // Scale source to target dims using high-quality sampling.
+                var info = new SKImageInfo(targetW, targetH);
+                using var dst = new SKBitmap(info);
+                if (!srcBitmap.ScalePixels(dst, new SKSamplingOptions(SKCubicResampler.Mitchell)))
+                {
+                    return null;
+                }
+                using var image = SKImage.FromBitmap(dst);
+                using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 85);
+                if (encoded == null) return null;
+                output = encoded.ToArray();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Spoiler parent-Primary resize failed: {ex.Message}");
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(cacheKey))
+            {
+                StoreInCache(cacheKey, output);
+            }
+
+            return output;
+        }
+
         public byte[]? Blur(byte[] input, float requestedSigma, string? cacheKey)
         {
             if (input == null || input.Length == 0) return null;
