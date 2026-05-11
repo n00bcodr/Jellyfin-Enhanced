@@ -221,12 +221,15 @@ automatically. No "clear app cache" needed.
 
 **Known limitations (inherent, no fix planned):**
 
-- **Trickplay tile previews** (`/Videos/{id}/Trickplay/...`) are
-  served by Jellyfin's video controller, not the image controller.
-  Each tile is a sparse-sampled frame from the entire movie; blurring
-  them defeats trickplay scrubbing entirely. They pass through
-  unblurred. If this is a deal-breaker, disable trickplay generation
-  for spoiler-list movies.
+- **Trickplay tile previews** (`/Videos/{id}/Trickplay/{w}/{i}.jpg`) —
+  R27: now covered. The image filter's `IsImageAction` accepts the
+  `Trickplay.GetTrickplayTileImage` action alongside the regular
+  `Image.GetItemImage*` actions. Trickplay tiles for unwatched items
+  in the user's spoiler list are blurred/hidden using the same Skia
+  pipeline as posters. Watched items pass through clear with
+  `no-store` headers. Verified empirically (Superman S1E7
+  tile-0: 1056 B blurred when unwatched → 4861 B clear when Played).
+  Tile responses are `PhysicalFileResult` (handled by `ExtractBytesAsync`).
 - **Subtitle file content** can describe scenes. Subtitle file
   fetches happen during playback (when the user is committed to
   watching). Out of scope.

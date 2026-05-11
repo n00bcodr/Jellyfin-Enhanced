@@ -29,6 +29,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     public sealed class SpoilerBlurImageFilter : IAsyncActionFilter, IDisposable
     {
         private const string ImageController = "Image";
+        // R27: trickplay tile-sheet endpoint (Videos/{id}/Trickplay/{w}/{i}.jpg).
+        // Each tile is a sprite-sheet JPEG containing many small thumbnails for
+        // timeline scrubbing previews. For spoiler-mode unwatched items, these
+        // thumbnails reveal scenes the user explicitly opted to hide.
+        private const string TrickplayController = "Trickplay";
         public const string SpoilerBlurFileName = "spoilerblur.json";
 
         // Image controller actions we care about. Jellyfin 10.11.x decorates
@@ -302,21 +307,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Configuration.PluginConfiguration pluginConfig)
         {
 
-            if (!TryGetItemId(context, out var itemId)
-                || !TryGetImageType(context, out var imageType))
+            if (!TryGetItemId(context, out var itemId))
             {
                 await next().ConfigureAwait(false);
                 return;
             }
-            // Always-blur tier (poster surface) vs artwork tier (Backdrop/
-            // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
-            // banners, etc.) passes through unchanged.
-            var inAlways = _alwaysBlurImageTypes.Contains(imageType);
-            var inArtwork = !inAlways && _artworkImageTypes.Contains(imageType);
-            if (!inAlways && !inArtwork)
+            // R27: trickplay routes don't carry an `imageType` argument —
+            // they're sprite-sheet tiles for a video's scrubbing previews.
+            // Treat them as always-blur (the entire sheet contains scene
+            // previews that the user opted to hide).
+            bool isTrickplay = IsTrickplayRoute(context);
+            string imageType;
+            bool inAlways, inArtwork;
+            if (isTrickplay)
             {
-                await next().ConfigureAwait(false);
-                return;
+                imageType = "Trickplay";
+                inAlways = true;
+                inArtwork = false;
+            }
+            else
+            {
+                if (!TryGetImageType(context, out imageType))
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Always-blur tier (poster surface) vs artwork tier (Backdrop/
+                // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
+                // banners, etc.) passes through unchanged.
+                inAlways = _alwaysBlurImageTypes.Contains(imageType);
+                inArtwork = !inAlways && _artworkImageTypes.Contains(imageType);
+                if (!inAlways && !inArtwork)
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
             }
             // R17-codex-H: do NOT short-circuit Backdrop/Art on
             // SpoilerBlurArtwork=false here — we still need the
@@ -650,9 +675,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var rv = context.ActionDescriptor.RouteValues;
             if (rv == null) return false;
             if (!rv.TryGetValue("controller", out var controller) || controller == null) return false;
-            if (!string.Equals(controller, ImageController, StringComparison.OrdinalIgnoreCase)) return false;
             if (!rv.TryGetValue("action", out var action) || action == null) return false;
-            return _imageActions.Contains(action);
+            if (string.Equals(controller, ImageController, StringComparison.OrdinalIgnoreCase))
+            {
+                return _imageActions.Contains(action);
+            }
+            // R27: trickplay tiles. Same image-mutation pipeline; the tile is
+            // just a JPEG of stitched-together thumbnails.
+            if (string.Equals(controller, TrickplayController, StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(action, "GetTrickplayTileImage", StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
+        }
+
+        private static bool IsTrickplayRoute(ActionExecutingContext context)
+        {
+            var rv = context.ActionDescriptor.RouteValues;
+            if (rv == null) return false;
+            if (!rv.TryGetValue("controller", out var c) || c == null) return false;
+            return string.Equals(c, TrickplayController, StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryGetItemId(ActionExecutingContext context, out Guid itemId)

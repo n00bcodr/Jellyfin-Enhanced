@@ -9,6 +9,7 @@ What works on what. Latest update 2026-05-11 (R26 — Moonfin pass).
 | **Jellyfin Web** | bundled with server 10.11.7 | `jellyfin-dev` direct + reverse-proxy `BaseUrl=/jf` | ✅ all features |
 | **Jellyfin AndroidTV** | v0.19.9 debug | NVIDIA SHIELD AndroidTV (Android 11) | ✅ all features (R23) |
 | **Moonfin AndroidTV-FireTV** | v1.9.1 (latest GA) | Fresh `R26_Moonfin_TV` AVD: AOSP TV on x86 (Android 14) — clean install, server reachable via emulator gateway `10.0.2.2` | ✅ all features (R26) |
+| **Wholphin** (damontecres) | v0.6.3 | Same `R26_Moonfin_TV` AVD, clean install | ✅ login + spoiler strip on episode tile + NextUp rail (R27) |
 | **Moonfin Desktop (Linux)** | v1.4.0 AppImage | Linux Manjaro, install + launch verified; Flutter EGL + media_kit running. UI screenshot deferred due to X/Wayland GL-capture limitation, but server-side mechanism is identical to Moonfin AndroidTV (same Flutter codebase + Jellyfin SDK) — expected to behave identically. | ✅ install + launch; UI screenshot deferred |
 | **API consumer (curl/python)** | n/a | `jellyfin-dev` direct + reverse-proxy `BaseUrl=/jf` | ✅ all features |
 
@@ -52,6 +53,7 @@ What works on what. Latest update 2026-05-11 (R26 — Moonfin pass).
 | NextUp / Continue Watching rails — episode tiles blurred | ✅ | ✅ | ✅ | ✅ |
 | TMDB reviews suppressed on spoiler-mode series/movie | ✅ | ⚪ (no reviews UI on AndroidTV) | ⚪ | ✅ |
 | **R20 cache-bust on watched-flip — native client refetches without cache clear** | ✅ | ✅ **verified empirically** | ✅ | ✅ |
+| **Trickplay tile previews blurred (R27)** | ✅ verified (1056B blurred → 4861B watched) | ❓ (no trickplay on test library) | ❓ | ✅ |
 | `BaseUrl=/jf` reverse-proxy — all spoiler-blur endpoints round-trip | ✅ | ❓ | ❓ | ✅ |
 | Per-user isolation — Test user only affects own state | ✅ | ⚪ | ⚪ | ✅ |
 | Restricted user (TestAdmin/Test) — only sees library they have access to | ✅ | ⚪ | ⚪ | ✅ |
@@ -94,7 +96,7 @@ See `/tmp/r23-summary.txt` and `/tmp/r23-failures.jsonl` for raw outputs.
 
 ## Known limitations / out of scope
 
-- **Trickplay tiles** (timeline-hover preview thumbnails) bypass the image filter. Documented in SECURITY.md.
+- ~~Trickplay tiles bypass the image filter~~ — **R27 added coverage.** `/Videos/{id}/Trickplay/{width}/{index}.jpg` now routes through `SpoilerBlurImageFilter` (treated as always-blur, no `imageType` needed). Verified blurred-vs-clear on Superman S1E7 (1056 B unwatched → 4861 B watched).
 - **Subtitle content** is not stripped (rendering happens client-side from raw .srt/.vtt bytes).
 - **In-memory client cache** (web client memory cache, not URL cache) is not invalidated on toggle — user must navigate or refresh. Mitigated by R14-M1 reviews-strip and JS tag-pipeline cache invalidation.
 - **Push notifications** ("New episode of X added") are server events outside the plugin's filter chain.
