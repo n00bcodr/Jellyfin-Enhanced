@@ -465,6 +465,67 @@
      * @param {HTMLButtonElement} button
      * @param {string} seriesId
      */
+    // R24: in-place refresh of every Jellyfin item-image URL on the page.
+    // Triggered after a spoiler-mode toggle so the visible state flips
+    // without an F5. Walks <img src>, srcset, and inline
+    // style.backgroundImage; appends `_sbcb=<timestamp>` to bust the
+    // browser HTTP cache. The image filter on the server re-runs against
+    // the user's current state and returns the right bytes (blurred /
+    // clear / hide-mode placeholder).
+    function refreshSpoilerableImages() {
+        var IMG_PATH_RE = /\/Items\/[a-f0-9-]+\/Images\//i;
+        var cb = '_sbcb=' + Date.now();
+
+        function bust(url) {
+            if (typeof url !== 'string' || !url) return url;
+            if (!IMG_PATH_RE.test(url)) return url;
+            // Strip any prior _sbcb param so successive toggles don't grow
+            // the query string unbounded.
+            var cleaned = url.replace(/([?&])_sbcb=\d+&?/g, '$1').replace(/[?&]$/, '');
+            return cleaned + (cleaned.indexOf('?') === -1 ? '?' : '&') + cb;
+        }
+
+        // <img src>
+        var imgs = document.querySelectorAll('img[src*="/Items/"]');
+        for (var i = 0; i < imgs.length; i++) {
+            var img = imgs[i];
+            var orig = img.getAttribute('src') || '';
+            if (IMG_PATH_RE.test(orig)) img.setAttribute('src', bust(orig));
+            var ss = img.getAttribute('srcset');
+            if (ss && IMG_PATH_RE.test(ss)) {
+                img.setAttribute('srcset', ss.replace(/([^\s,]+)(?=\s*[\d.]+x|\s*,|\s*$)/g, function (u) {
+                    return IMG_PATH_RE.test(u) ? bust(u) : u;
+                }));
+            }
+        }
+
+        // <source srcset> inside <picture>
+        var sources = document.querySelectorAll('source[srcset*="/Items/"]');
+        for (var j = 0; j < sources.length; j++) {
+            var s = sources[j];
+            var sss = s.getAttribute('srcset') || '';
+            if (IMG_PATH_RE.test(sss)) {
+                s.setAttribute('srcset', sss.replace(/([^\s,]+)(?=\s*[\d.]+x|\s*,|\s*$)/g, function (u) {
+                    return IMG_PATH_RE.test(u) ? bust(u) : u;
+                }));
+            }
+        }
+
+        // background-image on inline styles. Walk only nodes whose style
+        // attribute references /Items/ to avoid scanning the whole DOM.
+        var bgEls = document.querySelectorAll('[style*="/Items/"]');
+        for (var k = 0; k < bgEls.length; k++) {
+            var el = bgEls[k];
+            var st = el.getAttribute('style') || '';
+            if (IMG_PATH_RE.test(st)) {
+                var newSt = st.replace(/url\((["']?)([^"')]+)\1\)/gi, function (m, q, u) {
+                    return 'url(' + q + bust(u) + q + ')';
+                });
+                if (newSt !== st) el.setAttribute('style', newSt);
+            }
+        }
+    }
+
     function onToggleClicked(button, itemId, kind, visiblePage) {
         var willBeEnabled = !isEnabledForKind(kind, itemId);
         button.disabled = true;
@@ -528,6 +589,18 @@
                 }
             } catch (e) {
                 console.warn(logPrefix, 'reviews section cleanup failed:', e);
+            }
+            // R24: refresh all <img> + background-image URLs that point at
+            // Jellyfin item images, so the user sees the new blurred/clear
+            // state immediately without an F5. Adds a `_sbcb=<timestamp>`
+            // cache-buster query param; the server ignores unknown params
+            // but the URL changes → browser cache miss → fresh fetch →
+            // spoiler filter runs and returns the correct bytes for the
+            // user's current state.
+            try {
+                refreshSpoilerableImages();
+            } catch (e) {
+                console.warn(logPrefix, 'refreshSpoilerableImages failed:', e);
             }
         }).catch(function (err) {
             console.error(logPrefix, 'Toggle failed:', err);
