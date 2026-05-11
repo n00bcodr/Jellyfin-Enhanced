@@ -27,8 +27,9 @@ Untested in R23 (deferred): Findroid, Streamyfin, Swiftfin, Kodi, native iOS Jel
 | Movie detail page — `Spoiler mode activated` overview | ✅ | ✅ | ✅ |
 | Movie Primary art — blurred (unwatched) / hide-mode | ✅ | ✅ | ✅ |
 | Movie title preserved (no rewrite) | ✅ | ✅ | ✅ |
-| **Collection (BoxSet) detail page — `Spoiler mode activated`** | ✅ | ✅ | ✅ |
-| **Collection Primary art — blurred when in user list** | ✅ | ✅ | ✅ |
+| Collection (BoxSet) detail page — passes through clear (collection name + art is the entry point) | ✅ | ✅ | ✅ |
+| **Movies inside opted-in Collection — Primary art blurs per movie's watched state** | ✅ | ✅ | ✅ |
+| **Movies inside opted-in Collection — Overview / ratings / etc. stripped per movie's watched state** | ✅ | ✅ | ✅ |
 | **Collection name preserved (no rewrite)** | ✅ | ✅ | ✅ |
 | Search hints — episode/movie name suppressed for unwatched | ✅ | ✅ | ✅ |
 | NextUp / Continue Watching rails — episode tiles blurred | ✅ | ✅ | ✅ |
@@ -60,7 +61,7 @@ Spun up `nginx:alpine` proxying `:8099 → jellyfin-dev:8096/jf/`. Tested:
 - `POST /JellyfinEnhanced/spoiler-blur/{series,movies,collections}/{id}` via proxy → 200, state persisted
 - `GET /Users/{uid}/Items/{id}` via proxy → strip filter applied (Overview="Spoiler mode activated", ImageTags prefixed)
 - `GET /Items/{id}/Images/Primary` via proxy → 445B blurred body + `Cache-Control: private, no-store`
-- `POST /JellyfinEnhanced/tag-data/{uid}` via proxy → BoxSet/Series stub returned (Genres=[], ratings=null, Path=null)
+- `POST /JellyfinEnhanced/tag-data/{uid}` via proxy → Series + Movie stub returned (Genres=[], ratings=null, Path=null). BoxSet DTOs pass through unstripped per the R23 collection-redesign (collection is the entry point; movies inside it carry the strip).
 
 Bytes through proxy match bytes from direct call. No URL-emission bugs.
 

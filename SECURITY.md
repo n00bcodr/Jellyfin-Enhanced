@@ -136,8 +136,15 @@ apply:
    recently-active one wins. Until the activity disambiguates, User A
    may see images blurred per User B's spoiler list, and vice versa.
    The plugin detects this case (multiple distinct users active within
-   a 60-second window from the same IP) and **fails closed** — passes
-   through unblurred rather than apply the wrong user's preferences.
+   a 5-second activity window from the same IP, controlled by
+   `SpoilerUserResolver.SharedIpAmbiguityWindow`) and **fails closed**
+   — passes through unblurred rather than apply the wrong user's
+   preferences. The window was tightened from the original 60s to 5s
+   to reduce the disambiguation grace period: with 60s, a user who'd
+   been idle for 30s could still cause ambiguity-failure for a freshly
+   navigating user; 5s means typical click-through navigation
+   disambiguates almost immediately while still catching genuinely
+   concurrent multi-user requests through one proxy.
    Configure Jellyfin's `KnownProxies` to trust your proxy's
    `X-Forwarded-For` so that the request IP reflects the actual client.
 

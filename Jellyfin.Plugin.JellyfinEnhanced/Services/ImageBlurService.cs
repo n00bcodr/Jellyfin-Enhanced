@@ -86,9 +86,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall through with default dims; not worth a log line.
+                // Decoder failed on probe — fall through to default 600x900.
+                // Rate-limited so a malformed-image flood (corrupt poster
+                // somewhere in the library) can't fill the log.
+                _logger.Debug($"Spoiler stock-card probe failed for input ({input?.Length ?? 0} bytes): {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 
             byte[]? output;
@@ -145,7 +148,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
             }
-            catch { /* keep defaults */ }
+            catch (Exception ex)
+            {
+                // Reference probe failed — fall back to default 600x900
+                // target dims. Debug-level since this fires for any
+                // malformed reference and we have a sane default.
+                _logger.Debug($"Spoiler parent-Primary reference probe failed: {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
+            }
 
             byte[]? output;
             try

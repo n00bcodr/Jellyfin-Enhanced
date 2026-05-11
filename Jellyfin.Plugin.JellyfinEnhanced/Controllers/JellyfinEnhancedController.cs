@@ -3420,6 +3420,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // reads spoilerblur.json on every image request and blurs every UNWATCHED
         // episode of any series in that list. Watched episodes pass through unblurred.
 
+        // R25-health: returns a snapshot of any spoilerblur.json corruption
+        // events that have been logged this process-lifetime. Used by the
+        // admin UI to surface a banner ("Your spoiler-mode preferences
+        // were corrupted and reset; you may need to re-enable items").
+        // Per-user — each user only sees their OWN corruption events.
+        // Admins see all users (so they can advise affected users).
+        [HttpGet("spoiler-blur/health")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerBlurHealth()
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            var userKey = userId.Value.ToString("N");
+            var jUser = _userManager.GetUserById(userId.Value);
+            var isAdmin = jUser?.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator) ?? false;
+
+            var log = Services.SpoilerUserResolver.GetCorruptionLog();
+            var events = new List<object>();
+            foreach (var kvp in log)
+            {
+                if (!isAdmin && kvp.Key != userKey) continue; // non-admin: only own
+                events.Add(new
+                {
+                    userId = kvp.Key,
+                    userDisplay = kvp.Value.UserDisplay,
+                    at = kvp.Value.At.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    reason = kvp.Value.Reason,
+                });
+            }
+            return Ok(new
+            {
+                healthy = events.Count == 0,
+                corruptionEvents = events,
+            });
+        }
+
+        // R25-health: admin acknowledges a corruption event, clearing it
+        // from the banner. Users acknowledge their own.
+        [HttpDelete("spoiler-blur/health/{targetUserId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AckSpoilerBlurCorruption(string targetUserId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            var userKey = userId.Value.ToString("N");
+            var jUser = _userManager.GetUserById(userId.Value);
+            var isAdmin = jUser?.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator) ?? false;
+
+            if (!Guid.TryParse(targetUserId, out var tGuid)
+                && !Guid.TryParseExact(targetUserId, "N", out tGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid userId." });
+            }
+            var tKey = tGuid.ToString("N");
+            // Non-admins can only ack their own.
+            if (!isAdmin && tKey != userKey) return Forbid();
+            Services.SpoilerUserResolver.ClearCorruption(tKey);
+            return Ok(new { success = true });
+        }
+
         [HttpGet("spoiler-blur/series")]
         [Authorize]
         [Produces("application/json")]
@@ -3448,11 +3510,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
         }
@@ -3538,11 +3602,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
@@ -3593,11 +3659,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
@@ -3697,11 +3765,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
@@ -3749,11 +3819,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
@@ -3844,11 +3916,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
@@ -3896,11 +3970,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
@@ -6118,6 +6194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-corrupt:" + userKey,
                     $"Spoiler tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
                 return null;
             }
             catch (Newtonsoft.Json.JsonException ex)
@@ -6125,6 +6202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-corrupt:" + userKey,
                     $"Spoiler tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
                 return null;
             }
             catch (IOException ex)

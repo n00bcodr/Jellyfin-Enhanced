@@ -232,5 +232,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (stored != now) return;
             _logger.Warning(message);
         }
+
+        // R25-health: track per-user corruption events so the admin can
+        // surface a banner in the JE management UI when any user's
+        // spoilerblur.json was rolled into the .corrupt-backup file.
+        // The file-on-disk has been rewritten with an empty state by
+        // UserConfigurationManager (fail-open per SECURITY.md) so the
+        // user's image/strip pipeline silently no-ops until they
+        // re-enable items. Surfacing this lets the user know to retry.
+        private static readonly ConcurrentDictionary<string, CorruptionEvent> _corruptionLog = new();
+
+        public class CorruptionEvent
+        {
+            public string UserDisplay { get; set; } = string.Empty;
+            public DateTime At { get; set; }
+            public string Reason { get; set; } = string.Empty;
+        }
+
+        public static void RecordCorruption(string userKey, string userDisplay, string reason)
+        {
+            _corruptionLog[userKey] = new CorruptionEvent
+            {
+                UserDisplay = userDisplay,
+                At = DateTime.UtcNow,
+                Reason = reason,
+            };
+        }
+
+        public static IReadOnlyDictionary<string, CorruptionEvent> GetCorruptionLog()
+        {
+            return _corruptionLog;
+        }
+
+        public static void ClearCorruption(string userKey)
+        {
+            _corruptionLog.TryRemove(userKey, out _);
+        }
     }
 }

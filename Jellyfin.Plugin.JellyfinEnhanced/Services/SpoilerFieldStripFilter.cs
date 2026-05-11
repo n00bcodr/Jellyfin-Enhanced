@@ -311,6 +311,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi:
                     StripPlaybackInfo(pbi, userState, cfg, userId, context);
                     break;
+                default:
+                    // R25-diagnostics: route was in the allowlist (so we
+                    // *believed* it returned a spoilable DTO shape) but
+                    // the runtime shape didn't match any case arm. Two
+                    // common causes: (a) Jellyfin upgrade introduced a
+                    // new wrapper shape, (b) controller's return
+                    // changed signature (e.g. ActionResult<X> → Foo).
+                    // Rate-limited so a hot route with the new shape
+                    // doesn't spam logs — one warn per (Controller,
+                    // Action, ValueType) per process lifetime via the
+                    // resolver's rate-limit map.
+                    var rv = context.ActionDescriptor.RouteValues;
+                    var ctrl = rv != null && rv.TryGetValue("controller", out var c) ? c : "?";
+                    var act = rv != null && rv.TryGetValue("action", out var a) ? a : "?";
+                    _resolver.WarnRateLimited(
+                        $"fieldstrip-unknown-shape:{ctrl}.{act}:{objectResult.Value.GetType().FullName}",
+                        $"Spoiler field strip: route {ctrl}.{act} returned shape {objectResult.Value.GetType().FullName} — no case arm matched, strip silently skipped. Likely a Jellyfin upgrade. Add a case arm in StripIfApplicable to cover this shape.");
+                    break;
             }
         }
 

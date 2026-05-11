@@ -92,10 +92,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     }
 
     // Per-collection spoiler-blur entry. Collections (BoxSet) are
-    // user/admin-curated groupings of movies/series; toggling spoiler-
-    // blur on a collection blurs the collection art itself + applies
-    // strip to its DTO. Items WITHIN the collection retain their own
-    // per-item toggle state (separate from this dict).
+    // user/admin-curated groupings of movies. R23-collections-redesign:
+    // toggling spoiler-blur on a collection is a SHORTCUT — it does
+    // NOT blur or strip the collection itself (the collection name +
+    // art is the entry point the user clicked, like a Series). Instead,
+    // every movie that's a member of the collection (via BoxSet
+    // LinkedChildren) is treated as if it were directly opted-in, so
+    // its Primary art blurs (until Played) and its DTO strips. Items
+    // can be in `Movies` directly AND inherited via a collection — the
+    // image / strip pipelines OR these together (IsMovieInSpoilerScope).
     public class SpoilerBlurCollectionEntry
     {
         public string CollectionId { get; set; } = string.Empty;
