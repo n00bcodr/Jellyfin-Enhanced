@@ -803,6 +803,85 @@
     /**
      * Module init. Loads server state, then exposes toggle APIs.
      */
+    // R24: intercept watched-state mutations (mark played / unplayed) so
+    // we can auto-refresh thumbnails afterwards. Without this, the
+    // currently-rendered <img> URLs still have the OLD cache-bust prefix
+    // and the user keeps seeing the stale (blurred / clear) state until
+    // page refresh.
+    //
+    // Jellyfin's web client marks watched via:
+    //   POST   /Users/{uid}/PlayedItems/{itemId}      (mark played)
+    //   DELETE /Users/{uid}/PlayedItems/{itemId}      (mark unplayed)
+    // Both go through window.fetch in modern Jellyfin and through
+    // XMLHttpRequest in older ApiClient paths. Patch both.
+    var PLAYED_RE = /\/(?:Users\/[a-f0-9-]+|UserItems)\/PlayedItems\/[a-f0-9-]+/i;
+
+    function maybeRefreshAfterMutation(method, urlStr) {
+        if (typeof urlStr !== 'string') return;
+        if (!PLAYED_RE.test(urlStr)) return;
+        if (method !== 'POST' && method !== 'DELETE') return;
+        // Image filter on the server reads UserData.Played; the user-data
+        // mutation propagates synchronously in Jellyfin, but image-cache-
+        // bust URL params include the new state hash. Schedule a refresh
+        // after the response settles so subsequent navigations / DTO
+        // re-fetches don't race the pending mutation.
+        setTimeout(function () {
+            try { refreshSpoilerableImages(); }
+            catch (e) { console.warn(logPrefix, 'auto-refresh after watched-flip failed:', e); }
+        }, 200);
+    }
+
+    function installWatchedMutationHook() {
+        if (window.__je_spoilerBlurWatchedHookInstalled) return;
+        window.__je_spoilerBlurWatchedHookInstalled = true;
+
+        // fetch
+        try {
+            var origFetch = window.fetch;
+            if (typeof origFetch === 'function') {
+                window.fetch = function (input, init) {
+                    var url = typeof input === 'string' ? input : (input && input.url) || '';
+                    var method = (init && init.method) || (input && input.method) || 'GET';
+                    var p = origFetch.apply(this, arguments);
+                    if (PLAYED_RE.test(url)) {
+                        p.then(function (resp) {
+                            if (resp && resp.ok) maybeRefreshAfterMutation(method.toUpperCase(), url);
+                        }).catch(function () {});
+                    }
+                    return p;
+                };
+            }
+        } catch (e) {
+            console.warn(logPrefix, 'fetch hook install failed:', e);
+        }
+
+        // XMLHttpRequest
+        try {
+            var origOpen = XMLHttpRequest.prototype.open;
+            var origSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function (method, url) {
+                this.__je_method = (method || '').toUpperCase();
+                this.__je_url = typeof url === 'string' ? url : '';
+                return origOpen.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function () {
+                var xhr = this;
+                var method = xhr.__je_method;
+                var url = xhr.__je_url;
+                if (url && PLAYED_RE.test(url) && (method === 'POST' || method === 'DELETE')) {
+                    xhr.addEventListener('loadend', function () {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            maybeRefreshAfterMutation(method, url);
+                        }
+                    });
+                }
+                return origSend.apply(this, arguments);
+            };
+        } catch (e) {
+            console.warn(logPrefix, 'XHR hook install failed:', e);
+        }
+    }
+
     function init() {
         if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return;
         // Install the URL patcher BEFORE loading state. We want any image
@@ -818,6 +897,8 @@
                 JE.toast(JE.t('spoiler_blur_patcher_failed_toast'), 5000);
             }
         }
+        try { installWatchedMutationHook(); }
+        catch (e) { console.warn(logPrefix, 'watched-mutation hook install failed:', e); }
         loadState();
     }
 
