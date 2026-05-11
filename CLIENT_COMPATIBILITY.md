@@ -10,7 +10,19 @@ What works on what. Tested 2026-05-10 (R23 stress run).
 | **Jellyfin AndroidTV** | v0.19.9 debug | NVIDIA SHIELD Android TV (Android 11) | ✅ all features |
 | **API consumer (curl/python)** | n/a | `jellyfin-dev` direct + reverse-proxy `BaseUrl=/jf` | ✅ all features |
 
-Untested in R23 (deferred): Findroid, Streamyfin, Swiftfin, Kodi, native iOS Jellyfin client.
+### Expected-but-unverified clients
+
+| Client | Platform | Expected behaviour | Why we expect it works | Caveat |
+|---|---|---|---|---|
+| **Findroid** | Android phone/tablet (Compose UI) | Same as Jellyfin AndroidTV | Uses Jellyfin's official client SDK to construct image URLs (`ApiClient.getImageUrl`), which includes `api_key=` automatically → server filter resolves the user → blur applies. R23 install on SHIELD AndroidTV succeeded but Compose UI didn't render through uiautomator dump (SHIELD's Leanback variant), so deferring full UI verification to a phone install. | If a build path strips `api_key=` and relies on `Authorization:` header on image fetches, fallback is `SpoilerUserResolver.ResolveUserId` session-by-IP — fail-closed on shared IPs (see SECURITY.md). |
+| **Streamyfin** | iOS / Android (React Native) | Same as AndroidTV | Uses Jellyfin's official `@jellyfin/sdk-typescript` which constructs image URLs identically. Same `api_key=` mechanism. | Same shared-IP caveat. |
+| **Swiftfin** | iOS / tvOS native | Same as AndroidTV | Uses Jellyfin's official Swift SDK; image URLs include `api_key=`. | Same shared-IP caveat. |
+| **Kodi** (jellycon / jellyfin-kodi addon) | Kodi/CoreELEC | Same as AndroidTV | Python addons construct image URLs via Jellyfin's REST API including `api_key=`. | Same shared-IP caveat. |
+| **Stock Jellyfin iOS / iPad** | iOS native | Same as AndroidTV | Same Jellyfin SDK pattern. | Same shared-IP caveat. |
+
+These clients ARE expected to work because the spoiler-blur mechanism is **entirely server-side** — every native client hits the same `/Items/{id}/Images/{type}` endpoint and gets back the bytes the server's `SpoilerBlurImageFilter` decides to return. The only client-specific concern is whether the request carries the `api_key=` query param (Jellyfin's official SDK always adds it).
+
+Anything using Jellyfin's official SDK should work. Anything using raw image URLs without `api_key=` falls back to `SpoilerUserResolver`'s session-by-IP heuristic (5s window, see `SpoilerUserResolver.SharedIpAmbiguityWindow`) which fails closed on ambiguity. **Verified on AndroidTV — extrapolated to others.**
 
 ## Surface × client matrix
 
