@@ -465,6 +465,23 @@
      * @param {HTMLButtonElement} button
      * @param {string} seriesId
      */
+    // R24: full page reload to refresh DTO-derived text (Overview,
+    // episode names, ratings). The image-URL refresh handles the visual
+    // layer in-place, but title/overview/ratings come from a DTO the
+    // page rendered ONCE on initial load — they don't reactively update
+    // when the server-side strip changes between requests. Coalesced +
+    // debounced so successive watched-marks (mark a season's worth of
+    // episodes one after another) only trigger one reload.
+    var pendingReload = null;
+    function scheduleFullReload() {
+        if (pendingReload) clearTimeout(pendingReload);
+        pendingReload = setTimeout(function () {
+            pendingReload = null;
+            try { location.reload(); }
+            catch (e) { console.warn(logPrefix, 'reload failed:', e); }
+        }, 600);
+    }
+
     // R24: in-place refresh of every Jellyfin item-image URL on the page.
     // Triggered after a spoiler-mode toggle so the visible state flips
     // without an F5. Walks <img src>, srcset, and inline
@@ -590,18 +607,16 @@
             } catch (e) {
                 console.warn(logPrefix, 'reviews section cleanup failed:', e);
             }
-            // R24: refresh all <img> + background-image URLs that point at
-            // Jellyfin item images, so the user sees the new blurred/clear
-            // state immediately without an F5. Adds a `_sbcb=<timestamp>`
-            // cache-buster query param; the server ignores unknown params
-            // but the URL changes → browser cache miss → fresh fetch →
-            // spoiler filter runs and returns the correct bytes for the
-            // user's current state.
+            // R24: refresh all <img> + background-image URLs immediately
+            // for snappy visual feedback, then schedule a full page
+            // reload so DOM text (Overview, titles, ratings) also picks
+            // up the new server-side strip state.
             try {
                 refreshSpoilerableImages();
             } catch (e) {
                 console.warn(logPrefix, 'refreshSpoilerableImages failed:', e);
             }
+            scheduleFullReload();
         }).catch(function (err) {
             console.error(logPrefix, 'Toggle failed:', err);
             if (JE.toast) JE.toast(JE.t('spoiler_blur_error_toast'));
@@ -820,11 +835,17 @@
         if (typeof urlStr !== 'string') return;
         if (!PLAYED_RE.test(urlStr)) return;
         if (method !== 'POST' && method !== 'DELETE') return;
-        // Image filter on the server reads UserData.Played; the user-data
-        // mutation propagates synchronously in Jellyfin, but image-cache-
-        // bust URL params include the new state hash. Schedule a refresh
-        // after the response settles so subsequent navigations / DTO
-        // re-fetches don't race the pending mutation.
+        // Bail if the user has no spoiler-blur state.
+        if (loaded && enabledSeries.size === 0 && enabledMovies.size === 0 && enabledCollections.size === 0) return;
+        // Refresh image URLs in-place. DOM text fields (Overview,
+        // episode names, ratings) won't auto-update from this — they
+        // were rendered from the DTO once on navigation and Jellyfin's
+        // web client doesn't anticipate user-data → DTO-content
+        // transitions. We deliberately do NOT trigger a full page
+        // reload here: a watched/unwatched mark can fire from many
+        // contexts (auto-mark on playback end, batch-mark from a UI,
+        // sync from another client) and a reload mid-flow is jarring.
+        // The text will refresh on the user's next navigation.
         setTimeout(function () {
             try { refreshSpoilerableImages(); }
             catch (e) { console.warn(logPrefix, 'auto-refresh after watched-flip failed:', e); }
