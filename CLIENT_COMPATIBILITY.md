@@ -30,6 +30,20 @@ What works on what. Latest update 2026-05-11 (R26 — Moonfin pass).
 
 **Why mechanism-equivalence is enough**: the spoiler-blur is **entirely server-side**. Every Jellyfin client hits the same `/Items/{id}/Images/{type}` endpoint and gets back the bytes `SpoilerBlurImageFilter` decides to return. The only client-specific concern is whether the request carries the `api_key=` query param — Jellyfin's official SDK always adds it. Clients that build URLs by hand without `api_key=` fall back to `SpoilerUserResolver`'s session-by-IP heuristic (5s window, see `SpoilerUserResolver.SharedIpAmbiguityWindow`) which fails closed on ambiguity. **Mechanism verified on Web + Jellyfin AndroidTV + Moonfin AndroidTV.**
 
+### External players (VLC, MPV, MPC-HC, generic stream consumers)
+
+When a user picks **"Open in external player"** / **"Play with VLC"** / etc. from a Jellyfin client, the calling Jellyfin client hands the external app a stream URL (or `.strm` redirect). The external app then:
+
+- Plays the **video bytes** — **not affected** by spoiler-blur, and **not in scope**. The blur protects pre-watch metadata; the user has already chosen to watch.
+- Renders **no Jellyfin metadata UI** — no Primary art, no overview, no rating, no episode title from Jellyfin's DTO. Whatever the external player shows comes from the file's embedded MKV/MP4 tags, not from Jellyfin's API.
+- Generates its **own seek-bar thumbnails** locally from the stream — does not hit `/Videos/{id}/Trickplay/{width}/{index}.jpg`, so R27 trickplay coverage is irrelevant here (and unnecessary).
+
+**Net effect: out of scope by design.** External players are post-decision playback. The calling Jellyfin client (Web / AndroidTV / Moonfin) is the surface that needs spoiler protection, and it IS protected — the external player is just a video sink downstream of that decision.
+
+**Cast / DLNA caveat**: the "Cast to device" picker runs inside the calling Jellyfin client and IS spoiler-blurred (it's the client choosing the renderer, not the renderer fetching metadata). The receiving Chromecast / DLNA renderer / AirPlay device gets only the stream URL.
+
+**Note on Jellyfin-aware "external" apps** (Infuse, MrMC, third-party Kodi addons, etc.): these aren't really "external" — they query Jellyfin's API and build their own metadata UI from DTO responses. The server-side strip filter applies to those API responses identically to Web/AndroidTV. Covered under "Expected-but-unverified clients (mechanism-equivalent)" above, not here.
+
 ## Surface × client matrix
 
 ✅ = verified, ⚪ = N/A, ❓ = not exercised in this round.
