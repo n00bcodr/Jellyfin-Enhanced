@@ -1339,6 +1339,14 @@
     display: block;
     font-style: italic;
 }
+/* Parent-dep hints get appended as direct <div class="dep-hint-text"> children
+   of .checkboxContainer (which is display: flex; align-items: center). Without
+   these rules the hint becomes a flex sibling of the label, sharing the row
+   and crushing both pieces on narrow viewports (visible on phones: the label
+   "Use Plugin Pages for Hidden Content" and the hint "Enable X to configure"
+   end up squashed into half-width columns). Wrap the hint onto its own line. */
+#JellyfinEnhancedPage .checkboxContainer { flex-wrap: wrap; }
+#JellyfinEnhancedPage .checkboxContainer > .dep-hint-text { flex-basis: 100%; }
 .dep-required-icon { vertical-align: middle; margin-left: 6px; }
 
 /* ---------------------------------------------------------------------------
@@ -1779,14 +1787,18 @@ body.je-has-filetransformation .je-installed-badge[data-plugin="filetransformati
     }
     .je-save-dock .je-save-dock-btn { width: 100%; justify-content: center; }
     .je-tab-bar { padding: 10px 0; }
-    .jellyfin-tab-button { padding: 8px 14px; }
+    /* Prefix with #JellyfinEnhancedPage to match the base rule's specificity
+       (1,1,0). Class-only selectors (0,1,0) here lose the cascade to the
+       prefixed base, leaving desktop padding/grid values stuck on phones. */
+    #JellyfinEnhancedPage .jellyfin-tab-button { padding: 8px 14px; }
     .je-tab-icon { font-size: 18px !important; }
 
     /* The tab content grid uses minmax(480px, 1fr) for desktop multi-column.
        On viewports narrower than the 480px min, the grid forces horizontal
        overflow (descriptions get cut off, page scrolls sideways). Collapse
-       to single column under 768px so cards stack cleanly. */
-    .jellyfin-tab-content.active {
+       to single column under 768px so cards stack cleanly. The prefix is
+       required for specificity parity with the base rule at line ~654. */
+    #JellyfinEnhancedPage .jellyfin-tab-content.active {
         grid-template-columns: 1fr;
         gap: 12px;
     }
