@@ -295,6 +295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerStripReviews = true;
             SpoilerBlurMode = "blur";
             SpoilerBlurArtwork = false;
+            SpoilerAutoEnableOnFirstPlay = false;
             SpoilerOverviewPlaceholder = "Spoiler mode activated";
         }
 
@@ -629,6 +630,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are usually less specific, so the default scopes blur to the
         // poster surface where most spoiler risk lives.
         public bool SpoilerBlurArtwork { get; set; } = false;
+        // When true, the first time a user plays S1E1 of a series they have
+        // never played before, the plugin automatically adds that series to
+        // their spoiler list (UserSpoilerBlur.Series). Lets users opt out of
+        // explicitly toggling each new show. Per-user history is checked via
+        // IUserDataManager so rewatches don't re-trigger.
+        public bool SpoilerAutoEnableOnFirstPlay { get; set; } = false;
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.

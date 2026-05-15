@@ -811,6 +811,11 @@
                                 <div class="fieldDescription">When off (default), only Primary / Thumb / Screenshot images get replaced. The wider Backdrop / Art images shown on detail pages and in collections pass through unblurred. Turn on for the strictest mode.</div>
                             </div>
 
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable spoiler mode on first play of a new show</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnFirstPlay" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">When on, the first time a user plays S1E1 of a series they have never watched before, the plugin automatically adds that series to their spoiler list — they don't have to remember to toggle it before starting a new show. Rewatches (or jumping in at later episodes) won't trigger it. Applies to all users on this instance.</div>
+                            </div>
+
                             <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
                                 <summary>Hide metadata on unwatched episodes</summary>
                                 <div class="je-details-body">
@@ -4341,6 +4346,7 @@
                     ['spoilerStripCast',            'SpoilerStripCast',            false],
                     ['spoilerStripReviews',         'SpoilerStripReviews',         true],
                     ['spoilerBlurArtwork',          'SpoilerBlurArtwork',          false],
+                    ['spoilerAutoEnableOnFirstPlay','SpoilerAutoEnableOnFirstPlay',false],
                 ].forEach(function (t) {
                     var el = document.querySelector('#' + t[0]);
                     if (!el) return;
@@ -4681,7 +4687,7 @@
                 'spoilerStripTaglines', 'spoilerStripCommunityRating',
                 'spoilerStripCriticRating', 'spoilerStripPremiereDate',
                 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerStripReviews',
-                'spoilerBlurArtwork',
+                'spoilerBlurArtwork', 'spoilerAutoEnableOnFirstPlay',
             ].forEach(function (id) {
                 var el = document.querySelector('#' + id);
                 if (!el) return;
@@ -5565,7 +5571,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity', 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripCommunityRating', 'spoilerStripCriticRating', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity', 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripCommunityRating', 'spoilerStripCriticRating', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay'] },
             { parent: 'spoilerStripOverview', label: 'Hide episode descriptions', children: ['spoilerOverviewPlaceholder'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] }
         ];

@@ -65,6 +65,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Taglines, ratings, premiere date, episode title, cast) from BaseItemDto
             // responses for unwatched episodes whose series is in the user's spoiler list.
             serviceCollection.AddSingleton<SpoilerFieldStripFilter>();
+            // Auto-enable spoiler mode for a series on first play of S1E1.
+            // Gated by SpoilerAutoEnableOnFirstPlay; runs on every PlaybackStart.
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, SpoilerAutoEnableOnFirstPlayConsumer>();
 
             serviceCollection.Configure<MvcOptions>(o =>
             {
