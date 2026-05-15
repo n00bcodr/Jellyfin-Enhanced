@@ -95,12 +95,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"SpoilerSeerrPromoter: startup scan failed (gate may miss already-pending entries until next write): {ex.Message}");
             }
             _libraryManager.ItemAdded += OnItemAdded;
+            // ItemAdded fires before Jellyfin's TMDB provider has fetched
+            // metadata — ProviderIds.Tmdb is typically empty at that moment.
+            // ItemUpdated fires after metadata refresh, at which point
+            // ProviderIds.Tmdb is populated, so we re-run the same logic.
+            // OnItemChange is idempotent (gate + ContainsKey checks) so the
+            // double-fire on items that arrive with metadata already in
+            // place is harmless.
+            _libraryManager.ItemUpdated += OnItemAdded;
             return Task.CompletedTask;
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
             _libraryManager.ItemAdded -= OnItemAdded;
+            _libraryManager.ItemUpdated -= OnItemAdded;
             return Task.CompletedTask;
         }
 
