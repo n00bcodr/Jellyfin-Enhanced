@@ -296,6 +296,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurMode = "blur";
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
+            SpoilerAutoEnableOnSeerrRequest = false;
             SpoilerOverviewPlaceholder = "Spoiler mode activated";
         }
 
@@ -636,6 +637,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // explicitly toggling each new show. Per-user history is checked via
         // IUserDataManager so rewatches don't re-trigger.
         public bool SpoilerAutoEnableOnFirstPlay { get; set; } = false;
+        // When true, every successful Seerr request the user submits via JE
+        // also registers a pending spoiler-blur entry (UserSpoilerBlur.PendingTmdb).
+        // When the content lands in the library, SpoilerSeerrPendingPromoter
+        // moves the entry into Series/Movies so spoiler-blur is already on.
+        // Manual opt-in via the Seerr more-info modal button is always
+        // available (gated only by SpoilerBlurEnabled) — this toggle controls
+        // the auto-on-request path specifically.
+        public bool SpoilerAutoEnableOnSeerrRequest { get; set; } = false;
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.

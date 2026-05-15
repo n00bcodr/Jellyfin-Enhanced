@@ -1262,7 +1262,141 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> JellyseerrRequest([FromBody] JsonElement requestBody)
         {
-            return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
+            var result = await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
+
+            // Auto-on-request spoiler-blur pending — best-effort, never
+            // blocks the request. Gated by SpoilerBlurEnabled (master)
+            // AND SpoilerAutoEnableOnSeerrRequest (admin opt-in). Seerr's
+            // success codes are 200/201; 409 covers MEDIA_EXISTS /
+            // QUOTA_EXCEEDED / NO_PERMISSION_4K_MOVIE — only the first one
+            // represents successfully-expressed user intent, so we sniff
+            // the body when status is 409.
+            try
+            {
+                var cfg = JellyfinEnhanced.Instance?.Configuration;
+                if (cfg?.SpoilerBlurEnabled == true
+                    && cfg?.SpoilerAutoEnableOnSeerrRequest == true
+                    && IsSeerrRequestResultSuccessful(result))
+                {
+                    // Snapshot identity + body BEFORE the Task.Run — HttpContext
+                    // (and User) are bound to the request and become invalid
+                    // after we return. requestBody is a JsonElement valid for
+                    // the lifetime of the request; we materialize into a clone.
+                    var userId = UserHelper.GetCurrentUserId(User);
+                    if (userId != null && userId != Guid.Empty)
+                    {
+                        var capturedUserId = userId.Value;
+                        // JsonElement.Clone returns a detached element backed by
+                        // its own document, safe to read off-thread.
+                        JsonElement bodyClone;
+                        try { bodyClone = requestBody.Clone(); }
+                        catch { bodyClone = default; }
+
+                        if (bodyClone.ValueKind == JsonValueKind.Object)
+                        {
+                            _ = Task.Run(() => TryAutoEnablePendingFromSeerrRequest(capturedUserId, bodyClone));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Spoiler-blur auto-on-request hook threw {ex.GetType().Name}: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        // Inspects a Seerr proxy result for "user successfully expressed
+        // intent". Only 2xx counts as success. 409 is a Seerr conflict
+        // that could mean MEDIA_EXISTS (re-request of existing) or
+        // QUOTA_EXCEEDED / NO_PERMISSION_4K_MOVIE (denial) — and the
+        // upstream Seerr body is replaced by SeerrHttpHelper with a
+        // synthesized envelope, so we can't reliably distinguish them
+        // here. Fail closed on 409: the user can still manually click
+        // the modal toggle when re-requesting an existing title.
+        //
+        // Defensive: null StatusCode is only allowed for ContentResult
+        // (the proxy's `Content(json, "application/json")` success path,
+        // which ASP.NET defaults to 200). ObjectResult / StatusCodeResult
+        // with null StatusCode is treated as failure — guards against a
+        // future Ok(errorEnvelope) misclassification.
+        private static bool IsSeerrRequestResultSuccessful(IActionResult result)
+        {
+            int? status;
+            bool allowNullAsOk = false;
+            if (result is ContentResult cr)
+            {
+                status = cr.StatusCode;
+                allowNullAsOk = true;
+            }
+            else if (result is ObjectResult or)
+            {
+                status = or.StatusCode;
+            }
+            else if (result is StatusCodeResult sr)
+            {
+                status = sr.StatusCode;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (status is null)
+            {
+                if (!allowNullAsOk) return false;
+                status = 200;
+            }
+            int sc = status.Value;
+            return sc >= 200 && sc < 300;
+        }
+
+        // Off-thread continuation — must NOT touch HttpContext / User.
+        // userId is captured by the caller before Task.Run was scheduled.
+        private void TryAutoEnablePendingFromSeerrRequest(Guid userId, JsonElement requestBody)
+        {
+            try
+            {
+                if (requestBody.ValueKind != JsonValueKind.Object) return;
+                if (!requestBody.TryGetProperty("mediaType", out var mtProp) || mtProp.ValueKind != JsonValueKind.String) return;
+                if (!requestBody.TryGetProperty("mediaId", out var miProp)) return;
+
+                var rawType = mtProp.GetString();
+                if (string.IsNullOrEmpty(rawType)) return;
+                var mediaType = rawType.ToLowerInvariant();
+                if (mediaType != "tv" && mediaType != "movie") return;
+
+                int tmdbInt;
+                if (miProp.ValueKind == JsonValueKind.Number)
+                {
+                    if (!miProp.TryGetInt32(out tmdbInt) || tmdbInt <= 0) return;
+                }
+                else if (miProp.ValueKind == JsonValueKind.String)
+                {
+                    if (!int.TryParse(miProp.GetString(), System.Globalization.NumberStyles.Integer,
+                                      System.Globalization.CultureInfo.InvariantCulture, out tmdbInt)
+                        || tmdbInt <= 0) return;
+                }
+                else
+                {
+                    return;
+                }
+
+                var jUser = _userManager.GetUserById(userId);
+                if (jUser == null) return;
+
+                var canonicalTmdb = tmdbInt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var summary = AddSpoilerBlurPendingInternal(userId, jUser, mediaType, canonicalTmdb, displayName: null);
+                if (summary.WroteSomething)
+                {
+                    _logger.Info($"Spoiler-blur auto-on-request {summary.Promoted} for {mediaType}:{canonicalTmdb} by {ResolveUserDisplay(userId.ToString("N"))}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Spoiler-blur auto-on-request task threw {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         [HttpGet("jellyseerr/request")]
@@ -3985,6 +4119,413 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
             }
         }
+
+        // ─── Pre-acquisition pending spoiler-blur (Seerr / not-yet-downloaded) ───
+        // Registers spoiler-blur intent for a TMDB id that may or may not
+        // already be in the Jellyfin library. Source of two flows:
+        // (a) Seerr more-info modal manual "Enable spoiler" button (always
+        //     allowed when SpoilerBlurEnabled = true — works even when
+        //     another user has already requested the title and the Request
+        //     button is disabled),
+        // (b) auto on Seerr request (admin toggle SpoilerAutoEnableOnSeerrRequest).
+        // If the TMDB id resolves to an existing library item the user has
+        // access to, we promote directly into Series/Movies — pending is
+        // skipped. Otherwise we record into PendingTmdb and
+        // SpoilerSeerrPendingPromoter promotes it on ItemAdded.
+        [HttpPost("spoiler-blur/pending/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurPending(string mediaType, string tmdbId, [FromQuery] string? displayName = null)
+        {
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            if (cfg?.SpoilerBlurEnabled != true)
+            {
+                return StatusCode(503, new { success = false, message = "Spoiler-blur is disabled by the administrator." });
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            var normalizedType = (mediaType ?? string.Empty).ToLowerInvariant();
+            if (normalizedType != "tv" && normalizedType != "movie")
+            {
+                return BadRequest(new { success = false, message = "mediaType must be 'tv' or 'movie'." });
+            }
+            // TMDB ids are positive integers; reject anything else so we don't
+            // store junk keys that the promoter would never match.
+            if (string.IsNullOrWhiteSpace(tmdbId)
+                || !int.TryParse(tmdbId, System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var tmdbInt)
+                || tmdbInt <= 0)
+            {
+                return BadRequest(new { success = false, message = "Invalid tmdbId." });
+            }
+            var canonicalTmdb = tmdbInt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            // Library lookup: if the TMDB id already resolves to a Series /
+            // Movie the user can access, promote straight into the real
+            // Series / Movies dict and skip pending. This handles the
+            // "already in library" case (Seerr returns "already available"
+            // or the user opens the modal for an existing title) cleanly.
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+
+            try
+            {
+                var summary = AddSpoilerBlurPendingInternal(userId.Value, jUser, normalizedType, canonicalTmdb, displayName);
+                if (summary.Promoted == "cap-exceeded")
+                {
+                    return StatusCode(429, new
+                    {
+                        success = false,
+                        code = "pending_cap_exceeded",
+                        message = $"You already have the maximum of {MaxPendingTmdbPerUser} pending spoiler-blur entries. Remove some via the management UI before adding more."
+                    });
+                }
+                return Ok(new { success = true, promoted = summary.Promoted, jellyfinId = summary.JellyfinId, name = summary.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                var ukey = userId.Value.ToString("N");
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                var ukey = userId.Value.ToString("N");
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to record spoiler-blur pending {normalizedType}:{canonicalTmdb}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler-blur pending state." });
+            }
+        }
+
+        // Shared core for both the manual modal-button POST and the auto-
+        // on-Seerr-request hook. Performs library lookup, RMW, and returns
+        // a structured result so the HTTP layer and the fire-and-forget
+        // log/notification layer can both reason about what happened.
+        private SpoilerBlurPendingResult AddSpoilerBlurPendingInternal(
+            Guid userId,
+            Jellyfin.Database.Implementations.Entities.User jUser,
+            string mediaType,
+            string canonicalTmdb,
+            string? displayName)
+        {
+            var pendingKey = $"{mediaType}:{canonicalTmdb}";
+            var userKey = userId.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var existingItem = FindLibraryItemByTmdb(jUser, mediaType, canonicalTmdb);
+
+            if (existingItem is MediaBrowser.Controller.Entities.TV.Series existingSeries)
+            {
+                var seriesKey = existingSeries.Id.ToString("N");
+                var changed = _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                    {
+                        var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        if (state.Series.ContainsKey(seriesKey)) return pendingRemoved ? 1 : 0;
+                        state.Series[seriesKey] = new SpoilerBlurSeriesEntry
+                        {
+                            SeriesId = seriesKey,
+                            SeriesName = existingSeries.Name ?? string.Empty,
+                            EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                        };
+                        return 1;
+                    });
+                _logger.Info($"Spoiler-blur pending resolved to existing series '{existingSeries.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
+                return new SpoilerBlurPendingResult("series", seriesKey, existingSeries.Name, changed > 0);
+            }
+            if (existingItem is MediaBrowser.Controller.Entities.Movies.Movie existingMovie)
+            {
+                var movieKey = existingMovie.Id.ToString("N");
+                var changed = _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                    {
+                        var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        if (state.Movies.ContainsKey(movieKey)) return pendingRemoved ? 1 : 0;
+                        state.Movies[movieKey] = new SpoilerBlurMovieEntry
+                        {
+                            MovieId = movieKey,
+                            MovieName = existingMovie.Name ?? string.Empty,
+                            EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                        };
+                        return 1;
+                    });
+                _logger.Info($"Spoiler-blur pending resolved to existing movie '{existingMovie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
+                return new SpoilerBlurPendingResult("movie", movieKey, existingMovie.Name, changed > 0);
+            }
+
+            var sanitized = SanitizePendingDisplayName(displayName);
+            var capExceeded = new[] { false };
+            var pendingChanged = _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                userKey, fileName, state =>
+                {
+                    if (state.PendingTmdb.TryGetValue(pendingKey, out var existing))
+                    {
+                        if (string.Equals(existing.DisplayName, sanitized, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.DisplayName = sanitized;
+                        return 1;
+                    }
+                    if (state.PendingTmdb.Count >= MaxPendingTmdbPerUser)
+                    {
+                        capExceeded[0] = true;
+                        return 0;
+                    }
+                    state.PendingTmdb[pendingKey] = new SpoilerBlurPendingEntry
+                    {
+                        MediaType = mediaType,
+                        TmdbId = canonicalTmdb,
+                        DisplayName = sanitized,
+                        RequestedAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+            if (capExceeded[0])
+            {
+                _logger.Warning($"Spoiler-blur pending: cap of {MaxPendingTmdbPerUser} reached for {ResolveUserDisplay(userKey)} — rejecting new {pendingKey}");
+                return new SpoilerBlurPendingResult("cap-exceeded", null, null, false);
+            }
+            // Prime the promoter's fast-path gate so the next ItemAdded
+            // matching this TMDB id fans out to users instead of bailing.
+            Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey);
+            _logger.Info($"Spoiler-blur pending recorded {pendingKey} for {ResolveUserDisplay(userKey)} (not yet in library)");
+
+            // TOCTOU recovery: between the library lookup at the top of this
+            // method and the RMW write, the library scanner may have added
+            // the matching item — ItemAdded fired BEFORE our pending row
+            // existed, so the promoter saw nothing and skipped this user.
+            // Re-check once after the write and promote inline if so.
+            try
+            {
+                var raceItem = FindLibraryItemByTmdb(jUser, mediaType, canonicalTmdb);
+                if (raceItem is MediaBrowser.Controller.Entities.TV.Series rs)
+                {
+                    return PromotePendingToSeries(userKey, fileName, rs, pendingKey);
+                }
+                if (raceItem is MediaBrowser.Controller.Entities.Movies.Movie rm)
+                {
+                    return PromotePendingToMovie(userKey, fileName, rm, pendingKey);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Spoiler-blur pending TOCTOU recheck threw {ex.GetType().Name}: {ex.Message}");
+            }
+            return new SpoilerBlurPendingResult("pending", null, null, pendingChanged > 0);
+        }
+
+        // TOCTOU recovery helper: a pending row was just written but a
+        // matching library item is already present. Promote into Series.
+        private SpoilerBlurPendingResult PromotePendingToSeries(
+            string userKey, string fileName,
+            MediaBrowser.Controller.Entities.TV.Series series, string pendingKey)
+        {
+            var seriesKey = series.Id.ToString("N");
+            _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                userKey, fileName, state =>
+                {
+                    var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                    if (state.Series.ContainsKey(seriesKey)) return pendingRemoved ? 1 : 0;
+                    state.Series[seriesKey] = new SpoilerBlurSeriesEntry
+                    {
+                        SeriesId = seriesKey,
+                        SeriesName = series.Name ?? string.Empty,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+            _logger.Info($"Spoiler-blur pending TOCTOU-promoted to series '{series.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
+            return new SpoilerBlurPendingResult("series", seriesKey, series.Name, true);
+        }
+
+        private SpoilerBlurPendingResult PromotePendingToMovie(
+            string userKey, string fileName,
+            MediaBrowser.Controller.Entities.Movies.Movie movie, string pendingKey)
+        {
+            var movieKey = movie.Id.ToString("N");
+            _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                userKey, fileName, state =>
+                {
+                    var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                    if (state.Movies.ContainsKey(movieKey)) return pendingRemoved ? 1 : 0;
+                    state.Movies[movieKey] = new SpoilerBlurMovieEntry
+                    {
+                        MovieId = movieKey,
+                        MovieName = movie.Name ?? string.Empty,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+            _logger.Info($"Spoiler-blur pending TOCTOU-promoted to movie '{movie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
+            return new SpoilerBlurPendingResult("movie", movieKey, movie.Name, true);
+        }
+
+        private sealed record SpoilerBlurPendingResult(string Promoted, string? JellyfinId, string? Name, bool WroteSomething);
+
+        [HttpDelete("spoiler-blur/pending/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurPending(string mediaType, string tmdbId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            var normalizedType = (mediaType ?? string.Empty).ToLowerInvariant();
+            if (normalizedType != "tv" && normalizedType != "movie")
+            {
+                return BadRequest(new { success = false, message = "mediaType must be 'tv' or 'movie'." });
+            }
+            if (string.IsNullOrWhiteSpace(tmdbId)
+                || !int.TryParse(tmdbId, System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var tmdbInt)
+                || tmdbInt <= 0)
+            {
+                return BadRequest(new { success = false, message = "Invalid tmdbId." });
+            }
+            var canonicalTmdb = tmdbInt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var pendingKey = $"{normalizedType}:{canonicalTmdb}";
+            var userKey = userId.Value.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+
+            // Mirror the POST abstraction: the modal's "Disable spoiler" click
+            // shouldn't have to know whether the entry is in PendingTmdb or
+            // in the real Series/Movies dict. Resolve TMDB -> Jellyfin id
+            // and remove from whichever side holds the row. Pre-compute the
+            // candidate jellyfin id outside the RMW so we don't capture
+            // mutated locals into the lambda (robust to future async-RMW).
+            var jUser = _userManager.GetUserById(userId.Value);
+            try
+            {
+                var existingItem = jUser != null
+                    ? FindLibraryItemByTmdb(jUser, normalizedType, canonicalTmdb)
+                    : null;
+                var seriesKeyToRemove = (existingItem as MediaBrowser.Controller.Entities.TV.Series)?.Id.ToString("N");
+                var movieKeyToRemove = (existingItem as MediaBrowser.Controller.Entities.Movies.Movie)?.Id.ToString("N");
+                var resultBox = new[] { (Removed: false, From: "none", JellyfinId: (string?)null) };
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                    {
+                        bool pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        bool seriesRemoved = seriesKeyToRemove != null && state.Series.Remove(seriesKeyToRemove);
+                        bool movieRemoved = movieKeyToRemove != null && state.Movies.Remove(movieKeyToRemove);
+                        if (seriesRemoved) resultBox[0] = (true, "series", seriesKeyToRemove);
+                        else if (movieRemoved) resultBox[0] = (true, "movie", movieKeyToRemove);
+                        else if (pendingRemoved) resultBox[0] = (true, "pending", null);
+                        return resultBox[0].Removed ? 1 : 0;
+                    });
+                var (removedAnything, removedFrom, removedJellyfinId) = resultBox[0];
+                if (!removedAnything)
+                {
+                    return Ok(new { success = true, removed = false, removedFrom = "none" });
+                }
+                _logger.Info($"Spoiler-blur pending DELETE removed {pendingKey} ({removedFrom}) for {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, removed = true, removedFrom, jellyfinId = removedJellyfinId });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to remove spoiler-blur pending {pendingKey}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler-blur pending state." });
+            }
+        }
+
+        // Returns the Jellyfin library item that matches the TMDB id for the
+        // given media type, filtered by the user's library access. Returns
+        // null when not found / not accessible. Uses HasAnyProviderId so
+        // the SQL filter does the matching at the DB layer (indexed) rather
+        // than pulling every TMDB-tagged item and scanning client-side.
+        private MediaBrowser.Controller.Entities.BaseItem? FindLibraryItemByTmdb(
+            Jellyfin.Database.Implementations.Entities.User user,
+            string mediaType,
+            string tmdbId)
+        {
+            var kind = mediaType == "movie"
+                ? Jellyfin.Data.Enums.BaseItemKind.Movie
+                : Jellyfin.Data.Enums.BaseItemKind.Series;
+            try
+            {
+                var query = new MediaBrowser.Controller.Entities.InternalItemsQuery(user)
+                {
+                    IncludeItemTypes = new[] { kind },
+                    HasAnyProviderId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        { "Tmdb", tmdbId },
+                    },
+                    Recursive = true,
+                    Limit = 1,
+                };
+                var items = _libraryManager.GetItemList(query);
+                if (items != null && items.Count > 0)
+                {
+                    return items[0];
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"FindLibraryItemByTmdb({mediaType}, {tmdbId}) threw {ex.GetType().Name}: {ex.Message}");
+            }
+            return null;
+        }
+
+        // R28: clamp + strip control / format chars so a poisoned modal
+        // payload can't grow spoilerblur.json without bound or sneak null
+        // bytes / bidi-override (U+202E) tricks through the JSON
+        // serializer + management UI. Strips Unicode Cf (Format) and Cc
+        // (Control) categories explicitly so RTL spoofing
+        // (e.g. `‮gnP.exe`) is neutralized. Truncates surrogate-pair-
+        // safe so we don't emit lone surrogates that round-trip as U+FFFD
+        // through Newtonsoft.
+        private static string SanitizePendingDisplayName(string? raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return string.Empty;
+            const int max = 200;
+            int end = raw.Length > max ? max : raw.Length;
+            if (end > 0 && end < raw.Length && char.IsHighSurrogate(raw[end - 1]))
+            {
+                end -= 1;
+            }
+            var s = raw.Substring(0, end);
+            var buf = new System.Text.StringBuilder(s.Length);
+            foreach (var c in s)
+            {
+                if (c == '\r' || c == '\n' || c == '\t') { buf.Append(' '); continue; }
+                var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+                if (cat == System.Globalization.UnicodeCategory.Control
+                    || cat == System.Globalization.UnicodeCategory.Format)
+                {
+                    continue;
+                }
+                buf.Append(c);
+            }
+            return buf.ToString().Normalize(System.Text.NormalizationForm.FormC);
+        }
+
+        // R28: hard cap on PendingTmdb size — defensive against an auth'd
+        // user spamming the modal/Seerr-request hook to grow
+        // spoilerblur.json without bound. 500 is well above any plausible
+        // legitimate watchlist (Seerr's own quotas are typically <100/yr).
+        // Reaching the cap rejects NEW inserts; existing entries still
+        // promote and DELETE still works, so users can prune to recover.
+        private const int MaxPendingTmdbPerUser = 500;
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 

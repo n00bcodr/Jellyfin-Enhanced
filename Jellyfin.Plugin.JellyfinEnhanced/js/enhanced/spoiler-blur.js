@@ -10,6 +10,11 @@
     var enabledSeries = new Set();
     var enabledMovies = new Set();
     var enabledCollections = new Set();
+    // Pre-acquisition pending entries — keys "tv:{tmdbId}" / "movie:{tmdbId}".
+    // Used by the Seerr more-info modal to show toggle state for titles
+    // not yet in the library. Promoted to Series/Movies server-side on
+    // ItemAdded (see SpoilerSeerrPendingPromoter).
+    var enabledPendingTmdb = new Set();
     var loaded = false;
     // Tracks the in-flight loadState() promise so consumers
     // (reviews.js, etc.) can await initial state without racing.
@@ -39,6 +44,7 @@
             enabledSeries.clear();
             enabledMovies.clear();
             enabledCollections.clear();
+            enabledPendingTmdb.clear();
             if (data && data.Series) {
                 Object.keys(data.Series).forEach(function (key) {
                     enabledSeries.add(normalizeId(key));
@@ -52,6 +58,12 @@
             if (data && data.Collections) {
                 Object.keys(data.Collections).forEach(function (key) {
                     enabledCollections.add(normalizeId(key));
+                });
+            }
+            if (data && data.PendingTmdb) {
+                Object.keys(data.PendingTmdb).forEach(function (key) {
+                    // Keys are lowercase "tv:{tmdb}" / "movie:{tmdb}" — preserve casing of the prefix.
+                    enabledPendingTmdb.add(String(key).toLowerCase());
                 });
             }
             loaded = true;
@@ -167,6 +179,89 @@
             dataType: 'json',
         }).then(function () {
             enabledCollections.delete(normalized);
+        });
+    }
+
+    /**
+     * Normalize a media-type-prefixed TMDB key to "tv:123" / "movie:123".
+     * Both halves are lowercased so server keys (stored lowercase) and
+     * client lookups match regardless of caller casing.
+     */
+    function pendingKey(mediaType, tmdbId) {
+        var t = String(mediaType || '').toLowerCase();
+        var i = String(tmdbId || '').trim();
+        if (!i || (t !== 'tv' && t !== 'movie')) return '';
+        return t + ':' + i;
+    }
+
+    /**
+     * Returns true when the user has spoiler mode enabled for the given
+     * TMDB id, regardless of whether it lives in PendingTmdb (not in
+     * library yet) or in Series/Movies (already in library and promoted).
+     * jellyfinMediaId is optional — when supplied, we also check the
+     * Series/Movies set so the modal reflects active state for titles
+     * already in the library.
+     */
+    function isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId) {
+        var k = pendingKey(mediaType, tmdbId);
+        if (k && enabledPendingTmdb.has(k)) return true;
+        if (!jellyfinMediaId) return false;
+        if (mediaType === 'movie') return isMovieEnabledFor(jellyfinMediaId);
+        if (mediaType === 'tv') return isEnabledFor(jellyfinMediaId);
+        return false;
+    }
+
+    /**
+     * Enable spoiler mode for a TMDB id (modal-driven). Server promotes
+     * to Series/Movies if the library has a match, else records pending.
+     * On success, refresh local caches so the modal reflects the new
+     * state without another network round-trip.
+     */
+    function enableForTmdb(mediaType, tmdbId, displayName) {
+        var t = String(mediaType || '').toLowerCase();
+        var i = String(tmdbId || '').trim();
+        if (!i || (t !== 'tv' && t !== 'movie')) {
+            return Promise.reject(new Error('invalid mediaType/tmdbId'));
+        }
+        var query = displayName ? '?displayName=' + encodeURIComponent(displayName) : '';
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/pending/' + t + '/' + encodeURIComponent(i) + query),
+            type: 'POST',
+            dataType: 'json',
+        }).then(function (resp) {
+            var k = pendingKey(t, i);
+            if (resp && resp.promoted === 'pending') {
+                if (k) enabledPendingTmdb.add(k);
+            } else if (resp && resp.promoted === 'series' && resp.jellyfinId) {
+                enabledSeries.add(normalizeId(resp.jellyfinId));
+                if (k) enabledPendingTmdb.delete(k);
+            } else if (resp && resp.promoted === 'movie' && resp.jellyfinId) {
+                enabledMovies.add(normalizeId(resp.jellyfinId));
+                if (k) enabledPendingTmdb.delete(k);
+            }
+            return resp;
+        });
+    }
+
+    function disableForTmdb(mediaType, tmdbId) {
+        var t = String(mediaType || '').toLowerCase();
+        var i = String(tmdbId || '').trim();
+        if (!i || (t !== 'tv' && t !== 'movie')) {
+            return Promise.reject(new Error('invalid mediaType/tmdbId'));
+        }
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/pending/' + t + '/' + encodeURIComponent(i)),
+            type: 'DELETE',
+            dataType: 'json',
+        }).then(function (resp) {
+            var k = pendingKey(t, i);
+            if (k) enabledPendingTmdb.delete(k);
+            if (resp && resp.removedFrom === 'series' && resp.jellyfinId) {
+                enabledSeries.delete(normalizeId(resp.jellyfinId));
+            } else if (resp && resp.removedFrom === 'movie' && resp.jellyfinId) {
+                enabledMovies.delete(normalizeId(resp.jellyfinId));
+            }
+            return resp;
         });
     }
 
@@ -935,11 +1030,15 @@
         disableForMovie: disableForMovie,
         enableForCollection: enableForCollection,
         disableForCollection: disableForCollection,
+        isTmdbEnabled: isTmdbEnabled,
+        enableForTmdb: enableForTmdb,
+        disableForTmdb: disableForTmdb,
         whenLoaded: whenLoaded,
         preloadChapterImages: preloadChapterImages,
         // Used by tests / management UI.
         getEnabledSet: function () { return new Set(enabledSeries); },
         getEnabledMovieSet: function () { return new Set(enabledMovies); },
         getEnabledCollectionSet: function () { return new Set(enabledCollections); },
+        getEnabledPendingTmdbSet: function () { return new Set(enabledPendingTmdb); },
     };
 })(window.JellyfinEnhanced);

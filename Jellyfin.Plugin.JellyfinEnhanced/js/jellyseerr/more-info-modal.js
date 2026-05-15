@@ -1737,6 +1737,95 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     }
 }
 
+// Toggle button that lets the user enable spoiler-blur for a title in the
+// modal regardless of request status. Two use cases:
+//   (a) the user is about to Request it — they can pre-arm spoiler mode so
+//       the title is already blurred when it lands in their library.
+//   (b) another user has already requested it (Request button disabled) —
+//       this user can still register spoiler intent and have it auto-apply
+//       once the content arrives.
+// Server resolves "already in library" itself and promotes Series/Movies
+// directly, so the UI doesn't need to special-case that path.
+function buildSpoilerToggleButton(data, mediaType) {
+    if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return null;
+    if (!JE.spoilerBlur || typeof JE.spoilerBlur.enableForTmdb !== 'function') return null;
+    if (mediaType !== 'tv' && mediaType !== 'movie') return null;
+    var tmdbId = data && data.id;
+    if (!tmdbId) return null;
+
+    var jellyfinMediaId = (data && data.mediaInfo && data.mediaInfo.jellyfinMediaId) || null;
+    var displayName = (data && (data.title || data.name)) || '';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'jellyseerr-request-button je-spoiler-pending-btn';
+    btn.setAttribute('data-je-tmdb-id', String(tmdbId));
+    btn.setAttribute('data-je-media-type', mediaType);
+
+    var iconSpan = document.createElement('span');
+    iconSpan.className = 'material-icons';
+    var labelSpan = document.createElement('span');
+    btn.appendChild(iconSpan);
+    btn.appendChild(labelSpan);
+
+    function refreshLabel() {
+        var enabled = !!JE.spoilerBlur.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+        var label = enabled
+            ? (JE.t('spoiler_blur_pending_button_on') || 'Spoiler mode (pending)')
+            : (JE.t('spoiler_blur_pending_button_off') || 'Enable spoiler mode');
+        btn.classList.toggle('je-spoiler-pending-on', enabled);
+        btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        btn.setAttribute('title', label);
+        iconSpan.textContent = enabled ? 'blur_on' : 'blur_off';
+        labelSpan.textContent = label;
+    }
+    refreshLabel();
+    // Cold-load fix: spoiler-blur state may load after the modal mounts,
+    // so the initial refreshLabel above could read empty sets and show
+    // "Enable" for a TMDB id that's actually pending. whenLoaded resolves
+    // immediately if already loaded; otherwise awaits the in-flight load.
+    if (typeof JE.spoilerBlur.whenLoaded === 'function') {
+        JE.spoilerBlur.whenLoaded().then(refreshLabel).catch(function () {});
+    }
+
+    btn.addEventListener('click', async function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        var wasEnabled = !!JE.spoilerBlur.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+        try {
+            if (wasEnabled) {
+                await JE.spoilerBlur.disableForTmdb(mediaType, tmdbId);
+                if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_disabled_toast') || 'Spoiler mode disabled for this title.');
+            } else {
+                await JE.spoilerBlur.enableForTmdb(mediaType, tmdbId, displayName);
+                if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_enabled_toast') || 'Spoiler mode will engage when this title arrives in your library.');
+            }
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: spoiler-blur pending toggle failed:', err);
+            if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_error_toast') || 'Couldn\'t update spoiler mode. See console.');
+        } finally {
+            refreshLabel();
+            btn.disabled = false;
+        }
+    });
+
+    return btn;
+}
+
+// Append the spoiler-blur toggle button at the end of the current action
+// row. Helper so every early-return path in renderActions stays consistent.
+function appendSpoilerToggleIfApplicable(actionMount, data, mediaType) {
+    if (!actionMount) return;
+    try {
+        const spoilerBtn = buildSpoilerToggleButton(data, mediaType);
+        if (spoilerBtn) actionMount.appendChild(spoilerBtn);
+    } catch (err) {
+        console.warn('🪼 Jellyfin Enhanced: failed to render spoiler toggle button:', err);
+    }
+}
+
 function renderActions(data, mediaType) {
     if (!currentModal) return;
 
@@ -1799,12 +1888,14 @@ function renderActions(data, mediaType) {
                 if (followUp) actionMount.appendChild(followUp);
                 maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
             }
+            appendSpoilerToggleIfApplicable(actionMount, data, 'movie');
             return;
         }
 
         const actions = buildMovieActions(data, actionMount, chipMount, show4k);
         if (actions && actionMount) actionMount.appendChild(actions);
         maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
+        appendSpoilerToggleIfApplicable(actionMount, data, 'movie');
     } else {
         const mediaInfo = data.mediaInfo || {};
         const status = mediaInfo.status ?? 1;
@@ -1854,6 +1945,7 @@ function renderActions(data, mediaType) {
             const actions = buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
             maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+            appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
             return;
         }
 
@@ -1866,6 +1958,7 @@ function renderActions(data, mediaType) {
                 const requestMoreButton = buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                 if (requestMoreButton) actionMount.appendChild(requestMoreButton);
                 maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+                appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
                 return;
             }
             checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
@@ -1878,6 +1971,7 @@ function renderActions(data, mediaType) {
                     if (followUp4k) actionMount.appendChild(followUp4k);
                     maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
                 }
+                appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
             });
             return;
         }
@@ -1885,6 +1979,7 @@ function renderActions(data, mediaType) {
         const actions = buildTvActions(data);
         if (actions && actionMount) actionMount.appendChild(actions);
         maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+        appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
     }
 }
 

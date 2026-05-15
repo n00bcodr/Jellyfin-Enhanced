@@ -69,6 +69,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Gated by SpoilerAutoEnableOnFirstPlay; runs on every PlaybackStart.
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, SpoilerAutoEnableOnFirstPlayConsumer>();
 
+            // Promotes pending pre-acquisition spoiler-blur entries (PendingTmdb)
+            // into real Series/Movies entries when matching library items land.
+            serviceCollection.AddHostedService<SpoilerSeerrPendingPromoter>();
+
             serviceCollection.Configure<MvcOptions>(o =>
             {
                 // Order matters: HiddenContent runs first because it can DROP items

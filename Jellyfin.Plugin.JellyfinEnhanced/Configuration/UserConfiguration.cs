@@ -108,6 +108,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
+    // Pre-acquisition spoiler intent: user has subscribed to spoiler-blur
+    // for a TMDB id that isn't (yet) in the Jellyfin library. Two sources:
+    // (a) auto-add when the user submits a Seerr request via the JE-proxied
+    // /jellyseerr/request endpoint, gated by SpoilerAutoEnableOnSeerrRequest;
+    // (b) manual add from the Seerr more-info modal, gated only by the
+    // master SpoilerBlurEnabled (so a user can register intent even when
+    // another user has already requested the title and the Request button
+    // is disabled). Keyed "tv:{tmdbId}" or "movie:{tmdbId}". On ItemAdded,
+    // SpoilerSeerrPendingPromoter matches by ProviderIds.Tmdb and promotes
+    // the entry into Series/Movies — at which point the real per-item
+    // filter pipeline takes over and this pending row is removed.
+    public class SpoilerBlurPendingEntry
+    {
+        public string MediaType { get; set; } = string.Empty;
+        public string TmdbId { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string RequestedAt { get; set; } = string.Empty;
+    }
+
     public class UserSpoilerBlur
     {
         // Keyed by series ID in N format (no dashes), case-insensitive — matches
@@ -155,6 +174,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             set => _collections = value == null
                 ? new Dictionary<string, SpoilerBlurCollectionEntry>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, SpoilerBlurCollectionEntry>(value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        // Pre-acquisition pending entries keyed "tv:{tmdbId}" or
+        // "movie:{tmdbId}". Promoted to Series/Movies by
+        // SpoilerSeerrPendingPromoter on ItemAdded.
+        private Dictionary<string, SpoilerBlurPendingEntry> _pendingTmdb
+            = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SpoilerBlurPendingEntry> PendingTmdb
+        {
+            get => _pendingTmdb;
+            set => _pendingTmdb = value == null
+                ? new Dictionary<string, SpoilerBlurPendingEntry>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, SpoilerBlurPendingEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
     }
 
