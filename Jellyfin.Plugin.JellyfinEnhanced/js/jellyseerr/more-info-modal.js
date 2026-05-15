@@ -601,6 +601,7 @@ function buildModalContent(data, mediaType) {
                                     ${data.tagline ? `<p class="tagline">${escapeHtml(data.tagline)}</p>` : ''}
                                     <div class="je-downloads" data-mount="je-downloads"></div>
                                     <div class="je-more-info-actions" data-mount="je-actions"></div>
+                                    <div class="je-more-info-secondary-actions" data-mount="je-secondary-actions"></div>
                                 </div>
                             </div>
 
@@ -1758,7 +1759,10 @@ function buildSpoilerToggleButton(data, mediaType) {
 
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'jellyseerr-request-button je-spoiler-pending-btn';
+    // Deliberately NOT using .jellyseerr-request-button — that class is for
+    // the primary request CTA stack. This is a secondary action with its
+    // own quieter styling (see CSS in this file).
+    btn.className = 'je-spoiler-pending-btn';
     btn.setAttribute('data-je-tmdb-id', String(tmdbId));
     btn.setAttribute('data-je-media-type', mediaType);
 
@@ -1771,8 +1775,8 @@ function buildSpoilerToggleButton(data, mediaType) {
     function refreshLabel() {
         var enabled = !!JE.spoilerBlur.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
         var label = enabled
-            ? (JE.t('spoiler_blur_pending_button_on') || 'Spoiler mode (pending)')
-            : (JE.t('spoiler_blur_pending_button_off') || 'Enable spoiler mode');
+            ? JE.t('spoiler_blur_pending_button_on')
+            : JE.t('spoiler_blur_pending_button_off');
         btn.classList.toggle('je-spoiler-pending-on', enabled);
         btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
         btn.setAttribute('title', label);
@@ -1797,14 +1801,14 @@ function buildSpoilerToggleButton(data, mediaType) {
         try {
             if (wasEnabled) {
                 await JE.spoilerBlur.disableForTmdb(mediaType, tmdbId);
-                if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_disabled_toast') || 'Spoiler mode disabled for this title.');
+                if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_disabled_toast'));
             } else {
                 await JE.spoilerBlur.enableForTmdb(mediaType, tmdbId, displayName);
-                if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_enabled_toast') || 'Spoiler mode will engage when this title arrives in your library.');
+                if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_enabled_toast'));
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: spoiler-blur pending toggle failed:', err);
-            if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_error_toast') || 'Couldn\'t update spoiler mode. See console.');
+            if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_error_toast'));
         } finally {
             refreshLabel();
             btn.disabled = false;
@@ -1814,13 +1818,17 @@ function buildSpoilerToggleButton(data, mediaType) {
     return btn;
 }
 
-// Append the spoiler-blur toggle button at the end of the current action
-// row. Helper so every early-return path in renderActions stays consistent.
-function appendSpoilerToggleIfApplicable(actionMount, data, mediaType) {
-    if (!actionMount) return;
+// Append the spoiler-blur toggle button into the secondary-actions mount
+// so it sits visually below the primary Request CTA with its own spacing
+// — not stacked flush inside the .je-more-info-actions group (which has
+// overflow:hidden + gap:0 to "weld" related buttons together).
+function appendSpoilerToggleIfApplicable(_actionMount, data, mediaType) {
+    if (!currentModal) return;
+    const secondary = currentModal.querySelector('[data-mount="je-secondary-actions"]');
+    if (!secondary) return;
     try {
         const spoilerBtn = buildSpoilerToggleButton(data, mediaType);
-        if (spoilerBtn) actionMount.appendChild(spoilerBtn);
+        if (spoilerBtn) secondary.appendChild(spoilerBtn);
     } catch (err) {
         console.warn('🪼 Jellyfin Enhanced: failed to render spoiler toggle button:', err);
     }
@@ -1832,9 +1840,11 @@ function renderActions(data, mediaType) {
     const actionMount = currentModal.querySelector('[data-mount="je-actions"]');
     const chipMount = currentModal.querySelector('[data-mount="je-status-chip"]');
     const downloadsMount = currentModal.querySelector('[data-mount="je-downloads"]');
+    const secondaryMount = currentModal.querySelector('[data-mount="je-secondary-actions"]');
     if (actionMount) actionMount.innerHTML = '';
     if (chipMount) chipMount.innerHTML = '';
     if (downloadsMount) downloadsMount.innerHTML = '';
+    if (secondaryMount) secondaryMount.innerHTML = '';
 
     if (mediaType === 'movie') {
         const mediaInfo = data.mediaInfo || {};
@@ -2382,6 +2392,58 @@ function injectStyles() {
             align-items: stretch;
             border-radius: 8px;
             overflow: hidden;
+        }
+
+        /* Secondary actions: subtle, sits below the primary Request CTA
+           with explicit breathing room. Buttons here use the
+           .je-spoiler-pending-btn ghost style — quieter visual weight than
+           the Request button so the primary CTA stays dominant. */
+        .je-more-info-modal .je-more-info-secondary-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        .je-more-info-modal .je-more-info-secondary-actions:empty {
+            display: none;
+        }
+
+        .je-spoiler-pending-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0.45em 0.9em;
+            font-size: 0.85em;
+            font-weight: 500;
+            line-height: 1.2;
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
+        }
+        .je-spoiler-pending-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+        .je-spoiler-pending-btn:disabled {
+            opacity: 0.55;
+            cursor: progress;
+        }
+        .je-spoiler-pending-btn.je-spoiler-pending-on {
+            background: rgba(90, 63, 184, 0.22);
+            color: #d6c8ff;
+            border-color: rgba(90, 63, 184, 0.55);
+        }
+        .je-spoiler-pending-btn.je-spoiler-pending-on:hover:not(:disabled) {
+            background: rgba(90, 63, 184, 0.32);
+            border-color: rgba(90, 63, 184, 0.75);
+            color: #fff;
+        }
+        .je-spoiler-pending-btn .material-icons {
+            font-size: 1.1em;
         }
 
         /* Quota chip in more-info modal — tighter spacing than the season modal. */
