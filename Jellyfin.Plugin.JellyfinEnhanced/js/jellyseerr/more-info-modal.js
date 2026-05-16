@@ -1800,6 +1800,15 @@ function buildSpoilerToggleButton(data, mediaType) {
         var wasEnabled = !!JE.spoilerBlur.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
         try {
             if (wasEnabled) {
+                if (typeof JE.spoilerBlur.confirmDisableSpoiler === 'function') {
+                    var proceed = await JE.spoilerBlur.confirmDisableSpoiler();
+                    if (!proceed) return;
+                } else {
+                    // Older spoilerBlur build — log so the missing confirm
+                    // gate is visible in the console rather than failing
+                    // open silently.
+                    console.warn('🪼 Jellyfin Enhanced: spoiler-blur.confirmDisableSpoiler unavailable; disabling without prompt');
+                }
                 await JE.spoilerBlur.disableForTmdb(mediaType, tmdbId);
                 if (typeof JE.showToast === 'function') JE.showToast(JE.t('spoiler_blur_pending_disabled_toast'));
             } else {

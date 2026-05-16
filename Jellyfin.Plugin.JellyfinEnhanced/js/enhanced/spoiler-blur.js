@@ -638,9 +638,164 @@
         }
     }
 
+    // Disable-confirm snooze: when the user opts in via the checkbox in
+    // the confirm dialog, skip the dialog for 15 minutes. Scoped per
+    // Jellyfin user so multi-user clients don't share the suppression —
+    // when the user id is unavailable (pre-init, post-logout transient),
+    // we treat the request as "never snoozed; never persist" rather than
+    // collapsing into a shared empty-uid bucket.
+    var SNOOZE_MS = 15 * 60 * 1000;
+    var MAX_SNOOZE_FUTURE_MS = 24 * 60 * 60 * 1000;  // sanity cap for parsed values
+    var _emptyUidWarned = false;
+    function snoozeUid() {
+        try {
+            if (window.ApiClient && typeof ApiClient.getCurrentUserId === 'function') {
+                var uid = ApiClient.getCurrentUserId();
+                if (typeof uid === 'string' && uid.length > 0) return uid;
+            }
+        } catch (e) {}
+        if (!_emptyUidWarned) {
+            _emptyUidWarned = true;
+            console.warn(logPrefix, 'snooze: user id unavailable, snooze disabled this call');
+        }
+        return null;
+    }
+    function snoozeStorageKey(uid) { return 'je-spoiler-disable-snooze:' + uid; }
+    function isDisableSnoozed() {
+        var uid = snoozeUid();
+        if (!uid) return false;
+        var key = snoozeStorageKey(uid);
+        try {
+            var raw = localStorage.getItem(key);
+            if (!raw) return false;
+            var expiry = Number(raw);
+            if (!Number.isFinite(expiry) || expiry <= 0) return false;
+            // Reject absurd future expiries (corruption or clock skew);
+            // anything beyond 24h is out of contract.
+            if (expiry > Date.now() + MAX_SNOOZE_FUTURE_MS) {
+                localStorage.removeItem(key);
+                return false;
+            }
+            if (Date.now() < expiry) return true;
+            localStorage.removeItem(key);
+        } catch (e) {
+            console.warn(logPrefix, 'snooze read failed:', e);
+        }
+        return false;
+    }
+    function setDisableSnooze() {
+        var uid = snoozeUid();
+        if (!uid) return;
+        try { localStorage.setItem(snoozeStorageKey(uid), String(Date.now() + SNOOZE_MS)); }
+        catch (e) { console.warn(logPrefix, 'snooze persist failed:', e); }
+    }
+
+    /**
+     * Show a Jellyfin-native confirm dialog asking the user to confirm
+     * disabling spoiler mode. The dialog embeds a "Don't ask again for
+     * 15 minutes" checkbox; if checked when the user confirms, the
+     * snooze is persisted via localStorage. Returns true if the user
+     * confirmed, false if they cancelled. When already snoozed, resolves
+     * true immediately without showing a dialog.
+     * @returns {Promise<boolean>}
+     */
+    function confirmDisableSpoiler() {
+        if (isDisableSnoozed()) return Promise.resolve(true);
+        var title = JE.t('spoiler_disable_confirm_title');
+        var body = JE.t('spoiler_disable_confirm_body');
+        var snoozeLabel = JE.t('spoiler_disable_confirm_snooze');
+        var marker = 'je-sb-snooze-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+        var esc = (typeof JE.escapeHtml === 'function') ? JE.escapeHtml : function (s) { return String(s); };
+        // Dashboard.confirm renders `text` as HTML via DOMPurify. Body
+        // and snooze label come from Weblate-sourced translations, so
+        // they're escaped before interpolation in case a translator
+        // ever introduces stray markup.
+        var html = '<div>' + esc(body) + '</div>'
+            + '<label class="' + marker + '" style="display:flex;align-items:center;gap:.5em;margin-top:1em;cursor:pointer;">'
+            + '<input type="checkbox" />'
+            + '<span>' + esc(snoozeLabel) + '</span>'
+            + '</label>';
+        return new Promise(function (resolve) {
+            if (!window.Dashboard || typeof window.Dashboard.confirm !== 'function') {
+                // No Dashboard surface (rare). Fall back to native
+                // confirm without the snooze option — UX degrades but
+                // the disable still works.
+                console.warn(logPrefix, 'Dashboard.confirm unavailable; snooze checkbox unreachable on this surface');
+                resolve(window.confirm(title + '\n\n' + body));
+                return;
+            }
+            // Read the checkbox state via two independent paths to
+            // avoid the fast-click race that loses the snooze:
+            //  1. Capture-phase delegated change listener registered
+            //     BEFORE the dialog mounts — catches the checkbox's
+            //     change event regardless of when the input appears in
+            //     the DOM. Survives a tab-then-Enter user.
+            //  2. Defensive synchronous read inside the Dashboard.confirm
+            //     callback (if the dialog DOM is still present). Last
+            //     write wins.
+            var snoozeChecked = false;
+            function captureChange(e) {
+                try {
+                    var t = e.target;
+                    if (t && t.tagName === 'INPUT' && t.type === 'checkbox') {
+                        var label = t.closest('.' + marker);
+                        if (label) snoozeChecked = !!t.checked;
+                    }
+                } catch (err) { /* defensive; never let a stray DOM call abort */ }
+            }
+            document.addEventListener('change', captureChange, true);
+            function cleanup() {
+                try { document.removeEventListener('change', captureChange, true); } catch (e) {}
+            }
+            try {
+                window.Dashboard.confirm(html, title, function (ok) {
+                    // Defensive second read — dialog DOM may still be
+                    // present here depending on Jellyfin version.
+                    try {
+                        var cb = document.querySelector('.' + marker + ' input[type="checkbox"]');
+                        if (cb) snoozeChecked = !!cb.checked;
+                    } catch (e) {}
+                    cleanup();
+                    var confirmed = !!ok;
+                    if (confirmed && snoozeChecked) setDisableSnooze();
+                    resolve(confirmed);
+                });
+            } catch (err) {
+                cleanup();
+                console.warn(logPrefix, 'Dashboard.confirm threw, falling back:', err);
+                resolve(window.confirm(title + '\n\n' + body));
+            }
+        });
+    }
+
     function onToggleClicked(button, itemId, kind, visiblePage) {
+        if (button.disabled) return;  // ignore re-entrant clicks
         var willBeEnabled = !isEnabledForKind(kind, itemId);
+        // Disable the button up-front so the user can't stack confirm
+        // dialogs or queue duplicate toggles via rapid double-clicks.
+        // performToggle will keep it disabled for its async lifecycle;
+        // we re-enable on the cancel/error paths here.
         button.disabled = true;
+        if (!willBeEnabled) {
+            // Disabling — prompt once (unless snoozed) before mutating
+            // server state. Re-enabling does not prompt.
+            confirmDisableSpoiler().then(function (proceed) {
+                if (proceed) {
+                    performToggle(button, itemId, kind, visiblePage, willBeEnabled);
+                } else {
+                    button.disabled = false;
+                }
+            }, function (err) {
+                console.warn(logPrefix, 'confirmDisableSpoiler rejected:', err);
+                button.disabled = false;
+            });
+            return;
+        }
+        performToggle(button, itemId, kind, visiblePage, willBeEnabled);
+    }
+
+    function performToggle(button, itemId, kind, visiblePage, willBeEnabled) {
+        // button.disabled is already true (set by onToggleClicked).
         var displayName = '';
         if ((kind === 'movie' || kind === 'collection') && visiblePage) {
             try {
@@ -1035,6 +1190,7 @@
         disableForTmdb: disableForTmdb,
         whenLoaded: whenLoaded,
         preloadChapterImages: preloadChapterImages,
+        confirmDisableSpoiler: confirmDisableSpoiler,
         // Used by tests / management UI.
         getEnabledSet: function () { return new Set(enabledSeries); },
         getEnabledMovieSet: function () { return new Set(enabledMovies); },
