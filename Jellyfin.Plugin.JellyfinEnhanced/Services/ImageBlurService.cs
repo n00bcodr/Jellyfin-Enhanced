@@ -99,16 +99,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 using var surface = SKSurface.Create(new SKImageInfo(width, height));
                 if (surface == null) return null;
-                var canvas = surface.Canvas;
-                // R29: match Jellyfin's native "missing item" card look —
-                // dark background + centered Material-style "image_not_supported"
-                // icon (rounded rect outline with diagonal slash). Visually
-                // consistent with the client's own no-image placeholder so
-                // hide-mode spoiler cards don't look like a render bug.
-                canvas.Clear(new SKColor(0x1a, 0x1a, 0x1a));
-                DrawHiddenItemIcon(canvas, width, height);
+                surface.Canvas.Clear(new SKColor(0x1f, 0x1f, 0x1f));
                 using var image = surface.Snapshot();
-                using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 80);
+                using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 70);
                 if (encoded == null) return null;
                 output = encoded.ToArray();
             }
@@ -123,51 +116,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 StoreInCache(cacheKey, output);
             }
             return output;
-        }
-
-        // Draws a centered Material-style "image_not_supported" icon — a
-        // rounded square outline with a single diagonal slash. Universal,
-        // recognizable, and aspect-ratio-agnostic (always uses the smaller
-        // dimension so the icon stays square inside posters AND backdrops).
-        // Color is muted light-grey at ~38% opacity — matches the visual
-        // weight of Jellyfin's own client-rendered missing-item icons.
-        private static void DrawHiddenItemIcon(SKCanvas canvas, int width, int height)
-        {
-            // Icon size: 35% of the smaller dimension. Tuned so the icon
-            // reads clearly on poster (2:3) and backdrop (16:9) cards
-            // without dominating the card or getting lost.
-            var smaller = Math.Min(width, height);
-            var iconSize = smaller * 0.35f;
-            var iconX = (width - iconSize) / 2f;
-            var iconY = (height - iconSize) / 2f;
-            // Stroke ~6% of icon size — visually matches Material Icons'
-            // 24dp grid with a 1.5dp stroke equivalent at this scale.
-            var strokeWidth = Math.Max(2f, iconSize * 0.06f);
-            var corner = iconSize * 0.1f;
-
-            using var paint = new SKPaint
-            {
-                Color = new SKColor(0xC8, 0xC8, 0xC8, 0x60),
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = strokeWidth,
-                StrokeCap = SKStrokeCap.Round,
-                StrokeJoin = SKStrokeJoin.Round,
-                IsAntialias = true,
-            };
-
-            // Rounded square frame (the "image" outline).
-            var rect = SKRect.Create(iconX, iconY, iconSize, iconSize);
-            canvas.DrawRoundRect(rect, corner, corner, paint);
-
-            // Diagonal slash from just-inside top-left to just-inside
-            // bottom-right — the "not_supported" element of the icon.
-            var inset = strokeWidth * 0.5f;
-            canvas.DrawLine(
-                iconX + inset,
-                iconY + inset,
-                iconX + iconSize - inset,
-                iconY + iconSize - inset,
-                paint);
         }
 
         // R25: re-encode `source` JPEG bytes resized to match the
