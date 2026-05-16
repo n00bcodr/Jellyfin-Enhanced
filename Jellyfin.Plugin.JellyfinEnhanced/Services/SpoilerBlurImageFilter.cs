@@ -834,6 +834,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             bool anyWatched = false;
+            bool determinationFailed = false;
             // Diagnostic counters — kept (commented logger) for future
             // troubleshooting if the season-watched cache produces
             // unexpected blur/passthrough decisions. Uncomment the
@@ -862,21 +863,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // On error, fail SAFE (assume watched → no blur). Spoiler-
-                // mode is opt-in for entertainment, not security; a transient
-                // DB glitch shouldn't surface a wrong-state blur. Pass-through
-                // is the conservative default.
+                // R29: fail CLOSED (assume not watched → BLUR). The user opted
+                // into spoiler protection for this series; defaulting to
+                // pass-through on a transient DB-contention exception
+                // produces the exact bug pattern reported on One Piece —
+                // 24 simultaneous season-image requests overwhelm GetEpisodes
+                // for the late seasons in the burst, exceptions cache as
+                // "watched" for 30s, and the user sees S18-23 unblurred
+                // until the cache TTL expires. The PRIOR comment said
+                // "spoiler-mode is opt-in for entertainment, not security"
+                // and used that to justify failing OPEN, but the user's
+                // expectation is the opposite: if they enabled spoiler
+                // mode, they want blur on uncertainty, not exposure.
                 _resolver.WarnRateLimited(
                     "season-watched:" + ex.GetType().FullName,
-                    $"Spoiler blur: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — passing through unblurred. {ex.Message}");
-                anyWatched = true;
+                    $"Spoiler blur: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — failing CLOSED (blur). {ex.Message}");
+                anyWatched = false;
+                determinationFailed = true;
             }
 
-            _watchedCache[key] = new WatchedCacheEntry
+            // R29: don't cache exception results. The previous code cached
+            // the fail-open `anyWatched=true` for 30s, making one transient
+            // DB hiccup persist across the full TTL even after the contention
+            // subsided. Now: only cache successful determinations; let the
+            // next call retry, which under typical conditions succeeds.
+            if (!determinationFailed)
             {
-                AnyWatched = anyWatched,
-                ExpiresAt = now + SeasonWatchedCacheTtl,
-            };
+                _watchedCache[key] = new WatchedCacheEntry
+                {
+                    AnyWatched = anyWatched,
+                    ExpiresAt = now + SeasonWatchedCacheTtl,
+                };
+            }
 
             // Periodic eviction so the dictionary doesn't grow unbounded
             // across long server uptimes. R4-L2: snapshot via ToArray so a
