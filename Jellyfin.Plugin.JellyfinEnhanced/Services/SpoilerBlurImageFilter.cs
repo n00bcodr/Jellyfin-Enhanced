@@ -568,8 +568,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // Never let blur failure break the response — pass through originals.
-                _logger.Error($"Spoiler blur post-processing failed for episode {itemId} ({imageType}): {ex.Message}");
+                _logger.Error($"Spoiler blur post-processing failed for episode {itemId} ({imageType}, {spoilerMode}): {ex.Message}");
+
+                // Hide-mode has a stricter contract: an exception thrown
+                // BEFORE ReplaceWithStockCardAsync assigned executed.Result
+                // (e.g. ExtractBytesAsync stream-copy IOException, OOM on a
+                // 4K backdrop decode, ObjectDisposedException on a cancelled
+                // request) would otherwise let MVC write the original
+                // FileStreamResult body — leaking the spoiler image. Force
+                // the hardcoded fallback so the fail-closed invariant holds
+                // structurally regardless of where in the pipeline the
+                // failure occurred. Blur-mode is best-effort by design and
+                // is allowed to pass through.
+                if (spoilerMode == "hide" && !executed.HttpContext.Response.HasStarted)
+                {
+                    try
+                    {
+                        executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+                        ApplyNoStoreToResponse(executed.HttpContext);
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        _logger.Error($"Spoiler blur: hide-mode fallback assignment failed for {itemId}: {fallbackEx.Message}");
+                    }
+                }
             }
         }
 
@@ -918,8 +940,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // grid of "this show / this franchise" art rather than a sea of
         // blank dark cards. The parent image type is picked by source
         // aspect to avoid distortion:
-        //   Episode / Season → Series Backdrop (16:9)
-        //   Movie via Collection → Collection Primary (2:3)
+        //   Episode (16:9 thumb)        → Series Backdrop (16:9)
+        //   Season (2:3 poster)         → Series Primary (2:3)
+        //   Movie via Collection (2:3)  → Collection Primary (2:3)
         // Movies directly opted-in have no safe parent (their own
         // Primary IS the spoiler) → fall back to dark-grey.
         // Mirrors ReplaceWithBlurredAsync's no-store header policy.
@@ -945,8 +968,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Try parent Primary first.
-            var parentBytes = TryGetParentPrimaryBytes(item, userState, originalBytes, cacheKey + ":pp");
+            // Try parent art first.
+            var parentBytes = TryGetParentArtBytes(item, userState, originalBytes, cacheKey + ":pp");
             if (parentBytes != null && parentBytes.Length > 0)
             {
                 executed.Result = new FileContentResult(parentBytes, "image/jpeg");
@@ -958,7 +981,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var stock = _blurService.StockCard(originalBytes, cacheKey);
             if (stock == null)
             {
-                executed.Result = new FileContentResult(originalBytes, originalContentType ?? "image/jpeg");
+                // Skia render failed on a flat-fill — practically unreachable
+                // (Jellyfin's whole image pipeline shares the same Skia copy)
+                // but the hide-mode spoiler contract is "never serve original
+                // bytes through this path". Fall back to the pre-encoded
+                // 16x16 #101010 JPEG so the invariant is structural, not
+                // dependent on Skia liveness.
+                executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
                 ApplyNoStoreToResponse(executed.HttpContext);
                 return;
             }
@@ -970,17 +999,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Returns the bytes of a "safe parent" art image scaled to roughly
         // match the original-image dimensions. Picks the parent image type
-        // by source-aspect so we don't squash a 2:3 poster into a 16:9
-        // episode thumb:
+        // by the source's aspect so ResizeToMatch's non-uniform scale stays
+        // proportional:
         //
-        //   Episode / Season → Series Backdrop (16:9, matches episode thumb)
-        //   Movie via Collection → Collection Primary (2:3, matches poster)
+        //   Episode (16:9 thumb)        → Series Backdrop
+        //   Season (2:3 poster)         → Series Primary
+        //   Movie via Collection (2:3)  → Collection Primary
         //
         // Returns null when no safe parent exists (movie directly opted in,
         // or the picked image type is missing on the parent) — caller falls
         // through to the flat dark card. JPEG-encoded, suitable for
         // FileContentResult.
-        private byte[]? TryGetParentPrimaryBytes(
+        private byte[]? TryGetParentArtBytes(
             MediaBrowser.Controller.Entities.BaseItem item,
             UserSpoilerBlur userState,
             byte[] originalBytes,
@@ -993,13 +1023,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (item is Episode ep)
                 {
+                    // Episode Primary is the episode thumbnail (16:9). Series
+                    // Backdrop is also 16:9, so ResizeToMatch's non-uniform
+                    // scale stays proportional.
                     parentId = ep.SeriesId;
                     parentImageType = MediaBrowser.Model.Entities.ImageType.Backdrop;
                 }
                 else if (item is Season s)
                 {
+                    // Season Primary is the season poster (2:3). Keep Primary
+                    // here so we feed a 2:3 source into a 2:3 target slot — a
+                    // Series Backdrop would squash 16:9 → 2:3, which is what
+                    // we just fixed in the inverse direction for episodes.
                     parentId = s.SeriesId;
-                    parentImageType = MediaBrowser.Model.Entities.ImageType.Backdrop;
+                    parentImageType = MediaBrowser.Model.Entities.ImageType.Primary;
                 }
                 else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
                 {
@@ -1049,7 +1086,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex)
             {
                 _resolver.WarnRateLimited(
-                    "parent-primary:" + ex.GetType().FullName,
+                    "parent-art:" + ex.GetType().FullName,
                     $"Spoiler blur: parent-art fallback failed for item {item?.Id}: {ex.Message}");
                 return null;
             }

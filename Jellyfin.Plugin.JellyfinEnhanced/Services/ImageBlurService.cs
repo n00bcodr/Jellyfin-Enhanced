@@ -40,6 +40,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _cacheBytes;
         private readonly object _evictionLock = new();
 
+        // Hardcoded last-resort fallback served when both the parent-art path
+        // AND the SkiaSharp StockCard render fail. A flat-fill 16x16 #101010
+        // JPEG, pre-encoded so it has no runtime decode/encode dependency —
+        // if Skia is broken in-process, the spoiler-blur threat model still
+        // requires that we DO NOT serve the original spoiler bytes through
+        // the hide-mode path. 285 bytes; lifetime of the process.
+        private static readonly byte[] _hardcodedFallbackJpeg = Convert.FromBase64String(
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEi" +
+            "MEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7" +
+            "Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEA" +
+            "AAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhED" +
+            "EQA/AJKAD//Z");
+
+        // Public accessor for the structural-fallback bytes. Callers in
+        // SpoilerBlurImageFilter use this when StockCard returns null so the
+        // hide-mode fail-closed invariant doesn't depend on Skia liveness.
+        public byte[] HardcodedFallbackJpeg => _hardcodedFallbackJpeg;
+
         public ImageBlurService(Logger logger)
         {
             _logger = logger;
@@ -120,10 +138,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return output;
         }
 
-        // R25: re-encode `source` JPEG bytes resized to match the
+        // Re-encode `source` JPEG bytes resized to match the
         // dimensions of `referenceBytes` (or, if the source is much
         // larger than the reference, scale it down). Used by the
-        // hide-mode parent-Primary fallback so the placeholder card
+        // hide-mode parent-art fallback (Series Backdrop for
+        // episodes, Series Primary for seasons, Collection Primary
+        // for collection-opted movies) so the placeholder card
         // doesn't shift the client's grid layout. Cached in the same
         // LRU as Blur/StockCard.
         public byte[]? ResizeToMatch(byte[] source, byte[] referenceBytes, string? cacheKey)
@@ -155,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Reference probe failed — fall back to default 600x900
                 // target dims. Debug-level since this fires for any
                 // malformed reference and we have a sane default.
-                _logger.Debug($"Spoiler parent-Primary reference probe failed: {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
+                _logger.Debug($"Spoiler parent-art reference probe failed: {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 
             byte[]? output;
@@ -192,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"Spoiler parent-Primary resize failed: {ex.Message}");
+                _logger.Error($"Spoiler parent-art resize failed: {ex.Message}");
                 return null;
             }
 
