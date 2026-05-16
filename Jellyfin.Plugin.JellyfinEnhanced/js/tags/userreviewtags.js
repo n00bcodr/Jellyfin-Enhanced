@@ -75,7 +75,7 @@
         tag.className = 'rating-tag rating-tag-critic je-userreview-tag';
 
         const icon = document.createElement('span');
-        icon.className = 'material-icons je-userreview-icon';
+        icon.className = 'je-userreview-icon';
         icon.textContent = 'person_heart';
 
         const text = document.createElement('span');
@@ -139,10 +139,29 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
+                @font-face {
+                    font-family: 'Material Symbols Rounded';
+                    font-style: normal;
+                    font-weight: 100 700;
+                    font-display: block;
+                    src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+                }
                 .je-userreview-tag { color: #e91e8c !important; }
                 .je-userreview-icon {
+                    font-family: 'Material Symbols Rounded';
                     font-size: 14px !important;
+                    font-weight: normal;
+                    font-style: normal;
                     line-height: 1;
+                    letter-spacing: normal;
+                    text-transform: none;
+                    display: inline-block;
+                    white-space: nowrap;
+                    word-wrap: normal;
+                    direction: ltr;
+                    -webkit-font-feature-settings: 'liga';
+                    font-feature-settings: 'liga';
+                    -webkit-font-smoothing: antialiased;
                     color: #e91e8c !important;
                     vertical-align: middle;
                 }

@@ -538,7 +538,7 @@
                     chip.className = 'mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip';
                     chip.title = tWithFallback('reviews_avg_rating_tooltip',
                         'Average rating from {count} user(s)', { count: ratingsWithValue.length });
-                    chip.innerHTML = `<span class="material-icons starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
+                    chip.innerHTML = `<span class="material-symbols-rounded starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
 
                     // Insert after starRatingContainer, or after mediaInfoCriticRating if present,
                     // falling back to appending to the mediaInfoItems container
@@ -834,6 +834,28 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
+                @font-face {
+                    font-family: 'Material Symbols Rounded';
+                    font-style: normal;
+                    font-weight: 100 700;
+                    font-display: block;
+                    src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+                }
+                .material-symbols-rounded {
+                    font-family: 'Material Symbols Rounded';
+                    font-weight: normal;
+                    font-style: normal;
+                    line-height: 1;
+                    letter-spacing: normal;
+                    text-transform: none;
+                    display: inline-block;
+                    white-space: nowrap;
+                    word-wrap: normal;
+                    direction: ltr;
+                    -webkit-font-feature-settings: 'liga';
+                    font-feature-settings: 'liga';
+                    -webkit-font-smoothing: antialiased;
+                }
                 .tmdb-reviews-section { margin: 2em 0 1em 0; display: flex !important; flex-direction: column;}
                 .tmdb-reviews-section summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; -webkit-tap-highlight-color: transparent;}
                 .tmdb-reviews-section summary .expand-icon { color: rgba(255, 255, 255,.8);transition: transform 0.2s ease-in-out;}
@@ -997,6 +1019,10 @@
                 .je-avg-user-rating-chip .starIcon { color: #e91e8c !important; }
                 /* Remove the padding coming from using critic rating container */
                 .je-avg-user-rating-chip { padding-left: 0 !important; }
+                /* Remove the % added by ElegantFin Theme */
+                .mediaInfoCriticRating.mediaInfoItem.je-avg-user-rating-chip::after {
+                    content: "";
+                }
             `;
             document.head.appendChild(style);
         }
