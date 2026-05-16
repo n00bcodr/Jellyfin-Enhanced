@@ -913,13 +913,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Stock-card replacement path. Used when SpoilerBlurMode == "hide".
-        // R25: instead of returning a flat dark-grey rectangle, try the
-        // parent's Primary image first (Series Primary for unwatched
-        // episodes/seasons; Collection Primary for movies opted-in via a
-        // collection). The user gets a visually-consistent grid of "this
-        // show / this franchise" art rather than a sea of blank dark
-        // cards. Movies directly opted-in have no safe parent fallback
-        // (their own Primary IS the spoiler) → fall back to dark-grey.
+        // Instead of returning a flat dark-grey rectangle, try a "safe
+        // parent" art image first so the user gets a visually-consistent
+        // grid of "this show / this franchise" art rather than a sea of
+        // blank dark cards. The parent image type is picked by source
+        // aspect to avoid distortion:
+        //   Episode / Season → Series Backdrop (16:9)
+        //   Movie via Collection → Collection Primary (2:3)
+        // Movies directly opted-in have no safe parent (their own
+        // Primary IS the spoiler) → fall back to dark-grey.
         // Mirrors ReplaceWithBlurredAsync's no-store header policy.
         private async Task ReplaceWithStockCardAsync(
             ActionExecutedContext executed,
@@ -966,11 +968,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
         }
 
-        // R25: returns the bytes of a "safe parent" Primary image scaled
-        // to roughly match the original-image dimensions. Returns null
-        // when no safe parent exists (e.g. movie directly opted in, no
-        // collection fallback). The returned bytes are JPEG-encoded and
-        // suitable for FileContentResult.
+        // Returns the bytes of a "safe parent" art image scaled to roughly
+        // match the original-image dimensions. Picks the parent image type
+        // by source-aspect so we don't squash a 2:3 poster into a 16:9
+        // episode thumb:
+        //
+        //   Episode / Season → Series Backdrop (16:9, matches episode thumb)
+        //   Movie via Collection → Collection Primary (2:3, matches poster)
+        //
+        // Returns null when no safe parent exists (movie directly opted in,
+        // or the picked image type is missing on the parent) — caller falls
+        // through to the flat dark card. JPEG-encoded, suitable for
+        // FileContentResult.
         private byte[]? TryGetParentPrimaryBytes(
             MediaBrowser.Controller.Entities.BaseItem item,
             UserSpoilerBlur userState,
@@ -980,13 +989,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 Guid parentId = Guid.Empty;
-                if (item is Episode ep) parentId = ep.SeriesId;
-                else if (item is Season s) parentId = s.SeriesId;
+                var parentImageType = MediaBrowser.Model.Entities.ImageType.Primary;
+
+                if (item is Episode ep)
+                {
+                    parentId = ep.SeriesId;
+                    parentImageType = MediaBrowser.Model.Entities.ImageType.Backdrop;
+                }
+                else if (item is Season s)
+                {
+                    parentId = s.SeriesId;
+                    parentImageType = MediaBrowser.Model.Entities.ImageType.Backdrop;
+                }
                 else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
                 {
                     // Movie directly opted-in has no safe parent (its own
                     // Primary IS the spoiler). For collection-opted movies,
-                    // fall back to the collection's Primary art.
+                    // fall back to the collection's Primary art (2:3, same
+                    // aspect as the movie's own poster).
                     if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
                     {
                         foreach (var collKeyN in userState.Collections.Keys)
@@ -1012,7 +1032,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var parent = _libraryManager.GetItemById(parentId);
                 if (parent == null) return null;
 
-                var imgInfo = parent.GetImageInfo(MediaBrowser.Model.Entities.ImageType.Primary, 0);
+                var imgInfo = parent.GetImageInfo(parentImageType, 0);
                 if (imgInfo == null || string.IsNullOrEmpty(imgInfo.Path)) return null;
                 if (!System.IO.File.Exists(imgInfo.Path)) return null;
 
@@ -1030,7 +1050,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "parent-primary:" + ex.GetType().FullName,
-                    $"Spoiler blur: parent-Primary fallback failed for item {item?.Id}: {ex.Message}");
+                    $"Spoiler blur: parent-art fallback failed for item {item?.Id}: {ex.Message}");
                 return null;
             }
         }

@@ -54,8 +54,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // SpoilerBlurMode == "hide" — instead of blurring the actual
         // image, we return a generic placeholder so the user sees a
         // blank card. Cheap (~1 KB output), no per-image variation.
-        // Output is a flat #1f1f1f rectangle so it visually matches
-        // typical Jellyfin dark-theme card backgrounds.
+        // Output is a flat #101010 rectangle — matches Jellyfin's default
+        // dark-theme --card-bg-color so the placeholder blends with the
+        // card chrome the way an empty "missing episode" card does
+        // rather than reading as a distinct grey block.
         public byte[]? StockCard(byte[] input, string? cacheKey)
         {
             if (!string.IsNullOrEmpty(cacheKey)
@@ -99,7 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 using var surface = SKSurface.Create(new SKImageInfo(width, height));
                 if (surface == null) return null;
-                surface.Canvas.Clear(new SKColor(0x1f, 0x1f, 0x1f));
+                surface.Canvas.Clear(new SKColor(0x10, 0x10, 0x10));
                 using var image = surface.Snapshot();
                 using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 70);
                 if (encoded == null) return null;

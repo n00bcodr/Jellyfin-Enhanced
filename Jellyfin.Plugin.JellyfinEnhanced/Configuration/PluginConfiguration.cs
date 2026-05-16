@@ -620,9 +620,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SpoilerStripReviews { get; set; } = true;
         // Image-replacement mode. "blur" (default) runs the SkiaSharp
         // Gaussian on the original bytes so silhouettes / dominant colours
-        // remain visible. "hide" returns a flat dark-grey card so the
-        // image content is fully hidden — useful for users who find
-        // partial-blur "tease" worse than a clean placeholder.
+        // remain visible. "hide" substitutes a parent-level placeholder
+        // (Series Backdrop for episodes/seasons, Collection art for
+        // collection-opted movies, flat dark card otherwise) so the
+        // episode-specific imagery is fully hidden — useful for users
+        // who find partial-blur "tease" worse than a clean placeholder.
         public string SpoilerBlurMode { get; set; } = "blur";
         // When false (default), only Primary / Thumb / Screenshot images
         // get blurred — Backdrop / Art (the wider aesthetic / collection
