@@ -1718,6 +1718,18 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 // Token guards against stale chip insertion when the user navigates between items.
 let _quotaRenderToken = 0;
 
+// Token guard for renderActions itself. A single request can trigger
+// renderActions multiple times in rapid succession (mountRequestedChip
+// runs it directly + api.js emits jellyseerr-tv-requested which the
+// TV-route listener also reacts to with another renderActions call).
+// Each call clears the mounts synchronously, but the TV path's
+// checkForUnrequestedSeasons.then() callback lands AFTER both clears —
+// so each pending callback appends its own copy of the Request More /
+// Spoiler buttons, producing visible duplicates after the request is
+// submitted. Bump the token at the top of every renderActions call
+// and bail in the async tail if a newer render has superseded us.
+let _renderActionsToken = 0;
+
 async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     if (!actionMount) return;
     const myToken = ++_quotaRenderToken;
@@ -1855,6 +1867,8 @@ function renderActions(data, mediaType) {
     if (downloadsMount) downloadsMount.innerHTML = '';
     if (secondaryMount) secondaryMount.innerHTML = '';
 
+    const myToken = ++_renderActionsToken;
+
     if (mediaType === 'movie') {
         const mediaInfo = data.mediaInfo || {};
         const status = mediaInfo.status ?? 1;
@@ -1981,6 +1995,10 @@ function renderActions(data, mediaType) {
                 return;
             }
             checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
+                // A later renderActions has clobbered the mounts — bail
+                // so we don't double-append the buttons after both
+                // callbacks land. See _renderActionsToken comment.
+                if (myToken !== _renderActionsToken) return;
                 if (hasUnrequestedSeasons && actionMount) {
                     const requestMoreButton = buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                     if (requestMoreButton) actionMount.appendChild(requestMoreButton);
