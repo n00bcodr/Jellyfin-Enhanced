@@ -279,21 +279,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurEnabled = false;
             SpoilerBlurIntensity = 40;
 
-            // Field-strip defaults — Overview / Tags / Chapters / Taglines on,
-            // ratings / premiere date / title replacement / cast off. Admins
-            // tune these in the configPage's Spoiler Blur section.
+            // Field-strip defaults — when the admin enables the Spoiler
+            // Blur master switch, every per-field hide toggle defaults ON
+            // (the strictest sensible posture, since the user explicitly
+            // wants protection). The image-replacement mode defaults to
+            // "hide" (stock cards) for the same reason. Admins can relax
+            // anything they don't want in the configPage's Spoiler Blur
+            // section.
             SpoilerStripOverview = true;
             SpoilerStripTags = true;
             SpoilerStripChapters = true;
             SpoilerStripTaglines = true;
-            SpoilerStripCommunityRating = false;
-            SpoilerStripCriticRating = false;
-            SpoilerStripPremiereDate = false;
-            SpoilerReplaceTitle = false;
-            SpoilerStripCast = false;
+            SpoilerStripCommunityRating = true;
+            SpoilerStripCriticRating = true;
+            SpoilerStripPremiereDate = true;
+            SpoilerReplaceTitle = true;
+            SpoilerStripCast = true;
             SpoilerStripCastMode = "GuestStars";
             SpoilerStripReviews = true;
-            SpoilerBlurMode = "blur";
+            SpoilerBlurMode = "hide";
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
@@ -597,36 +601,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SpoilerStripTags { get; set; } = true;
         public bool SpoilerStripChapters { get; set; } = true;
         public bool SpoilerStripTaglines { get; set; } = true;
-        public bool SpoilerStripCommunityRating { get; set; } = false;
-        public bool SpoilerStripCriticRating { get; set; } = false;
-        public bool SpoilerStripPremiereDate { get; set; } = false;
+        public bool SpoilerStripCommunityRating { get; set; } = true;
+        public bool SpoilerStripCriticRating { get; set; } = true;
+        public bool SpoilerStripPremiereDate { get; set; } = true;
         // Title replacement: when on, episode names become "Season X,
         // Episode Y" instead of leaking spoiler titles like "The Death
-        // of Y". Off by default because some clients use the title in
-        // navigation tooltips and breadcrumbs where the change is jarring.
-        public bool SpoilerReplaceTitle { get; set; } = false;
-        // Cast stripping. SpoilerStripCast = false → no cast stripping at
-        // all (default). When SpoilerStripCast = true, SpoilerStripCastMode
-        // chooses between "GuestStars" (only Type=GuestStar entries
-        // removed; regular cast retained) and "All" (every People entry
-        // removed). Most series leak via guest stars only, so the default
-        // when stripping is on is "GuestStars".
-        public bool SpoilerStripCast { get; set; } = false;
+        // of Y". On by default — admins who'd rather keep titles visible
+        // can untick this (some clients use the title in navigation
+        // tooltips and breadcrumbs where the change can feel jarring).
+        public bool SpoilerReplaceTitle { get; set; } = true;
+        // Cast stripping. SpoilerStripCast = true → strip cast on
+        // unwatched episodes (default). SpoilerStripCastMode chooses
+        // between "GuestStars" (only Type=GuestStar entries removed;
+        // regular cast retained — the default) and "All" (every People
+        // entry removed). Most series leak via guest stars only, so the
+        // default when stripping is on is "GuestStars".
+        public bool SpoilerStripCast { get; set; } = true;
         public string SpoilerStripCastMode { get; set; } = "GuestStars";
         // Hide the JE Reviews panel on Series detail pages where the user
         // has Spoiler Guard enabled. TMDB reviews routinely contain plot
         // spoilers from arbitrary points in the show; user-written reviews
         // do too. Default ON because the spoiler risk dwarfs the UX cost.
         public bool SpoilerStripReviews { get; set; } = true;
-        // Image-replacement mode. "blur" (default) runs the SkiaSharp
-        // Gaussian on the original bytes so silhouettes / dominant colours
-        // remain visible. "hide" substitutes a parent-level placeholder
-        // picked by aspect (Series Backdrop for episodes, Series Primary
-        // for seasons, Collection Primary for collection-opted movies,
-        // flat dark card otherwise) so the episode-specific imagery is
-        // fully hidden — useful for users who find partial-blur "tease"
-        // worse than a clean placeholder.
-        public string SpoilerBlurMode { get; set; } = "blur";
+        // Image-replacement mode. "hide" (default) substitutes a
+        // parent-level placeholder picked by aspect (Series Backdrop for
+        // episodes, Series Primary for seasons, Collection Primary for
+        // collection-opted movies, flat dark card otherwise) so the
+        // episode-specific imagery is fully hidden. "blur" runs the
+        // SkiaSharp Gaussian on the original bytes so silhouettes /
+        // dominant colours remain visible — useful for users who prefer
+        // a softer hint of "something is here" over a clean placeholder.
+        public string SpoilerBlurMode { get; set; } = "hide";
         // When false (default), only Primary / Thumb / Screenshot images
         // get blurred — Backdrop / Art (the wider aesthetic / collection
         // artwork) pass through unblurred. Set true to also blur those.

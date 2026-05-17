@@ -790,8 +790,8 @@
                             <div class="selectContainer" data-gated-by="spoilerBlurEnabled">
                                 <label class="selectLabel" for="spoilerBlurMode">Image replacement mode</label>
                                 <select id="spoilerBlurMode" is="emby-select">
-                                    <option value="blur">Blur images (default)</option>
-                                    <option value="hide">Show stock cards (hide images entirely)</option>
+                                    <option value="hide">Show stock cards (hide images entirely, default)</option>
+                                    <option value="blur">Blur images</option>
                                 </select>
                             </div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurMode" data-gated-by="spoilerBlurEnabled">
@@ -4336,19 +4336,21 @@
                 var __sbSigma = document.querySelector('#spoilerBlurIntensity');
                 if (__sbSigma) __sbSigma.value = (config.SpoilerBlurIntensity >= 5 && config.SpoilerBlurIntensity <= 100) ? config.SpoilerBlurIntensity : 40;
                 var __sbMode = document.querySelector('#spoilerBlurMode');
-                if (__sbMode) __sbMode.value = (config.SpoilerBlurMode === 'hide') ? 'hide' : 'blur';
+                if (__sbMode) __sbMode.value = (config.SpoilerBlurMode === 'blur') ? 'blur' : 'hide';
                 // Field-strip toggles. Defaults match PluginConfiguration:
-                // Overview/Tags/Chapters/Taglines on; ratings/premiere/title/cast off.
+                // every hide toggle defaults ON (strictest sensible posture
+                // when the admin enables Spoiler Blur); SpoilerBlurArtwork +
+                // the auto-enable toggles default OFF.
                 [
                     ['spoilerStripOverview',        'SpoilerStripOverview',        true],
                     ['spoilerStripTags',            'SpoilerStripTags',            true],
                     ['spoilerStripChapters',        'SpoilerStripChapters',        true],
                     ['spoilerStripTaglines',        'SpoilerStripTaglines',        true],
-                    ['spoilerStripCommunityRating', 'SpoilerStripCommunityRating', false],
-                    ['spoilerStripCriticRating',    'SpoilerStripCriticRating',    false],
-                    ['spoilerStripPremiereDate',    'SpoilerStripPremiereDate',    false],
-                    ['spoilerReplaceTitle',         'SpoilerReplaceTitle',         false],
-                    ['spoilerStripCast',            'SpoilerStripCast',            false],
+                    ['spoilerStripCommunityRating', 'SpoilerStripCommunityRating', true],
+                    ['spoilerStripCriticRating',    'SpoilerStripCriticRating',    true],
+                    ['spoilerStripPremiereDate',    'SpoilerStripPremiereDate',    true],
+                    ['spoilerReplaceTitle',         'SpoilerReplaceTitle',         true],
+                    ['spoilerStripCast',            'SpoilerStripCast',            true],
                     ['spoilerStripReviews',         'SpoilerStripReviews',         true],
                     ['spoilerBlurArtwork',          'SpoilerBlurArtwork',          false],
                     ['spoilerAutoEnableOnFirstPlay','SpoilerAutoEnableOnFirstPlay',false],
@@ -4704,7 +4706,7 @@
             var __sbCastModeSave = document.querySelector('#spoilerStripCastMode');
             config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
             var __sbModeSave = document.querySelector('#spoilerBlurMode');
-            config.SpoilerBlurMode = (__sbModeSave && __sbModeSave.value === 'hide') ? 'hide' : 'blur';
+            config.SpoilerBlurMode = (__sbModeSave && __sbModeSave.value === 'blur') ? 'blur' : 'hide';
             var __sbPlaceholderSave = document.querySelector('#spoilerOverviewPlaceholder');
             if (__sbPlaceholderSave) {
                 // Strip HTML tags so a stored-XSS gadget via the
