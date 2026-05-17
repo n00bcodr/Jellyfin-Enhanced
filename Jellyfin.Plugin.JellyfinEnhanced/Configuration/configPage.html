@@ -821,6 +821,11 @@
                                 <div class="fieldDescription">When on, every successful Seerr request a user submits via JE also registers a pending spoiler-blur entry — when the content lands in the library, Spoiler Guard is already on. Users can also manually opt in via the "Enable Spoiler Guard" button in the Seerr more-info modal (always available regardless of this toggle), which is useful when another user has already requested the title.</div>
                             </div>
 
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurStrictRefresh" is="emby-checkbox" type="checkbox"/><span>Strict refresh mode (full page reload after toggle)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerBlurStrictRefresh" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">When off (default), toggling Spoiler Guard for a show or movie does an in-place image refresh — blurred / clear card images flip straight away with no full-page flash. The page-rendered text (Overview, episode titles, ratings) only refreshes on the user's next navigation. Turn on to also force a full page reload after every toggle so the text updates immediately too. Recommended off for the smoother UX; turn on if you'd rather pay the page-flash cost to see everything update at once.</div>
+                            </div>
+
                             <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
                                 <summary>Hide metadata on unwatched episodes</summary>
                                 <div class="je-details-body">
@@ -4355,6 +4360,7 @@
                     ['spoilerBlurArtwork',          'SpoilerBlurArtwork',          false],
                     ['spoilerAutoEnableOnFirstPlay','SpoilerAutoEnableOnFirstPlay',false],
                     ['spoilerAutoEnableOnSeerrRequest','SpoilerAutoEnableOnSeerrRequest',false],
+                    ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                 ].forEach(function (t) {
                     var el = document.querySelector('#' + t[0]);
                     if (!el) return;
@@ -4696,7 +4702,7 @@
                 'spoilerStripCriticRating', 'spoilerStripPremiereDate',
                 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerStripReviews',
                 'spoilerBlurArtwork', 'spoilerAutoEnableOnFirstPlay',
-                'spoilerAutoEnableOnSeerrRequest',
+                'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh',
             ].forEach(function (id) {
                 var el = document.querySelector('#' + id);
                 if (!el) return;
@@ -5581,7 +5587,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity', 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripCommunityRating', 'spoilerStripCriticRating', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Blur', children: ['spoilerBlurIntensity', 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripCommunityRating', 'spoilerStripCriticRating', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh'] },
             { parent: 'spoilerStripOverview', label: 'Hide episode descriptions', children: ['spoilerOverviewPlaceholder'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] }
         ];

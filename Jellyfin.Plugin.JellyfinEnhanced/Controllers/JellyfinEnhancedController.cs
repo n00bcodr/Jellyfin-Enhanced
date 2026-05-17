@@ -2941,6 +2941,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // toggle should appear at all and (eventually) for client-side previews.
                 config.SpoilerBlurEnabled,
                 config.SpoilerBlurIntensity,
+                config.SpoilerBlurStrictRefresh,
             });
         }
 

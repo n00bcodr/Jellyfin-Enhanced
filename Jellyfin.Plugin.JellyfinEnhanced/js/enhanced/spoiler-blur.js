@@ -857,15 +857,18 @@
                 console.warn(logPrefix, 'reviews section cleanup failed:', e);
             }
             // Refresh all <img> + background-image URLs immediately for
-            // snappy visual feedback, then schedule a full page reload so
-            // DOM text (Overview, titles, ratings) also picks up the new
-            // server-side strip state.
+            // snappy visual feedback. The DOM text (Overview, titles,
+            // ratings) only re-renders on the user's next navigation
+            // unless the admin opted into Strict refresh mode, in which
+            // case we also schedule a full page reload.
             try {
                 refreshSpoilerableImages();
             } catch (e) {
                 console.warn(logPrefix, 'refreshSpoilerableImages failed:', e);
             }
-            scheduleFullReload();
+            if (JE.pluginConfig?.SpoilerBlurStrictRefresh === true) {
+                scheduleFullReload();
+            }
         }).catch(function (err) {
             console.error(logPrefix, 'Toggle failed:', err);
             if (JE.toast) JE.toast(JE.t('spoiler_blur_error_toast'));

@@ -301,6 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
+            SpoilerBlurStrictRefresh = false;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
         }
 
@@ -653,6 +654,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // available (gated only by SpoilerBlurEnabled) — this toggle controls
         // the auto-on-request path specifically.
         public bool SpoilerAutoEnableOnSeerrRequest { get; set; } = false;
+        // Strict refresh mode. When true, toggling Spoiler Guard for a
+        // series / movie also fires a full page reload so DTO-derived
+        // text (Overview, episode titles, ratings) updates immediately.
+        // When false (default), only the in-place image-URL refresh
+        // runs — image bytes flip blur/clear straight away, but the
+        // page-rendered text stays stale until the user's next
+        // navigation. Off by default because the soft refresh is
+        // visually smoother (no full-page flash); admins who want the
+        // text to update straight away can opt in.
+        public bool SpoilerBlurStrictRefresh { get; set; } = false;
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.
