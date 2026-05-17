@@ -136,7 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // cache-bust pass (MutateImageTagsForCacheBust) must run on
             // EVERY DTO whenever spoiler blur is enabled, so native-client
             // image caches re-fetch when the user flips watched-state or
-            // toggles spoiler-mode itself. ApplyStripping is internally
+            // toggles Spoiler Guard itself. ApplyStripping is internally
             // per-toggle gated, so when no strip toggle is on it's a no-op
             // past the cache-bust mutation.
 
@@ -472,8 +472,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Series path: when the item is the Series itself (Series detail
             // page = /Items/{seriesId}), strip cast / overview / tags / etc.
-            // for the series-level DTO when the user has spoiler mode on for
-            // it. Crucial for the Cast & Crew rail on series detail pages —
+            // for the series-level DTO when the user has Spoiler Guard on
+            // for it. Crucial for the Cast & Crew rail on series detail
+            // pages —
             // an unexpected guest star or recurring villain on the series-
             // level cast is a major spoiler. No watched-state check (a
             // series doesn't have one), no Name rewrite (series titles are
@@ -686,7 +687,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     $"Spoiler field strip: ResolvePlayedServerSide failed for item {itemId}: {ex.Message}");
                 // Fail CLOSED: when we can't determine played-state and the
                 // response would otherwise leak metadata, prefer the strip.
-                // Better to show "Spoiler mode activated" on a watched
+                // Better to show "Spoiler Guard activated" on a watched
                 // episode (UX glitch) than leak the synopsis (privacy).
                 return false;
             }
@@ -771,7 +772,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // ever changes, the sanitizer must be re-evaluated.
         private static string SanitizePlaceholder(string? raw)
         {
-            if (string.IsNullOrEmpty(raw)) return "Spoiler mode activated";
+            if (string.IsNullOrEmpty(raw)) return "Spoiler Guard activated";
             var trimmed = raw.Length > 200 ? raw.Substring(0, 200) : raw;
             var stripped = _htmlTagRe.Replace(trimmed, string.Empty)
                 .Replace("<", string.Empty)
@@ -780,7 +781,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 .Replace("'", string.Empty)
                 .Replace("`", string.Empty)
                 .Replace("&", string.Empty);
-            return string.IsNullOrWhiteSpace(stripped) ? "Spoiler mode activated" : stripped;
+            return string.IsNullOrWhiteSpace(stripped) ? "Spoiler Guard activated" : stripped;
         }
 
         // SearchHintResult shape is different from BaseItemDto: each
@@ -1048,7 +1049,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             //     episode anyway, so they don't reveal anything new about
             //     this one.
             //   - "All": drop the entire People array. Strict mode for
-            //     paranoid spoiler-mode users; some shows leak via the
+            //     paranoid Spoiler Guard users; some shows leak via the
             //     regular cast appearing or not appearing in a given
             //     episode (e.g. a recurring villain return).
             // Always uses BaseItemPerson.Type string comparison so we don't

@@ -1752,7 +1752,7 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
 
 // Toggle button that lets the user enable spoiler-blur for a title in the
 // modal regardless of request status. Two use cases:
-//   (a) the user is about to Request it — they can pre-arm spoiler mode so
+//   (a) the user is about to Request it — they can pre-arm Spoiler Guard so
 //       the title is already blurred when it lands in their library.
 //   (b) another user has already requested it (Request button disabled) —
 //       this user can still register spoiler intent and have it auto-apply

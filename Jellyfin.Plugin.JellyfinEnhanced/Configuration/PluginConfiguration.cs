@@ -297,7 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
-            SpoilerOverviewPlaceholder = "Spoiler mode activated";
+            SpoilerOverviewPlaceholder = "Spoiler Guard activated";
         }
 
         // Jellyfin Enhanced Settings
@@ -614,7 +614,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SpoilerStripCast { get; set; } = false;
         public string SpoilerStripCastMode { get; set; } = "GuestStars";
         // Hide the JE Reviews panel on Series detail pages where the user
-        // has spoiler mode enabled. TMDB reviews routinely contain plot
+        // has Spoiler Guard enabled. TMDB reviews routinely contain plot
         // spoilers from arbitrary points in the show; user-written reviews
         // do too. Default ON because the spoiler risk dwarfs the UX cost.
         public bool SpoilerStripReviews { get; set; } = true;
@@ -651,7 +651,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.
-        public string SpoilerOverviewPlaceholder { get; set; } = "Spoiler mode activated";
+        public string SpoilerOverviewPlaceholder { get; set; } = "Spoiler Guard activated";
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.

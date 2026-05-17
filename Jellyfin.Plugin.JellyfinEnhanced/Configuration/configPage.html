@@ -811,14 +811,14 @@
                                 <div class="fieldDescription">When off (default), only Primary / Thumb / Screenshot images get replaced. The wider Backdrop / Art images shown on detail pages and in collections pass through unblurred. Turn on for the strictest mode.</div>
                             </div>
 
-                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable spoiler mode on first play of a new show</span></label></div>
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on first play of a new show</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnFirstPlay" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">When on, the first time a user plays S1E1 of a series they have never watched before, the plugin automatically adds that series to their spoiler list — they don't have to remember to toggle it before starting a new show. Rewatches (or jumping in at later episodes) won't trigger it. Applies to all users on this instance.</div>
                             </div>
 
-                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnSeerrRequest" is="emby-checkbox" type="checkbox"/><span>Auto-enable spoiler mode on Seerr request</span></label></div>
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnSeerrRequest" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on Seerr request</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnSeerrRequest" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">When on, every successful Seerr request a user submits via JE also registers a pending spoiler-blur entry — when the content lands in the library, spoiler mode is already on. Users can also manually opt in via the "Enable spoiler mode" button in the Seerr more-info modal (always available regardless of this toggle), which is useful when another user has already requested the title.</div>
+                                <div class="fieldDescription">When on, every successful Seerr request a user submits via JE also registers a pending spoiler-blur entry — when the content lands in the library, Spoiler Guard is already on. Users can also manually opt in via the "Enable Spoiler Guard" button in the Seerr more-info modal (always available regardless of this toggle), which is useful when another user has already requested the title.</div>
                             </div>
 
                             <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
@@ -828,7 +828,7 @@
                                         <div class="je-info-banner-row">
                                             <i class="material-icons je-info-icon">visibility_off</i>
                                             <div>
-                                                When enabled, these fields are stripped from the response for any unwatched episode of a series the user has spoiler mode on for. Stripped server-side so every client benefits.
+                                                When enabled, these fields are stripped from the response for any unwatched episode of a series the user has Spoiler Guard on for. Stripped server-side so every client benefits.
                                             </div>
                                         </div>
                                     </div>
@@ -843,7 +843,7 @@
                                         <input id="spoilerOverviewPlaceholder" type="text" is="emby-input" maxlength="200"/>
                                     </div>
                                     <div class="je-setting-description" data-desc-for="spoilerOverviewPlaceholder" data-gated-by="spoilerStripOverview">
-                                        <div class="fieldDescription">Shown in place of the description so the client doesn't render an empty section header. Default: "Spoiler mode activated".</div>
+                                        <div class="fieldDescription">Shown in place of the description so the client doesn't render an empty section header. Default: "Spoiler Guard activated".</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="spoilerStripTags" is="emby-checkbox" type="checkbox"/><span>Hide tags</span></label></div>
@@ -897,9 +897,9 @@
                                         <div class="fieldDescription">"Guest stars only" leaves the regular cast visible — they appear in every episode anyway, so they don't reveal anything new. "Entire cast" is the strict mode.</div>
                                     </div>
 
-                                    <div class="checkboxContainer"><label><input id="spoilerStripReviews" is="emby-checkbox" type="checkbox"/><span>Hide reviews on spoiler-mode series</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerStripReviews" is="emby-checkbox" type="checkbox"/><span>Hide reviews on Spoiler Guard series</span></label></div>
                                     <div class="je-setting-description" data-desc-for="spoilerStripReviews">
-                                        <div class="fieldDescription">Suppresses the JE Reviews panel on series detail pages where the user has spoiler mode enabled. TMDB reviews routinely contain plot spoilers from arbitrary points in the show — recommended on.</div>
+                                        <div class="fieldDescription">Suppresses the JE Reviews panel on series detail pages where the user has Spoiler Guard enabled. TMDB reviews routinely contain plot spoilers from arbitrary points in the show — recommended on.</div>
                                     </div>
                                 </div>
                             </details>
@@ -4362,7 +4362,7 @@
                 var __sbCastMode = document.querySelector('#spoilerStripCastMode');
                 if (__sbCastMode) __sbCastMode.value = config.SpoilerStripCastMode === 'All' ? 'All' : 'GuestStars';
                 var __sbPlaceholder = document.querySelector('#spoilerOverviewPlaceholder');
-                if (__sbPlaceholder) __sbPlaceholder.value = config.SpoilerOverviewPlaceholder || 'Spoiler mode activated';
+                if (__sbPlaceholder) __sbPlaceholder.value = config.SpoilerOverviewPlaceholder || 'Spoiler Guard activated';
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -4712,9 +4712,9 @@
                 // innerHTML on Overview. The server-side filter inserts
                 // this string verbatim into BaseItemDto.Overview;
                 // defense-in-depth.
-                var __raw = (__sbPlaceholderSave.value || 'Spoiler mode activated').slice(0, 200);
+                var __raw = (__sbPlaceholderSave.value || 'Spoiler Guard activated').slice(0, 200);
                 __raw = __raw.replace(/<\/?[^>]+>/g, '').replace(/[<>"'`]/g, '');
-                config.SpoilerOverviewPlaceholder = __raw || 'Spoiler mode activated';
+                config.SpoilerOverviewPlaceholder = __raw || 'Spoiler Guard activated';
             }
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;

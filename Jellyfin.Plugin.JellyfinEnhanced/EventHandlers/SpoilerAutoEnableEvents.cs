@@ -110,7 +110,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
 
                 if (changed > 0)
                 {
-                    _logger.Info($"SpoilerAutoEnable: enabled spoiler mode for series '{seriesName}' ({seriesIdN}) on first-play of S1E1 by user {userId}");
+                    _logger.Info($"SpoilerAutoEnable: enabled Spoiler Guard for series '{seriesName}' ({seriesIdN}) on first-play of S1E1 by user {userId}");
                 }
             }
             catch (Exception ex)

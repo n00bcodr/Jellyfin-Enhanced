@@ -3,7 +3,7 @@
 
     var logPrefix = '🪼 Jellyfin Enhanced [SpoilerBlur]:';
 
-    // In-memory cache of series IDs the current user has spoiler mode enabled for.
+    // In-memory cache of series IDs the current user has Spoiler Guard enabled for.
     // Populated once on init from the server's spoilerblur.json. The image filter
     // runs on the server so cards that are already displayed will be re-fetched
     // on next navigation; this cache only drives the per-show toggle button UI.
@@ -86,7 +86,7 @@
     }
 
     /**
-     * Returns true when the current user has spoiler mode enabled for this series.
+     * Returns true when the current user has Spoiler Guard enabled for this series.
      * @param {string} seriesId
      * @returns {boolean}
      */
@@ -95,7 +95,7 @@
     }
 
     /**
-     * Enable spoiler mode for a series.
+     * Enable Spoiler Guard for a series.
      * @param {string} seriesId
      * @returns {Promise<void>}
      */
@@ -111,7 +111,7 @@
     }
 
     /**
-     * Disable spoiler mode for a series.
+     * Disable Spoiler Guard for a series.
      * @param {string} seriesId
      * @returns {Promise<void>}
      */
@@ -195,7 +195,7 @@
     }
 
     /**
-     * Returns true when the user has spoiler mode enabled for the given
+     * Returns true when the user has Spoiler Guard enabled for the given
      * TMDB id, regardless of whether it lives in PendingTmdb (not in
      * library yet) or in Series/Movies (already in library and promoted).
      * jellyfinMediaId is optional — when supplied, we also check the
@@ -212,7 +212,7 @@
     }
 
     /**
-     * Enable spoiler mode for a TMDB id (modal-driven). Server promotes
+     * Enable Spoiler Guard for a TMDB id (modal-driven). Server promotes
      * to Series/Movies if the library has a match, else records pending.
      * On success, refresh local caches so the modal reflects the new
      * state without another network round-trip.
@@ -280,7 +280,7 @@
     /**
      * Network-friendly chapter image preloader.
      *
-     * What it does: for items the user has spoiler mode enabled for,
+     * What it does: for items the user has Spoiler Guard enabled for,
      * fetch every chapter image at fillWidth=320 so the browser HTTP
      * cache is warm by the time the player's timeline-hover tooltip
      * tries to render one (eliminates the "gray box → image swap" jank
@@ -428,7 +428,7 @@
     }
 
     /**
-     * Inserts a "Spoiler Mode" toggle button into a series detail page's
+     * Inserts a "Spoiler Guard" toggle button into a series detail page's
      * action button row. Idempotent: re-running on the same page reuses the
      * existing button and just refreshes its state.
      * @param {string} itemId Series ID.
@@ -552,7 +552,7 @@
     }
 
     /**
-     * Click handler: flips spoiler mode for the series and refreshes the button.
+     * Click handler: flips Spoiler Guard for the series and refreshes the button.
      * Toasts on success/failure. We deliberately do NOT force a page reload —
      * users will see the blur next time they navigate to or refresh the show,
      * which is what Jellyfin's image cache requires anyway.
@@ -577,7 +577,7 @@
     }
 
     // In-place refresh of every Jellyfin item-image URL on the page.
-    // Triggered after a spoiler-mode toggle so the visible state flips
+    // Triggered after a Spoiler Guard toggle so the visible state flips
     // without an F5. Walks <img src>, srcset, and inline
     // style.backgroundImage; appends `_sbcb=<timestamp>` to bust the
     // browser HTTP cache. The image filter on the server re-runs against
@@ -691,7 +691,7 @@
 
     /**
      * Show a Jellyfin-native confirm dialog asking the user to confirm
-     * disabling spoiler mode. The dialog embeds a "Don't ask again for
+     * disabling Spoiler Guard. The dialog embeds a "Don't ask again for
      * 15 minutes" checkbox; if checked when the user confirms, the
      * snooze is persisted via localStorage. Returns true if the user
      * confirmed, false if they cancelled. When already snoozed, resolves
@@ -844,7 +844,7 @@
             // Also remove any reviews section currently rendered for THIS
             // detail page — works for both Series and Movie pages (movies
             // were previously gated out and stayed visible until
-            // navigation/refresh after enabling spoiler mode).
+            // navigation/refresh after enabling Spoiler Guard).
             try {
                 if (willBeEnabled && JE.pluginConfig?.SpoilerStripReviews !== false) {
                     var existingReviews = document.querySelector('#itemDetailPage:not(.hide) .tmdb-reviews-section')

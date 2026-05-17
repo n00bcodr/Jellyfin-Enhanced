@@ -19,7 +19,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Replaces image bytes with a downsample-then-upsample blurred version when:
     //   1. Admin has enabled spoiler blur server-wide.
     //   2. The image is for an episode of a series.
-    //   3. The requesting user has opted-in to spoiler mode for that series.
+    //   3. The requesting user has opted-in to Spoiler Guard for that series.
     //   4. The user has NOT marked the episode as played.
     //
     // Runs as an MVC action filter scoped to Jellyfin's image controller actions
@@ -30,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const string ImageController = "Image";
         // Trickplay tile-sheet endpoint (Videos/{id}/Trickplay/{w}/{i}.jpg).
         // Each tile is a sprite-sheet JPEG containing many small thumbnails for
-        // timeline scrubbing previews. For spoiler-mode unwatched items, these
+        // timeline scrubbing previews. For Spoiler Guard unwatched items, these
         // thumbnails reveal scenes the user explicitly opted to hide.
         private const string TrickplayController = "Trickplay";
         public const string SpoilerBlurFileName = "spoilerblur.json";
@@ -370,7 +370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var userState = _resolver.LoadUserState(context.HttpContext, userId.Value);
             if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0)
             {
-                // User hasn't enabled spoiler mode for any show, movie, or collection — pass through.
+                // User hasn't enabled Spoiler Guard for any show, movie, or collection — pass through.
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -668,7 +668,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // (30s) for chapter images so subsequent hovers within the
             // same session are instant. Trade-off: a watched-state change
             // (e.g. user advances past a chapter) re-renders within 30s
-            // instead of immediately — acceptable for spoiler-mode UX.
+            // instead of immediately — acceptable for Spoiler Guard UX.
             // Other image types keep strict no-store: posters / thumbs
             // change blur status on a per-watch event, where caching past
             // a state change would defeat the feature.
@@ -892,7 +892,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // late seasons in the burst, exceptions cache as
                 // "watched" for 30s, and the user sees later seasons
                 // unblurred until the cache TTL expires. If the user
-                // enabled spoiler mode, they want blur on uncertainty,
+                // enabled Spoiler Guard, they want blur on uncertainty,
                 // not exposure.
                 _resolver.WarnRateLimited(
                     "season-watched:" + ex.GetType().FullName,
@@ -1126,7 +1126,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // We always re-encode as JPEG (the blur service does), so set the
             // content type explicitly. Cache-Control: private, no-store keeps
             // clients from holding the blurred copy after the user marks the
-            // episode watched or disables spoiler mode for the series.
+            // episode watched or disables Spoiler Guard for the series.
             // Chapter images get a short browser-cache window via
             // ApplyNoStoreHeadersDirect so timeline-hover preview thumbs
             // don't round-trip on every cursor move.

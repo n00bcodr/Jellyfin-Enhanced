@@ -3550,13 +3550,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         // ─── Spoiler Blur ─── Per-user list of series IDs the user has opted
-        // into spoiler-mode for. The image filter (Services/SpoilerBlurImageFilter.cs)
+        // into Spoiler Guard for. The image filter (Services/SpoilerBlurImageFilter.cs)
         // reads spoilerblur.json on every image request and blurs every UNWATCHED
         // episode of any series in that list. Watched episodes pass through unblurred.
 
         // Returns a snapshot of any spoilerblur.json corruption events
         // that have been logged this process-lifetime. Used by the admin
-        // UI to surface a banner ("Your spoiler-mode preferences were
+        // UI to surface a banner ("Your Spoiler Guard preferences were
         // corrupted and reset; you may need to re-enable items").
         // Per-user — each user only sees their OWN corruption events.
         // Admins see all users (so they can advise affected users).
@@ -3816,7 +3816,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // Per-movie spoiler-blur opt-in. Movies stored separately from
         // Series in the same spoilerblur.json file (UserSpoilerBlur.Movies
-        // dict). Movie-level spoiler mode blurs the movie's own poster /
+        // dict). Movie-level Spoiler Guard blurs the movie's own poster /
         // backdrop and field-strips its metadata until the user marks the
         // movie Played.
         [HttpPost("spoiler-blur/movies/{movieId}")]
@@ -5125,7 +5125,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var items = _tagCacheService.GetCacheForUser(user, since);
 
-            // Spoiler-mode tag-strip: when the user has SpoilerBlur on
+            // Spoiler Guard tag-strip: when the user has SpoilerBlur on
             // with any tag-relevant strip toggle, walk the cache and
             // zero-out matching fields for unwatched episodes whose parent
             // series is in the user's spoiler list. Without this, the JE
@@ -5175,7 +5175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         else if (isSeries)
                         {
                             // Series-level entry: only strip when the user has
-                            // spoiler mode on for THIS series (key == series ID).
+                            // Spoiler Guard on for THIS series (key == series ID).
                             // Covers home-rail cards bound to seriesId — e.g. when
                             // "Use episode images in Next Up / Continue Watching"
                             // is OFF in Jellyfin's Display settings, the cards use
@@ -5339,7 +5339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "Maximum 200 items per request" });
             }
 
-            // Spoiler mode short-circuit: if the user has the plugin's
+            // Spoiler Guard short-circuit: if the user has the plugin's
             // master switch on, has any tag-relevant strip toggle on, and
             // has at least one series in their spoiler list, we'll need
             // to skip tag data for unwatched episodes of those series.
@@ -5390,9 +5390,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-                // Spoiler-mode tag-strip: when the item is an Episode of a
-                // series the user has spoiler mode on for, AND the user
-                // hasn't watched it yet, return an Id+Type-only stub so
+                // Spoiler Guard tag-strip: when the item is an Episode of
+                // a series the user has Spoiler Guard on for, AND the
+                // user hasn't watched it yet, return an Id+Type-only stub so
                 // the frontend tag renderers have nothing to draw. The
                 // pipeline still considers the item processed (no retry
                 // loop), it just produces zero overlays.
@@ -5502,7 +5502,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 // Series-stub: when the item is a Series the user has
-                // spoiler mode enabled for, return the strip stub. Covers
+                // Spoiler Guard enabled for, return the strip stub. Covers
                 // home-rail cards bound to seriesId — e.g. NextUp /
                 // Continue Watching with "Use episode images" turned OFF
                 // in Jellyfin's Display settings, where the cards display
@@ -5520,7 +5520,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // replace under explicit title-strip toggle to match
                         // the field-strip filter's behaviour.
                         stubName = string.IsNullOrWhiteSpace(spoilerCfg.SpoilerOverviewPlaceholder)
-                            ? "Spoiler mode activated"
+                            ? "Spoiler Guard activated"
                             : spoilerCfg.SpoilerOverviewPlaceholder;
                     }
                     results.Add(new
@@ -5611,7 +5611,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // opted-in collections via IsMovieIdInSpoilerScope.
 
                 // When the item is a Season of a series the user has
-                // spoiler mode on for, AND no episode in that season has
+                // Spoiler Guard on for, AND no episode in that season has
                 // been watched, AND it's not S0/S1, return an Id+Type
                 // stub so the JE tag overlays don't render on the blurred
                 // season poster. Mirrors the field-strip filter's Season

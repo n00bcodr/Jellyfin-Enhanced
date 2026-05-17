@@ -13,7 +13,7 @@
         const logPrefix = '🪼 Jellyfin Enhanced: Reviews:';
 
         // Suppress the reviews panel when the current Series OR Movie has
-        // spoiler mode enabled by the user AND the admin has
+        // Spoiler Guard enabled by the user AND the admin has
         // SpoilerStripReviews on. TMDB reviews routinely contain plot
         // spoilers, and user-written reviews share that risk.
         // Async because the spoiler-blur module loads its state lazily;
@@ -36,17 +36,18 @@
                 }
                 return !!(JE.spoilerBlur.isEnabledFor && JE.spoilerBlur.isEnabledFor(item?.Id || ''));
             } catch (e) {
-                // R14-H2: fail-CLOSED. The "show reviews" path is the spoiler-
-                // leaking path; if any check above throws (cold-load network
-                // blip on whenLoaded, defensive bug in isEnabledFor, etc.),
-                // suppress the panel by default rather than render unsuppressed.
-                console.warn(`${logPrefix} spoiler-mode check failed; suppressing reviews:`, e);
+                // Fail-CLOSED. The "show reviews" path is the
+                // spoiler-leaking path; if any check above throws
+                // (cold-load network blip on whenLoaded, defensive bug in
+                // isEnabledFor, etc.), suppress the panel by default
+                // rather than render unsuppressed.
+                console.warn(`${logPrefix} Spoiler Guard check failed; suppressing reviews:`, e);
                 return true;
             }
         }
 
         // When the suppression decision flips on between two visits to the
-        // same series page (e.g. user just enabled spoiler mode in this
+        // same series page (e.g. user just enabled Spoiler Guard in this
         // session), an existing reviews section may already be in the DOM.
         // Strip it on suppress.
         function removeReviewsSection(page) {
