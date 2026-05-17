@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     public sealed class SpoilerBlurImageFilter : IAsyncActionFilter, IDisposable
     {
         private const string ImageController = "Image";
-        // R27: trickplay tile-sheet endpoint (Videos/{id}/Trickplay/{w}/{i}.jpg).
+        // Trickplay tile-sheet endpoint (Videos/{id}/Trickplay/{w}/{i}.jpg).
         // Each tile is a sprite-sheet JPEG containing many small thumbnails for
         // timeline scrubbing previews. For spoiler-mode unwatched items, these
         // thumbnails reveal scenes the user explicitly opted to hide.
@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // the same C# methods with both [HttpGet] and [HttpHead(Name="HeadItemImage")];
         // Name= only affects link generation, so RouteValues["action"] for a HEAD
         // request still resolves to the GET method name. We therefore only need
-        // the GetItem* names. (L2)
+        // the GetItem* names.
         private static readonly HashSet<string> _imageActions = new(StringComparer.OrdinalIgnoreCase)
         {
             "GetItemImage",
@@ -110,22 +110,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _blurService = blurService;
             _logger = logger;
 
-            // R4-H7: when a user marks an episode (or season/series) played
-            // or unplayed, evict the per-(user, season) "any episode
-            // watched?" cache for that season so the next image fetch
-            // reflects the new state immediately. Without this, the 30-second
-            // TTL produces a stale-blur window in the wrong direction —
+            // When a user marks an episode (or season/series) played or
+            // unplayed, evict the per-(user, season) "any episode watched?"
+            // cache for that season so the next image fetch reflects the
+            // new state immediately. Without this, the 30-second TTL
+            // produces a stale-blur window in the wrong direction —
             // marking an episode UN-played returns the cached "any-watched=
-            // true" entry and renders the season poster CLEAR for up to 30s,
-            // a privacy regression.
+            // true" entry and renders the season poster CLEAR for up to
+            // 30s, a privacy regression.
             _userDataManager.UserDataSaved += OnUserDataSaved;
         }
 
         private void OnUserDataSaved(object? sender, MediaBrowser.Controller.Library.UserDataSaveEventArgs e)
         {
-            // R5-M8: dispatch off the IUserDataManager publish thread.
-            // Other UserDataSaved consumers (resume tracking, scheduled
-            // tasks, integrations) share that thread; a malicious user
+            // Dispatch off the IUserDataManager publish thread. Other
+            // UserDataSaved consumers (resume tracking, scheduled tasks,
+            // integrations) share that thread; a malicious user
             // burst-toggling Played would otherwise pile up synchronous
             // O(K) cache scans on the publish path. Task.Run drops the
             // work onto the threadpool — fire-and-forget is safe because
@@ -150,28 +150,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case Series ser:
                     seriesId = ser.Id;
                     break;
-                // R14-H1 hygiene: explicit Movie no-op. The Movie image
-                // path doesn't use _watchedCache (it reads UserData.Played
-                // directly per request), so there's nothing to invalidate
-                // here. Listed for future-proofing — if a movie-level
-                // server cache is added later, this is the hook.
+                // Explicit Movie no-op. The Movie image path doesn't use
+                // _watchedCache (it reads UserData.Played directly per
+                // request), so there's nothing to invalidate here. Listed
+                // for future-proofing — if a movie-level server cache is
+                // added later, this is the hook.
                 case MediaBrowser.Controller.Entities.Movies.Movie:
                     return;
             }
 
             if (!seasonId.HasValue && !seriesId.HasValue) return;
 
-            // R6-M5 + R7-H1: per-(user, scope) coalesce. Prior code spawned a
-            // Task.Run per UserDataSaved event; a "Mark season watched"
-            // sweep on a 24-episode season fires 24 events → 24 queued
-            // threadpool tasks all racing the same _watchedCache. R6-M5
-            // bounded that with a per-user gate, but THAT was too coarse
-            // (codex R7-H1): events for season A and season B for the
-            // same user collapsed to one dispatch, dropping season B's
-            // eviction. Now keyed by (userId, scopeId) where scopeId is
-            // seasonId for episode/season events and seriesId for series
-            // events. Same-season repeats coalesce; cross-season events
-            // each get their own dispatch.
+            // Per-(user, scope) coalesce. A "Mark season watched" sweep on
+            // a 24-episode season fires 24 events → 24 queued threadpool
+            // tasks all racing the same _watchedCache; coalescing per-user
+            // only would collapse cross-season events (seasons A and B for
+            // the same user collide and drop B's eviction). Keyed by
+            // (userId, scopeId) where scopeId is seasonId for
+            // episode/season events and seriesId for series events.
+            // Same-season repeats coalesce; cross-season events each get
+            // their own dispatch.
             var scopeId = seasonId.HasValue && seasonId.Value != Guid.Empty
                 ? seasonId.Value
                 : seriesId!.Value;
@@ -181,7 +179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // R7-M2: protect the dispatcher itself. If Task.Run throws
+            // Protect the dispatcher itself. If Task.Run throws
             // synchronously (OOM, threadpool denial-of-service), the
             // lambda's `finally` never runs — the dedup key would stay
             // in the dictionary forever and that scope's events would
@@ -192,17 +190,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     try
                     {
-                        // R6-L3: instance-field _disposed read at execution
-                        // time so post-Dispose lambdas no-op fast.
+                        // Instance-field _disposed read at execution time
+                        // so post-Dispose lambdas no-op fast.
                         if (_disposed) return;
                         if (seasonId.HasValue && seasonId.Value != Guid.Empty)
                         {
                             var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
-                            // R5-M4: surface eviction-key-mismatch as a debug
+                            // Surface eviction-key-mismatch as a debug
                             // breadcrumb. If a future refactor desyncs the
-                            // build-key from the read-key, evictions silently
-                            // become no-ops; counting the no-removal cases
-                            // makes that observable.
+                            // build-key from the read-key, evictions
+                            // silently become no-ops; counting the
+                            // no-removal cases makes that observable.
                             if (!_watchedCache.TryRemove(key, out _))
                             {
                                 // Hit may simply not exist (cold cache); not an
@@ -217,10 +215,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             // "{userN}:{seasonN}" so we'd have to iterate. Cheap
                             // because the cache is small (≤512 entries) and this
                             // event is rare.
-                            // R5-M5/L3: ToArray for symmetry with the eviction
-                            // site at the bottom of this file. ConcurrentDictionary.Keys
-                            // is a snapshot in current .NET but ToArray makes
-                            // intent explicit and survives framework changes.
+                            // ToArray for symmetry with the eviction site
+                            // at the bottom of this file.
+                            // ConcurrentDictionary.Keys is a snapshot in
+                            // current .NET but ToArray makes intent
+                            // explicit and survives framework changes.
                             var prefix = userId.ToString("N") + ":";
                             foreach (var k in _watchedCache.Keys.ToArray())
                             {
@@ -253,14 +252,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // R6-M5 + R7-H1: per-(user, scope) dedup gate for the
-        // OnUserDataSaved Task.Run dispatch. Scope is seasonId for
-        // episode/season events, seriesId for series events. Static so a
-        // hot-reload preserves the dedup state across plugin instances
-        // (matches _watchedCache, _warnedShapeAt pattern in this file).
+        // Per-(user, scope) dedup gate for the OnUserDataSaved Task.Run
+        // dispatch. Scope is seasonId for episode/season events, seriesId
+        // for series events. Static so a hot-reload preserves the dedup
+        // state across plugin instances (matches _watchedCache,
+        // _warnedShapeAt pattern in this file).
         private static readonly ConcurrentDictionary<(Guid, Guid), byte> _pendingInvalidations = new();
 
-        // R5-H3 / R5-M9: this filter is a Singleton subscribed to
+        // This filter is a Singleton subscribed to
         // IUserDataManager.UserDataSaved. Without an unsubscribe path,
         // hot-reload / plugin disable+re-enable leaks the event handler
         // delegate (memory leak + double-fire on next event). DI containers
@@ -283,9 +282,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            // L5: sync fast-path. The filter runs on every MVC action; for non-
-            // image routes we want to add zero overhead by returning the
-            // existing Task directly without entering an async state machine.
+            // Sync fast-path. The filter runs on every MVC action; for
+            // non-image routes we want to add zero overhead by returning
+            // the existing Task directly without entering an async state
+            // machine.
             if (!IsImageAction(context))
             {
                 return next();
@@ -311,7 +311,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 await next().ConfigureAwait(false);
                 return;
             }
-            // R27: trickplay routes don't carry an `imageType` argument —
+            // Trickplay routes don't carry an `imageType` argument —
             // they're sprite-sheet tiles for a video's scrubbing previews.
             // Treat them as always-blur (the entire sheet contains scene
             // previews that the user opted to hide).
@@ -342,14 +342,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
             }
-            // R17-codex-H: do NOT short-circuit Backdrop/Art on
-            // SpoilerBlurArtwork=false here — we still need the
-            // eligibility check below so spoiler-list artwork can be
-            // served with `no-store`. Otherwise Jellyfin's default
-            // long-lived public cache headers would let a browser/proxy
-            // hold the unblurred bytes; if the admin later toggles
-            // SpoilerBlurArtwork on, the client never re-fetches and
-            // never sees the blurred response.
+            // Do NOT short-circuit Backdrop/Art on SpoilerBlurArtwork=false
+            // here — we still need the eligibility check below so
+            // spoiler-list artwork can be served with `no-store`. Otherwise
+            // Jellyfin's default long-lived public cache headers would let
+            // a browser/proxy hold the unblurred bytes; if the admin later
+            // toggles SpoilerBlurArtwork on, the client never re-fetches
+            // and never sees the blurred response.
             //
             // Decision is deferred to the post-eligibility branch:
             //   inAlways                          → blur (existing path)
@@ -391,12 +390,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // R23-collections-redesign: Collections are now a SHORTCUT for
-            // "blur all movies in this collection" — the collection's own
-            // art and Overview pass through clear (it's the entry point
-            // the user just clicked, same model as Series). The blur is
-            // applied per-movie based on each movie's individual watched
-            // state.
+            // Collections are a SHORTCUT for "blur all movies in this
+            // collection" — the collection's own art and Overview pass
+            // through clear (it's the entry point the user just clicked,
+            // same model as Series). The blur is applied per-movie based
+            // on each movie's individual watched state.
             if (item is MediaBrowser.Controller.Entities.Movies.BoxSet)
             {
                 // Collection's own art: pass through unconditionally.
@@ -490,15 +488,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var userData = _userDataManager.GetUserData(jUser, episode);
                     if (userData?.Played == true)
                     {
-                        // M3: pass-through, but force `no-store` so a watched episode's
-                        // image isn't cached permanently in the user's browser. If the
-                        // user later marks the episode unwatched again, the next fetch
-                        // must re-evaluate through this filter.
+                        // Pass-through, but force `no-store` so a watched
+                        // episode's image isn't cached permanently in the
+                        // user's browser. If the user later marks the
+                        // episode unwatched again, the next fetch must
+                        // re-evaluate through this filter.
                         //
-                        // R2-H2: register on Response.OnStarting BEFORE awaiting
-                        // next(). For streaming FileStreamResult paths the response
-                        // headers can be flushed inside next()'s execution, so a
-                        // post-next() header write would be a no-op.
+                        // Register on Response.OnStarting BEFORE awaiting
+                        // next(). For streaming FileStreamResult paths the
+                        // response headers can be flushed inside next()'s
+                        // execution, so a post-next() header write would
+                        // be a no-op.
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
                         return;
@@ -530,11 +530,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // R17-codex-H: artwork tier with the toggle OFF — pass
-            // through the original bytes BUT with no-store so the
-            // browser/proxy can't keep them past a future toggle-on.
-            // We still want spoiler-list artwork to re-evaluate through
-            // this filter on every request.
+            // Artwork tier with the toggle OFF — pass through the original
+            // bytes BUT with no-store so the browser/proxy can't keep them
+            // past a future toggle-on. We still want spoiler-list artwork
+            // to re-evaluate through this filter on every request.
             if (inArtwork && pluginConfig.SpoilerBlurArtwork != true)
             {
                 RegisterNoStoreOnStarting(context.HttpContext);
@@ -594,9 +593,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // M3 / R2-H1: when an item that SHOULD be considered for blur (user
-        // has the series enabled) takes a pass-through code path — watched,
-        // blur failed, item not yet resolvable, etc. — strip 1-year public
+        // When an item that SHOULD be considered for blur (user has the
+        // series enabled) takes a pass-through code path — watched, blur
+        // failed, item not yet resolvable, etc. — strip 1-year public
         // caching. Uses the SAME header set as the blurred-response path
         // (`private, no-store, max-age=0, must-revalidate` + drop ETag /
         // Last-Modified) because `private, no-cache` still permits 304
@@ -606,29 +605,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // For paths where the response has already begun streaming (the
         // watched-pass-through case after `next()`), we register on
         // `Response.OnStarting` so the override runs JUST BEFORE headers
-        // flush. R2-H2.
+        // flush.
         private void ApplyNoStoreToResponse(Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
             try
             {
                 if (httpContext.Response.HasStarted)
                 {
-                    // Response already flushed — too late to mutate headers.
-                    // R3-silent-failure-H1: surface so operators can diagnose
-                    // when M3 cache-scrub silently fails for streaming results.
+                    // Response already flushed — too late to mutate
+                    // headers. Surface so operators can diagnose when the
+                    // cache-scrub silently fails for streaming results.
                     // Rate-limited so a misbehaving response shape doesn't
                     // spam logs on every image fetch.
                     _resolver.WarnRateLimited(
                         "no-store-already-started",
-                        "Spoiler blur: ApplyNoStoreToResponse called after Response.HasStarted=true; cache headers NOT applied. M3 cache-scrub may not have taken effect for this code path. (For watched-pass-through, use RegisterNoStoreOnStarting BEFORE awaiting next() instead.)");
+                        "Spoiler blur: ApplyNoStoreToResponse called after Response.HasStarted=true; cache headers NOT applied. Cache-scrub may not have taken effect for this code path. (For watched-pass-through, use RegisterNoStoreOnStarting BEFORE awaiting next() instead.)");
                     return;
                 }
                 ApplyNoStoreHeadersDirect(httpContext);
             }
             catch (Exception ex)
             {
-                // R2-H6: don't silently swallow; surface so operators can
-                // diagnose when M3 isn't actually being applied.
+                // Don't silently swallow; surface so operators can
+                // diagnose when the cache headers aren't actually
+                // being applied.
                 _logger.Warning($"ApplyNoStoreToResponse failed: {ex.Message}");
             }
         }
@@ -684,10 +684,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // most-recently-active Jellyfin session whose RemoteEndPoint IP
         // matches the request's RemoteIpAddress. Returns null when no
         // session matches OR when multiple distinct users were recently
-        // active from the same IP (R2-H5: fail closed in shared-IP setups
-        // rather than apply the wrong user's spoiler list).
+        // active from the same IP (fail closed in shared-IP setups rather
+        // than apply the wrong user's spoiler list).
         //
-        // R2-H4: IP comparison via IPAddress.Equals after IPv4-mapped-IPv6
+        // IP comparison via IPAddress.Equals after IPv4-mapped-IPv6
         // normalization, NOT string match — `[::1]:54321` vs `::1` and
         // `::ffff:192.0.2.1` vs `192.0.2.1` would otherwise miss.
         //
@@ -701,7 +701,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 return _imageActions.Contains(action);
             }
-            // R27: trickplay tiles. Same image-mutation pipeline; the tile is
+            // Trickplay tiles. Same image-mutation pipeline; the tile is
             // just a JPEG of stitched-together thumbnails.
             if (string.Equals(controller, TrickplayController, StringComparison.OrdinalIgnoreCase))
             {
@@ -755,11 +755,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return int.TryParse(raw.ToString(), out imageIndex);
         }
 
-        // Query params Jellyfin's image controller uses to shape the output
-        // (resize / re-encode). M1: two clients requesting the same episode
-        // at different sizes must NOT share the same cached blurred bytes —
-        // a TV asking for 720p must not receive a 300px-encoded thumb cached
-        // for the web client.
+        // Query params Jellyfin's image controller uses to shape the
+        // output (resize / re-encode). Two clients requesting the same
+        // episode at different sizes must NOT share the same cached
+        // blurred bytes — a TV asking for 720p must not receive a
+        // 300px-encoded thumb cached for the web client.
         private static readonly string[] _sizeShapingParams =
         {
             "maxWidth", "maxHeight", "fillWidth", "fillHeight",
@@ -775,10 +775,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (context.ActionArguments.TryGetValue("imageIndex", out var idx) && idx != null)
                 index = idx.ToString();
 
-            // M1 / R2-H3: include the size-shaping query params so different
-            // output sizes get distinct cache entries. Use the FULL param
-            // name in the key — using just the first letter caused
-            // maxWidth=300 and maxHeight=300 to collide on `m300;`.
+            // Include the size-shaping query params so different output
+            // sizes get distinct cache entries. Use the FULL param name in
+            // the key — using just the first letter caused maxWidth=300
+            // and maxHeight=300 to collide on `m300;`.
             var sizeKey = new System.Text.StringBuilder();
             foreach (var p in _sizeShapingParams)
             {
@@ -809,12 +809,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
 
-        // R23-collections-redesign: a movie is "in spoiler scope" when
-        // either (a) the user has it directly opted in via the per-movie
-        // toggle, OR (b) the movie is a member of a collection (BoxSet)
-        // the user has opted in. BoxSets are NOT direct parents of their
-        // member movies in Jellyfin's data model — they reference movies
-        // via LinkedChildren. So we iterate opted-in collections, check
+        // A movie is "in spoiler scope" when either (a) the user has it
+        // directly opted in via the per-movie toggle, OR (b) the movie is
+        // a member of a collection (BoxSet) the user has opted in.
+        // BoxSets are NOT direct parents of their member movies in
+        // Jellyfin's data model — they reference movies via
+        // LinkedChildren. So we iterate opted-in collections, check
         // whether each contains the movie ID.
         private bool IsMovieInSpoilerScope(UserSpoilerBlur userState, MediaBrowser.Controller.Entities.Movies.Movie movie)
         {
@@ -884,18 +884,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // R29: fail CLOSED (assume not watched → BLUR). The user opted
+                // Fail CLOSED (assume not watched → BLUR). The user opted
                 // into spoiler protection for this series; defaulting to
                 // pass-through on a transient DB-contention exception
-                // produces the exact bug pattern reported on One Piece —
-                // 24 simultaneous season-image requests overwhelm GetEpisodes
-                // for the late seasons in the burst, exceptions cache as
-                // "watched" for 30s, and the user sees S18-23 unblurred
-                // until the cache TTL expires. The PRIOR comment said
-                // "spoiler-mode is opt-in for entertainment, not security"
-                // and used that to justify failing OPEN, but the user's
-                // expectation is the opposite: if they enabled spoiler
-                // mode, they want blur on uncertainty, not exposure.
+                // can produce a real bug pattern: 24 simultaneous
+                // season-image requests overwhelm GetEpisodes for the
+                // late seasons in the burst, exceptions cache as
+                // "watched" for 30s, and the user sees later seasons
+                // unblurred until the cache TTL expires. If the user
+                // enabled spoiler mode, they want blur on uncertainty,
+                // not exposure.
                 _resolver.WarnRateLimited(
                     "season-watched:" + ex.GetType().FullName,
                     $"Spoiler blur: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — failing CLOSED (blur). {ex.Message}");
@@ -903,11 +901,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 determinationFailed = true;
             }
 
-            // R29: don't cache exception results. The previous code cached
-            // the fail-open `anyWatched=true` for 30s, making one transient
-            // DB hiccup persist across the full TTL even after the contention
-            // subsided. Now: only cache successful determinations; let the
-            // next call retry, which under typical conditions succeeds.
+            // Don't cache exception results. Caching a fail-open
+            // `anyWatched=true` for 30s would make one transient DB
+            // hiccup persist across the full TTL even after the
+            // contention subsided. Only cache successful determinations;
+            // let the next call retry, which under typical conditions
+            // succeeds.
             if (!determinationFailed)
             {
                 _watchedCache[key] = new WatchedCacheEntry
@@ -918,7 +917,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Periodic eviction so the dictionary doesn't grow unbounded
-            // across long server uptimes. R4-L2: snapshot via ToArray so a
+            // across long server uptimes. Snapshot via ToArray so a
             // concurrent insert during the scan can't trip
             // InvalidOperationException — `ConcurrentDictionary` enumerator
             // only guarantees stable iteration when snapshotted.
@@ -1113,11 +1112,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blurred = _blurService.Blur(originalBytes, sigma, cacheKey);
             if (blurred == null)
             {
-                // H3: blur failed but we already consumed the original
-                // FileStreamResult's stream during ExtractBytesAsync. Replace
-                // the result with the original bytes we captured so MVC writes
-                // a complete body, not an empty one. Force `no-store` so the
-                // browser doesn't permanently cache this transient failure.
+                // Blur failed but we already consumed the original
+                // FileStreamResult's stream during ExtractBytesAsync.
+                // Replace the result with the original bytes we captured
+                // so MVC writes a complete body, not an empty one. Force
+                // `no-store` so the browser doesn't permanently cache
+                // this transient failure.
                 executed.Result = new FileContentResult(originalBytes, originalContentType ?? "image/jpeg");
                 ApplyNoStoreToResponse(executed.HttpContext);
                 return;

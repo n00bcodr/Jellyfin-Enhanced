@@ -9,11 +9,11 @@ using MediaBrowser.Controller.Session;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     // Shared user-resolution + spoiler-state-load helper used by both
-    // SpoilerBlurImageFilter and SpoilerFieldStripFilter. Extracted (R4-H3 +
-    // R4-M7) so the IPv6/IPv4-mapped-IPv6/raw-IPv6-with-port handling and
-    // the shared-IP ambiguity-window fail-closed logic stays in ONE place
-    // — preventing future regressions like the field-strip filter inheriting
-    // an old string-compare implementation.
+    // SpoilerBlurImageFilter and SpoilerFieldStripFilter. Extracted so the
+    // IPv6/IPv4-mapped-IPv6/raw-IPv6-with-port handling and the shared-IP
+    // ambiguity-window fail-closed logic stays in ONE place — preventing
+    // future regressions like the field-strip filter inheriting an old
+    // string-compare implementation.
     //
     // Also shares a single HttpContext.Items cache key so a request that
     // triggers BOTH filters (e.g. an /Items batch that ALSO loads images)
@@ -76,19 +76,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // R6-M1: GetUserConfiguration is the LENIENT path — it
-                // already swallows IOException + JsonException + parse
-                // failures internally and returns `new T()` (it logs at
-                // Error level via the config manager's own _logger, so the
-                // corruption fact is observable, just not under our
-                // namespace). The earlier R5-M2 split into IOException /
-                // JsonException / catch-all was dead code; only this
-                // outer catch-all fires, for exceptions that escape the
+                // GetUserConfiguration is the LENIENT path — it already
+                // swallows IOException + JsonException + parse failures
+                // internally and returns `new T()` (it logs at Error level
+                // via the config manager's own _logger, so the corruption
+                // fact is observable, just not under our namespace). This
+                // outer catch-all only fires for exceptions that escape the
                 // lenient path (e.g. ResolveUserFile throwing on a bad
-                // userId). Rate-limited so a flood of bad requests
-                // doesn't spam logs. Strict-read with corruption-503 is
-                // available on the dedicated /spoiler-blur/series
-                // endpoint and via LoadSpoilerStateForTagStrip.
+                // userId). Rate-limited so a flood of bad requests doesn't
+                // spam logs. Strict-read with corruption-503 is available
+                // on the dedicated /spoiler-blur/series endpoint and via
+                // LoadSpoilerStateForTagStrip.
                 WarnRateLimited(
                     "userstate-load:" + ex.GetType().FullName,
                     $"Spoiler resolver: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
@@ -104,8 +102,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (remoteIpRaw == null) return null;
             var remoteIp = NormalizeIp(remoteIpRaw);
 
-            // R5-M3: per-session try/catch instead of one outer try around
-            // the whole iteration. Previously a single misbehaving SessionInfo
+            // Per-session try/catch instead of one outer try around the
+            // whole iteration. Previously a single misbehaving SessionInfo
             // (e.g. a corrupt RemoteEndPoint string) aborted iteration of
             // ALL sessions; one bad row hid every healthy match. Now a
             // per-session failure logs a rate-limited warn and continues.
@@ -114,7 +112,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var recentlyActiveUsers = new HashSet<Guid>();
             var now = DateTime.UtcNow;
 
-            // R6-H3: snapshot the live IEnumerable INSIDE the outer try.
+            // Snapshot the live IEnumerable INSIDE the outer try.
             // ISessionManager.Sessions can return a live view; foreach's
             // MoveNext can throw InvalidOperationException ("Collection was
             // modified") that would escape both inner per-session catches
@@ -233,13 +231,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger.Warning(message);
         }
 
-        // R25-health: track per-user corruption events so the admin can
-        // surface a banner in the JE management UI when any user's
-        // spoilerblur.json was rolled into the .corrupt-backup file.
-        // The file-on-disk has been rewritten with an empty state by
-        // UserConfigurationManager (fail-open per SECURITY.md) so the
-        // user's image/strip pipeline silently no-ops until they
-        // re-enable items. Surfacing this lets the user know to retry.
+        // Track per-user corruption events so the admin can surface a
+        // banner in the JE management UI when any user's spoilerblur.json
+        // was rolled into the .corrupt-backup file. The file-on-disk has
+        // been rewritten with an empty state by UserConfigurationManager
+        // (fail-open per SECURITY.md) so the user's image/strip pipeline
+        // silently no-ops until they re-enable items. Surfacing this lets
+        // the user know to retry.
         private static readonly ConcurrentDictionary<string, CorruptionEvent> _corruptionLog = new();
 
         public class CorruptionEvent

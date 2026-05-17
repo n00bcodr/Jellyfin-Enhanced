@@ -57,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("UserLibrary", "GetItemLegacy"),          true },
                 { ("UserLibrary", "GetLatestMedia"),         true },
                 { ("UserLibrary", "GetLatestMediaLegacy"),   true },
-                // R4-H4: more UserLibrary endpoints that emit episode DTOs.
+                // More UserLibrary endpoints that emit episode DTOs.
                 { ("UserLibrary", "GetIntros"),              true },
                 { ("UserLibrary", "GetIntrosLegacy"),        true },
                 { ("UserLibrary", "GetLocalTrailers"),       true },
@@ -71,18 +71,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("Suggestions", "GetSuggestions"),         true },
                 { ("Suggestions", "GetSuggestionsLegacy"),   true },
                 { ("Search",      "GetSearchHints"),         true },
-                // R4-H4: "More Like This" rail emits BaseItemDto[] including
+                // "More Like This" rail emits BaseItemDto[] including
                 // episode-shaped items — strip those too.
                 { ("Library",     "GetSimilarItems"),        true },
                 { ("Library",     "GetSimilarShows"),        true },
                 { ("Library",     "GetSimilarMovies"),       true },
                 { ("Library",     "GetSimilarTrailers"),     true },
                 { ("Library",     "GetSimilarAlbums"),       true },
-                // R11-H1: /Items/{id}/Images returns IEnumerable<ImageInfo>
-                // whose Path is the raw server filesystem path (commonly
+                // /Items/{id}/Images returns IEnumerable<ImageInfo> whose
+                // Path is the raw server filesystem path (commonly
                 // contains the episode title in user-organized libraries).
                 { ("Image",       "GetItemImageInfos"),      true },
-                // R11-H2: /Items/{id}/PlaybackInfo returns
+                // /Items/{id}/PlaybackInfo returns
                 // PlaybackInfoResponse{MediaSources: MediaSourceInfo[]}.
                 // MediaSourceInfo carries the same title-bearing fields as
                 // BaseItemDto.MediaSources (Path, Name, MediaStreams,
@@ -91,9 +91,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // variants register here.
                 { ("MediaInfo",   "GetPlaybackInfo"),        true },
                 { ("MediaInfo",   "GetPostedPlaybackInfo"),  true },
-                // R21 native-client research: surfaces commonly hit by
-                // Streamyfin / Findroid / Swiftfin / Jellyfin Android TV
-                // that previously bypassed the strip.
+                // Surfaces commonly hit by native clients (Streamyfin /
+                // Findroid / Swiftfin / Jellyfin Android TV) that
+                // previously bypassed the strip.
                 //
                 // Movies.GetMovieRecommendations powers the "Recommended for
                 // You" rail on home screens — wraps BaseItemDto[] inside
@@ -132,13 +132,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.SpoilerBlurEnabled != true) return next();
-            // R22-H2: do NOT short-circuit on AnyStripToggleOn. The
-            // pipeline's cache-bust pass (MutateImageTagsForCacheBust)
-            // must run on EVERY DTO whenever spoiler blur is enabled, so
-            // native-client image caches re-fetch when the user flips
-            // watched-state or toggles spoiler-mode itself. ApplyStripping
-            // is internally per-toggle gated, so when no strip toggle is
-            // on it's a no-op past the cache-bust mutation.
+            // Do NOT short-circuit on AnyStripToggleOn. The pipeline's
+            // cache-bust pass (MutateImageTagsForCacheBust) must run on
+            // EVERY DTO whenever spoiler blur is enabled, so native-client
+            // image caches re-fetch when the user flips watched-state or
+            // toggles spoiler-mode itself. ApplyStripping is internally
+            // per-toggle gated, so when no strip toggle is on it's a no-op
+            // past the cache-bust mutation.
 
             return RunFieldStripAsync(context, next, cfg);
         }
@@ -165,9 +165,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var userState = _resolver.LoadUserState(context.HttpContext, userId);
-            // R15-codex-H: same family as R14-C1. A movies-only spoiler
-            // user (no series in their list) would short-circuit the
-            // entire field-strip pipeline here, leaving movie /Items,
+            // A movies-only spoiler user (no series in their list) would
+            // short-circuit the entire field-strip pipeline here if we
+            // only checked Series, leaving movie /Items,
             // /Items/{id}/PlaybackInfo, and /Items/{id}/Images unstripped
             // despite the Movie branches in StripItem +
             // RouteParentIsSpoilerEpisode. Mirror the GetTagCache /
@@ -179,10 +179,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var executed = await next().ConfigureAwait(false);
-            // R4-L5: surface (rate-limited) when the wrapped action threw —
-            // strip silently skipped and operator can correlate "Overview
-            // leaked but my toggle is on" reports with the underlying
-            // controller exception.
+            // Surface (rate-limited) when the wrapped action threw — strip
+            // silently skipped and operator can correlate "Overview leaked
+            // but my toggle is on" reports with the underlying controller
+            // exception.
             if (executed.Exception != null)
             {
                 _resolver.WarnRateLimited(
@@ -198,9 +198,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // R5-L1: rate-limit so a persistent strip bug on a 100-item
-                // batch doesn't produce 100 log lines. Pattern matches the
-                // rest of the filter (resolver.WarnRateLimited keyed by
+                // Rate-limit so a persistent strip bug on a 100-item batch
+                // doesn't produce 100 log lines. Pattern matches the rest
+                // of the filter (resolver.WarnRateLimited keyed by
                 // exception type).
                 _resolver.WarnRateLimited(
                     "fieldstrip-apply:" + ex.GetType().FullName,
@@ -218,11 +218,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Guid userId,
             ActionExecutingContext context)
         {
-            // R4-M4 + R5-H2: ObjectResult covers most MVC return shapes,
-            // but JsonResult / ContentResult / custom IActionResult are
-            // siblings (not subclasses). Generalize: log any non-null,
-            // non-ObjectResult shape with the type name as the rate-
-            // limit key so a future Jellyfin upgrade is observable.
+            // ObjectResult covers most MVC return shapes, but JsonResult /
+            // ContentResult / custom IActionResult are siblings (not
+            // subclasses). Generalize: log any non-null, non-ObjectResult
+            // shape with the type name as the rate-limit key so a future
+            // Jellyfin upgrade is observable.
             if (result == null) return;
             if (result is not ObjectResult objectResult)
             {
@@ -245,13 +245,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     break;
                 case IEnumerable<BaseItemDto> seq:
-                    // R23-H1: many controllers (e.g. UserLibrary.GetLatestMedia,
-                    // Items.GetItems via .Select projections) return a lazy
-                    // LINQ Select iterator that materializes a NEW BaseItemDto
-                    // on every enumeration. If we just iterate-and-mutate,
-                    // MVC re-iterates at serialization time and gets a fresh
-                    // unstripped DTO — our mutations are lost. Materialize
-                    // and write back so MVC serializes our stripped copies.
+                    // Many controllers (e.g. UserLibrary.GetLatestMedia,
+                    // Items.GetItems via .Select projections) return a
+                    // lazy LINQ Select iterator that materializes a NEW
+                    // BaseItemDto on every enumeration. If we just
+                    // iterate-and-mutate, MVC re-iterates at serialization
+                    // time and gets a fresh unstripped DTO — our mutations
+                    // are lost. Materialize and write back so MVC
+                    // serializes our stripped copies.
                     var list = seq is List<BaseItemDto> alreadyList
                         ? alreadyList
                         : seq.ToList();
@@ -264,15 +265,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case SearchHintResult shr:
                     StripSearchHints(shr, userState, cfg, userId);
                     break;
-                // R11-H1: ImageInfo[] from /Items/{id}/Images. Path is
-                // raw filesystem. Look up the parent itemId from the
-                // route to determine if its series is in the spoiler list.
+                // ImageInfo[] from /Items/{id}/Images. Path is raw
+                // filesystem. Look up the parent itemId from the route to
+                // determine if its series is in the spoiler list.
                 case IEnumerable<MediaBrowser.Model.Dto.ImageInfo> imgs:
                     StripImageInfos(imgs, userState, cfg, userId, context);
                     break;
-                // R21: Movies.GetMovieRecommendations returns a list of
-                // RecommendationDto wrappers, each holding a BaseItemDto[].
-                // Walk both layers.
+                // Movies.GetMovieRecommendations returns a list of
+                // RecommendationDto wrappers, each holding a
+                // BaseItemDto[]. Walk both layers.
                 case IEnumerable<MediaBrowser.Model.Dto.RecommendationDto> recs:
                     foreach (var rec in recs)
                     {
@@ -280,23 +281,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         foreach (var item in rec.Items) StripItem(item, userState, cfg, userId);
                     }
                     break;
-                // R11-H2: PlaybackInfoResponse contains MediaSources[]
-                // with the same title-bearing fields as BaseItemDto's
-                // MediaSources.
+                // PlaybackInfoResponse contains MediaSources[] with the
+                // same title-bearing fields as BaseItemDto's MediaSources.
                 case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi:
                     StripPlaybackInfo(pbi, userState, cfg, userId, context);
                     break;
                 default:
-                    // R25-diagnostics: route was in the allowlist (so we
-                    // *believed* it returned a spoilable DTO shape) but
-                    // the runtime shape didn't match any case arm. Two
-                    // common causes: (a) Jellyfin upgrade introduced a
-                    // new wrapper shape, (b) controller's return
-                    // changed signature (e.g. ActionResult<X> → Foo).
-                    // Rate-limited so a hot route with the new shape
-                    // doesn't spam logs — one warn per (Controller,
-                    // Action, ValueType) per process lifetime via the
-                    // resolver's rate-limit map.
+                    // Route was in the allowlist (so we *believed* it
+                    // returned a spoilable DTO shape) but the runtime
+                    // shape didn't match any case arm. Two common causes:
+                    // (a) Jellyfin upgrade introduced a new wrapper shape,
+                    // (b) controller's return changed signature
+                    // (e.g. ActionResult<X> → Foo). Rate-limited so a hot
+                    // route with the new shape doesn't spam logs — one
+                    // warn per (Controller, Action, ValueType) per process
+                    // lifetime via the resolver's rate-limit map.
                     var rv = context.ActionDescriptor.RouteValues;
                     var ctrl = rv != null && rv.TryGetValue("controller", out var c) ? c : "?";
                     var act = rv != null && rv.TryGetValue("action", out var a) ? a : "?";
@@ -307,7 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // R11-H1: extractor for /Items/{id}/Images. ImageInfo doesn't carry
+        // Extractor for /Items/{id}/Images. ImageInfo doesn't carry
         // SeriesId, so we look up the parent item via the route's `itemId`
         // and check its series-list membership.
         private void StripImageInfos(
@@ -327,7 +326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // R11-H2: extractor for /Items/{id}/PlaybackInfo. Walks
+        // Extractor for /Items/{id}/PlaybackInfo. Walks
         // PlaybackInfoResponse.MediaSources and applies the same
         // MediaSourceInfo-level strip as ApplyStripping does for
         // BaseItemDto.MediaSources.
@@ -370,9 +369,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // R11-H1/H2 helper: look up the parent item from the route's
-        // itemId value and confirm it's an Episode (or Season) of a
-        // spoiler-list series the user hasn't watched.
+        // Look up the parent item from the route's itemId value and
+        // confirm it's an Episode (or Season) of a spoiler-list series
+        // the user hasn't watched.
         private bool RouteParentIsSpoilerEpisode(
             ActionExecutingContext context,
             UserSpoilerBlur userState,
@@ -394,9 +393,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 Guid? seriesId = null;
                 bool watchedCheck = true;
-                // R14-H1: Movies path. Movie's spoiler-list membership is
-                // keyed by movie ID (not by SeriesId), and watched-state
-                // is the movie's own UserData.Played. Mirrors StripItem.
+                // Movies path. Movie's spoiler-list membership is keyed
+                // by movie ID (not by SeriesId), and watched-state is the
+                // movie's own UserData.Played. Mirrors StripItem.
                 if (parent is MediaBrowser.Controller.Entities.Movies.Movie movieParent)
                 {
                     if (!IsMovieIdInSpoilerScope(userState, movieParent.Id)) return false;
@@ -414,11 +413,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    // R12-codex-H: extras (Trailer / Video / Intro / etc.)
-                    // attached to a spoiler-list series. Mirrors the
-                    // R10-codex-H isExtra path in StripItem. Use the
-                    // BaseItem's SeriesId (`SeriesPresentationUniqueKey`-
-                    // related — fall back to ParentId lookup if absent).
+                    // Extras (Trailer / Video / Intro / etc.) attached to
+                    // a spoiler-list series. Mirrors the isExtra path in
+                    // StripItem. Use the BaseItem's SeriesId
+                    // (`SeriesPresentationUniqueKey`-related — fall back
+                    // to ParentId lookup if absent).
                     Guid extraSeriesId = Guid.Empty;
                     var hasSeriesProp = parent.GetType().GetProperty("SeriesId");
                     if (hasSeriesProp != null
@@ -483,19 +482,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (item.Id == Guid.Empty) return;
                 if (!userState.Series.ContainsKey(item.Id.ToString("N"))) return;
-                // R20-cache-bust: mutate ImageTags so native client image
-                // caches refetch on state change. Series has no per-watched
-                // semantics so just hash the in-list state.
+                // Mutate ImageTags so native client image caches refetch
+                // on state change. Series has no per-watched semantics so
+                // just hash the in-list state.
                 MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
                 ApplyStripping(item, cfg, userId);
                 return;
             }
 
-            // R23-collections-redesign: BoxSet (Collection) DTOs pass through
-            // unstripped. The collection itself is the entry point the user
-            // just clicked (like Series); blurring its art/Overview would
-            // spoil the user's own navigation. The collection toggle's effect
-            // is on the MOVIES inside (handled in the Movie arm via
+            // BoxSet (Collection) DTOs pass through unstripped. The
+            // collection itself is the entry point the user just clicked
+            // (like Series); blurring its art/Overview would spoil the
+            // user's own navigation. The collection toggle's effect is on
+            // the MOVIES inside (handled in the Movie arm via
             // IsMovieInSpoilerScope / IsMovieIdInSpoilerScope).
 
             // Movie path: a movie is in spoiler scope when either it's
@@ -516,18 +515,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     moviePlayed = ResolvePlayedServerSide(userId, item.Id);
                 }
-                // R20-cache-bust: mutate ImageTags BEFORE the watched-skip.
-                // We want the URL to flip on watched-state change so an
-                // already-cached blurred image gets re-fetched once the user
-                // marks the movie played.
+                // Mutate ImageTags BEFORE the watched-skip. We want the
+                // URL to flip on watched-state change so an already-cached
+                // blurred image gets re-fetched once the user marks the
+                // movie played.
                 MutateImageTagsForCacheBust(item, cfg, moviePlayed, moviePlayPos);
                 if (moviePlayed) return;
                 ApplyStripping(item, cfg, userId);
                 return;
             }
 
-            // R10-codex: trailer / intro / special-feature DTOs from
-            // GetIntros / GetLocalTrailers / GetSpecialFeatures routes
+            // Trailer / intro / special-feature DTOs from GetIntros /
+            // GetLocalTrailers / GetSpecialFeatures routes
             // arrive with Type=Trailer/Video and would prior have early-
             // returned. If their SeriesId is in the user's spoiler list,
             // their Name/Overview/Path/MediaStreams can leak the parent
@@ -557,8 +556,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var seriesId = item.SeriesId;
             if (seriesId == null || seriesId.Value == Guid.Empty)
             {
-                // R5-M1: Episode DTOs SHOULD always carry SeriesId.
-                // Silent return on null hides a Jellyfin DTO-shape regression.
+                // Episode DTOs SHOULD always carry SeriesId. Silent return
+                // on null hides a Jellyfin DTO-shape regression.
                 if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode)
                 {
                     _resolver.WarnRateLimited(
@@ -571,20 +570,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season)
             {
-                // R4-H5: Season DTOs leak Overview right next to a blurred
-                // Season poster. Strip them too — but mirror the image
-                // filter's "S1 always shows" + "any-played => pass-through"
-                // logic so the user has an entry point.
+                // Season DTOs leak Overview right next to a blurred Season
+                // poster. Strip them too — but mirror the image filter's
+                // "S1 always shows" + "any-played => pass-through" logic
+                // so the user has an entry point.
                 var sNum = item.IndexNumber.GetValueOrDefault(int.MaxValue);
                 if (sNum <= 1) return; // Season 0 (Specials) and Season 1 always pass.
 
                 // UserData.UnplayedItemCount is the simplest "any watched?"
                 // signal for a Season DTO. > 0 AND total > unplayed = some
-                // watched. R5-M6: TvShows.GetSeasons does NOT include
-                // ItemCounts in its default fields, so UserData on a Season
-                // DTO often lacks UnplayedItemCount/RecursiveItemCount —
-                // fail-closed would over-strip every S2+. Fall back to the
-                // server-side helper that mirrors the image filter's logic
+                // watched. TvShows.GetSeasons does NOT include ItemCounts
+                // in its default fields, so UserData on a Season DTO often
+                // lacks UnplayedItemCount/RecursiveItemCount — fail-closed
+                // would over-strip every S2+. Fall back to the server-side
+                // helper that mirrors the image filter's logic
                 // (HasWatchedAnyEpisodeInSeason via library iteration).
                 bool seasonAnyWatched = false;
                 if (item.UserData != null
@@ -599,8 +598,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     seasonAnyWatched = true;
                 }
-                // R20-cache-bust: mutate ImageTags BEFORE the watched-skip
-                // so the URL flips when the user starts the season.
+                // Mutate ImageTags BEFORE the watched-skip so the URL
+                // flips when the user starts the season.
                 MutateImageTagsForCacheBust(item, cfg, seasonAnyWatched, playbackPositionTicks: 0);
                 if (seasonAnyWatched) return;
                 ApplyStripping(item, cfg, userId);
@@ -608,11 +607,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Episode path.
-            // R4-C1: prefer UserData.Played from the DTO; if absent (the
-            // client passed enableUserData=false), fall back to
-            // IUserDataManager server-side rather than fail-safe to
-            // "treat as played, skip strip" — that bypass let lite
-            // clients receive full episode metadata silently.
+            // Prefer UserData.Played from the DTO; if absent (the client
+            // passed enableUserData=false), fall back to IUserDataManager
+            // server-side rather than fail-safe to "treat as played, skip
+            // strip" — that bypass let lite clients receive full episode
+            // metadata silently.
             bool played;
             if (item.UserData != null)
             {
@@ -622,8 +621,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 played = ResolvePlayedServerSide(userId, item.Id);
             }
-            // R20-cache-bust: same logic — mutate before watched-skip so
-            // the URL flips on watched-state change. Episode has no
+            // Same logic — mutate before watched-skip so the URL flips on
+            // watched-state change. Episode has no
             // playback-position-affects-image (chapter rail belongs to the
             // movie path), so pass 0.
             MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
@@ -632,14 +631,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ApplyStripping(item, cfg, userId);
         }
 
-        // R4-C1: server-side fallback when the response shape omits UserData.
-        // Checked exception types so a transient lookup failure doesn't kill
-        // the whole strip.
-        // R23-collections-redesign: a movie ID is "in spoiler scope" when
-        // either (a) it's directly in the user's Movies dict, OR (b) it's
-        // a member of a BoxSet (collection) the user has opted in. BoxSets
-        // are NOT direct parents in Jellyfin's data model — they reference
-        // movies via LinkedChildren.
+        // A movie ID is "in spoiler scope" when either (a) it's directly
+        // in the user's Movies dict, OR (b) it's a member of a BoxSet
+        // (collection) the user has opted in. BoxSets are NOT direct
+        // parents in Jellyfin's data model — they reference movies via
+        // LinkedChildren.
         private bool IsMovieIdInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
         {
             if (movieId == Guid.Empty) return false;
@@ -673,11 +669,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var jUser = _userManager.GetUserById(userId);
-                // R5-H4: comment-vs-code mismatch fixed — both branches
-                // return false, but for DIFFERENT reasons. When user/item
-                // are gone, "treat as unwatched → strip applies" is the
-                // safe default (we'd rather strip a non-existent ref than
-                // leak metadata).
+                // Both branches return false, but for DIFFERENT reasons.
+                // When user/item are gone, "treat as unwatched → strip
+                // applies" is the safe default (we'd rather strip a
+                // non-existent ref than leak metadata).
                 if (jUser == null) return false;
                 var item = _libraryManager.GetItemById(itemId);
                 if (item == null) return false;
@@ -697,13 +692,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // R17-codex-M2: server-side fallback for the watched-through tick
-        // used by progressive movie chapter strip. Returns long.MaxValue
-        // when the movie is fully Played (so all chapters show); the
-        // raw PlaybackPositionTicks otherwise; or null if neither could
-        // be resolved (caller treats null as fail-CLOSED → strip all).
-        // Used when the DTO's UserData is missing (enableUserData=false
-        // on lite clients).
+        // Server-side fallback for the watched-through tick used by
+        // progressive movie chapter strip. Returns long.MaxValue when the
+        // movie is fully Played (so all chapters show); the raw
+        // PlaybackPositionTicks otherwise; or null if neither could be
+        // resolved (caller treats null as fail-CLOSED → strip all). Used
+        // when the DTO's UserData is missing (enableUserData=false on
+        // lite clients).
         private long? ResolveWatchedThroughTicksServerSide(Guid userId, Guid itemId)
         {
             try
@@ -727,9 +722,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // R5-M6: server-side "has the user watched ANY episode in this
-        // season?" probe. Used as a fallback when the Season DTO carries
-        // no ItemCounts (TvShows.GetSeasons strips them by default unless
+        // Server-side "has the user watched ANY episode in this season?"
+        // probe. Used as a fallback when the Season DTO carries no
+        // ItemCounts (TvShows.GetSeasons strips them by default unless
         // ?fields=ItemCounts is requested). Fail-closed on throw → return
         // false so strip applies (privacy > UX glitch).
         private bool HasWatchedAnyEpisodeInSeasonServerSide(Guid userId, Guid seasonId)
@@ -761,19 +756,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly System.Text.RegularExpressions.Regex _htmlTagRe
             = new System.Text.RegularExpressions.Regex("<[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        // R4-M1 + R5-L8: server-side sanitizer for the admin-supplied placeholder.
-        // The configPage JS already strips tags + brackets on save, but
-        // an admin who edited the XML config on disk would bypass that.
-        // Cap length too — admin can't make a 1MB placeholder amplify
-        // every response. Defense-in-depth: also strip HTML-entity
-        // sequences (`&#60;` / `&lt;` etc.) so a future consumer that
-        // switches to innerHTML doesn't materialize them as `<`.
+        // Server-side sanitizer for the admin-supplied placeholder. The
+        // configPage JS already strips tags + brackets on save, but an
+        // admin who edited the XML config on disk would bypass that. Cap
+        // length too — admin can't make a 1MB placeholder amplify every
+        // response. Defense-in-depth: also strip HTML-entity sequences
+        // (`&#60;` / `&lt;` etc.) so a future consumer that switches to
+        // innerHTML doesn't materialize them as `<`.
         //
-        // R6-L4 scope: this sanitization is HTML-context defense only.
-        // It does NOT defend a JS-eval consumer (hex-escape sequences
-        // survive intact and are harmless in HTML context but would
-        // execute in a JS-eval context). No JE consumer evals Overview
-        // today; if that ever changes, the sanitizer must be re-evaluated.
+        // Scope: this sanitization is HTML-context defense only. It does
+        // NOT defend a JS-eval consumer (hex-escape sequences survive
+        // intact and are harmless in HTML context but would execute in a
+        // JS-eval context). No JE consumer evals Overview today; if that
+        // ever changes, the sanitizer must be re-evaluated.
         private static string SanitizePlaceholder(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return "Spoiler mode activated";
@@ -796,7 +791,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         //
         // We strip episode hints whose series is in the user's spoiler
         // list and that the user hasn't watched. Server-side, so all
-        // clients benefit. R4-H2.
+        // clients benefit.
         private void StripSearchHints(SearchHintResult result, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
             if (result?.SearchHints == null) return;
@@ -811,7 +806,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Look up the actual item. For Episodes we need SeriesId
                 // for spoiler-list membership; for Movies the hint.Id is
-                // the movie ID directly. R5-H1: lookup-throw fails-CLOSED.
+                // the movie ID directly. Lookup-throw fails-CLOSED.
                 MediaBrowser.Controller.Entities.BaseItem? actualItem;
                 try { actualItem = _libraryManager.GetItemById(hint.Id); }
                 catch (Exception ex)
@@ -842,35 +837,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    // R16-M1: Movie hint path. Spoiler-list keyed by movie
-                    // ID directly; watched check via the same server-side
-                    // helper.
-                    // R17: movie hint Name NOT rewritten (MatchedTerm still
-                    // nulled below to suppress autocomplete substring leak
-                    // of any non-title-bearing match).
+                    // Movie hint path. Spoiler-list keyed by movie ID
+                    // directly; watched check via the same server-side
+                    // helper. Movie hint Name is NOT rewritten (MatchedTerm
+                    // is still nulled below to suppress autocomplete
+                    // substring leak of any non-title-bearing match).
                     if (actualItem is not MediaBrowser.Controller.Entities.Movies.Movie) continue;
                     if (!IsMovieIdInSpoilerScope(userState, hint.Id)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
                 }
 
-                // R10-M3: MatchedTerm echoes the substring of the
-                // ORIGINAL Name that the search query matched —
-                // bypassing the Name rewrite. e.g. user searches
-                // "Optimus" → MatchedTerm = "Optimus" from the raw
-                // pre-strip title. Null it so autocomplete doesn't
-                // surface the substring. Applies to both Episode and
-                // Movie hints.
+                // MatchedTerm echoes the substring of the ORIGINAL Name
+                // that the search query matched — bypassing the Name
+                // rewrite. e.g. user searches "Optimus" → MatchedTerm =
+                // "Optimus" from the raw pre-strip title. Null it so
+                // autocomplete doesn't surface the substring. Applies to
+                // both Episode and Movie hints.
                 hint.MatchedTerm = null;
             }
         }
 
-        // R20-cache-bust: mutate the DTO's `ImageTags` so the URL the
-        // client constructs differs whenever the user's spoiler-state for
-        // this item changes. Native image caches (Glide, Coil,
-        // SDWebImage) cache strictly by URL and routinely ignore
-        // Cache-Control: no-store. By tying the tag to a state-hash, a
-        // watched-state flip immediately invalidates the cached blurred
-        // image without the user having to clear app cache.
+        // Mutate the DTO's `ImageTags` so the URL the client constructs
+        // differs whenever the user's spoiler-state for this item changes.
+        // Native image caches (Glide, Coil, SDWebImage) cache strictly by
+        // URL and routinely ignore Cache-Control: no-store. By tying the
+        // tag to a state-hash, a watched-state flip immediately
+        // invalidates the cached blurred image without the user having to
+        // clear app cache.
         //
         // Called from EVERY StripItem branch (not just ApplyStripping)
         // because we want the cache-bust even when no field-strip toggles
@@ -917,10 +910,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // toggle; toggles default ON for Overview / Tags / Chapters /
         // Taglines (the four highest-risk-leak-vs-lowest-UX-cost fields)
         // and OFF for everything else.
-        // R17-codex-M2: instance (was static) so it can call the
-        // server-side fallback for PlaybackPositionTicks when
-        // item.UserData is null (enableUserData=false response shape).
-        // The userId arg is used only by that fallback path.
+        // Instance (was static) so it can call the server-side fallback
+        // for PlaybackPositionTicks when item.UserData is null
+        // (enableUserData=false response shape). The userId arg is used
+        // only by that fallback path.
         private void ApplyStripping(BaseItemDto item, PluginConfiguration cfg, Guid userId)
         {
             // Overview (episode synopsis) — single biggest spoiler vector.
@@ -930,10 +923,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // to fall back to the series description, which can also leak
             // ("the season everyone dies").
             //
-            // R4-M1 defense-in-depth: sanitize the placeholder server-side
+            // Defense-in-depth: sanitize the placeholder server-side
             // even though the configPage save handler also strips tags.
-            // Defends against a config XML that was edited directly on disk
-            // bypassing the JS save path.
+            // Defends against a config XML that was edited directly on
+            // disk bypassing the JS save path.
             if (cfg.SpoilerStripOverview && !string.IsNullOrEmpty(item.Overview))
             {
                 item.Overview = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
@@ -953,7 +946,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // so the player's seek bar still shows the chapter divider; the
             // user can navigate via timestamp without the spoiler text.
             //
-            // R17 progressive-strip for Movies: only strip chapters whose
+            // Progressive-strip for Movies: only strip chapters whose
             // StartPositionTicks is AFTER the user's current playback
             // position. Already-watched chapters retain their names so a
             // half-finished movie shows scene names + thumbnails up to the
@@ -981,7 +974,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     else
                     {
-                        // R17-codex-M2: UserData omitted (lite client with
+                        // UserData omitted (lite client with
                         // enableUserData=false). Server-side fallback so a
                         // half-watched movie still shows pre-resume-point
                         // chapter names instead of stripping all of them.
@@ -994,11 +987,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (ch == null) continue;
                     chapterNumber++;
-                    // R17-codex-M1: strict-less-than. At the exact resume
-                    // boundary, the chapter that STARTS at that tick has
-                    // not been watched yet — its name is still a future
-                    // spoiler. Use `<` so the current chapter is hidden
-                    // until playback advances past its start.
+                    // Strict-less-than. At the exact resume boundary, the
+                    // chapter that STARTS at that tick has not been
+                    // watched yet — its name is still a future spoiler.
+                    // Use `<` so the current chapter is hidden until
+                    // playback advances past its start.
                     if (watchedThroughTicks.HasValue
                         && ch.StartPositionTicks < watchedThroughTicks.Value)
                     {
@@ -1068,11 +1061,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    // GuestStars-only mode (default). R4-M5: pre-scan for
-                    // any GuestStar entry before allocating — avoids list
+                    // GuestStars-only mode (default). Pre-scan for any
+                    // GuestStar entry before allocating — avoids list
                     // allocation on every cast-bearing item when no
-                    // GuestStars are present (typical for cartoon series
-                    // like Bluey).
+                    // GuestStars are present (typical for cartoon series).
                     bool hasGuest = false;
                     foreach (var p in item.People)
                     {
@@ -1118,42 +1110,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     item.SortName = null;
                     item.OriginalTitle = null;
                 }
-                // R17: Movie titles intentionally NOT rewritten. Per user
-                // request: the movie title is OK to surface (it's already
-                // in URLs / library nav anyway), only the synopsis /
-                // chapter / cast / artwork content needs spoiler treatment
-                // for movies.
+                // Movie titles intentionally NOT rewritten — the movie
+                // title is OK to surface (it's already in URLs / library
+                // nav anyway), only the synopsis / chapter / cast /
+                // artwork content needs spoiler treatment for movies.
             }
 
-            // R9-H1 + R10-batch: when title replacement OR overview
-            // strip is on, aggressively sanitize ALL title-bearing
-            // fields. The R7→R10 review loop kept finding new leak
-            // surfaces on the same DTO (MediaSources[].Path → tag-cache
-            // StreamData → /Items endpoint MediaStreams → nested
-            // MediaSources MediaStreams → MediaAttachments → RemoteTrailers
-            // → People[].Role → ChapterInfo.ImagePath → EpisodeTitle / ...).
-            // Per security review's paradigm-shift recommendation, treat
-            // this as deny-by-default: aggressively null every field
-            // that COULD carry the episode title. Future BaseItemDto
-            // fields added by Jellyfin must be assumed-leaky until
-            // proven otherwise. (R10-H1..H5 + R10-M1..M3)
+            // When title replacement OR overview strip is on, aggressively
+            // sanitize ALL title-bearing fields. The BaseItemDto has many
+            // nested surfaces that can leak the episode title in practice
+            // (MediaSources[].Path → tag-cache StreamData → /Items
+            // endpoint MediaStreams → nested MediaSources MediaStreams →
+            // MediaAttachments → RemoteTrailers → People[].Role →
+            // ChapterInfo.ImagePath → EpisodeTitle / ...). Treat this as
+            // deny-by-default: aggressively null every field that COULD
+            // carry the episode title. Future BaseItemDto fields added by
+            // Jellyfin must be assumed-leaky until proven otherwise.
             if (cfg.SpoilerReplaceTitle || cfg.SpoilerStripOverview)
             {
-                // R10-M1/M2: top-level title-bearing string fields.
+                // Top-level title-bearing string fields.
                 if (!string.IsNullOrEmpty(item.Path)) item.Path = null;
                 item.EpisodeTitle = null;
                 item.ForcedSortName = null;
                 item.CustomRating = null;
 
-                // R10-H3: external link arrays whose Url slug or Name
-                // commonly contains the episode title.
+                // External link arrays whose Url slug or Name commonly
+                // contains the episode title.
                 item.RemoteTrailers = null;
                 item.ExternalUrls = null;
 
-                // R9-H1 + R10-H1 + R10-H2: top-level + nested
-                // MediaStreams + MediaAttachments. ffprobe Title /
-                // Comment / attachment FileName all routinely carry
-                // the episode title on user-muxed mkvs.
+                // Top-level + nested MediaStreams + MediaAttachments.
+                // ffprobe Title / Comment / attachment FileName all
+                // routinely carry the episode title on user-muxed mkvs.
                 if (item.MediaStreams != null)
                 {
                     foreach (var s in item.MediaStreams)
@@ -1161,11 +1149,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (s == null) continue;
                         s.Title = null;
                         s.Comment = null;
-                        // R11-codex-H: external subtitle / audio stream
-                        // filenames mirror the episode title
-                        // ("S05E14 - The Death of X.en.srt"). Path is the
-                        // raw filesystem path; DeliveryUrl is the public
-                        // download URL — both leak.
+                        // External subtitle / audio stream filenames
+                        // mirror the episode title ("S05E14 - The Death
+                        // of X.en.srt"). Path is the raw filesystem path;
+                        // DeliveryUrl is the public download URL — both
+                        // leak.
                         s.Path = null;
                         s.DeliveryUrl = null;
                         // DisplayTitle is a read-only getter on the
@@ -1180,9 +1168,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (ms == null) continue;
                         ms.Path = null;
                         ms.Name = null;
-                        // R10-H1: MediaSources nests its OWN MediaStreams
-                        // array (separate from BaseItemDto.MediaStreams).
-                        // Strip it too.
+                        // MediaSources nests its OWN MediaStreams array
+                        // (separate from BaseItemDto.MediaStreams). Strip
+                        // it too.
                         if (ms.MediaStreams != null)
                         {
                             foreach (var s in ms.MediaStreams)
@@ -1190,16 +1178,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 if (s == null) continue;
                                 s.Title = null;
                                 s.Comment = null;
-                                // R11-codex-H: external file paths /
-                                // delivery URLs leak just like the
-                                // top-level streams.
+                                // External file paths / delivery URLs
+                                // leak just like the top-level streams.
                                 s.Path = null;
                                 s.DeliveryUrl = null;
                             }
                         }
-                        // R10-H2: mkv attachments (chapters_*.xml,
-                        // subtitle_*.srt) frequently embed the episode
-                        // title in FileName / Comment.
+                        // mkv attachments (chapters_*.xml, subtitle_*.srt)
+                        // frequently embed the episode title in FileName /
+                        // Comment.
                         if (ms.MediaAttachments != null)
                         {
                             foreach (var att in ms.MediaAttachments)
@@ -1212,13 +1199,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                // R10-H4: People[].Role (the character name) is an
-                // episode-level spoiler regardless of cast strip mode.
-                // R5 cast strip toggles drop the array entirely or filter
-                // GuestStars; in BOTH cases this loop is a no-op (kept
-                // people are removed elsewhere) or strips Role on the
-                // remaining People to plug "recurring villain in role
-                // 'Resurrected Optimus'" leaks.
+                // People[].Role (the character name) is an episode-level
+                // spoiler regardless of cast strip mode. The cast strip
+                // toggles drop the array entirely or filter GuestStars; in
+                // BOTH cases this loop is a no-op (kept people are
+                // removed elsewhere) or strips Role on the remaining
+                // People to plug "recurring villain in role 'Resurrected
+                // Optimus'" leaks.
                 if (item.People != null)
                 {
                     foreach (var p in item.People)
@@ -1228,11 +1215,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                // R10-H5 + R17: ChapterInfo.ImagePath leaks server
-                // filesystem path. Strip whenever title-strip is on,
-                // BUT respect the same progressive-strip carve-out for
-                // movies — already-watched chapter thumbnails stay
-                // visible (the user already saw those scenes).
+                // ChapterInfo.ImagePath leaks server filesystem path.
+                // Strip whenever title-strip is on, BUT respect the same
+                // progressive-strip carve-out for movies — already-watched
+                // chapter thumbnails stay visible (the user already saw
+                // those scenes).
                 if (item.Chapters != null)
                 {
                     long? watchedThroughTicksForImg = null;
@@ -1246,14 +1233,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         else
                         {
-                            // R17-codex-M2: server-side fallback.
+                            // Server-side fallback.
                             watchedThroughTicksForImg = ResolveWatchedThroughTicksServerSide(userId, item.Id);
                         }
                     }
                     foreach (var ch in item.Chapters)
                     {
                         if (ch == null) continue;
-                        // R17-codex-M1: strict-less-than (boundary).
+                        // Strict-less-than (boundary).
                         if (watchedThroughTicksForImg.HasValue
                             && ch.StartPositionTicks < watchedThroughTicksForImg.Value)
                         {

@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     //   - Native, ~130 ms on 1280x720; pure-managed alternatives were 2 s+.
     //   - No banding artefacts at any sigma (ImageSharp's GaussianBlur
     //     produced visible vertical-stripe artefacts at sigma >= 25 on
-    //     cartoon-style sources — see SPOILER_BLUR_FINDINGS.md).
+    //     cartoon-style sources).
     //
     // Cache results by (originalEtag, sigma) keyed by the caller. The cache
     // is bounded by entry count and total bytes; overflow evicts oldest.
@@ -233,7 +233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!string.IsNullOrEmpty(cacheKey)
                 && _cache.TryGetValue(cacheKey, out var cached))
             {
-                // L3: Interlocked.Exchange for atomic 64-bit write — torn
+                // Interlocked.Exchange for atomic 64-bit write — torn
                 // reads on 32-bit ARM hosts could yield unstable LRU sort
                 // order during eviction.
                 Interlocked.Exchange(ref cached.LastAccessTicks, DateTime.UtcNow.Ticks);
@@ -299,10 +299,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // so we don't get a black halo from the kernel reading
                     // transparent pixels. The SKImageFilter is owned by the
                     // SKPaint via SkiaSharp's internal ref-counting — wrapping
-                    // it in `using var` (codex L1) and assigning to
-                    // ImageFilter caused the filter to be released early in
-                    // some draw paths and silently produce unblurred output
-                    // (verified empirically on jellyfin-dev 2026-05-06).
+                    // it in `using var` and assigning to ImageFilter caused
+                    // the filter to be released early in some draw paths and
+                    // silently produce unblurred output.
                     ImageFilter = SKImageFilter.CreateBlur(sigma, sigma, SKShaderTileMode.Clamp),
                     IsAntialias = true,
                 };
@@ -346,10 +345,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void EvictIfOverCap()
         {
-            // L4: serialize eviction so two threads observing the cap exceeded
-            // don't both snapshot and over-evict. The blur-and-store path holds
-            // this lock only for the eviction window, which is rare (cap-only)
-            // and short — not on the hot path.
+            // Serialize eviction so two threads observing the cap
+            // exceeded don't both snapshot and over-evict. The
+            // blur-and-store path holds this lock only for the eviction
+            // window, which is rare (cap-only) and short — not on the
+            // hot path.
             if (_cache.Count <= MaxCacheEntries
                 && Interlocked.Read(ref _cacheBytes) <= MaxCacheBytes)
             {

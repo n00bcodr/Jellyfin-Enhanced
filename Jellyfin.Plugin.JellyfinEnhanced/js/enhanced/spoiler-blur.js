@@ -478,11 +478,11 @@
             existing.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             existing.type = 'button';
             container.appendChild(existing);
-            // R22-H3: read itemId/kind live from data-attrs, not closure.
-            // Jellyfin reuses the #itemDetailPage element across SPA
-            // navigations, so an existing button can be re-used for a
-            // different item; closure-captured values would fire toggles
-            // against the previous item.
+            // Read itemId/kind live from data-attrs, not closure. Jellyfin
+            // reuses the #itemDetailPage element across SPA navigations, so
+            // an existing button can be re-used for a different item;
+            // closure-captured values would fire toggles against the
+            // previous item.
             existing.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -509,8 +509,7 @@
         // DOM mutation — the body MutationObserver retriggers
         // handleItemDetails on every fired mutation, which re-enters
         // this function; an unconditional render would produce an
-        // unbounded loop. (See series-page network spam reproduced via
-        // Playwright on 2026-05-06.)
+        // unbounded loop.
         var stateChanged = existing.getAttribute('data-je-spoiler-state') !== newState;
         var identityChanged = prevId !== itemId || prevKind !== kind;
         if (stateChanged || identityChanged) {
@@ -560,10 +559,10 @@
      * @param {HTMLButtonElement} button
      * @param {string} seriesId
      */
-    // R24: full page reload to refresh DTO-derived text (Overview,
-    // episode names, ratings). The image-URL refresh handles the visual
-    // layer in-place, but title/overview/ratings come from a DTO the
-    // page rendered ONCE on initial load — they don't reactively update
+    // Full page reload to refresh DTO-derived text (Overview, episode
+    // names, ratings). The image-URL refresh handles the visual layer
+    // in-place, but title/overview/ratings come from a DTO the page
+    // rendered ONCE on initial load — they don't reactively update
     // when the server-side strip changes between requests. Coalesced +
     // debounced so successive watched-marks (mark a season's worth of
     // episodes one after another) only trigger one reload.
@@ -577,7 +576,7 @@
         }, 600);
     }
 
-    // R24: in-place refresh of every Jellyfin item-image URL on the page.
+    // In-place refresh of every Jellyfin item-image URL on the page.
     // Triggered after a spoiler-mode toggle so the visible state flips
     // without an F5. Walks <img src>, srcset, and inline
     // style.backgroundImage; appends `_sbcb=<timestamp>` to bust the
@@ -842,9 +841,9 @@
             } catch (e) {
                 console.warn(logPrefix, 'invalidateServerCache failed:', e);
             }
-            // R14-M1: also remove any reviews section currently rendered
-            // for THIS detail page — works for both Series and Movie pages
-            // (movies were previously gated out and stayed visible until
+            // Also remove any reviews section currently rendered for THIS
+            // detail page — works for both Series and Movie pages (movies
+            // were previously gated out and stayed visible until
             // navigation/refresh after enabling spoiler mode).
             try {
                 if (willBeEnabled && JE.pluginConfig?.SpoilerStripReviews !== false) {
@@ -857,10 +856,10 @@
             } catch (e) {
                 console.warn(logPrefix, 'reviews section cleanup failed:', e);
             }
-            // R24: refresh all <img> + background-image URLs immediately
-            // for snappy visual feedback, then schedule a full page
-            // reload so DOM text (Overview, titles, ratings) also picks
-            // up the new server-side strip state.
+            // Refresh all <img> + background-image URLs immediately for
+            // snappy visual feedback, then schedule a full page reload so
+            // DOM text (Overview, titles, ratings) also picks up the new
+            // server-side strip state.
             try {
                 refreshSpoilerableImages();
             } catch (e) {
@@ -896,11 +895,11 @@
         var IMAGE_PATH_RE = /\/Items\/[a-f0-9-]+\/Images\//i;
         var HAS_KEY_RE = /[?&](api_key|ApiKey)=/i;
 
-        // Capture the Jellyfin origin once at install time. Compared against
-        // every candidate URL — H1: never append api_key to a non-Jellyfin
-        // origin even if the path happens to match /Items/.../Images/.
-        // Tolerates Jellyfin reverse-proxy mounts (BaseUrl) by letting any
-        // path on the same origin through.
+        // Capture the Jellyfin origin once at install time. Compared
+        // against every candidate URL — never append api_key to a
+        // non-Jellyfin origin even if the path happens to match
+        // /Items/.../Images/. Tolerates Jellyfin reverse-proxy mounts
+        // (BaseUrl) by letting any path on the same origin through.
         var jfOrigin = (function () {
             try {
                 if (typeof ApiClient !== 'undefined' && typeof ApiClient.serverAddress === 'function') {
@@ -908,8 +907,8 @@
                     if (addr) return new URL(addr, location.href).origin;
                 }
             } catch (e) {
-                // R2-L1: surface — same-origin fallback might be wrong on a
-                // BaseUrl-mounted reverse-proxy install.
+                // Same-origin fallback might be wrong on a BaseUrl-mounted
+                // reverse-proxy install — log so operators can diagnose.
                 console.warn(logPrefix, 'ApiClient.serverAddress() failed; falling back to location.origin:', e);
             }
             return location.origin;
@@ -921,8 +920,9 @@
                     return ApiClient.accessToken() || '';
                 }
             } catch (e) {
-                // R2-L1: surface — without a token we won't append api_key
-                // and the web client will see unblurred images.
+                // Without a token we won't append api_key and the web
+                // client will see unblurred images — log so operators can
+                // diagnose.
                 console.warn(logPrefix, 'ApiClient.accessToken() failed:', e);
             }
             return '';
@@ -931,7 +931,7 @@
         // Returns true when the URL is for the same Jellyfin origin AND
         // matches the /Items/.../Images/ path shape AND doesn't already
         // carry api_key. Anchored on origin to prevent token leakage to
-        // attacker-controlled hosts (security findings H1 + H3).
+        // attacker-controlled hosts.
         function shouldPatchUrl(url) {
             if (typeof url !== 'string' || !url) return false;
             if (!IMAGE_PATH_RE.test(url)) return false;
@@ -999,10 +999,11 @@
                     origSetProp.call(el.style, 'background-image', rewritten);
                 }
             } catch (e) {
-                // H5: surface failures so we don't silently fall back to
-                // unblurred (which would mean every user sees every spoiler
-                // with no console signal). Rate-limited per element so a
-                // persistently-broken element doesn't spam the console.
+                // Surface failures so we don't silently fall back to
+                // unblurred (which would mean every user sees every
+                // spoiler with no console signal). Rate-limited per
+                // element so a persistently-broken element doesn't spam
+                // the console.
                 if (!el.__jeSpoilerWarned) {
                     el.__jeSpoilerWarned = true;
                     console.warn(logPrefix, 'rewriteStyleBgIfNeeded failed:', e, el);
@@ -1041,11 +1042,12 @@
             subtree: true,
         });
 
-        // Also rewrite static `src` / `style="background-image: ..."` attribute
-        // setters (some code uses setAttribute/style.cssText, which bypasses
-        // the property setters above). M4: early-out when the value can't
-        // possibly be a Jellyfin image URL — runs on every setAttribute call
-        // across the whole app, so the pre-filter matters.
+        // Also rewrite static `src` / `style="background-image: ..."`
+        // attribute setters (some code uses setAttribute/style.cssText,
+        // which bypasses the property setters above). Early-out when the
+        // value can't possibly be a Jellyfin image URL — runs on every
+        // setAttribute call across the whole app, so the pre-filter
+        // matters.
         var origSetAttr = Element.prototype.setAttribute;
         Element.prototype.setAttribute = function (name, value) {
             if (typeof value === 'string') {
@@ -1064,8 +1066,8 @@
     /**
      * Module init. Loads server state, then exposes toggle APIs.
      */
-    // R24: intercept watched-state mutations (mark played / unplayed) so
-    // we can auto-refresh thumbnails afterwards. Without this, the
+    // Intercept watched-state mutations (mark played / unplayed) so we
+    // can auto-refresh thumbnails afterwards. Without this, the
     // currently-rendered <img> URLs still have the OLD cache-bust prefix
     // and the user keeps seeing the stale (blurred / clear) state until
     // page refresh.

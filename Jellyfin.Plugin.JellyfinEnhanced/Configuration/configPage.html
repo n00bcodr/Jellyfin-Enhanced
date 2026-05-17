@@ -4707,10 +4707,11 @@
             config.SpoilerBlurMode = (__sbModeSave && __sbModeSave.value === 'hide') ? 'hide' : 'blur';
             var __sbPlaceholderSave = document.querySelector('#spoilerOverviewPlaceholder');
             if (__sbPlaceholderSave) {
-                // R4-M1: strip HTML tags so a stored-XSS gadget via the
-                // placeholder can't reach a JE consumer that uses innerHTML
-                // on Overview. The server-side filter inserts this string
-                // verbatim into BaseItemDto.Overview; defense-in-depth.
+                // Strip HTML tags so a stored-XSS gadget via the
+                // placeholder can't reach a JE consumer that uses
+                // innerHTML on Overview. The server-side filter inserts
+                // this string verbatim into BaseItemDto.Overview;
+                // defense-in-depth.
                 var __raw = (__sbPlaceholderSave.value || 'Spoiler mode activated').slice(0, 200);
                 __raw = __raw.replace(/<\/?[^>]+>/g, '').replace(/[<>"'`]/g, '');
                 config.SpoilerOverviewPlaceholder = __raw || 'Spoiler mode activated';

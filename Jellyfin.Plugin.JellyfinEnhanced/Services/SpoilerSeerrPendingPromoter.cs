@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // for them, which would otherwise be a UX bug (entry shows up in their
     // management UI for a title they can't access).
     //
-    // R28: ActivePendingKeys is a process-wide HashSet of "tv:{tmdb}" /
+    // ActivePendingKeys is a process-wide HashSet of "tv:{tmdb}" /
     // "movie:{tmdb}" keys that any user is known to have pending. Populated
     // on StartAsync via a one-time scan of per-user spoilerblur.json files,
     // and kept in sync by the controller endpoints + this promoter as items
