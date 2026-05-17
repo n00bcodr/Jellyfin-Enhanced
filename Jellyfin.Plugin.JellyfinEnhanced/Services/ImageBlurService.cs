@@ -383,12 +383,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        public void Clear()
-        {
-            _cache.Clear();
-            Interlocked.Exchange(ref _cacheBytes, 0);
-        }
-
         private sealed class CacheEntry
         {
             public required byte[] Bytes { get; init; }

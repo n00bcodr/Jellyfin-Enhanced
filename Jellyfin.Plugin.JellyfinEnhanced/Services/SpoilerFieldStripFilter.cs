@@ -110,46 +110,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
-        private readonly Logger _logger;
 
         public SpoilerFieldStripFilter(
             SpoilerUserResolver resolver,
             ILibraryManager libraryManager,
             IUserManager userManager,
-            IUserDataManager userDataManager,
-            Logger logger)
+            IUserDataManager userDataManager)
         {
             _resolver = resolver;
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
-            _logger = logger;
         }
 
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            // Diagnostic: uncomment to log every controller/action this
-            // filter sees on item-listing routes. Used to discover the
-            // real route-value mappings (e.g. UserLibrary.GetItemLegacy
-            // for /Users/{uid}/Items/{id}). Kept commented for future
-            // route-discovery work — the route table above was built
-            // from this output.
-            //
-            // var rv = context.ActionDescriptor.RouteValues;
-            // string ctrl = "(none)", act = "(none)";
-            // if (rv != null)
-            // {
-            //     if (rv.TryGetValue("controller", out var c) && c != null) ctrl = c;
-            //     if (rv.TryGetValue("action", out var a) && a != null) act = a;
-            // }
-            // var path = context.HttpContext.Request.Path.Value ?? "";
-            // if (!path.Contains("/Images/") &&
-            //     (path.Contains("/Items") || path.Contains("/Shows")
-            //      || path.Contains("/Suggestions") || path.Contains("/Search")))
-            // {
-            //     _logger.Info($"[fieldstrip-diag] path={path} controller={ctrl} action={act}");
-            // }
-
             // Sync fast-path bail order — three short-circuit checks before
             // we touch anything expensive. Returns the original Task<>
             // unchanged so non-matching routes pay zero overhead.

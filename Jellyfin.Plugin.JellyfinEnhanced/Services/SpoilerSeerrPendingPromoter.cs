@@ -48,20 +48,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _activePendingKeys.TryAdd(pendingKey, 0);
         }
 
-        // Caller-side note: we accept a potentially-overzealous "unregister"
-        // here. A user may DELETE while another user still has the same TMDB
-        // id pending — removing from the gate would silently disable
-        // promotion for that other user when the item lands. So this method
-        // intentionally is a no-op except inside StartAsync's repopulation
-        // path. Stale gate entries (TMDB ids that have NO user with them
-        // pending anymore) are harmless — worst case = one fan-out scan per
-        // stale key. Far cheaper than tracking per-key ref counts.
-        public static bool IsAnyPending(string pendingKey)
-        {
-            if (string.IsNullOrEmpty(pendingKey)) return false;
-            return _activePendingKeys.ContainsKey(pendingKey);
-        }
-
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly UserConfigurationManager _configManager;

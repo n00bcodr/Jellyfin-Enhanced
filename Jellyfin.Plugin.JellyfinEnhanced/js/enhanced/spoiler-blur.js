@@ -1061,10 +1061,6 @@
         };
     }
 
-    // H2: when the URL patcher fails to install, the user gets unblurred
-    // images silently. Surface the failure so they know something is wrong.
-    var patcherFailed = false;
-
     /**
      * Module init. Loads server state, then exposes toggle APIs.
      */
@@ -1162,7 +1158,6 @@
         try {
             patchImageUrlsForAuth();
         } catch (e) {
-            patcherFailed = true;
             console.error(logPrefix, 'URL patcher install failed — web client will see unblurred images:', e);
             if (JE.toast) {
                 JE.toast(JE.t('spoiler_blur_patcher_failed_toast'), 5000);
@@ -1191,10 +1186,5 @@
         whenLoaded: whenLoaded,
         preloadChapterImages: preloadChapterImages,
         confirmDisableSpoiler: confirmDisableSpoiler,
-        // Used by tests / management UI.
-        getEnabledSet: function () { return new Set(enabledSeries); },
-        getEnabledMovieSet: function () { return new Set(enabledMovies); },
-        getEnabledCollectionSet: function () { return new Set(enabledCollections); },
-        getEnabledPendingTmdbSet: function () { return new Set(enabledPendingTmdb); },
     };
 })(window.JellyfinEnhanced);
