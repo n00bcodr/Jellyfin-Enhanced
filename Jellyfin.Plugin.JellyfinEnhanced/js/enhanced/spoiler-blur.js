@@ -477,7 +477,7 @@
             existing.setAttribute('is', 'emby-button');
             existing.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             existing.type = 'button';
-            container.appendChild(existing);
+            placeButton(existing, container);
             // Read itemId/kind live from data-attrs, not closure. Jellyfin
             // reuses the #itemDetailPage element across SPA navigations, so
             // an existing button can be re-used for a different item;
@@ -497,6 +497,12 @@
             renderButton(existing, enabled);
             return;
         }
+
+        // Keep the button positioned just BEFORE the More-commands menu
+        // button. Idempotent — only moves the node when it's actually out
+        // of place, so the body MutationObserver re-runs don't cause
+        // pointless DOM churn.
+        placeButton(existing, container);
 
         // Always refresh data-attrs (cheap) so a button reused across SPA
         // detail-page navigations targets the CURRENT item / kind.
@@ -548,27 +554,20 @@
         button.appendChild(content);
     }
 
-    // Inject the Spoiler Guard detail-button stylesheet once per page.
-    // When the user has Spoiler Guard ON for the current item, the icon
-    // is rendered in Jellyfin's accent colour so the toggled-on state
-    // is visible at a glance. Falls back to a purple matching the
-    // Seerr modal's pending-Spoiler-Guard button so the two surfaces
-    // stay visually consistent if no theme variable resolves.
-    function injectButtonStyle() {
-        if (document.getElementById('je-spoiler-blur-btn-style')) return;
-        var style = document.createElement('style');
-        style.id = 'je-spoiler-blur-btn-style';
-        style.textContent = [
-            '.je-spoiler-blur-btn.je-spoiler-blur-on .detailButton-icon {',
-            '    color: var(--theme-primary-color, #aa5cc3);',
-            '}',
-            '.je-spoiler-blur-btn.je-spoiler-blur-on:hover .detailButton-icon,',
-            '.je-spoiler-blur-btn.je-spoiler-blur-on:focus .detailButton-icon {',
-            '    color: var(--theme-primary-color, #aa5cc3);',
-            '    filter: brightness(1.18);',
-            '}',
-        ].join('\n');
-        document.head.appendChild(style);
+    // Place the Spoiler Guard button just before Jellyfin's More-commands
+    // (...) menu button when one exists in the row — otherwise append at
+    // the end. Idempotent: only mutates the DOM when the button is
+    // actually out of position, so the body MutationObserver dispatching
+    // handleItemDetails on every fired mutation doesn't churn.
+    function placeButton(button, container) {
+        var menuBtn = container.querySelector('.btnMoreCommands');
+        if (menuBtn) {
+            if (button.nextElementSibling !== menuBtn) {
+                container.insertBefore(button, menuBtn);
+            }
+        } else if (button.parentNode !== container) {
+            container.appendChild(button);
+        }
     }
 
     /**
@@ -1190,8 +1189,6 @@
         }
         try { installWatchedMutationHook(); }
         catch (e) { console.warn(logPrefix, 'watched-mutation hook install failed:', e); }
-        try { injectButtonStyle(); }
-        catch (e) { console.warn(logPrefix, 'button style inject failed:', e); }
         loadState();
     }
 
