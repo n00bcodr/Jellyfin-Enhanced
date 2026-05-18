@@ -11,6 +11,30 @@
         link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
         document.head.appendChild(link);
     </script>
+    <style>
+        @font-face {
+            font-family: 'Material Symbols Rounded';
+            font-style: normal;
+            font-weight: 100 700;
+            font-display: block;
+            src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+        }
+        .material-symbols-rounded {
+            font-family: 'Material Symbols Rounded';
+            font-weight: normal;
+            font-style: normal;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
     <div data-role="content">
         <div class="content-primary">
 
@@ -1126,7 +1150,7 @@
                 </div>
 
                 <div id="seerr" class="jellyfin-tab-content">
-                    <fieldset>
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle">Seerr Connection Setup</legend>
                         <div class="configSection">
                             <div class="checkboxContainer je-main-feature">
@@ -1603,7 +1627,7 @@
                         </div>
                     </div>
 
-                    <fieldset>
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg" alt="">Sonarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="sonarrInstancesList">
@@ -1618,7 +1642,7 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg" alt="">Radarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="radarrInstancesList">
@@ -1633,7 +1657,7 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg" alt="">Bazarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="bazarrUrl">
@@ -1856,11 +1880,11 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingOnPosters" is="emby-checkbox" type="checkbox"/><span>Show average user rating on poster cards</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingOnPosters">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="material-icons" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingDash" is="emby-checkbox" type="checkbox"/><span>Show "—" on posters for unrated items</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingDash">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="material-icons" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -5206,20 +5230,45 @@
         resetAllUserSettingsBtn.addEventListener('click', resetAllUserSettings);
         initAutoMovieQualityMode();
 
-        // Live-update the Requests Page requirements banner as the admin types
-        // into Seerr fields or adds/edits/removes *arr instances. Delegated on
-        // the form so it also covers dynamically-created instance cards.
+        // Live-update the Requests Page requirements banner AND the dependency
+        // gates as the admin types into Seerr fields or adds/edits/removes/
+        // toggles *arr instances. Without this, the *arr UI Links / Tags Sync
+        // gate banners would stay up until the next form save + reload even
+        // though hasAnyArrService() is already true.
         (function wireRequestsBannerReactive() {
             var formEl = document.getElementById('JellyfinEnhancedForm');
-            if (!formEl) return;
+            if (!formEl) {
+                console.error('[JE] #JellyfinEnhancedForm missing — reactive dep updates disabled');
+                return;
+            }
             function relevant(target) {
                 if (!target) return false;
                 if (target.id === 'jellyseerrUrls' || target.id === 'JellyseerrApiKey') return true;
-                if (target.classList && (target.classList.contains('arr-instance-url') || target.classList.contains('arr-instance-apikey'))) return true;
-                return false;
+                if (!target.classList) return false;
+                return target.classList.contains('arr-instance-url')
+                    || target.classList.contains('arr-instance-apikey')
+                    || target.classList.contains('arr-instance-enabled');
             }
+            function refresh() {
+                try {
+                    updateRequestsRequirementsBanner();
+                    debouncedUpdateDeps();
+                } catch (err) {
+                    // Observer + listener callbacks must never throw — a throw
+                    // here would leave gate banners frozen in their last state
+                    // and keep firing on every subsequent mutation.
+                    console.error('[JE] dep refresh failed', err);
+                }
+            }
+            // `input` covers all relevant cases: per-keystroke for text/api-key
+            // fields, and bubbled-from-checkbox for `.arr-instance-enabled`
+            // clicks/keyboard toggles. We deliberately skip a parallel `change`
+            // listener — native checkboxes fire BOTH events per toggle, which
+            // would double-fire refresh() (debouncedUpdateDeps collapses it,
+            // but the synchronous updateRequestsRequirementsBanner pass would
+            // run twice).
             formEl.addEventListener('input', function(e) {
-                if (relevant(e.target)) updateRequestsRequirementsBanner();
+                if (relevant(e.target)) refresh();
             });
             // Instance add/remove happens via button clicks that mutate
             // #sonarrInstancesList / #radarrInstancesList. Observe both so the
@@ -5227,8 +5276,7 @@
             ['sonarrInstancesList', 'radarrInstancesList'].forEach(function(id) {
                 var root = document.getElementById(id);
                 if (!root) return;
-                new MutationObserver(updateRequestsRequirementsBanner)
-                    .observe(root, { childList: true, subtree: true });
+                new MutationObserver(refresh).observe(root, { childList: true, subtree: true });
             });
         })();
 
@@ -5352,23 +5400,33 @@
         }
 
         /**
-         * Checks whether at least one arr service (Sonarr or Radarr) has a URL and API key.
-         * @returns {boolean} True if any arr service is configured
+         * Checks whether at least one ENABLED arr service (Sonarr or Radarr) has a URL and API key.
+         * Disabled instances are skipped — they're stored config but the fan-out callers
+         * (controller endpoints, scheduled tag sync) skip them, so gating dependent
+         * features behind a disabled-only set would be misleading.
+         * @returns {boolean} True if any enabled arr service is fully configured
          */
         function hasAnyArrService() {
             var cards = document.querySelectorAll('#sonarrInstancesList .arr-instance-card, #radarrInstancesList .arr-instance-card');
             for (var i = 0; i < cards.length; i++) {
                 var url = cards[i].querySelector('.arr-instance-url');
                 var key = cards[i].querySelector('.arr-instance-apikey');
+                var enabled = cards[i].querySelector('.arr-instance-enabled');
+                // Treat missing checkbox as enabled (defensive — every card should have one)
+                if (enabled && !enabled.checked) continue;
                 if (url && url.value.trim() && key && key.value.trim()) return true;
             }
             return false;
         }
 
+        // Setup fieldsets that hold the connection inputs are tagged with
+        // `data-dep-setup` directly in the HTML — `updateSectionDep` walks
+        // every fieldset and gates only the ones WITHOUT that marker, so
+        // admins can always edit Sonarr/Radarr/Bazarr/Seerr setup boxes
+        // regardless of what else is configured.
         var SECTION_DEPS = [
             {
                 tabSelector: '#seerr',
-                skipFirst: true,
                 checkFn: hasJellyseerrConfigured,
                 bannerIcon: 'link_off',
                 bannerTitle: 'Enable "Seerr integration" to configure',
@@ -5377,11 +5435,10 @@
             },
             {
                 tabSelector: '#arr',
-                skipFirst: true,
                 checkFn: hasAnyArrService,
                 bannerIcon: 'link_off',
                 bannerTitle: 'Enable a *arr service to configure',
-                bannerHint: 'Add a URL and API key for Sonarr or Radarr in the Configuration section above.',
+                bannerHint: 'Add a URL and API key for Sonarr or Radarr above to enable these features.',
                 bannerId: 'dep-banner-arr'
             }
         ];
@@ -5470,7 +5527,10 @@
             var fieldsets = tab.querySelectorAll(':scope > fieldset');
             var targets = [];
             for (var i = 0; i < fieldsets.length; i++) {
-                if (dep.skipFirst && i === 0) continue;
+                // Setup fieldsets (Sonarr/Radarr/Bazarr config, Seerr connection setup)
+                // are always editable so admins can add a connection without first
+                // having one — they carry `data-dep-setup` directly in the HTML.
+                if (fieldsets[i].hasAttribute('data-dep-setup')) continue;
                 targets.push(fieldsets[i]);
             }
 
