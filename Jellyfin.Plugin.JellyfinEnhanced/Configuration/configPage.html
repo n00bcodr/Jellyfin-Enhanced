@@ -332,68 +332,6 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="sectionTitle">Icons &amp; Theme</legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="useIcons" is="emby-checkbox" type="checkbox"/><span>Use Icons in UI</span></label></div>
-                            <div class="je-setting-description" data-desc-for="useIcons">
-                                <div class="fieldDescription je-field-desc-lg">Display icons throughout the UI (toasts, settings panel headers, etc.)</div>
-                            </div>
-
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="iconStyle">Icon Style</label>
-                                <select id="iconStyle" name="iconStyle" is="emby-select" class="emby-select">
-                                    <option value="emoji">Emoji</option>
-                                    <option value="lucide">Lucide Icons</option>
-                                    <option value="mui">Material UI Icons</option>
-                                </select>
-                            </div>
-                            <div class="je-setting-description" data-desc-for="iconStyle">
-                                <div class="fieldDescription">Choose between emoji characters, Lucide icons, or Material UI icons.</div>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend class="sectionTitle">Random Button</legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer je-main-feature"><label><input id="randomButtonEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Random Button</span></label></div>
-                            <div class="je-setting-description" data-desc-for="randomButtonEnabled">
-                                <div class="fieldDescription">Adds a "Play Random" button to the Jellyfin header that opens a random item from the user's accessible libraries.</div>
-                            </div>
-
-                            <div class="checkboxContainer"><label><input id="randomUnwatchedOnly" is="emby-checkbox" type="checkbox"/><span>Show unwatched only</span></label></div>
-                            <div class="je-setting-description" data-desc-for="randomUnwatchedOnly">
-                                <div class="fieldDescription">When enabled, the random picker only chooses items the user has not watched yet.</div>
-                            </div>
-
-                            <div class="checkboxContainer"><label><input id="randomIncludeMovies" is="emby-checkbox" type="checkbox"/><span>Include movies</span></label></div>
-                            <div class="je-setting-description" data-desc-for="randomIncludeMovies">
-                                <div class="fieldDescription">Include movies in the random pool.</div>
-                            </div>
-
-                            <div class="checkboxContainer"><label><input id="randomIncludeShows" is="emby-checkbox" type="checkbox"/><span>Include shows</span></label></div>
-                            <div class="je-setting-description" data-desc-for="randomIncludeShows">
-                                <div class="fieldDescription">Include TV Shows in the random pool.</div>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend class="sectionTitle">Default Language</legend>
-                        <div class="configSection">
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="DefaultLanguage">Default UI Language</label>
-                                <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
-                                    <option value="">System Default</option>
-                                </select>
-                            </div>
-                            <div class="je-setting-description" data-desc-for="DefaultLanguage">
-                                <div class="fieldDescription">Sets the default language for all users. Users can still override this in their own settings.</div>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
                         <legend class="sectionTitle">Spoiler Guard</legend>
                         <div class="configSection">
                             <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
@@ -536,6 +474,68 @@
                                     </div>
                                 </div>
                             </details>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Icons &amp; Theme</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="useIcons" is="emby-checkbox" type="checkbox"/><span>Use Icons in UI</span></label></div>
+                            <div class="je-setting-description" data-desc-for="useIcons">
+                                <div class="fieldDescription je-field-desc-lg">Display icons throughout the UI (toasts, settings panel headers, etc.)</div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="iconStyle">Icon Style</label>
+                                <select id="iconStyle" name="iconStyle" is="emby-select" class="emby-select">
+                                    <option value="emoji">Emoji</option>
+                                    <option value="lucide">Lucide Icons</option>
+                                    <option value="mui">Material UI Icons</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="iconStyle">
+                                <div class="fieldDescription">Choose between emoji characters, Lucide icons, or Material UI icons.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Random Button</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="randomButtonEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Random Button</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomButtonEnabled">
+                                <div class="fieldDescription">Adds a "Play Random" button to the Jellyfin header that opens a random item from the user's accessible libraries.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="randomUnwatchedOnly" is="emby-checkbox" type="checkbox"/><span>Show unwatched only</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomUnwatchedOnly">
+                                <div class="fieldDescription">When enabled, the random picker only chooses items the user has not watched yet.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="randomIncludeMovies" is="emby-checkbox" type="checkbox"/><span>Include movies</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomIncludeMovies">
+                                <div class="fieldDescription">Include movies in the random pool.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="randomIncludeShows" is="emby-checkbox" type="checkbox"/><span>Include shows</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomIncludeShows">
+                                <div class="fieldDescription">Include TV Shows in the random pool.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Default Language</legend>
+                        <div class="configSection">
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="DefaultLanguage">Default UI Language</label>
+                                <select is="emby-select" id="DefaultLanguage" name="DefaultLanguage" class="emby-select">
+                                    <option value="">System Default</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="DefaultLanguage">
+                                <div class="fieldDescription">Sets the default language for all users. Users can still override this in their own settings.</div>
+                            </div>
                         </div>
                     </fieldset>
                 </div>
