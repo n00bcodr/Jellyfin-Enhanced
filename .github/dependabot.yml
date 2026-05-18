@@ -57,3 +57,8 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  - package-ecosystem: nuget
+    directory: /Jellyfin.Plugin.JellyfinEnhanced
+    schedule:
+      interval: daily
