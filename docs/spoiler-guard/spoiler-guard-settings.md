@@ -114,8 +114,6 @@ The in-place refresh is also what runs automatically when a user marks an episod
 
 A collapsible sub-section of per-field hide toggles. When the master switch is on **all of these default to on** — that's the strict-by-default posture a user opted into when they enabled Spoiler Guard for a show. Admins can relax anything they don't want.
 
-![Full Spoiler Guard settings panel](../screenshots/spoiler-blur/web-11-settings-full.png)
-
 ### Hide episode descriptions
 
 **Default: On.** Replaces the episode synopsis with the placeholder text below. The single biggest spoiler vector.

@@ -58,21 +58,29 @@ Every other Jellyfin client you use will pick up the same protection on its next
 
 ### Per movie
 
-The same button appears on Movie detail pages:
+The same toggle button appears on Movie detail pages. With Spoiler Guard off, you see the full poster and description as normal:
 
-![Spoiler Guard on a movie](../screenshots/spoiler-blur/shield-06-movie.png)
+![Back to the Future Part II — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf2-movie-before.png)
+
+Click the toggle on and the poster blurs (or hides, depending on Image Replacement mode), the description swaps to the placeholder, and chapters / cast on unwatched cards get the same treatment:
+
+![Back to the Future Part II — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf2-movie-after.png)
 
 > Spoiler Guard on. Movie images will be blurred until watched.
 
 ### Per collection
 
-For a BoxSet (movie collection), enabling Spoiler Guard at the **collection level** acts as a shortcut — every movie inside the collection gets the same protection until you mark each one watched:
+For a BoxSet (movie collection), enabling Spoiler Guard at the **collection level** acts as a shortcut — every movie inside the collection gets protected until you mark each one watched. The collection's own art and description pass through clear (it's the entry point you just clicked, same model as a series detail page).
 
-![Spoiler Guard on a collection](../screenshots/spoiler-blur/shield-07-collection.png)
+With Spoiler Guard off, the rail of movies inside the collection shows each poster clearly:
+
+![Back to the Future Collection — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf-collection-before.png)
+
+With Spoiler Guard on, the collection art stays visible but the individual movie posters in the rail are protected:
+
+![Back to the Future Collection — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf-collection-after.png)
 
 > Spoiler Guard on. Movies in this collection will be blurred until each is watched.
-
-The collection's own art passes through clear (it's the entry point you just clicked, same model as a series detail page).
 
 ### Pre-arming (for titles not yet in your library)
 
@@ -138,15 +146,12 @@ The reverse works too: marking an episode *unplayed* re-blurs it within the same
 Spoiler Guard intercepts at the server level, so every client sees the same protected images and metadata. Tested:
 
 - **Jellyfin Web** (Chrome, Firefox, Safari)
-- **Wholphin** (Android TV) — screenshot below
+- **Wholphin** (Android TV)
 - **Moonfin** (Android TV)
 - **Findroid** (Android)
 - **Swiftfin** (iOS, tvOS)
 - **Streamyfin** (mobile)
 - **Jellyfin Media Player** (desktop)
-- **Plethorafin** / other forks
-
-![Wholphin Android TV — protected home rail](../screenshots/spoiler-blur/wholphin-androidtv-home.png)
 
 There are no client-side tweaks to install. Once an admin turns the master switch on and a user opts a series in, every client picks it up on its next image fetch.
 
