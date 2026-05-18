@@ -1938,35 +1938,84 @@
         }
 
         // Spoiler Guard per-user override toggles. Each checkbox carries a
-        // data-pref attribute naming the SpoilerBlurUserPrefs field it maps to.
+        // data-pref attribute naming the SpoilerBlurUserPrefs field it maps to,
+        // and an `id` prefixed with "sbPref" (set in the panel render). The id
+        // prefix is what the selector below is anchored on so a future module
+        // that happens to use the bare `data-pref` attribute on its own checkbox
+        // won't accidentally trigger this Spoiler-Guard save path.
         // Checked = inherit admin (pref=null); unchecked = user opt-out (pref=false).
         // The SkipDisableConfirm toggle is the one boolean exception — its semantics
         // are direct (checked = skip the dialog) so it stores true, not null.
         // Lives outside the JE.hiddenContent gate so Spoiler Guard's section works
         // even on instances that have Hidden Content disabled.
         if (JE.spoilerBlur && JE.spoilerBlur.setUserPrefs) {
-            const sbPrefBoxes = document.querySelectorAll('input[type="checkbox"][data-pref]');
+            const sbPrefBoxes = document.querySelectorAll('input[type="checkbox"][id^="sbPref"][data-pref]');
             if (sbPrefBoxes.length > 0) {
-                const saveSbPrefs = () => {
-                    const current = JE.spoilerBlur.getUserPrefs ? JE.spoilerBlur.getUserPrefs() : {};
-                    sbPrefBoxes.forEach(box => {
-                        const k = box.dataset.pref;
-                        if (k === 'SkipDisableConfirm') {
-                            current[k] = !!box.checked;
-                        } else {
-                            // Unchecked = user wants to SEE the field even when Spoiler Guard
-                            // strips it for others, so override to false. Checked = follow admin,
-                            // which we represent as null so future admin policy flips track through.
-                            current[k] = box.checked ? null : false;
+                // Lock all override checkboxes while a save is in flight so
+                // the user can't race two POSTs against each other.
+                const setBoxesDisabled = (disabled) => {
+                    sbPrefBoxes.forEach(b => { b.disabled = disabled; });
+                };
+                const saveSbPrefs = async (changedBox, previousChecked) => {
+                    setBoxesDisabled(true);
+                    try {
+                        // Avoid the cold-load race: never write to the server using
+                        // the in-memory cache until loadState() has populated it.
+                        // Without this, a user toggling during the first few hundred
+                        // milliseconds of page load would POST an empty-cache-derived
+                        // payload that silently clobbers stored prefs.
+                        if (typeof JE.spoilerBlur.whenLoaded === 'function') {
+                            await JE.spoilerBlur.whenLoaded();
                         }
-                    });
-                    JE.spoilerBlur.setUserPrefs(current).catch(err => {
-                        console.warn('Spoiler Guard pref save failed:', err);
-                    });
+                        // Refuse to save when the initial GET failed — the
+                        // in-memory cache is empty, and writing from it
+                        // would clobber whatever prefs are stored on disk.
+                        if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
+                            throw new Error('Initial Spoiler Guard load failed; refusing to overwrite stored prefs.');
+                        }
+                        // Build the payload from the authoritative cache,
+                        // then overlay ONLY the checkbox the user just
+                        // clicked. Reading every box from the DOM is unsafe
+                        // because the panel may have rendered before
+                        // loadState() resolved — the unrelated boxes would
+                        // visually default to "checked" (inherit) from an
+                        // empty cache and a full-DOM iteration would
+                        // serialize those stale visuals as `null`,
+                        // clobbering stored opt-outs.
+                        const current = JE.spoilerBlur.getUserPrefs ? JE.spoilerBlur.getUserPrefs() : {};
+                        if (changedBox) {
+                            const k = changedBox.dataset.pref;
+                            if (k === 'SkipDisableConfirm') {
+                                current[k] = !!changedBox.checked;
+                            } else {
+                                // Unchecked = user wants to SEE the field even when Spoiler Guard
+                                // strips it for others, so override to false. Checked = follow admin,
+                                // which we represent as null so future admin policy flips track through.
+                                current[k] = changedBox.checked ? null : false;
+                            }
+                        }
+                        await JE.spoilerBlur.setUserPrefs(current);
+                    } catch (err) {
+                        // Always log even though the toast covers the visible case,
+                        // so a developer triaging "the panel isn't saving" can find
+                        // the actual error without having to add console.log breakpoints.
+                        console.error('🪼 Jellyfin Enhanced [SpoilerBlur] saveSbPrefs failed:', err);
+                        // Revert the visual state of the box the user just clicked
+                        // so they can see the change didn't stick.
+                        if (changedBox) changedBox.checked = previousChecked;
+                        if (JE.toast && JE.t) {
+                            JE.toast(JE.t('spoiler_blur_error_toast'));
+                        }
+                    } finally {
+                        setBoxesDisabled(false);
+                    }
                 };
                 sbPrefBoxes.forEach(box => {
                     box.addEventListener('change', () => {
-                        saveSbPrefs();
+                        // .checked has already flipped by the time `change` fires;
+                        // the negation gives us the pre-click state for revert.
+                        const previousChecked = !box.checked;
+                        saveSbPrefs(box, previousChecked);
                         resetAutoCloseTimer();
                     });
                 });

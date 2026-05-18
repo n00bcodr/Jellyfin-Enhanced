@@ -3659,13 +3659,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
         }
 
@@ -3697,19 +3697,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
         }
 
         [HttpPost("spoiler-blur/user-prefs")]
         [Authorize]
         [Produces("application/json")]
+        [Consumes("application/json")]
+        [RequestSizeLimit(8 * 1024)]
         public IActionResult SetSpoilerBlurUserPrefs([FromBody] SpoilerBlurUserPrefs? body)
         {
             var userId = UserHelper.GetCurrentUserId(User);
@@ -3746,17 +3748,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to save Spoiler Guard user prefs: {ex.Message}");
+                _logger.Error($"Failed to save Spoiler Guard user prefs for {ResolveUserDisplay(userKey)}: {ex.GetType().Name}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user prefs." });
             }
         }
@@ -3843,13 +3845,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -3900,13 +3902,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -4007,13 +4009,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -4061,13 +4063,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -4158,13 +4160,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -4212,13 +4214,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -4296,14 +4298,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var ukey = userId.Value.ToString("N");
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 var ukey = userId.Value.ToString("N");
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {
@@ -4540,13 +4542,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
             }
             catch (Exception ex)
             {

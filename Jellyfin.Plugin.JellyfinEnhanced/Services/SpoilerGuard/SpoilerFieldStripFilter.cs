@@ -317,7 +317,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ActionExecutingContext context)
         {
             if (!RouteParentIsSpoilerEpisode(context, userState, userId)) return;
-            if (!cfg.SpoilerReplaceTitle && !cfg.SpoilerStripOverview) return;
+            // Auxiliary "scrub title-bearing fields" path — only relevant when a
+            // title/overview strip is actually going to run for this user. Mirror
+            // the same admin-cap + user-opt-out semantics as ApplyStripping.
+            if (!ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
+                && !ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions)) return;
 
             foreach (var info in imgs)
             {
@@ -339,7 +343,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (pbi.MediaSources == null) return;
             if (!RouteParentIsSpoilerEpisode(context, userState, userId)) return;
-            if (!cfg.SpoilerReplaceTitle && !cfg.SpoilerStripOverview) return;
+            // Same scrubbing gate as StripImageInfos — honor the user's opt-outs.
+            if (!ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
+                && !ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions)) return;
 
             foreach (var ms in pbi.MediaSources)
             {
@@ -865,8 +871,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // rewrite. e.g. user searches "Optimus" → MatchedTerm =
                 // "Optimus" from the raw pre-strip title. Null it so
                 // autocomplete doesn't surface the substring. Applies to
-                // both Episode and Movie hints.
-                hint.MatchedTerm = null;
+                // both Episode and Movie hints — but only when the user
+                // hasn't opted out of all title/overview-bearing strips,
+                // otherwise the user explicitly wants those substrings
+                // visible.
+                if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
+                    || ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions))
+                {
+                    hint.MatchedTerm = null;
+                }
             }
         }
 
@@ -1209,7 +1222,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // deny-by-default: aggressively null every field that COULD
             // carry the episode title. Future BaseItemDto fields added by
             // Jellyfin must be assumed-leaky until proven otherwise.
-            if (cfg.SpoilerReplaceTitle || cfg.SpoilerStripOverview)
+            if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
+                || ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions))
             {
                 // Top-level title-bearing string fields.
                 if (!string.IsNullOrEmpty(item.Path)) item.Path = null;

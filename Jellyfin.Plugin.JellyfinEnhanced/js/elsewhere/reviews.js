@@ -31,6 +31,24 @@
                 if (typeof JE.spoilerBlur.whenLoaded === 'function') {
                     await JE.spoilerBlur.whenLoaded();
                 }
+                // Fail-CLOSED when the initial state load itself failed —
+                // the in-memory enabled-series/movies sets and userPrefs are
+                // unreliable, so we don't know whether THIS item is
+                // spoiler-protected. Without this short-circuit a transient
+                // network blip on /spoiler-blur/series would leak reviews
+                // for every guarded item until the next page navigation.
+                if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
+                    console.warn(`${logPrefix} Spoiler Guard state load failed; suppressing reviews fail-closed.`);
+                    return true;
+                }
+                // Honor the user-side opt-out. The admin policy is the cap
+                // (stripReviews === false already returned above), but a user
+                // who set HideReviews=false on their Spoiler Guard prefs has
+                // explicitly asked to see reviews on their guarded items.
+                if (typeof JE.spoilerBlur.getUserPrefs === 'function') {
+                    var userPrefs = JE.spoilerBlur.getUserPrefs() || {};
+                    if (userPrefs.HideReviews === false) return false;
+                }
                 if (mediaType === 'Movie') {
                     return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
                 }

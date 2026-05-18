@@ -19,6 +19,13 @@
     // toggle is nullable bool: null = inherit admin, false = user opted out.
     var userPrefs = {};
     var loaded = false;
+    // Did the initial GET succeed? Distinct from `loaded`: `loaded=true` means
+    // the GET ATTEMPT finished (success or failure), so consumers awaiting
+    // whenLoaded() unblock either way. `loadOk=true` additionally means the
+    // in-memory cache (userPrefs / enabledSeries / etc.) is authoritative.
+    // Callers that would otherwise clobber persisted state if the cache is
+    // empty (saveSbPrefs in particular) MUST check loadOk before writing.
+    var loadOk = false;
     // Tracks the in-flight loadState() promise so consumers
     // (reviews.js, etc.) can await initial state without racing.
     var statePromise = null;
@@ -71,20 +78,47 @@
             }
             userPrefs = (data && data.Prefs) ? data.Prefs : {};
             loaded = true;
+            loadOk = true;
         }).catch(function (err) {
-            console.warn(logPrefix, 'Failed to load spoiler-blur state:', err);
+            // Mark `loaded` so whenLoaded() unblocks, but DON'T set loadOk:
+            // the cache is unreliable. Save/strip callers must fail-closed
+            // rather than treating the empty cache as authoritative. Logged
+            // at error level — this is the load that everything downstream
+            // depends on, so it deserves more than a warn when filtering by
+            // severity in devtools.
+            console.error(logPrefix, 'Failed to load spoiler-blur state; downstream consumers will fail-closed:', err);
             loaded = true;
+            loadOk = false;
         });
         return statePromise;
+    }
+
+    /**
+     * Returns true when the initial GET /spoiler-blur/series resolved
+     * successfully and the in-memory cache (userPrefs, enabled* sets) is
+     * authoritative. Returns false either before the GET completes or after
+     * it failed. Callers that would otherwise overwrite server state from
+     * an empty cache MUST short-circuit on `false`.
+     * @returns {boolean}
+     */
+    function isLoadOk() {
+        return loadOk;
     }
 
     /**
      * Resolves once the initial Spoiler Guard state has loaded.
      * Consumers that need an authoritative isEnabledFor answer on a
      * cold page load (reviews suppression, etc.) await this.
+     *
+     * When the admin master switch is off, this short-circuits with a
+     * resolved Promise without hitting the network. Without this guard,
+     * a future consumer that forgot to gate on SpoilerBlurEnabled before
+     * calling whenLoaded() could trigger a 403/empty-response GET when
+     * the plugin's spoiler-blur feature is disabled.
      * @returns {Promise<void>}
      */
     function whenLoaded() {
+        if (JE.pluginConfig && JE.pluginConfig.SpoilerBlurEnabled !== true) return Promise.resolve();
         if (loaded) return Promise.resolve();
         return statePromise || loadState();
     }
@@ -724,8 +758,21 @@
     function confirmDisableSpoiler() {
         // Persistent user pref takes precedence over the per-browser
         // localStorage snooze. Set via the user-settings panel.
-        if (userPrefs && userPrefs.SkipDisableConfirm) return Promise.resolve(true);
-        if (isDisableSnoozed()) return Promise.resolve(true);
+        // Await the initial load so that a user who opted into
+        // SkipDisableConfirm doesn't get the dialog during the cold-load
+        // window before loadState() resolves.
+        var preflight = (typeof whenLoaded === 'function') ? whenLoaded() : Promise.resolve();
+        return preflight.then(function () {
+            if (userPrefs && userPrefs.SkipDisableConfirm) return true;
+            if (isDisableSnoozed()) return true;
+            return showConfirmDialog();
+        });
+    }
+
+    // The actual dialog body lives in its own function so confirmDisableSpoiler
+    // can short-circuit before opening it without duplicating the Dashboard
+    // / fallback handling code.
+    function showConfirmDialog() {
         var title = JE.t('spoiler_disable_confirm_title');
         var body = JE.t('spoiler_disable_confirm_body');
         var snoozeLabel = JE.t('spoiler_disable_confirm_snooze');
@@ -1225,6 +1272,11 @@
         }).then(function (res) {
             userPrefs = Object.assign({}, payload);
             return res && res.prefs ? res.prefs : userPrefs;
+        }).catch(function (err) {
+            // Always log with the logPrefix so the failure is greppable in
+            // the console, even if every caller swallows the rejection.
+            console.error(logPrefix, 'setUserPrefs failed:', err);
+            throw err;
         });
     }
 
@@ -1244,6 +1296,7 @@
         enableForTmdb: enableForTmdb,
         disableForTmdb: disableForTmdb,
         whenLoaded: whenLoaded,
+        isLoadOk: isLoadOk,
         preloadChapterImages: preloadChapterImages,
         confirmDisableSpoiler: confirmDisableSpoiler,
         getUserPrefs: getUserPrefs,
