@@ -658,6 +658,40 @@
     align-items: start;
 }
 
+/* Pages tab specifically uses CSS multi-column layout instead of CSS Grid.
+   Reason: this tab pairs sections of very uneven heights (a short Bookmarks
+   alongside a tall Hidden Content, etc). CSS Grid aligns rows, which leaves
+   a large empty band underneath whichever cell is shorter — visually reads
+   as a "spacing bug" where the next-row cards float far from their
+   same-column neighbours. CSS columns pack each card immediately under
+   the previous one in the same column, so heights balance naturally with
+   no big gaps. break-inside: avoid keeps each fieldset whole in its column. */
+#JellyfinEnhancedPage #pages.jellyfin-tab-content.active {
+    display: block;
+    column-count: 2;
+    column-gap: 20px;
+}
+#JellyfinEnhancedPage #pages.jellyfin-tab-content.active > fieldset,
+#JellyfinEnhancedPage #pages.jellyfin-tab-content.active > .je-info-banner,
+#JellyfinEnhancedPage #pages.jellyfin-tab-content.active > .je-dep-banner {
+    break-inside: avoid;
+    margin-bottom: 20px;
+    display: block;
+    width: 100%;
+}
+/* Wide-spanning elements (full-row banners) still need to clear both columns. */
+#JellyfinEnhancedPage #pages.jellyfin-tab-content.active > .je-fieldset-wide,
+#JellyfinEnhancedPage #pages.jellyfin-tab-content.active > .je-tab-intro {
+    column-span: all;
+}
+/* Drop to a single column on narrow viewports — keep parity with the base grid's
+   minmax(480px) breakpoint so the layout collapses at the same width. */
+@media (max-width: 960px) {
+    #JellyfinEnhancedPage #pages.jellyfin-tab-content.active {
+        column-count: 1;
+    }
+}
+
 /* ---------------------------------------------------------------------------
    Fieldsets (Cards)
    --------------------------------------------------------------------------- */
