@@ -41,7 +41,7 @@ The original image runs through SkiaSharp's `CreateBlur` (a separable Gaussian, 
 
 The **Blur intensity** slider (1-100, default 40) controls the sigma. 5 is mild, 40 hides scene content while keeping silhouettes and dominant colours visible, 100 is a solid blob. The intensity slider is ignored when Show stock cards is selected.
 
-![Heavily blurred episode card](../screenshots/spoiler-blur/web-03-bluey-s2.png)
+![Heavily blurred episode card](web-03-bluey-s2.png)
 
 ---
 

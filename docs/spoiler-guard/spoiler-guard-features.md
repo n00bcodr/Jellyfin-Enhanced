@@ -2,7 +2,7 @@
 
 A per-user, per-show opt-in protection layer for episodes, seasons, movies, and collections you haven't watched yet. Spoiler Guard blurs (or fully hides) thumbnail art, replaces episode titles, strips synopses, taglines, ratings, chapter names, cast lists, and reviews — all server-side, so **every Jellyfin client benefits** (Web, Android TV, iOS Swiftfin, Roku, Wholphin, Moonfin, Findroid, Streamyfin, etc.).
 
-![Spoiler Guard on a series page](../screenshots/spoiler-blur/web-02-bluey-series.png)
+![Spoiler Guard on a series page](web-02-bluey-series.png)
 
 !!! info "How it works at a glance"
 
@@ -48,7 +48,7 @@ Watched episodes pass through completely untouched. Your library doesn't change 
 
 Open any series detail page. The Spoiler Guard toggle button sits in the action row next to Play / Mark Watched:
 
-![Spoiler Guard toggle button on Bluey](../screenshots/spoiler-blur/shield-02-bluey-series.png)
+![Spoiler Guard toggle button on Bluey](shield-02-bluey-series.png)
 
 Click it. The button flips to **Spoiler Guard: On** and you'll see a toast confirmation:
 
@@ -62,7 +62,7 @@ The same toggle button appears on Movie detail pages. Click the toggle and the p
 
 | Before toggle | After toggle |
 |---|---|
-| ![Back to the Future Part II — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf2-movie-before.png) | ![Back to the Future Part II — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf2-movie-after.png) |
+| ![Back to the Future Part II — Spoiler Guard off](web-bttf2-movie-before.png) | ![Back to the Future Part II — Spoiler Guard on](web-bttf2-movie-after.png) |
 
 > Spoiler Guard on. Movie images will be blurred until watched.
 
@@ -74,7 +74,7 @@ With Spoiler Guard on, the collection art stays visible but the individual movie
 
 | Before toggle | After toggle |
 |---|---|
-| ![Back to the Future Collection — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf-collection-before.png) | ![Back to the Future Collection — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf-collection-after.png) |
+| ![Back to the Future Collection — Spoiler Guard off](web-bttf-collection-before.png) | ![Back to the Future Collection — Spoiler Guard on](web-bttf-collection-after.png) |
 
 > Spoiler Guard on. Movies in this collection will be blurred until each is watched.
 
@@ -109,7 +109,7 @@ The admin chooses how unwatched cards are visually hidden. There are two modes:
 
     The original image runs through a server-side Gaussian blur. Silhouettes and dominant colours stay visible — you can tell *something* is there, but not what.
 
-    ![Bluey S2 blurred](../screenshots/spoiler-blur/web-03-bluey-s2.png)
+    ![Bluey S2 blurred](web-03-bluey-s2.png)
 
     The blur intensity is admin-controlled (default 40 — strong enough to make characters unrecognizable while keeping the show's colour palette visible).
 
@@ -123,7 +123,7 @@ By default Spoiler Guard does a **soft refresh**: it immediately rewrites every 
 
 | Before toggle | After toggle (soft) |
 |---|---|
-| ![Before](../screenshots/spoiler-blur/web-refresh-after-toggle-off.png) | ![After ON](../screenshots/spoiler-blur/web-refresh-after-toggle-on.png) |
+| ![Before](web-refresh-after-toggle-off.png) | ![After ON](web-refresh-after-toggle-on.png) |
 
 If your admin enables **Strict refresh mode**, the page also auto-reloads after every toggle so the text updates immediately — at the cost of a brief page flash.
 
