@@ -520,6 +520,8 @@
 
     /**
      * Render the button content + tooltip for the given enabled state.
+     * Icon-only — the label rides on the button's `title` (hover tooltip)
+     * and `aria-label` (screen readers) so the row stays compact.
      * @param {HTMLButtonElement} button
      * @param {boolean} enabled
      */
@@ -543,12 +545,30 @@
         icon.textContent = enabled ? 'blur_on' : 'blur_off';
         content.appendChild(icon);
 
-        var textSpan = document.createElement('span');
-        textSpan.className = 'detailButton-icon-text';
-        textSpan.textContent = label;
-        content.appendChild(textSpan);
-
         button.appendChild(content);
+    }
+
+    // Inject the Spoiler Guard detail-button stylesheet once per page.
+    // When the user has Spoiler Guard ON for the current item, the icon
+    // is rendered in Jellyfin's accent colour so the toggled-on state
+    // is visible at a glance. Falls back to a purple matching the
+    // Seerr modal's pending-Spoiler-Guard button so the two surfaces
+    // stay visually consistent if no theme variable resolves.
+    function injectButtonStyle() {
+        if (document.getElementById('je-spoiler-blur-btn-style')) return;
+        var style = document.createElement('style');
+        style.id = 'je-spoiler-blur-btn-style';
+        style.textContent = [
+            '.je-spoiler-blur-btn.je-spoiler-blur-on .detailButton-icon {',
+            '    color: var(--theme-primary-color, #aa5cc3);',
+            '}',
+            '.je-spoiler-blur-btn.je-spoiler-blur-on:hover .detailButton-icon,',
+            '.je-spoiler-blur-btn.je-spoiler-blur-on:focus .detailButton-icon {',
+            '    color: var(--theme-primary-color, #aa5cc3);',
+            '    filter: brightness(1.18);',
+            '}',
+        ].join('\n');
+        document.head.appendChild(style);
     }
 
     /**
@@ -1170,6 +1190,8 @@
         }
         try { installWatchedMutationHook(); }
         catch (e) { console.warn(logPrefix, 'watched-mutation hook install failed:', e); }
+        try { injectButtonStyle(); }
+        catch (e) { console.warn(logPrefix, 'button style inject failed:', e); }
         loadState();
     }
 
