@@ -208,3 +208,7 @@ The admin needs to flip the master **Enable Spoiler Guard** switch in the plugin
 - Refresh the page — your browser may have cached the original images before you opted in.
 - Confirm the series is in your Spoiler Guard list (the toggle should read **Spoiler Guard: On**).
 - If you're testing on the Web client and just installed the plugin, your browser may need a hard reload (Ctrl-F5) to pick up the URL-patching layer.
+
+**Android TV (Wholphin / Moonfin / Findroid) shows the original images on first load after enabling Spoiler Guard.**
+
+Android TV clients cache image bytes locally using Glide / Coil. If you enabled Spoiler Guard for a series while that client already had the unblurred thumbnails cached on disk, the client serves them from cache instead of re-fetching from the server. **Clear the image cache once** in the client's settings (or force-stop the app and reopen) and the protected images will load correctly from that point onward. After this first clear, Spoiler Guard's per-user cache-bust tokens automatically invalidate the cache whenever your spoiler state changes — you won't need to clear it again.
