@@ -1,18 +1,18 @@
 # Spoiler Guard Settings
 
-Admin configuration for the **Spoiler Blur** section of the Jellyfin Enhanced plugin. All toggles here are server-wide policy — users opt into Spoiler Guard for individual shows / movies / collections per-user, but the admin decides what protection looks like once they do.
+Admin configuration for the **Spoiler Guard** section of the Jellyfin Enhanced plugin. All toggles here are server-wide policy — users opt into Spoiler Guard for individual shows / movies / collections per-user, but the admin decides what protection looks like once they do.
 
 ![Spoiler Guard admin settings](../screenshots/spoiler-blur/web-10-settings.png)
 
 !!! info "Where to find it"
 
-    Jellyfin Dashboard → Plugins → **Jellyfin Enhanced** → scroll to the **Spoiler Blur** section.
+    Jellyfin Dashboard → Plugins → **Jellyfin Enhanced** → scroll to the **Spoiler Guard** section.
 
 ---
 
 ## Master switch
 
-### Enable Spoiler Blur
+### Enable Spoiler Guard
 
 **Default: Off.** When off, the per-user opt-in has no effect and no user-facing UI appears anywhere. Turn on once you want users to be able to opt their shows in.
 
@@ -188,7 +188,7 @@ This is automatic and doesn't need configuration. The banner is per-user (each u
 For diagnostics, the plugin logs (rate-limited) to `/config/log/JellyfinEnhanced_{date}.log`:
 
 - Spoiler Guard auto-enable events: `SpoilerAutoEnable: enabled Spoiler Guard for series '<name>' (...) on first-play of S1E1 by user <id>`
-- Seerr pre-acquisition records: `Spoiler-blur pending recorded tv:<tmdbId> for <user>`
+- Seerr pre-acquisition records: `Spoiler Guard pending recorded tv:<tmdbId> for <user>`
 - Promotion events when a pending entry lands as a real library item: `SpoilerSeerrPromoter: promoted tv:<tmdbId> -> series <id> for user <id>`
 - Per-(user, scope) cache evictions when watched-state changes
 - Any unexpected response shape from a Jellyfin upgrade (rate-limited, one warn per (Controller, Action) per process lifetime)
@@ -202,7 +202,7 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 
 | Setting | Default |
 |---|---|
-| Enable Spoiler Blur | Off (admin must opt in) |
+| Enable Spoiler Guard | Off (admin must opt in) |
 | Image Replacement Mode | Show stock cards |
 | Blur intensity | 40 |
 | Also blur Backdrop / Art | Off |
@@ -224,15 +224,3 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 | Hide reviews on Spoiler Guard series | On |
 
 The strict-by-default posture means once an admin flips the master switch and a user opts a show in, every spoiler surface is protected without further configuration. Admins who want a looser setup can untick anything they don't need.
-
----
-
-## Upgrading from older Spoiler Blur versions
-
-Settings saved in your plugin XML config (`Jellyfin.Plugin.JellyfinEnhanced.xml`) are **preserved on upgrade** — the new defaults only apply to fresh installs or to properties that didn't exist in your saved XML yet.
-
-In particular:
-
-- If you had `<SpoilerStripCommunityRating>false</SpoilerStripCommunityRating>` saved before the rename, you'll keep `false`. To get the new default, clear the toggle in the admin UI and save.
-- If you had `<SpoilerOverviewPlaceholder>Spoiler mode activated</SpoilerOverviewPlaceholder>` saved before the rename, you'll keep the literal `Spoiler mode activated` text. Clear the field in the admin UI to get the new `Spoiler Guard activated` default.
-- All existing per-user `spoilerblur.json` files keep working — internal storage formats are unchanged.

@@ -1264,7 +1264,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var result = await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
 
-            // Auto-on-request spoiler-blur pending — best-effort, never
+            // Auto-on-request Spoiler Guard pending — best-effort, never
             // blocks the request. Gated by SpoilerBlurEnabled (master)
             // AND SpoilerAutoEnableOnSeerrRequest (admin opt-in). Seerr's
             // success codes are 200/201; 409 covers MEDIA_EXISTS /
@@ -1301,7 +1301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Spoiler-blur auto-on-request hook threw {ex.GetType().Name}: {ex.Message}");
+                _logger.Warning($"Spoiler Guard auto-on-request hook threw {ex.GetType().Name}: {ex.Message}");
             }
 
             return result;
@@ -1390,12 +1390,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var summary = AddSpoilerBlurPendingInternal(userId, jUser, mediaType, canonicalTmdb, displayName: null);
                 if (summary.WroteSomething)
                 {
-                    _logger.Info($"Spoiler-blur auto-on-request {summary.Promoted} for {mediaType}:{canonicalTmdb} by {ResolveUserDisplay(userId.ToString("N"))}");
+                    _logger.Info($"Spoiler Guard auto-on-request {summary.Promoted} for {mediaType}:{canonicalTmdb} by {ResolveUserDisplay(userId.ToString("N"))}");
                 }
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Spoiler-blur auto-on-request task threw {ex.GetType().Name}: {ex.Message}");
+                _logger.Warning($"Spoiler Guard auto-on-request task threw {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -2937,7 +2937,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentUsePluginPages,
                 config.HiddenContentUseCustomTabs,
 
-                // Spoiler Blur — frontend uses these to decide whether the per-show
+                // Spoiler Guard — frontend uses these to decide whether the per-show
                 // toggle should appear at all and (eventually) for client-side previews.
                 config.SpoilerBlurEnabled,
                 config.SpoilerBlurIntensity,
@@ -3550,7 +3550,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        // ─── Spoiler Blur ─── Per-user list of series IDs the user has opted
+        // ─── Spoiler Guard ─── Per-user list of series IDs the user has opted
         // into Spoiler Guard for. The image filter (Services/SpoilerBlurImageFilter.cs)
         // reads spoilerblur.json on every image request and blurs every UNWATCHED
         // episode of any series in that list. Watched episodes pass through unblurred.
@@ -3646,13 +3646,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
         }
 
@@ -3731,20 +3731,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     return 1;
                 });
-                _logger.Info($"Spoiler blur enabled for series '{series.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard enabled for series '{series.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, seriesId = key, name = series.Name });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -3785,23 +3785,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Log so a desync between client and server (two
                     // tabs, stale local cache, etc.) is observable instead
                     // of silently returning success.
-                    _logger.Info($"Spoiler blur disable was a no-op for series {key} by {ResolveUserDisplay(userKey)} — series was not in the user's spoiler-blur list.");
+                    _logger.Info($"Spoiler Guard disable was a no-op for series {key} by {ResolveUserDisplay(userKey)} — series was not in the user's spoiler-blur list.");
                     return Ok(new { success = true, seriesId = key, removed = false });
                 }
-                _logger.Info($"Spoiler blur disabled for series {key} by {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard disabled for series {key} by {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, seriesId = key, removed = true });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -3815,7 +3815,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public string? MovieName { get; set; }
         }
 
-        // Per-movie spoiler-blur opt-in. Movies stored separately from
+        // Per-movie Spoiler Guard opt-in. Movies stored separately from
         // Series in the same spoilerblur.json file (UserSpoilerBlur.Movies
         // dict). Movie-level Spoiler Guard blurs the movie's own poster /
         // backdrop and field-strips its metadata until the user marks the
@@ -3895,20 +3895,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     return 1;
                 });
-                _logger.Info($"Spoiler blur enabled for movie '{movie.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard enabled for movie '{movie.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, movieId = key, name = movie.Name });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -3946,23 +3946,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
                 if (!removed)
                 {
-                    _logger.Info($"Spoiler blur disable was a no-op for movie {key} by {ResolveUserDisplay(userKey)} — movie was not in the user's spoiler-blur list.");
+                    _logger.Info($"Spoiler Guard disable was a no-op for movie {key} by {ResolveUserDisplay(userKey)} — movie was not in the user's spoiler-blur list.");
                     return Ok(new { success = true, movieId = key, removed = false });
                 }
-                _logger.Info($"Spoiler blur disabled for movie {key} by {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard disabled for movie {key} by {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, movieId = key, removed = true });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -3976,7 +3976,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public string? CollectionName { get; set; }
         }
 
-        // Per-collection spoiler-blur opt-in. Collections (BoxSet) are
+        // Per-collection Spoiler Guard opt-in. Collections (BoxSet) are
         // user/admin-curated groupings; toggling here blurs the
         // collection's own art and applies field-strip to its DTO.
         // Items WITHIN the collection retain their own per-item state
@@ -4046,20 +4046,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     return 1;
                 });
-                _logger.Info($"Spoiler blur enabled for collection '{boxSet.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard enabled for collection '{boxSet.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, collectionId = key, name = boxSet.Name });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -4097,23 +4097,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
                 if (!removed)
                 {
-                    _logger.Info($"Spoiler blur disable was a no-op for collection {key} by {ResolveUserDisplay(userKey)} — collection was not in the user's spoiler-blur list.");
+                    _logger.Info($"Spoiler Guard disable was a no-op for collection {key} by {ResolveUserDisplay(userKey)} — collection was not in the user's spoiler-blur list.");
                     return Ok(new { success = true, collectionId = key, removed = false });
                 }
-                _logger.Info($"Spoiler blur disabled for collection {key} by {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard disabled for collection {key} by {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, collectionId = key, removed = true });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -4122,8 +4122,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        // ─── Pre-acquisition pending spoiler-blur (Seerr / not-yet-downloaded) ───
-        // Registers spoiler-blur intent for a TMDB id that may or may not
+        // ─── Pre-acquisition pending Spoiler Guard (Seerr / not-yet-downloaded) ───
+        // Registers Spoiler Guard intent for a TMDB id that may or may not
         // already be in the Jellyfin library. Source of two flows:
         // (a) Seerr more-info modal manual "Enable spoiler" button (always
         //     allowed when SpoilerBlurEnabled = true — works even when
@@ -4142,7 +4142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.SpoilerBlurEnabled != true)
             {
-                return StatusCode(503, new { success = false, message = "Spoiler-blur is disabled by the administrator." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard is disabled by the administrator." });
             }
 
             var userId = UserHelper.GetCurrentUserId(User);
@@ -4191,14 +4191,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var ukey = userId.Value.ToString("N");
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 var ukey = userId.Value.ToString("N");
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -4239,7 +4239,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         };
                         return 1;
                     });
-                _logger.Info($"Spoiler-blur pending resolved to existing series '{existingSeries.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard pending resolved to existing series '{existingSeries.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
                 return new SpoilerBlurPendingResult("series", seriesKey, existingSeries.Name, changed > 0);
             }
             if (existingItem is MediaBrowser.Controller.Entities.Movies.Movie existingMovie)
@@ -4258,7 +4258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         };
                         return 1;
                     });
-                _logger.Info($"Spoiler-blur pending resolved to existing movie '{existingMovie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard pending resolved to existing movie '{existingMovie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
                 return new SpoilerBlurPendingResult("movie", movieKey, existingMovie.Name, changed > 0);
             }
 
@@ -4292,13 +4292,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
             if (capExceeded[0])
             {
-                _logger.Warning($"Spoiler-blur pending: cap of {MaxPendingTmdbPerUser} reached for {ResolveUserDisplay(userKey)} — rejecting new {pendingKey}");
+                _logger.Warning($"Spoiler Guard pending: cap of {MaxPendingTmdbPerUser} reached for {ResolveUserDisplay(userKey)} — rejecting new {pendingKey}");
                 return new SpoilerBlurPendingResult("cap-exceeded", null, null, false);
             }
             // Prime the promoter's fast-path gate so the next ItemAdded
             // matching this TMDB id fans out to users instead of bailing.
             Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey);
-            _logger.Info($"Spoiler-blur pending recorded {pendingKey} for {ResolveUserDisplay(userKey)} (not yet in library)");
+            _logger.Info($"Spoiler Guard pending recorded {pendingKey} for {ResolveUserDisplay(userKey)} (not yet in library)");
 
             // TOCTOU recovery: between the library lookup at the top of this
             // method and the RMW write, the library scanner may have added
@@ -4319,7 +4319,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Spoiler-blur pending TOCTOU recheck threw {ex.GetType().Name}: {ex.Message}");
+                _logger.Warning($"Spoiler Guard pending TOCTOU recheck threw {ex.GetType().Name}: {ex.Message}");
             }
             return new SpoilerBlurPendingResult("pending", null, null, pendingChanged > 0);
         }
@@ -4344,7 +4344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     return 1;
                 });
-            _logger.Info($"Spoiler-blur pending TOCTOU-promoted to series '{series.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
+            _logger.Info($"Spoiler Guard pending TOCTOU-promoted to series '{series.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
             return new SpoilerBlurPendingResult("series", seriesKey, series.Name, true);
         }
 
@@ -4366,7 +4366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     return 1;
                 });
-            _logger.Info($"Spoiler-blur pending TOCTOU-promoted to movie '{movie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
+            _logger.Info($"Spoiler Guard pending TOCTOU-promoted to movie '{movie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
             return new SpoilerBlurPendingResult("movie", movieKey, movie.Name, true);
         }
 
@@ -4428,20 +4428,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     return Ok(new { success = true, removed = false, removedFrom = "none" });
                 }
-                _logger.Info($"Spoiler-blur pending DELETE removed {pendingKey} ({removedFrom}) for {ResolveUserDisplay(userKey)}");
+                _logger.Info($"Spoiler Guard pending DELETE removed {pendingKey} ({removedFrom}) for {ResolveUserDisplay(userKey)}");
                 return Ok(new { success = true, removed = true, removedFrom, jellyfinId = removedJellyfinId });
             }
             catch (InvalidDataException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Newtonsoft.Json.JsonException strictEx)
             {
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
-                return StatusCode(503, new { success = false, message = "Spoiler-blur store is corrupt; backed up. Please retry." });
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
             }
             catch (Exception ex)
             {
@@ -5234,7 +5234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     {
                                         _spoilerResolver.WarnRateLimited(
                                             "tagcache-season-probe:" + ex.GetType().FullName,
-                                            $"Spoiler tag-cache strip: season any-watched probe failed for {seasonItem.Id}: {ex.Message}");
+                                            $"Spoiler Guard tag-cache strip: season any-watched probe failed for {seasonItem.Id}: {ex.Message}");
                                         // Fail-CLOSED: assume not watched, proceed to strip.
                                     }
                                     if (anyWatched) continue;
@@ -5249,7 +5249,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // TagCacheService key format is observable.
                             _spoilerResolver.WarnRateLimited(
                                 "tagcache-key-not-guid",
-                                $"Spoiler tag-cache strip: TagCacheService key '{kvp.Key}' did not parse as Guid; played-state check skipped. Possible cache-key format change.");
+                                $"Spoiler Guard tag-cache strip: TagCacheService key '{kvp.Key}' did not parse as Guid; played-state check skipped. Possible cache-key format change.");
                         }
 
                         // TagCacheService stores ONE shared TagCacheEntry
@@ -5641,7 +5641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             _spoilerResolver.WarnRateLimited(
                                 "tagdata-season-probe:" + ex.GetType().FullName,
-                                $"Spoiler tag-data: season any-watched probe failed for {spSeason.Id}: {ex.Message}");
+                                $"Spoiler Guard tag-data: season any-watched probe failed for {spSeason.Id}: {ex.Message}");
                             // Fail-CLOSED: assume not watched, proceed to stub.
                         }
 
@@ -6688,7 +6688,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // strict reads so corruption is detected (rate-limited warn);
         // fall back to null so the strip silently no-ops rather than
         // returning 503 for the unrelated tag-cache request. The user's
-        // actual /spoiler-blur/series endpoint will return 503 next call.
+        // actual /Spoiler Guard/series endpoint will return 503 next call.
         // See SpoilerFieldStripFilter.IsMovieIdInSpoilerScope for the
         // same semantics: direct membership OR via opted-in BoxSet's
         // LinkedChildren.
@@ -6715,7 +6715,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-movie-collection:" + ex.GetType().FullName,
-                    $"Spoiler tag-strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
+                    $"Spoiler Guard tag-strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
             }
             return false;
         }
@@ -6736,7 +6736,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-corrupt:" + userKey,
-                    $"Spoiler tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                    $"Spoiler Guard tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
                 return null;
             }
@@ -6744,7 +6744,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-corrupt:" + userKey,
-                    $"Spoiler tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                    $"Spoiler Guard tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
                 return null;
             }
@@ -6752,7 +6752,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-io:" + ex.GetType().FullName,
-                    $"Spoiler tag-strip: IO error reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                    $"Spoiler Guard tag-strip: IO error reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
                 return null;
             }
             catch (Exception ex)
@@ -6769,7 +6769,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // tag-cache surface.
                 _spoilerResolver.WarnRateLimited(
                     "tagstrip-unexpected:" + ex.GetType().FullName,
-                    $"Spoiler tag-strip: unexpected {ex.GetType().Name} reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                    $"Spoiler Guard tag-strip: unexpected {ex.GetType().Name} reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
                 return null;
             }
         }

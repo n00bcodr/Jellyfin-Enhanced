@@ -293,7 +293,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
                 // Capture parent series ID for Episodes/Seasons so the
-                // spoiler-blur filter can strip cache entries for unwatched
+                // Spoiler Guard filter can strip cache entries for unwatched
                 // episodes of spoiler-list series without doing a library
                 // lookup per cache entry on every GetTagCache request.
                 string? seriesIdN = null;

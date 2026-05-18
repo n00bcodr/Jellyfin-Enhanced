@@ -75,7 +75,7 @@
     }
 
     /**
-     * Resolves once the initial spoiler-blur state has loaded.
+     * Resolves once the initial Spoiler Guard state has loaded.
      * Consumers that need an authoritative isEnabledFor answer on a
      * cold page load (reviews suppression, etc.) await this.
      * @returns {Promise<void>}
@@ -882,7 +882,7 @@
      * that points at Jellyfin's /Items/{id}/Images/{type} endpoint gets an
      * `api_key=<accessToken>` query param appended. Without this, browser
      * <img> requests are anonymous (Jellyfin's image endpoint is public-
-     * accessible by design) and the server-side spoiler-blur action filter
+     * accessible by design) and the server-side Spoiler Guard action filter
      * has no way to identify which user is requesting the image, so it can't
      * decide whether to blur. Adding api_key flips those requests into
      * authenticated ones and the filter starts firing.
@@ -1086,7 +1086,7 @@
         if (typeof urlStr !== 'string') return;
         if (!PLAYED_RE.test(urlStr)) return;
         if (method !== 'POST' && method !== 'DELETE') return;
-        // Bail if the user has no spoiler-blur state.
+        // Bail if the user has no Spoiler Guard state.
         if (loaded && enabledSeries.size === 0 && enabledMovies.size === 0 && enabledCollections.size === 0) return;
         // Refresh image URLs in-place. DOM text fields (Overview,
         // episode names, ratings) won't auto-update from this — they

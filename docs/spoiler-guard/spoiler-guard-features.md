@@ -200,18 +200,10 @@ Cache-bust tokens are also per-user, so two users on the same family network see
 
 **The toggle button isn't showing on a series page.**
 
-The admin needs to flip the master **Enable Spoiler Blur** switch in the plugin config. Until that's on, no user-facing UI appears.
+The admin needs to flip the master **Enable Spoiler Guard** switch in the plugin config. Until that's on, no user-facing UI appears.
 
 **I enabled Spoiler Guard but I still see episode thumbnails.**
 
 - Refresh the page — your browser may have cached the original images before you opted in.
 - Confirm the series is in your Spoiler Guard list (the toggle should read **Spoiler Guard: On**).
 - If you're testing on the Web client and just installed the plugin, your browser may need a hard reload (Ctrl-F5) to pick up the URL-patching layer.
-
-**The cards look squashed / posters look stretched.**
-
-You're seeing the parent-Primary placeholder being scaled into a slot of a different aspect. This was fixed in the released version — make sure you're on the latest plugin build. If you still see it, file an issue.
-
-**I see "Spoiler mode activated" instead of "Spoiler Guard activated" as the placeholder.**
-
-Your admin saved the placeholder text from a pre-rename release. Ask them to either clear the **Placeholder text** field (to get the new default) or update it manually.

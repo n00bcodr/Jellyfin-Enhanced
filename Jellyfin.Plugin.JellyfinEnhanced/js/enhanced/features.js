@@ -977,7 +977,7 @@
                 addHideContentButton(itemId, visiblePage);
             }
 
-            // Spoiler Blur — Series detail page (toggle blurs all unwatched
+            // Spoiler Guard — Series detail page (toggle blurs all unwatched
             // episode images via the server-side filter), Movie detail
             // page (toggle blurs the movie's own poster/backdrop until the
             // user has marked it Played), AND Collection (BoxSet) detail
@@ -991,7 +991,7 @@
             // player's timeline-hover tooltip later hits browser cache
             // instead of round-tripping (eliminates "gray box → image
             // swap" jank on first-hover). No-op when item isn't in the
-            // user's spoiler-blur list.
+            // user's Spoiler Guard list.
             if ((lastDetailsItemType === 'Movie' || lastDetailsItemType === 'Episode')
                 && JE.spoilerBlur
                 && typeof JE.spoilerBlur.preloadChapterImages === 'function') {

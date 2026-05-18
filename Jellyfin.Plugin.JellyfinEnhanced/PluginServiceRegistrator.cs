@@ -53,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
 
-            // Spoiler Blur: replaces image bytes for unaired episodes with a Gaussian-blurred
+            // Spoiler Guard: replaces image bytes for unaired episodes with a Gaussian-blurred
             // version. Runs as an MVC action filter scoped to the Image controller so every
             // client (web/TV/iOS/Android) gets the blurred bytes via the native image API.
             serviceCollection.AddSingleton<ImageBlurService>();
@@ -69,7 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Gated by SpoilerAutoEnableOnFirstPlay; runs on every PlaybackStart.
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, SpoilerAutoEnableOnFirstPlayConsumer>();
 
-            // Promotes pending pre-acquisition spoiler-blur entries (PendingTmdb)
+            // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
             // into real Series/Movies entries when matching library items land.
             serviceCollection.AddHostedService<SpoilerSeerrPendingPromoter>();
 

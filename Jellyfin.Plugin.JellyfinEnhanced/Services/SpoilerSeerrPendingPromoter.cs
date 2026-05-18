@@ -16,7 +16,7 @@ using Newtonsoft.Json;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
-    // Promotes pending spoiler-blur entries (UserSpoilerBlur.PendingTmdb) into
+    // Promotes pending Spoiler Guard entries (UserSpoilerBlur.PendingTmdb) into
     // real Series/Movies entries when matching library items land via Seerr or
     // any other source. Hooks ILibraryManager.ItemAdded. We snapshot the user
     // list synchronously inside the handler (UserManager / EventArgs aren't
@@ -24,7 +24,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // background Task so we don't block the Jellyfin scanner thread.
     //
     // Per-user library access is checked via GetItemById(id, user) — a user
-    // who can't see the new item won't get the spoiler-blur entry promoted
+    // who can't see the new item won't get the Spoiler Guard entry promoted
     // for them, which would otherwise be a UX bug (entry shows up in their
     // management UI for a title they can't access).
     //

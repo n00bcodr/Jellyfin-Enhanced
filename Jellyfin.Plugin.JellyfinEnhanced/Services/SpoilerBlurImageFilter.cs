@@ -17,7 +17,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     // Replaces image bytes with a downsample-then-upsample blurred version when:
-    //   1. Admin has enabled spoiler blur server-wide.
+    //   1. Admin has enabled Spoiler Guard server-wide.
     //   2. The image is for an episode of a series.
     //   3. The requesting user has opted-in to Spoiler Guard for that series.
     //   4. The user has NOT marked the episode as played.
@@ -232,7 +232,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _resolver.WarnRateLimited(
                             "userdata-saved-handler:" + ex.GetType().FullName,
-                            $"Spoiler blur: failed to invalidate season cache on UserDataSaved: {ex.Message}");
+                            $"Spoiler Guard: failed to invalidate season cache on UserDataSaved: {ex.Message}");
                     }
                     finally
                     {
@@ -248,7 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _pendingInvalidations.TryRemove(dedupKey, out _);
                 _resolver.WarnRateLimited(
                     "userdata-saved-dispatch:" + ex.GetType().FullName,
-                    $"Spoiler blur: Task.Run dispatch threw synchronously: {ex.Message}");
+                    $"Spoiler Guard: Task.Run dispatch threw synchronously: {ex.Message}");
             }
         }
 
@@ -465,7 +465,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             // future Jellyfin API change is observable.
                             _resolver.WarnRateLimited(
                                 "image-chapter-lookup:" + ex.GetType().FullName,
-                                $"Spoiler blur: chapter lookup failed for movie {movie.Id} idx {chapterIdx}: {ex.Message}");
+                                $"Spoiler Guard: chapter lookup failed for movie {movie.Id} idx {chapterIdx}: {ex.Message}");
                         }
                     }
                 }
@@ -491,7 +491,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (seriesId == Guid.Empty
                     || !userState.Series.ContainsKey(seriesId.ToString("N")))
                 {
-                    // Item's series isn't on the user's spoiler-blur list.
+                    // Item's series isn't on the user's Spoiler Guard list.
                     await next().ConfigureAwait(false);
                     return;
                 }
@@ -579,7 +579,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"Spoiler blur post-processing failed for episode {itemId} ({imageType}, {spoilerMode}): {ex.Message}");
+                _logger.Error($"Spoiler Guard post-processing failed for episode {itemId} ({imageType}, {spoilerMode}): {ex.Message}");
 
                 // Hide-mode has a stricter contract: an exception thrown
                 // BEFORE ReplaceWithStockCardAsync assigned executed.Result
@@ -600,7 +600,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     catch (Exception fallbackEx)
                     {
-                        _logger.Error($"Spoiler blur: hide-mode fallback assignment failed for {itemId}: {fallbackEx.Message}");
+                        _logger.Error($"Spoiler Guard: hide-mode fallback assignment failed for {itemId}: {fallbackEx.Message}");
                     }
                 }
             }
@@ -632,7 +632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // spam logs on every image fetch.
                     _resolver.WarnRateLimited(
                         "no-store-already-started",
-                        "Spoiler blur: ApplyNoStoreToResponse called after Response.HasStarted=true; cache headers NOT applied. Cache-scrub may not have taken effect for this code path. (For watched-pass-through, use RegisterNoStoreOnStarting BEFORE awaiting next() instead.)");
+                        "Spoiler Guard: ApplyNoStoreToResponse called after Response.HasStarted=true; cache headers NOT applied. Cache-scrub may not have taken effect for this code path. (For watched-pass-through, use RegisterNoStoreOnStarting BEFORE awaiting next() instead.)");
                     return;
                 }
                 ApplyNoStoreHeadersDirect(httpContext);
@@ -853,7 +853,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "movie-in-collection:" + ex.GetType().FullName,
-                    $"Spoiler blur: IsMovieInSpoilerScope linked-children walk failed for {movie.Id}: {ex.Message}");
+                    $"Spoiler Guard: IsMovieInSpoilerScope linked-children walk failed for {movie.Id}: {ex.Message}");
             }
             return false;
         }
@@ -909,7 +909,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // not exposure.
                 _resolver.WarnRateLimited(
                     "season-watched:" + ex.GetType().FullName,
-                    $"Spoiler blur: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — failing CLOSED (blur). {ex.Message}");
+                    $"Spoiler Guard: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — failing CLOSED (blur). {ex.Message}");
                 anyWatched = false;
                 determinationFailed = true;
             }
@@ -1114,7 +1114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "parent-art:" + ex.GetType().FullName,
-                    $"Spoiler blur: parent-art fallback failed for item {item?.Id}: {ex.Message}");
+                    $"Spoiler Guard: parent-art fallback failed for item {item?.Id}: {ex.Message}");
                 return null;
             }
         }
@@ -1206,7 +1206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 now,
                 (_, last) => (now - last) >= ShapeWarnInterval ? now : last);
             if (stored != now) return;
-            _logger.Warning($"Spoiler blur: image action produced an unrecognized result type ({key}); blur is no-op for this shape. Re-warns hourly. Likely a Jellyfin upgrade changed the image controller's return type.");
+            _logger.Warning($"Spoiler Guard: image action produced an unrecognized result type ({key}); blur is no-op for this shape. Re-warns hourly. Likely a Jellyfin upgrade changed the image controller's return type.");
         }
     }
 }

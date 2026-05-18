@@ -85,11 +85,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // lenient path (e.g. ResolveUserFile throwing on a bad
                 // userId). Rate-limited so a flood of bad requests doesn't
                 // spam logs. Strict-read with corruption-503 is available
-                // on the dedicated /spoiler-blur/series endpoint and via
+                // on the dedicated /Spoiler Guard/series endpoint and via
                 // LoadSpoilerStateForTagStrip.
                 WarnRateLimited(
                     "userstate-load:" + ex.GetType().FullName,
-                    $"Spoiler resolver: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
+                    $"Spoiler Guard resolver: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
                 state = new UserSpoilerBlur();
             }
             httpContext.Items[ContextKeyUserState] = state;
@@ -127,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 WarnRateLimited(
                     "session-list:" + ex.GetType().FullName,
-                    $"Spoiler resolver: ISessionManager.Sessions enumeration threw: {ex.Message}");
+                    $"Spoiler Guard resolver: ISessionManager.Sessions enumeration threw: {ex.Message}");
                 return null;
             }
 
@@ -152,7 +152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     WarnRateLimited(
                         "session-iter:" + ex.GetType().FullName,
-                        $"Spoiler resolver: skipped a session row during IP match: {ex.Message}");
+                        $"Spoiler Guard resolver: skipped a session row during IP match: {ex.Message}");
                     continue;
                 }
             }
@@ -161,7 +161,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 WarnRateLimited(
                     "shared-ip:" + remoteIp.ToString(),
-                    $"Spoiler resolver: ambiguous session-by-IP match for {remoteIp} — {recentlyActiveUsers.Count} distinct users active within {SharedIpAmbiguityWindow.TotalSeconds}s. Failing closed (pass-through unblurred). To resolve, configure Jellyfin's KnownProxies if behind a reverse proxy so the request IP reflects the actual client.");
+                    $"Spoiler Guard resolver: ambiguous session-by-IP match for {remoteIp} — {recentlyActiveUsers.Count} distinct users active within {SharedIpAmbiguityWindow.TotalSeconds}s. Failing closed (pass-through unblurred). To resolve, configure Jellyfin's KnownProxies if behind a reverse proxy so the request IP reflects the actual client.");
                 return null;
             }
 
@@ -185,7 +185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var safe = endpoint.Length > 80 ? endpoint.Substring(0, 80) + "…" : endpoint;
             WarnRateLimited(
                 "endpoint-parse",
-                $"Spoiler resolver: unrecognized SessionInfo.RemoteEndPoint format '{safe}' — session-by-IP fallback offline. Likely a Jellyfin format change.");
+                $"Spoiler Guard resolver: unrecognized SessionInfo.RemoteEndPoint format '{safe}' — session-by-IP fallback offline. Likely a Jellyfin format change.");
         }
 
         private bool RemoteEndpointIpEquals(string? endpoint, System.Net.IPAddress remoteIp)

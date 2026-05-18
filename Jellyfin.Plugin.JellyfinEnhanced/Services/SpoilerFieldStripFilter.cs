@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Strips spoiler-y metadata fields (Overview, Tags, Chapter names,
     // Taglines, ratings, premiere date, episode title, cast) from
     // BaseItemDto responses for UNWATCHED episodes whose parent series
-    // is in the requesting user's spoiler-blur list.
+    // is in the requesting user's Spoiler Guard list.
     //
     // Runs as an MVC action filter scoped to the standard item-listing
     // endpoints (Items, NextUp, Episodes, Suggestions, etc.) so every
@@ -134,7 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (cfg?.SpoilerBlurEnabled != true) return next();
             // Do NOT short-circuit on AnyStripToggleOn. The pipeline's
             // cache-bust pass (MutateImageTagsForCacheBust) must run on
-            // EVERY DTO whenever spoiler blur is enabled, so native-client
+            // EVERY DTO whenever Spoiler Guard is enabled, so native-client
             // image caches re-fetch when the user flips watched-state or
             // toggles Spoiler Guard itself. ApplyStripping is internally
             // per-toggle gated, so when no strip toggle is on it's a no-op
@@ -187,7 +187,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-action-exception:" + executed.Exception.GetType().FullName,
-                    $"Spoiler field strip: wrapped action threw — strip not applied. {executed.Exception.GetType().Name}: {executed.Exception.Message}");
+                    $"Spoiler Guard field strip: wrapped action threw — strip not applied. {executed.Exception.GetType().Name}: {executed.Exception.Message}");
                 return;
             }
             if (executed.Canceled) return;
@@ -204,7 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // exception type).
                 _resolver.WarnRateLimited(
                     "fieldstrip-apply:" + ex.GetType().FullName,
-                    $"Spoiler field strip failed: {ex.Message}");
+                    $"Spoiler Guard field strip failed: {ex.Message}");
             }
         }
 
@@ -228,7 +228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-shape:" + result.GetType().FullName,
-                    $"Spoiler field strip: action returned {result.GetType().Name}; strip is no-op for that shape. Likely a Jellyfin upgrade — switch to {result.GetType().Name}-aware extraction.");
+                    $"Spoiler Guard field strip: action returned {result.GetType().Name}; strip is no-op for that shape. Likely a Jellyfin upgrade — switch to {result.GetType().Name}-aware extraction.");
                 return;
             }
             if (objectResult.Value == null) return;
@@ -301,7 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var act = rv != null && rv.TryGetValue("action", out var a) ? a : "?";
                     _resolver.WarnRateLimited(
                         $"fieldstrip-unknown-shape:{ctrl}.{act}:{objectResult.Value.GetType().FullName}",
-                        $"Spoiler field strip: route {ctrl}.{act} returned shape {objectResult.Value.GetType().FullName} — no case arm matched, strip silently skipped. Likely a Jellyfin upgrade. Add a case arm in StripIfApplicable to cover this shape.");
+                        $"Spoiler Guard field strip: route {ctrl}.{act} returned shape {objectResult.Value.GetType().FullName} — no case arm matched, strip silently skipped. Likely a Jellyfin upgrade. Add a case arm in StripIfApplicable to cover this shape.");
                     break;
             }
         }
@@ -458,7 +458,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-route-parent:" + ex.GetType().FullName,
-                    $"Spoiler field strip: parent-route lookup failed: {ex.Message}");
+                    $"Spoiler Guard field strip: parent-route lookup failed: {ex.Message}");
                 // Fail CLOSED: better to over-strip than leak.
                 return true;
             }
@@ -563,7 +563,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _resolver.WarnRateLimited(
                         "fieldstrip-episode-no-seriesid",
-                        $"Spoiler field strip: Episode DTO {item.Id} has no SeriesId — strip cannot determine series membership. Possible Jellyfin DTO-shape change.");
+                        $"Spoiler Guard field strip: Episode DTO {item.Id} has no SeriesId — strip cannot determine series membership. Possible Jellyfin DTO-shape change.");
                 }
                 return;
             }
@@ -660,7 +660,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-movie-collection:" + ex.GetType().FullName,
-                    $"Spoiler field strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
+                    $"Spoiler Guard field strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
             }
             return false;
         }
@@ -684,7 +684,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-resolveplayed:" + ex.GetType().FullName,
-                    $"Spoiler field strip: ResolvePlayedServerSide failed for item {itemId}: {ex.Message}");
+                    $"Spoiler Guard field strip: ResolvePlayedServerSide failed for item {itemId}: {ex.Message}");
                 // Fail CLOSED: when we can't determine played-state and the
                 // response would otherwise leak metadata, prefer the strip.
                 // Better to show "Spoiler Guard activated" on a watched
@@ -718,7 +718,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-resolvethroughticks:" + ex.GetType().FullName,
-                    $"Spoiler field strip: ResolveWatchedThroughTicksServerSide failed for item {itemId}: {ex.Message}");
+                    $"Spoiler Guard field strip: ResolveWatchedThroughTicksServerSide failed for item {itemId}: {ex.Message}");
                 return null;
             }
         }
@@ -749,7 +749,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "fieldstrip-seasonprobe:" + ex.GetType().FullName,
-                    $"Spoiler field strip: season any-watched probe failed for season {seasonId}: {ex.Message}");
+                    $"Spoiler Guard field strip: season any-watched probe failed for season {seasonId}: {ex.Message}");
                 return false;
             }
         }
@@ -814,7 +814,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _resolver.WarnRateLimited(
                         "searchhint-lookup:" + ex.GetType().FullName,
-                        $"Spoiler field strip: SearchHint library lookup failed for {hint.Id}: {ex.Message}");
+                        $"Spoiler Guard field strip: SearchHint library lookup failed for {hint.Id}: {ex.Message}");
                     hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
                     hint.MatchedTerm = null;
                     continue;
@@ -868,7 +868,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         //
         // Called from EVERY StripItem branch (not just ApplyStripping)
         // because we want the cache-bust even when no field-strip toggles
-        // are on — the user opted into spoiler-blur, the image bytes
+        // are on — the user opted into Spoiler Guard, the image bytes
         // depend on watched-state, the URL must reflect that.
 
         // Image types whose bytes are intercepted by SpoilerBlurImageFilter

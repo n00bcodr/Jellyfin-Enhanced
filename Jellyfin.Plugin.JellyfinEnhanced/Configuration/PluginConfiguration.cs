@@ -272,7 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentDefaultFilterContinueWatching = true;
             HiddenContentDefaultExperimentalHideCollections = false;
 
-            // Spoiler Blur — server-wide master switch for the per-show feature
+            // Spoiler Guard — server-wide master switch for the per-show feature
             // that blurs images of unwatched episodes via the Jellyfin image API.
             // Defaults match property initializers; both must agree so XML upgrade
             // paths land on the same value.
@@ -284,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // (the strictest sensible posture, since the user explicitly
             // wants protection). The image-replacement mode defaults to
             // "hide" (stock cards) for the same reason. Admins can relax
-            // anything they don't want in the configPage's Spoiler Blur
+            // anything they don't want in the configPage's Spoiler Guard
             // section.
             SpoilerStripOverview = true;
             SpoilerStripTags = true;
@@ -576,7 +576,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentDefaultFilterContinueWatching { get; set; }
         public bool HiddenContentDefaultExperimentalHideCollections { get; set; }
 
-        // Spoiler Blur — when enabled by an admin AND opted into per-show by
+        // Spoiler Guard — when enabled by an admin AND opted into per-show by
         // a user, the plugin replaces images of UNWATCHED episodes of those
         // shows with a Gaussian-blurred version on the wire (SkiaSharp
         // CreateBlur, sigma=Intensity, tile-mode Clamp). Done in an MVC
@@ -648,9 +648,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // IUserDataManager so rewatches don't re-trigger.
         public bool SpoilerAutoEnableOnFirstPlay { get; set; } = false;
         // When true, every successful Seerr request the user submits via JE
-        // also registers a pending spoiler-blur entry (UserSpoilerBlur.PendingTmdb).
+        // also registers a pending Spoiler Guard entry (UserSpoilerBlur.PendingTmdb).
         // When the content lands in the library, SpoilerSeerrPendingPromoter
-        // moves the entry into Series/Movies so spoiler-blur is already on.
+        // moves the entry into Series/Movies so Spoiler Guard is already on.
         // Manual opt-in via the Seerr more-info modal button is always
         // available (gated only by SpoilerBlurEnabled) — this toggle controls
         // the auto-on-request path specifically.

@@ -1750,7 +1750,7 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     }
 }
 
-// Toggle button that lets the user enable spoiler-blur for a title in the
+// Toggle button that lets the user enable Spoiler Guard for a title in the
 // modal regardless of request status. Two use cases:
 //   (a) the user is about to Request it — they can pre-arm Spoiler Guard so
 //       the title is already blurred when it lands in their library.
@@ -1796,7 +1796,7 @@ function buildSpoilerToggleButton(data, mediaType) {
         labelSpan.textContent = label;
     }
     refreshLabel();
-    // Cold-load fix: spoiler-blur state may load after the modal mounts,
+    // Cold-load fix: Spoiler Guard state may load after the modal mounts,
     // so the initial refreshLabel above could read empty sets and show
     // "Enable" for a TMDB id that's actually pending. whenLoaded resolves
     // immediately if already loaded; otherwise awaits the in-flight load.
@@ -1839,7 +1839,7 @@ function buildSpoilerToggleButton(data, mediaType) {
     return btn;
 }
 
-// Append the spoiler-blur toggle button into the secondary-actions mount
+// Append the Spoiler Guard toggle button into the secondary-actions mount
 // so it sits visually below the primary Request CTA with its own spacing
 // — not stacked flush inside the .je-more-info-actions group (which has
 // overflow:hidden + gap:0 to "weld" related buttons together).

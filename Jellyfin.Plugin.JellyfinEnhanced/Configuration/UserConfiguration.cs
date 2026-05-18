@@ -67,9 +67,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CalendarDefaultViewMode { get; set; } = "agenda";
     }
 
-    // Per-user spoiler-blur state. Stored in spoilerblur.json alongside
+    // Per-user Spoiler Guard state. Stored in spoilerblur.json alongside
     // bookmarks.json / hidden-content.json. Each entry marks a series the user
-    // has opted into spoiler blur for; the image filter blurs every UNWATCHED
+    // has opted into Spoiler Guard for; the image filter blurs every UNWATCHED
     // episode of that series (both already-aired-but-not-watched, and unaired).
     public class SpoilerBlurSeriesEntry
     {
@@ -81,7 +81,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
-    // Per-movie spoiler-blur entry. Distinct from SpoilerBlurSeriesEntry
+    // Per-movie Spoiler Guard entry. Distinct from SpoilerBlurSeriesEntry
     // so the storage shape is explicit and the management UI can render
     // movies + series in separate sections without type-sniffing.
     public class SpoilerBlurMovieEntry
@@ -91,9 +91,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
-    // Per-collection spoiler-blur entry. Collections (BoxSet) are
+    // Per-collection Spoiler Guard entry. Collections (BoxSet) are
     // user/admin-curated groupings of movies. R23-collections-redesign:
-    // toggling spoiler-blur on a collection is a SHORTCUT — it does
+    // toggling Spoiler Guard on a collection is a SHORTCUT — it does
     // NOT blur or strip the collection itself (the collection name +
     // art is the entry point the user clicked, like a Series). Instead,
     // every movie that's a member of the collection (via BoxSet
@@ -108,7 +108,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
-    // Pre-acquisition spoiler intent: user has subscribed to spoiler-blur
+    // Pre-acquisition spoiler intent: user has subscribed to Spoiler Guard
     // for a TMDB id that isn't (yet) in the Jellyfin library. Two sources:
     // (a) auto-add when the user submits a Seerr request via the JE-proxied
     // /jellyseerr/request endpoint, gated by SpoilerAutoEnableOnSeerrRequest;
@@ -150,7 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : new Dictionary<string, SpoilerBlurSeriesEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
 
-        // Movies the user has opted into spoiler-blur for. Keyed the same
+        // Movies the user has opted into Spoiler Guard for. Keyed the same
         // way as Series — N-format movie GUID, case-insensitive. Existing
         // spoilerblur.json files written before movie support deserialize
         // with an empty dict (Newtonsoft default).
@@ -164,7 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : new Dictionary<string, SpoilerBlurMovieEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
 
-        // Collections (BoxSet) the user has opted into spoiler-blur for.
+        // Collections (BoxSet) the user has opted into Spoiler Guard for.
         // Same N-format key, case-insensitive comparer.
         private Dictionary<string, SpoilerBlurCollectionEntry> _collections
             = new(StringComparer.OrdinalIgnoreCase);

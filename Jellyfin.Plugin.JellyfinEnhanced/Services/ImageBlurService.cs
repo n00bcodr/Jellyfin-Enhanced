@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Hardcoded last-resort fallback served when both the parent-art path
         // AND the SkiaSharp StockCard render fail. A flat-fill 16x16 #101010
         // JPEG, pre-encoded so it has no runtime decode/encode dependency —
-        // if Skia is broken in-process, the spoiler-blur threat model still
+        // if Skia is broken in-process, the Spoiler Guard threat model still
         // requires that we DO NOT serve the original spoiler bytes through
         // the hide-mode path. 285 bytes; lifetime of the process.
         private static readonly byte[] _hardcodedFallbackJpeg = Convert.FromBase64String(
@@ -111,7 +111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Decoder failed on probe — fall through to default 600x900.
                 // Rate-limited so a malformed-image flood (corrupt poster
                 // somewhere in the library) can't fill the log.
-                _logger.Debug($"Spoiler stock-card probe failed for input ({input?.Length ?? 0} bytes): {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
+                _logger.Debug($"Spoiler Guard stock-card probe failed for input ({input?.Length ?? 0} bytes): {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 
             byte[]? output;
@@ -127,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"Spoiler stock-card render failed: {ex.Message}");
+                _logger.Error($"Spoiler Guard stock-card render failed: {ex.Message}");
                 return null;
             }
 
@@ -175,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Reference probe failed — fall back to default 600x900
                 // target dims. Debug-level since this fires for any
                 // malformed reference and we have a sane default.
-                _logger.Debug($"Spoiler parent-art reference probe failed: {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
+                _logger.Debug($"Spoiler Guard parent-art reference probe failed: {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 
             byte[]? output;
@@ -212,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"Spoiler parent-art resize failed: {ex.Message}");
+                _logger.Error($"Spoiler Guard parent-art resize failed: {ex.Message}");
                 return null;
             }
 
@@ -247,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"Spoiler blur failed: {ex.Message}");
+                _logger.Error($"Spoiler Guard failed: {ex.Message}");
                 return null;
             }
 

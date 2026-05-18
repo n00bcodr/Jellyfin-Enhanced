@@ -16,7 +16,7 @@
         // Spoiler Guard enabled by the user AND the admin has
         // SpoilerStripReviews on. TMDB reviews routinely contain plot
         // spoilers, and user-written reviews share that risk.
-        // Async because the spoiler-blur module loads its state lazily;
+        // Async because the Spoiler Guard module loads its state lazily;
         // calling whenLoaded() ensures we have an authoritative answer
         // even on a cold page load before the state XHR completes.
         async function shouldSuppressForSpoilerMode(item, mediaType) {
