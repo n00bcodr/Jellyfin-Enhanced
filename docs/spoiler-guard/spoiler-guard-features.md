@@ -48,7 +48,7 @@ Watched episodes pass through completely untouched. Your library doesn't change 
 
 Open any series detail page. The Spoiler Guard toggle button sits in the action row next to Play / Mark Watched:
 
-![Spoiler Guard toggle button on Bluey](shield-02-bluey-series.png)
+![Spoiler Guard toggle button in the action row](web-toggle-button.png)
 
 Click it. The button flips to **Spoiler Guard: On** and you'll see a toast confirmation:
 
