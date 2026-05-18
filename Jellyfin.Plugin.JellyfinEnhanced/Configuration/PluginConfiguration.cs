@@ -302,7 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
             SpoilerBlurStrictRefresh = false;
-            SpoilerKeepMoviePosters = false;
+            SpoilerKeepMoviePosters = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
         }
 
@@ -669,11 +669,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Thumb images pass through unblurred even when the master switch
         // is on. The movie's Chapter thumbnails, Screenshots, and (when
         // SpoilerBlurArtwork is on) Backdrop / Art still follow the
-        // protection logic. Useful when admins find movie posters to be
-        // generally curated marketing that doesn't reveal plot, while
-        // the chapter scene-thumbs are the actual spoiler vector. Off
-        // by default (current strict behaviour — hide everything).
-        public bool SpoilerKeepMoviePosters { get; set; } = false;
+        // protection logic. On by default — movie posters are typically
+        // curated marketing art that doesn't reveal plot, whereas the
+        // chapter scene-thumbs inside a movie's detail page (and the
+        // synopsis / cast / chapter names) are the actual spoiler vector.
+        // Admins who want maximum obscurity can flip this off to also
+        // hide movie posters until each movie is marked watched.
+        public bool SpoilerKeepMoviePosters { get; set; } = true;
         // Placeholder text shown in place of stripped Overview, so the
         // client doesn't render "Description" header followed by blank.
         // Configurable so admins can localise / personalise.

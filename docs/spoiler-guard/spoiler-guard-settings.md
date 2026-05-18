@@ -57,7 +57,7 @@ This toggle also controls how `ImageBlurHashes` are stripped on the DTO: by defa
 
 ## Show movie posters even when Spoiler Guard is on
 
-**Default: Off.** When on, a Spoiler-Guard-listed movie's **Primary** (poster) and **Thumb** images pass through unblurred. Useful when admins find that movie posters are typically curated marketing art that doesn't reveal plot, while the per-chapter scene-thumbs inside the movie's detail page are the real spoiler vector.
+**Default: On.** A Spoiler-Guard-listed movie's **Primary** (poster) and **Thumb** images pass through unblurred. Movie posters are typically curated marketing art that doesn't reveal plot, while the per-chapter scene-thumbs inside the movie's detail page (plus the synopsis, chapter names, cast) are the real spoiler vector. Turn off for maximum obscurity — protected movies will also have their posters hidden until each one is marked watched.
 
 What's still protected when this toggle is on:
 
@@ -202,7 +202,7 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 | Image Replacement Mode | Show stock cards |
 | Blur intensity | 40 |
 | Also blur Backdrop / Art | Off |
-| Show movie posters even when Spoiler Guard is on | Off |
+| Show movie posters even when Spoiler Guard is on | On |
 | Auto-enable on first play | Off |
 | Auto-enable on Seerr request | Off |
 | Strict refresh mode | Off |
