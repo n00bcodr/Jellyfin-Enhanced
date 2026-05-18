@@ -58,13 +58,11 @@ Every other Jellyfin client you use will pick up the same protection on its next
 
 ### Per movie
 
-The same toggle button appears on Movie detail pages. With Spoiler Guard off, you see the full poster and description as normal:
+The same toggle button appears on Movie detail pages. Click the toggle and the poster blurs (or hides, depending on Image Replacement mode), the description swaps to the placeholder, and chapters / cast on unwatched cards get the same treatment:
 
-![Back to the Future Part II — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf2-movie-before.png)
-
-Click the toggle on and the poster blurs (or hides, depending on Image Replacement mode), the description swaps to the placeholder, and chapters / cast on unwatched cards get the same treatment:
-
-![Back to the Future Part II — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf2-movie-after.png)
+| Before toggle | After toggle |
+|---|---|
+| ![Back to the Future Part II — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf2-movie-before.png) | ![Back to the Future Part II — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf2-movie-after.png) |
 
 > Spoiler Guard on. Movie images will be blurred until watched.
 
@@ -72,13 +70,11 @@ Click the toggle on and the poster blurs (or hides, depending on Image Replaceme
 
 For a BoxSet (movie collection), enabling Spoiler Guard at the **collection level** acts as a shortcut — every movie inside the collection gets protected until you mark each one watched. The collection's own art and description pass through clear (it's the entry point you just clicked, same model as a series detail page).
 
-With Spoiler Guard off, the rail of movies inside the collection shows each poster clearly:
-
-![Back to the Future Collection — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf-collection-before.png)
-
 With Spoiler Guard on, the collection art stays visible but the individual movie posters in the rail are protected:
 
-![Back to the Future Collection — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf-collection-after.png)
+| Before toggle | After toggle |
+|---|---|
+| ![Back to the Future Collection — Spoiler Guard off](../screenshots/spoiler-blur/web-bttf-collection-before.png) | ![Back to the Future Collection — Spoiler Guard on](../screenshots/spoiler-blur/web-bttf-collection-after.png) |
 
 > Spoiler Guard on. Movies in this collection will be blurred until each is watched.
 
@@ -127,7 +123,7 @@ By default Spoiler Guard does a **soft refresh**: it immediately rewrites every 
 
 | Before toggle | After toggle (soft) |
 |---|---|
-| ![Before](../screenshots/spoiler-blur/web-refresh-before-toggle.png) | ![After ON](../screenshots/spoiler-blur/web-refresh-after-toggle-on.png) |
+| ![Before](../screenshots/spoiler-blur/web-refresh-after-toggle-off.png) | ![After ON](../screenshots/spoiler-blur/web-refresh-after-toggle-on.png) |
 
 If your admin enables **Strict refresh mode**, the page also auto-reloads after every toggle so the text updates immediately — at the cost of a brief page flash.
 

@@ -2,8 +2,6 @@
 
 Admin configuration for the **Spoiler Guard** section of the Jellyfin Enhanced plugin. All toggles here are server-wide policy — users opt into Spoiler Guard for individual shows / movies / collections per-user, but the admin decides what protection looks like once they do.
 
-![Spoiler Guard admin settings](../screenshots/spoiler-blur/web-10-settings.png)
-
 !!! info "Where to find it"
 
     Jellyfin Dashboard → Plugins → **Jellyfin Enhanced** → scroll to the **Spoiler Guard** section.
