@@ -127,6 +127,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string RequestedAt { get; set; } = string.Empty;
     }
 
+    // Per-user opt-outs from individual admin strip categories. Each field
+    // is nullable bool with semantics: null = inherit admin policy,
+    // false = override to "don't hide this for me". true is recorded but
+    // never enables a strip the admin disabled — the admin cap still wins.
+    public class SpoilerBlurUserPrefs
+    {
+        public bool? HideEpisodeDescriptions { get; set; }
+        public bool? HideTags { get; set; }
+        public bool? HideChapterNames { get; set; }
+        public bool? HideTaglines { get; set; }
+        public bool? HideCommunityRating { get; set; }
+        public bool? HideCriticRating { get; set; }
+        public bool? HideAirDate { get; set; }
+        public bool? ReplaceEpisodeTitles { get; set; }
+        public bool? HideCast { get; set; }
+        public bool? HideReviews { get; set; }
+        // Persist the in-dialog "Don't ask again for 15 minutes" snooze as a
+        // permanent user choice instead of a session timer.
+        public bool SkipDisableConfirm { get; set; }
+    }
+
     public class UserSpoilerBlur
     {
         // Keyed by series ID in N format (no dashes), case-insensitive — matches
@@ -188,6 +209,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 ? new Dictionary<string, SpoilerBlurPendingEntry>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, SpoilerBlurPendingEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
+
+        // Per-user override of admin strip policy. A fresh user state has an
+        // empty Prefs object (all nullable bools = null), so unmigrated
+        // spoilerblur.json files continue to honor admin policy unchanged.
+        public SpoilerBlurUserPrefs Prefs { get; set; } = new SpoilerBlurUserPrefs();
     }
 
     public class UserShortcuts

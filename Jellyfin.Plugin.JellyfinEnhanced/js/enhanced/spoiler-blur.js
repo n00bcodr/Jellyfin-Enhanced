@@ -15,6 +15,9 @@
     // not yet in the library. Promoted to Series/Movies server-side on
     // ItemAdded (see SpoilerSeerrPendingPromoter).
     var enabledPendingTmdb = new Set();
+    // Per-user override prefs (mirrors C# SpoilerBlurUserPrefs). Each strip
+    // toggle is nullable bool: null = inherit admin, false = user opted out.
+    var userPrefs = {};
     var loaded = false;
     // Tracks the in-flight loadState() promise so consumers
     // (reviews.js, etc.) can await initial state without racing.
@@ -66,6 +69,7 @@
                     enabledPendingTmdb.add(String(key).toLowerCase());
                 });
             }
+            userPrefs = (data && data.Prefs) ? data.Prefs : {};
             loaded = true;
         }).catch(function (err) {
             console.warn(logPrefix, 'Failed to load spoiler-blur state:', err);
@@ -718,6 +722,9 @@
      * @returns {Promise<boolean>}
      */
     function confirmDisableSpoiler() {
+        // Persistent user pref takes precedence over the per-browser
+        // localStorage snooze. Set via the user-settings panel.
+        if (userPrefs && userPrefs.SkipDisableConfirm) return Promise.resolve(true);
         if (isDisableSnoozed()) return Promise.resolve(true);
         var title = JE.t('spoiler_disable_confirm_title');
         var body = JE.t('spoiler_disable_confirm_body');
@@ -1192,6 +1199,35 @@
         loadState();
     }
 
+    /**
+     * Returns a copy of the current user's Spoiler Guard override prefs.
+     * Empty object on first load.
+     */
+    function getUserPrefs() {
+        return Object.assign({}, userPrefs);
+    }
+
+    /**
+     * Persist updated override prefs server-side and update the local cache.
+     * Caller passes the full prefs object; missing keys are treated as null
+     * by the server (inherit admin). Returns the saved prefs on success.
+     * @param {Object} next
+     * @returns {Promise<Object>}
+     */
+    function setUserPrefs(next) {
+        var payload = next || {};
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/user-prefs'),
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            dataType: 'json',
+        }).then(function (res) {
+            userPrefs = Object.assign({}, payload);
+            return res && res.prefs ? res.prefs : userPrefs;
+        });
+    }
+
     JE.spoilerBlur = {
         init: init,
         addSpoilerBlurButton: addSpoilerBlurButton,
@@ -1210,5 +1246,7 @@
         whenLoaded: whenLoaded,
         preloadChapterImages: preloadChapterImages,
         confirmDisableSpoiler: confirmDisableSpoiler,
+        getUserPrefs: getUserPrefs,
+        setUserPrefs: setUserPrefs,
     };
 })(window.JellyfinEnhanced);

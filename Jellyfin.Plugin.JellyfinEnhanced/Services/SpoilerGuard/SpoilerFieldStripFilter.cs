@@ -487,7 +487,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // on state change. Series has no per-watched semantics so
                 // just hash the in-list state.
                 MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
-                ApplyStripping(item, cfg, userId);
+                ApplyStripping(item, userState, cfg, userId);
                 return;
             }
 
@@ -522,7 +522,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // movie played.
                 MutateImageTagsForCacheBust(item, cfg, moviePlayed, moviePlayPos);
                 if (moviePlayed) return;
-                ApplyStripping(item, cfg, userId);
+                ApplyStripping(item, userState, cfg, userId);
                 return;
             }
 
@@ -550,7 +550,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // since the extra exists as part of an episode whose
                 // very metadata the user has opted into hiding.
                 MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
-                ApplyStripping(item, cfg, userId);
+                ApplyStripping(item, userState, cfg, userId);
                 return;
             }
 
@@ -603,7 +603,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // flips when the user starts the season.
                 MutateImageTagsForCacheBust(item, cfg, seasonAnyWatched, playbackPositionTicks: 0);
                 if (seasonAnyWatched) return;
-                ApplyStripping(item, cfg, userId);
+                ApplyStripping(item, userState, cfg, userId);
                 return;
             }
 
@@ -629,7 +629,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
             if (played) return;
 
-            ApplyStripping(item, cfg, userId);
+            ApplyStripping(item, userState, cfg, userId);
         }
 
         // A movie ID is "in spoiler scope" when either (a) it's directly
@@ -770,6 +770,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // intact and are harmless in HTML context but would execute in a
         // JS-eval context). No JE consumer evals Overview today; if that
         // ever changes, the sanitizer must be re-evaluated.
+        // Merge admin strip policy with optional per-user override. The admin
+        // policy is the cap: a strip the admin has disabled is never re-enabled
+        // by a user override (no client-side knob can broaden server-side
+        // protection). When the admin has the strip enabled, the user can
+        // opt OUT by setting their override to false.
+        //   adminOn=false → never strip (admin gates the feature)
+        //   adminOn=true, override=null → strip (default: follow admin)
+        //   adminOn=true, override=false → don't strip (user opt-out)
+        //   adminOn=true, override=true → strip (explicit user re-affirm)
+        private static bool ShouldStrip(bool adminOn, bool? userOverride)
+            => adminOn && (userOverride ?? true);
+
         private static string SanitizePlaceholder(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return "Spoiler Guard activated";
@@ -827,11 +839,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (!userState.Series.ContainsKey(ep.SeriesId.ToString("N"))) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
 
-                    if (cfg.SpoilerReplaceTitle && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
+                    if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles) && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
                     {
                         hint.Name = $"Season {hint.ParentIndexNumber.Value}, Episode {hint.IndexNumber.Value}";
                     }
-                    else if (cfg.SpoilerStripOverview)
+                    else if (ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions))
                     {
                         hint.Name = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
                     }
@@ -974,7 +986,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // for PlaybackPositionTicks when item.UserData is null
         // (enableUserData=false response shape). The userId arg is used
         // only by that fallback path.
-        private void ApplyStripping(BaseItemDto item, PluginConfiguration cfg, Guid userId)
+        private void ApplyStripping(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
             // ImageBlurHashes are generated from the original image at
             // scan time and ship inside the DTO alongside ImageTags. The
@@ -998,7 +1010,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // even though the configPage save handler also strips tags.
             // Defends against a config XML that was edited directly on
             // disk bypassing the JS save path.
-            if (cfg.SpoilerStripOverview && !string.IsNullOrEmpty(item.Overview))
+            if (ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions) && !string.IsNullOrEmpty(item.Overview))
             {
                 item.Overview = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
             }
@@ -1007,7 +1019,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // "Death of a main character" or "Wedding". Empty array
             // (not null) matches what Jellyfin returns for an item
             // legitimately without tags.
-            if (cfg.SpoilerStripTags && item.Tags != null && item.Tags.Length > 0)
+            if (ShouldStrip(cfg.SpoilerStripTags, userState.Prefs?.HideTags) && item.Tags != null && item.Tags.Length > 0)
             {
                 item.Tags = Array.Empty<string>();
             }
@@ -1024,7 +1036,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // user's resume point, then hides everything after. For
             // Episodes (binary watched/unwatched semantics) the full strip
             // still applies — no "half-watched" episode mode.
-            if (cfg.SpoilerStripChapters && item.Chapters != null)
+            if (ShouldStrip(cfg.SpoilerStripChapters, userState.Prefs?.HideChapterNames) && item.Chapters != null)
             {
                 long? watchedThroughTicks = null;
                 if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
@@ -1081,7 +1093,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Taglines — TMDB taglines like "Everything changes tonight"
             // are pure spoiler bait. Empty array, same reasoning as Tags.
-            if (cfg.SpoilerStripTaglines && item.Taglines != null)
+            if (ShouldStrip(cfg.SpoilerStripTaglines, userState.Prefs?.HideTaglines) && item.Taglines != null)
             {
                 item.Taglines = Array.Empty<string>();
             }
@@ -1090,13 +1102,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // implies a major event. Off by default; opt-in for users who
             // find ratings spoiler-y. Setting to null is the right call —
             // empty/zero would render as "0/10" in some clients.
-            if (cfg.SpoilerStripCommunityRating)
+            if (ShouldStrip(cfg.SpoilerStripCommunityRating, userState.Prefs?.HideCommunityRating))
             {
                 item.CommunityRating = null;
             }
 
             // CriticRating — same rationale.
-            if (cfg.SpoilerStripCriticRating)
+            if (ShouldStrip(cfg.SpoilerStripCriticRating, userState.Prefs?.HideCriticRating))
             {
                 item.CriticRating = null;
             }
@@ -1107,7 +1119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // surfaces that show "airs on YYYY-MM-DD" — though those
             // surfaces are mostly unaired (i.e. the user has no chance to
             // watch yet) and would not be in the spoiler list anyway.
-            if (cfg.SpoilerStripPremiereDate)
+            if (ShouldStrip(cfg.SpoilerStripPremiereDate, userState.Prefs?.HideAirDate))
             {
                 item.PremiereDate = null;
             }
@@ -1124,7 +1136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             //     episode (e.g. a recurring villain return).
             // Always uses BaseItemPerson.Type string comparison so we don't
             // pull in a hard reference to PersonKind enum from elsewhere.
-            if (cfg.SpoilerStripCast && item.People != null && item.People.Length > 0)
+            if (ShouldStrip(cfg.SpoilerStripCast, userState.Prefs?.HideCast) && item.People != null && item.People.Length > 0)
             {
                 if (string.Equals(cfg.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1164,7 +1176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // IndexNumber is set. Off by default because some clients use
             // Name in navigation tooltips, breadcrumbs, and "now playing"
             // overlays where the synthesized title can look jarring.
-            if (cfg.SpoilerReplaceTitle)
+            if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles))
             {
                 if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode
                     && item.IndexNumber.HasValue

@@ -2942,6 +2942,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerBlurEnabled,
                 config.SpoilerBlurIntensity,
                 config.SpoilerBlurStrictRefresh,
+                // Strip-policy fields drive the per-user override UI in the
+                // settings panel — only categories the admin has enabled
+                // surface an opt-out toggle.
+                config.SpoilerStripOverview,
+                config.SpoilerStripTags,
+                config.SpoilerStripChapters,
+                config.SpoilerStripTaglines,
+                config.SpoilerStripCommunityRating,
+                config.SpoilerStripCriticRating,
+                config.SpoilerStripPremiereDate,
+                config.SpoilerReplaceTitle,
+                config.SpoilerStripCast,
+                config.SpoilerStripReviews,
             });
         }
 
@@ -3653,6 +3666,98 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+            }
+        }
+
+        // Per-user override toggles for the admin's strip categories.
+        // Returned shape mirrors SpoilerBlurUserPrefs — nullable bools where
+        // null means "inherit admin policy", and a permanent SkipDisableConfirm
+        // flag that replaces the per-session "Don't ask for 15 minutes" snooze.
+        [HttpGet("spoiler-blur/user-prefs")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerBlurUserPrefs()
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            var userKey = userId.Value.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+
+            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+            {
+                return Ok(new SpoilerBlurUserPrefs());
+            }
+            try
+            {
+                var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                    userKey, fileName);
+                return Ok(state.Prefs ?? new SpoilerBlurUserPrefs());
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+            }
+        }
+
+        [HttpPost("spoiler-blur/user-prefs")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult SetSpoilerBlurUserPrefs([FromBody] SpoilerBlurUserPrefs? body)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            if (body == null) return BadRequest(new { success = false, message = "Missing body." });
+
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    state.Prefs = new SpoilerBlurUserPrefs
+                    {
+                        HideEpisodeDescriptions = body.HideEpisodeDescriptions,
+                        HideTags = body.HideTags,
+                        HideChapterNames = body.HideChapterNames,
+                        HideTaglines = body.HideTaglines,
+                        HideCommunityRating = body.HideCommunityRating,
+                        HideCriticRating = body.HideCriticRating,
+                        HideAirDate = body.HideAirDate,
+                        ReplaceEpisodeTitles = body.ReplaceEpisodeTitles,
+                        HideCast = body.HideCast,
+                        HideReviews = body.HideReviews,
+                        SkipDisableConfirm = body.SkipDisableConfirm,
+                    };
+                    return 1;
+                });
+                return Ok(new { success = true, prefs = body });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save Spoiler Guard user prefs: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user prefs." });
             }
         }
 
