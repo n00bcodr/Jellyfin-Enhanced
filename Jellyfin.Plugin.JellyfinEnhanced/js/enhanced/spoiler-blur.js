@@ -761,8 +761,7 @@
         // Await the initial load so that a user who opted into
         // SkipDisableConfirm doesn't get the dialog during the cold-load
         // window before loadState() resolves.
-        var preflight = (typeof whenLoaded === 'function') ? whenLoaded() : Promise.resolve();
-        return preflight.then(function () {
+        return whenLoaded().then(function () {
             if (userPrefs && userPrefs.SkipDisableConfirm) return true;
             if (isDisableSnoozed()) return true;
             return showConfirmDialog();

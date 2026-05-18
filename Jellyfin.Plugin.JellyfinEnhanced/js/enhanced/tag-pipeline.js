@@ -775,7 +775,7 @@
                 isInvalidating = false;
             }
             try {
-                if (typeof runScan === 'function') runScan();
+                runScan();
             } catch (e) {
                 console.warn(`${logPrefix} post-invalidate scan failed:`, e);
             }
