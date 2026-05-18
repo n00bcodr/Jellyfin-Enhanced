@@ -97,9 +97,9 @@ The admin chooses how unwatched cards are visually hidden. There are two modes:
     - **Episode thumbnails** (16:9) → Series Backdrop
     - **Season posters** (2:3) → Series Primary
     - **Movies opted in via a collection** (2:3) → Collection Primary
-    - **Movies opted in directly / no safe parent art** → flat dark card
+    - **Movies opted in directly / no safe parent art available** → blurred version of the original (so the card always renders something instead of going blank). A pre-encoded flat dark JPEG remains as a final fail-closed safety net if the blur step itself fails.
 
-    Useful when partial-blur feels like a tease. The viewer sees a consistent grid of "this show / this franchise" art instead of mystery boxes.
+    Useful when partial-blur feels like a tease. The viewer sees a consistent grid of "this show / this franchise" art instead of mystery boxes — and when no safe parent is available, a blur rather than a blank box.
 
 === "Blur images"
 

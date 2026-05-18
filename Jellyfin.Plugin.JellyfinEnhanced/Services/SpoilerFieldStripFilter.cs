@@ -897,14 +897,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // spoiler frame, even though the actual bytes that arrive are
         // protected. Series and BoxSet entry-point DTOs are exempt
         // because their images pass through clear (the user clicked on
-        // them; their identity isn't the spoiler).
+        // them; their identity isn't the spoiler). Movies with
+        // SpoilerKeepMoviePosters on keep their Primary / Thumb
+        // BlurHashes since those image bytes also pass through clear.
         private static void StripProtectedBlurHashes(BaseItemDto item, PluginConfiguration cfg)
         {
             if (item?.ImageBlurHashes == null || item.ImageBlurHashes.Count == 0) return;
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Series) return;
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.BoxSet) return;
 
-            foreach (var t in _alwaysProtectedImageTypes) item.ImageBlurHashes.Remove(t);
+            bool keepMoviePosters = cfg.SpoilerKeepMoviePosters
+                && item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie;
+
+            foreach (var t in _alwaysProtectedImageTypes)
+            {
+                if (keepMoviePosters
+                    && (t == MediaBrowser.Model.Entities.ImageType.Primary
+                        || t == MediaBrowser.Model.Entities.ImageType.Thumb))
+                {
+                    continue;
+                }
+                item.ImageBlurHashes.Remove(t);
+            }
             if (cfg.SpoilerBlurArtwork)
             {
                 foreach (var t in _artworkImageTypes) item.ImageBlurHashes.Remove(t);
@@ -926,7 +940,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Hash the inputs that affect blur OUTPUT bytes. Same shape
             // as the API's imageCacheToken so a client integrating with
             // the API ends up with the SAME URL as one that doesn't.
-            var inputs = $"{item.Id:N}|{cfg?.SpoilerBlurEnabled == true}|{watched}|{cfg?.SpoilerBlurMode ?? "blur"}|{cfg?.SpoilerBlurIntensity ?? 40}|{cfg?.SpoilerBlurArtwork == true}|{playbackPositionTicks}";
+            var inputs = $"{item.Id:N}|{cfg?.SpoilerBlurEnabled == true}|{watched}|{cfg?.SpoilerBlurMode ?? "blur"}|{cfg?.SpoilerBlurIntensity ?? 40}|{cfg?.SpoilerBlurArtwork == true}|{cfg?.SpoilerKeepMoviePosters == true}|{playbackPositionTicks}";
             var token = ShortHash(inputs);
 
             // Prefix the existing tag rather than replace it — preserves

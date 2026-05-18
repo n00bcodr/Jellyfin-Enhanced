@@ -415,6 +415,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     await next().ConfigureAwait(false);
                     return;
                 }
+                // Admin opt-out for movie posters: when SpoilerKeepMoviePosters
+                // is on, the Primary and Thumb image types (the movie's
+                // poster surface) pass through unblurred. Chapter thumbs,
+                // Screenshots, and (when SpoilerBlurArtwork is on)
+                // Backdrop / Art continue to follow the protection logic.
+                if (pluginConfig.SpoilerKeepMoviePosters
+                    && (string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(imageType, "Thumb", StringComparison.OrdinalIgnoreCase)))
+                {
+                    RegisterNoStoreOnStarting(context.HttpContext, imageType);
+                    await next().ConfigureAwait(false);
+                    return;
+                }
                 // Progressive chapter ("Scenes" rail) blur for unwatched
                 // movies in the spoiler list: chapters whose
                 // StartPositionTicks are BEFORE the user's resume point
@@ -557,7 +570,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (spoilerMode == "hide")
                 {
-                    await ReplaceWithStockCardAsync(executed, cacheKey, imageType, item, userState).ConfigureAwait(false);
+                    await ReplaceWithStockCardAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey, imageType, item, userState).ConfigureAwait(false);
                 }
                 else
                 {
@@ -946,6 +959,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Mirrors ReplaceWithBlurredAsync's no-store header policy.
         private async Task ReplaceWithStockCardAsync(
             ActionExecutedContext executed,
+            int sigma,
             string cacheKey,
             string imageType,
             MediaBrowser.Controller.Entities.BaseItem item,
@@ -971,6 +985,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (parentBytes != null && parentBytes.Length > 0)
             {
                 executed.Result = new FileContentResult(parentBytes, "image/jpeg");
+                if (executed.HttpContext.Response.HasStarted) return;
+                ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+                return;
+            }
+
+            // No safe parent art available (e.g. movie directly opted in,
+            // series without a Backdrop, season without a Series Primary).
+            // Fall back to a blur of the original bytes so the card still
+            // has content rather than rendering as a flat dark "broken"
+            // tile. Visually consistent with what the user would see in
+            // blur-mode for the same item.
+            var blurred = _blurService.Blur(originalBytes, sigma, cacheKey);
+            if (blurred != null)
+            {
+                executed.Result = new FileContentResult(blurred, "image/jpeg");
                 if (executed.HttpContext.Response.HasStarted) return;
                 ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
                 return;

@@ -57,6 +57,26 @@ This toggle also controls how `ImageBlurHashes` are stripped on the DTO: by defa
 
 ---
 
+## Show movie posters even when Spoiler Guard is on
+
+**Default: Off.** When on, a Spoiler-Guard-listed movie's **Primary** (poster) and **Thumb** images pass through unblurred. Useful when admins find that movie posters are typically curated marketing art that doesn't reveal plot, while the per-chapter scene-thumbs inside the movie's detail page are the real spoiler vector.
+
+What's still protected when this toggle is on:
+
+- **Chapter** thumbnails — the "Scenes" rail on the movie detail page. Progressive-strip rules still apply (chapters before the user's resume point pass through; chapters at-or-after the resume point are protected).
+- **Screenshot** images.
+- **Backdrop / Art** — only if "Also blur Backdrop / Art" is also on.
+
+What passes through clear:
+
+- The movie's **Primary** poster — visible on home rails, search results, the movie detail page header, everywhere a Primary is fetched.
+- The movie's **Thumb** image (the Primary-variant used in some surfaces).
+- BlurHash placeholders for Primary / Thumb (so the loading-state preview stays consistent with the clear bytes that follow).
+
+Series and Episodes are unaffected by this toggle — they have their own per-aspect logic (Episode → Series Backdrop, Season → Series Primary).
+
+---
+
 ## Auto-enable on first play of a new show
 
 **Default: Off.** When on, the first time a user plays S1E1 of a series they've never watched before, the plugin automatically adds that series to their Spoiler Guard list. They don't have to remember to toggle it before starting.
@@ -186,6 +206,7 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 | Image Replacement Mode | Show stock cards |
 | Blur intensity | 40 |
 | Also blur Backdrop / Art | Off |
+| Show movie posters even when Spoiler Guard is on | Off |
 | Auto-enable on first play | Off |
 | Auto-enable on Seerr request | Off |
 | Strict refresh mode | Off |
