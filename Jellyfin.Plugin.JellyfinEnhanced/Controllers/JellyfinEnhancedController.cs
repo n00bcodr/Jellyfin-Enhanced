@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Text;
@@ -2813,7 +2814,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503, "TMDB API key is not configured.");
             }
 
-            var httpClient = _httpClientFactory.CreateClient();
+            // TMDB returns gzip-encoded responses regardless of Accept-Encoding;
+            // the factory client doesn't auto-decompress, so ReadAsStringAsync would
+            // UTF-8-mangle the gzip header and corrupt the body.
+            using var handler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All };
+            using var httpClient = new HttpClient(handler);
             var queryString = HttpContext.Request.QueryString;
             var separator = queryString.HasValue ? "&" : "?";
             var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
