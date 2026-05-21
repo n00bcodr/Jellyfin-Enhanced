@@ -533,6 +533,6 @@
     "hidden_content_experimental_label": "實驗性",
     "active_streams_count": "{count} 個活躍串流",
     "active_streams_none": "無活躍串流",
-    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
-    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
+    "reviews_avg_rating_tooltip": "來自 {count} 位用戶嘅平均評分",
+    "panel_settings_subtitles_position_note": "需要喺字幕設定入面將 Jellyfin 字幕樣式設為 <b>自訂</b>"
 }

@@ -533,6 +533,6 @@
     "hidden_content_experimental_label": "Expérimental",
     "active_streams_count": "{count} flux actif|{count} flux actifs",
     "active_streams_none": "Aucun flux actif",
-    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
-    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
+    "reviews_avg_rating_tooltip": "Note moyenne de {count} utilisateur(s)",
+    "panel_settings_subtitles_position_note": "Nécessite que le style des sous-titres Jellyfin soit défini sur <b>Personnalisé</b> dans les paramètres des sous-titres"
 }
