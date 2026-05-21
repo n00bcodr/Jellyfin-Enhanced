@@ -532,5 +532,7 @@
     "hidden_content_unknown_show": "Okänd serie",
     "hidden_content_experimental_label": "Experimentell",
     "active_streams_count": "{count} aktiv ström|{count} aktiva strömmar",
-    "active_streams_none": "Inga aktiva strömmar"
+    "active_streams_none": "Inga aktiva strömmar",
+    "reviews_avg_rating_tooltip": "Genomsnittligt betyg från {count} användare(s)",
+    "panel_settings_subtitles_position_note": "Kräver Jellyfin subtitle stil inställd på <b>Custom</b> i undertextinställningar"
 }

@@ -532,5 +532,7 @@
     "hidden_content_unknown_show": "Série desconhecida",
     "hidden_content_experimental_label": "Experimental",
     "active_streams_count": "{count} stream ativo|{count} streams ativos",
-    "active_streams_none": "Nenhum stream ativo"
+    "active_streams_none": "Nenhum stream ativo",
+    "reviews_avg_rating_tooltip": "Avaliação média de {count} utilizador(es)",
+    "panel_settings_subtitles_position_note": "Requer que o estilo das legendas do Jellyfin esteja definido como <b>Personalizado</b> nas definições de legendas"
 }

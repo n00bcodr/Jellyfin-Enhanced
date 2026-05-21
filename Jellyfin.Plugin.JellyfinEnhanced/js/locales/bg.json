@@ -532,5 +532,7 @@
     "hidden_content_unknown_show": "Неизвестен сериал",
     "hidden_content_experimental_label": "Експериментално",
     "active_streams_count": "{count} активен поток|{count} активни потока",
-    "active_streams_none": "Няма активни потоци"
+    "active_streams_none": "Няма активни потоци",
+    "reviews_avg_rating_tooltip": "Средна оценка от {count} потребител(и)",
+    "panel_settings_subtitles_position_note": "Изисква стилът на субтитрите на Jellyfin да бъде зададен на <b>Персонализиран</b> в настройките за субтитри."
 }

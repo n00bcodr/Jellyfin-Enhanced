@@ -532,5 +532,7 @@
     "hidden_content_unknown_show": "Unknown Tale",
     "hidden_content_experimental_label": "Experimental, arrr",
     "active_streams_count": "{count} stream ativo|{count} streams ativos",
-    "active_streams_none": "Nenhum stream ativo"
+    "active_streams_none": "Nenhum stream ativo",
+    "reviews_avg_rating_tooltip": "Average rating from {count} matey(s)",
+    "panel_settings_subtitles_position_note": "Ye must set Jellyfin subtitle style to <b>Custom</b> in th' subtitle settings"
 }

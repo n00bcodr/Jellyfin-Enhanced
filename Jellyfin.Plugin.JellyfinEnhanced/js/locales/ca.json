@@ -532,5 +532,7 @@
     "hidden_content_unknown_show": "Sèrie desconeguda",
     "hidden_content_experimental_label": "Experimental",
     "active_streams_count": "{count} flux actiu|{count} fluxos actius",
-    "active_streams_none": "Cap flux actiu"
+    "active_streams_none": "Cap flux actiu",
+    "reviews_avg_rating_tooltip": "Valoració mitjana de {count} usuari(s)",
+    "panel_settings_subtitles_position_note": "Requereix l'estil de subtítols de Jellyfin a <b>Custom</b> en la configuració del subtítols"
 }
