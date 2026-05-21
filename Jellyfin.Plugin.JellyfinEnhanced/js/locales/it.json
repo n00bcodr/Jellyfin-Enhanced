@@ -533,5 +533,5 @@
     "hidden_content_experimental_label": "Sperimentale",
     "active_streams_count": "{count} stream attivo|{count} stream attivi",
     "active_streams_none": "Nessuno stream attivo",
-    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)"
+    "reviews_avg_rating_tooltip": "Punteggio medio da {count} utente/i"
 }
