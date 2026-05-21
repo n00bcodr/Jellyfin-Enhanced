@@ -532,5 +532,7 @@
     "hidden_content_experimental_label": "Eksperymentalne",
     "active_streams_count": "{count} aktywny strumień|{count} aktywne strumienie",
     "active_streams_none": "Brak aktywnych strumieni",
-    "jellyseerr_report_issue_type_other": "Inny"
+    "jellyseerr_report_issue_type_other": "Inny",
+    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
+    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
 }

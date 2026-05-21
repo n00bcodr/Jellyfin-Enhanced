@@ -532,5 +532,6 @@
     "hidden_content_unknown_show": "مسلسل غير معروف",
     "hidden_content_experimental_label": "تجريبي",
     "active_streams_count": "تدفقات نشطة: {count}",
-    "active_streams_none": "لا توجد تدفقات نشطة"
+    "active_streams_none": "لا توجد تدفقات نشطة",
+    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)"
 }

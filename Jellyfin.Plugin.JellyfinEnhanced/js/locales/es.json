@@ -532,5 +532,7 @@
     "hidden_content_unknown_show": "Serie desconocida",
     "hidden_content_experimental_label": "Experimental",
     "active_streams_count": "{count} transmisión activa|{count} transmisiones activas",
-    "active_streams_none": "Sin transmisiones activas"
+    "active_streams_none": "Sin transmisiones activas",
+    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
+    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
 }

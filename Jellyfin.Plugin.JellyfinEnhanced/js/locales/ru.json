@@ -532,5 +532,7 @@
     "hidden_content_experimental_label": "Экспериментально",
     "active_streams_count": "{count} активный поток|{count} активных потока",
     "active_streams_none": "Нет активных потоков",
-    "jellyseerr_report_issue_type_other": "Прочие"
+    "jellyseerr_report_issue_type_other": "Прочие",
+    "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
+    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
 }
