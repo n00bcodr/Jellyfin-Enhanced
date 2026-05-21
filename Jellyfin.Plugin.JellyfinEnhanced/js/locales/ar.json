@@ -533,5 +533,6 @@
     "hidden_content_experimental_label": "تجريبي",
     "active_streams_count": "تدفقات نشطة: {count}",
     "active_streams_none": "لا توجد تدفقات نشطة",
-    "reviews_avg_rating_tooltip": "متوسط التقييم من {count} مستخدم(ين)"
+    "reviews_avg_rating_tooltip": "متوسط التقييم من {count} مستخدم(ين)",
+    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
 }

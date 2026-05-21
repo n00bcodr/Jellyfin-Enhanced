@@ -533,5 +533,6 @@
     "hidden_content_experimental_label": "Sperimentale",
     "active_streams_count": "{count} stream attivo|{count} stream attivi",
     "active_streams_none": "Nessuno stream attivo",
-    "reviews_avg_rating_tooltip": "Punteggio medio da {count} utente/i"
+    "reviews_avg_rating_tooltip": "Punteggio medio da {count} utente/i",
+    "panel_settings_subtitles_position_note": "Requires Jellyfin subtitle style set to <b>Custom</b> in subtitle settings"
 }
