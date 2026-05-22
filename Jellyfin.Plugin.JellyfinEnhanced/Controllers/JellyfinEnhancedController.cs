@@ -1084,7 +1084,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 string.IsNullOrEmpty(config.JellyseerrUrls))
                 return StatusCode(503, "Seerr integration is not configured or enabled.");
 
-            var jellyfinUsers = _userManager.Users
+            var jellyfinUsers = _userManager.GetAllUsers()
                 .GroupBy(u => u.Id)
                 .Select(g => g.First())
                 .ToList();
@@ -2133,7 +2133,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 int itemsAdded = 0;
                 var errors = new List<string>();
 
-                foreach (var user in _userManager.Users)
+                foreach (var user in _userManager.GetAllUsers())
                 {
                     try
                     {
@@ -2262,7 +2262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
-                var userIds = _userManager.Users
+                var userIds = _userManager.GetAllUsers()
                     .Select(u => u.Id.ToString().Replace("-", ""))
                     .Where(id => !blockedIds.Contains(id))
                     .ToList();

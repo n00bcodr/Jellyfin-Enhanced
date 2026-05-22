@@ -575,5 +575,7 @@
     "hidden_content_unknown_show": "Ukjent serie",
     "hidden_content_experimental_label": "Eksperimentell",
     "active_streams_count": "{count} aktiv strøm|{count} aktive strømmer",
-    "active_streams_none": "Ingen aktive strømmer"
+    "active_streams_none": "Ingen aktive strømmer",
+    "reviews_avg_rating_tooltip": "Gjennomsnittsvurdering fra {count} bruker(e)",
+    "panel_settings_subtitles_position_note": "Krever at Jellyfin-undertekststilen er satt til <b>Egendefinert</b> i undertekstinnstillingene"
 }

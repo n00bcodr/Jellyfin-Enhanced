@@ -575,5 +575,7 @@
     "hidden_content_unknown_show": "Neznámý seriál",
     "hidden_content_experimental_label": "Experimentální",
     "active_streams_count": "{count} aktivní stream|{count} aktivní streamy",
-    "active_streams_none": "Žádné aktivní streamy"
+    "active_streams_none": "Žádné aktivní streamy",
+    "reviews_avg_rating_tooltip": "Průměrné hodnocení od {count} uživatelů",
+    "panel_settings_subtitles_position_note": "Vyžaduje styl Jellyfin titulky nastavený na <b>Vlastní</b> v nastavení titulků"
 }

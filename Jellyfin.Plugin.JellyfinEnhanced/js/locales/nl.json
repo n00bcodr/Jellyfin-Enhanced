@@ -575,5 +575,7 @@
     "hidden_content_unknown_show": "Onbekende serie",
     "hidden_content_experimental_label": "Experimenteel",
     "active_streams_count": "{count} actieve stream|{count} actieve streams",
-    "active_streams_none": "Geen actieve streams"
+    "active_streams_none": "Geen actieve streams",
+    "reviews_avg_rating_tooltip": "Gemiddelde beoordeling van {count} gebruiker(s)",
+    "panel_settings_subtitles_position_note": "Vereist dat de Jellyfin-ondertitelstijl is ingesteld op <b>Aangepast</b> in de ondertitelinstellingen"
 }
