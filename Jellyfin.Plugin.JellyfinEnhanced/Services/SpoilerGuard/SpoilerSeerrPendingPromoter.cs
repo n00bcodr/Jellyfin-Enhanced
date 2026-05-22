@@ -162,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // full library scan when nobody has anything pending.
                 if (!_activePendingKeys.ContainsKey(pendingKey)) return;
 
-                var userIds = _userManager.Users.Select(u => u.Id).ToArray();
+                var userIds = _userManager.GetAllUsers().Select(u => u.Id).ToArray();
                 var itemId = item.Id;
                 var itemName = item.Name ?? string.Empty;
                 var isSeries = item is Series;
