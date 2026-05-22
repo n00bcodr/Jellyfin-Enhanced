@@ -359,8 +359,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (s == null) continue;
                         s.Title = null;
                         s.Comment = null;
-                        s.Path = null;
-                        s.DeliveryUrl = null;
+                        // Path / DeliveryUrl are spoiler-leaky ONLY on
+                        // external streams (separate .srt files whose
+                        // filename mirrors the episode title). Embedded
+                        // streams use DeliveryUrl for the server's
+                        // transcoded-subtitle delivery URL — nulling it
+                        // on those breaks playback in the Jellyfin web
+                        // client (the source-list parser bails out with
+                        // "Playback Error"). Scoping the strip to
+                        // IsExternal keeps the leak protection where it
+                        // matters without killing in-band streams.
+                        if (s.IsExternal)
+                        {
+                            s.Path = null;
+                            s.DeliveryUrl = null;
+                        }
                     }
                 }
                 if (ms.MediaAttachments != null)
@@ -1246,16 +1259,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (s == null) continue;
                         s.Title = null;
                         s.Comment = null;
-                        // External subtitle / audio stream filenames
-                        // mirror the episode title ("S05E14 - The Death
-                        // of X.en.srt"). Path is the raw filesystem path;
-                        // DeliveryUrl is the public download URL — both
-                        // leak.
-                        s.Path = null;
-                        s.DeliveryUrl = null;
-                        // DisplayTitle is a read-only getter on the
-                        // MediaStream entity that derives from Title;
-                        // nulling Title sanitizes it transitively.
+                        // Path / DeliveryUrl are spoiler-leaky ONLY on
+                        // external streams (separate .srt files whose
+                        // filename mirrors the episode title, e.g.
+                        // "S05E14 - The Death of X.en.srt"). For embedded
+                        // streams the Jellyfin server populates
+                        // DeliveryUrl with a transcoded-subtitle delivery
+                        // route the player needs at init time — nulling
+                        // it kills web-client playback with a generic
+                        // "Playback Error" toast.
+                        // DisplayTitle is a read-only getter that derives
+                        // from Title; nulling Title sanitizes it
+                        // transitively.
+                        if (s.IsExternal)
+                        {
+                            s.Path = null;
+                            s.DeliveryUrl = null;
+                        }
                     }
                 }
                 if (item.MediaSources != null)
@@ -1267,7 +1287,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         ms.Name = null;
                         // MediaSources nests its OWN MediaStreams array
                         // (separate from BaseItemDto.MediaStreams). Strip
-                        // it too.
+                        // it too — same external-only scoping as above
+                        // for the same reason.
                         if (ms.MediaStreams != null)
                         {
                             foreach (var s in ms.MediaStreams)
@@ -1275,10 +1296,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 if (s == null) continue;
                                 s.Title = null;
                                 s.Comment = null;
-                                // External file paths / delivery URLs
-                                // leak just like the top-level streams.
-                                s.Path = null;
-                                s.DeliveryUrl = null;
+                                if (s.IsExternal)
+                                {
+                                    s.Path = null;
+                                    s.DeliveryUrl = null;
+                                }
                             }
                         }
                         // mkv attachments (chapters_*.xml, subtitle_*.srt)
