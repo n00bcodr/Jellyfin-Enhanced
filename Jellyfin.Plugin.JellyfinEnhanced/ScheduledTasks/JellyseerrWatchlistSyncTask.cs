@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -105,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             // so blocked users don't get watchlist sync.
             var blockedIds = Helpers.Jellyseerr.JellyseerrUserImportHelper
                 .GetBlockedUserIds(config.JellyseerrImportBlockedUsers);
-            var allUsers = _userManager.Users.ToList();
+            var allUsers = _userManager.GetAllUsers().ToList();
             var jellyfinUsers = allUsers
                 .Where(u => !blockedIds.Contains(u.Id.ToString().Replace("-", ""), StringComparer.OrdinalIgnoreCase))
                 .ToList();
