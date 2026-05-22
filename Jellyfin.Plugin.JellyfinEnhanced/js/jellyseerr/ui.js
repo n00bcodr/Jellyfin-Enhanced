@@ -2449,13 +2449,21 @@
 
             const apiStatus = seasonStatusMap[seasonNumber];
 
-            // If Seerr reports Available (5) but the show has no Jellyfin media ID
-            // for this mode, the library was wiped and Seerr's status is stale —
-            // treat the season as requestable.
+            // If Seerr reports Available (5) but neither the show nor this specific season
+            // has a Jellyfin media ID, the library entry was deleted and Seerr's status is
+            // stale — treat the season as requestable (status 7 = deleted).
             const showJellyfinId = is4kMode
                 ? (tvDetails.mediaInfo?.jellyfinMediaId4k || null)
                 : (tvDetails.mediaInfo?.jellyfinMediaId || null);
-            const effectiveApiStatus = (apiStatus === 5 && !showJellyfinId) ? 7 : apiStatus;
+            // Also check per-season Jellyfin IDs from the season info in mediaInfo
+            const seasonMediaInfo = tvDetails.mediaInfo?.seasons?.find(s => s.seasonNumber === seasonNumber);
+            const seasonJellyfinId = is4kMode
+                ? (seasonMediaInfo?.jellyfinMediaId4k || seasonMediaInfo?.jellyfinSeasonId4k || null)
+                : (seasonMediaInfo?.jellyfinMediaId || seasonMediaInfo?.jellyfinSeasonId || null);
+            // Season is stale-available if Seerr says available but there's no Jellyfin ID
+            // at either the show level or the season level
+            const isStaleAvailable = apiStatus === 5 && !showJellyfinId && !seasonJellyfinId;
+            const effectiveApiStatus = isStaleAvailable ? 7 : apiStatus;
 
             const canRequest = !effectiveApiStatus || effectiveApiStatus === 1 || effectiveApiStatus === 7;
 

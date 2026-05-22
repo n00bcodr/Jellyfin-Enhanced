@@ -304,8 +304,15 @@ function getSeasonJellyfinId(seasonInfo, is4k = false) {
 function buildSeasonAvailabilityLinks(seasonInfo, jellyfinSeasonId = null, jellyfinSeasonId4k = null) {
     const normalStatus = seasonInfo?.status;
     const status4k = seasonInfo?.status4k;
-    const isNormalAvailable = normalStatus === 5 || normalStatus === 4 || (!normalStatus && !!jellyfinSeasonId);
-    const is4kAvailable = status4k === 5 || status4k === 4 || (!status4k && !!jellyfinSeasonId4k);
+    // A season is only "available" if Jellyseerr says so AND we have a real Jellyfin ID to back it up.
+    // If Jellyseerr reports status 5 (available) but there's no jellyfinSeasonId, the library entry
+    // was deleted and Jellyseerr's status is stale — don't show the Available chip.
+    const isNormalAvailable = (normalStatus === 5 && !!jellyfinSeasonId)
+        || normalStatus === 4
+        || (!normalStatus && !!jellyfinSeasonId);
+    const is4kAvailable = (status4k === 5 && !!jellyfinSeasonId4k)
+        || status4k === 4
+        || (!status4k && !!jellyfinSeasonId4k);
 
     const pills = [];
 
@@ -352,7 +359,7 @@ async function fetchJellyfinSeasonMap(seriesId) {
         for (const season of items) {
             const seasonNumber = Number(season?.IndexNumber);
             if (season?.Id && Number.isFinite(seasonNumber) && seasonNumber > 0) {
-                map[seasonNumber] = season.Id;
+                map[seasonNumber] = { id: season.Id, name: season.Name || null };
             }
         }
         return map;
@@ -381,9 +388,19 @@ async function enrichSeasonCardsWithJellyfinLinks(data, modal = currentModal) {
         if (!mount || !Number.isFinite(seasonNumber)) return;
 
         const seasonInfo = getSeasonStatusInfo(data, seasonNumber);
-        const seasonId = getSeasonJellyfinId(seasonInfo, false) || data._jellyfinSeasonIdMap?.[seasonNumber] || null;
+        const jellyfinEntry = data._jellyfinSeasonIdMap?.[seasonNumber];
+        const jellyfinId = typeof jellyfinEntry === 'object' ? jellyfinEntry?.id : jellyfinEntry;
+        const seasonId = getSeasonJellyfinId(seasonInfo, false) || jellyfinId || null;
         const seasonId4k = getSeasonJellyfinId(seasonInfo, true) || null;
         mount.innerHTML = buildSeasonAvailabilityLinks(seasonInfo, seasonId, seasonId4k);
+
+        // Override the season display name with what Jellyfin actually calls it,
+        // so TVDB subtitles like "Beast Hunters" are replaced with "Season 3".
+        const jellyfinName = typeof jellyfinEntry === 'object' ? jellyfinEntry?.name : null;
+        if (jellyfinName) {
+            const nameEl = card.querySelector('.season-name');
+            if (nameEl) nameEl.textContent = jellyfinName;
+        }
     });
 }
 
