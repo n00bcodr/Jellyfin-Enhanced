@@ -553,7 +553,7 @@
         // Helper to render unavailable/no data with dash
         const renderUnavailable = () => {
             applyLangStyles(placeholder);
-            placeholder.innerHTML = `<span class="material-symbols-outlined" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
+            placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">translate</span> -`;
         };
 
         // Helper to render language items with proper DOM elements
@@ -567,7 +567,7 @@
 
             // Add icon
             const icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined';
+            icon.className = 'material-icons';
             icon.style.fontSize = 'inherit';
             icon.style.flexShrink = '0';
             icon.textContent = 'translate';
