@@ -1058,6 +1058,9 @@
         const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.jellyfinMediaId4k || null;
         const jellyfinHref = jellyfinMediaId ? `#!/details?id=${jellyfinMediaId}` : null;
         const isAvailable = Boolean(jellyfinMediaId);
+        // True when the card should navigate directly to an external Seerr URL instead of
+        // showing the hover overview — used to decide poster touch behaviour below.
+        const navigatesExternally = !useMoreInfoModal && !jellyfinMediaId && !!jellyseerrUrl && item.mediaType !== 'collection';
         // is="emby-linkbutton" routes external URLs through the system browser on iOS/Android.
         const titleLinkIsAttribute = 'is="emby-linkbutton"';
         const titleHrefAttribute = jellyfinHref
@@ -1120,8 +1123,13 @@
                 overview = document.createElement('div');
                 overview.className = 'jellyseerr-overview';
                 overview.style.cursor = 'pointer';
+                // When modal is disabled and item isn't in the library, wrap the description
+                // text in a real <a is="emby-linkbutton"> so the user's tap opens outside the app.
+                const contentHtml = navigatesExternally
+                    ? `<a is="emby-linkbutton" href="${jellyseerrUrl}" target="_blank" rel="noopener noreferrer" class="content jellyseerr-overview-link" style="text-decoration:none;color:inherit;">${escapeHtml((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</a>`
+                    : `<div class="content">${escapeHtml((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>`;
                 overview.innerHTML = `
-                    <div class="content">${escapeHtml((item.overview || JE.t('jellyseerr_card_no_info')).slice(0, 500))}</div>
+                    ${contentHtml}
                     <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${item.mediaType}"></button>
                 `;
 
@@ -1132,6 +1140,9 @@
                 // Click handler on overview to open modal
                 overview.addEventListener('click', (e) => {
                     if (e.target.closest('.jellyseerr-request-button')) {
+                        return;
+                    }
+                    if (e.target.closest('.jellyseerr-overview-link')) {
                         return;
                     }
                     e.preventDefault();
@@ -1145,16 +1156,6 @@
                         if (tmdbId && mediaType) {
                             JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
                         }
-                    } else if (jellyseerrUrl) {
-                        const tmp = (JE.helpers?.createExternalLink || ((u) => {
-                            const a = document.createElement('a');
-                            a.setAttribute('is', 'emby-linkbutton');
-                            a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer';
-                            return a;
-                        }))(jellyseerrUrl);
-                        document.body.appendChild(tmp);
-                        tmp.click();
-                        document.body.removeChild(tmp);
                     }
                 });
             };
