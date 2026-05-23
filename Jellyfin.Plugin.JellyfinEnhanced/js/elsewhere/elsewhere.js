@@ -524,19 +524,24 @@
                     if (error instanceof TypeError && errorMessageText === 'Failed to fetch') {
                         errorMessage = 'TMDB API is unreachable.';
 
-                    // Check 2: Invalid API Key error
+                    // Check 2: JSON parse error — server returned non-JSON with a 200 status
+                    // (e.g. a reverse proxy error page, or a Jellyfin middleware intercept)
+                    } else if (error instanceof SyntaxError) {
+                        errorMessage = 'Received an unexpected response from the server. Check your reverse proxy or Jellyfin configuration.';
+
+                    // Check 3: Invalid API Key error
                     } else if (errorMessageText.includes('401')) {
                         errorMessage = 'Invalid TMDB API Key.';
 
-                    // Check 3: Item not found
+                    // Check 4: Item not found
                     } else if (errorMessageText.includes('404')) {
                         errorMessage = 'The requested item could not be found on TMDB.';
 
-                    // Check 4: Rate limit error
+                    // Check 5: Rate limit error
                     } else if (errorMessageText.includes('429')) {
                         errorMessage = 'Too many requests. Please wait a moment and try again.';
 
-                    // Check 5: TMDB server-side issues (e.g., 500, 502, 503, 504)
+                    // Check 6: TMDB server-side issues (e.g., 500, 502, 503, 504)
                     } else if (errorMessageText.startsWith('API Error: 5')) {
                         errorMessage = 'The TMDB service is temporarily unavailable. Please try again later.';
 
