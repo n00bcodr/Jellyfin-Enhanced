@@ -1251,7 +1251,7 @@
                             </div>` : '';
                         return `
                         <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
-                            <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.EYE)} ${JE.t('panel_settings_spoiler_guard')}</summary>
+                            <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.BLUR_ON)} ${JE.t('panel_settings_spoiler_guard')}</summary>
                             <div style="padding: 0 16px 16px 16px;">
                                 <div style="font-size:12px; color:rgba(255,255,255,0.55); margin-bottom: 10px; padding-left:4px;">${JE.t('panel_settings_spoiler_guard_desc')}</div>
                                 <div style="font-weight:500; font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:8px; padding-left:4px;">${JE.t('panel_settings_spoiler_guard_overrides_section')}</div>
