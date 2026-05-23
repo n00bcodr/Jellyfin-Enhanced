@@ -683,32 +683,26 @@
 
         // --- DOM MANIPULATION ---
         /**
-         * Reads a boolean from per-user settings, falling back to the admin default and then the supplied default
+         * Reads a boolean category toggle from per-user settings.
          * @param {string} userKey - Key on JE.currentSettings
-         * @param {string} pluginKey - Key on JE.pluginConfig
-         * @param {boolean} fallback - Returned when neither source has a boolean value
+         * @param {boolean} fallback - Returned when the user setting is not a boolean
          * @returns {boolean} The resolved boolean
          */
-        function readBool(userKey, pluginKey, fallback) {
+        function readBool(userKey, fallback) {
             const userVal = JE.currentSettings?.[userKey];
             if (typeof userVal === 'boolean') return userVal;
-            const adminVal = JE.pluginConfig?.[pluginKey];
-            if (typeof adminVal === 'boolean') return adminVal;
             return fallback;
         }
 
         /**
-         * Reads a number from per-user settings, falling back to the admin default and then the supplied default
+         * Reads a numeric category order from per-user settings.
          * @param {string} userKey - Key on JE.currentSettings
-         * @param {string} pluginKey - Key on JE.pluginConfig
-         * @param {number} fallback - Returned when neither source has a finite number
+         * @param {number} fallback - Returned when the user setting is not a finite number
          * @returns {number} The resolved number
          */
-        function readInt(userKey, pluginKey, fallback) {
+        function readInt(userKey, fallback) {
             const userVal = JE.currentSettings?.[userKey];
             if (Number.isFinite(userVal)) return userVal;
-            const adminVal = JE.pluginConfig?.[pluginKey];
-            if (Number.isFinite(adminVal)) return adminVal;
             return fallback;
         }
 
@@ -748,7 +742,7 @@
                 const catKey = categorize(q);
                 if (catKey) {
                     const cat = CATEGORY_BY_KEY.get(catKey);
-                    if (!readBool(cat.settingKey, cat.pluginKey, true)) continue;
+                    if (!readBool(cat.settingKey, true)) continue;
                     if (!buckets.has(catKey)) buckets.set(catKey, []);
                     buckets.get(catKey).push(q);
                 } else {
@@ -782,7 +776,7 @@
                 return {
                     key,
                     cat,
-                    order: readInt(cat.orderUserKey, cat.orderPluginKey, cat.defaultOrder),
+                    order: readInt(cat.orderUserKey, cat.defaultOrder),
                 };
             }).sort((a, b) => {
                 if (a.order !== b.order) return a.order - b.order;

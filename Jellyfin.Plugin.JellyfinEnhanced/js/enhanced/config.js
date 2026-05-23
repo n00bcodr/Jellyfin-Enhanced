@@ -104,12 +104,8 @@
             pauseScreenEnabled: true,
             pauseScreenDelaySeconds: 5,
             qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, peopleTagsEnabled: false, tagsHideOnHover: false,
-            // Quality category sub-toggle defaults are null so loadSettings preserves
-            // a missing/null user value, letting readBool/readInt in qualitytags.js
-            // fall through to the admin pluginConfig default. This is what makes
-            // admin-side category disables propagate to existing pre-PR users.
-            showResolutionTag: null, showSourceTag: null, showDynamicRangeTag: null, showSpecialFormatTag: null, showVideoCodecTag: null, showAudioInfoTag: null,
-            resolutionTagOrder: null, sourceTagOrder: null, dynamicRangeTagOrder: null, specialFormatTagOrder: null, videoCodecTagOrder: null, audioInfoTagOrder: null,
+            showResolutionTag: true, showSourceTag: true, showDynamicRangeTag: true, showSpecialFormatTag: true, showVideoCodecTag: true, showAudioInfoTag: true,
+            resolutionTagOrder: 1, sourceTagOrder: 2, dynamicRangeTagOrder: 3, specialFormatTagOrder: 4, videoCodecTagOrder: 5, audioInfoTagOrder: 6,
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
@@ -121,6 +117,13 @@
         };
 
         const mergedSettings = {};
+        // Seed with all keys from the stored user settings so that any field not
+        // listed in hardcodedDefaults (e.g. fields added in newer plugin versions,
+        // or fields the frontend doesn't actively manage) is preserved as-is and
+        // not silently dropped when currentSettings is written back to the server.
+        for (const key in userSettings) {
+            mergedSettings[key] = userSettings[key];
+        }
         for (const key in hardcodedDefaults) {
             if (userSettings.hasOwnProperty(key) && userSettings[key] !== null && userSettings[key] !== undefined) {
                 // Detect corrupted values (empty arrays or unexpected objects)
