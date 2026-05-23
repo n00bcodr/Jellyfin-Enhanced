@@ -206,7 +206,6 @@
                 runPageSpecificFunctions();
                 JE.addRandomButton();
                 JE.addUserPreferencesLink();
-                onUserButtonLongPress();
             }, 100),
             document.body,
             { childList: true, subtree: true }
@@ -294,54 +293,6 @@
 
             checkAndSetContinueWatchingContext(itemElement);
         }, true);
-    }
-
-    /**
-     * Adds long-press functionality to the user button to open the settings panel.
-     */
-    function onUserButtonLongPress() {
-        const userButton = document.querySelector('.headerUserButton');
-        if (!userButton || userButton.dataset.longPressEnhanced) return;
-
-        let pressTimer = null;
-        const startPress = (e) => {
-            if (e.button && e.button !== 0) return;
-            userButton.classList.add('long-press-active');
-            pressTimer = setTimeout(() => {
-                userButton.classList.remove('long-press-active');
-                JE.showEnhancedPanel();
-                pressTimer = null;
-            }, 750);
-        };
-        const cancelPress = () => {
-            userButton.classList.remove('long-press-active');
-            clearTimeout(pressTimer);
-        };
-        const handleClick = (e) => {
-            if (!pressTimer) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        };
-
-        userButton.addEventListener('mousedown', startPress);
-        userButton.addEventListener('mouseup', cancelPress);
-        userButton.addEventListener('mouseleave', cancelPress);
-        userButton.addEventListener('touchstart', startPress, { passive: true });
-        userButton.addEventListener('touchend', cancelPress);
-        userButton.addEventListener('touchcancel', cancelPress);
-        userButton.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                startPress(e);
-            }
-        });
-        userButton.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                cancelPress();
-            }
-        });
-        userButton.addEventListener('click', handleClick, { capture: true });
-        userButton.dataset.longPressEnhanced = 'true';
     }
 
     /**
