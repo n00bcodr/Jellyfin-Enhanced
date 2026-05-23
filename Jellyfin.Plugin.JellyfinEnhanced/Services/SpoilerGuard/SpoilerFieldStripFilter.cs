@@ -909,64 +909,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // are on — the user opted into Spoiler Guard, the image bytes
         // depend on watched-state, the URL must reflect that.
 
-        // Image types whose bytes are intercepted by SpoilerBlurImageFilter
-        // unconditionally (when the user has the item spoiler-listed and
-        // it's unwatched). Mirrors _alwaysBlurImageTypes in the image
-        // filter — keep these two lists in sync.
-        private static readonly MediaBrowser.Model.Entities.ImageType[] _alwaysProtectedImageTypes =
-        {
-            MediaBrowser.Model.Entities.ImageType.Primary,
-            MediaBrowser.Model.Entities.ImageType.Thumb,
-            MediaBrowser.Model.Entities.ImageType.Screenshot,
-            MediaBrowser.Model.Entities.ImageType.Chapter,
-        };
-
-        // Image types only protected when SpoilerBlurArtwork is on.
-        private static readonly MediaBrowser.Model.Entities.ImageType[] _artworkImageTypes =
-        {
-            MediaBrowser.Model.Entities.ImageType.Backdrop,
-            MediaBrowser.Model.Entities.ImageType.Art,
-        };
-
-        // Strips ImageBlurHashes for image types whose bytes are about to
-        // be intercepted by SpoilerBlurImageFilter. Without this, the
-        // brief loading-state preview the client renders from the
-        // BlurHash would show the dominant colours of the ORIGINAL
-        // spoiler frame, even though the actual bytes that arrive are
-        // protected. Series and BoxSet entry-point DTOs are exempt
-        // because their images pass through clear (the user clicked on
-        // them; their identity isn't the spoiler). Movies with
-        // SpoilerKeepMoviePosters on keep their Primary / Thumb
-        // BlurHashes since those image bytes also pass through clear.
-        private static void StripProtectedBlurHashes(BaseItemDto item, PluginConfiguration cfg)
-        {
-            if (item?.ImageBlurHashes == null || item.ImageBlurHashes.Count == 0) return;
-            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Series) return;
-            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.BoxSet) return;
-
-            bool keepMoviePosters = cfg.SpoilerKeepMoviePosters
-                && item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie;
-
-            foreach (var t in _alwaysProtectedImageTypes)
-            {
-                if (keepMoviePosters
-                    && (t == MediaBrowser.Model.Entities.ImageType.Primary
-                        || t == MediaBrowser.Model.Entities.ImageType.Thumb))
-                {
-                    continue;
-                }
-                item.ImageBlurHashes.Remove(t);
-            }
-            if (cfg.SpoilerBlurArtwork)
-            {
-                foreach (var t in _artworkImageTypes) item.ImageBlurHashes.Remove(t);
-            }
-            if (item.ImageBlurHashes.Count == 0)
-            {
-                item.ImageBlurHashes = null;
-            }
-        }
-
         public static void MutateImageTagsForCacheBust(
             BaseItemDto item,
             PluginConfiguration cfg,
@@ -1014,17 +956,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // only by that fallback path.
         private void ApplyStripping(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
-            // ImageBlurHashes are generated from the original image at
-            // scan time and ship inside the DTO alongside ImageTags. The
-            // SpoilerBlurImageFilter intercepts the image BYTES, but
-            // doesn't touch the BlurHash string — so during the brief
-            // loading window before the protected bytes arrive, the
-            // client renders a soft colour-preview of the original
-            // spoilery frame. Strip the BlurHashes for image types the
-            // image filter actually protects so the loading-state
-            // preview is consistent with the eventual served bytes.
-            StripProtectedBlurHashes(item, cfg);
-
             // Overview (episode synopsis) — single biggest spoiler vector.
             // Replace with the admin-configured placeholder so clients
             // don't render an empty "Description" header. We *replace*
