@@ -51,8 +51,6 @@ The **Blur intensity** slider (1-100, default 40) controls the sigma. 5 is mild,
 
 Most spoilers live in the per-episode thumbnails and per-season posters; backdrops are usually less plot-specific (curated cinematography rather than reveal stills), so the default scopes protection to the surfaces with the highest spoiler risk.
 
-This toggle also controls how `ImageBlurHashes` are stripped on the DTO: by default the BlurHashes for Primary / Thumb / Screenshot / Chapter are dropped (matching the image-bytes protection), but Backdrop / Art BlurHashes pass through. Turn this toggle on to also drop Backdrop / Art BlurHashes so the loading-state preview stays consistent with the eventual served bytes.
-
 ---
 
 ## Show movie posters even when Spoiler Guard is on
@@ -69,7 +67,6 @@ What passes through clear:
 
 - The movie's **Primary** poster — visible on home rails, search results, the movie detail page header, everywhere a Primary is fetched.
 - The movie's **Thumb** image (the Primary-variant used in some surfaces).
-- BlurHash placeholders for Primary / Thumb (so the loading-state preview stays consistent with the clear bytes that follow).
 
 Series and Episodes are unaffected by this toggle — they have their own per-aspect logic (Episode → Series Backdrop, Season → Series Primary).
 
