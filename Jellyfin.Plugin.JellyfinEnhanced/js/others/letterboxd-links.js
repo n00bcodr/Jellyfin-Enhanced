@@ -45,7 +45,6 @@
                     background-size: contain;
                     background-repeat: no-repeat;
                     vertical-align: middle;
-                    margin-right: 5px;
                 }
             `;
             document.head.appendChild(style);
