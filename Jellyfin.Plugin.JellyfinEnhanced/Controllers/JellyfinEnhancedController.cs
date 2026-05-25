@@ -3403,6 +3403,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
                 }
+                Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
             }
@@ -3556,6 +3557,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         h.Items[key] = entry;
                         return 1;
                     });
+                Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                 return Ok(new { success = true, key, entry });
             }
             catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
@@ -3611,6 +3613,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
 
                 if (dropped == 0) return NotFound(new { success = false, message = "No matching hidden-content entry." });
+                Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                 return Ok(new { success = true });
             }
             catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
@@ -3970,6 +3973,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             hc.Settings = BuildHcDefaultSettings(defaultConfig);
                             return 1;
                         });
+                    Services.HiddenContentResponseFilter.InvalidateUser(userId);
                 }
                 catch (Exception ex) when (ex is InvalidDataException
                                         || ex is Newtonsoft.Json.JsonException

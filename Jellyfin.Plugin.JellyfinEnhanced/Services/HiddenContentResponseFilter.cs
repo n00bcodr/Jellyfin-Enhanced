@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,6 +18,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         private const string FileName = "hidden-content.json";
         private const string CacheKey = "__JE_HC_FILTER_CACHE";
+
+        // Cross-request in-memory cache keyed by userId (N-format string).
+        // Eliminates per-request disk reads for hidden-content.json.
+        private static readonly ConcurrentDictionary<string, (HideContext Ctx, DateTime CachedAt)> _hcCache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan _hcCacheTtl = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Removes the cached hidden-content context for the given user so the next
+        /// request re-reads from disk. Call this immediately after any write to
+        /// hidden-content.json for that user.
+        /// </summary>
+        public static void InvalidateUser(string userId)
+        {
+            if (!string.IsNullOrEmpty(userId))
+                _hcCache.TryRemove(userId, out _);
+        }
 
         private static readonly Dictionary<(string, string), (string Surface, ResponseHandler Handler)> _routes
             = new(KeyComparer.Instance)
@@ -153,15 +170,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private HideContext LoadHideContext(HttpContext httpContext, Guid userId)
         {
+            // 1. Per-request cache, avoids repeated work within a single request (e.g. nested filter calls).
             if (httpContext.Items.TryGetValue(CacheKey, out var cached) && cached is HideContext hit)
             {
                 return hit;
             }
 
+            // 2. Cross-request in-memory cache, avoids disk reads on every Jellyfin API call.
+            var userIdN = userId.ToString("N");
+            var now = DateTime.UtcNow;
+            if (_hcCache.TryGetValue(userIdN, out var entry) && (now - entry.CachedAt) < _hcCacheTtl)
+            {
+                httpContext.Items[CacheKey] = entry.Ctx;
+                return entry.Ctx;
+            }
+
+            // 3. Cache miss, read from disk.
             UserHiddenContent? data;
             try
             {
-                data = _configManager.GetUserConfiguration<UserHiddenContent>(userId.ToString("N"), FileName);
+                data = _configManager.GetUserConfiguration<UserHiddenContent>(userIdN, FileName);
             }
             catch (Exception ex)
             {
@@ -176,6 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (data != null) _warnedReadFailure.TryRemove(userId, out _);
 
             var ctx = HideContext.Build(data);
+            _hcCache[userIdN] = (ctx, now);
             httpContext.Items[CacheKey] = ctx;
             return ctx;
         }
