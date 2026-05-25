@@ -18,9 +18,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             var pluginName = "Jellyfin Enhanced";
             var pluginVersion = JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown";
+            var dllTimestamp = new FileInfo(typeof(JellyfinEnhanced).Assembly.Location).LastWriteTimeUtc.Ticks;
+            var cacheKey = $"{pluginVersion}-{dllTimestamp}";
+            var devMode = JellyfinEnhanced.Instance?.Configuration?.DevMode == true;
 
-            var scriptUrl = $"../JellyfinEnhanced/script?v={pluginVersion}";
-            var scriptTag = $"<script plugin=\"{pluginName}\" version=\"{pluginVersion}\" src=\"{scriptUrl}\" defer></script>";
+            var scriptUrl = $"../JellyfinEnhanced/script?v={cacheKey}";
+            var scriptTag = $"<script plugin=\"{pluginName}\" version=\"{cacheKey}\" dev=\"{(devMode ? "true" : "false")}\" src=\"{scriptUrl}\" defer></script>";
 
             var regex = new Regex($"<script[^>]*plugin=[\"']{pluginName}[\"'][^>]*>\\s*</script>\\n?");
             var updatedContent = regex.Replace(content.Contents, string.Empty);

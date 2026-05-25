@@ -37,7 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
-            // empty UA as bot â€            Helpers.Jellyseerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
+            // empty UA as bot ï¿½            Helpers.Jellyseerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
@@ -374,8 +374,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
 
                 var content = File.ReadAllText(indexPath);
-                var scriptUrl = $"../JellyfinEnhanced/script?v={Version}";
-                var scriptTag = $"<script plugin=\"{Name}\" version=\"{Version}\" src=\"{scriptUrl}\" defer></script>";
+                // Append the DLL's last-write timestamp so that every build produces
+                // a distinct cache-busting value, even when the version number hasn't
+                // changed (e.g. during local dev/testing). In production the version
+                // bump alone would suffice, but the timestamp makes dev iterations safe.
+                var dllTimestamp = new FileInfo(typeof(JellyfinEnhanced).Assembly.Location).LastWriteTimeUtc.Ticks;
+                var cacheKey = $"{Version}-{dllTimestamp}";
+                var devMode = Configuration?.DevMode == true;
+                var scriptUrl = $"../JellyfinEnhanced/script?v={cacheKey}";
+                var scriptTag = $"<script plugin=\"{Name}\" version=\"{cacheKey}\" dev=\"{(devMode ? "true" : "false")}\" src=\"{scriptUrl}\" defer></script>";
                 var regex = new Regex($"<script[^>]*plugin=[\"']{Name}[\"'][^>]*>\\s*</script>\\n?");
 
                 // Remove any old versions of the script tag first

@@ -1871,6 +1871,16 @@
                         </div>
                     </fieldset>
 
+                    <fieldset>
+                        <legend class="sectionTitle">Developer</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="devMode" is="emby-checkbox" type="checkbox"/><span>Dev Mode</span></label></div>
+                            <div class="je-setting-description" data-desc-for="devMode">
+                                <div class="fieldDescription">Enabling Dev Mode disables JS caching so scripts are always re-fetched from the server. <br>Default: OFF. <br>DO NOT CHANGE if you don't know why you are changing it.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <fieldset class="je-fieldset-wide">
                         <legend class="sectionTitle">Custom Image Assets</legend>
                         <div class="configSection">
@@ -3965,6 +3975,7 @@
                 populateAddShortcutDropdown();
 
                 // Load all other settings
+                document.querySelector('#devMode').checked = config.DevMode;
                 document.querySelector('#enableCustomSplashScreen').checked = config.EnableCustomSplashScreen;
                 document.querySelector('#splashScreenImageUrl').value = config.SplashScreenImageUrl;
                 document.querySelector('#disableAllShortcuts').checked = config.DisableAllShortcuts;
@@ -4256,6 +4267,7 @@
                 if (index !== -1) finalShortcuts[index] = override;
             });
             config.Shortcuts = finalShortcuts;
+            config.DevMode = document.querySelector('#devMode').checked;
             config.EnableCustomSplashScreen = document.querySelector('#enableCustomSplashScreen').checked;
             config.SplashScreenImageUrl = document.querySelector('#splashScreenImageUrl').value;
             config.DisableAllShortcuts = document.querySelector('#disableAllShortcuts').checked;

@@ -2902,7 +2902,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             else if (resourcePath.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
                 contentType = "text/html";
 
-            Response.Headers["Cache-Control"] = "no-cache";
+            // DevMode: no-cache so the browser always re-fetches after a server restart,
+            // useful when iterating on JS without bumping the version number.
+            // Production: the script URL includes ?v={version}-{dllTimestamp}, so the URL
+            // changes on every build and immutable caching is safe.
+            var devMode = JellyfinEnhanced.Instance?.Configuration?.DevMode == true;
+            Response.Headers["Cache-Control"] = devMode ? "no-store" : "public, max-age=31536000, immutable";
             return new FileStreamResult(stream, contentType);
         }
 

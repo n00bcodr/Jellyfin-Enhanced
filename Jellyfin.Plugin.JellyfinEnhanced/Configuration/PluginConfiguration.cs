@@ -20,6 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HelpPanelAutocloseDelay = 15000;
             EnableCustomSplashScreen = false;
             SplashScreenImageUrl = "/web/assets/img/banner-light.png";
+            DevMode = false;
 
             // Jellyfin Elsewhere Settings
             ElsewhereEnabled = true;
@@ -278,6 +279,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int HelpPanelAutocloseDelay { get; set; }
         public bool EnableCustomSplashScreen { get; set; }
         public string SplashScreenImageUrl { get; set; }
+        public bool DevMode { get; set; }
 
 
         // Jellyfin Elsewhere Settings

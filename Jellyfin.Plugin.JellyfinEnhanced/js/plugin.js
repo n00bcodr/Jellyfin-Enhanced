@@ -164,6 +164,24 @@
     }
 
     /**
+     * Returns the plugin version for use as a cache-busting query parameter.
+     * Reads synchronously from the injected script tag's version attribute so it
+     * is available before the async version fetch resolves. Falls back to
+     * JE.pluginVersion when already set (post-init calls), and to Date.now() if
+     * neither source is available.
+     * @returns {string}
+     */
+    function getScriptVersion() {
+        const scriptEl = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        if (scriptEl?.getAttribute('dev') === 'true') return Date.now();
+        // Always prefer the script tag's version attribute, it holds the full
+        // cacheKey (version + DLL timestamp) baked in at server startup.
+        // JE.pluginVersion is just the bare version number from the API and
+        // does not include the timestamp component.
+        return scriptEl?.getAttribute('version') || JE.pluginVersion || Date.now();
+    }
+
+    /**
      * Loads the translation module and exposes JE.loadTranslations.
      * @returns {Promise<void>}
      */
@@ -171,7 +189,7 @@
         if (typeof JE.loadTranslations === 'function') return;
         await new Promise((resolve) => {
             const script = document.createElement('script');
-            script.src = ApiClient.getUrl(`/JellyfinEnhanced/js/enhanced/translations.js?v=${Date.now()}`);
+            script.src = ApiClient.getUrl(`/JellyfinEnhanced/js/enhanced/translations.js?v=${getScriptVersion()}`);
             script.onload = () => resolve();
             script.onerror = (e) => {
                 console.error('🪼 Jellyfin Enhanced: Failed to load translations module', e);
@@ -250,7 +268,7 @@
         const promises = scripts.map(scriptName => {
             return new Promise((resolve) => { // Always resolve so one failure doesn't stop others
                 const script = document.createElement('script');
-                script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${Date.now()}`); // Cache-busting
+                script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${getScriptVersion()}`);
                 script.onload = () => {
                     resolve({ status: 'fulfilled', script: scriptName });
                 };
@@ -274,7 +292,7 @@
             return;
         }
         const splashScript = document.createElement('script');
-        splashScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/others/splashscreen.js?v=' + Date.now());
+        splashScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/others/splashscreen.js?v=' + getScriptVersion());
         splashScript.onload = () => {
             if (typeof JE.initializeSplashScreen === 'function') {
                 JE.initializeSplashScreen(); // Initialize if available
@@ -302,7 +320,7 @@
             // Only load if enabled (default to false)
             if (config?.EnableLoginImage === true) {
                 const loginImageScript = document.createElement('script');
-                loginImageScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/extras/login-image.js?v=' + Date.now());
+                loginImageScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/extras/login-image.js?v=' + getScriptVersion());
                 loginImageScript.onerror = () => console.error('🪼 Jellyfin Enhanced: Failed to load login image script.');
                 document.head.appendChild(loginImageScript);
             }
