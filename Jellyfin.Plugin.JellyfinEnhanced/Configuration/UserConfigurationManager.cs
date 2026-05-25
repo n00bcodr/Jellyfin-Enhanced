@@ -100,7 +100,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                         return new T();
                     }
 
-                    var settings = JsonConvert.DeserializeObject<T>(json);
+                    var settings = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                    {
+                        // Silently skip JSON null values rather than throwing when the target
+                        // C# property is a non-nullable type (e.g. bool). This handles the case
+                        // where a field was previously bool? (stored as null on disk) and has
+                        // since been changed to bool — without this the deserialization throws,
+                        // GetUserConfiguration returns new T(), and the first subsequent save
+                        // overwrites the user's real data with defaults.
+                        NullValueHandling = NullValueHandling.Ignore
+                    });
 
                     if (settings == null)
                     {
