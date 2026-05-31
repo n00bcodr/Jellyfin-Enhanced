@@ -1,6 +1,5 @@
 # Seerr Settings
 
-<!-- use a custom title -->
 !!! info "Prerequisites"
 
     **Prerequisites:**
@@ -23,8 +22,7 @@
 2. Enable **"Enable Jellyfin Sign-In"**
 3. Save settings
 
-<!-- relative directory  -->
-![Jellyfin Sign-In](../images/jellyfin-signin.png)
+![Jellyfin Sign-In setting in Seerr](../images/jellyfin-signin.png)
 
 ### Step 2: Import Jellyfin Users
 
@@ -39,12 +37,10 @@ This step is optional if you enable plugin-side auto import.
 
 - Users WITH access:
 
-  <!-- relative directory  -->
   ![Users with access](../images/users-with-access.png)
 
 - Users WITHOUT access:
 
-  <!-- relative directory  -->
   ![Users without access](../images/users-no-access.png)
 
 ### Step 3: Configure Plugin
@@ -68,7 +64,7 @@ Enable automatic import in the plugin if you do not want to manually import user
 
 When enabled, new Jellyfin users are automatically imported into Seerr the first time they use Seerr Search.
 
-1. Go to **Dashboard** -> **Plugins** -> **Jellyfin Enhanced**
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Seerr Settings** tab
 3. In **User Import**, check **"Auto import Jellyfin users to Seerr"**
 4. Optional: expand **Blocked users** and select users to exclude
@@ -86,7 +82,7 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 
     **Requirements:**
 
-      - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) plugin**
+      - The **[KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks)**
       - Automatically add items to Jellyfin watchlist when they become available
 
 ### Sync Seerr Watchlist to Jellyfin

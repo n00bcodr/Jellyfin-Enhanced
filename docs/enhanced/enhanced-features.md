@@ -6,7 +6,9 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 
 ## Content Management
 
-### 🙈 Hidden Content System
+### Hidden Content System
+
+![Hidden content management panel](../images/hidden-content-panel.png)
 
 Per-user content hiding with server-side storage and granular filtering controls.
 
@@ -91,12 +93,11 @@ Access via:
 
 ## Playback & Controls
 
-### ⌨️ Advanced Keyboard Shortcuts
+### Advanced Keyboard Shortcuts
 
 Comprehensive hotkeys for navigation, playback control, and more.
 
-<!-- relative directories -->
-![Shortcuts](../images/shortcuts.png)
+![Shortcuts](../images/enhanced-panel-shortcuts.png)
 
 **Default Shortcuts:**
 
@@ -130,7 +131,9 @@ Comprehensive hotkeys for navigation, playback control, and more.
 3. Click on any key to set a custom shortcut
 4. Changes save automatically per user
 
-### 📝 Smart Bookmarks
+### Smart Bookmarks
+
+![Bookmark markers on the video timeline](../images/bookmarks-timeline.png)
 
 Save timestamps and jump to specific moments with visual timeline markers.
 
@@ -158,7 +161,7 @@ Save timestamps and jump to specific moments with visual timeline markers.
 - Detect and merge duplicates
 - Adjust time offsets for synced bookmarks
 
-### 🎬 Custom Pause Screen
+### Custom Pause Screen
 
 Beautiful overlay with media info when you pause a video.
 
@@ -173,12 +176,11 @@ Beautiful overlay with media info when you pause a video.
 - Spinning disc animation
 - Blurred backdrop
 
-<!-- custom css note -->
 !!! tip
 
     [Custom CSS available](../advanced/css-customization.md)
 
-### ⏯️ Smart Playback
+### Smart Playback
 
 Intelligent playback features for better viewing experience.
 
@@ -193,7 +195,7 @@ Intelligent playback features for better viewing experience.
 **Configuration:**
 Enable/disable in Enhanced panel → Settings tab
 
-### 📝 Customizable Subtitles
+### Customizable Subtitles
 
 Fine-tune subtitle appearance with presets and custom colors.
 
@@ -230,11 +232,11 @@ Fine-tune subtitle appearance with presets and custom colors.
 
 ## Discovery & Integration
 
-### 🪼 Seerr Search Integration
+### Seerr Search Integration
 
 Search, request, and discover media directly from Jellyfin's search interface.
 
-![Seerr](../images/jellyseerr.png)
+![Seerr search results](../images/jellyseerr.png)
 
 **Features:**
 
@@ -272,7 +274,9 @@ Search, request, and discover media directly from Jellyfin's search interface.
 | <img alt="noaccess" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" /> | **User Not Found** | Seerr is successfully connected, but the current Jellyfin user is not linked to a Seerr account. <br>Ensure the user has been imported into Seerr from Jellyfin. Results will not load. |
 | <img alt="offline" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" /> | **Offline** | The plugin could not connect to any of the configured Seerr URLs. <br> Check your plugin settings and ensure Seerr is running and accessible. Results will not load. |
 
-### 🎬 Seerr Item Details
+### Seerr Item Details
+
+![Seerr recommendations and similar items on a detail page](../images/seerr-recommendations.png)
 
 View recommendations and similar items on detail pages.
 
@@ -301,7 +305,9 @@ View recommendations and similar items on detail pages.
 - Tag-based discovery
 - All with TV/Movies/All filtering
 
-### 🔗 .arr Links Integration
+### .arr Links Integration
+
+![ARR links on an item detail page](../images/arr-links-item.png)
 
 Quick access to Sonarr, Radarr, and Bazarr (admin only).
 
@@ -312,7 +318,7 @@ Quick access to Sonarr, Radarr, and Bazarr (admin only).
 - Display *arr tags as clickable links
 - Filter and customize tag display
 
-### 🔍 Streaming Provider Lookup
+### Streaming Provider Lookup
 
 See where else your media is available to stream.
 
@@ -331,7 +337,48 @@ See where else your media is available to stream.
 2. Select your region
 3. View providers on item detail pages
 
-### ✒️ TMDB Reviews
+### User Reviews
+
+![User reviews section on an item detail page](../images/user-reviews.png)
+
+Jellyfin users can write their own reviews for movies, series, seasons, and episodes. Reviews are stored server-side and visible to all users.
+
+**Features:**
+
+- Write a review with a star rating (1-5) and optional text, or just a rating with no text
+- Reviews appear in a dedicated "Reviews" section on item detail pages, listed before TMDB reviews
+- Edit or delete your own review at any time
+- Average user rating chip displayed next to TMDB/RT ratings in the item media info bar
+- Average user rating also shown as a poster tag (`person_heart` icon) on library cards when rating tags are enabled
+- Admin moderation — admins can delete any user's review
+
+**How to write a review:**
+
+1. Open any movie, series, season, or episode detail page
+2. Scroll to the **Reviews** section
+3. Click **Add Review**
+4. Select a star rating (optional) and write your review text (optional — a rating alone is valid)
+5. Click the save icon
+
+**Setup (admin):**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Enhanced Settings** tab
+3. Enable **"Show User Reviews"**
+4. Optionally enable **"Show User Rating on Posters"** to display the average rating as a poster tag
+5. Optionally disable **"Show User Rating Dash"** to hide the `—` placeholder on posters when no ratings exist yet
+6. Click **Save**
+
+!!! note
+    The poster tag requires the user to also have **Rating Tags** enabled in the Enhanced panel (Settings tab).
+
+**Admin moderation:**
+
+Admins see a delete button on all reviews, not just their own. A confirmation dialog is shown before deletion. The action is logged and the section refreshes automatically.
+
+---
+
+### TMDB Reviews
 
 Display user reviews from TMDB on item pages.
 
@@ -344,13 +391,15 @@ Display user reviews from TMDB on item pages.
 - Expandable/collapsible reviews
 
 **Setup:**
-Enable "Show TMDB Reviews" in Enhanced panel → Settings
+Enable **"Show TMDB Reviews"** in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere Settings** tab.
+
+See [Elsewhere Features](../elsewhere/elsewhere-features.md#tmdb-reviews) for full details.
 
 ---
 
 ## Visual Enhancements
 
-### 🏷️ Quality Tags
+### Quality Tags
 
 Display quality information (4K, HDR, Atmos) directly on posters.
 
@@ -362,7 +411,9 @@ Display quality information (4K, HDR, Atmos) directly on posters.
 - **Audio:** ATMOS, DTS-X, TRUEHD, DTS, Dolby Digital+, 7.1, 5.1
 - **Media Stubs:** BluRay, HD DVD, DVD, VHS, HDTV, Physical (for physical media files)
 
-### 🎭 Genre Tags
+### Genre Tags
+
+![Genre tags on posters](../images/genre-tags.png)
 
 Identify genres with themed icons on posters.
 
@@ -373,7 +424,9 @@ Identify genres with themed icons on posters.
 - Show up to 3 genres per item
 - Customizable position
 
-### 🌐 Language Tags
+### Language Tags
+
+![Language tags (country flags) on posters](../images/language-tags.png)
 
 Display available audio languages as country flags on posters.
 
@@ -384,7 +437,7 @@ Display available audio languages as country flags on posters.
 - Positioned bottom-left by default
 - Also displays on item detail pages
 
-### ⭐ Rating Tags
+### Rating Tags
 
 Show TMDB and Rotten Tomatoes ratings on posters and in player.
 
@@ -399,7 +452,9 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Color-coded by rating value
 
 
-### 👤 People Tags
+### People Tags
+
+![People tags on cast cards](../images/people-tags.png)
 
 Display age and birthplace information for cast members.
 

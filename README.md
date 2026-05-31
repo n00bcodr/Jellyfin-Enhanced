@@ -128,8 +128,8 @@ For detailed installation instructions and troubleshooting, see the [Installatio
     <th>Settings</th>
   </tr>
   <tr>
-    <td><img src="docs/images/shortcuts.png" width="400" /></td>
-    <td><img src="docs/images/settings.png" width="400" /></td>
+    <td><img src="docs/images/enhanced-panel-shortcuts.png" width="400" /></td>
+    <td><img src="docs/images/enhanced-panel-settings.png" width="400" /></td>
   </tr>
   <tr>
     <th>Pause Screen</th>

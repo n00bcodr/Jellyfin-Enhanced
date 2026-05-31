@@ -2,12 +2,13 @@
 
 ## Enhanced Panel
 
+![Enhanced panel — Settings tab overview](../images/enhanced-panel-settings.png)
+
 Access user-configured settings via the Enhanced panel:
 
 | Shortcuts | Settings |
 |-----------|----------|
-| ![Shortcuts](../images/shortcuts.png) | ![Settings](../images/settings.png) |
-<!-- relative paths for images -->
+| ![Shortcuts](../images/enhanced-panel-shortcuts.png) | ![Settings](../images/enhanced-panel-settings.png) |
 
 **Open Panel:**
 
@@ -48,7 +49,7 @@ Access user-configured settings via the Enhanced panel:
 Most features can be enabled/disabled individually:
 
 1. Open Enhanced panel
-2. Go to `Enhanced Settings` tab
+2. Go to the **Settings** tab
 3. Toggle features on/off
 4. Changes apply immediately *(no restart needed)*
 
@@ -60,8 +61,6 @@ Most features can be enabled/disabled individually:
 2. Enable and configure tags you want *(Eg: `Quality Tags`)*
 3. Adjust position (top-left, top-right, etc.)
 
-<!-- custom css note -->
-<!-- explicit path seemed necessary (idk why) -->
 !!! tip
 
     [Custom CSS available](../advanced/css-customization.md#tags)

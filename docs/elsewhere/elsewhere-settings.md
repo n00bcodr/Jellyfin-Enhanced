@@ -1,4 +1,5 @@
-<!-- use a custom title  -->
+# Elsewhere Settings
+
 !!! info "Prerequisites"
 
     **Prerequisites:**
@@ -8,7 +9,9 @@
     - **Jellyfin Enhanced** plugin installed
 
 
-## Getting a TMDB API Key
+## Prerequisites
+
+### Getting a TMDB API Key
 
 1. Create a free account at [TMDB](https://www.themoviedb.org/)
 2. Go to [Settings → API](https://www.themoviedb.org/settings/api)
@@ -16,7 +19,7 @@
 4. Copy the API Key (v3 auth)
 5. Paste into plugin settings
 
-# Setup
+## Setup
 
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to **Elsewhere Settings** tab
@@ -28,7 +31,7 @@
 
 
 
-# Configuration Options
+## Configuration Options
 
 ## Default Region
 
@@ -110,19 +113,19 @@ Multiple patterns:
 
 ## Usage
 
-## On Item Detail Pages
+### On Item Detail Pages
 
 1. Open any movie or TV show detail page
 2. Scroll to the "Jellyfin Elsewhere" section
 3. View available streaming options
 
-## Information Displayed
+### Information Displayed
 
 - **Provider icons** - Visual logos of streaming services where content is available
 - **Provider names** - Name of each streaming service
 - **Multi-region support** - Shows availability across your selected regions
 
-# Troubleshooting
+## Troubleshooting
 
 ## Elsewhere Not Showing
 
@@ -155,7 +158,7 @@ Multiple patterns:
 - Verify item has TMDB ID
 - Wait and try again later
 
-# Integration with Seerr
+## Integration with Seerr
 
 Elsewhere can be displayed on Seerr discovery pages.
 
@@ -172,7 +175,7 @@ Elsewhere can be displayed on Seerr discovery pages.
 - Same provider information as item pages
 - Helps decide what to request
 
-# Privacy & Data
+## Privacy & Data
 
 **What Data is Sent:**
 
@@ -192,14 +195,14 @@ Elsewhere can be displayed on Seerr discovery pages.
 - Updated regularly by TMDB community
 - Accuracy depends on TMDB data quality
 
-# Limitations
+## Limitations
 
 - Availability data depends on TMDB accuracy
 - Some regions have limited provider data
 - Provider availability changes frequently
 - Requires internet connection
 
-# Support
+## Support
 
 If you encounter issues:
 

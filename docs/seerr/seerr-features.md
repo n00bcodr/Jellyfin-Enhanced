@@ -2,10 +2,8 @@
 
 Search, request, and discover media directly from Jellyfin using your Seerr instance.
 
-<!-- relative directory  -->
-![Seerr](../images/jellyseerr.png)
+![Seerr search results](../images/jellyseerr.png)
 
-<!-- use a custom title -->
 !!! info "Note"
 
     **This plugin is NOT affiliated with Seerr.** Seerr is an independent project. This plugin simply integrates with it to enhance the Jellyfin experience.
@@ -27,7 +25,6 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 - **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *([requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks)*)
 
 
-<!-- use a custom title -->
 !!! tip "How it works"
 
     To ensure security and prevent CORS errors, the plugin uses the Jellyfin server as a proxy. This keeps your Seerr API key safe and avoids browser security issues.
@@ -126,6 +123,8 @@ Report problems with media directly to Seerr.
     * User is not linked
 
 ## Requests Page
+
+![Seerr requests page showing pending, approved, and available requests](../images/seerr-requests-page.png)
 
 Monitor active downloads from Sonarr/Radarr and manage Seerr requests and issues in one dedicated page.
 

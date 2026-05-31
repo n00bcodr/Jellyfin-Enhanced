@@ -221,6 +221,8 @@ See README for more CSS examples.
 
 ## Calendar Page
 
+![Calendar page showing upcoming Sonarr and Radarr releases](../images/calendar-page.png)
+
 View upcoming releases from Sonarr and Radarr in a calendar interface.
 
 ### Setup
@@ -278,3 +280,31 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 - Click event to view details
 - Filter by Sonarr/Radarr
 - Search functionality
+
+---
+
+## Downloads Page
+
+![Downloads page showing active Sonarr/Radarr queue](../images/downloads-page.png)
+
+Monitor active downloads from Sonarr and Radarr in a dedicated page.
+
+### Features
+
+- Active download queue with progress bars and ETA
+- Quality and file size information
+- Auto-refresh with configurable poll interval
+- Filter and search
+
+### Setup
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to ***arr Settings** tab
+3. Check **"Enable Requests Page"** (under "Requests Page (Downloads)")
+4. Choose integration method (Plugin Pages or Custom Tabs)
+5. Click **Save** and restart Jellyfin if using Plugin Pages
+
+Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
+
+!!! note
+    This page shows only *arr download queue entries. Seerr media requests and issues are shown on a separate Requests page configured in the **Seerr Settings** tab.
