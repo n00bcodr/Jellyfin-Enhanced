@@ -5,7 +5,6 @@
     'use strict';
 
     const LOG = '🪼 Jellyfin Enhanced:';
-    const POLL_INTERVAL = 15000;
 
     // ── State ────────────────────────────────────────────────────────────────
     let _pollTimer = null;
@@ -189,15 +188,17 @@
 }
 .je-as-progress-bar {
   flex: 1;
-  height: 3px;
+  height: 6px;
   background: rgba(255,255,255,0.1);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
 }
 .je-as-progress-fill {
+  position: relative;
+  z-index: 1;
   height: 100%;
   background: var(--je-as-accent, #00a4dc);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: width 0.4s;
 }
 .je-as-progress-time {
@@ -290,6 +291,18 @@
 }
 .je-as-card-title-link:hover { text-decoration: underline; }
 
+/* Transcode buffer behind the progress bar */
+.je-as-progress-bar { position: relative; }
+.je-as-transcode-fill {
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 0;
+  height: 100%;
+  background: rgba(245,158,11,0.8);
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
 /* Last updated footer */
 .je-as-panel-footer {
   font-size: 10px;
@@ -298,6 +311,27 @@
   padding-top: 6px;
   border-top: 1px solid rgba(255,255,255,0.08);
   margin-top: 2px;
+}
+
+/* Refresh button */
+.je-as-refresh-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+  transition: color 0.2s;
+}
+.je-as-refresh-btn:hover { color: rgba(255,255,255,0.8); }
+.je-as-refresh-btn.je-as-refreshing { animation: je-as-spin 0.6s linear; }
+@keyframes je-as-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* ── Broadcast button ──────────────────────────────────────────────────── */
@@ -497,8 +531,26 @@
         }
 
         if (ps.PlayMethod === 'Transcode' && ts?.TranscodeReasons?.length) {
-            const reason = ts.TranscodeReasons[0].replace(/([A-Z])/g, ' $1').trim();
-            badges.push({ label: reason, cls: 'je-as-badge-reason' });
+            const streams = session.NowPlayingItem?.MediaStreams || [];
+            for (const rawReason of ts.TranscodeReasons) {
+                const reason = rawReason.replace(/([A-Z])/g, ' $1').trim();
+                badges.push({ label: reason, cls: 'je-as-badge-reason' });
+
+                // Append codec conversion arrow for codec-related reasons
+                if (rawReason === 'AudioCodecNotSupported') {
+                    const srcCodec = streams.find(s => s.Type === 'Audio')?.Codec;
+                    const dstCodec = ts.AudioCodec;
+                    if (srcCodec && dstCodec && srcCodec.toLowerCase() !== dstCodec.toLowerCase()) {
+                        badges.push({ label: `${srcCodec.toUpperCase()} → ${dstCodec.toUpperCase()}`, cls: 'je-as-badge-reason' });
+                    }
+                } else if (rawReason === 'VideoCodecNotSupported') {
+                    const srcCodec = streams.find(s => s.Type === 'Video')?.Codec;
+                    const dstCodec = ts.VideoCodec;
+                    if (srcCodec && dstCodec && srcCodec.toLowerCase() !== dstCodec.toLowerCase()) {
+                        badges.push({ label: `${srcCodec.toUpperCase()} → ${dstCodec.toUpperCase()}`, cls: 'je-as-badge-reason' });
+                    }
+                }
+            }
         }
 
         return badges.map(b => {
@@ -608,12 +660,22 @@
         main.appendChild(top);
 
         // Progress row
+        const ts = session.TranscodingInfo;
         if (dur) {
             const progressRow = document.createElement('div');
             progressRow.className = 'je-as-progress-row';
 
             const bar = document.createElement('div');
             bar.className = 'je-as-progress-bar';
+
+            // Transcoding buffer — amber layer behind playback position
+            if (ts && ts.CompletionPercentage != null) {
+                const transcodeFill = document.createElement('div');
+                transcodeFill.className = 'je-as-transcode-fill';
+                transcodeFill.style.width = `${Math.min(100, ts.CompletionPercentage).toFixed(1)}%`;
+                bar.appendChild(transcodeFill);
+            }
+
             const fill = document.createElement('div');
             fill.className = 'je-as-progress-fill';
             fill.style.width = `${pct}%`;
@@ -785,11 +847,9 @@
         if (_panelOpen) renderPanel(sessions);
     };
 
-    // ── Polling ──────────────────────────────────────────────────────────────
+    // ── Fetch on demand (no background polling) ──────────────────────────────
     const startPolling = () => {
-        if (_pollTimer) clearInterval(_pollTimer);
-        updateCounter();
-        _pollTimer = setInterval(updateCounter, POLL_INTERVAL);
+        updateCounter(); // initial fetch only; panel open & refresh button drive updates
     };
 
     const stopPolling = () => {
@@ -1039,6 +1099,24 @@
         if (skinHeader) {
             panel.style.top = (skinHeader.getBoundingClientRect().height + 2) + 'px';
         }
+
+        // Refresh button — available to all users who can see the panel
+        const refreshBtn = document.createElement('button');
+        refreshBtn.className = 'je-as-refresh-btn';
+        refreshBtn.setAttribute('aria-label', 'Refresh sessions');
+        refreshBtn.title = 'Refresh';
+        const refreshIcon = document.createElement('span');
+        refreshIcon.className = 'material-icons';
+        refreshIcon.style.fontSize = '18px';
+        refreshIcon.textContent = 'refresh';
+        refreshBtn.appendChild(refreshIcon);
+        refreshBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            refreshBtn.classList.add('je-as-refreshing');
+            refreshBtn.addEventListener('animationend', () => refreshBtn.classList.remove('je-as-refreshing'), { once: true });
+            updateCounter();
+        });
+        header.insertBefore(refreshBtn, closeBtn);
 
         // Inject broadcast button for admins only
         if (JE?.currentUser?.Policy?.IsAdministrator === true) {
