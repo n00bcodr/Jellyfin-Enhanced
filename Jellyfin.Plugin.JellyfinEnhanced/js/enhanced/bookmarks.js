@@ -591,6 +591,14 @@
           box-shadow: 0 8px 32px rgba(0,0,0,0.8);
           display: flex;
           flex-direction: column;
+          overflow: hidden;
+        }
+        @media (max-width: 600px) {
+          .je-bm-player-modal-container {
+            padding: 16px;
+            max-height: 90vh;
+            width: 95%;
+          }
         }
         .je-bookmark-modal-close {
           position: absolute;
@@ -615,8 +623,9 @@
         .je-bookmark-modal-actions {
           display: flex;
           gap: 12px;
-          margin-top: 24px;
+          margin-top: 16px;
           justify-content: flex-end;
+          flex-shrink: 0;
         }
         .je-bookmark-btn-submit,
         .je-bookmark-btn-cancel {
@@ -645,7 +654,12 @@
         .je-bookmark-btn-cancel:hover {
           background: rgba(255,255,255,0.15);
         }
-        .je-bookmark-modal { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; }
+        .je-bookmark-modal {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+          flex: 1;
+          overflow-y: auto;
+          min-height: 0;
+        }
         .je-bookmark-hero { padding: 0 0 20px 0; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
         .je-bookmark-hero-title { font-size: 20px; font-weight: 600; color: #fff; margin: 0 0 6px 0; }
         .je-bookmark-hero-icon { display: none; }
@@ -695,6 +709,12 @@
           max-height: 300px;
           overflow-y: auto;
           padding-right: 8px;
+        }
+        @media (max-width: 600px) {
+          .je-bookmark-list {
+            max-height: 150px;
+            margin-top: 16px;
+          }
         }
         .je-bookmark-list::-webkit-scrollbar {
           width: 8px;
