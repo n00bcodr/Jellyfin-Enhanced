@@ -1235,6 +1235,7 @@
     gap: 8px;
 }
 .je-branding-label-bold { font-weight: bold; color: #fff; font-size: 1.05em; }
+.je-branding-size-hint { font-size: 0.75em; color: #888; margin-bottom: 6px; }
 .je-branding-label { color: #aaa; font-size: 0.85em; }
 .je-branding-meta { font-size: 0.8em; color: #aaa; margin-bottom: 10px; }
 .je-branding-dropzone {
