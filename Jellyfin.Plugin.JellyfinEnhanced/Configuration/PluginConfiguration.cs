@@ -196,6 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
+            SyncJellyfinWatchlistToSeerr = false;
             PreventWatchlistReAddition = true;
             WatchlistMemoryRetentionDays = 365;
 
@@ -451,6 +452,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }
         public bool SyncJellyseerrWatchlist { get; set; }
+        public bool SyncJellyfinWatchlistToSeerr { get; set; }
         public bool PreventWatchlistReAddition { get; set; }
         public int WatchlistMemoryRetentionDays { get; set; }
 

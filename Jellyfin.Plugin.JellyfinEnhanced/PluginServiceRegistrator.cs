@@ -43,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
+            serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
 

@@ -1366,12 +1366,21 @@
                                 </div>
                             </div>
 
-                            <div class="checkboxContainer"><label><input id="syncJellyseerrWatchlist" is="emby-checkbox" type="checkbox"/><span>Sync Seerr Watchlist</span></label></div>
+                            <div class="checkboxContainer"><label><input id="syncJellyseerrWatchlist" is="emby-checkbox" type="checkbox"/><span>Sync Seerr Watchlist → Jellyfin</span></label></div>
                             <div class="je-setting-description" data-desc-for="syncJellyseerrWatchlist">
                                 <div class="fieldDescription je-field-desc-xl">
                                     When enabled, items from each user's Seerr watchlist will be automatically synced to their Jellyfin watchlist.<br/><br/>
                                     Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Seerr to Jellyfin".<br/><br/>
                                     <strong>Note:</strong> Requires <a class="je-bold-link" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank">KefinTweaks</a> to actually render the watchlist UI.
+                                    <span class="je-installed-badge" data-plugin="kefintweaks"><i class="material-icons" aria-hidden="true">check_circle</i>KefinTweaks detected</span>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="syncJellyfinWatchlistToSeerr" is="emby-checkbox" type="checkbox"/><span>Sync Jellyfin Watchlist → Seerr</span></label></div>
+                            <div class="je-setting-description" data-desc-for="syncJellyfinWatchlistToSeerr">
+                                <div class="fieldDescription je-field-desc-xl">
+                                    When enabled, items from a user's Jellyfin watchlist (from <a class="je-bold-link" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank">KefinTweaks</a>) will be automatically synced to their Seerr watchlist.<br/><br/>
+                                    Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Jellyfin to Seerr".
                                     <span class="je-installed-badge" data-plugin="kefintweaks"><i class="material-icons" aria-hidden="true">check_circle</i>KefinTweaks detected</span>
                                 </div>
                             </div>
@@ -4121,6 +4130,7 @@
                 }
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
+                document.querySelector('#syncJellyfinWatchlistToSeerr').checked = config.SyncJellyfinWatchlistToSeerr || false;
                 document.querySelector('#jellyseerrAutoImportUsers').checked = config.JellyseerrAutoImportUsers || false;
                 document.querySelector('#jellyseerrImportBlockedUsers').value = config.JellyseerrImportBlockedUsers || '';
                 loadBlockedUsersList(config.JellyseerrImportBlockedUsers || '');
@@ -4434,6 +4444,7 @@
             config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
+            config.SyncJellyfinWatchlistToSeerr = document.querySelector('#syncJellyfinWatchlistToSeerr').checked;
             config.JellyseerrAutoImportUsers = document.querySelector('#jellyseerrAutoImportUsers').checked;
             syncBlockedUsersToHiddenInput();
             config.JellyseerrImportBlockedUsers = document.querySelector('#jellyseerrImportBlockedUsers').value || '';
