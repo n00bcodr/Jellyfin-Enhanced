@@ -5420,7 +5420,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         int? reqStatus = req["status"]?.Value<int>();
                         int? mediaStatusVal = media?["status"]?.Value<int>();
-                        string mediaStatus = GetMediaStatus(reqStatus, mediaStatusVal);
+                        bool hasActiveDownload = (media?["downloadStatus"] as JArray)?.Count > 0
+                            || (media?["downloadStatus4k"] as JArray)?.Count > 0;
+                        string mediaStatus = GetMediaStatus(reqStatus, mediaStatusVal, hasActiveDownload);
 
                         string? type = req["type"]?.Value<string>();
                         int? tmdbId = media?["tmdbId"]?.Value<int>();
@@ -5604,11 +5606,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var totalResults = isComingSoonFilter ? requests.Count : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
 
+                var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                    jellyseerrUser.Permissions,
+                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+                );
+
                 return Ok(new
                 {
                     requests = requests,
                     totalPages = totalPages,
-                    totalResults = totalResults
+                    totalResults = totalResults,
+                    canApproveRequests = canApproveRequests
                 });
             }
             catch (Exception ex)
@@ -5629,6 +5637,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     totalResults = 0,
                 });
             }
+        }
+
+        [HttpPost("arr/requests/{requestId}/approve")]
+        [HttpPost("arr/requests/{requestId}/decline")]
+        [Authorize]
+        public async Task<IActionResult> ActOnRequest([FromRoute] int requestId)
+        {
+            var action = HttpContext.Request.Path.Value?.Contains("/approve", StringComparison.OrdinalIgnoreCase) == true ? "approve" : "decline";
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                return StatusCode(503, new { error = true, message = "Seerr not configured." });
+
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return BadRequest(new { message = "Jellyfin User ID not found." });
+
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+                return NotFound(new { message = "Current user is not linked to a Seerr account." });
+
+            bool canApprove = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                jellyseerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+            );
+            if (!canApprove)
+                return StatusCode(403, new { error = true, message = "You do not have permission to approve or decline requests." });
+
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim().TrimEnd('/'))
+                .FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
+
+            if (string.IsNullOrEmpty(jellyseerrUrl))
+                return StatusCode(503, new { error = true, message = "No valid Seerr URL configured." });
+
+            var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}/{action}";
+            var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+            using var httpRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUser.Id.ToString());
+            using var response = await client.SendAsync(httpRequest);
+            var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+
+            if (error != null)
+            {
+                _logger.Warning($"Seerr {action} request {requestId} failed: {error.Code} {error.HttpStatus}");
+                return StatusCode(error.HttpStatus > 0 ? error.HttpStatus : 502,
+                    IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
+            }
+
+            return Ok(new { success = true });
         }
 
         [HttpGet("arr/calendar")]
@@ -6410,7 +6469,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return (result.Title, result.Year, result.PosterUrl, result.DigitalReleaseDate, result.TheatricalReleaseDate, result.InitialAirDate, result.NextAirDate);
         }
 
-        private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
+        private static string GetMediaStatus(int? requestStatus, int? mediaStatus, bool hasActiveDownload = false)
         {
             // MediaStatus: 1 = Unknown, 2 = Pending, 3 = Processing, 4 = Partially Available, 5 = Available, 6 = Blocklisted, 7 = Deleted
             // MediaRequestStatus: 1 = Pending, 2 = Approved, 3 = Declined, 4 = Failed, 5 = Completed
@@ -6420,7 +6479,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaStatus == 6) return "Blocklisted";
             if (mediaStatus == 5) return "Available";
             if (mediaStatus == 4) return "Partially Available";
-            if (mediaStatus == 3) return "Processing";
+            // MediaStatus.PROCESSING (3): only show "Processing" when Radarr/Sonarr is actively downloading.
+            // Without active download data the request is approved-but-queued — Seerr labels that "Requested".
+            if (mediaStatus == 3) return hasActiveDownload ? "Processing" : "Approved";
             if (mediaStatus == 2) return "Pending";
 
             // Fall back to request status

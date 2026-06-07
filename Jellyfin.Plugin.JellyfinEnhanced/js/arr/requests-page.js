@@ -16,6 +16,7 @@
     requestsPage: 1,
     requestsTotalPages: 1,
     requestsFilter: "all",
+    canApproveRequests: false,
     issues: [],
     issuesPage: 1,
     issuesTotalPages: 1,
@@ -280,6 +281,27 @@
         }
         .je-request-watch-btn:hover { opacity: 0.9; }
         .je-request-watch-btn .material-icons { font-size: 20px; }
+        .je-request-approve-btn, .je-request-decline-btn {
+          border: none;
+          padding: 0.45em;
+          border-radius: 50%;
+          cursor: pointer;
+          width: 36px;
+          height: 36px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+          margin-left: 6px;
+        }
+        .je-request-approve-btn { background: #4caf50; color: #fff; }
+        .je-request-decline-btn { background: #f44336; color: #fff; }
+        .je-request-approve-btn:hover { background: #43a047; }
+        .je-request-decline-btn:hover { background: #e53935; }
+        .je-request-approve-btn .material-icons,
+        .je-request-decline-btn .material-icons { font-size: 20px; }
+        .je-request-approve-btn:disabled,
+        .je-request-decline-btn:disabled { opacity: 0.5; cursor: default; }
         .je-issues-section h2 {
           font-size: 1.5em;
           margin-bottom: 1em;
@@ -420,7 +442,9 @@
         .je-requests-status-chip.je-chip-partial { background: rgba(234, 179, 8, 0.25); color: #f0f9ff; border-color: rgba(234, 179, 8, 0.5); }
         .je-requests-status-chip.je-chip-processing { background: rgba(59, 130, 246, 0.25); color: #f0f9ff; border-color: rgba(59, 130, 246, 0.5); }
         .je-requests-status-chip.je-chip-requested { background: rgba(168, 85, 247, 0.25); color: #f0f9ff; border-color: rgba(168, 85, 247, 0.5); }
-        .je-requests-status-chip.je-chip-rejected { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
+        .je-requests-status-chip.je-chip-pending { background: rgba(234, 179, 8, 0.25); color: #f0f9ff; border-color: rgba(234, 179, 8, 0.5); }
+        .je-requests-status-chip.je-chip-rejected,
+        .je-requests-status-chip.je-chip-declined { background: rgba(248, 113, 113, 0.25); color: #f0f9ff; border-color: rgba(248, 113, 113, 0.5); }
         .je-requests-status-chip.je-chip-blocklisted { background: rgba(245, 158, 11, 0.25); color: #f0f9ff; border-color: rgba(245, 158, 11, 0.5); }
         .je-requests-status-chip.je-chip-deleted { background: rgba(220, 38, 38, 0.22); color: #ffe4e6; border-color: rgba(248, 113, 113, 0.55); }
         .je-requests-status-chip.je-chip-coming-soon { background: rgba(156, 39, 176, 0.25); color: #f0f9ff; border-color: rgba(156, 39, 176, 0.5); }
@@ -438,6 +462,7 @@
           border: 1px solid rgba(156, 39, 176, 0.5);
           color: #f0f9ff;
         }
+        .je-release-date-icon { font-size: 1em; margin-right: 3px; vertical-align: middle; line-height: 1; }
         .je-release-date-chip sup,
         .je-requests-status-chip sup,
         .je-request-title sup {
@@ -816,6 +841,7 @@
 
       state.requests = data.requests || [];
       state.requestsTotalPages = data.totalPages || 1;
+      state.canApproveRequests = data.canApproveRequests === true;
 
       return data;
     } catch (error) {
@@ -1214,10 +1240,19 @@
    * Get release date label for display
    */
   function getReleaseDateLabel(item) {
-    const dateStr = item.type === 'tv'
-      ? item.nextAirDate
-      : (item.digitalReleaseDate || item.theatricalReleaseDate);
-    return formatFutureReleaseDate(dateStr);
+    if (item.type === 'tv') {
+      const label = formatFutureReleaseDate(item.nextAirDate);
+      return label ? { label, icon: 'tv', isHtml: false } : null;
+    }
+    if (item.digitalReleaseDate) {
+      const label = formatFutureReleaseDate(item.digitalReleaseDate);
+      return label ? { label, icon: 'cloud', isHtml: false } : null;
+    }
+    if (item.theatricalReleaseDate) {
+      const label = formatFutureReleaseDate(item.theatricalReleaseDate);
+      return label ? { label, icon: 'local_movies', isHtml: false } : null;
+    }
+    return null;
   }
 
   /**
@@ -1240,6 +1275,7 @@
     const labelProcessing = JE.t?.("jellyseerr_btn_processing") || "Processing";
     const labelPending = JE.t?.("jellyseerr_btn_pending") || "Pending Approval";
     const labelRequested = JE.t?.("jellyseerr_btn_requested") || "Requested";
+    const labelDeclined = JE.t?.("jellyseerr_btn_declined") || "Declined";
     const labelRejected = JE.t?.("jellyseerr_btn_rejected") || "Rejected";
     const labelBlocklisted = JE.t?.("jellyseerr_btn_blocklisted") || "Blocklisted";
     const labelDeleted = JE.t?.("jellyseerr_btn_deleted") || "Deleted";
@@ -1268,9 +1304,9 @@
       case "approved":
         return { label: labelRequested, className: "je-chip-requested" };
       case "pending":
-        return { label: labelPending, className: "je-chip-requested" };
+        return { label: labelPending, className: "je-chip-pending" };
       case "declined":
-        return { label: labelRejected, className: "je-chip-rejected" };
+        return { label: labelDeclined, className: "je-chip-declined" };
       case "blocklisted":
         return { label: labelBlocklisted, className: "je-chip-blocklisted" };
       case "deleted":
@@ -1350,14 +1386,22 @@
       watchButton = `<button class="je-request-watch-btn" title="${escapeHtml(playLabel)}" aria-label="${escapeHtml(playLabel)}" data-media-id="${escapeHtml(item.jellyfinMediaId)}">${playIcon}</button>`;
     }
 
+    let approvalButtons = "";
+    if (state.canApproveRequests && item.mediaStatus === "Pending" && item.id) {
+      approvalButtons = `
+        <button class="je-request-approve-btn" data-request-id="${escapeHtml(String(item.id))}" title="Approve"><span class="material-icons">check</span></button>
+        <button class="je-request-decline-btn" data-request-id="${escapeHtml(String(item.id))}" title="Decline"><span class="material-icons">close</span></button>
+      `;
+    }
+
     // Handle release date label - check if it contains HTML
     let releaseDateHtml = "";
     if (releaseDateLabel) {
-      if (typeof releaseDateLabel === 'object' && releaseDateLabel.isHtml) {
-        releaseDateHtml = `<span class="je-release-date-chip">${releaseDateLabel.text}</span>`;
-      } else {
-        releaseDateHtml = `<span class="je-release-date-chip">${escapeHtml(releaseDateLabel)}</span>`;
-      }
+      const dateText = typeof releaseDateLabel === 'object' ? releaseDateLabel.label : releaseDateLabel;
+      const icon = typeof releaseDateLabel === 'object' && releaseDateLabel.icon
+        ? `<span class="material-icons je-release-date-icon">${escapeHtml(releaseDateLabel.icon)}</span>`
+        : '';
+      releaseDateHtml = `<span class="je-release-date-chip">${icon}${typeof dateText === 'object' ? dateText.text || '' : escapeHtml(dateText)}</span>`;
     }
 
     return `
@@ -1380,7 +1424,7 @@
                         ${item.createdAt ? `<span>&#8226;</span><span>${escapeHtml(formatRelativeDate(item.createdAt))}</span>` : ""}
                       </div>
                     </div>
-                    ${watchButton ? `<div class="je-request-actions">${watchButton}</div>` : ""}
+                    ${(watchButton || approvalButtons) ? `<div class="je-request-actions">${watchButton}${approvalButtons}</div>` : ""}
                 </div>
             </div>
         `;
@@ -1620,6 +1664,27 @@
    * @param {HTMLElement} [targetContainer] - Optional container to render into
    *   (used by custom-tab mode to avoid duplicate-ID conflicts).
    */
+  async function handleRequestAction(btn, action) {
+    const requestId = btn.getAttribute('data-request-id');
+    if (!requestId) return;
+
+    btn.disabled = true;
+    const icon = btn.querySelector('.material-icons');
+    if (icon) icon.textContent = 'hourglass_empty';
+
+    try {
+      const url = ApiClient.getUrl(`/JellyfinEnhanced/arr/requests/${requestId}/${action}`);
+      const response = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await fetchRequests();
+      renderPage();
+    } catch (err) {
+      console.error(`${logPrefix} Failed to ${action} request ${requestId}:`, err);
+      btn.disabled = false;
+      if (icon) icon.textContent = action === 'approve' ? 'check' : 'close';
+    }
+  }
+
   function renderPage(targetContainer) {
     let container;
     if (targetContainer) {
@@ -1945,6 +2010,22 @@
         if (mediaId && window.Emby?.Page?.showItem) {
           window.Emby.Page.showItem(mediaId);
         }
+        return;
+      }
+
+      const approveBtn = e.target.closest('.je-request-approve-btn');
+      if (approveBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleRequestAction(approveBtn, 'approve');
+        return;
+      }
+
+      const declineBtn = e.target.closest('.je-request-decline-btn');
+      if (declineBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleRequestAction(declineBtn, 'decline');
         return;
       }
 
