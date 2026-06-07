@@ -3291,12 +3291,24 @@
         ];
 
         function isCustomTabsConfigShapeOk(cfg) {
-            if (!cfg || typeof cfg !== 'object') return false;
-            if (!Array.isArray(cfg.Tabs)) return false;
+            if (!cfg || typeof cfg !== 'object') {
+                console.warn('[JE] Custom Tabs compat: config is not an object:', cfg);
+                return false;
+            }
+            if (!Array.isArray(cfg.Tabs)) {
+                console.warn('[JE] Custom Tabs compat: cfg.Tabs is not an array. Keys present:', Object.keys(cfg));
+                return false;
+            }
             for (var i = 0; i < cfg.Tabs.length; i++) {
                 var t = cfg.Tabs[i];
-                if (!t || typeof t !== 'object') return false;
-                if (typeof t.Title !== 'string' || typeof t.ContentHtml !== 'string') return false;
+                if (!t || typeof t !== 'object') {
+                    console.warn('[JE] Custom Tabs compat: tab[' + i + '] is not an object:', t);
+                    return false;
+                }
+                if (typeof t.Title !== 'string' || typeof t.ContentHtml !== 'string') {
+                    console.warn('[JE] Custom Tabs compat: tab[' + i + '] missing expected fields. Got keys:', Object.keys(t));
+                    return false;
+                }
             }
             return true;
         }

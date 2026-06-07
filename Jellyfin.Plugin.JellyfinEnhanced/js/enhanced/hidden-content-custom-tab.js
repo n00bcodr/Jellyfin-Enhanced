@@ -61,8 +61,15 @@
   function findActiveContainer() {
     var all = document.querySelectorAll('.jellyfinenhanced.hidden-content');
     for (var i = all.length - 1; i >= 0; i--) {
-      var page = all[i].closest('.page');
-      if (page && !page.classList.contains('hide')) return all[i];
+      var el = all[i];
+      // 1. Standard Jellyfin page structure
+      var page = el.closest('.page');
+      if (page && !page.classList.contains('hide')) return el;
+      // 2. Custom Tabs wraps content in .tabContent.is-active (no .page ancestor)
+      var tabContent = el.closest('.tabContent');
+      if (tabContent && tabContent.classList.contains('is-active')) return el;
+      // 3. Last resort: element is simply visible in the document
+      if (!page && !tabContent && el.offsetParent !== null) return el;
     }
     return null;
   }
