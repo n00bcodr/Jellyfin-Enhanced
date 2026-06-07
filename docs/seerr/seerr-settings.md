@@ -89,6 +89,11 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 - Sync your Seerr watchlist items to Jellyfin watchlist
 - Items added when they become available in library
 
+### Sync Jellyfin Watchlist to Seerr
+- Sync each user's Jellyfin watchlist to their linked Seerr watchlist
+- Runs via the **Sync Watchlist from Jellyfin to Seerr** scheduled task (default: daily at 03:30)
+- Requires users to have a linked Seerr account
+
 ### Show 'Report Issue' Button
 - Display issue reporting button on item detail pages
 - Report video, audio, subtitle, or other problems

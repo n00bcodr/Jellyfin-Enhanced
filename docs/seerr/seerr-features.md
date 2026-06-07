@@ -53,8 +53,10 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 #### Request Status Indicators:
 
 - **Available** - Already in your library
-- **Pending** - Request submitted, awaiting approval
-- **Approved** - Request approved, downloading
+- **Pending Approval** - Request submitted, awaiting admin approval
+- **Requested** - Request approved, waiting to be downloaded
+- **Processing** - Actively downloading
+- **Declined** - Request was declined by an admin
 - **Not Requested** - Click to request
 
 ### Item Details
@@ -166,12 +168,13 @@ Monitor active downloads from Sonarr/Radarr and manage Seerr requests and issues
 #### Features
 
 - View active downloads (if enabled)
-- View Seerr requests with status
+- View Seerr requests with status chips (Pending Approval, Requested, Processing, Declined)
 - View reported issues (if enabled)
 - Progress bars and ETA for downloads
 - Quality and size information
 - Filter by status
 - Search functionality
+- **Approve / Decline buttons** — admins and users with Manage Requests permission see green approve and red decline icon buttons on pending requests
 
 ### Issues on Downloads Page
 
@@ -202,23 +205,31 @@ View and manage Seerr issues directly from the Requests page.
 
 ### Watchlist Sync
 
-Automatically sync requested media to Jellyfin watchlist.
+Automatically sync watchlist items between Seerr and Jellyfin in both directions.
+
+#### Seerr → Jellyfin
 
 !!! note
 
     [Requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) to provide watchlist functionality
 
-#### Features:
+- Add requested items to Jellyfin watchlist when they become available in the library
+- Sync Seerr watchlist items to Jellyfin
+- Prevent re-addition of previously removed items
+- Runs via the **Sync Watchlist from Seerr to Jellyfin** scheduled task
 
-- Add requested items to watchlist when available
-- Sync Seerr watchlist to Jellyfin
-- Prevent re-addition of removed items
-- Configurable memory retention
+#### Jellyfin → Seerr
+
+- Sync each user's Jellyfin watchlist to their linked Seerr watchlist
+- Only syncs items that have a TMDB ID and a linked Seerr account
+- Skips items already present in the Seerr watchlist
+- Runs via the **Sync Watchlist from Jellyfin to Seerr** scheduled task (default: daily at 03:30)
 
 #### Configuration:
 
 - **Add Requested Media to Watchlist** - Auto-add when available
-- **Sync Seerr Watchlist** - Sync watchlist items
+- **Sync Seerr Watchlist** - Sync Seerr watchlist to Jellyfin
+- **Sync Jellyfin Watchlist to Seerr** - Sync Jellyfin watchlist to Seerr
 - **Prevent Watchlist Re-Addition** - Remember removed items
 - **Memory Retention Days** - How long to remember (default: 365)
 
