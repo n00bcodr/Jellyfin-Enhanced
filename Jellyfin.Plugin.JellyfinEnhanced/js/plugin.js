@@ -303,7 +303,44 @@
     }
 
     /**
+     * Injects a maintenance banner at the top of the page.
+     */
+    function injectMaintenanceBanner(message) {
+        if (document.getElementById('je-maintenance-banner')) return;
+        const text = (message || '').trim() || 'This server is currently undergoing maintenance. Please try again later.';
+        const banner = document.createElement('div');
+        banner.id = 'je-maintenance-banner';
+        banner.style.cssText = [
+            'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:99999',
+            'background:#b71c1c', 'color:#fff', 'text-align:center',
+            'padding:10px 16px', 'font-size:14px', 'font-weight:600',
+            'letter-spacing:0.02em', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
+            'font-family:inherit'
+        ].join(';');
+        banner.textContent = text;
+        document.body.appendChild(banner);
+        // Inject a stylesheet that shifts Jellyfin's fixed header + body down by the banner height.
+        // We use a <style> tag so the rule applies even if Jellyfin re-renders its header.
+        requestAnimationFrame(function() {
+            const h = banner.offsetHeight;
+            if (h <= 0) return;
+            const existing = document.getElementById('je-maintenance-banner-style');
+            if (existing) return;
+            const style = document.createElement('style');
+            style.id = 'je-maintenance-banner-style';
+            style.textContent = [
+                'body { padding-top: ' + h + 'px !important; }',
+                '.skinHeader { top: ' + h + 'px !important; }',
+                '.mainDrawer { top: ' + h + 'px !important; }',
+                '.videoOsdBottom { bottom: 0 !important; }'
+            ].join('\n');
+            document.head.appendChild(style);
+        });
+    }
+
+    /**
      * Loads the login image script early (checks config first).
+     * Also injects a maintenance banner when maintenance mode is active.
      */
     function loadLoginImageEarly() {
         if (typeof ApiClient === 'undefined') {
@@ -311,13 +348,18 @@
             return;
         }
 
-        // Fetch the public config to check if login image is enabled
+        // Fetch the public config to check if login image / maintenance banner is needed
         ApiClient.ajax({
             type: 'GET',
             url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
             dataType: 'json'
         }).then((config) => {
-            // Only load if enabled (default to false)
+            // Show maintenance banner for all users (admins can dismiss it mentally)
+            if (config?.MaintenanceModeEnabled === true) {
+                injectMaintenanceBanner(config.MaintenanceModeMessage);
+            }
+
+            // Only load login image if enabled (default to false)
             if (config?.EnableLoginImage === true) {
                 const loginImageScript = document.createElement('script');
                 loginImageScript.src = ApiClient.getUrl('/JellyfinEnhanced/js/extras/login-image.js?v=' + getScriptVersion());

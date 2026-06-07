@@ -70,6 +70,7 @@
                 <button class="jellyfin-tab-button" data-tab="elsewhere"><h3><i class="material-icons je-tab-icon" aria-hidden="true">travel_explore</i>Elsewhere</h3></button>
                 <button class="jellyfin-tab-button" data-tab="extras"><h3><i class="material-icons je-tab-icon" aria-hidden="true">auto_awesome</i>Extras</h3></button>
                     <button class="jellyfin-tab-button" data-tab="keyboard"><h3><i class="material-icons je-tab-icon" aria-hidden="true">keyboard</i>Keyboard</h3></button>
+                    <button class="jellyfin-tab-button" data-tab="admin"><h3><i class="material-icons je-tab-icon" aria-hidden="true">admin_panel_settings</i>Admin</h3></button>
                     <button class="jellyfin-tab-button" data-tab="docs"><h3><i class="material-icons je-tab-icon" aria-hidden="true">menu_book</i>Docs</h3></button>
                 </div>
             </div>
@@ -1880,16 +1881,6 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
-                        <legend class="sectionTitle">Developer</legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer"><label><input id="devMode" is="emby-checkbox" type="checkbox"/><span>Dev Mode</span></label></div>
-                            <div class="je-setting-description" data-desc-for="devMode">
-                                <div class="fieldDescription">Enabling Dev Mode disables JS caching so scripts are always re-fetched from the server. <br>Default: OFF. <br>DO NOT CHANGE if you don't know why you are changing it.</div>
-                            </div>
-                        </div>
-                    </fieldset>
-
                     <fieldset class="je-fieldset-wide">
                         <legend class="sectionTitle">Custom Image Assets</legend>
                         <div class="configSection">
@@ -1998,6 +1989,103 @@
                             </div>
                         </div>
                     </fieldset>
+                </div>
+
+                <div id="admin" class="jellyfin-tab-content">
+
+                    <fieldset class="je-fieldset-wide">
+                        <legend class="sectionTitle">Maintenance Mode</legend>
+                        <div class="configSection">
+
+                            <!-- Enable toggle -->
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceModeEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable Maintenance Mode</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.25em;">
+                                When enabled, the selected action is applied to affected users immediately on save.
+                                A banner is shown on the Jellyfin login page. Admins are <strong>never</strong> affected.
+                                Disabling restores all users automatically.
+                            </div>
+
+                            <!-- Banner message -->
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceModeMessage">Login Page Banner Message</label>
+                                <textarea id="maintenanceModeMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="This server is currently undergoing maintenance. Please try again later."
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only.</div>
+                            </div>
+
+                            <!-- Notification message (broadcast) -->
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceModeNotificationMessage">Active Session Notification</label>
+                                <textarea id="maintenanceModeNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="Server maintenance is starting. Please finish up and try again later."
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching — reaches all clients (web, mobile, TV apps).</div>
+                            </div>
+
+                            <!-- Action selection -->
+                            <div style="margin-bottom:1.5em;">
+                                <div style="font-weight:600;margin-bottom:0.6em;">Action</div>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;margin-bottom:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmAction_accounts" style="margin-top:3px;flex-shrink:0;" checked/>
+                                    <span>
+                                        <strong>Disable user accounts</strong>
+                                        <span class="fieldDescription" style="display:block;margin:0;">Users cannot log in at all until maintenance ends.</span>
+                                    </span>
+                                </label>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmAction_remote" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span>
+                                        <strong>Disable remote connections</strong>
+                                        <span class="fieldDescription" style="display:block;margin:0;">Blocks connections from outside the local network; LAN access still works.</span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <!-- Affected users -->
+                            <div>
+                                <div style="font-weight:600;margin-bottom:0.6em;">Affected Users</div>
+                                <label style="display:flex;align-items:center;gap:0.6em;margin-bottom:0.5em;cursor:pointer;">
+                                    <input type="radio" name="maintenanceModeUsers" id="mmUsers_all" value="all" checked/>
+                                    <span>All non-admin users</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:0.6em;cursor:pointer;">
+                                    <input type="radio" name="maintenanceModeUsers" id="mmUsers_select" value="select"/>
+                                    <span>Select specific users</span>
+                                </label>
+
+                                <!-- User checklist — shown when "select" is chosen -->
+                                <div id="je-mm-user-list" style="display:none;margin-top:0.75em;padding:0.75em;
+                                    background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);
+                                    border-radius:6px;max-height:260px;overflow-y:auto;max-width:480px;">
+                                    <div style="display:flex;gap:0.75em;margin-bottom:0.6em;">
+                                        <button type="button" id="je-mm-select-all" style="padding:0.25em 0.8em;font-size:0.8em;border:1px solid rgba(255,255,255,0.3);border-radius:4px;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer;">Select All</button>
+                                        <button type="button" id="je-mm-deselect-all" style="padding:0.25em 0.8em;font-size:0.8em;border:1px solid rgba(255,255,255,0.3);border-radius:4px;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer;">Deselect All</button>
+                                    </div>
+                                    <div id="je-mm-users-inner">
+                                        <div id="je-mm-users-loading" style="opacity:0.55;font-size:0.875em;">Loading users…</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Developer Settings</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="devMode" is="emby-checkbox" type="checkbox"/><span>Dev Mode</span></label></div>
+                            <div class="je-setting-description" data-desc-for="devMode">
+                                <div class="fieldDescription">Enabling Dev Mode disables JS caching so scripts are always re-fetched from the server. <br>Default: OFF. <br>DO NOT CHANGE if you don't know why you are changing it.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
                 </div>
 
                 <div id="keyboard" class="jellyfin-tab-content">
@@ -3995,6 +4083,25 @@
 
                 // Load all other settings
                 document.querySelector('#devMode').checked = config.DevMode;
+                document.querySelector('#maintenanceModeEnabled').checked = config.MaintenanceModeEnabled || false;
+                document.querySelector('#maintenanceModeMessage').value = config.MaintenanceModeMessage || '';
+                document.querySelector('#maintenanceModeNotificationMessage').value = config.MaintenanceModeNotificationMessage || '';
+                // Restore action checkboxes
+                const savedAction = config.MaintenanceModeAction || 'disable_accounts';
+                document.getElementById('mmAction_accounts').checked = savedAction === 'disable_accounts' || savedAction === 'both';
+                document.getElementById('mmAction_remote').checked   = savedAction === 'disable_remote'   || savedAction === 'both';
+                // Restore user selection radio + checkboxes
+                const savedUsers = config.MaintenanceModeAffectedUsers || 'all';
+                if (savedUsers === 'all') {
+                    document.querySelector('#mmUsers_all').checked = true;
+                    document.getElementById('je-mm-user-list').style.display = 'none';
+                } else {
+                    document.querySelector('#mmUsers_select').checked = true;
+                    document.getElementById('je-mm-user-list').style.display = '';
+                    // Preselected IDs will be applied after the user list loads
+                    document.getElementById('je-mm-user-list').dataset.preselect = savedUsers;
+                }
+                loadMaintenanceUsers();
                 document.querySelector('#enableCustomSplashScreen').checked = config.EnableCustomSplashScreen;
                 document.querySelector('#splashScreenImageUrl').value = config.SplashScreenImageUrl;
                 document.querySelector('#disableAllShortcuts').checked = config.DisableAllShortcuts;
@@ -4288,6 +4395,21 @@
             });
             config.Shortcuts = finalShortcuts;
             config.DevMode = document.querySelector('#devMode').checked;
+            config.MaintenanceModeEnabled = document.querySelector('#maintenanceModeEnabled').checked;
+            config.MaintenanceModeMessage = document.querySelector('#maintenanceModeMessage').value;
+            config.MaintenanceModeNotificationMessage = document.querySelector('#maintenanceModeNotificationMessage').value;
+            const mmAccounts = document.getElementById('mmAction_accounts').checked;
+            const mmRemote   = document.getElementById('mmAction_remote').checked;
+            config.MaintenanceModeAction = (mmAccounts && mmRemote) ? 'both'
+                                         : mmRemote                 ? 'disable_remote'
+                                         :                            'disable_accounts';
+            const mmUsersMode = (document.querySelector('input[name="maintenanceModeUsers"]:checked') || {}).value || 'all';
+            if (mmUsersMode === 'all') {
+                config.MaintenanceModeAffectedUsers = 'all';
+            } else {
+                const checked = Array.from(document.querySelectorAll('.je-mm-user-cb:checked')).map(cb => cb.value);
+                config.MaintenanceModeAffectedUsers = JSON.stringify(checked);
+            }
             config.EnableCustomSplashScreen = document.querySelector('#enableCustomSplashScreen').checked;
             config.SplashScreenImageUrl = document.querySelector('#splashScreenImageUrl').value;
             config.DisableAllShortcuts = document.querySelector('#disableAllShortcuts').checked;
@@ -4682,6 +4804,53 @@
                 // We surface non-OK results to the admin via Dashboard.alert so a
                 // partial failure doesn't hide behind the green "saved" toast.
                 const syncResult = await runCustomTabsSync(config);
+
+                // Apply maintenance mode: enable/disable users to match the toggle
+                try {
+                    if (config.MaintenanceModeEnabled) {
+                        const affectedIds = config.MaintenanceModeAffectedUsers === 'all'
+                            ? []
+                            : JSON.parse(config.MaintenanceModeAffectedUsers || '[]');
+                        await ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Enable'),
+                            contentType: 'application/json',
+                            data: JSON.stringify({
+                                message: config.MaintenanceModeMessage || '',
+                                durationMinutes: 0,
+                                action: config.MaintenanceModeAction || 'disable_accounts',
+                                affectedUserIds: affectedIds
+                            })
+                        });
+                        // Broadcast a native Jellyfin message to all active sessions
+                        // (reaches non-web clients like TV apps too — works regardless of Active Streams setting)
+                        const mmMsg = (config.MaintenanceModeNotificationMessage || '').trim()
+                            || (config.MaintenanceModeMessage || '').trim()
+                            || 'Server maintenance is starting. Please finish up and try again later.';
+                        try {
+                            await ApiClient.ajax({
+                                type: 'POST',
+                                url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Broadcast'),
+                                contentType: 'application/json',
+                                data: JSON.stringify({
+                                    header: 'Server Maintenance',
+                                    text: mmMsg,
+                                    timeoutMs: 30000
+                                })
+                            });
+                        } catch (bcErr) {
+                            console.warn('[JE] Maintenance broadcast failed (no active sessions?):', bcErr);
+                        }
+                    } else {
+                        await ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable')
+                        });
+                    }
+                } catch (mmErr) {
+                    console.warn('[JE] Maintenance mode apply failed:', mmErr);
+                }
+
                 Dashboard.processPluginConfigurationUpdateResult(result);
                 if (syncResult && syncResult.ok === false) {
                     try {
@@ -4743,6 +4912,114 @@
                     });
                 }
             }
+        }
+
+        // ── Maintenance mode: user checklist ─────────────────────────────────────
+
+        function loadMaintenanceUsers() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Users'),
+                dataType: 'json'
+            }).then(function(users) {
+                const inner = document.getElementById('je-mm-users-inner');
+                if (!inner) return;
+                inner.innerHTML = '';
+
+                if (!users || users.length === 0) {
+                    const msg = document.createElement('div');
+                    msg.style.cssText = 'opacity:0.55;font-size:0.875em;';
+                    msg.textContent = 'No non-admin users found.';
+                    inner.appendChild(msg);
+                    return;
+                }
+
+                // Collect any pre-selected IDs stored on the container by loadConfig
+                const listEl = document.getElementById('je-mm-user-list');
+                let preselect = [];
+                try { preselect = JSON.parse(listEl.dataset.preselect || '[]'); } catch (e) {}
+                const preselectAll = preselect.length === 0;
+
+                // 3-column grid
+                const grid = document.createElement('div');
+                grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:0.2em 0.75em;';
+
+                users.forEach(function(u) {
+                    // Handle both camelCase and PascalCase from the API
+                    const uid  = u.id  || u.Id  || '';
+                    const uname = u.username || u.Username || uid;
+
+                    const checked = preselectAll || preselect.indexOf(uid) !== -1;
+
+                    const label = document.createElement('label');
+                    label.style.cssText = 'display:flex;align-items:center;gap:0.45em;padding:0.3em 0.2em;cursor:pointer;border-radius:4px;min-width:0;';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'je-mm-user-cb';
+                    cb.value = uid;
+                    cb.checked = checked;
+                    cb.style.flexShrink = '0';
+
+                    const avatar = document.createElement('span');
+                    avatar.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;' +
+                        'width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.15);' +
+                        'font-size:0.7em;font-weight:700;flex-shrink:0;overflow:hidden;';
+                    // Try to load the user's actual Jellyfin profile picture
+                    const img = document.createElement('img');
+                    img.style.cssText = 'width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;';
+                    img.src = ApiClient.getUrl('/Users/' + uid + '/Images/Primary', { width: 26 });
+                    img.alt = '';
+                    const fallbackLetter = document.createTextNode((uname || '?').charAt(0).toUpperCase());
+                    img.onerror = function() {
+                        this.style.display = 'none';
+                        avatar.appendChild(fallbackLetter);
+                    };
+                    avatar.appendChild(img);
+
+                    const name = document.createElement('span');
+                    name.style.cssText = 'font-size:0.875em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    name.textContent = uname;
+
+                    label.appendChild(cb);
+                    label.appendChild(avatar);
+                    label.appendChild(name);
+                    grid.appendChild(label);
+                });
+
+                inner.appendChild(grid);
+            }).catch(function() {
+                const inner = document.getElementById('je-mm-users-inner');
+                if (!inner) return;
+                inner.innerHTML = '';
+                const msg = document.createElement('div');
+                msg.style.cssText = 'opacity:0.55;font-size:0.875em;';
+                msg.textContent = 'Failed to load users.';
+                inner.appendChild(msg);
+            });
+        }
+
+        function setupMaintenanceModeControls() {
+            // Show/hide user checklist based on radio selection
+            document.querySelectorAll('input[name="maintenanceModeUsers"]').forEach(function(radio) {
+                radio.addEventListener('change', function() {
+                    const listEl = document.getElementById('je-mm-user-list');
+                    if (this.value === 'select') {
+                        listEl.style.display = '';
+                        loadMaintenanceUsers();
+                    } else {
+                        listEl.style.display = 'none';
+                    }
+                });
+            });
+
+            // Select All / Deselect All buttons
+            document.getElementById('je-mm-select-all').addEventListener('click', function() {
+                document.querySelectorAll('.je-mm-user-cb').forEach(function(cb) { cb.checked = true; });
+            });
+            document.getElementById('je-mm-deselect-all').addEventListener('click', function() {
+                document.querySelectorAll('.je-mm-user-cb').forEach(function(cb) { cb.checked = false; });
+            });
         }
 
         // Setup branding file uploads and previews
@@ -4966,6 +5243,7 @@
         }
 
         setupBrandingUploads();
+        setupMaintenanceModeControls();
 
         // Populate language options dynamically
         (async () => {

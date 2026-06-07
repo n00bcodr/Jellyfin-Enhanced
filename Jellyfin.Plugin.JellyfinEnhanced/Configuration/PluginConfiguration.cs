@@ -19,6 +19,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ToastDuration = 1500;
             HelpPanelAutocloseDelay = 15000;
             EnableCustomSplashScreen = false;
+
+            // Maintenance Mode
+            MaintenanceModeEnabled = false;
+            MaintenanceModeMessage = "This server is currently undergoing maintenance. Please try again.";
+            MaintenanceModeNotificationMessage = "Server undergoing maintenance.";
+            MaintenanceModeAction = "disable_accounts";
+            MaintenanceModeAffectedUsers = "all";
             SplashScreenImageUrl = "/web/assets/img/banner-light.png";
             DevMode = false;
 
@@ -274,6 +281,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentDefaultFilterContinueWatching = true;
             HiddenContentDefaultExperimentalHideCollections = false;
         }
+
+        // Maintenance Mode
+        public bool MaintenanceModeEnabled { get; set; }
+        /// <summary>Shown as a banner on the login page.</summary>
+        public string MaintenanceModeMessage { get; set; } = string.Empty;
+        /// <summary>Sent as a native Jellyfin broadcast to all active sessions.</summary>
+        public string MaintenanceModeNotificationMessage { get; set; } = string.Empty;
+        /// <summary>"disable_accounts" | "disable_remote" | "both"</summary>
+        public string MaintenanceModeAction { get; set; } = "disable_accounts";
+        /// <summary>"all" or a JSON array of user ID strings.</summary>
+        public string MaintenanceModeAffectedUsers { get; set; } = "all";
 
         // Jellyfin Enhanced Settings
         public int ToastDuration { get; set; }
