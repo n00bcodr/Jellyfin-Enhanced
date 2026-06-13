@@ -5528,6 +5528,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             posterUrl = posterUrl,
                             tmdbId = tmdbId,
                             mediaStatus = mediaStatus,
+                            // Raw Seerr request status (1=Pending, 2=Approved, 3=Declined,
+                            // 4=Failed, 5=Completed). Exposed separately from mediaStatus
+                            // because mediaStatus collapses to the media's availability
+                            // (e.g. "Partially Available" for a show that already has some
+                            // seasons), which masks a still-pending request and prevents the
+                            // approve/decline buttons from rendering.
+                            requestStatus = reqStatus,
                             requestedBy = displayName ?? username ?? "Unknown",
                             requestedByAvatar = avatarUrl,
                             createdAt = createdAtStr,

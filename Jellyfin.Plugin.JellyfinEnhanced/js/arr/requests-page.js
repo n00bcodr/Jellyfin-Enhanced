@@ -1387,7 +1387,12 @@
     }
 
     let approvalButtons = "";
-    if (state.canApproveRequests && item.mediaStatus === "Pending" && item.id) {
+    // Gate on the request's own status (1 = Pending), NOT item.mediaStatus.
+    // mediaStatus collapses to the media's availability, so a pending request
+    // for a new season of an already-(partially-)available show reports
+    // "Partially Available"/"Available" and would otherwise hide the buttons,
+    // making the request impossible to approve from the UI.
+    if (state.canApproveRequests && item.requestStatus === 1 && item.id) {
       approvalButtons = `
         <button class="je-request-approve-btn" data-request-id="${escapeHtml(String(item.id))}" title="Approve"><span class="material-icons">check</span></button>
         <button class="je-request-decline-btn" data-request-id="${escapeHtml(String(item.id))}" title="Decline"><span class="material-icons">close</span></button>
