@@ -1387,7 +1387,12 @@
     }
 
     let approvalButtons = "";
-    if (state.canApproveRequests && item.mediaStatus === "Pending" && item.id) {
+    // Gate on the request's own status (1 = Pending), NOT item.mediaStatus.
+    // mediaStatus collapses to the media's availability, so a pending request
+    // for a new season of an already-(partially-)available show reports
+    // "Partially Available"/"Available" and would otherwise hide the buttons,
+    // making the request impossible to approve from the UI.
+    if (state.canApproveRequests && item.requestStatus === 1 && item.id) {
       approvalButtons = `
         <button class="je-request-approve-btn" data-request-id="${escapeHtml(String(item.id))}" title="Approve"><span class="material-icons">check</span></button>
         <button class="je-request-decline-btn" data-request-id="${escapeHtml(String(item.id))}" title="Decline"><span class="material-icons">close</span></button>
@@ -1999,8 +2004,18 @@
       });
     }
 
-    // Add click handlers for cards and watch buttons
-    container.addEventListener('click', (e) => {
+    // Add click handlers for cards and watch buttons.
+    // This delegated listener is attached to `container`, which persists across
+    // renders (see custom-tab reuse of state._customTabContainer and the
+    // container.innerHTML rebuild above). renderPage() runs on initial load, on
+    // every poll cycle, on tab switches and on search input, so binding here
+    // unconditionally stacks a new listener every render. A single Approve/Decline
+    // click would then fire once per accumulated listener, firing N approve POSTs
+    // (N duplicate Seerr "Request Approved" notifications) and ultimately failing
+    // the request. Bind exactly once per container element instead.
+    if (!container._jeRequestsActionsBound) {
+      container._jeRequestsActionsBound = true;
+      container.addEventListener('click', (e) => {
       // Handle play/watch button clicks
       const playBtn = e.target.closest('.je-request-watch-btn');
       if (playBtn) {
@@ -2050,7 +2065,8 @@
           window.Emby.Page.showItem(mediaId);
         }
       }
-    });
+      });
+    }
   }
 
   /**
