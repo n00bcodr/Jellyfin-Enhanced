@@ -411,7 +411,7 @@
                 continue;
             }
 
-            if (excludeBlocklistedItems && item.mediaInfo?.status === 6) { // Status 6 = Blocklisted
+            if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) {
                 continue;
             }
             const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);

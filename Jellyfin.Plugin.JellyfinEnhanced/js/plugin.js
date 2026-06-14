@@ -584,6 +584,7 @@
                 'elsewhere/reviews.js',
 
                 // jellyseerr
+                'jellyseerr/seerr-status.js',
                 'jellyseerr/request-manager.js',
                 'jellyseerr/api.js',
                 'jellyseerr/jellyseerr.js',
