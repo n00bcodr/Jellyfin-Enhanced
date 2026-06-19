@@ -201,8 +201,8 @@ Option B (manual in Seerr):
 
 ### Bookmarks not syncing across devices?
 
-
-!!!  "How it works"
+<!-- use a custom title -->
+!!! info "How it works"
 
     Bookmarks are stored server-side but settings are per-browser.
 
