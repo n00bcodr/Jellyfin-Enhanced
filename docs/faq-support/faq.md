@@ -204,15 +204,20 @@ Option B (manual in Seerr):
 <!-- use a custom title -->
 !!! info "How it works"
 
-    Bookmarks are stored server-side but settings are per-browser.
+    **Bookmarks are stored server-side, but settings are per-browser.**
 
-    - Bookmark data stored on Jellyfin server
+    > Same user can access bookmarks from any device
 
-    - Settings stored in browser `localStorage`
+    Stored on Jellyfin server:
+
+    - Bookmark **data** [`bookmarks.json`](../advanced/api.md#bookmark-api--info)
+
+    Stored in browsers' `localStorage`:
+
+    - Users' **settings**
 
     - Each browser has independent settings
 
-    - Same user can access bookmarks from any device
 
 **Syncing Bookmarks:**
 
