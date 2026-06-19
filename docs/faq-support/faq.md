@@ -204,30 +204,19 @@ Option B (manual in Seerr):
 <!-- use a custom title -->
 !!! info "How it works"
 
+    Same user should be able to access bookmarks, from any device
+    
     **Bookmarks are stored server-side, but settings are per-browser.**
 
-    > Same user can access bookmarks from any device
+    **Stored on Jellyfin server:**
 
-    Stored on Jellyfin server:
+    - [Bookmark **data** `bookmarks.json`](../advanced/api.md#bookmark-api--info)
 
-    - Bookmark **data** [`bookmarks.json`](../advanced/api.md#bookmark-api--info)
+   ** Stored in browsers' `localStorage`:**
 
-    Stored in browsers' `localStorage`:
-
-    - Users' **settings**
+    - [Users' **settings**](../enhanced/enhanced-features.md#smart-bookmarks)
 
     - Each browser has independent settings
-
-
-**Syncing Bookmarks:**
-
-- Bookmarks automatically sync via server
-
-- Settings must be configured per browser
-
-- Use same Jellyfin user account
-
-- Bookmarks appear on all devices
 
 **Troubleshooting:**
 
