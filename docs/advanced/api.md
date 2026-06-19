@@ -13,12 +13,12 @@ curl -X GET \
 
 ### Storage Directory
 Bookmarks are stored in the server's user data directory at:
-```
+``` title="bookmarks.json path" hl_lines="1"
 /config/data/users/{userId}/jellyfin-enhanced/bookmarks.json
 ```
 
 The data structure is:
-```json
+``` json title="bookmarks.json data structure"
 {
   "Bookmarks": {
     "unique-bookmark-id": {
@@ -42,12 +42,16 @@ The data structure is:
 External applications can read and write bookmarks using the Jellyfin Enhanced API endpoints
 
 #### Get Bookmarks
+
+<!-- TODO: change to `curl` ? -->
 ```http
 GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
 Authorization: MediaBrowser Token="{your-api-key}"
 ```
 
 #### Save Bookmarks
+
+<!-- TODO: change to `curl` ? -->
 ```http
 POST /JellyfinEnhanced/user-settings
 Authorization: MediaBrowser Token="{your-api-key}"
@@ -67,7 +71,7 @@ Plugin exposes proxy endpoints for Seerr:
 
 Checks if the plugin can connect to any of the configured Seerr URLs using the provided API key.
 
-```bash
+``` bash title="Bash" hl_lines="3"
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
   "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status"
@@ -77,7 +81,7 @@ curl -X GET \
 
 Verifies that the currently logged-in Jellyfin user is successfully linked to a Seerr user account.
 
-```bash
+``` bash title="Bash" hl_lines="4"
 curl -X GET \
   -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
   -H "X-Jellyfin-User-Id: <JELLYFIN_USER_ID>" \
@@ -88,7 +92,7 @@ curl -X GET \
 
 Executes a search query through the Seerr instance for the specified user.
 
-```bash
+``` bash title="Bash" hl_lines="4"
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
   -H "X-Jellyfin-User-Id: <USER_ID>" \
@@ -99,10 +103,10 @@ curl -X GET \
 
 Submits a media request to Seerr on behalf of the specified user.
 
-- `mediaType` can be `tv` or `movie`\
+- `mediaType` can be `tv` or `movie`
 - `mediaId` is the **TMDB ID** of the item
 
-```bash
+``` bash title="Bash" hl_lines="6"
 curl -X POST \
   -H "X-Emby-Token: <API_KEY>" \
   -H "X-Jellyfin-User-Id: <USER_ID>" \
