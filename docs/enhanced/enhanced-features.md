@@ -550,6 +550,7 @@ Replace default activity icons with Material Design icons.
 - Better visual distinction
 
 **Configuration:**
+
 Enable in Enhanced panel → Settings → Extras
 
 ### 🎪 Colored Ratings
@@ -580,6 +581,7 @@ Show user profile images on manual login page.
 - Automatic fallback to text
 
 **Configuration:**
+
 Enable in Enhanced panel → Settings → Extras
 
 ### 🧩 Plugin Icons
