@@ -184,10 +184,13 @@ Structure of each link:
 ```
 
 Available hooks:
+
 - `.arr-tag-link` – the anchor element for a single tag
 - `.arr-tag-link-icon` – the icon span inside the link
 - `.arr-tag-link-text` – the label span inside the link
+
 - Data attributes on both the link and text spans:
+
   - `data-id` – a CSS-friendly slug of the raw tag (e.g. `in-netflix`)
   - `data-tag` – full tag text including the prefix
   - `data-tag-name` – tag without the prefix

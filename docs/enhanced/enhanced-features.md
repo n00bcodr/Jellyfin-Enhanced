@@ -507,6 +507,7 @@ A live stream counter in the Jellyfin header that shows who is currently playing
 **Session card details:**
 
 Each card in the panel shows:
+
 - Poster thumbnail (series poster for episodes, movie poster for films)
 - Title and episode info (S01E01 · Episode Name)
 - Playing / Paused badge
@@ -549,6 +550,7 @@ Replace default activity icons with Material Design icons.
 - Better visual distinction
 
 **Configuration:**
+
 Enable in Enhanced panel → Settings → Extras
 
 ### 🎪 Colored Ratings
@@ -579,6 +581,7 @@ Show user profile images on manual login page.
 - Automatic fallback to text
 
 **Configuration:**
+
 Enable in Enhanced panel → Settings → Extras
 
 ### 🧩 Plugin Icons

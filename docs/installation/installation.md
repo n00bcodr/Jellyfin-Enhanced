@@ -41,12 +41,15 @@
     Why?
 
     - The File Transformation plugin helps avoid permission issues while modifying `index.html`
+    
     - Recommended on all installation types:
+
         - Docker
         - Windows
         - Linux
         - etc
-    - Without it, you may encounter permission errors
+
+    - Without it, you may encounter **permission errors**
 
 
 1. In the **Catalog** tab, search for "file-transformation"
