@@ -44,7 +44,7 @@ External applications can read and write bookmarks using the Jellyfin Enhanced A
 #### Get Bookmarks
 
 <!-- TODO: change to `curl` ? -->
-```http
+``` http
 GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
 Authorization: MediaBrowser Token="{your-api-key}"
 ```
@@ -52,7 +52,7 @@ Authorization: MediaBrowser Token="{your-api-key}"
 #### Save Bookmarks
 
 <!-- TODO: change to `curl` ? -->
-```http
+``` http
 POST /JellyfinEnhanced/user-settings
 Authorization: MediaBrowser Token="{your-api-key}"
 Content-Type: application/json
@@ -74,8 +74,11 @@ Checks if the plugin can connect to any of the configured Seerr URLs using the p
 ``` bash title="Bash" hl_lines="3"
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status"
+  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status" #(1)!
 ```
+
+<!-- code block annotation -->
+1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/status`
 
 ### Check User Status
 
@@ -85,8 +88,11 @@ Verifies that the currently logged-in Jellyfin user is successfully linked to a 
 curl -X GET \
   -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
   -H "X-Jellyfin-User-Id: <JELLYFIN_USER_ID>" \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/user-status"
+  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/user-status" # (1)!
 ```
+
+<!-- code block annotation -->
+1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/user-status`
 
 ### Perform A Seerr Search
 
@@ -96,8 +102,11 @@ Executes a search query through the Seerr instance for the specified user.
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
   -H "X-Jellyfin-User-Id: <USER_ID>" \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/search?query=Inception"
+  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/search?query=Inception" # (1)!
 ```
+
+<!-- code block annotation -->
+1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/search?query=Inception`
 
 ### Make a Request on Seerr
 
@@ -106,11 +115,16 @@ Submits a media request to Seerr on behalf of the specified user.
 - `mediaType` can be `tv` or `movie`
 - `mediaId` is the **TMDB ID** of the item
 
+<!-- TODO: add annotation, on the highlighted line (URL) -->
+Example:
 ``` bash title="Bash" hl_lines="6"
 curl -X POST \
   -H "X-Emby-Token: <API_KEY>" \
   -H "X-Jellyfin-User-Id: <USER_ID>" \
   -H "Content-Type: application/json" \
   -d '{"mediaType": "movie", "mediaId": 27205}' \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/request"
+  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/request" # (1)!
 ```
+
+<!-- code block annotation -->
+1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/request`
