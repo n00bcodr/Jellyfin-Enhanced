@@ -1,24 +1,24 @@
-## Jellyfin Enhanced API
+# Jellyfin Enhanced's API
 
-### Get Plugin Version
-
-Checks the installed version of the Jellyfin Enhanced plugin:
-
-```bash
+``` bash title="Check version of the plugin"
 curl -X GET \
   "<JELLYFIN_ADDRESS>/JellyfinEnhanced/version"
 ```
 
-## Bookmark API + Info
+## Bookmarks
 
 ### Storage Directory
-Bookmarks are stored in the server's user data directory at:
-``` title="bookmarks.json path" hl_lines="1"
-/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json
+
+Bookmarks are stored as `bookmarks.json` the server's user data directory
+
+<!-- Bash: so that annotations work (comments) -->
+``` bash title="bookmarks.json"
+/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json # (1)!
 ```
 
-The data structure is:
-``` json title="bookmarks.json data structure"
+1. `userId` is from Jellyfin's API. Example: ``
+
+``` json title="Data structure (Example)"
 {
   "Bookmarks": {
     "unique-bookmark-id": {
@@ -39,29 +39,55 @@ The data structure is:
 
 ### API Access
 
-External applications can read and write bookmarks using the Jellyfin Enhanced API endpoints
+Bookmarks can be accessed via API endpoints
 
-#### Get Bookmarks
+!!! info
+    
+    **API keys are required**
 
-<!-- TODO: change to `curl` ? -->
-``` http
-GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
-Authorization: MediaBrowser Token="{your-api-key}"
-```
+<!-- content tabs for each language/method: each has the content + code blocks embedded within -->
+=== "HTTP Request"
 
-#### Save Bookmarks
+    <!-- NOTE: using `bash`, because comments are required for Annotations in code blocks -->
+    ``` txt title="Get Bookmarks"
+    GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
+    Authorization: MediaBrowser Token="{your-api-key}" # (1)!
+    ```
+    
+    <!-- code block annotation -->
+    1. Pass your **API key** here
 
-<!-- TODO: change to `curl` ? -->
-``` http
-POST /JellyfinEnhanced/user-settings
-Authorization: MediaBrowser Token="{your-api-key}"
-Content-Type: application/json
+    ``` http title="Save Bookmarks"
+    POST /JellyfinEnhanced/user-settings
+    Authorization: MediaBrowser Token="{your-api-key}"
+    Content-Type: application/json
 
-{
-  "fileName": "bookmarks.json",
-  "data": { "Bookmarks": {...} }
-}
-```
+    {
+      "fileName": "bookmarks.json",
+      "data": { "Bookmarks": {...} }
+    }
+    ```
+
+=== "Bash"
+
+    ``` bash title="Get Bookmarks"
+    curl \
+        -H 'Authorization: MediaBrowser Token="YOUR_API_KEY"' \ # (1)!
+        'https://your-jellyfin-server.com/JellyfinEnhanced/user-settings?fileName=bookmarks.json'
+    ```
+
+    1. Pass your **API key** here
+
+    ``` http title="Save Bookmarks"
+    POST /JellyfinEnhanced/user-settings
+    Authorization: MediaBrowser Token="{your-api-key}"
+    Content-Type: application/json
+
+    {
+      "fileName": "bookmarks.json",
+      "data": { "Bookmarks": {...} }
+    }
+    ```
 
 ## Seerr Integration API
 
@@ -71,7 +97,7 @@ Plugin exposes proxy endpoints for Seerr:
 
 Checks if the plugin can connect to any of the configured Seerr URLs using the provided API key.
 
-``` bash title="Bash" hl_lines="3"
+``` bash title="Bash" hl_lines="2 3"
 curl -X GET \
   -H "X-Emby-Token: <API_KEY>" \
   "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status" #(1)!
@@ -122,9 +148,10 @@ curl -X POST \
   -H "X-Emby-Token: <API_KEY>" \
   -H "X-Jellyfin-User-Id: <USER_ID>" \
   -H "Content-Type: application/json" \
-  -d '{"mediaType": "movie", "mediaId": 27205}' \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/request" # (1)!
+  -d '{"mediaType": "movie", "mediaId": 27205}' \ # (1)!
+  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/request" # (2)!
 ```
 
 <!-- code block annotation -->
-1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/request`
+1. Example: `{"mediaType": "movie", "mediaID":}`
+2. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/request`
