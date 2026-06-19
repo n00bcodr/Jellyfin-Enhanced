@@ -69,6 +69,12 @@
   color: #d199f5 !important;
 }
 
+/* Annotations wider, for more content */
+:root {
+  --md-tooltip-width: 600px;
+}
+
+
 /* ============================================================
    ADMONITIONS (note, tip, warning etc)
    ============================================================ */
