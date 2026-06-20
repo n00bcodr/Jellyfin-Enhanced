@@ -9,7 +9,7 @@
     === "cURL"
 
 
-        ``` bash title="Bash"
+        ``` bash title="Bash" hl_lines="2"
         curl -X GET \
           "JELLYFIN_SERVER_URL/JellyfinEnhanced/version"
         ```
