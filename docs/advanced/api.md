@@ -7,13 +7,14 @@ curl -X GET \
 
 ## Bookmarks
 
-### Storage Directory
+Bookmarks are stored as `bookmarks.json` files
 
-Bookmarks are stored as `bookmarks.json` the server's user data directory
+- `bookmarks.json` are saved in **Jellyfin Server's plugin configurations directory**
+- `bookmarks.json` are saved **for each user**
 
 <!-- Bash: so that annotations work (comments) -->
 ``` bash title="bookmarks.json"
-/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json # (1)!
+/config/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/{JELLYFIN_userId}/jellyfin-enhanced/bookmarks.json # (1)!
 ```
 
 1. `userId` is from Jellyfin's API. Example: ``
