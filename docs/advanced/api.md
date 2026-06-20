@@ -104,7 +104,7 @@ curl -X GET \
 ```
 
 <!-- code block annotation -->
-1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/status`
+1. Example: `http://localhost:8096/JellyfinEnhanced/jellyseerr/status`
 
 ### Check User Status
 
@@ -118,7 +118,7 @@ curl -X GET \
 ```
 
 <!-- code block annotation -->
-1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/user-status`
+1. Example: `http://localhost:8096/JellyfinEnhanced/jellyseerr/user-status`
 
 ### Perform A Seerr Search
 
@@ -132,7 +132,7 @@ curl -X GET \
 ```
 
 <!-- code block annotation -->
-1. Example: `http://localhost:8096:JellyfinEnhanced/jellyseerr/search?query=Inception`
+1. Example: `http://localhost:8096/JellyfinEnhanced/jellyseerr/search?query=Inception`
 
 ### Make a Request on Seerr
 
