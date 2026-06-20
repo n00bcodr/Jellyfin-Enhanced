@@ -1,5 +1,7 @@
 # Jellyfin Enhanced's API
 
+**`/JellyfinEnhanced`**
+
 ???+ dev "Check version"
 
     **`/JellyfinEnhanced/version`**
