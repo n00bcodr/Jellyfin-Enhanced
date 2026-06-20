@@ -1,13 +1,15 @@
 # Jellyfin Enhanced's API
 
-???+ dev "Check version"
+**`/JellyfinEnhanced`**
+
+???+ dev "Check version" 
 
     **`/JellyfinEnhanced/version`**
 
     === "cURL"
 
 
-        ``` bash title="Bash"
+        ``` bash title="Bash" hl_lines="2"
         curl -X GET \
           "JELLYFIN_SERVER_URL/JellyfinEnhanced/version"
         ```
