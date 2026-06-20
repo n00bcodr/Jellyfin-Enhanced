@@ -1,25 +1,62 @@
 # Jellyfin Enhanced's API
 
-``` bash title="Check version of the plugin"
-curl -X GET \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/version"
-```
+???+ dev "Check version"
 
-## Bookmarks
+    **`/JellyfinEnhanced/version`**
 
-Bookmarks are stored as `bookmarks.json` files
+    === "cURL"
+
+
+        ``` bash title="Bash"
+        curl -X GET \
+          "JELLYFIN_SERVER_URL/JellyfinEnhanced/version"
+        ```
+
+    - Jellyfin Server URL (`JELLYFIN_URL`)
+
+<!-- TODO: add more here -->
+
+## Bookmarks API
+
+### Bookmarks Storage Directory
+
+Bookmarks are stored as `bookmarks.json` files:
 
 - `bookmarks.json` are saved in **Jellyfin Server's plugin configurations directory**
-- `bookmarks.json` are saved **for each user**
+- `bookmarks.json` are saved **for each user `userID`**
 
-<!-- Bash: so that annotations work (comments) -->
-``` bash title="bookmarks.json"
-/config/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/{JELLYFIN_userId}/jellyfin-enhanced/bookmarks.json # (1)!
+``` title="bookmarks.json"
+/config/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/JELLYFIN_USER_ID/jellyfin-enhanced/bookmarks.json
 ```
 
-1. `userId` is from Jellyfin's API. Example: ``
+<!-- collapsed -->
+??? question "`userID`? `JELLYFIN_USER_ID`?"
+    
+    > **`userID` (1) is Jellyfin Server's unique ID for each user**
+    > { .annotate }
+    >    
+    > <!-- annotation -->
+    > 
+    > 1. A.K.A. `X-Jellyfin-User-Id`
+    > 
+    > `JELLYFIN_USER_ID` is a placeholder for the users' `userID`
+    > 
+    > <br>
+    > 
+    > Reference: 
+    > 
+    > [Jellyfin's API documentation on `/Users`](https://api.jellyfin.org/#tag/User)
 
-``` json title="Data structure (Example)"
+    !!! tip 
+    
+        A simple way to **find which `userID` belongs to which user:**
+
+        - [x] Jellyfin Dashboard: `Users`
+        - [x] Click a user's profile
+        - [x] The `userID` for that user appears in the URL. For example: `9285e8b54149414941494edb9e464dcd` in the URL `http://localhost:8096/#/dashboard/users/profile?userId=9285e8b54149414941494edb9e464dcd`
+
+
+``` json title="bookmarks.json: Example Data structure"
 {
   "Bookmarks": {
     "unique-bookmark-id": {
@@ -38,109 +75,136 @@ Bookmarks are stored as `bookmarks.json` files
 }
 ```
 
-### API Access
+### Bookmarks API endpoints
 
-Bookmarks can be accessed via API endpoints
+<!-- TODO: these API endpoints do not work? -->
+<!--! `404` "No matching view found"        -->
 
-!!! info
-    
-    **API keys are required**
+**`/JellyfinEnhanced/user-settings`** (1)
+{ .annotate }
 
-<!-- content tabs for each language/method: each has the content + code blocks embedded within -->
-=== "HTTP Request"
+<!-- annotation -->
 
-    <!-- NOTE: using `bash`, because comments are required for Annotations in code blocks -->
-    ``` txt title="Get Bookmarks"
-    GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
-    Authorization: MediaBrowser Token="{your-api-key}" # (1)!
-    ```
-    
-    <!-- code block annotation -->
-    1. Pass your **API key** here
+1. Bookmark APIs are under `/user-settings`
 
-    ``` http title="Save Bookmarks"
-    POST /JellyfinEnhanced/user-settings
-    Authorization: MediaBrowser Token="{your-api-key}"
-    Content-Type: application/json
+<!-- custom admonition `api` for each API endpoint -->
+???+ dev "Get Bookmarks"
 
-    {
-      "fileName": "bookmarks.json",
-      "data": { "Bookmarks": {...} }
-    }
-    ```
+    **`/JellyfinEnhanced/user-settings?fileName=bookmarks.json`**
 
-=== "Bash"
+    <!-- content tabs for each language/method: code blocks are embedded within -->
+    === "cURL"
 
-    ``` bash title="Get Bookmarks"
-    curl \
-        -H 'Authorization: MediaBrowser Token="YOUR_API_KEY"' \ # (1)!
-        'https://your-jellyfin-server.com/JellyfinEnhanced/user-settings?fileName=bookmarks.json'
-    ```
+        ``` bash title="Bash" hl_lines="2-3"
+        curl \
+            -H 'Authorization: MediaBrowser Token="JELLYFIN_API_KEY"' \
+            'JELLYFIN_SERVER_URL/JellyfinEnhanced/user-settings?fileName=bookmarks.json'
+        ```
+  
+    === "HTTP"
 
-    1. Pass your **API key** here
+        ``` http
+        GET /JellyfinEnhanced/user-settings?fileName=bookmarks.json
+        Authorization: MediaBrowser Token="JELLYFIN_API_KEY"
+        ```
 
-    ``` http title="Save Bookmarks"
-    POST /JellyfinEnhanced/user-settings
-    Authorization: MediaBrowser Token="{your-api-key}"
-    Content-Type: application/json
+    - Jellyfin Server API key `MediaBrowser Token` (`JELLYFIN_API_KEY`)
+    - Jellyfin Server URL `JELLYFIN_SERVER_URL`
 
-    {
-      "fileName": "bookmarks.json",
-      "data": { "Bookmarks": {...} }
-    }
-    ```
+
+???+ dev "Save Bookmarks"
+
+    **`/JellyfinEnhanced/user-settings`**
+
+    === "cURL"
+
+        ``` bash title="Bash" hl_lines="2-10"
+            curl -X POST \
+                -H 'Content-Type: application/json' \
+                -H 'Authorization: MediaBrowser Token="JELLYFIN_API_KEY"' \
+                -d '{
+                    "fileName": "bookmarks.json",
+                    "data": {
+                        "Bookmarks": {}
+                    }
+                }'
+                '<JELLYFIN_SERVER_URL>/JellyfinEnhanced/user-settings'
+        ```
+
+    === "HTTP"
+
+        <!-- `bash`: provides some syntax highlighting -->
+
+        ``` bash title="HTTP Request"
+        POST /JellyfinEnhanced/user-settings
+        Authorization: MediaBrowser Token="JELLYFIN_API_KEY"
+        Content-Type: application/json
+
+        {
+          "fileName": "bookmarks.json",
+          "data": { "Bookmarks": {...} }
+        }
+        ```
+
+    - Jellyfin Server API key (`JELLYFIN_API_KEY`)
+    - Jellyfin Server URL `JELLYFIN_SERVER_URL`
+    - `bookmarks.json` JSON data
 
 ## Seerr Integration API
 
-Plugin exposes proxy endpoints for Seerr:
+**`/JellyfinEnhanced/jellyseerr`**
 
-### Check Connection Status
+<!-- explain what `JELLYFIN_USER_ID` and `JELLYFIN_API_KEY` are -->
+!!! info "Jellyfin Server's API"
+    
+    These values are from [Jellyfin Server's API:](https://api.jellyfin.org/)
 
-Checks if the plugin can connect to any of the configured Seerr URLs using the provided API key.
+    - `X-Jellyfin-User-Id`:
+      - **User Unique ID (UUID)**
+      - [Jellyfin's documentation: users](https://jellyfin.org/docs/general/server/users/)
+    
+    - `X-Emby-Token`: 
+      - **API key**
 
-``` bash title="Bash" hl_lines="2 3"
-curl -X GET \
-  -H "X-Emby-Token: <API_KEY>" \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status" #(1)!
-```
+???+ dev "Check Seerr connection"
 
-<!-- code block annotation -->
-1. Example: `http://localhost:8096/JellyfinEnhanced/jellyseerr/status`
+    **`/JellyfinEnhanced/jellyseerr/status`**
 
-### Check User Status
+    === "cURL"
 
-Verifies that the currently logged-in Jellyfin user is successfully linked to a Seerr user account.
+        ``` bash title="Bash" hl_lines="2-3"
+        curl -X GET \
+          -H "X-Emby-Token: JELLYFIN_API_KEY" \
+          "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/status"
+        ```
 
-``` bash title="Bash" hl_lines="4"
-curl -X GET \
-  -H "X-Emby-Token: <JELLYFIN_API_KEY>" \
-  -H "X-Jellyfin-User-Id: <JELLYFIN_USER_ID>" \
-  "<JELLYFIN_ADDRESS>/JellyfinEnhanced/jellyseerr/user-status" # (1)!
-```
+    - Jellyfin Server API key (`JELLYFIN_API_KEY`)
+    - Jellyfin Server User ID (`JELLYFIN_USER_ID`)
+    - Jellyfin Server URL (`JELLYFIN_URL`)
 
-<!-- code block annotation -->
-1. Example: `http://localhost:8096/JellyfinEnhanced/jellyseerr/user-status`
+    Using [Seerr configuration](../seerr/seerr-settings.md):
 
-### Perform A Seerr Search
+    - URL(s)
+    - API keys    
 
-Executes a search query through the Seerr instance for the specified user.
 
-``` bash title="Bash" hl_lines="4"
-curl -X GET \
-  -H "X-Emby-Token: <API_KEY>" \
-  -H "X-Jellyfin-User-Id: <USER_ID>" \
-  "<JELLYFIN_URL>/JellyfinEnhanced/jellyseerr/search?query=Inception" # (1)!
-```
+???+ dev "Check if user `X-Jellyfin-User-Id` has a successfully linked Seerr account"
 
-<!-- code block annotation -->
-1. Example: `http://localhost:8096/JellyfinEnhanced/jellyseerr/search?query=Inception`
+    **`/JellyfinEnhanced/jellyseerr/user-status`**
 
-### Make a Request on Seerr
+    === "cURL"
+    
+        ``` bash title="Bash" hl_lines="2-4"
+        curl -X GET \
+          -H "X-Emby-Token: JELLYFIN_API_KEY" \
+          -H "X-Jellyfin-User-Id: JELLYFIN_USER_ID" \
+          "JELLYFIN_SERVER_URL/JellyfinEnhanced/jellyseerr/user-status"
+        ```
 
-Submits a media request to Seerr on behalf of the specified user.
+    - Jellyfin Server API key `X-Emby-Token` (`JELLYFIN_API_KEY`)
+    - Jellyfin Server User ID `X-Jellyfin-User-Id` (`JELLYFIN_USER_ID`)
+    - Jellyfin Server URL (`JELLYFIN_URL`)
 
-- `mediaType` can be `tv` or `movie`
-- `mediaId` is the **TMDB ID** of the item
 
 <!-- TODO: add annotation, on the highlighted line (URL) -->
 Example:
