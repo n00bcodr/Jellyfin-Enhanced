@@ -3286,6 +3286,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        public sealed class AddBookmarkPayload
+        {
+            public string ItemId { get; set; } = string.Empty;
+            public string TmdbId { get; set; } = string.Empty;
+            public string TvdbId { get; set; } = string.Empty;
+            public string MediaType { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public double Timestamp { get; set; }
+            public string Label { get; set; } = string.Empty;
+            public string SyncedFrom { get; set; } = string.Empty;
+        }
+
+        [HttpPost("user-settings/{userId}/bookmark.json/add")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AddUserBookmark(string userId, [FromBody] AddBookmarkPayload payload)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (payload == null || string.IsNullOrWhiteSpace(payload.ItemId))
+            {
+                return BadRequest(new { success = false, message = "ItemId is required." });
+            }
+
+            var now = DateTime.UtcNow.ToString("o");
+            var bookmarkId = $"Bm_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N").Substring(0, 9)}";
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json", config =>
+                {
+                    config.Bookmarks[bookmarkId] = new BookmarkItem
+                    {
+                        ItemId = payload.ItemId,
+                        TmdbId = payload.TmdbId ?? string.Empty,
+                        TvdbId = payload.TvdbId ?? string.Empty,
+                        MediaType = payload.MediaType ?? string.Empty,
+                        Name = payload.Name ?? string.Empty,
+                        Timestamp = payload.Timestamp,
+                        Label = payload.Label ?? string.Empty,
+                        CreatedAt = now,
+                        UpdatedAt = now,
+                        SyncedFrom = payload.SyncedFrom ?? string.Empty
+                    };
+                    return 1;
+                });
+                _logger.Info($"Added bookmark {bookmarkId} for {ResolveUserDisplay(authorizedUserId)}");
+                return Ok(new { success = true, id = bookmarkId });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to add bookmark for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to add bookmark." });
+            }
+        }
+
+        [HttpDelete("user-settings/{userId}/bookmark.json/{bookmarkId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult RemoveUserBookmark(string userId, string bookmarkId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (string.IsNullOrWhiteSpace(bookmarkId))
+            {
+                return BadRequest(new { success = false, message = "bookmarkId is required." });
+            }
+
+            try
+            {
+                var removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json", config =>
+                {
+                    removed = config.Bookmarks.Remove(bookmarkId);
+                    return removed ? 1 : 0;
+                });
+
+                if (!removed)
+                {
+                    return NotFound(new { success = false, removed = false, message = "No matching bookmark to remove." });
+                }
+
+                _logger.Info($"Removed bookmark {bookmarkId} for {ResolveUserDisplay(authorizedUserId)}");
+                return Ok(new { success = true, removed = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to remove bookmark {bookmarkId} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to remove bookmark." });
+            }
+        }
+
         [HttpPost("user-settings/{userId}/elsewhere.json")]
         [Authorize]
         [Produces("application/json")]
@@ -3803,7 +3903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
-            if (!currentUserId.HasValue) return Forbid();
+            if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty) return Forbid();
             var userIdN = currentUserId.Value.ToString("N");
 
             try
@@ -3821,6 +3921,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpPost("reviews/admin/{userIdN}/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AdminUpsertReview(string userIdN, string mediaType, string tmdbId, [FromBody] ReviewPayload payload)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(userIdN) || !Guid.TryParseExact(userIdN, "N", out _))
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            if (mediaType != "movie" && mediaType != "tv")
+                return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
+
+            if (!IsValidTmdbKey(tmdbId))
+                return BadRequest(new { success = false, message = "Invalid TmdbId." });
+
+            if (payload == null)
+                return BadRequest(new { success = false, message = "Invalid review payload." });
+
+            var normalizedContent = payload.Content?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedContent) && !payload.Rating.HasValue)
+                return BadRequest(new { success = false, message = "A rating or review text is required." });
+
+            if (normalizedContent.Length > 2000)
+                return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
+
+            if (payload.Rating.HasValue && (payload.Rating.Value < 1 || payload.Rating.Value > 5))
+                return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
+
+            try
+            {
+                var now = DateTime.UtcNow.ToString("o");
+                _userConfigurationManager.UpsertReview(
+                    userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
+                _logger.Info($"Admin saved review for {mediaType}:{tmdbId} on behalf of {ResolveUserDisplay(userIdN)}.");
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Admin failed to save review for user {ResolveUserDisplay(userIdN)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save review." });
+            }
+        }
+
         [HttpDelete("reviews/{mediaType}/{tmdbId}")]
         [Authorize]
         [Produces("application/json")]
@@ -3833,7 +3979,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
-            if (!currentUserId.HasValue) return Forbid();
+            if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty) return Forbid();
             var userIdN = currentUserId.Value.ToString("N");
 
             try
