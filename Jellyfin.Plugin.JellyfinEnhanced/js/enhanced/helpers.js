@@ -177,13 +177,24 @@
         const _push = history.pushState.bind(history);
         const _replace = history.replaceState.bind(history);
 
+        // Some host pages (e.g. third-party custom-tabs plugins reacting to DOM
+        // mutations) call pushState repeatedly for a URL that hasn't changed.
+        // Skip the synthetic event in that case so we don't re-trigger our own
+        // navigation-driven rescans, which would mutate the DOM and risk feeding
+        // back into whatever observer caused the redundant pushState in the first place.
         history.pushState = function(...args) {
+            const before = window.location.href;
             _push(...args);
-            window.dispatchEvent(new Event('je:navigate'));
+            if (window.location.href !== before) {
+                window.dispatchEvent(new Event('je:navigate'));
+            }
         };
         history.replaceState = function(...args) {
+            const before = window.location.href;
             _replace(...args);
-            window.dispatchEvent(new Event('je:navigate'));
+            if (window.location.href !== before) {
+                window.dispatchEvent(new Event('je:navigate'));
+            }
         };
     }
 
