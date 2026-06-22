@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HelpPanelAutocloseDelay = 15000;
             EnableCustomSplashScreen = false;
 
-            // Request-time injection middleware (replaces File Transformation). Enabled
+            // Request-time injection middleware (script + branding). Enabled
             // by default; the flags are kill-switches for troubleshooting.
             DisableScriptInjectionMiddleware = false;
             DisableBrandingMiddleware = false;

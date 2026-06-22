@@ -5,7 +5,7 @@
              The same source produces two artifacts — one per runtime, never one DLL for both:
                -p:JellyfinTarget=jf12  -> Jellyfin 12, .NET 10
                -p:JellyfinTarget=jf10  -> Jellyfin 10.11, .NET 9
-             The File-Transformation-free injection (ScriptInjectionStartupFilter /
+             The request-time injection (ScriptInjectionStartupFilter /
              BrandingAssetStartupFilter) uses only standard ASP.NET, so it works on
              both runtimes. -->
         <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>

@@ -19,13 +19,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         {
             serviceCollection.AddSingleton<StartupService>();
 
-            // Jellyfin 12 / File-Transformation-free injection. These request-time
-            // IStartupFilter middlewares replace the File Transformation plugin:
+            // Request-time injection middlewares (Jellyfin 10.11 & 12):
             //   - ScriptInjectionStartupFilter injects the client <script> into the
-            //     web index.html (the only hard dependency JE had on FT);
-            //   - BrandingAssetStartupFilter swaps in custom logo/banner/favicon
-            //     images (the other FT use). Both are kill-switchable via config and
-            //     no-op safely when there's nothing to do.
+            //     web index.html;
+            //   - BrandingAssetStartupFilter serves custom logo/banner/favicon images.
+            //     Both are kill-switchable via config and no-op safely when there's
+            //     nothing to do.
             serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
             serviceCollection.AddSingleton<IStartupFilter, BrandingAssetStartupFilter>();
 
