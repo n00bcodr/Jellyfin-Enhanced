@@ -1376,6 +1376,9 @@
         try {
             const response = await fetch(url, {
                 headers: {
+                    // Jellyfin 12 authenticates from the Authorization header; the
+                    // legacy X-Emby-Token is kept for 10.11 back-compat.
+                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                     "X-Emby-Token": ApiClient.accessToken()
                 }
             });

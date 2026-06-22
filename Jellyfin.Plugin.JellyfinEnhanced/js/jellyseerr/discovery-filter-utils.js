@@ -356,6 +356,9 @@
                     method: 'GET',
                     headers: {
                         'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
+                        // Jellyfin 12 authenticates from the Authorization header; the
+                        // legacy X-Emby-Token is kept for 10.11 back-compat.
+                        'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                         'X-Emby-Token': ApiClient.accessToken(),
                         'Accept': 'application/json'
                     },
@@ -466,7 +469,10 @@
 
             const checkContainer = () => {
                 if (type === 'detail') {
+                    // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
+                    // .detailPageSecondaryContainer, then the page itself.
                     const detailContent = document.querySelector('.itemDetailPage:not(.hide) .detailPageContent') ||
+                                          document.querySelector('.itemDetailPage:not(.hide) .detailPageSecondaryContainer') ||
                                           document.querySelector('.itemDetailPage:not(.hide)');
                     return detailContent;
                 }
