@@ -1875,7 +1875,7 @@
                                 <div class="je-info-banner-compact">
                                     <i class="material-icons je-info-icon-sm">info</i>
                                     <div>
-                                        Uploaded icon / favicon / logo images are served by Jellyfin Enhanced itself at request time — no File Transformation plugin required. Changes apply on next page load (a hard refresh may be needed if your browser cached the old image).
+                                        Uploaded icon / favicon / logo images are applied automatically at request time. Changes apply on next page load (a hard refresh may be needed if your browser cached the old image).
                                     </div>
                                 </div>
                             </div>
@@ -3078,9 +3078,8 @@
         var customTabsCompatState = null;
 
         /**
-         * Checks installed plugins (File Transformation, Plugin Pages, Custom Tabs).
-         * Shows a warning if File Transformation is missing. Updates dependency state
-         * for Plugin Pages / Custom Tabs dependent settings.
+         * Checks installed plugins (Plugin Pages, Custom Tabs, etc.) and updates
+         * dependency state for Plugin Pages / Custom Tabs dependent settings.
          * Called during loadConfig() on page load.
          */
         function checkInstalledPlugins() {
