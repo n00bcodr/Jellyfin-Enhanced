@@ -1328,10 +1328,6 @@
     grid-column: 1 / -1;
 }
 
-.je-ft-warning-title { display: block; margin-bottom: 0.3em; }
-.je-ft-warning-link { color: #ff6b6b; text-decoration: underline; }
-.je-ft-warning-code { background: var(--je-surface-3); padding: 2px 6px; border-radius: 3px; }
-.je-ft-warning-actions { display: flex; gap: 10px; margin-top: 10px; }
 
 .dep-hint-text {
     color: #ffc107;

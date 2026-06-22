@@ -315,7 +315,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are not served and jellyfin-web's stock assets are used. Default false.
         public bool DisableBrandingMiddleware { get; set; }
 
-
         // Jellyfin Elsewhere Settings
         public bool ElsewhereEnabled { get; set; }
         public string TMDB_API_KEY { get; set; }
