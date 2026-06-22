@@ -1305,8 +1305,15 @@
   function findActiveBookmarksContainer() {
     const all = document.querySelectorAll('.sections.bookmarks');
     for (let i = all.length - 1; i >= 0; i--) {
-      const page = all[i].closest('.page');
-      if (page && !page.classList.contains('hide')) return all[i];
+      const el = all[i];
+      // 1. Standard Jellyfin page structure
+      const page = el.closest('.page');
+      if (page && !page.classList.contains('hide')) return el;
+      // 2. Custom Tabs wraps content in .tabContent.is-active (no .page ancestor)
+      const tabContent = el.closest('.tabContent');
+      if (tabContent && tabContent.classList.contains('is-active')) return el;
+      // 3. Last resort: element is simply visible in the document
+      if (!page && !tabContent && el.offsetParent !== null) return el;
     }
     return null;
   }

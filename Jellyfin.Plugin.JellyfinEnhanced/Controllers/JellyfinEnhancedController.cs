@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
         private readonly Services.TagCacheService _tagCacheService;
         private readonly MediaBrowser.Controller.Session.ISessionManager _sessionManager;
+        private readonly Services.MaintenanceModeService _maintenanceModeService;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -163,7 +164,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IItemRepository itemRepository,
             IDbContextFactory<JellyfinDbContext> dbContextFactory,
             Services.TagCacheService tagCacheService,
-            MediaBrowser.Controller.Session.ISessionManager sessionManager)
+            MediaBrowser.Controller.Session.ISessionManager sessionManager,
+            Services.MaintenanceModeService maintenanceModeService)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -176,6 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _dbContextFactory = dbContextFactory;
             _tagCacheService = tagCacheService;
             _sessionManager = sessionManager;
+            _maintenanceModeService = maintenanceModeService;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
@@ -2800,6 +2803,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentUsePluginPages,
                 config.HiddenContentUseCustomTabs,
 
+                // Maintenance Mode
+                config.MaintenanceModeEnabled,
+                config.MaintenanceModeMessage,
+                config.MaintenanceModeAction,
+                config.MaintenanceModeAffectedUsers,
+
             });
         }
 
@@ -3274,6 +3283,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save enhanced bookmarks for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save enhanced bookmarks." });
+            }
+        }
+
+        public sealed class AddBookmarkPayload
+        {
+            public string ItemId { get; set; } = string.Empty;
+            public string TmdbId { get; set; } = string.Empty;
+            public string TvdbId { get; set; } = string.Empty;
+            public string MediaType { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public double Timestamp { get; set; }
+            public string Label { get; set; } = string.Empty;
+            public string SyncedFrom { get; set; } = string.Empty;
+        }
+
+        [HttpPost("user-settings/{userId}/bookmark.json/add")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AddUserBookmark(string userId, [FromBody] AddBookmarkPayload payload)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (payload == null || string.IsNullOrWhiteSpace(payload.ItemId))
+            {
+                return BadRequest(new { success = false, message = "ItemId is required." });
+            }
+
+            var now = DateTime.UtcNow.ToString("o");
+            var bookmarkId = $"Bm_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N").Substring(0, 9)}";
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json", config =>
+                {
+                    config.Bookmarks[bookmarkId] = new BookmarkItem
+                    {
+                        ItemId = payload.ItemId,
+                        TmdbId = payload.TmdbId ?? string.Empty,
+                        TvdbId = payload.TvdbId ?? string.Empty,
+                        MediaType = payload.MediaType ?? string.Empty,
+                        Name = payload.Name ?? string.Empty,
+                        Timestamp = payload.Timestamp,
+                        Label = payload.Label ?? string.Empty,
+                        CreatedAt = now,
+                        UpdatedAt = now,
+                        SyncedFrom = payload.SyncedFrom ?? string.Empty
+                    };
+                    return 1;
+                });
+                _logger.Info($"Added bookmark {bookmarkId} for {ResolveUserDisplay(authorizedUserId)}");
+                return Ok(new { success = true, id = bookmarkId });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to add bookmark for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to add bookmark." });
+            }
+        }
+
+        [HttpDelete("user-settings/{userId}/bookmark.json/{bookmarkId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult RemoveUserBookmark(string userId, string bookmarkId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (string.IsNullOrWhiteSpace(bookmarkId))
+            {
+                return BadRequest(new { success = false, message = "bookmarkId is required." });
+            }
+
+            try
+            {
+                var removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json", config =>
+                {
+                    removed = config.Bookmarks.Remove(bookmarkId);
+                    return removed ? 1 : 0;
+                });
+
+                if (!removed)
+                {
+                    return NotFound(new { success = false, removed = false, message = "No matching bookmark to remove." });
+                }
+
+                _logger.Info($"Removed bookmark {bookmarkId} for {ResolveUserDisplay(authorizedUserId)}");
+                return Ok(new { success = true, removed = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to remove bookmark {bookmarkId} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to remove bookmark." });
             }
         }
 
@@ -3794,7 +3903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
-            if (!currentUserId.HasValue) return Forbid();
+            if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty) return Forbid();
             var userIdN = currentUserId.Value.ToString("N");
 
             try
@@ -3812,6 +3921,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        [HttpPost("reviews/admin/{userIdN}/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AdminUpsertReview(string userIdN, string mediaType, string tmdbId, [FromBody] ReviewPayload payload)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(userIdN) || !Guid.TryParseExact(userIdN, "N", out _))
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            if (mediaType != "movie" && mediaType != "tv")
+                return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
+
+            if (!IsValidTmdbKey(tmdbId))
+                return BadRequest(new { success = false, message = "Invalid TmdbId." });
+
+            if (payload == null)
+                return BadRequest(new { success = false, message = "Invalid review payload." });
+
+            var normalizedContent = payload.Content?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedContent) && !payload.Rating.HasValue)
+                return BadRequest(new { success = false, message = "A rating or review text is required." });
+
+            if (normalizedContent.Length > 2000)
+                return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
+
+            if (payload.Rating.HasValue && (payload.Rating.Value < 1 || payload.Rating.Value > 5))
+                return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
+
+            try
+            {
+                var now = DateTime.UtcNow.ToString("o");
+                _userConfigurationManager.UpsertReview(
+                    userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
+                _logger.Info($"Admin saved review for {mediaType}:{tmdbId} on behalf of {ResolveUserDisplay(userIdN)}.");
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Admin failed to save review for user {ResolveUserDisplay(userIdN)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save review." });
+            }
+        }
+
         [HttpDelete("reviews/{mediaType}/{tmdbId}")]
         [Authorize]
         [Produces("application/json")]
@@ -3824,7 +3979,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
-            if (!currentUserId.HasValue) return Forbid();
+            if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty) return Forbid();
             var userIdN = currentUserId.Value.ToString("N");
 
             try
@@ -5420,7 +5575,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         int? reqStatus = req["status"]?.Value<int>();
                         int? mediaStatusVal = media?["status"]?.Value<int>();
-                        string mediaStatus = GetMediaStatus(reqStatus, mediaStatusVal);
+                        bool hasActiveDownload = (media?["downloadStatus"] as JArray)?.Count > 0
+                            || (media?["downloadStatus4k"] as JArray)?.Count > 0;
+                        string mediaStatus = GetMediaStatus(reqStatus, mediaStatusVal, hasActiveDownload);
 
                         string? type = req["type"]?.Value<string>();
                         int? tmdbId = media?["tmdbId"]?.Value<int>();
@@ -5517,6 +5674,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             posterUrl = posterUrl,
                             tmdbId = tmdbId,
                             mediaStatus = mediaStatus,
+                            // Raw Seerr request status (1=Pending, 2=Approved, 3=Declined,
+                            // 4=Failed, 5=Completed). Exposed separately from mediaStatus
+                            // because mediaStatus collapses to the media's availability
+                            // (e.g. "Partially Available" for a show that already has some
+                            // seasons), which masks a still-pending request and prevents the
+                            // approve/decline buttons from rendering.
+                            requestStatus = reqStatus,
                             requestedBy = displayName ?? username ?? "Unknown",
                             requestedByAvatar = avatarUrl,
                             createdAt = createdAtStr,
@@ -5604,11 +5768,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var totalResults = isComingSoonFilter ? requests.Count : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
 
+                var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                    jellyseerrUser.Permissions,
+                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+                );
+
                 return Ok(new
                 {
                     requests = requests,
                     totalPages = totalPages,
-                    totalResults = totalResults
+                    totalResults = totalResults,
+                    canApproveRequests = canApproveRequests
                 });
             }
             catch (Exception ex)
@@ -5629,6 +5799,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     totalResults = 0,
                 });
             }
+        }
+
+        [HttpPost("arr/requests/{requestId}/approve")]
+        [HttpPost("arr/requests/{requestId}/decline")]
+        [Authorize]
+        public async Task<IActionResult> ActOnRequest([FromRoute] int requestId)
+        {
+            var action = HttpContext.Request.Path.Value?.Contains("/approve", StringComparison.OrdinalIgnoreCase) == true ? "approve" : "decline";
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                return StatusCode(503, new { error = true, message = "Seerr not configured." });
+
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return BadRequest(new { message = "Jellyfin User ID not found." });
+
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+                return NotFound(new { message = "Current user is not linked to a Seerr account." });
+
+            bool canApprove = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                jellyseerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+            );
+            if (!canApprove)
+                return StatusCode(403, new { error = true, message = "You do not have permission to approve or decline requests." });
+
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim().TrimEnd('/'))
+                .FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
+
+            if (string.IsNullOrEmpty(jellyseerrUrl))
+                return StatusCode(503, new { error = true, message = "No valid Seerr URL configured." });
+
+            var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}/{action}";
+            var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+            using var httpRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUser.Id.ToString());
+            using var response = await client.SendAsync(httpRequest);
+            var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+
+            if (error != null)
+            {
+                _logger.Warning($"Seerr {action} request {requestId} failed: {error.Code} {error.HttpStatus}");
+                return StatusCode(error.HttpStatus > 0 ? error.HttpStatus : 502,
+                    IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
+            }
+
+            return Ok(new { success = true });
         }
 
         [HttpGet("arr/calendar")]
@@ -6410,7 +6631,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return (result.Title, result.Year, result.PosterUrl, result.DigitalReleaseDate, result.TheatricalReleaseDate, result.InitialAirDate, result.NextAirDate);
         }
 
-        private static string GetMediaStatus(int? requestStatus, int? mediaStatus)
+        private static string GetMediaStatus(int? requestStatus, int? mediaStatus, bool hasActiveDownload = false)
         {
             // MediaStatus: 1 = Unknown, 2 = Pending, 3 = Processing, 4 = Partially Available, 5 = Available, 6 = Blocklisted, 7 = Deleted
             // MediaRequestStatus: 1 = Pending, 2 = Approved, 3 = Declined, 4 = Failed, 5 = Completed
@@ -6420,7 +6641,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaStatus == 6) return "Blocklisted";
             if (mediaStatus == 5) return "Available";
             if (mediaStatus == 4) return "Partially Available";
-            if (mediaStatus == 3) return "Processing";
+            // MediaStatus.PROCESSING (3): only show "Processing" when Radarr/Sonarr is actively downloading.
+            // Without active download data the request is approved-but-queued — Seerr labels that "Requested".
+            if (mediaStatus == 3) return hasActiveDownload ? "Processing" : "Approved";
             if (mediaStatus == 2) return "Pending";
 
             // Fall back to request status
@@ -6589,6 +6812,112 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(itemIds.FirstOrDefault());
         }
 
+        // ── Maintenance Mode ────────────────────────────────────────────────────
+
+        [Authorize]
+        [HttpGet("MaintenanceMode/Status")]
+        public IActionResult GetMaintenanceStatus()
+        {
+            if (!IsAdminUser()) return Forbid();
+            var state = _maintenanceModeService.GetStatus();
+            return Ok(new
+            {
+                state.IsActive,
+                state.Message,
+                state.Action,
+                state.StartedAt,
+                state.EndsAt,
+                AccountDisabledCount = state.AccountDisabledUserIds.Count,
+                RemoteDisabledCount  = state.RemoteDisabledUserIds.Count
+            });
+        }
+
+        [Authorize]
+        [HttpPost("MaintenanceMode/Enable")]
+        public async Task<IActionResult> EnableMaintenanceMode([FromBody] MaintenanceModeRequest request)
+        {
+            if (!IsAdminUser()) return Forbid();
+            await _maintenanceModeService.EnableAsync(
+                request.Message ?? string.Empty,
+                request.DurationMinutes,
+                request.Action ?? "disable_accounts",
+                request.AffectedUserIds).ConfigureAwait(false);
+            return Ok(new { success = true });
+        }
+
+        [Authorize]
+        [HttpPost("MaintenanceMode/Disable")]
+        public async Task<IActionResult> DisableMaintenanceMode()
+        {
+            if (!IsAdminUser()) return Forbid();
+            await _maintenanceModeService.DisableAsync().ConfigureAwait(false);
+            return Ok(new { success = true });
+        }
+
+        [Authorize]
+        [HttpGet("MaintenanceMode/Users")]
+        public IActionResult GetMaintenanceModeUsers()
+        {
+            if (!IsAdminUser()) return Forbid();
+            var users = _userManager.GetAllUsers()
+                .Where(u => !u.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator))
+                .Select(u => new { Id = u.Id.ToString(), u.Username })
+                .OrderBy(u => u.Username)
+                .ToList();
+            return Ok(users);
+        }
+
+        [Authorize]
+        [HttpPost("MaintenanceMode/Broadcast")]
+        public async Task<IActionResult> BroadcastMaintenanceMessage([FromBody] MaintenanceBroadcastRequest request)
+        {
+            if (!IsAdminUser()) return Forbid();
+            if (request == null || string.IsNullOrWhiteSpace(request.Text))
+                return BadRequest("Message text is required.");
+
+            var controllingSessionId = string.Empty;
+            try
+            {
+                var adminSession = _sessionManager.Sessions.FirstOrDefault(s => s.UserId == GetCurrentUserId());
+                controllingSessionId = adminSession?.Id ?? string.Empty;
+            }
+            catch { /* non-fatal */ }
+
+            var command = new MediaBrowser.Model.Session.MessageCommand
+            {
+                Header = request.Header ?? "Server Maintenance",
+                Text = request.Text,
+                TimeoutMs = request.TimeoutMs > 0 ? request.TimeoutMs : 30000
+            };
+
+            var sent = 0; var skipped = 0; var errors = new List<string>();
+            foreach (var session in _sessionManager.Sessions)
+            {
+                if (string.IsNullOrWhiteSpace(session.UserName) ||
+                    string.Equals(session.UserName, "Unknown", StringComparison.OrdinalIgnoreCase))
+                { skipped++; continue; }
+                try
+                {
+                    await _sessionManager.SendMessageCommand(controllingSessionId, session.Id, command, CancellationToken.None).ConfigureAwait(false);
+                    sent++;
+                }
+                catch (Exception ex)
+                {
+                    skipped++;
+                    errors.Add($"{session.UserName}: {ex.Message}");
+                }
+            }
+
+            return Ok(new { sent, skipped, errors });
+        }
+
+        public class MaintenanceBroadcastRequest
+        {
+            public string? Header { get; set; }
+            public string Text { get; set; } = string.Empty;
+            public long TimeoutMs { get; set; } = 30000;
+        }
+
         [Authorize]
         [HttpGet("{viewName}")]
         public ActionResult GetView([FromRoute] string viewName)
@@ -6637,5 +6966,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public string Text { get; set; } = string.Empty;
 
         public long? TimeoutMs { get; set; }
+    }
+
+    public class MaintenanceModeRequest
+    {
+        public string? Message { get; set; }
+        public int DurationMinutes { get; set; }
+        /// <summary>"disable_accounts" | "disable_remote" | "both"</summary>
+        public string Action { get; set; } = "disable_accounts";
+        /// <summary>Specific user IDs to affect. Null or empty = all non-admin users.</summary>
+        public List<string>? AffectedUserIds { get; set; }
     }
 }

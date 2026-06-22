@@ -5,6 +5,8 @@
     const ui = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
     const escapeHtml = JE.escapeHtml;
+    const MediaStatus = JE.seerrStatus.MEDIA;
+    const DisplayStatus = JE.seerrStatus.DISPLAY;
 
     // State variables managed by the main jellyseerr.js, but used by UI functions
     let jellyseerrHoverPopover = null;
@@ -279,30 +281,20 @@
         const request4KBtn = document.createElement('button');
         request4KBtn.className = 'jellyseerr-4k-popup-item';
 
-        if (status4k === 5) {
-            // 4K is available
+        const popupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+        if (popupDs4k === DisplayStatus.AVAILABLE) {
             request4KBtn.innerHTML = `<span>4K Available</span>${icons.available}`;
             request4KBtn.disabled = true;
             request4KBtn.classList.add('jellyseerr-4k-available', 'chip-available');
-        } else if (status4k === 2 || status4k === 3) {
-            // 4K is pending or processing
+        } else if (popupDs4k === DisplayStatus.PENDING || popupDs4k === DisplayStatus.REQUESTED || popupDs4k === DisplayStatus.PROCESSING) {
             request4KBtn.innerHTML = `<span>4K Requested</span>${icons.pending}`;
             request4KBtn.disabled = true;
-            request4KBtn.classList.add(status4k === 3 ? 'chip-processing' : 'chip-pending');
-        } else if (status4k === 6) {
-            // 4K is blocklisted
-            request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_blocklisted')}</span>${icons.blocklisted}`;
+            request4KBtn.classList.add(popupDs4k === DisplayStatus.PROCESSING ? 'chip-processing' : 'chip-pending');
+        } else if (popupDs4k === DisplayStatus.BLOCKED) {
+            request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_blocklisted')}</span>${icons.cancel}`;
             request4KBtn.disabled = true;
             request4KBtn.classList.add('chip-blocklisted');
-        } else if (status4k === 7) {
-            // 4K was deleted and can be requested again
-            request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
-            request4KBtn.dataset.tmdbId = item.id;
-            request4KBtn.dataset.mediaType = item.mediaType || 'movie';
-            request4KBtn.dataset.action = 'request4k';
-            request4KBtn.classList.add('chip-requested');
         } else {
-            // 4K can be requested
             request4KBtn.innerHTML = `<span>${JE.t('jellyseerr_btn_request_4k')}</span>`;
             request4KBtn.dataset.tmdbId = item.id;
             request4KBtn.dataset.mediaType = item.mediaType || 'movie';
@@ -761,11 +753,11 @@
         if (total === 0) return { overallStatus: 1, statusSummary: null, total: 0 };
 
         const statusCounts = {
-            available: regularSeasons.filter(s => s.status === 5).length,
-            pending: regularSeasons.filter(s => s.status === 2).length,
-            processing: regularSeasons.filter(s => s.status === 3).length,
-            partiallyAvailable: regularSeasons.filter(s => s.status === 4).length,
-            notRequested: regularSeasons.filter(s => s.status === 1).length
+            available: regularSeasons.filter(s => s.status === MediaStatus.AVAILABLE).length,
+            pending: regularSeasons.filter(s => s.status === MediaStatus.PENDING).length,
+            processing: regularSeasons.filter(s => s.status === MediaStatus.PROCESSING).length,
+            partiallyAvailable: regularSeasons.filter(s => s.status === MediaStatus.PARTIALLY_AVAILABLE).length,
+            notRequested: regularSeasons.filter(s => s.status === MediaStatus.UNKNOWN).length
         };
         const requestedCount = statusCounts.pending + statusCounts.processing;
         const availableCount = statusCounts.available + statusCounts.partiallyAvailable;
@@ -773,15 +765,15 @@
         let overallStatus, statusSummary = null;
 
         if (statusCounts.notRequested === 0) {
-            overallStatus = (availableCount === total) ? 5 : 7;
-            if (overallStatus === 7) statusSummary = JE.t('jellyseerr_seasons_accounted_for', { count: accountedForCount, total });
+            overallStatus = (availableCount === total) ? MediaStatus.AVAILABLE : MediaStatus.DELETED;
+            if (overallStatus === MediaStatus.DELETED) statusSummary = JE.t('jellyseerr_seasons_accounted_for', { count: accountedForCount, total });
         } else if (accountedForCount > 0) {
-            overallStatus = (availableCount > 0) ? 4 : 3;
+            overallStatus = (availableCount > 0) ? MediaStatus.PARTIALLY_AVAILABLE : MediaStatus.PROCESSING;
             statusSummary = (availableCount > 0) ? JE.t('jellyseerr_seasons_available_count', { count: availableCount, total }) : JE.t('jellyseerr_seasons_requested_count', { count: requestedCount, total });
         } else {
-            overallStatus = 1;
+            overallStatus = MediaStatus.UNKNOWN;
         }
-        return { overallStatus, statusSummary, total };
+        return { overallStatus, statusSummary, total, availableCount };
     }
 
     /**
@@ -971,60 +963,22 @@
             status = item.mediaInfo.status || 1;
         }
 
-        // MediaStatus: 1=Unknown, 2=Pending, 3=Processing, 4=Partially Available, 5=Available, 6=Blocklisted, 7=Deleted
-        let icon = '';
-        let statusClass = '';
+        const hasDownloads = (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0);
+        const displayStatus = JE.seerrStatus.resolveDisplayStatus(status, hasDownloads);
+        const badgeConfig = JE.seerrStatus.getBadgeConfig(displayStatus);
 
-        switch (status) {
-            case 5: // Available
-                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg>`;
-                statusClass = 'status-available';
-                break;
-            case 2: // Pending
-                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0 24.585 24.585 0 01-4.831-1.244.75.75 0 01-.298-1.205A8.217 8.217 0 005.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0 25.057 25.057 0 01-4.496 0z" clip-rule="evenodd" /></svg>`;
-                statusClass = 'status-pending';
-                break;
-            case 3: // Processing (with downloads) or Requested (without downloads)
-                // Check if there are active downloads to differentiate
-                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
-                    // Processing - spinner icon with animation
-                    icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>`;
-                    statusClass = 'status-processing';
-                } else {
-                    // Requested - clock icon
-                    icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" clip-rule="evenodd"></path></svg>`;
-                    statusClass = 'status-requested';
-                }
-                break;
-            case 4: // Partially Available
-                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM6.75 9.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clip-rule="evenodd" /></svg>`;
-                statusClass = 'status-partially-available';
-                break;
-            case 6: // Blocklisted
-                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg>`;
-                statusClass = 'status-blocklisted';
-                break;
-            case 7: // Deleted
-                icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" /></svg>`;
-                statusClass = 'status-deleted';
-                break;
-            default:
-                // Unknown status - hide badge
-                badge.style.display = 'none';
-                return;
+        if (!badgeConfig) {
+            badge.style.display = 'none';
+            return;
         }
 
-        badge.innerHTML = icon;
-        badge.className = `jellyseerr-status-badge ${statusClass}`;
+        badge.innerHTML = badgeConfig.icon;
+        badge.className = `jellyseerr-status-badge ${badgeConfig.cssClass}`;
         badge.style.display = 'flex';
 
-        // Add hover tooltip for Partially Available TV shows with active downloads
-        if (status === 4 && item.mediaType === 'tv') {
-            const hasDownloads = (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0);
-            if (hasDownloads) {
-                badge.style.cursor = 'pointer';
-                addDownloadProgressHover(badge, item);
-            }
+        if (displayStatus === DisplayStatus.PARTIAL && item.mediaType === 'tv' && hasDownloads) {
+            badge.style.cursor = 'pointer';
+            addDownloadProgressHover(badge, item);
         }
     }
 
@@ -1054,10 +1008,21 @@
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
 
-        // Treat as "in library" only when Jellyfin exposes a media id
         const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.jellyfinMediaId4k || null;
-        const jellyfinHref = jellyfinMediaId ? `#!/details?id=${jellyfinMediaId}` : null;
-        const isAvailable = Boolean(jellyfinMediaId);
+        // For TV shows, derive the card-level availability from the season analysis so that
+        // a stale Seerr jellyfinMediaId on a show where no seasons are confirmed present
+        // does not produce a false "in library" green link.
+        // Only AVAILABLE (all seasons present) or PARTIALLY_AVAILABLE (some present) justify the link.
+        let cardEffectiveStatus;
+        if (item.mediaType === 'tv' && item.mediaInfo?.seasons?.length) {
+            const sa = analyzeSeasonStatuses(item.mediaInfo.seasons);
+            cardEffectiveStatus = sa ? sa.overallStatus : JE.seerrStatus.effectiveMediaStatus(item.mediaInfo?.status, jellyfinMediaId);
+        } else {
+            cardEffectiveStatus = JE.seerrStatus.effectiveMediaStatus(item.mediaInfo?.status, jellyfinMediaId);
+        }
+        const isAvailable = Boolean(jellyfinMediaId)
+            && (cardEffectiveStatus === MediaStatus.AVAILABLE || cardEffectiveStatus === MediaStatus.PARTIALLY_AVAILABLE);
+        const jellyfinHref = isAvailable ? `#!/details?id=${jellyfinMediaId}` : null;
         // True when the card should navigate directly to an external Seerr URL instead of
         // showing the hover overview — used to decide poster touch behaviour below.
         const navigatesExternally = !useMoreInfoModal && !jellyfinMediaId && !!jellyseerrUrl && item.mediaType !== 'collection';
@@ -1520,18 +1485,17 @@
             button.className = `jellyseerr-request-button jellyseerr-button-tv ${className}`; // Reset classes
         };
         switch (overallStatus) {
-            case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending'); break;
-            case 3: setButton(JE.t('jellyseerr_btn_request_more'), icons.request, 'jellyseerr-button-request'); break;
-            case 7: setButton(JE.t('jellyseerr_btn_request_more'), icons.request, 'jellyseerr-button-request'); break;
-            case 4:
+            case MediaStatus.PENDING: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending'); break;
+            case MediaStatus.PROCESSING: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
+            case MediaStatus.DELETED: setButton(JE.t(seasonAnalysis?.availableCount > 0 ? 'jellyseerr_btn_request_more' : 'jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
+            case MediaStatus.PARTIALLY_AVAILABLE:
                 setButton(JE.t('jellyseerr_btn_request_missing'), icons.request, 'jellyseerr-button-partially-available');
-                // Add download progress hover if there are active downloads
                 if (item?.mediaInfo?.downloadStatus?.length > 0 || item?.mediaInfo?.downloadStatus4k?.length > 0) {
                     addDownloadProgressHover(button, item);
                 }
                 break;
-            case 5: setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_all_seasons', {count: seasonAnalysis.total}) : null); break;
-            case 6: setButton(JE.t('jellyseerr_btn_blocklisted'), icons.cancel, 'jellyseerr-button-blocklisted', true); break;
+            case MediaStatus.AVAILABLE: setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_all_seasons', {count: seasonAnalysis.total}) : null); break;
+            case MediaStatus.BLOCKED: setButton(JE.t('jellyseerr_btn_blocklisted'), icons.cancel, 'jellyseerr-button-blocklisted', true); break;
             default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request', false, seasonAnalysis?.total > 1 ? JE.t('jellyseerr_seasons_available', {count: seasonAnalysis.total}) : null); break;
         }
 
@@ -1554,11 +1518,12 @@
             arrowButton.dataset.tmdbId = item.id;
             arrowButton.dataset.toggle4k = 'true';
 
-            if (status4k === 5) {
+            const tvDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+            if (tvDs4k === DisplayStatus.AVAILABLE) {
                 arrowButton.disabled = true;
                 arrowButton.classList.add('jellyseerr-split-arrow-disabled', 'jellyseerr-4k-available');
                 arrowButton.title = '4K Available';
-            } else if (status4k === 2 || status4k === 3) {
+            } else if (tvDs4k === DisplayStatus.PENDING || tvDs4k === DisplayStatus.REQUESTED || tvDs4k === DisplayStatus.PROCESSING) {
                 arrowButton.classList.add('jellyseerr-4k-pending');
                 arrowButton.title = '4K Requested';
             } else {
@@ -1605,84 +1570,37 @@
             const buttonGroup = document.createElement('div');
             buttonGroup.className = 'jellyseerr-button-group';
 
-            // Determine main button state based on status
-            let mainButtonText, mainButtonIcon, mainButtonClass, mainButtonDisabled;
-
-            if (status === 5) {
-                // Check if item is available but also downloading (upgrading version)
-                if (item.mediaInfo?.downloadStatus?.length > 0) {
-                    mainButtonText = JE.t('jellyseerr_btn_available');
-                    mainButtonIcon = icons.available;
-                    mainButtonClass = 'jellyseerr-button-available-updating';
-                    mainButtonDisabled = true;
-                } else {
-                    mainButtonText = JE.t('jellyseerr_btn_available');
-                    mainButtonIcon = icons.available;
-                    mainButtonClass = 'jellyseerr-button-available';
-                    mainButtonDisabled = true;
-                }
-            } else if (status === 2) {
-                mainButtonText = JE.t('jellyseerr_btn_pending');
-                mainButtonIcon = icons.pending;
-                mainButtonClass = 'jellyseerr-button-pending';
-                mainButtonDisabled = true;
-            } else if (status === 3) {
-                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
-                    mainButtonText = JE.t('jellyseerr_btn_processing');
-                    mainButtonIcon = '';
-                    mainButtonClass = 'jellyseerr-button-processing';
-                    mainButtonDisabled = true;
-                } else {
-                    mainButtonText = JE.t('jellyseerr_btn_requested');
-                    mainButtonIcon = icons.requested;
-                    mainButtonClass = 'jellyseerr-button-pending';
-                    mainButtonDisabled = true;
-                }
-            } else if (status === 6) {
-                mainButtonText = JE.t('jellyseerr_btn_blocklisted');
-                mainButtonIcon = icons.cancel;
-                mainButtonClass = 'jellyseerr-button-blocklisted';
-                mainButtonDisabled = true;
-            } else if (status === 7) {
-                mainButtonText = JE.t('jellyseerr_btn_request');
-                mainButtonIcon = icons.request;
-                mainButtonClass = 'jellyseerr-button-request';
-                mainButtonDisabled = false;
-            } else {
-                mainButtonText = JE.t('jellyseerr_btn_request');
-                mainButtonIcon = icons.request;
-                mainButtonClass = 'jellyseerr-button-request';
-                mainButtonDisabled = false;
-            }
+            const hasMainDownloads = item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0;
+            const mainDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, hasMainDownloads);
+            const { labelKey: mainLabelKey, cssClass: mainButtonClass, disabled: mainButtonDisabled, showSpinner: mainShowSpinner, iconKey } = JE.seerrStatus.getButtonConfig(mainDisplayStatus);
+            const mainButtonText = JE.t(mainLabelKey);
+            const mainButtonIcon = icons[iconKey] || '';
 
             // Main button
             const mainButton = document.createElement('button');
             mainButton.className = `jellyseerr-request-button jellyseerr-split-main ${mainButtonClass}`;
             mainButton.disabled = mainButtonDisabled;
-            mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${(mainButtonClass === 'jellyseerr-button-processing' || mainButtonClass === 'jellyseerr-button-available-updating') ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
+            mainButton.innerHTML = `${mainButtonIcon}<span>${mainButtonText}</span>${mainShowSpinner ? '<span class="jellyseerr-button-spinner"></span>' : ''}`;
             mainButton.dataset.tmdbId = item.id;
             mainButton.dataset.mediaType = 'movie';
             mainButton.dataset.searchResultItem = JSON.stringify(item);
 
-            // Add download progress hover if processing or available-updating
-            if ((status === 3 || status === 5) && (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0)) {
+            if (hasMainDownloads && mainButtonDisabled) {
                 addDownloadProgressHover(mainButton, item);
             }
 
-            // Arrow button for 4K dropdown
             const arrowButton = document.createElement('button');
             arrowButton.className = 'jellyseerr-split-arrow';
             arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
             arrowButton.dataset.tmdbId = item.id;
             arrowButton.dataset.toggle4k = 'true';
 
-            // Determine arrow button state based on 4K status
-            if (status4k === 5) {
+            const ds4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+            if (ds4k === DisplayStatus.AVAILABLE) {
                 arrowButton.disabled = true;
-                arrowButton.classList.add('jellyseerr-split-arrow-disabled');
-                arrowButton.classList.add('jellyseerr-4k-available');
+                arrowButton.classList.add('jellyseerr-split-arrow-disabled', 'jellyseerr-4k-available');
                 arrowButton.title = '4K Available';
-            } else if (status4k === 2 || status4k === 3) {
+            } else if (ds4k === DisplayStatus.PENDING || ds4k === DisplayStatus.REQUESTED || ds4k === DisplayStatus.PROCESSING) {
                 arrowButton.classList.add('jellyseerr-4k-pending');
                 arrowButton.title = '4K Requested';
             } else {
@@ -1745,34 +1663,17 @@
             return;
         }
 
-        // Standard button (no 4K option or button in overview)
-        switch (status) {
-            case 2: setButton(JE.t('jellyseerr_btn_pending'), icons.pending, 'jellyseerr-button-pending', true); break;
-            case 3:
-                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
-                    button.innerHTML = `<span>${JE.t('jellyseerr_btn_processing')}</span><span class="jellyseerr-button-spinner"></span>`;
-                    button.disabled = true;
-                    button.className = 'jellyseerr-request-button jellyseerr-button-processing';
-                    addDownloadProgressHover(button, item);
-                } else {
-                    setButton(JE.t('jellyseerr_btn_requested'), icons.requested, 'jellyseerr-button-pending', true);
-                }
-                break;
-            case 4: setButton(JE.t('jellyseerr_btn_partially_available'), icons.partially_available, 'jellyseerr-button-partially-available', true); break;
-            case 5:
-                // Check if item is available but also downloading (upgrading version)
-                if (item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0) {
-                    button.innerHTML = `${icons.available}<span>${JE.t('jellyseerr_btn_available')}</span><span class="jellyseerr-button-spinner"></span>`;
-                    button.disabled = true;
-                    button.className = 'jellyseerr-request-button jellyseerr-button-available-updating';
-                    addDownloadProgressHover(button, item);
-                } else {
-                    setButton(JE.t('jellyseerr_btn_available'), icons.available, 'jellyseerr-button-available', true);
-                }
-                break;
-            case 6: setButton(JE.t('jellyseerr_btn_blocklisted'), icons.cancel, 'jellyseerr-button-blocklisted', true); break;
-            case 7: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
-            default: setButton(JE.t('jellyseerr_btn_request'), icons.request, 'jellyseerr-button-request'); break;
+        const hasStdDownloads = item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0;
+        const stdDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, hasStdDownloads);
+        const { labelKey: stdLabelKey, cssClass: stdClass, disabled: stdDisabled, showSpinner: stdSpinner, iconKey: stdIconKey } = JE.seerrStatus.getButtonConfig(stdDisplayStatus);
+
+        if (stdSpinner) {
+            button.innerHTML = `${icons[stdIconKey] || ''}<span>${JE.t(stdLabelKey)}</span><span class="jellyseerr-button-spinner"></span>`;
+            button.disabled = true;
+            button.className = `jellyseerr-request-button ${stdClass}`;
+            if (hasStdDownloads) addDownloadProgressHover(button, item);
+        } else {
+            setButton(JE.t(stdLabelKey), icons[stdIconKey] || '', stdClass, stdDisabled);
         }
 
         // Add click handler for request button (for overview button and standard button)
@@ -2178,6 +2079,36 @@
             return;
         }
 
+        // Fetch Jellyfin season map to cross-reference Seerr's availability status.
+        // Seerr can report a season as status 5 (Available) after it was deleted from
+        // the library — the show-level jellyfinMediaId is still set (other seasons exist),
+        // so the per-show stale check doesn't fire. Querying Jellyfin directly tells us
+        // exactly which seasons are physically present.
+        let jellyfinSeasonMap = null;
+        const jellyfinSeriesId = tvDetails.mediaInfo?.jellyfinMediaId || null;
+        if (jellyfinSeriesId) {
+            try {
+                const userId = ApiClient.getCurrentUserId?.();
+                if (userId) {
+                    const resp = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                            ParentId: jellyfinSeriesId,
+                            IncludeItemTypes: 'Season',
+                            Recursive: false,
+                            Fields: 'IndexNumber'
+                        }),
+                        dataType: 'json'
+                    });
+                    jellyfinSeasonMap = {};
+                    for (const s of (resp?.Items || [])) {
+                        const idx = Number(s?.IndexNumber);
+                        if (Number.isFinite(idx) && idx >= 0) jellyfinSeasonMap[idx] = true;
+                    }
+                }
+            } catch (_) {}
+        }
+
         const normalizedTitle = String(showTitle || '').trim();
         const isGenericFallbackTitle = ['this show', 'this movie', 'this collection'].includes(normalizedTitle.toLowerCase());
         const resolvedShowTitle = (!isGenericFallbackTitle && normalizedTitle)
@@ -2280,7 +2211,7 @@
 
         // Populate season list inside the modal (shows immediately, air dates may be empty)
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
-        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
+        updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
         modalInstance.show();
 
         // Quota chip — runs async so it doesn't block modal open.
@@ -2348,7 +2279,7 @@
             // When all fetches complete, re-render with backfilled dates
             Promise.all([...seasonFetches, tmdbFetch]).then(() => {
                 applyAirDateBackfill(tvDetails);
-                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
+                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
             });
         }
 
@@ -2395,7 +2326,7 @@
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
             if (freshTvDetails) {
                 applyAirDateBackfill(freshTvDetails);
-                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k);
+                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
                 // Update Select All state after refresh
                 if (seasonList._updateSelectAllState) {
                     seasonList._updateSelectAllState();
@@ -2414,7 +2345,7 @@
         }
     };
 
-    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false, is4kMode = false) {
+    function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false, is4kMode = false, jellyfinSeasonMap = null) {
         if (!seasonListElement || !tvDetails) return;
 
         const seasonStatusMap = {};
@@ -2461,25 +2392,14 @@
             const seasonJellyfinId = is4kMode
                 ? (seasonMediaInfo?.jellyfinMediaId4k || seasonMediaInfo?.jellyfinSeasonId4k || null)
                 : (seasonMediaInfo?.jellyfinMediaId || seasonMediaInfo?.jellyfinSeasonId || null);
-            // Season is stale-available if Seerr says available but there's no Jellyfin ID
-            // at either the show level or the season level
-            const isStaleAvailable = apiStatus === 5 && !showJellyfinId && !seasonJellyfinId;
-            const effectiveApiStatus = isStaleAvailable ? 7 : apiStatus;
-
-            const canRequest = !effectiveApiStatus || effectiveApiStatus === 1 || effectiveApiStatus === 7;
-
-            let statusText = JE.t('jellyseerr_season_status_not_requested'), statusClass = 'not-requested';
-            switch (effectiveApiStatus) {
-                case 2:
-                case 3: statusText = JE.t('jellyseerr_season_status_requested'); statusClass = 'processing'; break;
-                case 4: statusText = JE.t('jellyseerr_season_status_partial'); statusClass = 'partially-available'; break;
-                case 5: statusText = JE.t('jellyseerr_season_status_available'); statusClass = 'available'; break;
-            }
-
+            const effectiveApiStatus = JE.seerrStatus.effectiveMediaStatus(
+                apiStatus, showJellyfinId, jellyfinSeasonMap, seasonNumber
+            );
+            const canRequest = JE.seerrStatus.isRequestable(effectiveApiStatus);
             const modeDownloads = is4kMode ? (tvDetails.mediaInfo?.downloadStatus4k || []) : (tvDetails.mediaInfo?.downloadStatus || []);
-            if ((effectiveApiStatus === 2 || effectiveApiStatus === 3) && modeDownloads.some(ds => ds.episode?.seasonNumber === seasonNumber)) {
-                statusText = JE.t('jellyseerr_season_status_processing');
-            }
+            const hasSeasonDownloads = modeDownloads.some(ds => ds.episode?.seasonNumber === seasonNumber);
+            const { labelKey, cssClass: statusClass } = JE.seerrStatus.getDisplayInfo(effectiveApiStatus, hasSeasonDownloads);
+            const statusText = JE.t(labelKey);
 
             // Update the content but preserve the checkbox state if it exists
             const existingCheckbox = seasonItem.querySelector('.jellyseerr-season-checkbox');
@@ -2518,7 +2438,7 @@
             const existingProgress = seasonItem.querySelector('.jellyseerr-inline-progress');
             if (existingProgress) existingProgress.remove();
 
-            if ((effectiveApiStatus === 2 || effectiveApiStatus === 3) && modeDownloads.length > 0) {
+            if (hasSeasonDownloads && modeDownloads.length > 0) {
                 const seasonDownloads = modeDownloads.filter(ds => ds.episode?.seasonNumber === seasonNumber);
                 if (seasonDownloads.length > 0) {
                     const totalSize = seasonDownloads.reduce((sum, ds) => sum + (ds.size || 0), 0);
@@ -2535,7 +2455,7 @@
 
     /**
      * Shows a modal for requesting a collection (all movies in a TMDB collection).
-     * @param {number} collectionId - The TMDB collection ID.
+     * @param {number} collectionId - The TMDB collection IDisplayStatus.
      * @param {string} collectionName - The name of the collection.
      * @param {object} searchResultItem - Optional search result item data.
      */
@@ -2561,23 +2481,23 @@
 
         // Create checkbox list of movies in the collection with posters and status badges
         const movieListHtml = collectionDetails.parts.map(movie => {
-            const status = movie.mediaInfo?.status || 1; // 1 = not available, 2 = requested, 3 = pending/processing, 4 = partially available, 5 = available
+            const status = movie.mediaInfo?.status || MediaStatus.UNKNOWN;
             const downloads = movie.mediaInfo?.downloadStatus || [];
             const hasActiveDownloads = downloads && downloads.length > 0;
-            const isAvailable = status === 5;
-            const isRequested = status === 2 || status === 3;
+            const isAvailable = status === MediaStatus.AVAILABLE;
+            const isRequested = status === MediaStatus.PENDING || status === MediaStatus.PROCESSING;
             const isDisabled = isAvailable || isRequested;
 
             let statusClass = 'not-requested';
             let statusText = JE.t('jellyseerr_season_status_not_requested') || 'Not Requested';
 
-            if (status === 5) {
+            if (status === MediaStatus.AVAILABLE) {
                 statusClass = 'available';
                 statusText = JE.t('jellyseerr_btn_available') || 'Available';
-            } else if (status === 4) {
+            } else if (status === MediaStatus.PARTIALLY_AVAILABLE) {
                 statusClass = 'partially-available';
                 statusText = JE.t('jellyseerr_btn_partially_available') || 'Partially Available';
-            } else if (status === 3) {
+            } else if (status === MediaStatus.PROCESSING) {
                 if (hasActiveDownloads) {
                     statusClass = 'processing';
                     statusText = JE.t('jellyseerr_btn_processing') || 'Processing';
@@ -2585,7 +2505,7 @@
                     statusClass = 'pending';
                     statusText = JE.t('jellyseerr_btn_requested') || 'Requested';
                 }
-            } else if (status === 2) {
+            } else if (status === MediaStatus.PENDING) {
                 statusClass = 'pending';
                 statusText = JE.t('jellyseerr_btn_pending') || 'Pending';
             }

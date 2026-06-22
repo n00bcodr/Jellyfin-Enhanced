@@ -341,13 +341,13 @@
 
             const filteredSimilarResults = similarResults.filter(item => {
                 if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
-                if (excludeBlocklistedItems && item.mediaInfo?.status === 6) return false; // Status 6 = Blocklisted
+                if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) return false;
                 return true;
             });
 
             const filteredRecommendedResults = recommendedResults.filter(item => {
                 if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
-                if (excludeBlocklistedItems && item.mediaInfo?.status === 6) return false; // Status 6 = Blocklisted
+                if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) return false;
                 return true;
             });
 

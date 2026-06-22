@@ -1,8 +1,8 @@
-# 🔗 .arr Links Integration
+# .arr Links Integration
 
 Quick access to Sonarr, Radarr, and Bazarr (admin only).
 
-### Setup
+## Setup
 
 1. Open plugin settings → **`*arr Settings`** tab
 2. Add one or more Sonarr and/or Radarr instances
@@ -80,9 +80,9 @@ When more than one instance contains the item, the link becomes a dropdown. Each
 
 | Colour | Meaning |
 |---|---|
-| 🟢 Green | Complete — all episodes/file present |
-| 🟡 Amber | Partial — some episodes missing |
-| ⚫ Grey | Missing — not in this instance |
+| Green | Complete — all episodes/file present |
+| Amber | Partial — some episodes missing |
+| Grey | Missing — not in this instance |
 
 ---
 
@@ -92,3 +92,42 @@ The original `SonarrUrl`, `SonarrApiKey`, `RadarrUrl`, and `RadarrApiKey` fields
 
 !!! note
     Once you add instances via the new UI, the legacy fields are no longer used for arr links. They are not deleted, so downgrading to an older plugin version restores single-instance behaviour.
+
+---
+
+## Calendar Page Settings
+
+Found in the ***arr Settings** tab under "Calendar Page".
+
+| Setting | Description |
+|---|---|
+| **Enable Calendar Page** | Enables the calendar view for upcoming Sonarr/Radarr releases |
+| **Use Plugin Pages** | Adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages)) |
+| **Use Custom Tabs** | Adds a custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)) |
+| **First Day of Week** | Monday or Sunday |
+| **Time Format** | 12-hour (`5pm/5:30pm`) or 24-hour (`17:00/17:30`) |
+| **Highlight Favorites** | Highlights favorite shows/movies based on Jellyfin favorites |
+| **Highlight Watched Series** | Highlights series you are currently watching |
+
+After enabling with Plugin Pages, restart Jellyfin for the sidebar link to appear.
+
+Direct URL: `/web/index.html#!/jellyfinenhanced/calendar`
+
+---
+
+## Requests Page Settings
+
+Found in the ***arr Settings** tab under "Requests Page (Downloads)".
+
+| Setting | Description |
+|---|---|
+| **Enable Requests Page** | Enables a dedicated page showing active downloads from Sonarr/Radarr |
+| **Use Plugin Pages** | Adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages)) |
+| **Use Custom Tabs** | Adds a custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)) |
+| **Enable Auto-Refresh** | Automatically refreshes download status |
+| **Poll Interval** | How often to refresh, in seconds (30–300, default: 30) |
+
+!!! note
+    The Requests page for downloads is separate from the Seerr Requests page. Both can be enabled independently. The Seerr Requests page (showing media requests and issues) is configured in the **Seerr Settings** tab.
+
+Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`

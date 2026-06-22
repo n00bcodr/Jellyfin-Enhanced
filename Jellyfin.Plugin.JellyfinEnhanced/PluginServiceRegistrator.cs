@@ -43,12 +43,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
+            serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
 
             // Hidden Content: server-side filter for every native Jellyfin endpoint that surfaces user-facing item lists
             // (Resume, Items, Latest, NextUp, Upcoming, Suggestions, SearchHints). Same filter handles "Remove from
             // Continue Watching" via HideScope=continuewatching in hidden-content.json.
+            serviceCollection.AddSingleton<MaintenanceModeService>();
             serviceCollection.AddSingleton<HiddenContentResponseFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();

@@ -86,13 +86,13 @@ We welcome contributions from the community!
 
 **Ways to Contribute:**
 
-- 🐛 Report bugs and issues
-- 💡 Suggest new features
-- 🌍 Add or improve translations
-- 📝 Improve documentation
-- 💻 Submit code contributions
-- ⭐ Star the repository
-- 💬 Help others in discussions
+- Report bugs and issues
+- Suggest new features
+- Add or improve translations
+- Improve documentation
+- Submit code contributions
+- Star the repository
+- Help others in discussions
 
 **Get Started:**
 

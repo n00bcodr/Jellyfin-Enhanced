@@ -29,7 +29,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 Quick links:
 - [Installation Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/)
 - [Features Overview](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/)
-- [Seerr Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/jellyseerr/jellyseerr-features/)
+- [Seerr Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/seerr/seerr-features/)
 - [ARR Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/arr/arr-features/)
 - [FAQ & Troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
 - [CSS Customization](https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/css-customization/)
@@ -128,8 +128,8 @@ For detailed installation instructions and troubleshooting, see the [Installatio
     <th>Settings</th>
   </tr>
   <tr>
-    <td><img src="docs/images/shortcuts.png" width="400" /></td>
-    <td><img src="docs/images/settings.png" width="400" /></td>
+    <td><img src="docs/images/enhanced-panel-shortcuts.png" width="400" /></td>
+    <td><img src="docs/images/enhanced-panel-settings.png" width="400" /></td>
   </tr>
   <tr>
     <th>Pause Screen</th>

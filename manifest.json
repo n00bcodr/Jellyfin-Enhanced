@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "- docs: add images and expand features/settings\n - chore(ci)(deps): bump actions/setup-dotnet from 5.2.0 to 5.3.0 in the github-actions group ([#643](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/643))\n - Show transcode buffer, codec badges & refresh\n - fix: Improve bookmark modal\n - fix: Add missed size hints and labels to branding inputs\n - feat: Sync Jellyfin Watchlist to Seerr\n - feat: Approve/decline request buttons on downloads page with localized status chips\n - feat: add Maintenance Mode ([#638](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/638))\n - fix: improve Custom Tabs mount resilience and compat diagnostics\n - docs: update Seerr docs for request status, approve/decline, and watchlist sync\n - chore(ci)(deps): bump the github-actions group with 3 updates ([#651](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/651))",
+        "targetAbi": "10.11.0.0",
+        "version": "11.12.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/11.12.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "32E3D02B8F46414C02243B1C47209557",
+        "timestamp": "2026-06-10T19:54:41"
+      },
+      {
         "changelog": "- chore(ci)(deps): bump the github-actions group with 3 updates ([#631](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/631))\n - Add DevMode and improved script cache-busting\n - Per-user cache for hidden-content and invalidation\n - Ignore JSON nulls when deserializing user settings",
         "targetAbi": "10.11.0.0",
         "version": "11.11.0.0",

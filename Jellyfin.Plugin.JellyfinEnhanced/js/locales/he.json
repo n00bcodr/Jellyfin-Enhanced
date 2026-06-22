@@ -308,6 +308,7 @@
     "jellyseerr_quota_reset_in_minutes": "You can make another request in about {minutes} min",
     "feature_random_button": "{{icon:random}} כפתור אקראי",
     "jellyseerr_btn_rejected": "Rejected",
+    "jellyseerr_btn_declined": "נדחה",
     "bookmark_time_label": "Time",
     "hidden_content_confirm_cancel": "Cancel",
     "jellyseerr_modal_budget": "Budget",

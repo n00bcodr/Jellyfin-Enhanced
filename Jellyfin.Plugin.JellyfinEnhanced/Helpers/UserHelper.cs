@@ -24,15 +24,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers {
         {
             var currentUserId = GetCurrentUserId(claimsPrincipal);
 
-            if (currentUserId.IsNullOrEmpty()) return null;
-
-            if (userId.IsNullOrEmpty()) return currentUserId;
+            if (userId.IsNullOrEmpty()) return currentUserId.IsNullOrEmpty() ? null : currentUserId;
 
             var isAdministrator = claimsPrincipal.IsInRole("Administrator");
+            if (isAdministrator || (!currentUserId.IsNullOrEmpty() && userId.Equals(currentUserId)))
+            {
+                return userId.Value;
+            }
 
-            if (!userId.Equals(currentUserId) && !isAdministrator) return null;
-
-            return userId.Value;
+            return null;
         }
     }
 }

@@ -236,6 +236,7 @@
         function getChannelTag(audioStreams) {
             if (!Array.isArray(audioStreams) || audioStreams.length === 0) return null;
 
+            const rank = { '7.1': 3, '5.1': 2, '2.0': 1 };
             let maxChannels = 0;
             let detectedLayoutTag = null;
 
@@ -246,14 +247,17 @@
                 }
 
                 const layoutSignals = `${stream.ChannelLayout || ''} ${stream.DisplayTitle || ''}`.toLowerCase();
-                if (!detectedLayoutTag) {
-                    if (/\b7[. ]?1\b/.test(layoutSignals)) {
-                        detectedLayoutTag = '7.1';
-                    } else if (/\b5[. ]?1\b/.test(layoutSignals)) {
-                        detectedLayoutTag = '5.1';
-                    } else if (/\bstereo\b|\b2[. ]?0\b/.test(layoutSignals)) {
-                        detectedLayoutTag = '2.0';
-                    }
+                let tag = null;
+                if (/\b7[. ]?1\b/.test(layoutSignals)) {
+                    tag = '7.1';
+                } else if (/\b5[. ]?1\b/.test(layoutSignals)) {
+                    tag = '5.1';
+                } else if (/\bstereo\b|\b2[. ]?0\b/.test(layoutSignals)) {
+                    tag = '2.0';
+                }
+
+                if (tag && (!detectedLayoutTag || rank[tag] > rank[detectedLayoutTag])) {
+                    detectedLayoutTag = tag;
                 }
             }
 

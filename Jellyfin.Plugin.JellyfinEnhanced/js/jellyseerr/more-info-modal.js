@@ -5,6 +5,8 @@
     const moreInfoModal = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr More Info:';
     const escapeHtml = JE.escapeHtml;
+    const MediaStatus = JE.seerrStatus.MEDIA;
+    const DisplayStatus = JE.seerrStatus.DISPLAY;
 
     let currentModal = null;
 
@@ -307,11 +309,11 @@ function buildSeasonAvailabilityLinks(seasonInfo, jellyfinSeasonId = null, jelly
     // A season is only "available" if Jellyseerr says so AND we have a real Jellyfin ID to back it up.
     // If Jellyseerr reports status 5 (available) but there's no jellyfinSeasonId, the library entry
     // was deleted and Jellyseerr's status is stale — don't show the Available chip.
-    const isNormalAvailable = (normalStatus === 5 && !!jellyfinSeasonId)
-        || normalStatus === 4
+    const isNormalAvailable = (normalStatus === MediaStatus.AVAILABLE && !!jellyfinSeasonId)
+        || normalStatus === MediaStatus.PARTIALLY_AVAILABLE
         || (!normalStatus && !!jellyfinSeasonId);
-    const is4kAvailable = (status4k === 5 && !!jellyfinSeasonId4k)
-        || status4k === 4
+    const is4kAvailable = (status4k === MediaStatus.AVAILABLE && !!jellyfinSeasonId4k)
+        || status4k === MediaStatus.PARTIALLY_AVAILABLE
         || (!status4k && !!jellyfinSeasonId4k);
 
     const pills = [];
@@ -390,7 +392,7 @@ async function enrichSeasonCardsWithJellyfinLinks(data, modal = currentModal) {
         const seasonInfo = getSeasonStatusInfo(data, seasonNumber);
         const jellyfinEntry = data._jellyfinSeasonIdMap?.[seasonNumber];
         const jellyfinId = typeof jellyfinEntry === 'object' ? jellyfinEntry?.id : jellyfinEntry;
-        const seasonId = getSeasonJellyfinId(seasonInfo, false) || jellyfinId || null;
+        const seasonId = jellyfinId || getSeasonJellyfinId(seasonInfo, false) || null;
         const seasonId4k = getSeasonJellyfinId(seasonInfo, true) || null;
         mount.innerHTML = buildSeasonAvailabilityLinks(seasonInfo, seasonId, seasonId4k);
 
@@ -1092,11 +1094,10 @@ function buildTvActions(data, show4kOption = false) {
     // the library was wiped and Seerr's status is stale — treat as requestable.
     const jellyfinMediaId = mediaInfo.jellyfinMediaId || null;
     const jellyfinMediaId4k = mediaInfo.jellyfinMediaId4k || null;
-    const effectiveStatus = (status === 5 && !jellyfinMediaId) ? 7 : status;
-    const effectiveStatus4k = (status4k === 5 && !jellyfinMediaId4k) ? 7 : status4k;
+    const effectiveStatus = JE.seerrStatus.effectiveMediaStatus(status, jellyfinMediaId);
+    const effectiveStatus4k = JE.seerrStatus.effectiveMediaStatus(status4k, jellyfinMediaId4k);
 
-    // Only skip when the normal TV request is not requestable.
-    if (effectiveStatus && effectiveStatus !== 1 && effectiveStatus !== 7) {
+    if (!JE.seerrStatus.isRequestable(effectiveStatus)) {
         return null;
     }
 
@@ -1156,15 +1157,16 @@ function buildTvActions(data, show4kOption = false) {
             const option = document.createElement('button');
             option.className = 'je-4k-popup-item';
 
-            if (status4k === 5) {
+            const tvPopupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+            if (tvPopupDs4k === DisplayStatus.AVAILABLE) {
                 option.textContent = `4K ${JE.t('jellyseerr_btn_available') || 'Available'}`;
                 option.disabled = true;
                 option.classList.add('je-4k-available');
-            } else if (status4k === 2 || status4k === 3) {
+            } else if (tvPopupDs4k === DisplayStatus.PENDING || tvPopupDs4k === DisplayStatus.REQUESTED || tvPopupDs4k === DisplayStatus.PROCESSING) {
                 option.textContent = `4K ${JE.t('jellyseerr_btn_requested') || 'Requested'}`;
                 option.disabled = true;
-                option.classList.add(status4k === 3 ? 'je-4k-processing' : 'je-4k-pending');
-            } else if (status4k === 6) {
+                option.classList.add(tvPopupDs4k === DisplayStatus.PROCESSING ? 'je-4k-processing' : 'je-4k-pending');
+            } else if (tvPopupDs4k === DisplayStatus.BLOCKED) {
                 option.textContent = `4K ${JE.t('jellyseerr_btn_blocklisted') || 'Blocklisted'}`;
                 option.disabled = true;
                 option.classList.add('je-4k-blocklisted');
@@ -1266,10 +1268,7 @@ function buildSingle4kButton(data) {
 function buildMovieActions(data, actionMount, chipMount, show4kOption) {
     const status = data.mediaInfo ? data.mediaInfo.status : 1;
     const status4k = data.mediaInfo ? data.mediaInfo.status4k : 1;
-    const canRequestMain = !status || status === 1 || status === 7;
-
-    // Only block the main movie action when the item is not requestable.
-    if (!canRequestMain) {
+    if (!JE.seerrStatus.isRequestable(status)) {
         return null;
     }
 
@@ -1350,23 +1349,20 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         const option = document.createElement('button');
         option.className = 'je-4k-popup-item';
 
-        if (status4k === 5) {
-            // 4K is available
+        const moviePopupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+        if (moviePopupDs4k === DisplayStatus.AVAILABLE) {
             option.textContent = 'Request in 4K';
             option.disabled = true;
             option.classList.add('je-4k-available');
-        } else if (status4k === 2 || status4k === 3) {
-            // 4K is pending or processing
+        } else if (moviePopupDs4k === DisplayStatus.PENDING || moviePopupDs4k === DisplayStatus.REQUESTED || moviePopupDs4k === DisplayStatus.PROCESSING) {
             option.textContent = 'Request in 4K';
             option.disabled = true;
-            option.classList.add(status4k === 3 ? 'je-4k-processing' : 'je-4k-pending');
-        } else if (status4k === 6) {
-            // 4K is blocklisted
+            option.classList.add(moviePopupDs4k === DisplayStatus.PROCESSING ? 'je-4k-processing' : 'je-4k-pending');
+        } else if (moviePopupDs4k === DisplayStatus.BLOCKED) {
             option.textContent = 'Request in 4K';
             option.disabled = true;
             option.classList.add('je-4k-blocklisted');
         } else {
-            // 4K can be requested
             option.textContent = 'Request in 4K';
             option.classList.add('je-4k-request');
             option.addEventListener('click', async (ev) => {
@@ -1471,24 +1467,10 @@ function buildStatusChip(status, status4k, isMovie, downloads = [], downloads4k 
 function resolveStatusLabel(status, status4k, isMovie, downloads = [], downloads4k = [], is4kChip = false) {
     const targetStatus = is4kChip ? status4k : status;
     const hasActiveDownloads = (is4kChip ? downloads4k : downloads)?.length > 0;
-    const labelAvailable = JE.t('jellyseerr_btn_available') || 'Available';
-    const labelPartial = JE.t('jellyseerr_btn_partially_available') || 'Partially Available';
-    const labelProcessing = JE.t('jellyseerr_btn_processing') || 'Processing';
-    const labelRequested = JE.t('jellyseerr_btn_requested') || 'Requested';
-    const labelBlocklisted = JE.t('jellyseerr_btn_blocklisted') || 'Blocklisted';
-    const labelDeleted = JE.t('jellyseerr_btn_deleted') || 'Deleted';
     const with4k = (text) => is4kChip ? `4K ${text}` : text;
-    switch (targetStatus) {
-        case 5: return { text: with4k(labelAvailable), className: 'chip-available' };
-        case 4: return { text: with4k(labelPartial), className: 'chip-partial' };
-        case 3: return hasActiveDownloads
-            ? { text: with4k(labelProcessing), className: 'chip-processing' }
-            : { text: with4k(labelRequested), className: 'chip-requested' };
-        case 2: return { text: with4k(labelRequested), className: 'chip-requested' };
-        case 6: return { text: with4k(labelBlocklisted), className: 'chip-blocklisted' };
-        case 7: return { text: with4k(labelDeleted), className: 'chip-deleted' };
-        default: return { text: labelRequested, className: 'chip-requested' };
-    }
+    const chipDisplayStatus = JE.seerrStatus.resolveDisplayStatus(targetStatus, hasActiveDownloads);
+    const { labelKey: chipLabelKey, cssClass: chipCssClass } = JE.seerrStatus.getChipConfig(chipDisplayStatus);
+    return { text: with4k(JE.t(chipLabelKey) || chipLabelKey), className: chipCssClass };
 }
 
 function buildDownloadBars(downloads = [], downloads4k = []) {
@@ -1606,13 +1588,43 @@ async function checkForUnrequestedSeasons(data) {
         // Check if any TMDB season is unrequested. Status 0/undefined and 1
         // (Unknown) mean it has never been requested. Status 7 (Deleted) means
         // a prior request was removed and the season can be re-requested.
-        // Status 5 (Available) with no jellyfinMediaId means the library was
-        // wiped and Seerr's status is stale — treat as requestable too.
+        // Status 5 (Available) can be stale: Seerr keeps showing a season as
+        // available after it was deleted from the library. The show-level check
+        // (!jellyfinMediaId) only catches full-show deletions; for partial
+        // deletions (one missing season in an otherwise-present show) the show
+        // still has a jellyfinMediaId so the old check misses them. Query
+        // Jellyfin directly to get the authoritative per-season presence map.
         const jellyfinMediaId = data.mediaInfo?.jellyfinMediaId || null;
+        let jellyfinSeasonPresenceMap = null;
+        if (jellyfinMediaId) {
+            try {
+                const userId = ApiClient.getCurrentUserId?.();
+                if (userId) {
+                    const resp = await ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl(`/Users/${userId}/Items`, {
+                            ParentId: jellyfinMediaId,
+                            IncludeItemTypes: 'Season',
+                            Recursive: false,
+                            Fields: 'IndexNumber'
+                        }),
+                        dataType: 'json'
+                    });
+                    jellyfinSeasonPresenceMap = {};
+                    for (const s of (resp?.Items || [])) {
+                        const idx = Number(s?.IndexNumber);
+                        if (Number.isFinite(idx) && idx >= 0) jellyfinSeasonPresenceMap[idx] = true;
+                    }
+                }
+            } catch (_) {}
+        }
+
         for (const tmdbSeason of tmdbSeasons) {
-            const status = statusMap[tmdbSeason.seasonNumber];
-            const isStaleAvailable = status === 5 && !jellyfinMediaId;
-            if (!status || status === 1 || status === 7 || isStaleAvailable) {
+            const rawStatus = statusMap[tmdbSeason.seasonNumber];
+            const effectiveStatus = JE.seerrStatus.effectiveMediaStatus(
+                rawStatus, jellyfinMediaId, jellyfinSeasonPresenceMap, tmdbSeason.seasonNumber
+            );
+            if (JE.seerrStatus.isRequestable(effectiveStatus)) {
                 return true;
             }
         }
@@ -1776,8 +1788,8 @@ function renderActions(data, mediaType) {
         const show4k = !!JE.pluginConfig.JellyseerrEnable4KRequests;
 
         // Show both chips if both statuses exist
-        const hasNormalStatus = status && status !== 1;
-        const has4kStatus = status4k && status4k !== 1;
+        const hasNormalStatus = JE.seerrStatus.hasStatus(status);
+        const has4kStatus = JE.seerrStatus.hasStatus(status4k);
 
         if (chipMount) {
             if (hasNormalStatus && has4kStatus) {
@@ -1803,13 +1815,11 @@ function renderActions(data, mediaType) {
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
-        // If Seerr reports Available (5) but the item has no Jellyfin media ID,
-        // the library was wiped and Seerr's status is stale — treat as requestable.
-        const effectiveMovieStatus = (status === 5 && !jellyfinMediaId) ? 7 : status;
-        const effectiveMovieStatus4k = (status4k === 5 && !jellyfinMediaId4k) ? 7 : status4k;
+        const effectiveMovieStatus = JE.seerrStatus.effectiveMediaStatus(status, jellyfinMediaId);
+        const effectiveMovieStatus4k = JE.seerrStatus.effectiveMediaStatus(status4k, jellyfinMediaId4k);
 
-        const canRequestNormal = !effectiveMovieStatus || effectiveMovieStatus === 1 || effectiveMovieStatus === 7;
-        const canRequest4k = !effectiveMovieStatus4k || effectiveMovieStatus4k === 1 || effectiveMovieStatus4k === 7;
+        const canRequestNormal = JE.seerrStatus.isRequestable(effectiveMovieStatus);
+        const canRequest4k = JE.seerrStatus.isRequestable(effectiveMovieStatus4k);
 
         if (!canRequestNormal) {
             if (show4k && canRequest4k && actionMount) {
@@ -1834,8 +1844,8 @@ function renderActions(data, mediaType) {
         const show4kTv = !!JE.pluginConfig.JellyseerrEnable4KTvRequests;
 
         // Show both chips if both statuses exist
-        const hasNormalStatus = status && status !== 1;
-        const has4kStatus = status4k && status4k !== 1;
+        const hasNormalStatus = JE.seerrStatus.hasStatus(status);
+        const has4kStatus = JE.seerrStatus.hasStatus(status4k);
 
         if (chipMount) {
             if (hasNormalStatus && has4kStatus) {
@@ -1861,13 +1871,11 @@ function renderActions(data, mediaType) {
         const bars = buildDownloadBars(downloads, downloads4k);
         if (bars && downloadsMount) downloadsMount.appendChild(bars);
 
-        // If Seerr reports Available (5) but the item has no Jellyfin media ID,
-        // the library was wiped and Seerr's status is stale — treat as requestable.
-        const effectiveStatus = (status === 5 && !jellyfinMediaId) ? 7 : status;
-        const effectiveStatus4k = (status4k === 5 && !jellyfinMediaId4k) ? 7 : status4k;
+        const effectiveStatus = JE.seerrStatus.effectiveMediaStatus(status, jellyfinMediaId);
+        const effectiveStatus4k = JE.seerrStatus.effectiveMediaStatus(status4k, jellyfinMediaId4k);
 
-        const canRequestNormal = !effectiveStatus || effectiveStatus === 1 || effectiveStatus === 7;
-        const canRequest4k = !effectiveStatus4k || effectiveStatus4k === 1 || effectiveStatus4k === 7;
+        const canRequestNormal = JE.seerrStatus.isRequestable(effectiveStatus);
+        const canRequest4k = JE.seerrStatus.isRequestable(effectiveStatus4k);
         if (canRequestNormal) {
             const actions = buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
@@ -2286,6 +2294,7 @@ function injectStyles() {
         .je-more-info-modal .runtime,
         .je-more-info-modal .genres {
             opacity: 0.8;
+            width: fit-content;
         }
 
         .je-more-info-modal .tagline {

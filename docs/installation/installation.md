@@ -31,7 +31,7 @@
 3. Click **Install**
 4. Wait for the installation to complete
 
-### Step 2a: Install File Transformation Plugin (Recommended)
+### Step 3: Install File Transformation Plugin (Recommended)
 
 <!-- use a custom title -->
 !!! info "Important"
@@ -41,12 +41,15 @@
     Why?
 
     - The File Transformation plugin helps avoid permission issues while modifying `index.html`
+    
     - Recommended on all installation types:
+
         - Docker
         - Windows
         - Linux
         - etc
-    - Without it, you may encounter permission errors
+
+    - Without it, you may encounter **permission errors**
 
 
 1. In the **Catalog** tab, search for "file-transformation"
@@ -57,11 +60,11 @@
 
 If you do not have file-transformation installed, you might encounter permission issues. Refer [troubleshooting steps](troubleshooting.md)
 
-### Step 3: Restart Server
+### Step 4: Restart Server
 
 1. **Restart** your Jellyfin server to complete the installation *(This is required for the plugin to take effect)*
 
-### Step 4: Verify Installation
+### Step 5: Verify Installation
 
 After restart:
 
