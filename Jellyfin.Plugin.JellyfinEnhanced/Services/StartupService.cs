@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
