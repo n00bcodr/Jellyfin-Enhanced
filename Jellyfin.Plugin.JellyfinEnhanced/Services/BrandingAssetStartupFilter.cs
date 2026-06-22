@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -93,7 +94,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // Resolve under BrandingDirectory and confirm the candidate stays
                     // inside it (defence in depth; OnDiskFileName is a constant).
                     var fullDir = Path.GetFullPath(brandingDir);
-                    var filePath = Path.GetFullPath(Path.Combine(fullDir, onDiskFileName));
+                    var filePath = Path.GetFullPath(Path.Join(fullDir, onDiskFileName));
                     if (string.Equals(Path.GetDirectoryName(filePath), fullDir, StringComparison.OrdinalIgnoreCase)
                         && File.Exists(filePath))
                     {
@@ -176,9 +177,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                foreach (var token in value.Split(','))
+                foreach (var t in value.Split(',').Select(s => s.Trim()))
                 {
-                    var t = token.Trim();
                     if (t.Length == 0)
                     {
                         continue;
