@@ -86,18 +86,6 @@
                 </div>
             </div>
 
-            <div id="fileTransformationWarning" class="je-danger-banner" style="display: none;">
-                <i class="material-icons je-danger-icon">error_outline</i>
-                <div>
-                    <strong class="je-ft-warning-title">File Transformation no longer required</strong><br>
-                    Jellyfin Enhanced now injects its client script and serves custom branding itself at request time, so the <a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank" class="je-ft-warning-link">File Transformation</a> plugin is no longer needed (and is unsupported on Jellyfin 12). You can safely uninstall it.
-                    <div class="je-ft-warning-actions">
-                        <button id="dismissFtWarningSession" type="button" class="emby-button raised raised-mini">Dismiss</button>
-                        <button id="dismissFtWarningForever" type="button" class="emby-button raised raised-mini">Don't show again</button>
-                    </div>
-                </div>
-            </div>
-
             <form id="JellyfinEnhancedForm">
 
                 <div id="overview" class="jellyfin-tab-content active">
@@ -3067,9 +3055,6 @@
             }
         }
 
-
-        /** @type {boolean} Tracks whether the File Transformation warning has been dismissed this session */
-        var ftWarningDismissedSession = false;
         // Plugin detection state.
         //
         // Each `hasX` is tri-state: `null` (not yet probed or probe failed),
@@ -3187,16 +3172,6 @@
                     customTabsCompatState = null;
                 }
 
-                // File Transformation is no longer required (JE injects its own script
-                // and serves custom branding itself). Only surface the banner when FT is
-                // still installed, to let the admin know they can safely remove it.
-                if (!ftWarningDismissedSession && localStorage.getItem('je_ft_warning_dismissed') !== 'true') {
-                    var warning = document.getElementById('fileTransformationWarning');
-                    if (warning) {
-                        warning.style.display = hasFileTransformation === true ? 'block' : 'none';
-                    }
-                }
-
                 // Re-run dependencies now that plugin info is available
                 updateAllDependencies();
             }).catch(function(err) {
@@ -3227,22 +3202,6 @@
                     console.warn('[JE] updateStatusDashboard threw during plugin-detect fallback:', e);
                 }
             });
-
-            // Set up dismiss button handlers
-            var dismissSession = document.getElementById('dismissFtWarningSession');
-            var dismissForever = document.getElementById('dismissFtWarningForever');
-            if (dismissSession) {
-                dismissSession.onclick = function() {
-                    ftWarningDismissedSession = true;
-                    document.getElementById('fileTransformationWarning').style.display = 'none';
-                };
-            }
-            if (dismissForever) {
-                dismissForever.onclick = function() {
-                    localStorage.setItem('je_ft_warning_dismissed', 'true');
-                    document.getElementById('fileTransformationWarning').style.display = 'none';
-                };
-            }
             // Probe-warning retry — re-runs plugin detection (which also re-runs
             // the Custom Tabs config probe inside its .then). One handler only;
             // checkInstalledPlugins is idempotent.
