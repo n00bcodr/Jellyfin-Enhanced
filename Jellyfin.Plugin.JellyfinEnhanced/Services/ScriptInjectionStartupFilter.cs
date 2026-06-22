@@ -124,13 +124,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                var plugin = JellyfinEnhanced.Instance;
+                // The config guard above (config != null) already implies the plugin
+                // instance is non-null; the enclosing try/catch covers the impossible
+                // case where it isn't.
+                var plugin = JellyfinEnhanced.Instance!;
                 // Idempotency guard keyed on the controller endpoint, so we never
                 // double-inject alongside a legacy on-disk tag or a future FT build.
                 var alreadyInjected = html.IndexOf("/JellyfinEnhanced/script", StringComparison.OrdinalIgnoreCase) >= 0;
                 var bodyClose = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
 
-                if (plugin != null && !alreadyInjected && bodyClose >= 0)
+                if (!alreadyInjected && bodyClose >= 0)
                 {
                     var tag = plugin.BuildScriptTag();
                     html = html.Substring(0, bodyClose) + tag + "\n" + html.Substring(bodyClose);
