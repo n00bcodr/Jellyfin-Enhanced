@@ -18,8 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// with the admin's uploaded custom images at request time, via ASP.NET middleware
     /// registered through <see cref="Microsoft.AspNetCore.Hosting.IStartupFilter"/>.
     ///
-    /// This is the branding half of dropping the File Transformation dependency
-    /// (script injection is handled by <see cref="ScriptInjectionStartupFilter"/>).
+    /// This is the branding counterpart of <see cref="ScriptInjectionStartupFilter"/>.
     /// jellyfin-web serves these assets as plain hashed static files
     /// (e.g. /web/icon-transparent.&lt;hash&gt;.png), so the only interception point is a
     /// plugin middleware ahead of the static-file handler.
@@ -146,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                             if (Interlocked.Exchange(ref _loggedOnce, 1) == 0)
                             {
-                                _logger.Info("Serving custom branding via request-time middleware (IStartupFilter). File Transformation is not required.");
+                                _logger.Info("Jellyfin Enhanced: serving custom branding via request-time middleware (IStartupFilter).");
                             }
 
                             // HEAD: headers only, no body.

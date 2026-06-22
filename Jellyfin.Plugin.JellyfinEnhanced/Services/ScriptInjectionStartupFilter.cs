@@ -13,20 +13,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// index.html at request time, via ASP.NET middleware registered through
     /// <see cref="Microsoft.AspNetCore.Hosting.IStartupFilter"/>.
     ///
-    /// This is what lets the plugin work WITHOUT the File Transformation plugin.
-    /// Jellyfin 12 provides no native script-injection hook and serves index.html
-    /// as a plain static file, so the only supported interception point is a
-    /// plugin-registered middleware that runs ahead of the static-file handler.
-    /// File Transformation's own rewrite uses the same technique; this keeps the
-    /// behaviour self-contained in the plugin and avoids both the Harmony patching
-    /// (unsupported on the .NET 10 runtime used by Jellyfin 12) and the on-disk
-    /// index.html rewrite (which needs a writable web folder / root container and
-    /// is wiped on every jellyfin-web update).
+    /// Jellyfin 12 serves index.html as a plain static file with no native
+    /// script-injection hook, so the plugin injects its own script by running
+    /// middleware ahead of the static-file handler. This keeps script injection
+    /// self-contained and works on both Jellyfin 10.11 and 12, without writing to
+    /// the web folder (the legacy on-disk rewrite needs a writable web folder /
+    /// root container and is wiped on every jellyfin-web update).
     ///
     /// The filter is deliberately defensive and additive:
     ///   - only ever touches the web index.html response;
     ///   - idempotent: no-ops if the script tag is already present (e.g. a legacy
-    ///     on-disk rewrite, or a future File Transformation build, already added it);
+    ///     on-disk rewrite already added it);
     ///   - on any error it serves the original response unchanged, never throwing
     ///     into the pipeline;
     ///   - can be disabled via the DisableScriptInjectionMiddleware config flag.
@@ -129,7 +126,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // case where it isn't.
                 var plugin = JellyfinEnhanced.Instance!;
                 // Idempotency guard keyed on the controller endpoint, so we never
-                // double-inject alongside a legacy on-disk tag or a future FT build.
+                // double-inject alongside a legacy on-disk tag.
                 var alreadyInjected = html.IndexOf("/JellyfinEnhanced/script", StringComparison.OrdinalIgnoreCase) >= 0;
                 var bodyClose = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
 
@@ -140,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (System.Threading.Interlocked.Exchange(ref _loggedOnce, 1) == 0)
                     {
-                        _logger.Info("Injected Jellyfin Enhanced script via request-time middleware (IStartupFilter). File Transformation is not required.");
+                        _logger.Info("Jellyfin Enhanced: injected the client script via request-time middleware (IStartupFilter).");
                     }
                 }
             }

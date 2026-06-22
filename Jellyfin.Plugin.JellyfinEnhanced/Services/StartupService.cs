@@ -83,13 +83,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }, cancellationToken);
         }
 
-        // Jellyfin 12 / File-Transformation-free script injection.
+        // Request-time script injection (Jellyfin 10.11 & 12).
         //
         // The client <script> tag is injected into web/index.html at request time by
         // ScriptInjectionStartupFilter (and branding by BrandingAssetStartupFilter), so
-        // the File Transformation plugin is no longer required and nothing is written to
-        // the web folder on startup. The legacy on-disk index.html rewrite is kept only
-        // as an explicit fallback for admins who disable the middleware.
+        // nothing is written to the web folder on startup. The legacy on-disk index.html
+        // rewrite is kept only as an explicit fallback for admins who disable the middleware.
         private void EnsureScriptInjected()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -101,7 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            _logger.Info("Client script will be injected at request time by the injection middleware (File Transformation not required).");
+            _logger.Info("Client script will be injected at request time by the injection middleware.");
         }
 
 
