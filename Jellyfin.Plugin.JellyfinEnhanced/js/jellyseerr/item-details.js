@@ -88,7 +88,12 @@
                 const activePage = document.querySelector('.libraryPage:not(.hide)');
                 if (!activePage) return null;
 
-                const detailPageContent = activePage.querySelector('.detailPageContent');
+                // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
+                // .detailPageSecondaryContainer, then the page itself. #similarCollapsible
+                // (our insertion anchor) still exists inside it on both lines.
+                const detailPageContent = activePage.querySelector('.detailPageContent') ||
+                                          activePage.querySelector('.detailPageSecondaryContainer') ||
+                                          activePage;
                 const moreLikeThisSection = detailPageContent?.querySelector('#similarCollapsible');
 
                 if (detailPageContent && moreLikeThisSection) {
