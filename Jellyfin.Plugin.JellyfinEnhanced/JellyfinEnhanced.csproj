@@ -1,14 +1,37 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <JellyfinVersion>10.11.0</JellyfinVersion>
-        <TargetFramework>net9.0</TargetFramework>
+        <!-- Build target selector. The same source produces two artifacts (one per
+             runtime — never one DLL for both):
+               default / -p:JellyfinTarget=jf12  -> Jellyfin 12, .NET 10
+               -p:JellyfinTarget=jf10            -> Jellyfin 10.11, .NET 9
+             The File-Transformation-free injection (ScriptInjectionStartupFilter /
+             BrandingAssetStartupFilter) uses only standard ASP.NET, so it works on
+             both runtimes. -->
+        <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>
+
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AssemblyVersion>11.12.0.0</AssemblyVersion>
         <FileVersion>11.12.0.0</FileVersion>
         <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
+    </PropertyGroup>
+
+    <!-- Jellyfin 12 / .NET 10. The Jellyfin.Controller/Model 12.0.0-rc1 NuGet packages
+         bring the rest (incl. EF Core) transitively. Bump to 12.0.0 once it ships. -->
+    <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf12'">
+        <TargetFramework>net10.0</TargetFramework>
+        <JellyfinVersion>12.0.0-rc1</JellyfinVersion>
+        <JellyfinTargetAbi>12.0.0.0</JellyfinTargetAbi>
+    </PropertyGroup>
+
+    <!-- Jellyfin 10.11 / .NET 9. Pinned to 10.11.0 (as upstream does) so the artifact
+         loads across the whole 10.11.x line — a newer host satisfies the lower ref. -->
+    <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf10'">
+        <TargetFramework>net9.0</TargetFramework>
+        <JellyfinVersion>10.11.0</JellyfinVersion>
+        <JellyfinTargetAbi>10.11.0.0</JellyfinTargetAbi>
     </PropertyGroup>
 
     <ItemGroup>

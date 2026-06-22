@@ -1605,7 +1605,6 @@ body.je-has-customtabs   .je-installed-badge[data-plugin="customtabs"]   { displ
 body.je-has-pluginpages  .je-installed-badge[data-plugin="pluginpages"]  { display: inline-flex; }
 body.je-has-introskipper .je-installed-badge[data-plugin="introskipper"] { display: inline-flex; }
 body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { display: inline-flex; }
-body.je-has-filetransformation .je-installed-badge[data-plugin="filetransformation"] { display: inline-flex; }
 .je-installed-badge {
     align-items: center;
     gap: 4px;
