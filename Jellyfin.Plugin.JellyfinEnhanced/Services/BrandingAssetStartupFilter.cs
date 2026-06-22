@@ -86,6 +86,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            // Only GET/HEAD serve an asset; let the host handle any other method.
+            if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+            {
+                await nextMw().ConfigureAwait(false);
+                return;
+            }
+
             try
             {
                 var brandingDir = JellyfinEnhanced.BrandingDirectory;
