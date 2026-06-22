@@ -89,9 +89,8 @@
             <div id="fileTransformationWarning" class="je-danger-banner" style="display: none;">
                 <i class="material-icons je-danger-icon">error_outline</i>
                 <div>
-                    <strong class="je-ft-warning-title">Highly Recommended: File Transformation Plugin</strong><br>
-                    It is highly recommended to have the <a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank" class="je-ft-warning-link">File Transformation</a> plugin installed. It helps avoid permission issues while modifying <code class="je-ft-warning-code">index.html</code>.
-                    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced?tab=readme-ov-file#-installation" target="_blank" class="je-ft-warning-link">Learn more</a>
+                    <strong class="je-ft-warning-title">File Transformation no longer required</strong><br>
+                    Jellyfin Enhanced now injects its client script and serves custom branding itself at request time, so the <a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank" class="je-ft-warning-link">File Transformation</a> plugin is no longer needed (and is unsupported on Jellyfin 12). You can safely uninstall it.
                     <div class="je-ft-warning-actions">
                         <button id="dismissFtWarningSession" type="button" class="emby-button raised raised-mini">Dismiss</button>
                         <button id="dismissFtWarningForever" type="button" class="emby-button raised raised-mini">Don't show again</button>
@@ -1888,8 +1887,7 @@
                                 <div class="je-info-banner-compact">
                                     <i class="material-icons je-info-icon-sm">info</i>
                                     <div>
-                                        Uploading custom icon / favicon / logo images requires the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank">File Transformation</a> plugin to be installed — it's what replaces Jellyfin's default web logos at request time. Splash screen URL override below works without it.
-                                        <span class="je-installed-badge" data-plugin="filetransformation"><i class="material-icons" aria-hidden="true">check_circle</i>File Transformation detected</span>
+                                        Uploaded icon / favicon / logo images are served by Jellyfin Enhanced itself at request time — no File Transformation plugin required. Changes apply on next page load (a hard refresh may be needed if your browser cached the old image).
                                     </div>
                                 </div>
                             </div>
@@ -3177,7 +3175,6 @@
                 document.body.classList.toggle('je-has-introskipper',      hasIntroSkipper       === true);
                 document.body.classList.toggle('je-has-inplayerepisodepreview', hasInPlayerEpisodePreview === true);
                 document.body.classList.toggle('je-has-kefintweaks',       hasKefinTweaks        === true);
-                document.body.classList.toggle('je-has-filetransformation', hasFileTransformation === true);
 
                 // If Custom Tabs is present, probe its config to decide whether the
                 // schema matches what we know how to write. Only on success do we
@@ -3190,11 +3187,13 @@
                     customTabsCompatState = null;
                 }
 
-                // File Transformation warning
+                // File Transformation is no longer required (JE injects its own script
+                // and serves custom branding itself). Only surface the banner when FT is
+                // still installed, to let the admin know they can safely remove it.
                 if (!ftWarningDismissedSession && localStorage.getItem('je_ft_warning_dismissed') !== 'true') {
                     var warning = document.getElementById('fileTransformationWarning');
                     if (warning) {
-                        warning.style.display = hasFileTransformation ? 'none' : 'block';
+                        warning.style.display = hasFileTransformation === true ? 'block' : 'none';
                     }
                 }
 
@@ -3217,7 +3216,7 @@
                 hasFileTransformation = null;
                 hasKefinTweaks = null;
                 customTabsCompatState = null;
-                document.body.classList.remove('je-has-customtabs', 'je-has-pluginpages', 'je-has-introskipper', 'je-has-inplayerepisodepreview', 'je-has-customtabs-compat', 'je-has-kefintweaks', 'je-has-filetransformation');
+                document.body.classList.remove('je-has-customtabs', 'je-has-pluginpages', 'je-has-introskipper', 'je-has-inplayerepisodepreview', 'je-has-customtabs-compat', 'je-has-kefintweaks');
                 setProbeWarning('plugins', "Couldn't reach the Jellyfin /Plugins endpoint to verify which integrations are installed (auth expiry, network, or server issue). Dependency hints and \"plugin detected\" badges are now hidden until you retry.");
                 try { updateAllDependencies(); } catch (e) {
                     console.warn('[JE] updateAllDependencies threw during plugin-detect fallback:', e);
@@ -6044,7 +6043,6 @@
          * rendered as "Checking…" rather than asserting missing.
          */
         var OPTIONAL_PLUGINS = [
-            { key: 'fileTransformation', name: 'File Transformation', icon: 'transform',       url: 'https://github.com/IAmParadox27/jellyfin-plugin-file-transformation', purpose: 'Required for custom splash screens, branding images, and media bar integration.', getFlag: function(){ return hasFileTransformation; } },
             { key: 'pluginPages',        name: 'Plugin Pages',        icon: 'view_list',       url: 'https://github.com/IAmParadox27/jellyfin-plugin-pages',               purpose: 'Sidebar pages for Bookmarks, Hidden Content, Requests, Calendar.',                   getFlag: function(){ return hasPluginPages; } },
             { key: 'customTabs',         name: 'Custom Tabs',         icon: 'tab',             url: 'https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs',         purpose: 'Home-page tab entries for Bookmarks, Hidden Content, Requests, Calendar.',          getFlag: function(){ return hasCustomTabs; } },
             { key: 'introSkipper',       name: 'Intro Skipper',       icon: 'skip_next',       url: 'https://github.com/intro-skipper/intro-skipper',                      purpose: 'Source of timestamps for Auto-skip Intro / Auto-skip Outro.',                        getFlag: function(){ return hasIntroSkipper; } },
@@ -6217,16 +6215,11 @@
                 calWarn ? 'Enabled but no *arr instance is configured' : 'Enabled',
                 calWarn);
 
-            // Custom splash screen / branding. Splash-screen URL works without
-            // any extra plugin, but the branding image uploads (icons/favicon/
-            // logos) require File Transformation to actually replace the web
-            // assets — surface a warning when the splash is enabled and File
-            // Transformation is missing.
+            // Custom splash screen / branding. Both the splash screen and the
+            // branding image uploads (icons/favicon/logos) are handled by Jellyfin
+            // Enhanced itself at request time, so no extra plugin is required.
             var splashOn = bool('enableCustomSplashScreen');
-            var splashWarn = splashOn && hasFileTransformation !== true;
-            feat('Custom splash / branding', splashOn, 'extras',
-                splashWarn ? 'Enabled but File Transformation plugin missing (uploaded images won\'t apply)' : 'Enabled',
-                splashWarn);
+            feat('Custom splash / branding', splashOn, 'extras', 'Enabled', false);
 
             // Extras
             var elsewhereWarn = bool('elsewhereEnabled') && !val('TMDB_API_KEY');

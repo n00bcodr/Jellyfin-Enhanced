@@ -6,6 +6,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using MediaBrowser.Controller;
@@ -17,6 +18,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<StartupService>();
+
+            // Jellyfin 12 / File-Transformation-free injection. These request-time
+            // IStartupFilter middlewares replace the File Transformation plugin:
+            //   - ScriptInjectionStartupFilter injects the client <script> into the
+            //     web index.html (the only hard dependency JE had on FT);
+            //   - BrandingAssetStartupFilter swaps in custom logo/banner/favicon
+            //     images (the other FT use). Both are kill-switchable via config and
+            //     no-op safely when there's nothing to do.
+            serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
+            serviceCollection.AddSingleton<IStartupFilter, BrandingAssetStartupFilter>();
+
             serviceCollection.AddHttpClient();
 
             // a named HttpClient with AllowAutoRedirect=false so

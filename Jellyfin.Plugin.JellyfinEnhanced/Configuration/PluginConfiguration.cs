@@ -20,6 +20,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HelpPanelAutocloseDelay = 15000;
             EnableCustomSplashScreen = false;
 
+            // Request-time injection middleware (replaces File Transformation). Enabled
+            // by default; the flags are kill-switches for troubleshooting.
+            DisableScriptInjectionMiddleware = false;
+            DisableBrandingMiddleware = false;
+
             // Maintenance Mode
             MaintenanceModeEnabled = false;
             MaintenanceModeMessage = "This server is currently undergoing maintenance. Please try again.";
@@ -299,6 +304,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool EnableCustomSplashScreen { get; set; }
         public string SplashScreenImageUrl { get; set; }
         public bool DevMode { get; set; }
+
+        // Kill-switch for the request-time <script> injection middleware
+        // (ScriptInjectionStartupFilter). When true, the middleware no-ops and the
+        // plugin falls back to the legacy on-disk index.html rewrite. Default false.
+        public bool DisableScriptInjectionMiddleware { get; set; }
+
+        // Kill-switch for the request-time branding-asset middleware
+        // (BrandingAssetStartupFilter). When true, custom logo/banner/favicon images
+        // are not served and jellyfin-web's stock assets are used. Default false.
+        public bool DisableBrandingMiddleware { get; set; }
 
 
         // Jellyfin Elsewhere Settings
