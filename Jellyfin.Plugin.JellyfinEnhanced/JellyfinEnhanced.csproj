@@ -8,7 +8,7 @@
              The File-Transformation-free injection (ScriptInjectionStartupFilter /
              BrandingAssetStartupFilter) uses only standard ASP.NET, so it works on
              both runtimes. -->
-        <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf10</JellyfinTarget>
+        <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>
 
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
