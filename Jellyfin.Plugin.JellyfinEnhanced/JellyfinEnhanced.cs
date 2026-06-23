@@ -454,8 +454,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     Name = this.Name,
                     DisplayName = "Jellyfin Enhanced",
                     EnableInMainMenu = true,
-                    EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html"
-                    //Custom Icons are not supported - https://github.com/jellyfin/jellyfin-web/blob/38ac3355447a91bf280df419d745f5d49d05aa9b/src/apps/dashboard/components/drawer/sections/PluginDrawerSection.tsx#L61
+                    EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html",
+                    // MenuIcon was previously ignored - jellyfin-web hardcoded <Folder /> regardless of
+                    // this value. Jellyfin 12 reads it https://github.com/jellyfin/jellyfin-web/commit/ca55f7998bb774b3c05af3ae410b1b24f72805a5
+                    MenuIcon = "tune"
                 }
             };
         }
