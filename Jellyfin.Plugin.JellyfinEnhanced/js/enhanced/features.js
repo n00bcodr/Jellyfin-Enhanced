@@ -164,7 +164,7 @@
         });
 
         buttonContainer.appendChild(randomButton);
-        const headerRight = document.querySelector('.headerRight');
+        const headerRight = JE.helpers.getHeaderRightContainer();
         headerRight?.prepend(buttonContainer);
     };
 

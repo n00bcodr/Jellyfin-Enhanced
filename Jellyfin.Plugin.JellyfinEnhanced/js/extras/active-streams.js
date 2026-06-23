@@ -1097,8 +1097,16 @@
         document.body.appendChild(panel);
 
         const skinHeader = document.querySelector('.skinHeader');
-        if (skinHeader) {
-            panel.style.top = (skinHeader.getBoundingClientRect().height + 2) + 'px';
+        const skinHeaderHeight = skinHeader?.getBoundingClientRect().height || 0;
+        if (skinHeaderHeight > 0) {
+            panel.style.top = (skinHeaderHeight + 2) + 'px';
+        } else {
+            // Jellyfin 12 experimental layout: the legacy .skinHeader is hidden,
+            // measure the new MUI AppBar toolbar instead.
+            const appBar = document.querySelector('.MuiAppBar-root');
+            if (appBar) {
+                panel.style.top = (appBar.getBoundingClientRect().height + 2) + 'px';
+            }
         }
 
         // Refresh button — available to all users who can see the panel
@@ -1139,7 +1147,7 @@
         if (document.getElementById('je-active-streams')) return;
         if (attempts > 20) return;
 
-        const headerRight = document.querySelector('.headerRight');
+        const headerRight = JE.helpers.getHeaderRightContainer();
         if (!headerRight) {
             setTimeout(() => tryInjectHeader(attempts + 1), 500);
             return;
