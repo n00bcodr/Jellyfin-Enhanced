@@ -17,6 +17,7 @@
             const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
             return fetch(url, {
                 headers: {
+                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                     "X-Emby-Token": ApiClient.accessToken()
                 }
             })
@@ -35,7 +36,7 @@
             // mediaType is already in API format ('movie' or 'tv') — no conversion needed
             const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
             return fetch(url, {
-                headers: { "X-Emby-Token": ApiClient.accessToken() }
+                headers: { "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"', "X-Emby-Token": ApiClient.accessToken() }
             })
                 .then(r => r.ok ? r.json() : Promise.reject(`API Error: ${r.status}`))
                 .then(data => data.reviews || [])
@@ -54,6 +55,7 @@
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
+                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                     "X-Emby-Token": ApiClient.accessToken(),
                     "Content-Type": "application/json"
                 },
@@ -73,7 +75,7 @@
             const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
             const response = await fetch(url, {
                 method: 'DELETE',
-                headers: { "X-Emby-Token": ApiClient.accessToken() }
+                headers: { "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"', "X-Emby-Token": ApiClient.accessToken() }
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
         }
@@ -92,7 +94,7 @@
             const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`);
             const response = await fetch(url, {
                 method: 'DELETE',
-                headers: { "X-Emby-Token": ApiClient.accessToken() }
+                headers: { "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"', "X-Emby-Token": ApiClient.accessToken() }
             });
             if (response.status === 404) {
                 throw new Error('No matching review to delete (it may have already been removed).');

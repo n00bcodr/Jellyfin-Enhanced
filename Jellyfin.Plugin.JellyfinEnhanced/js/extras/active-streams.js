@@ -491,7 +491,7 @@
         try {
             const token = ApiClient?.accessToken?.() || '';
             const resp = await fetch(ApiClient.getUrl('/JellyfinEnhanced/active-streams/sessions'), {
-                headers: { 'X-MediaBrowser-Token': token }
+                headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
             });
             if (!resp.ok) return null;
             return await resp.json();
@@ -1027,6 +1027,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': 'MediaBrowser Token="' + token + '"',
                     'X-MediaBrowser-Token': token
                 },
                 body: JSON.stringify({ header: header || null, text, timeoutMs })

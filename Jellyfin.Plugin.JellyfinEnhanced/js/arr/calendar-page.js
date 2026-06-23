@@ -1360,6 +1360,7 @@
   function getAuthHeaders() {
     const token = ApiClient.accessToken ? ApiClient.accessToken() : "";
     return {
+      "Authorization": 'MediaBrowser Token="' + token + '"',
       "X-MediaBrowser-Token": token,
       "Content-Type": "application/json",
     };

@@ -505,6 +505,7 @@
             const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`);
             fetch(url, {
                 headers: {
+                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                     "X-Emby-Token": ApiClient.accessToken()
                 }
             })
