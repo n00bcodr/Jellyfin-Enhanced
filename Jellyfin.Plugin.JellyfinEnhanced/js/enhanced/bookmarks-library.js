@@ -956,6 +956,7 @@
     if (pageState.pageVisible) return;
     if (isPluginPagesActive()) return;
     if (JE?.pluginConfig?.BookmarksUseCustomTabs) return;
+    if (JE?.pluginConfig?.BookmarksUseNativeTab) return;
 
     pageState.pageVisible = true;
     startLocationWatcher();
@@ -1121,6 +1122,7 @@
     if (!JE?.pluginConfig?.BookmarksEnabled) return;
     if (isPluginPagesActive()) return;
     if (JE?.pluginConfig?.BookmarksUseCustomTabs) return;
+    if (JE?.pluginConfig?.BookmarksUseNativeTab) return;
 
     // Hide plugin page link if it exists
     const sb = document.querySelector('.mainDrawer-scrollContainer');
@@ -1176,6 +1178,7 @@
     if (!JE?.pluginConfig?.BookmarksEnabled) return;
     if (isPluginPagesActive()) return;
     if (JE?.pluginConfig?.BookmarksUseCustomTabs) return;
+    if (JE?.pluginConfig?.BookmarksUseNativeTab) return;
 
     const observer = new MutationObserver(() => {
       if (isPluginPagesActive()) return;
@@ -1229,8 +1232,9 @@
         hookViewEvents();
         document.addEventListener('je-bookmarks-updated', renderIfSectionExists);
 
-        // Sidebar navigation (when neither Plugin Pages nor Custom Tabs is handling it)
-        if (!isPluginPagesActive() && !JE.pluginConfig?.BookmarksUseCustomTabs) {
+        // Sidebar navigation (when neither Plugin Pages, Custom Tabs, nor the
+        // native tab is handling it)
+        if (!isPluginPagesActive() && !JE.pluginConfig?.BookmarksUseCustomTabs && !JE.pluginConfig?.BookmarksUseNativeTab) {
           injectNavigation();
           setupNavigationWatcher();
           window.addEventListener('hashchange', interceptNavigation, true);
@@ -1240,6 +1244,19 @@
           window.addEventListener('hashchange', handleNavigation);
           window.addEventListener('popstate', handleNavigation);
           handleNavigation();
+        }
+
+        // Native tab (self-contained, no external Custom Tabs plugin needed -
+        // see enhanced/native-tabs.js). The existing Custom Tabs watcher below
+        // (findActiveBookmarksContainer / renderIfSectionExists) already treats
+        // any ".sections.bookmarks" wrapped in an ".is-active" tabContent as
+        // valid, so it picks up our own panel unmodified.
+        if (JE.pluginConfig?.BookmarksUseNativeTab) {
+          JE.nativeTabs.register('bookmarks', 'Bookmarks', (panel) => {
+            const marker = document.createElement('div');
+            marker.className = 'sections bookmarks';
+            panel.appendChild(marker);
+          }, 'location_on');
         }
 
         // Watch for section being injected by CustomTabs. Observe document.body

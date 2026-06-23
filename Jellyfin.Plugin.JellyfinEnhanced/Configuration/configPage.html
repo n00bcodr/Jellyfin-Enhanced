@@ -557,6 +557,11 @@
                                 <div class="fieldDescription je-field-desc-lg">Save custom bookmarks/timestamps while watching videos to quickly jump back to your favorite scenes or moments.</div>
                             </div>
 
+                            <div class="checkboxContainer"><label><input id="bookmarksUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Bookmarks as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="bookmarksUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Bookmarks as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
+
                             <div class="checkboxContainer"><label><input id="bookmarksUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Bookmarks Library</span></label></div>
                             <div class="je-setting-description" data-desc-for="bookmarksUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
@@ -626,6 +631,11 @@
                             <div class="checkboxContainer je-main-feature"><label><input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Hidden Content</span></label></div>
                             <div class="je-setting-description" data-desc-for="hiddenContentEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="hiddenContentUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Hidden Content as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="hiddenContentUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Hidden Content as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="hiddenContentUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Hidden Content</span></label></div>
@@ -813,10 +823,15 @@
                             <div class="je-setting-description" data-desc-for="downloadsPageShowIssues">
                                 <div class="fieldDescription je-field-desc-xl">Shows open/resolved Seerr issues beneath Requests.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="downloadsUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Requests as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="downloadsUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Requests as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">Replaces the default Requests page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.<span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span></div>
                             </div>
+
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="downloadsUseCustomTabs,downloadsPageEnabled">
@@ -893,6 +908,11 @@
                             <div class="je-setting-description" data-desc-for="calendarPageEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Adds a "Calendar" link to the navigation showing upcoming releases from Sonarr/Radarr.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="calendarUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Calendar as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="calendarUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Calendar as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
+
                             <div class="checkboxContainer"><label><input id="calendarUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
@@ -4216,6 +4236,7 @@
                 document.querySelector('#seerrScanDebounceSeconds').value = config.SeerrScanDebounceSeconds || 60;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#bookmarksUsePluginPages').checked = config.BookmarksUsePluginPages === true;
+                document.querySelector('#bookmarksUseNativeTab').checked = config.BookmarksUseNativeTab === true;
                 document.querySelector('#bookmarksUseCustomTabs').checked = config.BookmarksUseCustomTabs === true;
                 var __bAuto = document.querySelector('#bookmarksAutoCreateCustomTab');
                 if (__bAuto) __bAuto.checked = config.BookmarksAutoCreateCustomTab === true;
@@ -4272,6 +4293,7 @@
                 document.querySelector('#downloadsFilterByUserRequests').checked = config.DownloadsFilterByUserRequests !== false;
                 document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
+                document.querySelector('#downloadsUseNativeTab').checked = config.DownloadsUseNativeTab === true;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
                 var __dAuto = document.querySelector('#downloadsAutoCreateCustomTab');
                 if (__dAuto) __dAuto.checked = config.DownloadsAutoCreateCustomTab === true;
@@ -4281,6 +4303,7 @@
                 // Calendar Page settings
                 document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
                 document.querySelector('#calendarUseCustomTabs').checked = config.CalendarUseCustomTabs === true;
+                document.querySelector('#calendarUseNativeTab').checked = config.CalendarUseNativeTab === true;
                 var __cAuto = document.querySelector('#calendarAutoCreateCustomTab');
                 if (__cAuto) __cAuto.checked = config.CalendarAutoCreateCustomTab === true;
                 document.querySelector('#calendarUsePluginPages').checked = config.CalendarUsePluginPages !== false;
@@ -4295,6 +4318,7 @@
                 // Hidden Content settings
                 document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
                 document.querySelector('#hiddenContentUsePluginPages').checked = config.HiddenContentUsePluginPages === true;
+                document.querySelector('#hiddenContentUseNativeTab').checked = config.HiddenContentUseNativeTab === true;
                 document.querySelector('#hiddenContentUseCustomTabs').checked = config.HiddenContentUseCustomTabs === true;
                 var __hAuto = document.querySelector('#hiddenContentAutoCreateCustomTab');
                 if (__hAuto) __hAuto.checked = config.HiddenContentAutoCreateCustomTab === true;
@@ -4548,6 +4572,7 @@
             config.SeerrScanDebounceSeconds = isNaN(seerrScanDebounce) || seerrScanDebounce < 5 ? 60 : Math.min(seerrScanDebounce, 3600);
             config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
             config.BookmarksUsePluginPages = document.querySelector('#bookmarksUsePluginPages').checked;
+            config.BookmarksUseNativeTab = document.querySelector('#bookmarksUseNativeTab').checked;
             config.BookmarksUseCustomTabs = document.querySelector('#bookmarksUseCustomTabs').checked;
             var __bAutoSave = document.querySelector('#bookmarksAutoCreateCustomTab');
             config.BookmarksAutoCreateCustomTab = !!(__bAutoSave && __bAutoSave.checked);
@@ -4607,12 +4632,14 @@
             const pollInterval = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10);
             config.DownloadsPollIntervalSeconds = pollInterval >= 30 ? pollInterval : 30;
             config.DownloadsUseCustomTabs = document.querySelector('#downloadsUseCustomTabs').checked;
+            config.DownloadsUseNativeTab = document.querySelector('#downloadsUseNativeTab').checked;
             var __dAutoSave = document.querySelector('#downloadsAutoCreateCustomTab');
             config.DownloadsAutoCreateCustomTab = !!(__dAutoSave && __dAutoSave.checked);
 
             // Calendar Page settings
             config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
             config.CalendarUseCustomTabs = document.querySelector('#calendarUseCustomTabs').checked;
+            config.CalendarUseNativeTab = document.querySelector('#calendarUseNativeTab').checked;
             var __cAutoSave = document.querySelector('#calendarAutoCreateCustomTab');
             config.CalendarAutoCreateCustomTab = !!(__cAutoSave && __cAutoSave.checked);
             config.CalendarUsePluginPages = document.querySelector('#calendarUsePluginPages').checked;
@@ -4627,6 +4654,7 @@
             // Hidden Content settings
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
             config.HiddenContentUsePluginPages = document.querySelector('#hiddenContentUsePluginPages').checked;
+            config.HiddenContentUseNativeTab = document.querySelector('#hiddenContentUseNativeTab').checked;
             config.HiddenContentUseCustomTabs = document.querySelector('#hiddenContentUseCustomTabs').checked;
             var __hAutoSave = document.querySelector('#hiddenContentAutoCreateCustomTab');
             config.HiddenContentAutoCreateCustomTab = !!(__hAutoSave && __hAutoSave.checked);
@@ -5698,19 +5726,19 @@
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
             { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
             { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
-            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
+            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseNativeTab', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
-            { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
+            { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
-            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
-            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
+            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
+            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] }
         ];
 
         /**

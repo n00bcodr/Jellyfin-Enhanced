@@ -1366,6 +1366,7 @@
     const config = JE.pluginConfig || {};
     if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
     if (config.HiddenContentUseCustomTabs) return;
+    if (config.HiddenContentUseNativeTab) return;
 
     state.pageVisible = true;
 
@@ -1509,6 +1510,7 @@
     if (!config.HiddenContentEnabled) return;
     if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
     if (config.HiddenContentUseCustomTabs) return;
+    if (config.HiddenContentUseNativeTab) return;
 
     const pluginPageItem = sidebar?.querySelector(
       'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage"]'
@@ -1567,10 +1569,12 @@
     if (!config.HiddenContentEnabled) return;
     if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
     if (config.HiddenContentUseCustomTabs) return;
+    if (config.HiddenContentUseNativeTab) return;
 
     const observer = new MutationObserver(() => {
       const currentConfig = JE.pluginConfig || {};
       if (currentConfig.HiddenContentUseCustomTabs) return;
+      if (currentConfig.HiddenContentUseNativeTab) return;
       if (pluginPagesExists && currentConfig.HiddenContentUsePluginPages) return;
 
       if (!document.querySelector('.je-nav-hidden-content-item')) {

@@ -216,6 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             BookmarksEnabled = true;
             BookmarksUsePluginPages = false;
             BookmarksUseCustomTabs = false;
+            BookmarksUseNativeTab = false;
             BookmarksAutoCreateCustomTab = false;
             BookmarksCustomTabJeOwned = false;
 
@@ -237,6 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DownloadsPageEnabled = false;
             DownloadsUsePluginPages = false;
             DownloadsUseCustomTabs = false;
+            DownloadsUseNativeTab = false;
             DownloadsAutoCreateCustomTab = false;
             DownloadsCustomTabJeOwned = false;
             DownloadsPagePollingEnabled = true;
@@ -249,6 +251,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarPageEnabled = false;
             CalendarUsePluginPages = false;
             CalendarUseCustomTabs = false;
+            CalendarUseNativeTab = false;
             CalendarAutoCreateCustomTab = false;
             CalendarCustomTabJeOwned = false;
             CalendarFirstDayOfWeek = "Monday";
@@ -263,6 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentEnabled = false;
             HiddenContentUsePluginPages = false;
             HiddenContentUseCustomTabs = false;
+            HiddenContentUseNativeTab = false;
             HiddenContentAutoCreateCustomTab = false;
             HiddenContentCustomTabJeOwned = false;
 
@@ -497,6 +501,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool BookmarksUsePluginPages { get; set; }
         public bool BookmarksUseCustomTabs { get; set; }
         /// <summary>
+        /// Shows Bookmarks as a self-contained tab on the Home page, created and
+        /// managed entirely by Jellyfin Enhanced's own injected script (see
+        /// js/enhanced/native-tabs.js) -- no external Custom Tabs plugin required.
+        /// Recommended on Jellyfin 12's experimental layout (the default there),
+        /// where the legacy Custom-Tabs/Plugin-Pages integration points are hidden.
+        /// </summary>
+        public bool BookmarksUseNativeTab { get; set; }
+        /// <summary>
         /// When true (and the Custom Tabs plugin is detected with a recognized
         /// config schema), Jellyfin Enhanced will manage the corresponding
         /// Custom Tabs entry: creating it when <see cref="BookmarksUseCustomTabs"/>
@@ -531,6 +543,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DownloadsPageEnabled { get; set; }
         public bool DownloadsUsePluginPages { get; set; }
         public bool DownloadsUseCustomTabs { get; set; }
+        /// <summary>
+        /// Shows Requests as a self-contained tab on the Home page, created and
+        /// managed entirely by Jellyfin Enhanced's own injected script (see
+        /// js/enhanced/native-tabs.js) -- no external Custom Tabs plugin required.
+        /// Recommended on Jellyfin 12's experimental layout (the default there),
+        /// where the legacy Custom-Tabs/Plugin-Pages integration points are hidden.
+        /// </summary>
+        public bool DownloadsUseNativeTab { get; set; }
         public bool DownloadsAutoCreateCustomTab { get; set; }
         public bool DownloadsCustomTabJeOwned { get; set; }
         public bool DownloadsPagePollingEnabled { get; set; }
@@ -543,6 +563,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarPageEnabled { get; set; }
         public bool CalendarUseCustomTabs { get; set; }
         public bool CalendarUsePluginPages { get; set; }
+        /// <summary>
+        /// Shows Calendar as a self-contained tab on the Home page, created and
+        /// managed entirely by Jellyfin Enhanced's own injected script (see
+        /// js/enhanced/native-tabs.js) -- no external Custom Tabs plugin required.
+        /// Recommended on Jellyfin 12's experimental layout (the default there),
+        /// where the legacy Custom-Tabs/Plugin-Pages integration points are hidden.
+        /// </summary>
+        public bool CalendarUseNativeTab { get; set; }
         public bool CalendarAutoCreateCustomTab { get; set; }
         public bool CalendarCustomTabJeOwned { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
@@ -557,6 +585,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentEnabled { get; set; }
         public bool HiddenContentUsePluginPages { get; set; }
         public bool HiddenContentUseCustomTabs { get; set; }
+        /// <summary>
+        /// Shows Hidden Content as a self-contained tab on the Home page, created
+        /// and managed entirely by Jellyfin Enhanced's own injected script (see
+        /// js/enhanced/native-tabs.js) -- no external Custom Tabs plugin required.
+        /// Recommended on Jellyfin 12's experimental layout (the default there),
+        /// where the legacy Custom-Tabs/Plugin-Pages integration points are hidden.
+        /// </summary>
+        public bool HiddenContentUseNativeTab { get; set; }
         public bool HiddenContentAutoCreateCustomTab { get; set; }
         public bool HiddenContentCustomTabJeOwned { get; set; }
 
