@@ -639,6 +639,32 @@
     }
 
     /**
+     * Finds the container plugin sidebar nav links should be injected into.
+     *
+     * The legacy `.mainDrawer-scrollContainer` is hidden the same way `.headerRight`
+     * is under Jellyfin 12's experimental layout (both live inside the
+     * `display:none`-wrapped legacy AppHeader). Unlike the header, there's no
+     * always-present replacement: the new drawer (`AppDrawer`/`MainDrawerContent`,
+     * a MUI `SwipeableDrawer`) is itself only ever rendered at all on narrow/mobile
+     * viewports - desktop has no drawer in the new layout at all, nav lives inline
+     * in the toolbar instead (see getHeaderRightContainer). So on desktop there is
+     * no sidebar equivalent to fall back to; this returns null there, same as if
+     * nothing existed yet, and callers' existing "wait and retry" logic covers it.
+     * @returns {HTMLElement|null}
+     */
+    function getSidebarContainer() {
+        const legacy = document.querySelector('.mainDrawer-scrollContainer');
+        if (legacy && legacy.offsetParent !== null) return legacy;
+
+        // MUI's global stable class for the drawer's sliding panel. `keepMounted`
+        // on the SwipeableDrawer means this exists in the DOM even while closed.
+        const muiDrawerPanel = document.querySelector('.MuiDrawer-paper');
+        if (!muiDrawerPanel) return null;
+
+        return muiDrawerPanel.querySelector('[role="presentation"]') || muiDrawerPanel;
+    }
+
+    /**
      * Wait for a condition to be true
      * @param {Function} condition - Function that returns boolean
      * @param {number} timeout - Maximum wait time in ms (default: 5000)
@@ -770,6 +796,7 @@
         disconnectObserver,
         disconnectAllObservers,
         getHeaderRightContainer,
+        getSidebarContainer,
         waitForElement,
         waitForCondition,
         debounce,
