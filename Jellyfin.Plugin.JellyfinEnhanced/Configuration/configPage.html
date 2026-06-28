@@ -1031,7 +1031,7 @@
                             <div class="inputContainer">
                                 <label class="inputLabel" for="JellyseerrApiKey">Seerr API Key</label>
                                 <div class="je-api-row">
-                                    <input id="JellyseerrApiKey" is="emby-input" name="JellyseerrApiKey" type="password" class="je-api-input"/>
+                                    <input id="JellyseerrApiKey" is="emby-input" name="JellyseerrApiKey" type="text" autocomplete="off" class="je-api-input"/>
                                     <span id="jellyseerrStatusIndicator" class="material-icons"></span>
                                     <button is="emby-button" type="button" id="testJellyseerrBtn" class="emby-button raised button-submit">Test</button>
                                 </div>
@@ -1042,7 +1042,7 @@
                             <div class="inputContainer">
                                 <label class="inputLabel" for="jellyseerr_TMDB_API_KEY">TMDB API Key</label>
                                 <div class="je-api-row">
-                                    <input id="jellyseerr_TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="password" class="je-api-input"/>
+                                    <input id="jellyseerr_TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" autocomplete="off" class="je-api-input"/>
                                     <span id="jellyseerrTmdbStatusIndicator" class="material-icons"></span>
                                     <button is="emby-button" type="button" class="testTmdbBtn emby-button raised button-submit">Test</button>
                                 </div>
@@ -1661,7 +1661,7 @@
                             <div class="inputContainer">
                                 <label class="inputLabel" for="TMDB_API_KEY">TMDB API Key</label>
                                 <div class="je-api-row">
-                                    <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="password" class="je-api-input"/>
+                                    <input id="TMDB_API_KEY" is="emby-input" name="TMDB_API_KEY" type="text" autocomplete="off" class="je-api-input"/>
                                     <span id="tmdbStatusIndicator" class="material-icons"></span>
                                     <button is="emby-button" type="button" class="testTmdbBtn emby-button raised button-submit">Test</button>
                                 </div>
@@ -3661,7 +3661,7 @@
             var urlContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [urlLabel, urlInput, urlDesc]);
 
             var apiLabel = createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'API Key' });
-            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'password', placeholder: 'API key (find in Settings > General > Security)', value: instance.ApiKey || '' });
+            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'text', autocomplete: 'off', placeholder: 'API key (find in Settings > General > Security)', value: instance.ApiKey || '' });
             var statusIcon = createEl('span', { className: 'material-icons arr-instance-status', style: 'transition: color 0.3s ease;' });
             var testBtn = createEl('button', { className: 'emby-button raised arr-instance-test', type: 'button' });
             testBtn.appendChild(createEl('span', { textContent: 'Test' }));
