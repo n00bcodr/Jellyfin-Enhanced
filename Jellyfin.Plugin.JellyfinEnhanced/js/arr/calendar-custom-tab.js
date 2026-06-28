@@ -1,6 +1,11 @@
 /**
  * Calendar Custom Tab
- * Creates <div class="jellyfinenhanced calendar"></div> for CustomTabs plugin
+ * Creates <div class="jellyfinenhanced calendar"></div>, either inside a tab
+ * panel managed by the external Custom Tabs plugin (CalendarUseCustomTabs),
+ * or inside a panel JE creates itself via the shared native-tabs registry
+ * (CalendarUseNativeTab, see enhanced/native-tabs.js) -- no external plugin
+ * needed for the latter. The rest of this file doesn't care which one
+ * created the wrapping panel.
  *
  * Uses a persistent observer to remount whenever the home page DOM is rebuilt
  * (e.g. after SPA navigation). Only runs when on the home page; suspends
@@ -14,8 +19,19 @@
     return;
   }
 
-  if (!window.JellyfinEnhanced?.pluginConfig?.CalendarUseCustomTabs) {
+  var useCustomTabs = !!window.JellyfinEnhanced?.pluginConfig?.CalendarUseCustomTabs;
+  var useNativeTab = !!window.JellyfinEnhanced?.pluginConfig?.CalendarUseNativeTab;
+
+  if (!useCustomTabs && !useNativeTab) {
     return;
+  }
+
+  if (useNativeTab) {
+    window.JellyfinEnhanced.nativeTabs.register('calendar', 'Calendar', function (panel) {
+      var marker = document.createElement('div');
+      marker.className = 'jellyfinenhanced calendar';
+      panel.appendChild(marker);
+    }, 'calendar_month');
   }
 
   var style = document.createElement('style');

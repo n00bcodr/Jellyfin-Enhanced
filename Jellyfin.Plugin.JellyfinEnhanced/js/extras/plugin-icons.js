@@ -147,8 +147,14 @@
         const iconDiv = link.querySelector('.MuiListItemIcon-root');
         if (!iconDiv) return false;
 
-        const oldSvg = iconDiv.querySelector('svg');
-        if (!oldSvg || oldSvg.dataset.testid !== 'FolderIcon') return false;
+        // Already replaced on a previous pass - skip.
+        if (iconDiv.querySelector('.plugin-material-icon, .plugin-custom-icon-img')) return false;
+
+        // Jellyfin 12 dropped the <Folder /> SVG default icon in favor of MUI's
+        // <Icon> ligature-font wrapper (a <span class="material-icons">folder</span>,
+        // no svg at all), so match either shape rather than requiring an svg.
+        const oldIcon = iconDiv.querySelector('svg, .material-icons');
+        if (!oldIcon) return false;
 
         let iconElement;
         if (iconConfig.type === 'image') {
@@ -157,6 +163,7 @@
             iconElement.style.width = '24px';
             iconElement.style.height = '24px';
             iconElement.alt = iconConfig.alt;
+            iconElement.className = 'plugin-custom-icon-img';
         } else if (iconConfig.type === 'material') {
             iconElement = document.createElement('span');
             iconElement.className = 'material-icons plugin-material-icon';
@@ -165,7 +172,7 @@
         }
 
         if (iconElement) {
-            oldSvg.replaceWith(iconElement);
+            oldIcon.replaceWith(iconElement);
             return true;
         }
         return false;

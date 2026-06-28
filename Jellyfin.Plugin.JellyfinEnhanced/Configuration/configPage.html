@@ -86,19 +86,6 @@
                 </div>
             </div>
 
-            <div id="fileTransformationWarning" class="je-danger-banner" style="display: none;">
-                <i class="material-icons je-danger-icon">error_outline</i>
-                <div>
-                    <strong class="je-ft-warning-title">Highly Recommended: File Transformation Plugin</strong><br>
-                    It is highly recommended to have the <a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank" class="je-ft-warning-link">File Transformation</a> plugin installed. It helps avoid permission issues while modifying <code class="je-ft-warning-code">index.html</code>.
-                    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced?tab=readme-ov-file#-installation" target="_blank" class="je-ft-warning-link">Learn more</a>
-                    <div class="je-ft-warning-actions">
-                        <button id="dismissFtWarningSession" type="button" class="emby-button raised raised-mini">Dismiss</button>
-                        <button id="dismissFtWarningForever" type="button" class="emby-button raised raised-mini">Don't show again</button>
-                    </div>
-                </div>
-            </div>
-
             <form id="JellyfinEnhancedForm">
 
                 <div id="overview" class="jellyfin-tab-content active">
@@ -570,6 +557,11 @@
                                 <div class="fieldDescription je-field-desc-lg">Save custom bookmarks/timestamps while watching videos to quickly jump back to your favorite scenes or moments.</div>
                             </div>
 
+                            <div class="checkboxContainer"><label><input id="bookmarksUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Bookmarks as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="bookmarksUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Bookmarks as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
+
                             <div class="checkboxContainer"><label><input id="bookmarksUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Bookmarks Library</span></label></div>
                             <div class="je-setting-description" data-desc-for="bookmarksUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
@@ -639,6 +631,11 @@
                             <div class="checkboxContainer je-main-feature"><label><input id="hiddenContentEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Hidden Content</span></label></div>
                             <div class="je-setting-description" data-desc-for="hiddenContentEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Enable or disable the Hidden Content feature server-wide. When disabled, hide buttons, filtering, sidebar navigation, and settings panel options are all removed. User data is preserved and restored when re-enabled.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="hiddenContentUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Hidden Content as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="hiddenContentUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Hidden Content as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="hiddenContentUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Hidden Content</span></label></div>
@@ -826,10 +823,15 @@
                             <div class="je-setting-description" data-desc-for="downloadsPageShowIssues">
                                 <div class="fieldDescription je-field-desc-xl">Shows open/resolved Seerr issues beneath Requests.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="downloadsUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Requests as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="downloadsUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Requests as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">Replaces the default Requests page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.<span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span></div>
                             </div>
+
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="downloadsUseCustomTabs,downloadsPageEnabled">
@@ -906,6 +908,11 @@
                             <div class="je-setting-description" data-desc-for="calendarPageEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Adds a "Calendar" link to the navigation showing upcoming releases from Sonarr/Radarr.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="calendarUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Calendar as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="calendarUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Calendar as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
+
                             <div class="checkboxContainer"><label><input id="calendarUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
@@ -1898,8 +1905,7 @@
                                 <div class="je-info-banner-compact">
                                     <i class="material-icons je-info-icon-sm">info</i>
                                     <div>
-                                        Uploading custom icon / favicon / logo images requires the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" target="_blank">File Transformation</a> plugin to be installed — it's what replaces Jellyfin's default web logos at request time. Splash screen URL override below works without it.
-                                        <span class="je-installed-badge" data-plugin="filetransformation"><i class="material-icons" aria-hidden="true">check_circle</i>File Transformation detected</span>
+                                        Uploaded icon / favicon / logo images are applied automatically at request time. Changes apply on next page load (a hard refresh may be needed if your browser cached the old image).
                                     </div>
                                 </div>
                             </div>
@@ -3079,9 +3085,6 @@
             }
         }
 
-
-        /** @type {boolean} Tracks whether the File Transformation warning has been dismissed this session */
-        var ftWarningDismissedSession = false;
         // Plugin detection state.
         //
         // Each `hasX` is tri-state: `null` (not yet probed or probe failed),
@@ -3105,9 +3108,8 @@
         var customTabsCompatState = null;
 
         /**
-         * Checks installed plugins (File Transformation, Plugin Pages, Custom Tabs).
-         * Shows a warning if File Transformation is missing. Updates dependency state
-         * for Plugin Pages / Custom Tabs dependent settings.
+         * Checks installed plugins (Plugin Pages, Custom Tabs, etc.) and updates
+         * dependency state for Plugin Pages / Custom Tabs dependent settings.
          * Called during loadConfig() on page load.
          */
         function checkInstalledPlugins() {
@@ -3187,7 +3189,6 @@
                 document.body.classList.toggle('je-has-introskipper',      hasIntroSkipper       === true);
                 document.body.classList.toggle('je-has-inplayerepisodepreview', hasInPlayerEpisodePreview === true);
                 document.body.classList.toggle('je-has-kefintweaks',       hasKefinTweaks        === true);
-                document.body.classList.toggle('je-has-filetransformation', hasFileTransformation === true);
 
                 // If Custom Tabs is present, probe its config to decide whether the
                 // schema matches what we know how to write. Only on success do we
@@ -3198,14 +3199,6 @@
                 } else {
                     document.body.classList.remove('je-has-customtabs-compat');
                     customTabsCompatState = null;
-                }
-
-                // File Transformation warning
-                if (!ftWarningDismissedSession && localStorage.getItem('je_ft_warning_dismissed') !== 'true') {
-                    var warning = document.getElementById('fileTransformationWarning');
-                    if (warning) {
-                        warning.style.display = hasFileTransformation ? 'none' : 'block';
-                    }
                 }
 
                 // Re-run dependencies now that plugin info is available
@@ -3227,7 +3220,7 @@
                 hasFileTransformation = null;
                 hasKefinTweaks = null;
                 customTabsCompatState = null;
-                document.body.classList.remove('je-has-customtabs', 'je-has-pluginpages', 'je-has-introskipper', 'je-has-inplayerepisodepreview', 'je-has-customtabs-compat', 'je-has-kefintweaks', 'je-has-filetransformation');
+                document.body.classList.remove('je-has-customtabs', 'je-has-pluginpages', 'je-has-introskipper', 'je-has-inplayerepisodepreview', 'je-has-customtabs-compat', 'je-has-kefintweaks');
                 setProbeWarning('plugins', "Couldn't reach the Jellyfin /Plugins endpoint to verify which integrations are installed (auth expiry, network, or server issue). Dependency hints and \"plugin detected\" badges are now hidden until you retry.");
                 try { updateAllDependencies(); } catch (e) {
                     console.warn('[JE] updateAllDependencies threw during plugin-detect fallback:', e);
@@ -3238,22 +3231,6 @@
                     console.warn('[JE] updateStatusDashboard threw during plugin-detect fallback:', e);
                 }
             });
-
-            // Set up dismiss button handlers
-            var dismissSession = document.getElementById('dismissFtWarningSession');
-            var dismissForever = document.getElementById('dismissFtWarningForever');
-            if (dismissSession) {
-                dismissSession.onclick = function() {
-                    ftWarningDismissedSession = true;
-                    document.getElementById('fileTransformationWarning').style.display = 'none';
-                };
-            }
-            if (dismissForever) {
-                dismissForever.onclick = function() {
-                    localStorage.setItem('je_ft_warning_dismissed', 'true');
-                    document.getElementById('fileTransformationWarning').style.display = 'none';
-                };
-            }
             // Probe-warning retry — re-runs plugin detection (which also re-runs
             // the Custom Tabs config probe inside its .then). One handler only;
             // checkInstalledPlugins is idempotent.
@@ -4270,6 +4247,7 @@
                 document.querySelector('#seerrScanDebounceSeconds').value = config.SeerrScanDebounceSeconds || 60;
                 document.querySelector('#bookmarksEnabled').checked = config.BookmarksEnabled !== false;
                 document.querySelector('#bookmarksUsePluginPages').checked = config.BookmarksUsePluginPages === true;
+                document.querySelector('#bookmarksUseNativeTab').checked = config.BookmarksUseNativeTab === true;
                 document.querySelector('#bookmarksUseCustomTabs').checked = config.BookmarksUseCustomTabs === true;
                 var __bAuto = document.querySelector('#bookmarksAutoCreateCustomTab');
                 if (__bAuto) __bAuto.checked = config.BookmarksAutoCreateCustomTab === true;
@@ -4326,6 +4304,7 @@
                 document.querySelector('#downloadsFilterByUserRequests').checked = config.DownloadsFilterByUserRequests !== false;
                 document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
+                document.querySelector('#downloadsUseNativeTab').checked = config.DownloadsUseNativeTab === true;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
                 var __dAuto = document.querySelector('#downloadsAutoCreateCustomTab');
                 if (__dAuto) __dAuto.checked = config.DownloadsAutoCreateCustomTab === true;
@@ -4335,6 +4314,7 @@
                 // Calendar Page settings
                 document.querySelector('#calendarPageEnabled').checked = config.CalendarPageEnabled !== false;
                 document.querySelector('#calendarUseCustomTabs').checked = config.CalendarUseCustomTabs === true;
+                document.querySelector('#calendarUseNativeTab').checked = config.CalendarUseNativeTab === true;
                 var __cAuto = document.querySelector('#calendarAutoCreateCustomTab');
                 if (__cAuto) __cAuto.checked = config.CalendarAutoCreateCustomTab === true;
                 document.querySelector('#calendarUsePluginPages').checked = config.CalendarUsePluginPages !== false;
@@ -4349,6 +4329,7 @@
                 // Hidden Content settings
                 document.querySelector('#hiddenContentEnabled').checked = config.HiddenContentEnabled || false;
                 document.querySelector('#hiddenContentUsePluginPages').checked = config.HiddenContentUsePluginPages === true;
+                document.querySelector('#hiddenContentUseNativeTab').checked = config.HiddenContentUseNativeTab === true;
                 document.querySelector('#hiddenContentUseCustomTabs').checked = config.HiddenContentUseCustomTabs === true;
                 var __hAuto = document.querySelector('#hiddenContentAutoCreateCustomTab');
                 if (__hAuto) __hAuto.checked = config.HiddenContentAutoCreateCustomTab === true;
@@ -4603,6 +4584,7 @@
             config.SeerrScanDebounceSeconds = isNaN(seerrScanDebounce) || seerrScanDebounce < 5 ? 60 : Math.min(seerrScanDebounce, 3600);
             config.BookmarksEnabled = document.querySelector('#bookmarksEnabled').checked;
             config.BookmarksUsePluginPages = document.querySelector('#bookmarksUsePluginPages').checked;
+            config.BookmarksUseNativeTab = document.querySelector('#bookmarksUseNativeTab').checked;
             config.BookmarksUseCustomTabs = document.querySelector('#bookmarksUseCustomTabs').checked;
             var __bAutoSave = document.querySelector('#bookmarksAutoCreateCustomTab');
             config.BookmarksAutoCreateCustomTab = !!(__bAutoSave && __bAutoSave.checked);
@@ -4662,12 +4644,14 @@
             const pollInterval = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10);
             config.DownloadsPollIntervalSeconds = pollInterval >= 30 ? pollInterval : 30;
             config.DownloadsUseCustomTabs = document.querySelector('#downloadsUseCustomTabs').checked;
+            config.DownloadsUseNativeTab = document.querySelector('#downloadsUseNativeTab').checked;
             var __dAutoSave = document.querySelector('#downloadsAutoCreateCustomTab');
             config.DownloadsAutoCreateCustomTab = !!(__dAutoSave && __dAutoSave.checked);
 
             // Calendar Page settings
             config.CalendarPageEnabled = document.querySelector('#calendarPageEnabled').checked;
             config.CalendarUseCustomTabs = document.querySelector('#calendarUseCustomTabs').checked;
+            config.CalendarUseNativeTab = document.querySelector('#calendarUseNativeTab').checked;
             var __cAutoSave = document.querySelector('#calendarAutoCreateCustomTab');
             config.CalendarAutoCreateCustomTab = !!(__cAutoSave && __cAutoSave.checked);
             config.CalendarUsePluginPages = document.querySelector('#calendarUsePluginPages').checked;
@@ -4682,6 +4666,7 @@
             // Hidden Content settings
             config.HiddenContentEnabled = document.querySelector('#hiddenContentEnabled').checked;
             config.HiddenContentUsePluginPages = document.querySelector('#hiddenContentUsePluginPages').checked;
+            config.HiddenContentUseNativeTab = document.querySelector('#hiddenContentUseNativeTab').checked;
             config.HiddenContentUseCustomTabs = document.querySelector('#hiddenContentUseCustomTabs').checked;
             var __hAutoSave = document.querySelector('#hiddenContentAutoCreateCustomTab');
             config.HiddenContentAutoCreateCustomTab = !!(__hAutoSave && __hAutoSave.checked);
@@ -5064,12 +5049,6 @@
 
                 if (!input || !dropZone || !statusDiv) return;
 
-                // Click to upload (ignore clicks on Delete button)
-                dropZone.addEventListener('click', (e) => {
-                    if (e.target && e.target.closest && e.target.closest('button')) return;
-                    input.click();
-                });
-
                 // Handle file selection
                 input.addEventListener('change', (e) => {
                     if (e.target.files.length > 0) {
@@ -5166,6 +5145,9 @@
                     method: 'POST',
                     body: formData,
                     headers: {
+                        // Jellyfin 12 authenticates from the Authorization header; the
+                        // legacy X-MediaBrowser-Token is kept for 10.11 back-compat.
+                        'Authorization': 'MediaBrowser Token="' + token + '"',
                         'X-MediaBrowser-Token': token
                     }
                 });
@@ -5197,7 +5179,9 @@
             const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
             try {
                 const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingImage', { fileName: config.fileName, t: Date.now() }), {
-                    headers: { 'X-MediaBrowser-Token': token }
+                    // Jellyfin 12 authenticates from the Authorization header; the
+                    // legacy X-MediaBrowser-Token is kept for 10.11 back-compat.
+                    headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
                 });
 
                 if (!response.ok) {
@@ -5242,7 +5226,9 @@
                 const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/DeleteBrandingImage'), {
                     method: 'POST',
                     body: formData,
-                    headers: { 'X-MediaBrowser-Token': token }
+                    // Jellyfin 12 authenticates from the Authorization header; the
+                    // legacy X-MediaBrowser-Token is kept for 10.11 back-compat.
+                    headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
                 });
 
                 if (response.ok) {
@@ -5753,19 +5739,19 @@
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
             { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
             { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
-            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
+            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseNativeTab', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
-            { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
+            { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
-            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseCustomTabs'] },
-            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseCustomTabs'] }
+            { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
+            { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] }
         ];
 
         /**
@@ -6056,7 +6042,7 @@
          * rendered as "Checking…" rather than asserting missing.
          */
         var OPTIONAL_PLUGINS = [
-            { key: 'fileTransformation', name: 'File Transformation', icon: 'transform',       url: 'https://github.com/IAmParadox27/jellyfin-plugin-file-transformation', purpose: 'Required for custom splash screens, branding images, and media bar integration.', getFlag: function(){ return hasFileTransformation; } },
+            { key: 'fileTransformation', name: 'File Transformation', icon: 'transform',       url: 'https://github.com/IAmParadox27/jellyfin-plugin-file-transformation', purpose: 'Required by Custom Tabs, Plugin Pages, and other plugins that modify the web client.', getFlag: function(){ return hasFileTransformation; } },
             { key: 'pluginPages',        name: 'Plugin Pages',        icon: 'view_list',       url: 'https://github.com/IAmParadox27/jellyfin-plugin-pages',               purpose: 'Sidebar pages for Bookmarks, Hidden Content, Requests, Calendar.',                   getFlag: function(){ return hasPluginPages; } },
             { key: 'customTabs',         name: 'Custom Tabs',         icon: 'tab',             url: 'https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs',         purpose: 'Home-page tab entries for Bookmarks, Hidden Content, Requests, Calendar.',          getFlag: function(){ return hasCustomTabs; } },
             { key: 'introSkipper',       name: 'Intro Skipper',       icon: 'skip_next',       url: 'https://github.com/intro-skipper/intro-skipper',                      purpose: 'Source of timestamps for Auto-skip Intro / Auto-skip Outro.',                        getFlag: function(){ return hasIntroSkipper; } },
@@ -6229,16 +6215,11 @@
                 calWarn ? 'Enabled but no *arr instance is configured' : 'Enabled',
                 calWarn);
 
-            // Custom splash screen / branding. Splash-screen URL works without
-            // any extra plugin, but the branding image uploads (icons/favicon/
-            // logos) require File Transformation to actually replace the web
-            // assets — surface a warning when the splash is enabled and File
-            // Transformation is missing.
+            // Custom splash screen / branding. Both the splash screen and the
+            // branding image uploads (icons/favicon/logos) are handled by Jellyfin
+            // Enhanced itself at request time, so no extra plugin is required.
             var splashOn = bool('enableCustomSplashScreen');
-            var splashWarn = splashOn && hasFileTransformation !== true;
-            feat('Custom splash / branding', splashOn, 'extras',
-                splashWarn ? 'Enabled but File Transformation plugin missing (uploaded images won\'t apply)' : 'Enabled',
-                splashWarn);
+            feat('Custom splash / branding', splashOn, 'extras', 'Enabled', false);
 
             // Extras
             var elsewhereWarn = bool('elsewhereEnabled') && !val('TMDB_API_KEY');

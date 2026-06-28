@@ -640,6 +640,7 @@
   function getAuthHeaders() {
     const token = ApiClient.accessToken ? ApiClient.accessToken() : "";
     return {
+      "Authorization": 'MediaBrowser Token="' + token + '"',
       "X-MediaBrowser-Token": token,
       "Content-Type": "application/json",
     };
@@ -2344,6 +2345,7 @@
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
     if (config.DownloadsUseCustomTabs) return; // Skip sidebar injection if using custom tabs
+    if (config.DownloadsUseNativeTab) return; // Skip sidebar injection if using the native tab
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
@@ -2392,12 +2394,14 @@
     if (!config.DownloadsPageEnabled) return;
     if (pluginPagesExists && config.DownloadsUsePluginPages) return;
     if (config.DownloadsUseCustomTabs) return; // Don't watch if using custom tabs
+    if (config.DownloadsUseNativeTab) return; // Don't watch if using the native tab
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
       // Re-check config each time to avoid injecting when settings change
       const currentConfig = JE.pluginConfig || {};
       if (currentConfig.DownloadsUseCustomTabs) return;
+      if (currentConfig.DownloadsUseNativeTab) return;
       if (pluginPagesExists && currentConfig.DownloadsUsePluginPages) return;
 
       if (!document.querySelector('.je-nav-downloads-item')) {

@@ -26,7 +26,7 @@
             try {
                 const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbKey}`);
                 const response = await fetch(url, {
-                    headers: { 'X-Emby-Token': ApiClient.accessToken() }
+                    headers: { 'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"', 'X-Emby-Token': ApiClient.accessToken() }
                 });
                 if (!response.ok) {
                     _reviewCache.set(tmdbKey, null);

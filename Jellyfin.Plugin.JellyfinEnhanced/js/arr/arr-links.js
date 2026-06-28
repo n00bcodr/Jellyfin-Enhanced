@@ -395,7 +395,7 @@
 
                 try {
                     const resp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`), {
-                        headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
+                        headers: { 'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"', 'X-MediaBrowser-Token': ApiClient.accessToken() }
                     });
                     if (!resp.ok) {
                         surfaceGlobalFailure('Sonarr', `HTTP ${resp.status}`);
@@ -443,7 +443,7 @@
 
                 try {
                     const resp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`), {
-                        headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
+                        headers: { 'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"', 'X-MediaBrowser-Token': ApiClient.accessToken() }
                     });
                     if (!resp.ok) {
                         surfaceGlobalFailure('Radarr', `HTTP ${resp.status}`);

@@ -166,7 +166,7 @@
         });
 
         buttonContainer.appendChild(randomButton);
-        const headerRight = document.querySelector('.headerRight');
+        const headerRight = JE.helpers.getHeaderRightContainer();
         headerRight?.prepend(buttonContainer);
     };
 
@@ -733,7 +733,9 @@
      */
     function tmdbGet(path) {
         const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
-        return fetch(url, { headers: { "X-Emby-Token": ApiClient.accessToken() } })
+        // Jellyfin 12 authenticates from the Authorization header; the legacy
+        // X-Emby-Token is kept for 10.11 back-compat.
+        return fetch(url, { headers: { "Authorization": `MediaBrowser Token="${ApiClient.accessToken()}"`, "X-Emby-Token": ApiClient.accessToken() } })
             .then(r => r.ok ? r.json() : Promise.reject(`API Error: ${r.status}`))
             .catch(error => {
                 console.error(`🪼 Jellyfin Enhanced: Release Date: TMDB request failed for ${path}`, error);

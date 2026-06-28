@@ -2745,6 +2745,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.BookmarksEnabled,
                 config.BookmarksUsePluginPages,
                 config.BookmarksUseCustomTabs,
+                config.BookmarksUseNativeTab,
 
                 // Arr Links Settings
                 config.ArrLinksEnabled,
@@ -2783,6 +2784,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowDownloadsInRequests,
                 config.DownloadsUsePluginPages,
                 config.DownloadsUseCustomTabs,
+                config.DownloadsUseNativeTab,
                 config.DownloadsPagePollingEnabled,
                 config.DownloadsPollIntervalSeconds,
                 config.DownloadsFilterByUserRequests,
@@ -2791,6 +2793,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarPageEnabled,
                 config.CalendarUseCustomTabs,
                 config.CalendarUsePluginPages,
+                config.CalendarUseNativeTab,
                 config.CalendarFirstDayOfWeek,
                 config.CalendarTimeFormat,
                 config.CalendarHighlightFavorites,
@@ -2803,6 +2806,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentEnabled,
                 config.HiddenContentUsePluginPages,
                 config.HiddenContentUseCustomTabs,
+                config.HiddenContentUseNativeTab,
 
                 // Maintenance Mode
                 config.MaintenanceModeEnabled,

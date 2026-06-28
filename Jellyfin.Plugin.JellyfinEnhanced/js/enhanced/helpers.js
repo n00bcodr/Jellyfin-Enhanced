@@ -8,6 +8,10 @@
     // Store the original onViewShow function
     let originalOnViewShow = null;
 
+    // Tracks whether the MUI-toolbar button-sizing CSS fix has been injected (see
+    // getHeaderRightContainer below) so it's only added once.
+    let muiHeaderButtonCSSInjected = false;
+
     // Array to store registered handlers
     const handlers = [];
 
@@ -566,6 +570,101 @@
     }
 
     /**
+     * Finds (or creates) the container plugin buttons should be injected into.
+     *
+     * Jellyfin 12's "experimental" layout (now the default) replaces the legacy
+     * AngularJS header with a React/MUI AppBar+Toolbar. The legacy `.headerRight`
+     * element is still present in the DOM for backwards compatibility, but it sits
+     * inside a `display:none` wrapper, so injecting into it silently produces
+     * invisible buttons. When that's detected, this reuses the toolbar's own
+     * SyncPlay/RemotePlay/Search button tray (a `flexGrow:1; justifyContent:flex-end`
+     * Box) as the container — it's the functional equivalent of `.headerRight`, and
+     * injecting into it (rather than next to it) keeps plugin buttons right-aligned
+     * with the native ones instead of stranding them as a separate flex item further
+     * left in the toolbar.
+     * @returns {HTMLElement|null} The container, or null if no header is ready yet.
+     */
+    function getHeaderRightContainer() {
+        const legacy = document.querySelector('.headerRight');
+        if (legacy && legacy.offsetParent !== null) return legacy;
+
+        const userMenuButton = document.querySelector('[aria-controls="app-user-menu"]');
+        const toolbar = userMenuButton?.closest('.MuiToolbar-root') || document.querySelector('.MuiAppBar-root .MuiToolbar-root');
+        if (!toolbar) return null;
+
+        // The legacy .headerButton/.paper-icon-button-light classes size themselves
+        // with `em` units relative to the *inherited* font-size, which was tuned for
+        // the old .skinHeader context. Inside the MUI toolbar the ambient font-size is
+        // different, so the icons come out oversized/misaligned next to the native MUI
+        // IconButtons. Pin them to MUI's own ~48px button / 24px icon convention instead.
+        // !important is needed because some callers (e.g. active-streams.js) set their
+        // own fixed-size CSS via an #id selector, which otherwise outranks this rule's
+        // specificity regardless of declaration order.
+        if (!muiHeaderButtonCSSInjected) {
+            addCSS('je-mui-header-button-fix', `
+                .MuiToolbar-root .headerButton.paper-icon-button-light {
+                    display: inline-flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    box-sizing: border-box !important;
+                    width: 48px !important;
+                    height: 48px !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    font-size: 16px !important;
+                }
+                .MuiToolbar-root .headerButton.paper-icon-button-light > .material-icons {
+                    font-size: 24px !important;
+                }
+            `);
+            muiHeaderButtonCSSInjected = true;
+        }
+
+        let userMenuBox = userMenuButton;
+        while (userMenuBox && userMenuBox.parentElement !== toolbar) {
+            userMenuBox = userMenuBox.parentElement;
+        }
+        const buttonsTray = userMenuBox?.previousElementSibling;
+        if (buttonsTray) return buttonsTray;
+
+        // No user-menu available (e.g. public/video pages) - fall back to a
+        // synthetic container appended to the toolbar itself.
+        let container = toolbar.querySelector(':scope > .headerRight');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'headerRight';
+            toolbar.appendChild(container);
+        }
+        return container;
+    }
+
+    /**
+     * Finds the container plugin sidebar nav links should be injected into.
+     *
+     * The legacy `.mainDrawer-scrollContainer` is hidden the same way `.headerRight`
+     * is under Jellyfin 12's experimental layout (both live inside the
+     * `display:none`-wrapped legacy AppHeader). Unlike the header, there's no
+     * always-present replacement: the new drawer (`AppDrawer`/`MainDrawerContent`,
+     * a MUI `SwipeableDrawer`) is itself only ever rendered at all on narrow/mobile
+     * viewports - desktop has no drawer in the new layout at all, nav lives inline
+     * in the toolbar instead (see getHeaderRightContainer). So on desktop there is
+     * no sidebar equivalent to fall back to; this returns null there, same as if
+     * nothing existed yet, and callers' existing "wait and retry" logic covers it.
+     * @returns {HTMLElement|null}
+     */
+    function getSidebarContainer() {
+        const legacy = document.querySelector('.mainDrawer-scrollContainer');
+        if (legacy && legacy.offsetParent !== null) return legacy;
+
+        // MUI's global stable class for the drawer's sliding panel. `keepMounted`
+        // on the SwipeableDrawer means this exists in the DOM even while closed.
+        const muiDrawerPanel = document.querySelector('.MuiDrawer-paper');
+        if (!muiDrawerPanel) return null;
+
+        return muiDrawerPanel.querySelector('[role="presentation"]') || muiDrawerPanel;
+    }
+
+    /**
      * Wait for a condition to be true
      * @param {Function} condition - Function that returns boolean
      * @param {number} timeout - Maximum wait time in ms (default: 5000)
@@ -696,6 +795,8 @@
         removeBodySubscriber,
         disconnectObserver,
         disconnectAllObservers,
+        getHeaderRightContainer,
+        getSidebarContainer,
         waitForElement,
         waitForCondition,
         debounce,

@@ -6,6 +6,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using MediaBrowser.Controller;
@@ -17,6 +18,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<StartupService>();
+
+            // Request-time injection middlewares (Jellyfin 10.11 & 12):
+            //   - ScriptInjectionStartupFilter injects the client <script> into the
+            //     web index.html;
+            //   - BrandingAssetStartupFilter serves custom logo/banner/favicon images.
+            //     Both are kill-switchable via config and no-op safely when there's
+            //     nothing to do.
+            serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
+            serviceCollection.AddSingleton<IStartupFilter, BrandingAssetStartupFilter>();
+
             serviceCollection.AddHttpClient();
 
             // a named HttpClient with AllowAutoRedirect=false so

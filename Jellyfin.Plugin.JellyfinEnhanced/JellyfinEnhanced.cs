@@ -147,6 +147,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             }
         }
 
+        // Cache-busting key: plugin version plus the DLL's last-write timestamp, so
+        // every build yields a distinct value even when the version is unchanged
+        // (local dev/testing). Falls back to the bare version if the assembly
+        // location can't be read (e.g. single-file hosting).
+        internal string ScriptCacheKey
+        {
+            get
+            {
+                var version = Version?.ToString() ?? "unknown";
+                try
+                {
+                    var location = typeof(JellyfinEnhanced).Assembly.Location;
+                    if (!string.IsNullOrEmpty(location) && File.Exists(location))
+                    {
+                        var ticks = new FileInfo(location).LastWriteTimeUtc.Ticks;
+                        return $"{version}-{ticks}";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Fall through to the bare version below.
+                    _logger.Debug($"ScriptCacheKey: couldn't read assembly file metadata, using bare version: {ex.Message}");
+                }
+
+                return version;
+            }
+        }
+
+        // The single source of truth for the client-script tag. Consumed both by the
+        // request-time injection middleware (ScriptInjectionStartupFilter) and by the
+        // legacy on-disk index.html rewrite, so the two never drift. plugin.js reads
+        // the plugin/version/dev attributes off this tag.
+        internal string BuildScriptTag()
+        {
+            var cacheKey = ScriptCacheKey;
+            var devMode = Configuration?.DevMode == true;
+            return $"<script plugin=\"{Name}\" version=\"{cacheKey}\" dev=\"{(devMode ? "true" : "false")}\" src=\"../JellyfinEnhanced/script?v={cacheKey}\" defer></script>";
+        }
+
         public void InjectScript()
         {
             UpdateIndexHtml(true);
@@ -374,15 +413,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
 
                 var content = File.ReadAllText(indexPath);
-                // Append the DLL's last-write timestamp so that every build produces
-                // a distinct cache-busting value, even when the version number hasn't
-                // changed (e.g. during local dev/testing). In production the version
-                // bump alone would suffice, but the timestamp makes dev iterations safe.
-                var dllTimestamp = new FileInfo(typeof(JellyfinEnhanced).Assembly.Location).LastWriteTimeUtc.Ticks;
-                var cacheKey = $"{Version}-{dllTimestamp}";
-                var devMode = Configuration?.DevMode == true;
-                var scriptUrl = $"../JellyfinEnhanced/script?v={cacheKey}";
-                var scriptTag = $"<script plugin=\"{Name}\" version=\"{cacheKey}\" dev=\"{(devMode ? "true" : "false")}\" src=\"{scriptUrl}\" defer></script>";
+                var scriptTag = BuildScriptTag();
                 var regex = new Regex($"<script[^>]*plugin=[\"']{Name}[\"'][^>]*>\\s*</script>\\n?");
 
                 // Remove any old versions of the script tag first
@@ -424,8 +455,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     Name = this.Name,
                     DisplayName = "Jellyfin Enhanced",
                     EnableInMainMenu = true,
-                    EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html"
-                    //Custom Icons are not supported - https://github.com/jellyfin/jellyfin-web/blob/38ac3355447a91bf280df419d745f5d49d05aa9b/src/apps/dashboard/components/drawer/sections/PluginDrawerSection.tsx#L61
+                    EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html",
+                    // MenuIcon was previously ignored - jellyfin-web hardcoded <Folder /> regardless of
+                    // this value. Jellyfin 12 reads it https://github.com/jellyfin/jellyfin-web/commit/ca55f7998bb774b3c05af3ae410b1b24f72805a5
+                    MenuIcon = "tune"
                 }
             };
         }

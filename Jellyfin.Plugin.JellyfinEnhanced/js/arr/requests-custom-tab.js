@@ -1,6 +1,13 @@
 /**
  * Requests Custom Tab
- * Creates <div class="jellyfinenhanced requests"></div> for CustomTabs plugin
+ * Creates <div class="jellyfinenhanced requests"></div>, either inside a tab
+ * panel managed by the external Custom Tabs plugin (DownloadsUseCustomTabs),
+ * or inside a panel JE creates itself via the shared native-tabs registry
+ * (DownloadsUseNativeTab, see enhanced/native-tabs.js) -- no external plugin
+ * needed for the latter. The rest of this file (finding the active container,
+ * rendering into it, polling) doesn't care which one created the wrapping
+ * panel, since both end up as a `.tabContent` with `.is-active` toggled by
+ * Jellyfin's own tab-switching logic.
  *
  * Uses a persistent observer to remount whenever the home page DOM is rebuilt
  * (e.g. after SPA navigation). Only runs when on the home page; suspends
@@ -14,8 +21,21 @@
     return;
   }
 
-  if (!window.JellyfinEnhanced?.pluginConfig?.DownloadsUseCustomTabs) {
+  var useCustomTabs = !!window.JellyfinEnhanced?.pluginConfig?.DownloadsUseCustomTabs;
+  var useNativeTab = !!window.JellyfinEnhanced?.pluginConfig?.DownloadsUseNativeTab;
+
+  console.log('🪼 Jellyfin Enhanced: [requests-custom-tab] DownloadsUseCustomTabs=' + useCustomTabs + ', DownloadsUseNativeTab=' + useNativeTab);
+
+  if (!useCustomTabs && !useNativeTab) {
     return;
+  }
+
+  if (useNativeTab) {
+    window.JellyfinEnhanced.nativeTabs.register('requests', 'Requests', function (panel) {
+      var marker = document.createElement('div');
+      marker.className = 'jellyfinenhanced requests';
+      panel.appendChild(marker);
+    }, 'download');
   }
 
   var style = document.createElement('style');

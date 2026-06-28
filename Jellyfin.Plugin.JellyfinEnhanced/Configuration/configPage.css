@@ -1328,10 +1328,6 @@
     grid-column: 1 / -1;
 }
 
-.je-ft-warning-title { display: block; margin-bottom: 0.3em; }
-.je-ft-warning-link { color: #ff6b6b; text-decoration: underline; }
-.je-ft-warning-code { background: var(--je-surface-3); padding: 2px 6px; border-radius: 3px; }
-.je-ft-warning-actions { display: flex; gap: 10px; margin-top: 10px; }
 
 .dep-hint-text {
     color: #ffc107;
@@ -1605,7 +1601,6 @@ body.je-has-customtabs   .je-installed-badge[data-plugin="customtabs"]   { displ
 body.je-has-pluginpages  .je-installed-badge[data-plugin="pluginpages"]  { display: inline-flex; }
 body.je-has-introskipper .je-installed-badge[data-plugin="introskipper"] { display: inline-flex; }
 body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { display: inline-flex; }
-body.je-has-filetransformation .je-installed-badge[data-plugin="filetransformation"] { display: inline-flex; }
 .je-installed-badge {
     align-items: center;
     gap: 4px;

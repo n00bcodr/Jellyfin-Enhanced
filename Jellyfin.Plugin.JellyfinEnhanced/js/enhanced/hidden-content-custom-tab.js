@@ -1,6 +1,11 @@
 /**
  * Hidden Content Custom Tab
- * Creates <div class="jellyfinenhanced hidden-content"></div> for CustomTabs plugin
+ * Creates <div class="jellyfinenhanced hidden-content"></div>, either inside a
+ * tab panel managed by the external Custom Tabs plugin
+ * (HiddenContentUseCustomTabs), or inside a panel JE creates itself via the
+ * shared native-tabs registry (HiddenContentUseNativeTab, see
+ * enhanced/native-tabs.js) -- no external plugin needed for the latter. The
+ * rest of this file doesn't care which one created the wrapping panel.
  *
  * Uses a persistent observer to remount whenever the home page DOM is rebuilt
  * (e.g. after SPA navigation). Only runs when on the home page; suspends
@@ -14,8 +19,19 @@
     return;
   }
 
-  if (!window.JellyfinEnhanced?.pluginConfig?.HiddenContentUseCustomTabs) {
+  var useCustomTabs = !!window.JellyfinEnhanced?.pluginConfig?.HiddenContentUseCustomTabs;
+  var useNativeTab = !!window.JellyfinEnhanced?.pluginConfig?.HiddenContentUseNativeTab;
+
+  if (!useCustomTabs && !useNativeTab) {
     return;
+  }
+
+  if (useNativeTab) {
+    window.JellyfinEnhanced.nativeTabs.register('hidden-content', 'Hidden Content', function (panel) {
+      var marker = document.createElement('div');
+      marker.className = 'jellyfinenhanced hidden-content';
+      panel.appendChild(marker);
+    }, 'remove_red_eye');
   }
 
   var style = document.createElement('style');

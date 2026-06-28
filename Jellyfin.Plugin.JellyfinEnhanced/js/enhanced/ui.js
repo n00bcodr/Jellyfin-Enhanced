@@ -485,7 +485,12 @@
         };
 
         JE.helpers.onBodyMutation('ui-menu-button', () => {
-            const sidebar = document.querySelector('.mainDrawer-scrollContainer');
+            // getSidebarContainer() falls back to the new MUI drawer (mobile only)
+            // when the legacy sidebar is hidden under Jellyfin 12's experimental
+            // layout. Every other module that looks for `.jellyfinEnhancedSection`
+            // queries it unscoped, so creating it here - wherever it ends up - is
+            // the only choke point that needs to know about the new drawer.
+            const sidebar = JE.helpers.getSidebarContainer();
             if (sidebar && !sidebar.querySelector('#jellyfinEnhancedSettingsLink')) {
                 addMenuButton(sidebar);
             }

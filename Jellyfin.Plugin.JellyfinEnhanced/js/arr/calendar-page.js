@@ -1360,6 +1360,7 @@
   function getAuthHeaders() {
     const token = ApiClient.accessToken ? ApiClient.accessToken() : "";
     return {
+      "Authorization": 'MediaBrowser Token="' + token + '"',
       "X-MediaBrowser-Token": token,
       "Content-Type": "application/json",
     };
@@ -2714,6 +2715,7 @@
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
     if (config.CalendarUseCustomTabs) return; // Skip if using custom tabs
+    if (config.CalendarUseNativeTab) return; // Skip if using the native tab
 
     // Hide plugin page link if it exists
     const pluginPageItem = sidebar?.querySelector(
@@ -2761,12 +2763,14 @@
     if (!config.CalendarPageEnabled) return;
     if (pluginPagesExists && config.CalendarUsePluginPages) return;
     if (config.CalendarUseCustomTabs) return; // Don't watch if using custom tabs
+    if (config.CalendarUseNativeTab) return; // Don't watch if using the native tab
 
     // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
     const observer = new MutationObserver(() => {
       // Re-check config each time to avoid injecting when settings change
       const currentConfig = JE.pluginConfig || {};
       if (currentConfig.CalendarUseCustomTabs) return;
+      if (currentConfig.CalendarUseNativeTab) return;
       if (pluginPagesExists && currentConfig.CalendarUsePluginPages) return;
 
       if (!document.querySelector('.je-nav-calendar-item')) {
