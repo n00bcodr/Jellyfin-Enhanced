@@ -42,17 +42,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Served-filename pattern -> fixed on-disk filename under BrandingDirectory.
         // Patterns match the stable basename and are hash-agnostic, since the webpack
-        // content hash changes on every jellyfin-web build. The touchicon pattern
-        // requires a literal "." before the hash so it does NOT also match the
-        // separate "touchicon144.<hash>.png" variant. The served basename "touchicon"
-        // maps to the upload name "apple-touch-icon.png"; the other four match 1:1.
+        // content hash changes on every jellyfin-web build. The served basename
+        // "touchicon" (in any sized/hashed form) maps to the single upload name
+        // "apple-touch-icon.png"; the other four match 1:1.
+        //
+        // Jellyfin 12 sources its branding images from a separate @jellyfin/ux-web
+        // npm package and added a manifest.json (PWA "add to home screen") that
+        // references unhashed, sized touch-icon variants copied verbatim into a new
+        // /web/favicons/ subdirectory (e.g. favicons/touchicon144.png) - distinct from
+        // the older flat, content-hashed /web/touchicon.<hash>.png used by the
+        // <link rel="apple-touch-icon"> tag. The touchicon pattern below covers both:
+        // an optional size suffix (72/114/144/512) and an optional ".<hash>" segment.
         private static readonly (Regex Pattern, string OnDiskFileName)[] Map =
         {
             (new Regex(@"^icon-transparent\..*\.png$", Opts, MatchTimeout), "icon-transparent.png"),
             (new Regex(@"^banner-light\..*\.png$", Opts, MatchTimeout), "banner-light.png"),
             (new Regex(@"^banner-dark\..*\.png$", Opts, MatchTimeout), "banner-dark.png"),
             (new Regex(@"^favicon\..*\.ico$", Opts, MatchTimeout), "favicon.ico"),
-            (new Regex(@"^touchicon\.[0-9a-f]+\.png$", Opts, MatchTimeout), "apple-touch-icon.png"),
+            (new Regex(@"^touchicon\d*(\.[0-9a-f]+)?\.png$", Opts, MatchTimeout), "apple-touch-icon.png"),
         };
 
         public BrandingAssetStartupFilter(Logger logger)

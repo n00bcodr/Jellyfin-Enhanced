@@ -5049,12 +5049,6 @@
 
                 if (!input || !dropZone || !statusDiv) return;
 
-                // Click to upload (ignore clicks on Delete button)
-                dropZone.addEventListener('click', (e) => {
-                    if (e.target && e.target.closest && e.target.closest('button')) return;
-                    input.click();
-                });
-
                 // Handle file selection
                 input.addEventListener('change', (e) => {
                     if (e.target.files.length > 0) {
@@ -5151,6 +5145,9 @@
                     method: 'POST',
                     body: formData,
                     headers: {
+                        // Jellyfin 12 authenticates from the Authorization header; the
+                        // legacy X-MediaBrowser-Token is kept for 10.11 back-compat.
+                        'Authorization': 'MediaBrowser Token="' + token + '"',
                         'X-MediaBrowser-Token': token
                     }
                 });
@@ -5182,7 +5179,9 @@
             const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
             try {
                 const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingImage', { fileName: config.fileName, t: Date.now() }), {
-                    headers: { 'X-MediaBrowser-Token': token }
+                    // Jellyfin 12 authenticates from the Authorization header; the
+                    // legacy X-MediaBrowser-Token is kept for 10.11 back-compat.
+                    headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
                 });
 
                 if (!response.ok) {
@@ -5227,7 +5226,9 @@
                 const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/DeleteBrandingImage'), {
                     method: 'POST',
                     body: formData,
-                    headers: { 'X-MediaBrowser-Token': token }
+                    // Jellyfin 12 authenticates from the Authorization header; the
+                    // legacy X-MediaBrowser-Token is kept for 10.11 back-compat.
+                    headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
                 });
 
                 if (response.ok) {
