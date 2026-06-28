@@ -535,5 +535,6 @@
     "active_streams_count": "{count} aktivt stream|{count} aktive streams",
     "active_streams_none": "Ingen aktive streams",
     "reviews_avg_rating_tooltip": "Gennemsnitlig bedømmelse fra {count} bruger(r)",
+    "release_date_tooltip": "Udgivelses-/udsendelsesdato (via TMDB)",
     "panel_settings_subtitles_position_note": "Kræver Jellyfin undertekststil indstillet til <b>Brugerdefinerede</b> i undertekster"
 }

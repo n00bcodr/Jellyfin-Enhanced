@@ -535,5 +535,6 @@
     "active_streams_count": "{count} stream ativo|{count} streams ativos",
     "active_streams_none": "Nenhum stream ativo",
     "reviews_avg_rating_tooltip": "Avaliação média de {count} usuário(s)",
+    "release_date_tooltip": "Data de lançamento/exibição (via TMDB)",
     "panel_settings_subtitles_position_note": "Requer que o estilo das legendas do Jellyfin esteja definido como <b>Personalizado</b> nas configurações de legendas"
 }

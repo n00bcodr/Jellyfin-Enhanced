@@ -535,5 +535,6 @@
     "active_streams_count": "{count} aktív stream",
     "active_streams_none": "Nincs aktív stream",
     "reviews_avg_rating_tooltip": "Átlagos értékelés {count} felhasználó(s)",
+    "release_date_tooltip": "Megjelenés/sugárzás dátuma (TMDB-n keresztül)",
     "panel_settings_subtitles_position_note": "A Jellyfin feliratstílusát a feliratbeállításokban <b>Egyéni</b> értékre kell állítani"
 }

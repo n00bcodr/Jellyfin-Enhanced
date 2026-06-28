@@ -535,5 +535,6 @@
     "active_streams_count": "{count} aktiv ström|{count} aktiva strömmar",
     "active_streams_none": "Inga aktiva strömmar",
     "reviews_avg_rating_tooltip": "Genomsnittligt betyg från {count} användare(s)",
+    "release_date_tooltip": "Releasedatum/sändningsdatum (via TMDB)",
     "panel_settings_subtitles_position_note": "Kräver Jellyfin subtitle stil inställd på <b>Custom</b> i undertextinställningar"
 }

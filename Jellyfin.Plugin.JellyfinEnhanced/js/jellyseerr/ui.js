@@ -773,6 +773,18 @@
         } else {
             overallStatus = MediaStatus.UNKNOWN;
         }
+
+        // If every regular season is accounted for but the specials season (0) was never
+        // requested, still surface a "Request More" affordance instead of marking the
+        // show fully Available, so specials-only seasons remain requestable.
+        if (overallStatus === MediaStatus.AVAILABLE) {
+            const specialsSeason = seasons.find(s => s.seasonNumber === 0);
+            if (specialsSeason && specialsSeason.status === MediaStatus.UNKNOWN) {
+                overallStatus = MediaStatus.DELETED;
+                statusSummary = JE.t('jellyseerr_seasons_accounted_for', { count: accountedForCount, total });
+            }
+        }
+
         return { overallStatus, statusSummary, total, availableCount };
     }
 

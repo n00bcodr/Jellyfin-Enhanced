@@ -400,6 +400,7 @@
     "panel_settings_ui_quality_tags_audio_info": "Sound (Atmos, DTS, 5.1, 7.1, ...)",
     "panel_settings_ui_quality_tags_move_up": "Move up",
     "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
+    "release_date_tooltip": "תאריך יציאה/שידור (דרך TMDB)",
     "panel_settings_auto_resume_desc": "Resume when returning to tab",
     "jellyseerr_toast_filter_on": "{{icon:jellyfish}} Showing results only from Seerr",
     "elsewhere_panel_not_available_in_regions": "Not available on any streaming services in {regions}",

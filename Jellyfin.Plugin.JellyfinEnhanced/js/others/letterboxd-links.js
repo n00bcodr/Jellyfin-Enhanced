@@ -65,6 +65,19 @@
             return null;
         }
 
+        // Letterboxd has no IMDb/TMDB lookup for people, only a name-based slug
+        // (e.g. https://letterboxd.com/actor/tommy-lee-jones/), so we derive it
+        // from the person's name the same way Letterboxd does.
+        function getPersonSlug(name) {
+            if (!name) return null;
+            const slug = name
+                .toLowerCase()
+                .normalize("NFD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-+|-+$/g, '');
+            return slug || null;
+        }
+
         async function addLetterboxdLinks() {
             if (isAddingLinks) {
                 return;
@@ -111,21 +124,32 @@
                     return;
                 }
 
-                if (!['Movie', 'Series'].includes(item.Type)) {
+                // Note: Letterboxd does not support TV shows, Add 'Series' if letterboxd ever adds support for them in the future.
+                if (!['Movie', 'Person'].includes(item.Type)) {
                     console.log(`${logPrefix} Skipping ${item.Type} - Letterboxd links not supported.`);
                     processedItemIds.add(itemId);
                     return;
                 }
 
-                const imdbId = getImdbId(visiblePage);
-                if (!imdbId) {
-                    console.log(`${logPrefix} No IMDb ID found for ${item.Type}.`);
-                    processedItemIds.add(itemId);
-                    return;
+                let letterboxdUrl;
+                if (item.Type === 'Person') {
+                    const personSlug = getPersonSlug(item.Name);
+                    if (!personSlug) {
+                        console.log(`${logPrefix} Could not derive a Letterboxd slug for ${item.Name}.`);
+                        processedItemIds.add(itemId);
+                        return;
+                    }
+                    letterboxdUrl = `https://letterboxd.com/actor/${personSlug}`;
+                } else {
+                    const imdbId = getImdbId(visiblePage);
+                    if (!imdbId) {
+                        console.log(`${logPrefix} No IMDb ID found for ${item.Type}.`);
+                        processedItemIds.add(itemId);
+                        return;
+                    }
+                    letterboxdUrl = `https://letterboxd.com/imdb/${imdbId}`;
                 }
 
-                // Create Letterboxd link using IMDb ID
-                const letterboxdUrl = `https://letterboxd.com/imdb/${imdbId}`;
                 anchorElement.appendChild(document.createTextNode(' '));
                 anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl, "letterboxd-link-icon"));
                 processedItemIds.add(itemId);

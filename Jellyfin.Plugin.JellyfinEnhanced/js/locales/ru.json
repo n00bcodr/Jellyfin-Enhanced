@@ -535,5 +535,6 @@
     "active_streams_none": "Нет активных потоков",
     "jellyseerr_report_issue_type_other": "Прочие",
     "reviews_avg_rating_tooltip": "Средний рейтинг от {count} user(s)",
+    "release_date_tooltip": "Дата релиза/эфира (через TMDB)",
     "panel_settings_subtitles_position_note": "Требуется стиль субтитров Jellyfin для <b>Custom</b> в настройках субтитров"
 }

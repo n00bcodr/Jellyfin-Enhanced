@@ -1730,6 +1730,16 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">Release Dates</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="showReleaseDate" is="emby-checkbox" type="checkbox"/><span>Show Release/Air Date</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showReleaseDate">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Requires TMDB API Key to be set. Shows a chip on Movie, Series, Season and Episode detail pages with the cinema/digital/physical release date or next/last air date, sourced from TMDB. Uses the Default Region set under Elsewhere above to pick which country's dates to prefer.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">User Reviews</legend>
                         <div class="configSection">
                             <div class="je-info-banner-inline je-banner-managed">
@@ -1855,7 +1865,7 @@
                         <div class="configSection">
                             <div class="checkboxContainer je-main-feature"><label><input id="letterboxdEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Letterboxd Links</span></label></div>
                             <div class="je-setting-description" data-desc-for="letterboxdEnabled">
-                                <div class="fieldDescription je-field-desc-md">Adds Letterboxd links to item details page.</div>
+                                <div class="fieldDescription je-field-desc-md">Adds Letterboxd links to movie and person details pages.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showLetterboxdLinkAsText" is="emby-checkbox" type="checkbox"/><span>Show link as text</span></label></div>
                             <div class="je-setting-description" data-desc-for="showLetterboxdLinkAsText">
@@ -4177,6 +4187,7 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
+                document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
                 document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
                 document.querySelector('#hideReviewsFromDisabledUsers').checked = config.HideReviewsFromDisabledUsers !== false;
                 document.querySelector('#showUserRatingDash').checked = config.ShowUserRatingDash !== false;
@@ -4469,6 +4480,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
+            config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;
             config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;
             config.HideReviewsFromDisabledUsers = document.querySelector('#hideReviewsFromDisabledUsers').checked;
             config.ShowUserRatingDash = document.querySelector('#showUserRatingDash').checked;

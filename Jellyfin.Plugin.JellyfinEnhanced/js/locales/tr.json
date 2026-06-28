@@ -535,5 +535,6 @@
     "active_streams_count": "{count} aktif yayın|{count} aktif yayın",
     "active_streams_none": "Aktif yayın yok",
     "reviews_avg_rating_tooltip": "Ortalama Puan {count} kullanıcı(s)",
+    "release_date_tooltip": "Yayın/Çıkış Tarihi (TMDB üzerinden)",
     "panel_settings_subtitles_position_note": "Jellyfin alt başlık stili <b>Custom</b> alt başlık ayarlarında"
 }
