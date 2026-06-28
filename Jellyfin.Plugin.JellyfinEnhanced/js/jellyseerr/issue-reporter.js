@@ -836,10 +836,56 @@
                 return false;
             }
 
+            // Gate on item type FIRST, before any availability/TMDB lookup — items
+            // like MusicVideo, Audio, Book, Photo, BoxSet, etc. can never be reported
+            // regardless of TMDB/Jellyseerr state, so there's no point doing a status
+            // round-trip (or showing a disabled button) for something that's
+            // permanently out of scope rather than transiently unavailable.
+            const isTvLike = ['Series', 'Season', 'Episode'].includes(item.Type);
+            const isMovie = item.Type === 'Movie';
+            if (!isTvLike && !isMovie) {
+                console.debug(`${logPrefix} Skipping ${item.Name}: unsupported item type (${item.Type}) — not a Movie/Series/Season/Episode`);
+                return false;
+            }
+
+            // Special seasons/episodes (season 0) aren't reportable either.
+            try {
+                if (item.Type === 'Season') {
+                    const seasonNumber = parseInt(item.IndexNumber || item.SeasonNumber || item.Index || 0) || 0;
+                    if (seasonNumber === 0) {
+                        console.debug(`${logPrefix} Skipping ${item.Name}: special season (season 0)`);
+                        return false;
+                    }
+                }
+
+                if (item.Type === 'Episode') {
+                    // Episode items often contain the season number in ParentIndexNumber or SeasonNumber
+                    const parentSeason = parseInt(item.ParentIndexNumber || item.SeasonIndex || item.ParentIndex || item.SeasonNumber || 0) || 0;
+                    if (parentSeason === 0) {
+                        console.debug(`${logPrefix} Skipping ${item.Name}: special episode (season 0)`);
+                        return false;
+                    }
+                }
+            } catch (e) {
+                // If any unexpected shape, don't block the flow; just continue
+                console.debug(`${logPrefix} Could not determine season index for special detection:`, e);
+            }
+
+            const mediaType = isTvLike ? 'tv' : 'movie';
+
             // Check if reporting is available (item has TMDB ID and Jellyseerr configured)
             const availability = await issueReporter.checkReportingAvailability(item);
 
-            // If services not available, show unavailable button
+            // If services not available, show unavailable button — except when the
+            // item itself simply has no TMDB ID (e.g. MusicVideo, or any other type
+            // TMDB doesn't catalog). That's not a transient/fixable state like
+            // Jellyseerr being down, so there's nothing useful to report on this
+            // item; skip silently rather than cluttering the page with a disabled
+            // button that always explains the same permanent limitation.
+            if (availability === 'no-tmdb' || availability === 'no-both') {
+                console.debug(`${logPrefix} Skipping ${item.Name}: no TMDB ID available, nothing to report against`);
+                return false;
+            }
             if (availability !== 'available') {
                 console.debug(`${logPrefix} Reporting not available: ${availability}`);
 
@@ -886,43 +932,9 @@
                 return false;
             }
 
-            // Determine media type. Treat Series, Season, Episode as 'tv'
             let tmdbId = item.ProviderIds?.Tmdb;
-            const isTvLike = ['Series', 'Season', 'Episode'].includes(item.Type);
-            const isMovie = item.Type === 'Movie';
-
-            // Do not display report button for non-media collection pages (collections/boxsets/etc.)
-            if (!isTvLike && !isMovie) {
-                console.debug(`${logPrefix} Skipping ${item.Name}: unsupported item type (${item.Type}) — likely a collection/boxset`);
-                return false;
-            }
-
-            const mediaType = isTvLike ? 'tv' : 'movie';
 
             console.debug(`${logPrefix} Checking item: ${item.Name} (type=${item.Type}, mediaType=${mediaType}, TMDB: ${tmdbId})`);
-
-            // Remove report button for special seasons (season 0) and special episodes (season 0)
-            try {
-                if (item.Type === 'Season') {
-                    const seasonNumber = parseInt(item.IndexNumber || item.SeasonNumber || item.Index || 0) || 0;
-                    if (seasonNumber === 0) {
-                        console.debug(`${logPrefix} Skipping ${item.Name}: special season (season 0)`);
-                        return false;
-                    }
-                }
-
-                if (item.Type === 'Episode') {
-                    // Episode items often contain the season number in ParentIndexNumber or SeasonNumber
-                    const parentSeason = parseInt(item.ParentIndexNumber || item.SeasonIndex || item.ParentIndex || item.SeasonNumber || 0) || 0;
-                    if (parentSeason === 0) {
-                        console.debug(`${logPrefix} Skipping ${item.Name}: special episode (season 0)`);
-                        return false;
-                    }
-                }
-            } catch (e) {
-                // If any unexpected shape, don't block the flow; just continue
-                console.debug(`${logPrefix} Could not determine season index for special detection:`, e);
-            }
 
             // If no TMDB ID, and this is a Season/Episode, try to fetch parent/series TMDB ID first
             if (!tmdbId && (item.Type === 'Season' || item.Type === 'Episode')) {
@@ -956,58 +968,14 @@
                 tmdbId = await issueReporter.getTmdbIdFallback(item.Name, mediaType, item);
 
                 if (!tmdbId) {
-                    console.debug(`${logPrefix} No TMDB ID could be resolved for ${item.Name} (fallback also failed)`);
-
-                    // Try to add a disabled 'unavailable' button in-place to inform the user
-                    let buttonContainerFallback = null;
-                    const selectorsFallback = [
-                        '.detailButtons',
-                        '.itemActionsBottom',
-                        '[class*="ActionButtons"]',
-                        '.mainDetailButtons',
-                        '.detailButtonsContainer',
-                        '[class*="primaryActions"]',
-                        '.topBarSecondaryMenus + *'
-                    ];
-
-                    for (const sel of selectorsFallback) {
-                        const found = itemDetailPage.querySelector(sel);
-                        if (found) {
-                            buttonContainerFallback = found;
-                            break;
-                        }
-                    }
-
-                    if (!buttonContainerFallback) {
-                        const allButtons = itemDetailPage.querySelectorAll('button');
-                        if (allButtons.length > 0) {
-                            buttonContainerFallback = allButtons[allButtons.length - 1].parentElement;
-                        }
-                    }
-
-                    if (buttonContainerFallback) {
-                        const unavailableButton = issueReporter.createUnavailableButton(buttonContainerFallback, item.Name, mediaType, 'no-tmdb');
-                        if (unavailableButton) {
-                            const moreButton = buttonContainerFallback.querySelector('.btnMoreCommands');
-                            if (moreButton) {
-                                buttonContainerFallback.insertBefore(unavailableButton, moreButton);
-                            } else {
-                                buttonContainerFallback.appendChild(unavailableButton);
-                            }
-                            console.log(`${logPrefix} Added unavailable report button for ${item.Name}`);
-                            return true;
-                        }
-                    }
-
+                    // No TMDB ID for this item, and the fallback search couldn't find one
+                    // either. As above: this isn't a transient state, so skip silently
+                    // instead of inserting a disabled "unavailable" button.
+                    console.debug(`${logPrefix} No TMDB ID could be resolved for ${item.Name} (fallback also failed), skipping button`);
                     return false;
                 } else {
                     console.log(`${logPrefix} Found TMDB ID via fallback: ${tmdbId}`);
                 }
-            }
-
-            if (mediaType !== 'tv' && mediaType !== 'movie') {
-                console.debug(`${logPrefix} Skipping ${item.Name}: invalid type (${mediaType})`);
-                return false;
             }
 
             // Find the appropriate container for the button - check multiple locations

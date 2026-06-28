@@ -1925,7 +1925,7 @@
   function normalizeMediaType(mediaType) {
     const type = (mediaType || '').toLowerCase();
     if (type === 'series' || type === 'episode' || type === 'tvshow' || type === 'tv') return 'tv';
-    if (type === 'movie' || type === 'film') return 'movie';
+    if (type === 'movie' || type === 'film' || type === 'musicvideo') return 'movie';
     return 'other';
   }
 
