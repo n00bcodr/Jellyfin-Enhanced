@@ -165,9 +165,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                         return $"{version}-{ticks}";
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Fall through to the bare version below.
+                    _logger.Debug($"ScriptCacheKey: couldn't read assembly file metadata, using bare version: {ex.Message}");
                 }
 
                 return version;
