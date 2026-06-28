@@ -944,14 +944,46 @@
         }
     }
 
+    let releaseDateIconFontInjected = false;
+    function ensureReleaseDateIconFont() {
+        if (releaseDateIconFontInjected) return;
+        releaseDateIconFontInjected = true;
+        JE.helpers.addCSS('je-release-date-symbols', `
+            @font-face {
+                font-family: 'Material Symbols Rounded';
+                font-style: normal;
+                font-weight: 100 700;
+                font-display: block;
+                src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+            }
+            .je-release-date-icon {
+                font-family: 'Material Symbols Rounded';
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1;
+                letter-spacing: normal;
+                text-transform: none;
+                display: inline-block;
+                white-space: nowrap;
+                word-wrap: normal;
+                direction: ltr;
+                -webkit-font-feature-settings: 'liga';
+                -moz-font-feature-settings: 'liga';
+                font-feature-settings: 'liga';
+                -webkit-font-smoothing: antialiased;
+            }
+        `);
+    }
+
     /** Fills an existing release-date placeholder element with one icon+date pair per known release type. */
     function fillReleaseDateChip(chip, infos) {
+        ensureReleaseDateIconFont();
         chip.title = JE.t('release_date_tooltip');
         chip.style.display = 'flex';
         chip.style.alignItems = 'center';
         chip.style.gap = '0.6em';
         chip.style.margin = '0 1em 0 0 !important';
-        chip.innerHTML = infos.map(info => `<span style="display: inline-flex; align-items: center;"><span class="material-icons" style="font-size: inherit; margin-right: 0.3em;" title="${JE.t(info.titleKey)}">${info.icon}</span>${formatReleaseDate(info.date)}</span>`).join('');
+        chip.innerHTML = infos.map(info => `<span style="display: inline-flex; align-items: center;"><span class="je-release-date-icon" style="font-size: inherit; margin-right: 0.3em;" title="${JE.t(info.titleKey)}">${info.icon}</span>${formatReleaseDate(info.date)}</span>`).join('');
     }
 
     /** Creates and appends a fresh release-date chip (cache-hit path, where there's no placeholder to fill). */
