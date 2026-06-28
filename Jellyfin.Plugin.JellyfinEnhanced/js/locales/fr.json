@@ -535,5 +535,6 @@
     "active_streams_count": "{count} flux actif|{count} flux actifs",
     "active_streams_none": "Aucun flux actif",
     "reviews_avg_rating_tooltip": "Note moyenne de {count} utilisateur(s)",
+    "release_date_tooltip": "Date de sortie/diffusion (via TMDB)",
     "panel_settings_subtitles_position_note": "Nécessite que le style des sous-titres Jellyfin soit défini sur <b>Personnalisé</b> dans les paramètres des sous-titres"
 }

@@ -535,5 +535,6 @@
     "active_streams_count": "{count} aktivní stream|{count} aktivní streamy",
     "active_streams_none": "Žádné aktivní streamy",
     "reviews_avg_rating_tooltip": "Průměrné hodnocení od {count} uživatelů",
+    "release_date_tooltip": "Datum vydání/vysílání (přes TMDB)",
     "panel_settings_subtitles_position_note": "Vyžaduje styl Jellyfin titulky nastavený na <b>Vlastní</b> v nastavení titulků"
 }

@@ -535,5 +535,6 @@
     "active_streams_none": "Brak aktywnych strumieni",
     "jellyseerr_report_issue_type_other": "Inny",
     "reviews_avg_rating_tooltip": "Średnia ocena od {count} użytkownika(ów)",
+    "release_date_tooltip": "Data wydania/emisji (przez TMDB)",
     "panel_settings_subtitles_position_note": "Wymaga ustawienia stylu napisów Jellyfin na <b>Niestandardowy</b> w ustawieniach napisów"
 }

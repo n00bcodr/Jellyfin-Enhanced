@@ -535,5 +535,6 @@
     "active_streams_count": "{count} активен поток|{count} активни потока",
     "active_streams_none": "Няма активни потоци",
     "reviews_avg_rating_tooltip": "Средна оценка от {count} потребител(и)",
+    "release_date_tooltip": "Дата на издаване/излъчване (чрез TMDB)",
     "panel_settings_subtitles_position_note": "Изисква стилът на субтитрите на Jellyfin да бъде зададен на <b>Персонализиран</b> в настройките за субтитри."
 }

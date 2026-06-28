@@ -535,5 +535,6 @@
     "active_streams_count": "{count} aktiver Stream|{count} aktive Streams",
     "active_streams_none": "Keine aktiven Streams",
     "reviews_avg_rating_tooltip": "Durchschnittliche Bewertung von {count} Benutzer(n)",
+    "release_date_tooltip": "Veröffentlichungs-/Ausstrahlungsdatum (über TMDB)",
     "panel_settings_subtitles_position_note": "Erfordert, dass der Jellyfin-Untertitelstil in den Untertiteleinstellungen auf <b>Benutzerdefiniert</b> gesetzt ist."
 }
