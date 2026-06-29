@@ -23,6 +23,18 @@
     locationSignature: null,
     locationTimer: null,
     _customTabContainer: null,
+    // Admin cross-user view: an admin can view another user's hidden content
+    // read-only via a toolbar dropdown. All of these stay inert/empty for non-admins.
+    adminIsAdmin: null,          // tri-state: null = not yet resolved, then true/false (false only when authoritative)
+    adminUsers: null,            // cached dropdown list: [{ userId, userName, count }]; null = needs (re)fetch
+    adminUsersLoading: false,    // guards against concurrent user-list fetches
+    selectedAdminUserId: null,   // null = viewing own list; otherwise the target user's N-id
+    adminEditMode: false,        // when viewing another user, allow editing (unhiding) their items
+    adminUserName: '',           // display name of the selected user (for the header badge)
+    adminItems: null,            // cached hidden items for the selected user
+    adminItemsUserId: null,      // which user adminItems belongs to (guards against showing stale items)
+    adminLoadError: false,       // true when the selected user's items failed to load (vs genuinely empty)
+    adminLoadToken: 0,           // increments per fetch so stale responses are ignored
   };
 
   const logPrefix = '🪼 Jellyfin Enhanced: Hidden Content Page:';
@@ -393,6 +405,132 @@
       color: rgba(180, 210, 255, 0.95);
     }
 
+    /* Admin cross-user controls. Accent + text colours come from the active theme via the
+       --je-hc-accent / --je-hc-text custom properties set in applyAdminThemeVars(); the literal values
+       below are fallbacks used when no theme variable is available (option backgrounds are themed inline).
+       The control itself stays a neutral translucent surface (matching the sibling search / scoped-toggle
+       controls) so it reads on any dark theme. color-mix() needs a modern engine (Chrome 111+/Firefox
+       113+/Safari 16.4+); older browsers ignore the rule and fall back to the var() default colour. */
+    .je-hidden-admin-user-filter {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--je-hc-text, rgba(255,255,255,0.85));
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      max-width: 240px;
+      outline: none;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .je-hidden-admin-user-filter:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .je-hidden-admin-user-filter:focus {
+      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(150,170,255)) 60%, transparent);
+    }
+    .je-hidden-admin-edit-toggle {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--je-hc-text, rgba(255,255,255,0.7));
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .je-hidden-admin-edit-toggle:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .je-hidden-admin-edit-toggle.active {
+      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 22%, transparent);
+      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);
+      color: var(--je-hc-accent, rgb(185,240,200));
+    }
+    .je-hidden-admin-add-btn {
+      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 22%, transparent);
+      border: 1px solid color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);
+      color: var(--je-hc-accent, rgb(185,240,200));
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .je-hidden-admin-add-btn:hover {
+      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 34%, transparent);
+    }
+    /* Compact status chip that sits inside the header (right of the title). Inline so it never adds
+       a banner row that shifts the page; height stays within the title's line so the header doesn't
+       grow when it appears/disappears. */
+    .je-hidden-admin-viewing-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex: 0 0 auto;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      line-height: 1.2;
+      white-space: nowrap;
+      max-width: 100%;
+      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,149,237)) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--je-hc-accent, rgb(100,149,237)) 35%, transparent);
+    }
+    .je-hidden-admin-viewing-badge.je-hidden-admin-editing {
+      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 18%, transparent);
+      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);
+    }
+    .je-hidden-admin-viewing-icon {
+      font-size: 16px;
+      color: var(--je-hc-accent, rgb(180,210,255));
+    }
+    .je-hidden-admin-editing .je-hidden-admin-viewing-icon {
+      color: var(--je-hc-accent, rgb(185,240,200));
+    }
+    .je-hidden-admin-viewing-user {
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--je-hc-accent, rgb(180,210,255));
+    }
+    .je-hidden-admin-editing .je-hidden-admin-viewing-user {
+      color: var(--je-hc-accent, rgb(185,240,200));
+    }
+
+    /* Add-items modal: the panel fills the viewport and the results grid scrolls inside
+       it (the search box stays put); overscroll-behavior stops the scroll reaching the page behind. */
+    .je-hidden-admin-add-overlay {
+      padding: 24px 16px;
+      overscroll-behavior: contain;
+    }
+    .je-hidden-admin-add-overlay .je-hidden-management-panel {
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 48px);
+      max-height: calc(100dvh - 48px);
+      overflow: hidden;
+    }
+    .je-hidden-admin-add-overlay .je-hidden-management-grid {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      flex: 1 1 auto;
+      min-height: 0;
+      /* The grid has a definite (flex-constrained) height. Without this, its auto rows are sized
+         down to each card's min-content to fit that height, and the cards' overflow:hidden then
+         clips the poster+info to a ~34px sliver (only visible with many results). Pinning rows to
+         max-content keeps every card full height; the grid overflows and scrolls instead. */
+      grid-auto-rows: max-content;
+      align-content: start;
+    }
+
     @media (max-width: 768px) {
       .je-hidden-content-page {
         padding: 0.5em;
@@ -419,6 +557,23 @@
         grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
         gap: 10px;
       }
+
+      /* Add-items modal: near-fullscreen with small result cards on phones. */
+      .je-hidden-admin-add-overlay {
+        padding: 8px;
+      }
+      .je-hidden-admin-add-overlay .je-hidden-management-panel {
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
+      }
+      .je-hidden-admin-add-overlay .je-hidden-management-grid {
+        grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+        gap: 10px;
+        padding: 12px;
+      }
+      .je-hidden-admin-add-overlay .je-hidden-item-name { font-size: 12px; }
+      .je-hidden-admin-add-overlay .je-hidden-item-meta { font-size: 10px; }
+      .je-hidden-admin-add-overlay .je-hidden-item-unhide { font-size: 11px; padding: 5px; }
     }
   `;
 
@@ -448,8 +603,17 @@
 
     // Re-render listener runs in BOTH native and Plugin-Pages modes; gated on container presence (state.pageVisible isn't set in Plugin-Pages mode).
     window.addEventListener('je-hidden-content-changed', () => {
+      // This event fires only for the ADMIN's own hidden-content changes. Invalidate the cached
+      // admin user list so the dropdown picks up new/emptied users on the next render.
+      // Only when on the admin's own view: while viewing another user, nulling the cache would strip
+      // the dropdown on the next admin-edit render until it re-fetches (a visible flicker).
+      if (state.adminIsAdmin === true && !state.selectedAdminUserId) {
+        state.adminUsers = null;
+      }
       const container = document.getElementById('je-hidden-content-container');
-      if (container && document.contains(container)) {
+      // Don't repaint while viewing another user — the admin's own change must not clobber that
+      // read-only view with own-list data under the wrong badge.
+      if (container && document.contains(container) && !state.selectedAdminUserId) {
         renderPage(container);
       }
     });
@@ -710,6 +874,27 @@
               self.style.display = 'none';
             }
           }).catch(function() { self.style.display = 'none'; });
+        } else if (group.seriesName && JE.jellyseerrAPI && JE.jellyseerrMoreInfo) {
+          // No TMDB id stored (e.g. an episode hidden from Next Up) and the Jellyfin media is gone.
+          // Resolve the show via a Seerr search by name so the card can still open the more-info
+          // modal — instead of leaving a blank poster and a dead "#/details" link.
+          self.style.display = 'none';
+          JE.jellyseerrAPI.search(group.seriesName).then(function(res) {
+            var results = (res && res.results) || [];
+            var hit = results.find(function(r) { return r.mediaType === 'tv'; }) || results[0];
+            if (hit && hit.id) {
+              posterLink.dataset.jellyfinRemoved = '1';
+              posterLink.dataset.resolvedTmdbId = String(hit.id);
+              posterLink.dataset.resolvedMediaType = hit.mediaType || 'tv';
+              posterLink.href = '#';
+              var p = hit.posterPath || hit.poster_path;
+              if (p) {
+                self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${p}`;
+                self.style.display = '';
+                self.onerror = function() { this.style.display = 'none'; };
+              }
+            }
+          }).catch(function() {});
         } else {
           self.style.display = 'none';
         }
@@ -822,7 +1007,7 @@
       showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
         unhideBtn.closest('.je-hidden-group-card').style.opacity = '0.3';
         setTimeout(() => {
-          JE.hiddenContent.unhideItem(mainItem._key || mainItem.itemId);
+          handleUnhide(mainItem._key || mainItem.itemId);
         }, UNHIDE_FADE_DELAY_MS);
       }, itemLabel);
     });
@@ -897,7 +1082,7 @@
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           row.style.opacity = '0.3';
           setTimeout(() => {
-            JE.hiddenContent.unhideItem(item._key || item.itemId);
+            handleUnhide(item._key || item.itemId);
           }, UNHIDE_FADE_DELAY_MS);
         }, rowLabel);
       });
@@ -913,9 +1098,7 @@
     unhideAllBtn.textContent = JE.t('hidden_content_unhide_all_show');
     unhideAllBtn.addEventListener('click', () => {
       showUnhideConfirmation(JE.t('hidden_content_unhide_all_confirm') || 'Unhide all items for this show?', () => {
-        for (const item of group.items) {
-          JE.hiddenContent.unhideItem(item._key || item.itemId);
-        }
+        handleUnhideMany(group.items.map((item) => item._key || item.itemId));
       }, group.seriesName || 'this show');
     });
     fragment.appendChild(unhideAllBtn);
@@ -955,31 +1138,32 @@
     const { info, nameEl } = createGroupInfo(group, mainItem, totalItems, hasEpisodes, tmdbId);
     card.appendChild(info);
 
-    // Jellyseerr navigation handler for items without Jellyfin ID,
-    // or items removed from Jellyfin that have a TMDB ID fallback
-    if (hasTmdbId && JE.jellyseerrMoreInfo) {
+    // Seerr navigation: open the more-info modal when the item has no Jellyfin page (no
+    // Jellyfin id) or its Jellyfin media has been deleted. The TMDB id is either stored on the item,
+    // or — for an orphan episode whose show is gone — resolved at render time by createGroupPoster
+    // and stashed on the poster link's dataset.
+    if (JE.jellyseerrMoreInfo) {
       const posterLink = card.querySelector('.je-hidden-group-poster-link');
-      const mediaType = mainItem.type === 'Series' ? 'tv' : 'movie';
+      const baseMediaType = mainItem.type === 'Series' ? 'tv' : 'movie';
       const openJellyseerr = (e) => {
-        e.preventDefault();
-        JE.jellyseerrMoreInfo.open(parseInt(tmdbId, 10), mediaType);
+        const id = tmdbId || (posterLink && posterLink.dataset.resolvedTmdbId);
+        if (!id) return;
+        const mediaType = tmdbId ? baseMediaType : (posterLink.dataset.resolvedMediaType || 'tv');
+        if (e) e.preventDefault();
+        JE.jellyseerrMoreInfo.open(parseInt(id, 10), mediaType);
       };
-      if (!hasJellyfinId) {
-        posterLink.addEventListener('click', openJellyseerr);
-        nameEl.addEventListener('click', openJellyseerr);
-      } else {
-        // For items with Jellyfin ID, only use Jellyseerr if item was removed
-        posterLink.addEventListener('click', (e) => {
-          if (posterLink.dataset.jellyfinRemoved === '1') {
-            openJellyseerr(e);
-          }
-        });
-        nameEl.addEventListener('click', (e) => {
-          if (posterLink.dataset.jellyfinRemoved === '1') {
-            e.preventDefault();
-            JE.jellyseerrMoreInfo.open(parseInt(tmdbId, 10), mediaType);
-          }
-        });
+      if (posterLink) {
+        if (hasTmdbId && !hasJellyfinId) {
+          // No Jellyfin page at all → always open Seerr.
+          posterLink.addEventListener('click', openJellyseerr);
+          if (nameEl) nameEl.addEventListener('click', openJellyseerr);
+        } else {
+          // Has a Jellyfin page (or an orphan episode) → divert to Seerr only once the Jellyfin
+          // media is gone (createGroupPoster sets data-jellyfin-removed on image failure).
+          const guarded = (e) => { if (posterLink.dataset.jellyfinRemoved === '1') openJellyseerr(e); };
+          posterLink.addEventListener('click', guarded);
+          if (nameEl) nameEl.addEventListener('click', guarded);
+        }
       }
     }
 
@@ -1063,6 +1247,482 @@
     return section;
   }
 
+  // ============================================================
+  // Admin cross-user view
+  // ============================================================
+
+  /**
+   * Resolves whether the current user is an administrator, caching the result.
+   * Prefers values already determined elsewhere (settings.json flag, pre-fetched
+   * user) and falls back to a single ApiClient.getCurrentUser() call. This is a
+   * UX gate only — the server independently enforces admin access on every
+   * admin/* endpoint, so a false positive here cannot leak another user's data.
+   * @returns {Promise<boolean>}
+   */
+  async function resolveIsAdmin() {
+    if (state.adminIsAdmin !== null) return state.adminIsAdmin;
+    // A positive flag is trustworthy; a falsy one may simply be "not yet resolved",
+    // so only short-circuit on an explicit true and otherwise verify authoritatively.
+    if (JE.currentSettings && JE.currentSettings.isAdmin === true) {
+      state.adminIsAdmin = true;
+      return true;
+    }
+    if (JE.currentUser && JE.currentUser.Policy) {
+      state.adminIsAdmin = JE.currentUser.Policy.IsAdministrator === true;
+      return state.adminIsAdmin;
+    }
+    try {
+      const user = await ApiClient.getCurrentUser();
+      // Authoritative result — cache it even when false.
+      state.adminIsAdmin = !!(user && user.Policy && user.Policy.IsAdministrator);
+      return state.adminIsAdmin;
+    } catch (e) {
+      // Transient failure: do NOT cache false, so a later render retries instead of
+      // permanently disabling the admin filter for an actual admin.
+      return false;
+    }
+  }
+
+  /**
+   * Lazily loads the admin user-filter: resolves admin status and, for admins, the list
+   * of users who have hidden content. Re-renders once the dropdown becomes available.
+   * Safe to call on every render — it no-ops once the list is cached and re-fetches only
+   * after the cache is invalidated (state.adminUsers reset to null). Never throws.
+   */
+  async function maybeInitAdminFilter() {
+    // Respect the admin config toggle: when cross-user access is disabled, never build the filter
+    // (and never call the admin endpoints, which the server also refuses).
+    if (JE.pluginConfig && JE.pluginConfig.HiddenContentAdmin === false) return;
+    if (state.adminUsers !== null || state.adminUsersLoading) return;
+    state.adminUsersLoading = true;
+    // Capture the load token: if the page is left mid-fetch (hidePage bumps the token), a late
+    // completion must NOT repopulate adminUsers — that would defeat the fresh re-init on re-open.
+    const token = state.adminLoadToken;
+    try {
+      const isAdmin = await resolveIsAdmin();
+      if (!isAdmin) return; // leave adminUsers null; resolveIsAdmin governs retry semantics
+      const list = await JE.hiddenContent.fetchHiddenContentUsers();
+      // null = transient failure: leave adminUsers null so a later render retries, and do NOT
+      // re-render here (re-rendering would re-enter this function and spin a fetch/render loop).
+      if (list === null) return;
+      if (token !== state.adminLoadToken) return; // page left during the fetch — discard stale result
+      state.adminUsers = list;
+      // The dropdown can now be drawn from cache — repaint the current surface.
+      renderPage();
+    } catch (e) {
+      console.warn(`${logPrefix} admin filter init failed`, e);
+    } finally {
+      state.adminUsersLoading = false;
+    }
+  }
+
+  /**
+   * Handles a change of the admin user-filter dropdown. Empty value returns to the
+   * admin's own list; any other value loads that user's hidden content read-only.
+   * A monotonically increasing token discards stale responses if the admin switches
+   * users quickly, and search/scoped filters reset so they don't leak across views.
+   * @param {string} value Selected user id (N format) or '' for own list.
+   */
+  async function onAdminUserChange(value) {
+    const token = ++state.adminLoadToken;
+    state.searchQuery = '';
+    state.scopedOnly = false;
+    state.adminEditMode = false; // always start a freshly-selected user in read-only view
+    state.adminLoadError = false;
+
+    if (!value) {
+      state.selectedAdminUserId = null;
+      state.adminItems = null;
+      state.adminItemsUserId = null;
+      state.adminUserName = '';
+      renderPage();
+      return;
+    }
+
+    state.selectedAdminUserId = value;
+    const match = (state.adminUsers || []).find((u) => u.userId === value);
+    state.adminUserName = match ? match.userName : value;
+    // Clear any prior user's items and repaint to a loading state until the fetch resolves.
+    state.adminItems = null;
+    state.adminItemsUserId = null;
+    renderPage();
+
+    const items = await JE.hiddenContent.fetchUserHiddenItemsForAdmin(value);
+    if (token !== state.adminLoadToken) return; // a newer selection superseded this one
+    if (items === null) {
+      // Load failed — surface an error (with retry) rather than a misleading empty grid. Leaving
+      // adminItemsUserId null keeps adminReady false so the error branch renders.
+      state.adminLoadError = true;
+    } else {
+      state.adminItems = items;
+      state.adminItemsUserId = value;
+    }
+    renderPage();
+  }
+
+  /**
+   * Converts a colour to an opaque form (drops any alpha) so it is safe as a native <option>
+   * background — a translucent colour would let the OS-default white show through. Returns null
+   * for gradients / unparseable values so callers fall back to a solid default.
+   * @param {string} c A CSS colour (rgb/rgba/hex).
+   * @returns {string|null}
+   */
+  function toOpaqueColor(c) {
+    if (typeof c !== 'string') return null;
+    const s = c.trim();
+    const m = s.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) {
+      const parts = m[1].split(/[,\s/]+/).filter(Boolean);
+      if (parts.length >= 3) return `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})`;
+    }
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s;       // opaque hex
+    if (/^#([0-9a-f]{8})$/i.test(s)) return '#' + s.slice(1, 7); // hex8 → drop alpha
+    return null;
+  }
+
+  /**
+   * Publishes the active theme's accent / text / surface colours as CSS custom properties on the
+   * page container so the admin controls (dropdown, edit toggle, badges) follow the user's theme
+   * (e.g. Purple Haze) instead of hard-coded colours. The CSS carries sensible fallbacks, so this
+   * is best-effort — missing theme variables simply leave the defaults in place.
+   * @param {HTMLElement} container The rendered content container.
+   */
+  function applyAdminThemeVars(container) {
+    if (!container || !(JE.themer && JE.themer.getThemeVariables)) return;
+    let tv;
+    try { tv = JE.themer.getThemeVariables() || {}; } catch (e) { return; }
+    // Only publish VALID CSS colours. A malformed theme value written to the property would make
+    // color-mix() invalid AND defeat the CSS var() fallback (which only applies when the property is
+    // unset), so we leave the property unset on anything the browser doesn't accept as a colour.
+    if (isCssColor(tv.primaryAccent)) container.style.setProperty('--je-hc-accent', tv.primaryAccent);
+    if (isCssColor(tv.textColor)) container.style.setProperty('--je-hc-text', tv.textColor);
+  }
+
+  /**
+   * Returns true if `v` is a colour the browser accepts (so it's safe inside color-mix() / var()).
+   * Falls back to a permissive check where the CSS API is unavailable.
+   * @param {*} v
+   * @returns {boolean}
+   */
+  function isCssColor(v) {
+    if (typeof v !== 'string' || v.trim() === '') return false;
+    if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return true;
+    return CSS.supports('color', v.trim());
+  }
+
+  /**
+   * Builds the "Viewing: <user> · read-only" badge shown above the grid while an
+   * admin is inspecting another user's hidden content.
+   * @returns {HTMLElement}
+   */
+  function createAdminViewingBadge() {
+    const editing = state.adminEditMode;
+    // A compact chip that lives INSIDE the always-present page header (right of the title), so
+    // entering/leaving admin view never inserts a block that shifts the page down.
+    const chip = document.createElement('div');
+    chip.className = 'je-hidden-admin-viewing-badge' + (editing ? ' je-hidden-admin-editing' : '');
+    // Read-only nuance lives in the eye icon + tooltip (and the Edit button); keeps the chip short.
+    if (!editing) chip.title = JE.t('hidden_content_admin_readonly_note');
+
+    const icon = document.createElement('span');
+    icon.className = 'material-icons je-hidden-admin-viewing-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = editing ? 'edit' : 'visibility';
+    chip.appendChild(icon);
+
+    const who = document.createElement('span');
+    who.className = 'je-hidden-admin-viewing-user';
+    const displayName = state.adminUserName || state.selectedAdminUserId || '';
+    who.textContent = JE.t(editing ? 'hidden_content_admin_editing_user' : 'hidden_content_admin_viewing_user', { userName: displayName });
+    chip.appendChild(who);
+
+    return chip;
+  }
+
+  /**
+   * Routes a single-item unhide to the correct store: the admin endpoint when editing another
+   * user, otherwise the current user's own store. No-op in read-only admin view.
+   * @param {string} key Item key (item._key || item.itemId).
+   */
+  function handleUnhide(key) {
+    if (state.selectedAdminUserId) {
+      if (state.adminEditMode) adminUnhide([key]);
+      return; // read-only view: ignore (the control should already be stripped)
+    }
+    JE.hiddenContent.unhideItem(key);
+  }
+
+  /**
+   * Routes a bulk unhide (whole show / unhide-all) the same way as {@link handleUnhide}.
+   * @param {string[]} keys Item keys to unhide.
+   */
+  function handleUnhideMany(keys) {
+    if (!Array.isArray(keys) || keys.length === 0) return;
+    if (state.selectedAdminUserId) {
+      if (state.adminEditMode) adminUnhide(keys);
+      return;
+    }
+    keys.forEach((k) => JE.hiddenContent.unhideItem(k));
+  }
+
+  /**
+   * Performs an admin-side unhide for the currently-viewed user, then prunes the local cache and
+   * repaints. Keeps the dropdown count roughly in sync without a full refetch.
+   * @param {string[]} keys Item keys to unhide for state.selectedAdminUserId.
+   */
+  async function adminUnhide(keys) {
+    const uid = state.selectedAdminUserId;
+    if (!uid) return;
+    const ok = await JE.hiddenContent.adminUnhideForUser(uid, keys);
+    if (!ok) return;
+    const removed = new Set(keys);
+    if (Array.isArray(state.adminItems)) {
+      state.adminItems = state.adminItems.filter((it) => !removed.has(it._key));
+    }
+    if (Array.isArray(state.adminUsers)) {
+      // Immutable update: replace the entry rather than mutating the cached object in place.
+      state.adminUsers = state.adminUsers.map((x) =>
+        x.userId === uid ? { ...x, count: Math.max(0, (x.count || 0) - removed.size) } : x);
+    }
+    renderPage();
+  }
+
+  /**
+   * Builds a hidden-content item from a Jellyfin search result and hides it for the viewed user
+   * (admin adding). Updates the local cache + dropdown count and repaints.
+   * @param {string} targetUserId The user to hide the item for.
+   * @param {Object} result A normalized search result (library or Seerr).
+   * @returns {Promise<boolean>} true on success.
+   */
+  async function adminAddItem(targetUserId, result) {
+    const item = {
+      itemId: result.itemId || '',
+      name: result.name || '',
+      type: result.type || '',
+      tmdbId: result.tmdbId ? String(result.tmdbId) : '',
+      // Store the TMDB poster path for Seerr-sourced items (not in the library) so the hidden card
+      // can render a poster; library items render from their Jellyfin image, so leave it blank.
+      posterPath: result.source === 'seerr' ? (result.posterPath || '') : '',
+      seriesId: '',
+      seriesName: '',
+      seasonNumber: null,
+      episodeNumber: null,
+      hideScope: 'global',
+      hiddenAt: new Date().toISOString(),
+    };
+    const added = await JE.hiddenContent.adminHideForUser(targetUserId, [item]);
+    if (added === false) return false;
+    // The server returns the number of items it newly added; 0 means the user already had it hidden.
+    // Only update the local cache + dropdown count for a real add, so the count can't drift upward.
+    const didAdd = typeof added === 'number' ? added > 0 : true;
+    const key = item.itemId || ('tmdb-' + item.tmdbId);
+    if (didAdd && Array.isArray(state.adminItems) && !state.adminItems.some((i) => (i._key || i.itemId) === key)) {
+      state.adminItems = state.adminItems.concat([{ ...item, _key: key }]);
+    }
+    if (didAdd && Array.isArray(state.adminUsers)) {
+      // Immutable update: replace the entry rather than mutating the cached object in place.
+      state.adminUsers = state.adminUsers.map((x) =>
+        x.userId === targetUserId ? { ...x, count: (x.count || 0) + 1 } : x);
+    }
+    renderPage();
+    return true;
+  }
+
+  /**
+   * Opens a modal to ADD items to the viewed user's hidden content: searches the Jellyfin library,
+   * and hiding a result adds it to that user's hidden list (admin adding). Reuses the
+   * management-panel styling.
+   */
+  function openAdminAddModal() {
+    const uid = state.selectedAdminUserId;
+    if (!uid) return;
+    const userName = state.adminUserName || uid;
+
+    // The open overlay normally blocks re-opening, but if a stale one is somehow present, note it so
+    // we don't later "restore" the page overflow to its already-locked 'hidden' value (a perma-lock).
+    const hadStaleOverlay = !!document.querySelector('.je-hidden-admin-add-overlay');
+    document.querySelector('.je-hidden-admin-add-overlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'je-hidden-management-overlay je-hidden-admin-add-overlay';
+    const panel = document.createElement('div');
+    panel.className = 'je-hidden-management-panel';
+
+    const header = document.createElement('div');
+    header.className = 'je-hidden-management-header';
+    const h2 = document.createElement('h2');
+    h2.textContent = JE.t('hidden_content_admin_add_title', { userName });
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'je-hidden-management-close';
+    closeBtn.textContent = '×';
+    header.appendChild(h2);
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'je-hidden-management-toolbar';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'je-hidden-management-search';
+    searchInput.placeholder = JE.t('hidden_content_admin_add_search');
+    toolbar.appendChild(searchInput);
+    panel.appendChild(toolbar);
+
+    const grid = document.createElement('div');
+    grid.className = 'je-hidden-management-grid';
+    const hint = document.createElement('div');
+    hint.className = 'je-hidden-management-empty';
+    hint.textContent = JE.t('hidden_content_admin_add_hint');
+    grid.appendChild(hint);
+    panel.appendChild(grid);
+
+    overlay.appendChild(panel);
+
+    // Lock the background scroll so scrolling the modal doesn't move the page behind it (mobile).
+    // If a stale modal was already locking it, treat the pre-modal value as default ('') so closing
+    // can never re-save and re-apply a 'hidden' that permanently locks the page.
+    const prevBodyOverflow = hadStaleOverlay ? '' : document.body.style.overflow;
+    const prevHtmlOverflow = hadStaleOverlay ? '' : document.documentElement.style.overflow;
+    const close = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', esc);
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+    const esc = (e) => { if (e.key === 'Escape') close(); };
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', esc);
+
+    const buildResultCard = (n) => {
+      const key = n.itemId || ('tmdb-' + n.tmdbId);
+      const alreadyHidden = (state.adminItems || []).some((i) => (i._key || i.itemId) === key);
+      const card = document.createElement('div');
+      card.className = 'je-hidden-item-card';
+
+      const posterWrap = document.createElement('div');
+      posterWrap.className = 'je-hidden-item-poster-link';
+      const img = document.createElement('img');
+      img.className = 'je-hidden-item-poster';
+      img.loading = 'lazy';
+      img.alt = '';
+      const tmdbPoster = n.posterPath ? ('https://image.tmdb.org/t/p/w' + POSTER_MAX_WIDTH + n.posterPath) : '';
+      if (n.itemId) {
+        // Library item → Jellyfin image, falling back to the TMDB poster if available.
+        img.src = ApiClient.getUrl('/Items/' + n.itemId + '/Images/Primary', { maxWidth: POSTER_MAX_WIDTH });
+        img.onerror = tmdbPoster
+          ? function () { this.onerror = function () { this.style.display = 'none'; }; this.src = tmdbPoster; }
+          : function () { this.style.display = 'none'; };
+      } else if (tmdbPoster) {
+        // Seerr-only item → TMDB poster.
+        img.src = tmdbPoster;
+        img.onerror = function () { this.style.display = 'none'; };
+      } else {
+        img.style.display = 'none';
+      }
+      posterWrap.appendChild(img);
+      card.appendChild(posterWrap);
+
+      const info = document.createElement('div');
+      info.className = 'je-hidden-item-info';
+      const name = document.createElement('div');
+      name.className = 'je-hidden-item-name';
+      name.title = n.name || '';
+      name.textContent = n.name || 'Unknown';
+      const meta = document.createElement('div');
+      meta.className = 'je-hidden-item-meta';
+      const sourceLabel = n.source === 'seerr'
+        ? JE.t('hidden_content_admin_add_source_seerr')
+        : JE.t('hidden_content_admin_add_source_library');
+      meta.textContent = [n.type, n.year, sourceLabel].filter(Boolean).join(' · ');
+      const btn = document.createElement('button');
+      btn.className = 'je-hidden-item-unhide';
+      if (alreadyHidden) {
+        btn.textContent = JE.t('hidden_content_admin_add_already');
+        btn.disabled = true;
+      } else {
+        btn.textContent = JE.t('hidden_content_admin_add_hide');
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = JE.t('hidden_content_admin_add_hiding');
+          const ok = await adminAddItem(uid, n);
+          btn.textContent = ok ? JE.t('hidden_content_admin_add_added') : JE.t('hidden_content_admin_add_hide');
+          if (!ok) btn.disabled = false;
+        });
+      }
+      info.appendChild(name);
+      info.appendChild(meta);
+      info.appendChild(btn);
+      card.appendChild(info);
+      return card;
+    };
+
+    let searchTimer = null;
+    let searchToken = 0;
+    const showMessage = (text) => {
+      const m = document.createElement('div');
+      m.className = 'je-hidden-management-empty';
+      m.textContent = text;
+      grid.replaceChildren(m);
+    };
+    const doSearch = async (q) => {
+      const token = ++searchToken;
+      const term = (q || '').trim();
+      if (term.length < 2) { grid.replaceChildren(hint); return; }
+      showMessage(JE.t('hidden_content_admin_add_searching'));
+
+      // Search the Jellyfin library AND Seerr (when available) in parallel, so the admin can hide
+      // items that aren't in the library too.
+      const libP = ApiClient.ajax({
+        type: 'GET',
+        url: ApiClient.getUrl('/Items', {
+          userId: ApiClient.getCurrentUserId(), searchTerm: term, IncludeItemTypes: 'Movie,Series',
+          Recursive: true, Limit: 24, Fields: 'ProviderIds', ImageTypeLimit: 1, EnableImageTypes: 'Primary',
+        }),
+        dataType: 'json',
+      }).then((res) => (res && res.Items) || []).catch(() => []);
+      const seerrP = (JE.jellyseerrAPI && JE.jellyseerrAPI.search)
+        ? JE.jellyseerrAPI.search(term).then((res) => (res && res.results) || []).catch(() => [])
+        : Promise.resolve([]);
+
+      const [libItems, seerrItems] = await Promise.all([libP, seerrP]);
+      if (token !== searchToken) return;
+
+      const normalized = [];
+      const seenTmdb = new Set();
+      for (const r of libItems) {
+        const tmdb = (r.ProviderIds && (r.ProviderIds.Tmdb || r.ProviderIds.tmdb)) || '';
+        if (tmdb) seenTmdb.add(String(tmdb));
+        normalized.push({ source: 'library', itemId: r.Id, name: r.Name, type: r.Type,
+          tmdbId: tmdb ? String(tmdb) : '', posterPath: '', year: r.ProductionYear || '' });
+      }
+      for (const r of seerrItems) {
+        if (r.mediaType !== 'movie' && r.mediaType !== 'tv') continue; // skip people
+        const tmdb = String(r.id);
+        if (seenTmdb.has(tmdb)) continue; // already shown from the library
+        seenTmdb.add(tmdb);
+        normalized.push({ source: 'seerr', itemId: '', name: r.title || r.name || '',
+          type: r.mediaType === 'tv' ? 'Series' : 'Movie', tmdbId: tmdb,
+          posterPath: r.posterPath || r.poster_path || '',
+          year: ((r.releaseDate || r.firstAirDate || '') + '').slice(0, 4) });
+      }
+
+      if (!normalized.length) { showMessage(JE.t('hidden_content_admin_add_none')); return; }
+      const frag = document.createDocumentFragment();
+      for (const n of normalized) frag.appendChild(buildResultCard(n));
+      grid.replaceChildren(frag);
+    };
+
+    searchInput.addEventListener('input', () => {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => doSearch(searchInput.value), 300);
+    });
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.appendChild(overlay);
+    searchInput.focus();
+  }
+
   /**
    * Creates the page header with title and item count.
    * @param {number} totalCount Total number of hidden items.
@@ -1102,12 +1762,67 @@
     scopedToggle.textContent = JE.t('hidden_content_scope_filter_button');
     toolbar.appendChild(scopedToggle);
 
+    // Admin-only user filter: pick another user to view (and, in edit mode, edit)
+    // their hidden content. Only rendered once admin status is confirmed and there is at least one
+    // other user with hidden items; the server still gates the underlying data.
+    let adminUserSelect = null;
+    let adminEditToggle = null;
+    let adminAddBtn = null;
+    const adminAllowed = !(JE.pluginConfig && JE.pluginConfig.HiddenContentAdmin === false);
+    if (adminAllowed && state.adminIsAdmin === true && Array.isArray(state.adminUsers) && state.adminUsers.length > 0) {
+      // A plain native <select> styled to match the page's own toolbar controls (search / scoped
+      // toggle), so it follows the dark theme instead of the browser default. The option pop-up is
+      // themed too — options must be OPAQUE because a translucent colour lets the OS white show through.
+      adminUserSelect = document.createElement("select");
+      adminUserSelect.className = "je-hidden-admin-user-filter";
+      adminUserSelect.setAttribute('aria-label', JE.t('hidden_content_admin_select_user'));
+
+      const tv = (JE.themer && JE.themer.getThemeVariables) ? JE.themer.getThemeVariables() : {};
+      const optColor = isCssColor(tv.textColor) ? tv.textColor : '#ffffff';
+      const optBg = toOpaqueColor(tv.secondaryBg) || toOpaqueColor(tv.panelBg) || '#1f1f23';
+      const styleOption = (opt) => { opt.style.backgroundColor = optBg; opt.style.color = optColor; };
+
+      const ownOption = document.createElement("option");
+      ownOption.value = '';
+      ownOption.textContent = JE.t('hidden_content_admin_view_own');
+      styleOption(ownOption);
+      adminUserSelect.appendChild(ownOption);
+
+      for (const u of state.adminUsers) {
+        const opt = document.createElement("option");
+        opt.value = u.userId;
+        opt.textContent = `${u.userName} (${u.count})`;
+        if (u.userId === state.selectedAdminUserId) opt.selected = true;
+        styleOption(opt);
+        adminUserSelect.appendChild(opt);
+      }
+      toolbar.appendChild(adminUserSelect);
+
+      // Edit toggle: only while viewing another user (admin access is already allowed at this point).
+      if (state.selectedAdminUserId) {
+        adminEditToggle = document.createElement("button");
+        adminEditToggle.className = 'je-hidden-admin-edit-toggle' + (state.adminEditMode ? ' active' : '');
+        adminEditToggle.textContent = state.adminEditMode
+          ? JE.t('hidden_content_admin_done')
+          : JE.t('hidden_content_admin_edit');
+        toolbar.appendChild(adminEditToggle);
+
+        // Add-items button — only while actively editing this user's hidden content.
+        if (state.adminEditMode) {
+          adminAddBtn = document.createElement("button");
+          adminAddBtn.className = 'je-hidden-admin-add-btn';
+          adminAddBtn.textContent = JE.t('hidden_content_admin_add');
+          toolbar.appendChild(adminAddBtn);
+        }
+      }
+    }
+
     const unhideAllBtn = document.createElement("button");
     unhideAllBtn.className = "je-hidden-content-page-unhide-all";
     unhideAllBtn.textContent = JE.t('hidden_content_clear_all');
     toolbar.appendChild(unhideAllBtn);
 
-    return { element: toolbar, searchInput, scopedToggle, unhideAllBtn };
+    return { element: toolbar, searchInput, scopedToggle, unhideAllBtn, adminUserSelect, adminEditToggle, adminAddBtn };
   }
 
   /**
@@ -1242,7 +1957,42 @@
       if (!page || !container) return;
     }
 
-    const allItems = JE.hiddenContent.getAllHiddenItems();
+    // Publish theme colours so the admin controls follow the active theme (Purple Haze, etc.).
+    applyAdminThemeVars(container);
+
+    // Resolve admin status / load the user list on first render (fire-and-forget; repaints once ready).
+    maybeInitAdminFilter();
+
+    // If the selected user dropped out of the (possibly refreshed) list — e.g. they unhid
+    // everything — fall back to the admin's own list instead of stranding on an empty grid.
+    if (state.selectedAdminUserId && Array.isArray(state.adminUsers)
+        && !state.adminUsers.some((u) => u.userId === state.selectedAdminUserId)) {
+      state.selectedAdminUserId = null;
+      state.adminEditMode = false;
+      state.adminItems = null;
+      state.adminItemsUserId = null;
+      state.adminUserName = '';
+    }
+
+    // If admin cross-user access was disabled in config, drop the selected user and edit mode so the
+    // page returns to the admin's own list (the server also refuses the admin endpoints when off).
+    if (JE.pluginConfig && JE.pluginConfig.HiddenContentAdmin === false) {
+      state.adminEditMode = false;
+      state.selectedAdminUserId = null;
+      state.adminItems = null;
+      state.adminItemsUserId = null;
+      state.adminUserName = '';
+      state.adminLoadError = false;
+    }
+
+    // When an admin has selected another user, render that user's items (read-only) instead of own.
+    const viewingOther = !!state.selectedAdminUserId;
+    // Only surface fetched items once they belong to the currently-selected user, so an in-flight
+    // switch never briefly shows the previous user's items under the new user's name/badge.
+    const adminReady = viewingOther && state.adminItemsUserId === state.selectedAdminUserId;
+    const allItems = viewingOther
+      ? (adminReady ? (state.adminItems || []) : [])
+      : JE.hiddenContent.getAllHiddenItems();
     const searchQuery = state.searchQuery.toLowerCase();
 
     let filtered = searchQuery
@@ -1261,10 +2011,42 @@
 
     container.replaceChildren();
 
-    container.appendChild(createPageHeader(allItems.length));
+    const header = createPageHeader(allItems.length);
+    // Show whose list is displayed as a chip INSIDE the header (not a separate banner), so toggling
+    // admin view doesn't push the toolbar/grid up and down — the header is always present.
+    if (viewingOther) {
+      header.appendChild(createAdminViewingBadge());
+    }
+    container.appendChild(header);
 
     const toolbar = createToolbar();
     container.appendChild(toolbar.element);
+
+    // Wire the admin user-filter dropdown.
+    // IMPORTANT (Android): onAdminUserChange() re-renders, which rebuilds the toolbar and removes
+    // this very <select>. Doing that synchronously inside the 'change' handler — while the native
+    // picker is still dismissing — crashes the Jellyfin Android app's webview. Blur the control and
+    // defer to the next tick so the native picker fully tears down before the element is replaced.
+    if (toolbar.adminUserSelect) {
+      toolbar.adminUserSelect.addEventListener('change', (e) => {
+        const value = e.target.value;
+        try { e.target.blur(); } catch (_) {}
+        setTimeout(function () { onAdminUserChange(value); }, 0);
+      });
+    }
+
+    // Wire the admin edit-mode toggle: flips read-only ↔ editable for the viewed user.
+    if (toolbar.adminEditToggle) {
+      toolbar.adminEditToggle.addEventListener('click', () => {
+        state.adminEditMode = !state.adminEditMode;
+        renderPage();
+      });
+    }
+
+    // Wire the admin "add items" button: opens the library-search modal.
+    if (toolbar.adminAddBtn) {
+      toolbar.adminAddBtn.addEventListener('click', () => openAdminAddModal());
+    }
 
     // Apply scoped filter — only show items hidden from Next Up / CW
     if (state.scopedOnly) {
@@ -1287,13 +2069,30 @@
     if (filtered.length === 0) {
       const emptyDiv = document.createElement("div");
       emptyDiv.className = "je-hidden-content-page-empty";
-      emptyDiv.textContent = JE.t('hidden_content_manage_empty');
+      if (viewingOther && state.adminLoadError) {
+        // Load failed — show a retry affordance rather than a misleading "empty".
+        emptyDiv.textContent = JE.t('hidden_content_admin_load_error');
+        emptyDiv.style.cursor = 'pointer';
+        emptyDiv.addEventListener('click', () => onAdminUserChange(state.selectedAdminUserId));
+      } else if (viewingOther && !adminReady) {
+        // Another user's items are still loading — show a loading hint rather than "empty".
+        emptyDiv.textContent = JE.t('hidden_content_admin_loading');
+      } else {
+        emptyDiv.textContent = JE.t('hidden_content_manage_empty');
+      }
       container.appendChild(emptyDiv);
     } else {
       const { movies, seriesRelated, scopedMovies, castActors } = partitionItems(filtered);
       renderMoviesSection(movies, scopedMovies, container);
       renderSeriesSection(seriesRelated, container);
       renderCastSection(castActors, container);
+      // Read-only invariant: while viewing another user WITHOUT edit mode, no surface
+      // may expose an unhide control. Movie/cast cards and the series group cards each build their
+      // own buttons — strip every known variant here as the single enforced backstop. In edit mode
+      // the buttons stay and route through handleUnhide() to the admin endpoint.
+      if (viewingOther && !state.adminEditMode) {
+        stripUnhideControls(container);
+      }
     }
 
     // Attach search handler
@@ -1325,12 +2124,36 @@
       }
     });
 
-    // Attach unhide all handler
-    toolbar.unhideAllBtn.addEventListener('click', () => {
-      showUnhideConfirmation(JE.t('hidden_content_clear_confirm') || 'Unhide all items?', () => {
-        JE.hiddenContent.unhideAll();
+    // Unhide-all handler. Own list → clear own; admin edit mode → clear the viewed user's list via
+    // the admin endpoint; read-only admin view → button hidden.
+    if (viewingOther && !state.adminEditMode) {
+      toolbar.unhideAllBtn.style.display = 'none';
+    } else {
+      toolbar.unhideAllBtn.addEventListener('click', () => {
+        showUnhideConfirmation(JE.t('hidden_content_clear_confirm') || 'Unhide all items?', () => {
+          if (viewingOther) {
+            handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId));
+          } else {
+            JE.hiddenContent.unhideAll();
+          }
+        });
       });
-    });
+    }
+  }
+
+  /**
+   * Removes every unhide control from a rendered container, enforcing the read-only contract
+   * while an admin views another user's hidden content. Movie/cast cards use
+   * `.je-hidden-item-unhide`; series group cards use `.je-hidden-group-unhide`,
+   * `.je-hidden-group-item-unhide`, and `.je-hidden-group-unhide-all`. Clicking any of these would
+   * call JE.hiddenContent.unhideItem(), which writes to the CURRENT (admin) user's store — so they
+   * must never be operable while inspecting another user.
+   * @param {HTMLElement} container The rendered content container.
+   */
+  function stripUnhideControls(container) {
+    container.querySelectorAll(
+      '.je-hidden-item-unhide, .je-hidden-group-unhide, .je-hidden-group-item-unhide, .je-hidden-group-unhide-all'
+    ).forEach((btn) => btn.remove());
   }
 
   /**
@@ -1346,7 +2169,7 @@
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           card.classList.add('je-hidden-item-removing');
           setTimeout(() => {
-            JE.hiddenContent.unhideItem(item._key || item.itemId);
+            handleUnhide(item._key || item.itemId);
           }, 300);
         }, item.name || 'this item');
       });
@@ -1444,6 +2267,22 @@
     state.pageVisible = false;
     state.previousPage = null;
     state.searchQuery = '';
+    // Reset admin cross-user view so re-opening the page starts on the admin's own
+    // list rather than a stale "Viewing: <user>" snapshot, and the dropdown re-initialises fresh.
+    // Bumping adminLoadToken invalidates any in-flight cross-user fetch so a late completion can't
+    // repopulate adminItems after the page has been left.
+    state.adminLoadToken++;
+    state.selectedAdminUserId = null;
+    state.adminEditMode = false;
+    state.adminItems = null;
+    state.adminItemsUserId = null;
+    state.adminLoadError = false;
+    state.adminUserName = '';
+    state.scopedOnly = false;
+    state.adminUsers = null;
+    // Clear the loading flag too: an in-flight user-list fetch now discards its result via the token
+    // check, so re-opening the page must be free to start a fresh fetch.
+    state.adminUsersLoading = false;
     stopLocationWatcher();
   }
 

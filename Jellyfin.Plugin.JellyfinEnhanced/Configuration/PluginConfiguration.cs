@@ -270,6 +270,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HiddenContentUseNativeTab = false;
             HiddenContentAutoCreateCustomTab = false;
             HiddenContentCustomTabJeOwned = false;
+            // Admin cross-user view + management; on by default, admins can disable below.
+            HiddenContentAdmin = true;
 
             // Hidden Content per-user defaults — applied when a user's
             // hidden-content.json is created and via "Apply defaults to all users".
@@ -597,6 +599,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool HiddenContentUseNativeTab { get; set; }
         public bool HiddenContentAutoCreateCustomTab { get; set; }
         public bool HiddenContentCustomTabJeOwned { get; set; }
+
+        // Admin cross-user hidden-content view + management
+        public bool HiddenContentAdmin { get; set; }
 
         // Hidden Content per-user defaults
         public bool HiddenContentDefaultEnabled { get; set; }

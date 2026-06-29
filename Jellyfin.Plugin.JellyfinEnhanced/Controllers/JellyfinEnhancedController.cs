@@ -2807,6 +2807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentUsePluginPages,
                 config.HiddenContentUseCustomTabs,
                 config.HiddenContentUseNativeTab,
+                config.HiddenContentAdmin,
 
                 // Maintenance Mode
                 config.MaintenanceModeEnabled,
@@ -3525,6 +3526,287 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        // ─── Admin cross-user hidden-content visibility ───
+        // Lets an admin see what other users have hidden, surfaced as a read-only user filter on
+        // the Hidden Content page/tab. Both endpoints are admin-gated server-side via IsAdminUser()
+        // and never mutate another user's data — the client `isAdmin` flag is a UX convenience only,
+        // never the security boundary. See js/enhanced/hidden-content-page.js for the consuming UI.
+
+        /// <summary>
+        /// Admin-only: lists users who have hidden at least one item, together with their
+        /// hidden-item count, to populate the admin user-filter dropdown on the Hidden Content page.
+        /// The calling admin is excluded because their own list is shown via the default view.
+        /// </summary>
+        /// <remarks>
+        /// Cost: O(users-with-a-config-dir) — deserialises each such user's hidden-content.json to read
+        /// its item count. The client caches the result, but it re-fetches after a cache invalidation.
+        /// Fine for typical user counts; revisit (cache counts / pre-filter on file size) if it grows.
+        /// </remarks>
+        [HttpGet("admin/hidden-content-users")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetHiddenContentUsers()
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            // Honour the admin config toggle: the whole cross-user feature can be disabled.
+            if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentAdmin != true)
+                return Forbid();
+
+            // The caller's own list is reachable through the default "My hidden content" option,
+            // so omit them here to avoid a confusing duplicate entry.
+            var currentUserIdN = UserHelper.GetCurrentUserId(User)?.ToString("N");
+
+            // Enumerate only users that already have a config directory (GetAllUserIds), rather than
+            // every Jellyfin user, so a pure read here never creates empty per-user folders as a side
+            // effect. Anyone with hidden content necessarily already has a directory. This mirrors the
+            // reset-all-users admin endpoint.
+            var users = new List<(string UserId, string UserName, int Count)>();
+            foreach (var userIdN in _userConfigurationManager.GetAllUserIds())
+            {
+                if (string.Equals(userIdN, currentUserIdN, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                try
+                {
+                    // Skip stale directories left by deleted users — only surface current accounts.
+                    if (!Guid.TryParseExact(userIdN, "N", out var userGuid))
+                        continue;
+                    var user = _userManager.GetUserById(userGuid);
+                    if (user == null)
+                        continue;
+
+                    // GetUserConfiguration returns an empty default when the file is missing or
+                    // unreadable, so a user who never hid anything simply reports a count of 0.
+                    var cfg = _userConfigurationManager
+                        .GetUserConfiguration<UserHiddenContent>(userIdN, "hidden-content.json");
+                    var count = cfg?.Items?.Count ?? 0;
+                    if (count == 0)
+                        continue;
+
+                    users.Add((userIdN, user.Username, count));
+                }
+                catch (Exception ex)
+                {
+                    // Per-user guard: one unreadable config must not break the whole list.
+                    _logger.Warning($"Skipping user {ResolveUserDisplay(userIdN)} in hidden-content-users: {ex.Message}");
+                }
+            }
+
+            var result = users
+                .OrderBy(u => u.UserName, StringComparer.OrdinalIgnoreCase)
+                .Select(u => new { userId = u.UserId, userName = u.UserName, count = u.Count })
+                .ToList();
+
+            return Ok(new { users = result });
+        }
+
+        /// <summary>
+        /// Admin-only: returns a single user's hidden content (read-only) so an admin can review
+        /// what that user has hidden. Validates the id format and never writes.
+        /// </summary>
+        [HttpGet("admin/hidden-content/{userId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetUserHiddenContentForAdmin(string userId)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            // Honour the admin config toggle.
+            if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentAdmin != true)
+                return Forbid();
+
+            // Match the AdminUpsertReview contract: expect a 32-char hex (N-format) id. This also
+            // guards the filesystem path independently of GetUserConfigDir()'s canonicalization.
+            if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParseExact(userId, "N", out var userGuid) || userGuid == Guid.Empty)
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            // Resolve the user before touching the config store: this returns a clean 404 for an
+            // unknown id and avoids creating an empty per-user directory as a read side effect.
+            var user = _userManager.GetUserById(userGuid);
+            if (user == null)
+                return NotFound(new { success = false, message = "User not found." });
+
+            try
+            {
+                // Read-only: GetUserConfiguration yields an empty default for a missing/corrupt
+                // file, so this never throws for a valid-but-empty user.
+                var config = _userConfigurationManager
+                    .GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json");
+
+                return Ok(new { userId, userName = user.Username, hiddenContent = config });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Admin hidden-content read failed for {ResolveUserDisplay(userId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to load hidden content." });
+            }
+        }
+
+        /// <summary>
+        /// Admin-only: unhides one or more items from another user's hidden content
+        /// (admin editing). The body is a JSON array of item keys (keys of UserHiddenContent.Items).
+        /// Read-modify-write under the per-user file lock so it can't clobber a concurrent change by
+        /// the user themselves. Returns how many items were actually removed.
+        /// </summary>
+        [HttpPost("admin/hidden-content/{userId}/unhide")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AdminUnhideForUser(string userId, [FromBody] List<string> keys)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            // Honour the admin config toggle: cross-user management can be disabled.
+            if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentAdmin != true)
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParseExact(userId, "N", out var userGuid) || userGuid == Guid.Empty)
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            var user = _userManager.GetUserById(userGuid);
+            if (user == null)
+                return NotFound(new { success = false, message = "User not found." });
+
+            if (keys == null || keys.Count == 0)
+                return BadRequest(new { success = false, message = "No item keys provided." });
+
+            // Canonical N-format id for every store / log call, mirroring SaveUserHiddenContent.
+            var userIdN = userGuid.ToString("N");
+
+            try
+            {
+                var removed = 0;
+                // RMW holds the per-user file lock, strict-reads (corruption → backup + throw), applies
+                // the mutation, and persists only when it reports a change (returns > 0).
+                _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(userIdN, "hidden-content.json", cfg =>
+                {
+                    var count = 0;
+                    foreach (var key in keys)
+                    {
+                        // Keys are dictionary lookups (never used as filesystem paths); the length cap is
+                        // light defence against pathological payloads.
+                        if (!string.IsNullOrEmpty(key) && key.Length <= 256 && cfg.Items.Remove(key)) count++;
+                    }
+                    removed = count;
+                    return count;
+                });
+
+                if (removed > 0)
+                    Services.HiddenContentResponseFilter.InvalidateUser(userIdN);
+                _logger.Info($"Admin unhid {removed} item(s) for {ResolveUserDisplay(userIdN)}.");
+                return Ok(new { success = true, removed });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(userIdN)} during admin unhide (backed up): {ex.Message}");
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (IOException ioEx)
+            {
+                _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(userIdN)}: {ioEx.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Admin unhide failed for {ResolveUserDisplay(userIdN)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to update hidden content." });
+            }
+        }
+
+        /// <summary>
+        /// Admin-only: hides one or more items on behalf of another user (admin adding).
+        /// The body is a list of hidden-content items (the same shape the client stores). Each is keyed
+        /// by its item id (or tmdb-{id}) and RMW-merged into the user's hidden-content.json without
+        /// overwriting an item the user already hid. Returns how many were newly added.
+        /// </summary>
+        [HttpPost("admin/hidden-content/{userId}/hide")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AdminHideForUser(string userId, [FromBody] List<HiddenContentItem> items)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            // Adding is a management operation: gated by the admin config toggle.
+            if (JellyfinEnhanced.Instance?.Configuration?.HiddenContentAdmin != true)
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParseExact(userId, "N", out var userGuid) || userGuid == Guid.Empty)
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            var user = _userManager.GetUserById(userGuid);
+            if (user == null)
+                return NotFound(new { success = false, message = "User not found." });
+
+            if (items == null || items.Count == 0)
+                return BadRequest(new { success = false, message = "No items provided." });
+            if (items.Count > 200)
+                return BadRequest(new { success = false, message = "Too many items (max 200)." });
+
+            var userIdN = userGuid.ToString("N");
+
+            // Trim any admin-supplied string to a sane maximum before it is written to another user's store.
+            static string Clamp(string? s, int max) =>
+                string.IsNullOrEmpty(s) ? string.Empty : (s.Length <= max ? s : s.Substring(0, max));
+
+            try
+            {
+                var added = 0;
+                _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(userIdN, "hidden-content.json", cfg =>
+                {
+                    var count = 0;
+                    foreach (var it in items)
+                    {
+                        if (it == null) continue;
+                        // Mirror the client's key scheme: item id, else tmdb-{id}.
+                        var key = !string.IsNullOrEmpty(it.ItemId)
+                            ? it.ItemId
+                            : (!string.IsNullOrEmpty(it.TmdbId) ? $"tmdb-{it.TmdbId}" : null);
+                        if (string.IsNullOrEmpty(key) || key.Length > 256) continue;
+                        if (cfg.Items.ContainsKey(key)) continue; // never clobber the user's own hide
+                        // Cross-user write path: bound the admin-supplied free-text fields and constrain
+                        // HideScope to the known set, so a compromised admin token can't persist multi-MB
+                        // strings or an unrecognised scope into another user's store.
+                        it.Name = Clamp(it.Name, 512);
+                        it.SeriesName = Clamp(it.SeriesName, 512);
+                        it.PosterPath = Clamp(it.PosterPath, 512);
+                        it.SeriesId = Clamp(it.SeriesId, 128);
+                        it.Type = Clamp(it.Type, 64);
+                        it.TmdbId = Clamp(it.TmdbId, 32);
+                        it.HiddenAt = string.IsNullOrEmpty(it.HiddenAt) ? DateTime.UtcNow.ToString("o") : Clamp(it.HiddenAt, 64);
+                        it.HideScope = it.HideScope is "global" or "continuewatching" or "nextup" or "homesections" ? it.HideScope : "global";
+                        cfg.Items[key] = it;
+                        count++;
+                    }
+                    added = count;
+                    return count;
+                });
+
+                if (added > 0)
+                    Services.HiddenContentResponseFilter.InvalidateUser(userIdN);
+                _logger.Info($"Admin hid {added} item(s) for {ResolveUserDisplay(userIdN)}.");
+                return Ok(new { success = true, added });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(userIdN)} during admin hide (backed up): {ex.Message}");
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (IOException ioEx)
+            {
+                _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(userIdN)}: {ioEx.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Admin hide failed for {ResolveUserDisplay(userIdN)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to update hidden content." });
             }
         }
 

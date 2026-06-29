@@ -388,7 +388,7 @@ Hide specific items from your Jellyfin library without deleting them.
 3. Search and filter hidden items
 4. Click to unhide
 
-**Note:** Hidden items are per-user and don't affect other users.
+**Note:** Hidden items are per-user. Admins can optionally view and manage other users' hidden lists. See **Hidden Content → Admin Controls** in the plugin settings.
 
 ---
 
