@@ -108,7 +108,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`bookmarks-library.js`**: Provides a comprehensive bookmark management interface accessible via Custom Tabs. Allows users to view all bookmarks across movies and TV shows, cleanup orphaned bookmarks, detect duplicates, and adjust time offsets for synced bookmarks.
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
     * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
-    * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching".
+    * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching / Next Up".
     * **`helpers.js`**: Provides utility functions and helper methods used across the enhanced components for common tasks like DOM manipulation and data processing.
     * **`icons.js`**: Manages icon selection and rendering logic, allowing users to choose between emoji and Lucide icons throughout the interface.
     * **`osd-rating.js`**: Displays TMDB and Rotten Tomatoes ratings in the video player OSD controls next to the time display.

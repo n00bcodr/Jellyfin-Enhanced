@@ -17,8 +17,9 @@
         IconName: {}, // Will be replaced by icons.js
         state: {
             activeShortcuts: {},
-            currentContextItemId: null,
-            isContinueWatchingContext: false,
+            // { itemId, surface: 'continuewatching'|'nextup'|null, ts } captured on a menu trigger
+            // so the action-sheet observer knows which Remove button (if any) to add.
+            removeContext: null,
             skipToastShown: false,
             pauseScreenClickTimer: null
          },

@@ -3848,20 +3848,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? (DateTime?)dt : null;
         }
 
-        // Merges an existing HC scope with a new continuewatching hide without narrowing the user's earlier wider intent.
-        private static string MergeWithCwScope(string existing)
+        // Widens an existing HC scope to also cover a new targetScope (continuewatching|nextup)
+        // hide without ever narrowing the user's earlier intent. Mirrors the client-side
+        // mergeCwScope in hidden-content.js: global/homesections stay; same scope stays; the
+        // other home surface (or any unknown value) composes up to homesections.
+        private static string MergeHomeScope(string existing, string targetScope)
         {
+            if (string.IsNullOrEmpty(existing)) return targetScope;
             if (string.Equals(existing, "global", StringComparison.OrdinalIgnoreCase)) return "global";
             if (string.Equals(existing, "homesections", StringComparison.OrdinalIgnoreCase)) return "homesections";
-            if (string.Equals(existing, "continuewatching", StringComparison.OrdinalIgnoreCase)) return "continuewatching";
-            if (string.Equals(existing, "nextup", StringComparison.OrdinalIgnoreCase)) return "homesections";
+            if (string.Equals(existing, targetScope, StringComparison.OrdinalIgnoreCase)) return targetScope;
             return "homesections";
         }
 
         [HttpPost("continue-watching/hide/{itemId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult HideFromContinueWatching(string itemId)
+        public IActionResult HideFromContinueWatching(string itemId) => HideFromHomeSurface(itemId, "continuewatching");
+
+        [HttpPost("next-up/hide/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult HideFromNextUp(string itemId) => HideFromHomeSurface(itemId, "nextup");
+
+        // Shared implementation for "Remove from Continue Watching" / "Remove from Next Up".
+        // Records a scoped HC entry (HideScope=continuewatching|nextup) under a server-side
+        // read-modify-write so a concurrent hide can't clobber it. An existing entry's scope
+        // is widened — never narrowed — via MergeHomeScope (e.g. continuewatching ⊕ nextup → homesections).
+        private IActionResult HideFromHomeSurface(string itemId, string targetScope)
         {
             var userId = UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
             if (userId == Guid.Empty) return Forbid();
@@ -3906,7 +3920,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 SeriesName = seriesName ?? string.Empty,
                 SeasonNumber = seasonNumber,
                 EpisodeNumber = episodeNumber,
-                HideScope = "continuewatching"
+                HideScope = targetScope
             };
 
             var key = entry.ItemId;
@@ -3925,6 +3939,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         if (!preExistedHc && hcDefaults != null && h.Items.Count == 0)
                         {
                             h.Settings = BuildHcDefaultSettings(hcDefaults);
+                            // The user just performed a hide via the Remove feature, so filtering
+                            // must be active for it to take effect — even if the admin's HC default
+                            // is disabled. (Existing files keep whatever the user chose.)
+                            h.Settings.Enabled = true;
                         }
 
                         // Merge with existing entries (under either hyphenated or N-format key) — pick the wider scope.
@@ -3937,7 +3955,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         if (!string.IsNullOrEmpty(existingScope))
                         {
-                            entry.HideScope = MergeWithCwScope(existingScope);
+                            entry.HideScope = MergeHomeScope(existingScope, targetScope);
                         }
 
                         // Preserve the earliest HiddenAt across both entries so re-affirming doesn't reset history.
@@ -3962,15 +3980,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to add CW hide for user {userId}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = "Failed to hide from Continue Watching." });
+                _logger.Error($"Failed to add {targetScope} hide for user {userId}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to hide item." });
             }
         }
 
         [HttpDelete("continue-watching/hide/{itemId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult UnhideFromContinueWatching(string itemId)
+        public IActionResult UnhideFromContinueWatching(string itemId) => UnhideFromHomeSurface(itemId, "continuewatching");
+
+        [HttpDelete("next-up/hide/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult UnhideFromNextUp(string itemId) => UnhideFromHomeSurface(itemId, "nextup");
+
+        // Drops the scoped HC entry for {itemId} whose HideScope exactly matches targetScope
+        // (mirror of the scoped POST). Wider composite scopes (e.g. homesections) are left
+        // intact — narrowing them is handled by the Hidden Content management page.
+        private IActionResult UnhideFromHomeSurface(string itemId, string targetScope)
         {
             var userId = UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
             if (userId == Guid.Empty) return Forbid();
@@ -3995,7 +4023,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         var entry = kvp.Value;
                         if (entry == null) continue;
-                        if (!string.Equals(entry.HideScope, "continuewatching", StringComparison.OrdinalIgnoreCase))
+                        if (!string.Equals(entry.HideScope, targetScope, StringComparison.OrdinalIgnoreCase))
                             continue;
                         var entryId = entry.ItemId ?? string.Empty;
                         if (string.Equals(entryId, canonical, StringComparison.OrdinalIgnoreCase)
@@ -4018,7 +4046,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to remove CW hide for user {userId}: {ex.Message}");
+                _logger.Error($"Failed to remove {targetScope} hide for user {userId}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to unhide." });
             }
         }

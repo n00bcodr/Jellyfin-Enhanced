@@ -82,6 +82,35 @@ Access via:
    - Plugin Pages (requires Plugin Pages plugin)
    - Custom Tabs (requires Custom Tabs plugin)
 
+### Remove from Continue Watching / Next Up
+
+A lightweight, **non-destructive** way to tidy the home screen. It adds a **Remove** option to an item's "⋯" action-sheet menu for items in the **Continue Watching** and **Next Up** rows, hiding the item from that row without touching your playback position or watched state.
+
+![The Remove option in an item's menu](../images/remove-from-row.png)
+
+**How It Works:**
+
+1. Open an item's "⋯" menu in the Continue Watching or Next Up row
+2. Click **Remove from Continue Watching** / **Remove from Next Up**
+3. The item disappears from that row — your progress is left untouched
+
+**Highlights:**
+
+- Works on both **Continue Watching** and **Next Up** items, each removed from its own row
+- Also appears in Jellyfin's **long-press / multi-select menu**, so touch devices with no "⋯" button can remove items. Selecting a mix of rows (and other items) only ever removes the Continue Watching / Next Up ones
+- Removing several at once shows a confirmation listing each item and the row it will be removed from
+- Hidden state is stored **server-side, per-user**, so it applies across all your devices and survives reloads
+- **Undoable:** removed items appear in the **Hidden Content** management page with an "Add back" button, and simply resuming a hidden item unhides it automatically
+- Works on its own — it does not require the full Hidden Content feature to be enabled
+
+![Bulk removal confirmation listing each item and its row](../images/remove-confirm.png)
+
+**Enable it:**
+
+- Open the Enhanced panel (press `?`) → **Settings** → **Add Remove from Continue Watching & Next Up Buttons**
+
+---
+
 ### Admin: Other Users' Hidden Content
 
 ![Admin viewing another user's hidden content](../images/hidden-content-admin.png)

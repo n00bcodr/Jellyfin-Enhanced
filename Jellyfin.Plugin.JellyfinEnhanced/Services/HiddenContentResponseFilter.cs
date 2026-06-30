@@ -96,8 +96,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 ? "search"
                 : route.Surface;
 
-            // RemoveContinueWatchingEnabled keeps CW filtering on even when HC's master switch is off.
-            if (!hcEnabled && !(rcwEnabled && string.Equals(surface, "continuewatching", StringComparison.OrdinalIgnoreCase)))
+            // RemoveContinueWatchingEnabled keeps the home-section Remove surfaces (Continue
+            // Watching + Next Up) filtering on even when HC's master switch is off.
+            var isRemoveSurface = string.Equals(surface, "continuewatching", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(surface, "nextup", StringComparison.OrdinalIgnoreCase);
+            if (!hcEnabled && !(rcwEnabled && isRemoveSurface))
             {
                 await next().ConfigureAwait(false);
                 return;

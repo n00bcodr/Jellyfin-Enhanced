@@ -278,28 +278,27 @@ This is usually due to TMDB API access issues.
 
 4. Verify Seerr can access TMDB
 
-### "Remove from Continue Watching" is destructive?
+### Is "Remove from Continue Watching / Next Up" destructive?
 
-Yes, this feature resets playback progress to zero.
+**No.** It is non-destructive — your playback position and watched state are always preserved. It only hides the item from the **Continue Watching** (and **Next Up**) row.
 
 **How It Works:**
 
-- Removes item from Continue Watching list
-- Resets watch progress to 0%
-- Marks item as unwatched
-- Cannot be undone
+- Adds a **Remove** option to an item's "⋯" menu (and to the long-press / multi-select menu on touch devices) for Continue Watching and Next Up items
+- Hides the item from that row only — your progress is **not** reset and the item is **not** marked played
+- The hidden state is stored server-side per-user, so it applies across all your devices
+
+**Can it be undone?**
+
+Yes:
+
+- Removed items appear in the **Hidden Content** management page, where each has an "Add back" button
+- Simply **resuming** a hidden item unhides it automatically
 
 **Use Cases:**
 
-- Remove items you don't want to continue
-- Clean up Continue Watching section
-- Reset progress for rewatching
-
-**Alternative:**
-
-- Mark as played to remove from list
-- Keep progress intact
-- Use Jellyfin's built-in "Mark Played" feature
+- Tidy up the Continue Watching / Next Up rows without losing your place
+- Hide a show you're not ready to continue, then resume it later to bring it back
 
 ---
 
