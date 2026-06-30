@@ -1002,6 +1002,27 @@
                             self.style.display = 'none';
                         }
                     }).catch(function() { self.style.display = 'none'; });
+                } else if (item.type !== 'Person' && item.name && JE.jellyseerrAPI && JE.jellyseerrMoreInfo) {
+                    // No TMDB id stored and the Jellyfin media is gone — resolve via a Seerr search
+                    // so the card opens the more-info modal instead of a blank poster + dead link.
+                    self.style.display = 'none';
+                    const wantType = (item.type === 'Series' || item.type === 'Episode' || item.type === 'Season') ? 'tv' : 'movie';
+                    JE.jellyseerrAPI.search(item.name).then(function(res) {
+                        const results = (res && res.results) || [];
+                        const hit = results.find(function(r) { return r.mediaType === wantType; })
+                            || results.find(function(r) { return r.mediaType === 'movie' || r.mediaType === 'tv'; });
+                        if (hit && hit.id) {
+                            card.dataset.jellyfinRemoved = '1';
+                            card.dataset.resolvedTmdbId = String(hit.id);
+                            card.dataset.resolvedMediaType = hit.mediaType || wantType;
+                            const p = hit.posterPath || hit.poster_path;
+                            if (p) {
+                                self.src = `https://image.tmdb.org/t/p/w${POSTER_MAX_WIDTH}${p}`;
+                                self.style.display = '';
+                                self.onerror = function() { this.style.display = 'none'; };
+                            }
+                        }
+                    }).catch(function() {});
                 } else {
                     self.style.display = 'none';
                 }
@@ -1034,10 +1055,14 @@
         const navigableLinks = [posterLink, nameLink];
         for (const link of navigableLinks) {
             link.addEventListener('click', (e) => {
-                // If item was removed from Jellyfin, fall back to Jellyseerr modal
-                if (hasJellyfinId && card.dataset.jellyfinRemoved === '1' && hasTmdbId && JE.jellyseerrMoreInfo) {
+                // If item was removed from Jellyfin, fall back to the Seerr modal — using the
+                // stored TMDB id, or one resolved at render time by a Seerr search.
+                const removedId = (card.dataset.jellyfinRemoved === '1')
+                    ? (hasTmdbId ? item.tmdbId : card.dataset.resolvedTmdbId)
+                    : '';
+                if (hasJellyfinId && removedId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
-                    JE.jellyseerrMoreInfo.open(parseInt(item.tmdbId, 10), mediaType);
+                    JE.jellyseerrMoreInfo.open(parseInt(removedId, 10), hasTmdbId ? mediaType : (card.dataset.resolvedMediaType || mediaType));
                     if (onNavigate) onNavigate();
                 } else if (hasJellyfinId) {
                     if (onNavigate) onNavigate();
@@ -1889,6 +1914,108 @@
         }
     }
 
+    // ── Admin-only cross-user visibility ──
+    // The server enforces admin access on these endpoints (IsAdminUser); these helpers fail soft
+    // — returning an empty array on a 403 or any transient error — so a non-admin or a hiccup can
+    // never throw into the page render path.
+
+    /**
+     * Fetches the list of users who have hidden content, for the admin user-filter dropdown.
+     * Admin-only server-side. Returns an array on success (possibly empty), or `null` on any
+     * error so callers can distinguish a genuine empty list from a transient failure and avoid
+     * caching a bad result.
+     * @returns {Promise<Array<{userId: string, userName: string, count: number}>|null>}
+     */
+    async function fetchHiddenContentUsers() {
+        try {
+            const res = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/admin/hidden-content-users'),
+                dataType: 'json'
+            });
+            return (res && Array.isArray(res.users)) ? res.users : [];
+        } catch (e) {
+            if (e && e.status === 403) console.warn('🪼 Jellyfin Enhanced: Hidden Content admin user-list denied (not an admin).');
+            return null;
+        }
+    }
+
+    /**
+     * Fetches another user's hidden items (admin-only) normalised to the same shape that
+     * {@link getAllHiddenItems} produces (camelCase fields plus a `_key`). Returns an array on
+     * success (possibly empty), or `null` on any error so callers can show an error state instead
+     * of an empty grid. Read-only — callers must not attempt to persist these items.
+     * @param {string} targetUserId Jellyfin user ID in N format (no dashes).
+     * @returns {Promise<Array<Object>|null>}
+     */
+    async function fetchUserHiddenItemsForAdmin(targetUserId) {
+        if (!targetUserId) return [];
+        try {
+            const res = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}`),
+                dataType: 'json'
+            });
+            // The server returns PascalCase ({ Items, Settings }); reuse the shared converter so the
+            // items match locally-loaded ones (toCamelCase is idempotent and recurses into Items).
+            const hc = (typeof JE.toCamelCase === 'function')
+                ? JE.toCamelCase(res && res.hiddenContent)
+                : (res && res.hiddenContent);
+            const items = (hc && hc.items) || {};
+            return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
+        } catch (e) {
+            if (e && e.status === 403) console.warn('🪼 Jellyfin Enhanced: Hidden Content admin read denied (not an admin).');
+            return null;
+        }
+    }
+
+    /**
+     * Admin-only: unhides items from another user's hidden content (admin editing).
+     * Server enforces admin access. Fails soft (returns false) so a denied/transient error never
+     * throws into the UI.
+     * @param {string} targetUserId Jellyfin user ID in N format (no dashes).
+     * @param {string[]} keys Keys (item._key) of the items to unhide for that user.
+     * @returns {Promise<boolean>} true on success.
+     */
+    async function adminUnhideForUser(targetUserId, keys) {
+        if (!targetUserId || !Array.isArray(keys) || keys.length === 0) return false;
+        try {
+            await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/unhide`),
+                data: JSON.stringify(keys),
+                contentType: 'application/json'
+            });
+            return true;
+        } catch (e) {
+            if (e && e.status === 403) console.warn('🪼 Jellyfin Enhanced: Hidden Content admin unhide denied (not an admin).');
+            return false;
+        }
+    }
+
+    /**
+     * Admin-only: hides items on behalf of another user (admin adding). Server enforces
+     * admin + the HiddenContentAdmin toggle. Fails soft (returns false) so a denied/transient error never throws.
+     * @param {string} targetUserId Jellyfin user ID in N format (no dashes).
+     * @param {Array<Object>} items Hidden-content item objects to add (same shape as getAllHiddenItems).
+     * @returns {Promise<number|false>} Count newly added, or false on failure.
+     */
+    async function adminHideForUser(targetUserId, items) {
+        if (!targetUserId || !Array.isArray(items) || items.length === 0) return false;
+        try {
+            const res = await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/hide`),
+                data: JSON.stringify(items),
+                contentType: 'application/json'
+            });
+            return (res && typeof res.added === 'number') ? res.added : true;
+        } catch (e) {
+            if (e && e.status === 403) console.warn('🪼 Jellyfin Enhanced: Hidden Content admin hide denied (not an admin / disabled).');
+            return false;
+        }
+    }
+
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
     // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
@@ -2328,7 +2455,12 @@
             removeLibraryHideButtons,
             refresh,
             markScopedHidden,
-            flushPendingSave
+            flushPendingSave,
+            // Admin-only cross-user visibility + editing
+            fetchHiddenContentUsers,
+            fetchUserHiddenItemsForAdmin,
+            adminUnhideForUser,
+            adminHideForUser
         };
 
         console.log(`🪼 Jellyfin Enhanced: Hidden Content initialized (${getHiddenCount()} items hidden)`);

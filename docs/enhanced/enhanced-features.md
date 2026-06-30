@@ -82,12 +82,23 @@ Access via:
    - Plugin Pages (requires Plugin Pages plugin)
    - Custom Tabs (requires Custom Tabs plugin)
 
-**Performance:**
+### Admin: Other Users' Hidden Content
 
-- Optimized with CSS classes instead of inline styles
-- Batched DOM visibility changes
-- Chunked API requests for parent series
-- Cached surface detection
+![Admin viewing another user's hidden content](../images/hidden-content-admin.png)
+
+Administrators can review (and optionally manage) what other users have hidden, from the same Hidden Content page. Admin-only and enforced server-side; regular users never see it.
+
+**Features:**
+
+- User-filter dropdown to switch between *My hidden content* and any user who has hidden something
+- Another user's list is read-only by default, with a "Viewing: OtherUser" badge
+- An **Edit** toggle (when enabled) to unhide items for that user, or add new ones
+- Add items by searching the library *and* Seerr, so you can hide titles that aren't in the library yet
+- An admin never overwrites an item the user hid themselves
+
+**Configuration:**
+
+In **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Pages** → **Hidden Content** → **Admin Controls**, the **Let admins view and manage other users' hidden content** toggle enables the whole feature (the user-filter dropdown and the Edit toggle). On by default; turn it off to keep hidden lists private.
 
 ---
 
