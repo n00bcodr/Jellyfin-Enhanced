@@ -2115,7 +2115,7 @@
         window.addEventListener('pagehide', cancelPendingRetry);
     } catch (_) { /* non-browser env, harmless */ }
 
-    // Client-side mirror of MergeWithCwScope in JellyfinEnhancedController.cs (CW-write specific).
+    // Client-side mirror of MergeHomeScope in JellyfinEnhancedController.cs (scoped home-row hide write).
     function mergeCwScope(existing, incoming) {
         const ex = (existing || '').toLowerCase();
         const inc = (incoming || 'continuewatching').toLowerCase();

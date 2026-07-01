@@ -213,64 +213,72 @@
     }
 
     /**
-     * Sets up listeners for the action sheet to add the "Remove" button.
+     * Sets up the action-sheet observer that injects the "Remove" item.
+     *
+     * Injection is coalesced onto a requestAnimationFrame rather than a timer: rAF runs after
+     * the mutation but BEFORE the browser paints the freshly-opened sheet, so the Remove item
+     * is present on the sheet's first frame and never appears late to reflow it (which would
+     * jank the open animation). Coalescing also means at most one pass per frame regardless of
+     * how many mutations fire, and the handlers early-return cheaply when no sheet is open.
      */
     function observeActionSheets() {
-        // Create managed observer for action sheets
+        let scheduled = false;
+        const runInjection = () => {
+            scheduled = false;
+            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
+            if (typeof JE.addRemoveButton === 'function') {
+                JE.addRemoveButton();
+            } else {
+                console.warn('🪼 Jellyfin Enhanced: addRemoveButton not available');
+            }
+            // Also offer Remove in the multi-select / long-press menu (touch devices
+            // with no per-item "…" button).
+            if (typeof JE.addMultiSelectRemoveButton === 'function') {
+                JE.addMultiSelectRemoveButton();
+            }
+        };
+
         JE.helpers.createObserver(
             'action-sheets',
-            JE.helpers.debounce(() => {
-                if (JE.currentSettings.removeContinueWatchingEnabled) {
-                    if (typeof JE.addRemoveButton === 'function') {
-                        JE.addRemoveButton();
-                    } else {
-                        console.warn('🪼 Jellyfin Enhanced: addRemoveButton not available');
-                    }
-                }
-            }, 150),
+            () => {
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(runInjection);
+            },
             document.body,
             { childList: true, subtree: true }
         );
     }
 
     /**
-     * Listens for context menu clicks to identify "Continue Watching" items.
+     * Listens for menu triggers to capture which home surface ("Continue Watching" or
+     * "Next Up") an item belongs to, so the matching Remove button can be added to the
+     * action sheet that opens next. Context is captured on the trigger (menu mousedown /
+     * right-click) because that is the only moment the source card is known.
      */
     function addContextMenuListener() {
         /**
-         * Helper function to check if an item is in Continue Watching and set context state
+         * Records the item + its home surface (or clears it) for the action-sheet observer.
+         * @param {Element|null} itemElement The element carrying the item's `data-id`.
          */
-        const checkAndSetContinueWatchingContext = (itemElement) => {
-            if (!itemElement) return;
+        const captureRemoveContext = (itemElement) => {
+            if (!itemElement) { JE.state.removeContext = null; return; }
 
-            JE.state.isContinueWatchingContext = false;
-            JE.state.currentContextItemId = null;
+            const card = itemElement.closest('.card') || itemElement;
+            const itemId = card?.dataset?.id || itemElement?.dataset?.id || null;
+            if (!itemId) { JE.state.removeContext = null; return; }
 
-            // Primary: Check for data-positionticks attribute
-            // This indicates the item has playback progress and should be in Continue Watching
-            const card = itemElement.closest('.card');
-            const hasPositionTicks = card?.getAttribute('data-positionticks') || itemElement.getAttribute('data-positionticks');
-
-            if (hasPositionTicks) {
-                JE.state.isContinueWatchingContext = true;
-                JE.state.currentContextItemId = itemElement.dataset.id;
-                console.log('🪼 Jellyfin Enhanced: Continue Watching item detected via data-positionticks for item:', itemElement.dataset.id);
-                return;
-            }
-
-            // Fallback: Check section-based approach
-            const section = itemElement.closest('.verticalSection');
-            if (section) {
-                const titleElement = section.querySelector('.sectionTitle');
-                const isDefaultSection = titleElement && titleElement.textContent.trim() === 'Continue Watching';
-
-                if (section.classList.contains('ContinueWatching') || isDefaultSection) {
-                    JE.state.isContinueWatchingContext = true;
-                    JE.state.currentContextItemId = itemElement.dataset.id;
-                    console.log('🪼 Jellyfin Enhanced: Continue Watching item detected via section title for item:', itemElement.dataset.id);
-                }
+            const surface = (typeof JE.detectCardSurface === 'function') ? JE.detectCardSurface(card) : null;
+            JE.state.removeContext = { itemId, surface, card, ts: Date.now() };
+            if (surface) {
+                console.log(`🪼 Jellyfin Enhanced: ${surface} item detected for Remove action sheet:`, itemId);
             }
         };
+
+        // Clicks/right-clicks inside an already-open action sheet or dialog are menu interactions,
+        // not card triggers — capturing context there would bind to a menu row (e.g. "resume").
+        const isInsideOpenMenu = (target) =>
+            !!(target.closest && target.closest('.actionSheetContent, .actionSheet, .dialogContainer, dialog'));
 
         // Listen for three-dot menu button clicks
         document.body.addEventListener('mousedown', (e) => {
@@ -279,19 +287,17 @@
             const menuButton = e.target.closest('button[data-action="menu"]');
             if (!menuButton) return;
 
-            const itemElement = menuButton.closest('[data-id]');
-            checkAndSetContinueWatchingContext(itemElement);
+            const itemElement = menuButton.closest('.card[data-id]') || menuButton.closest('[data-id]');
+            captureRemoveContext(itemElement);
         }, true);
 
-        // Listen for right-click (contextmenu) events on card items
+        // Listen for right-click (contextmenu) / long-press on home cards
         document.body.addEventListener('contextmenu', (e) => {
             if (!JE.currentSettings.removeContinueWatchingEnabled) return;
+            if (isInsideOpenMenu(e.target)) return;
 
-            // Find the card or item element that was right-clicked
-            const cardElement = e.target.closest('.card[data-id]');
-            const itemElement = cardElement || e.target.closest('[data-id]');
-
-            checkAndSetContinueWatchingContext(itemElement);
+            // Only real cards carry a removable home surface; ignore other [data-id] targets.
+            captureRemoveContext(e.target.closest('.card[data-id]'));
         }, true);
     }
 

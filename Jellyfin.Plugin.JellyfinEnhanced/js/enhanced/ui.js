@@ -257,12 +257,9 @@
             @keyframes dice { 0%, 100% { transform: rotate(0deg) scale(1); } 10%, 30%, 50% { transform: rotate(-10deg) scale(1.1); } 20%, 40% { transform: rotate(10deg) scale(1.1); } 60% { transform: rotate(360deg) scale(1); } }
             button#randomItemButton:not(.loading):hover .material-icons { animation: dice 1.5s; }
             .layout-desktop #enhancedSettingsBtn { display: none !important; }
-            .remove-continue-watching-button { transition: all 0.2s ease; }
-            .remove-continue-watching-button .material-icons { width: 24px; text-align: center; transition: transform 0.2s ease, color 0.2s ease; }
-            .remove-continue-watching-button:hover .material-icons { transform: scale(1.1); color: #ff6b6b; }
-            .remove-continue-watching-button:active .material-icons { transform: scale(0.95); }
-            .remove-continue-watching-button:disabled { opacity: 0.6; cursor: not-allowed; }
-            .remove-continue-watching-button:disabled .material-icons { transform: none !important; }
+            /* Remove menu items render like native action-sheet items; only dim them while the removal is in flight. */
+            .actionSheetMenuItem[data-id="remove-continue-watching"]:disabled,
+            .actionSheetMenuItem[data-id="je-multiselect-remove"]:disabled { opacity: 0.6; cursor: default; }
             .layout-mobile #jellyfin-enhanced-panel { width: 95vw; max-width: 95vw; }
             .layout-mobile #jellyfin-enhanced-panel .shortcuts-container { flex-direction: column; }
             .layout-mobile #jellyfin-enhanced-panel #settings-content { width: auto !important; }
