@@ -38,9 +38,9 @@ The userscript has been discontinued as the plugin functionality has grown signi
 
 ### Plugin Compatibility
 
-| Plugin | Jellyfin 12 | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
-|--------|-------------|----------------|----------------|-------|
-| Jellyfin Enhanced | ✅ | ✅ | ❌ | On 12, Enhanced self-injects (no File Transformation plugin needed) |
+| Plugin | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
+|--------|----------------|----------------|-------|
+| Jellyfin Enhanced | ✅ | ❌ | Use 10.11 manifest |
 
 ### Plugin not appearing after installation?
 
