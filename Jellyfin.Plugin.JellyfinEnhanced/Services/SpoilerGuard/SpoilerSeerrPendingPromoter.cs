@@ -47,7 +47,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // a title they can't access).
     public sealed class SpoilerSeerrPendingPromoter : IHostedService
     {
-        // pendingKey -> set of user ids that have the key in their PendingTmdb.
         // Populated on StartAsync from the per-user spoilerblur.json files and
         // kept in sync by the controller endpoints + the sweeps below.
         private static readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, byte>> _pendingUsersByKey
@@ -158,10 +157,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Task.CompletedTask;
         }
 
-        // One-shot read of every user's spoilerblur.json at startup; extracts
-        // PendingTmdb keys (per user) into _pendingUsersByKey. Best-effort —
-        // corrupt or missing files are skipped (lenient read on purpose: the
-        // gate is a performance optimization, not a correctness invariant).
+        // Best-effort startup scan — corrupt or missing files are skipped on
+        // purpose: the gate is a performance optimization, not a correctness
+        // invariant.
         private void ScanExistingPendingKeys()
         {
             var baseDir = Path.Combine(

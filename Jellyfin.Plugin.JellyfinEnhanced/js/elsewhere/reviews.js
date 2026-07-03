@@ -12,19 +12,16 @@
 
         const logPrefix = '🪼 Jellyfin Enhanced: Reviews:';
 
-        // Suppress the reviews panel when the current Series OR Movie has
-        // Spoiler Guard enabled by the user AND the admin has
-        // SpoilerStripReviews on. TMDB reviews routinely contain plot
-        // spoilers, and user-written reviews share that risk.
-        // Async because the Spoiler Guard module loads its state lazily;
-        // calling whenLoaded() ensures we have an authoritative answer
-        // even on a cold page load before the state XHR completes.
+        // Suppress the reviews panel when the item has Spoiler Guard enabled by the
+        // user AND the admin has SpoilerStripReviews on — TMDB and user reviews
+        // routinely contain plot spoilers. Async because Spoiler Guard loads its
+        // state lazily; whenLoaded() gives an authoritative answer even on a cold
+        // page load before the state XHR completes.
         async function shouldSuppressForSpoilerMode(item, mediaType) {
             try {
-                // Season / Episode detail pages ALSO render reviews (keyed by
-                // the parent series' TMDB id + s{n}/e{m}), so they must be
-                // suppressible too — otherwise a guarded series still leaks
-                // reviews on its per-season / per-episode pages.
+                // Season / Episode pages also render reviews (keyed by parent series
+                // TMDB id), so they must be suppressible too or a guarded series
+                // leaks reviews on its per-season / per-episode pages.
                 if (mediaType !== 'Series' && mediaType !== 'Movie'
                     && mediaType !== 'Season' && mediaType !== 'Episode') return false;
                 if (!JE.pluginConfig?.SpoilerBlurEnabled) return false;
@@ -36,20 +33,17 @@
                 if (typeof JE.spoilerBlur.whenLoaded === 'function') {
                     await JE.spoilerBlur.whenLoaded();
                 }
-                // Fail-CLOSED when the initial state load itself failed —
-                // the in-memory enabled-series/movies sets and userPrefs are
-                // unreliable, so we don't know whether THIS item is
-                // spoiler-protected. Without this short-circuit a transient
-                // network blip on /spoiler-blur/series would leak reviews
-                // for every guarded item until the next page navigation.
+                // Fail-CLOSED when the initial state load failed — the enabled sets
+                // and userPrefs are unreliable, so we can't tell if THIS item is
+                // guarded. Without it, a transient blip on /spoiler-blur/series leaks
+                // reviews for every guarded item until the next navigation.
                 if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
                     console.warn(`${logPrefix} Spoiler Guard state load failed; suppressing reviews fail-closed.`);
                     return true;
                 }
-                // Honor the user-side opt-out. The admin policy is the cap
-                // (stripReviews === false already returned above), but a user
-                // who set HideReviews=false on their Spoiler Guard prefs has
-                // explicitly asked to see reviews on their guarded items.
+                // Honor the user-side opt-out: admin policy is the cap (handled
+                // above), but a user with HideReviews=false has explicitly asked to
+                // see reviews on their guarded items.
                 if (typeof JE.spoilerBlur.getUserPrefs === 'function') {
                     var userPrefs = JE.spoilerBlur.getUserPrefs() || {};
                     if (userPrefs.HideReviews === false) return false;
@@ -57,26 +51,21 @@
                 if (mediaType === 'Movie') {
                     return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
                 }
-                // Series → its own id; Season / Episode → the parent series id
-                // (item.SeriesId is on the DTO for both), so the whole series'
-                // guarded state governs its child pages.
+                // Series → own id; Season / Episode → parent series id (item.SeriesId),
+                // so the whole series' guarded state governs its child pages.
                 var seriesKey = (mediaType === 'Series') ? (item?.Id || '') : (item?.SeriesId || '');
                 return !!(JE.spoilerBlur.isEnabledFor && JE.spoilerBlur.isEnabledFor(seriesKey));
             } catch (e) {
-                // Fail-CLOSED. The "show reviews" path is the
-                // spoiler-leaking path; if any check above throws
-                // (cold-load network blip on whenLoaded, defensive bug in
-                // isEnabledFor, etc.), suppress the panel by default
-                // rather than render unsuppressed.
+                // Fail-CLOSED: "show reviews" is the spoiler-leaking path, so if any
+                // check above throws, suppress the panel rather than render it.
                 console.warn(`${logPrefix} Spoiler Guard check failed; suppressing reviews:`, e);
                 return true;
             }
         }
 
-        // When the suppression decision flips on between two visits to the
-        // same series page (e.g. user just enabled Spoiler Guard in this
-        // session), an existing reviews section may already be in the DOM.
-        // Strip it on suppress.
+        // If suppression flips on between two visits to the same page (e.g. user
+        // just enabled Spoiler Guard this session), an existing reviews section may
+        // already be in the DOM. Strip it on suppress.
         function removeReviewsSection(page) {
             try {
                 const root = page || document.querySelector('#itemDetailPage:not(.hide)') || document;

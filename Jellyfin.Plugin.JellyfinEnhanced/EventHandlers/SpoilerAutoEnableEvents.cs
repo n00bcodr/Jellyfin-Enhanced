@@ -72,9 +72,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                 var user = _userManager.GetUserById(userId);
                 if (user == null) return Task.CompletedTask;
 
-                // Has the user played ANY episode of this series before? Ask
-                // the library for one played episode under the series for this
-                // user. IsPlayed reflects per-episode UserData, which Jellyfin
+                // Has the user played ANY episode of this series before?
+                // IsPlayed reflects per-episode UserData, which Jellyfin
                 // does maintain (unlike the Series row). A hit means either a
                 // rewatch of S1E1 or a user who watched later episodes first —
                 // both are "already knows the show", so skip auto-enable.

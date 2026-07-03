@@ -487,8 +487,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // Per-item strip. Only Episodes are eligible. Mutates `item` in
-        // place when applicable; no-op otherwise.
+        // Per-item strip. Mutates `item` in place when applicable; no-op otherwise.
         private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
             if (item == null) return;
@@ -1283,7 +1282,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         else
                         {
-                            // Server-side fallback.
                             watchedThroughTicksForImg = ResolveWatchedThroughTicksServerSide(userId, item.Id);
                         }
                     }

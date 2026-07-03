@@ -1248,12 +1248,10 @@
                 addHideContentButton(itemId, visiblePage);
             }
 
-            // Spoiler Guard — Series detail page (toggle blurs all unwatched
-            // episode images via the server-side filter), Movie detail
-            // page (toggle blurs the movie's own poster/backdrop until the
-            // user has marked it Played), AND Collection (BoxSet) detail
-            // page (toggle protects every movie inside the collection; the
-            // collection's own art stays clear).
+            // Spoiler Guard toggle on Series (blurs all unwatched episode images
+            // via the server filter), Movie (blurs the movie's own poster/backdrop
+            // until marked Played), and Collection/BoxSet (protects every movie
+            // inside; the collection's own art stays clear) detail pages.
             if ((lastDetailsItemType === 'Series' || lastDetailsItemType === 'Movie' || lastDetailsItemType === 'BoxSet')
                 && JE.spoilerBlur
                 && typeof JE.spoilerBlur.addSpoilerBlurButton === 'function') {

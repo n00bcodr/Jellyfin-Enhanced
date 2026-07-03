@@ -3,10 +3,9 @@
 
     var logPrefix = '🪼 Jellyfin Enhanced [SpoilerBlur]:';
 
-    // In-memory cache of series IDs the current user has Spoiler Guard enabled for.
-    // Populated once on init from the server's spoilerblur.json. The image filter
-    // runs on the server so cards that are already displayed will be re-fetched
-    // on next navigation; this cache only drives the per-show toggle button UI.
+    // In-memory cache of series IDs the current user has Spoiler Guard enabled
+    // for. The image filter runs on the server, so already-displayed cards
+    // re-fetch on next navigation; this cache only drives the toggle button UI.
     var enabledSeries = new Set();
     var enabledMovies = new Set();
     var enabledCollections = new Set();
@@ -33,18 +32,13 @@
     /**
      * Normalize a series ID to "N" format (no dashes, lowercase).
      * Server stores keys this way for deterministic comparison.
-     * @param {string} id
-     * @returns {string}
      */
     function normalizeId(id) {
         if (!id) return '';
         return String(id).replace(/-/g, '').toLowerCase();
     }
 
-    /**
-     * Fetch the user's enabled-series list from the server.
-     * @returns {Promise<void>}
-     */
+    /** Fetch the user's enabled-series list from the server. */
     function loadState() {
         statePromise = ApiClient.ajax({
             url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/series'),
@@ -82,10 +76,7 @@
         }).catch(function (err) {
             // Mark `loaded` so whenLoaded() unblocks, but DON'T set loadOk:
             // the cache is unreliable. Save/strip callers must fail-closed
-            // rather than treating the empty cache as authoritative. Logged
-            // at error level — this is the load that everything downstream
-            // depends on, so it deserves more than a warn when filtering by
-            // severity in devtools.
+            // rather than treating the empty cache as authoritative.
             console.error(logPrefix, 'Failed to load spoiler-blur state; downstream consumers will fail-closed:', err);
             loaded = true;
             loadOk = false;
@@ -99,7 +90,6 @@
      * authoritative. Returns false either before the GET completes or after
      * it failed. Callers that would otherwise overwrite server state from
      * an empty cache MUST short-circuit on `false`.
-     * @returns {boolean}
      */
     function isLoadOk() {
         return loadOk;
@@ -115,7 +105,6 @@
      * a future consumer that forgot to gate on SpoilerBlurEnabled before
      * calling whenLoaded() could trigger a 403/empty-response GET when
      * the plugin's spoiler-blur feature is disabled.
-     * @returns {Promise<void>}
      */
     function whenLoaded() {
         if (JE.pluginConfig && JE.pluginConfig.SpoilerBlurEnabled !== true) return Promise.resolve();
@@ -123,20 +112,12 @@
         return statePromise || loadState();
     }
 
-    /**
-     * Returns true when the current user has Spoiler Guard enabled for this series.
-     * @param {string} seriesId
-     * @returns {boolean}
-     */
+    /** Returns true when the current user has Spoiler Guard enabled for this series. */
     function isEnabledFor(seriesId) {
         return enabledSeries.has(normalizeId(seriesId));
     }
 
-    /**
-     * Enable Spoiler Guard for a series.
-     * @param {string} seriesId
-     * @returns {Promise<void>}
-     */
+    /** Enable Spoiler Guard for a series. */
     function enableForSeries(seriesId) {
         var normalized = normalizeId(seriesId);
         return ApiClient.ajax({
@@ -148,11 +129,7 @@
         });
     }
 
-    /**
-     * Disable Spoiler Guard for a series.
-     * @param {string} seriesId
-     * @returns {Promise<void>}
-     */
+    /** Disable Spoiler Guard for a series. */
     function disableForSeries(seriesId) {
         var normalized = normalizeId(seriesId);
         return ApiClient.ajax({
@@ -308,8 +285,7 @@
     // cache it existed for. The player's own on-demand chapter request is
     // still intercepted and blurred by the server-side image filter.)
 
-    // Maps a Jellyfin item type to the Spoiler Guard "kind" the state model
-    // uses (movie / collection / series).
+    // Maps a Jellyfin item type to the Spoiler Guard "kind" (movie / collection / series).
     function kindOf(itemType) {
         if (itemType === 'Movie') return 'movie';
         if (itemType === 'BoxSet') return 'collection';
@@ -326,9 +302,6 @@
      * Inserts a "Spoiler Guard" toggle button into a Series / Movie / Collection
      * detail page's action button row. Idempotent: re-running on the same page
      * reuses the existing button and just refreshes its state.
-     * @param {string} itemId The Series / Movie / BoxSet ID.
-     * @param {HTMLElement} visiblePage The visible #itemDetailPage element.
-     * @param {string} itemType 'Series' | 'Movie' | 'BoxSet'.
      */
     function addSpoilerBlurButton(itemId, visiblePage, itemType) {
         // Admin-level kill switch.
@@ -412,8 +385,6 @@
      * Render the button content + tooltip for the given enabled state.
      * Icon-only — the label rides on the button's `title` (hover tooltip)
      * and `aria-label` (screen readers) so the row stays compact.
-     * @param {HTMLButtonElement} button
-     * @param {boolean} enabled
      */
     function renderButton(button, enabled) {
         var label = enabled
@@ -474,11 +445,10 @@
 
     // In-place refresh of every Jellyfin item-image URL on the page.
     // Triggered after a Spoiler Guard toggle so the visible state flips
-    // without an F5. Walks <img src>, srcset, and inline
-    // style.backgroundImage; appends `_sbcb=<timestamp>` to bust the
-    // browser HTTP cache. The image filter on the server re-runs against
-    // the user's current state and returns the right bytes (blurred /
-    // clear / hide-mode placeholder).
+    // without an F5. Appends `_sbcb=<timestamp>` to bust the browser HTTP
+    // cache; the server image filter then re-runs against the user's
+    // current state and returns the right bytes (blurred / clear /
+    // hide-mode placeholder).
     function refreshSpoilerableImages() {
         var IMG_PATH_RE = /\/Items\/[a-f0-9-]+\/Images\//i;
         var cb = '_sbcb=' + Date.now();
@@ -492,7 +462,6 @@
             return cleaned + (cleaned.indexOf('?') === -1 ? '?' : '&') + cb;
         }
 
-        // <img src>
         var imgs = document.querySelectorAll('img[src*="/Items/"]');
         for (var i = 0; i < imgs.length; i++) {
             var img = imgs[i];
@@ -506,7 +475,6 @@
             }
         }
 
-        // <source srcset> inside <picture>
         var sources = document.querySelectorAll('source[srcset*="/Items/"]');
         for (var j = 0; j < sources.length; j++) {
             var s = sources[j];
@@ -592,7 +560,6 @@
      * snooze is persisted via localStorage. Returns true if the user
      * confirmed, false if they cancelled. When already snoozed, resolves
      * true immediately without showing a dialog.
-     * @returns {Promise<boolean>}
      */
     function confirmDisableSpoiler() {
         // Persistent user pref takes precedence over the per-browser
@@ -683,10 +650,6 @@
      * this Series / Movie / Collection, shows a confirm dialog on disable
      * (unless snoozed / SkipDisableConfirm), toasts the result, and refreshes
      * thumbnails in place (plus a full reload when Strict refresh mode is on).
-     * @param {HTMLButtonElement} button
-     * @param {string} itemId Series / Movie / BoxSet ID.
-     * @param {string} kind 'series' | 'movie' | 'collection'.
-     * @param {HTMLElement} visiblePage The visible #itemDetailPage element.
      */
     function onToggleClicked(button, itemId, kind, visiblePage) {
         if (button.disabled) return;  // ignore re-entrant clicks
@@ -808,9 +771,6 @@
         });
     }
 
-    /**
-     * Module init. Loads server state, then exposes toggle APIs.
-     */
     // Intercept watched-state mutations (mark played / unplayed) so we
     // can auto-refresh thumbnails afterwards. Without this, the
     // currently-rendered <img> URLs still have the OLD cache-bust prefix
@@ -820,9 +780,7 @@
     // Jellyfin's web client marks watched via one of two route shapes:
     //   POST/DELETE /Users/{uid}/PlayedItems/{itemId}   (legacy apiclient)
     //   POST/DELETE /UserPlayedItems/{itemId}           (modern React/SDK)
-    // The user-scoped variant is used by the legacy jellyfin-apiclient; the
-    // user-less /UserPlayedItems/ variant is what the current React surfaces
-    // hit. Match BOTH so a watched-state change refreshes thumbnails no
+    // Match BOTH so a watched-state change refreshes thumbnails no
     // matter which client path fired it. Requests go through window.fetch in
     // modern Jellyfin and XMLHttpRequest in older ApiClient paths — patch both.
     var PLAYED_RE = /\/(?:Users\/[a-f0-9-]+\/PlayedItems|UserPlayedItems)\/[a-f0-9-]+/i;
@@ -852,7 +810,6 @@
         if (window.__je_spoilerBlurWatchedHookInstalled) return;
         window.__je_spoilerBlurWatchedHookInstalled = true;
 
-        // fetch
         try {
             var origFetch = window.fetch;
             if (typeof origFetch === 'function') {
@@ -872,7 +829,6 @@
             console.warn(logPrefix, 'fetch hook install failed:', e);
         }
 
-        // XMLHttpRequest
         try {
             var origOpen = XMLHttpRequest.prototype.open;
             var origSend = XMLHttpRequest.prototype.send;
@@ -976,8 +932,6 @@
      * Persist updated override prefs server-side and update the local cache.
      * Caller passes the full prefs object; missing keys are treated as null
      * by the server (inherit admin). Returns the saved prefs on success.
-     * @param {Object} next
-     * @returns {Promise<Object>}
      */
     function setUserPrefs(next) {
         var payload = next || {};

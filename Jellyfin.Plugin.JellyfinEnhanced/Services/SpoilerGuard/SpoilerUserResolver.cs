@@ -141,8 +141,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Anonymous request (browser <img>/CSS-background, or a native
-            // TV/mobile image fetch). Resolve by the users with a session from
-            // the request IP (cached briefly — see below).
+            // TV/mobile image fetch) — resolve by session-on-IP (cached briefly).
             var ipUsers = ScanActiveSessionUsersCached(httpContext);
 
             // Per-browser cookie disambiguation. The je-spoiler-uid cookie pins

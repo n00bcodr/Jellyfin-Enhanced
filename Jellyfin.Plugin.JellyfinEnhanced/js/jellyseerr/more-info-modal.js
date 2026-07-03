@@ -1783,15 +1783,11 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     }
 }
 
-// Toggle button that lets the user enable Spoiler Guard for a title in the
-// modal regardless of request status. Two use cases:
-//   (a) the user is about to Request it — they can pre-arm Spoiler Guard so
-//       the title is already blurred when it lands in their library.
-//   (b) another user has already requested it (Request button disabled) —
-//       this user can still register spoiler intent and have it auto-apply
-//       once the content arrives.
-// Server resolves "already in library" itself and promotes Series/Movies
-// directly, so the UI doesn't need to special-case that path.
+// Toggle button to enable Spoiler Guard for a title in the modal regardless of
+// request status: pre-arm it before requesting, or register intent on a title
+// someone else already requested so it auto-applies when the content arrives.
+// The server resolves "already in library" and promotes Series/Movies itself,
+// so the UI doesn't special-case that path.
 function buildSpoilerToggleButton(data, mediaType) {
     if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return null;
     if (!JE.spoilerBlur || typeof JE.spoilerBlur.enableForTmdb !== 'function') return null;
@@ -1804,9 +1800,8 @@ function buildSpoilerToggleButton(data, mediaType) {
 
     var btn = document.createElement('button');
     btn.type = 'button';
-    // Deliberately NOT using .jellyseerr-request-button — that class is for
-    // the primary request CTA stack. This is a secondary action with its
-    // own quieter styling (see CSS in this file).
+    // Deliberately NOT .jellyseerr-request-button (the primary request CTA stack)
+    // — this is a secondary action with its own quieter styling (see CSS below).
     btn.className = 'je-spoiler-pending-btn';
     btn.setAttribute('data-je-tmdb-id', String(tmdbId));
     btn.setAttribute('data-je-media-type', mediaType);
@@ -1829,10 +1824,9 @@ function buildSpoilerToggleButton(data, mediaType) {
         labelSpan.textContent = label;
     }
     refreshLabel();
-    // Cold-load fix: Spoiler Guard state may load after the modal mounts,
-    // so the initial refreshLabel above could read empty sets and show
-    // "Enable" for a TMDB id that's actually pending. whenLoaded resolves
-    // immediately if already loaded; otherwise awaits the in-flight load.
+    // Cold-load fix: Spoiler Guard state may load after the modal mounts, so the
+    // initial refreshLabel could read empty sets and show "Enable" for a pending
+    // id. whenLoaded resolves immediately if loaded, else awaits the in-flight load.
     if (typeof JE.spoilerBlur.whenLoaded === 'function') {
         JE.spoilerBlur.whenLoaded().then(refreshLabel).catch(function () {});
     }
@@ -1849,9 +1843,8 @@ function buildSpoilerToggleButton(data, mediaType) {
                     var proceed = await JE.spoilerBlur.confirmDisableSpoiler();
                     if (!proceed) return;
                 } else {
-                    // Older spoilerBlur build — log so the missing confirm
-                    // gate is visible in the console rather than failing
-                    // open silently.
+                    // Older spoilerBlur build — log so the missing confirm gate is
+                    // visible rather than failing open silently.
                     console.warn('🪼 Jellyfin Enhanced: spoiler-blur.confirmDisableSpoiler unavailable; disabling without prompt');
                 }
                 await JE.spoilerBlur.disableForTmdb(mediaType, tmdbId);
@@ -1872,10 +1865,9 @@ function buildSpoilerToggleButton(data, mediaType) {
     return btn;
 }
 
-// Append the Spoiler Guard toggle button into the secondary-actions mount
-// so it sits visually below the primary Request CTA with its own spacing
-// — not stacked flush inside the .je-more-info-actions group (which has
-// overflow:hidden + gap:0 to "weld" related buttons together).
+// Append the Spoiler Guard toggle into the secondary-actions mount so it sits
+// below the primary Request CTA with its own spacing — not welded into the
+// .je-more-info-actions group (overflow:hidden + gap:0).
 function appendSpoilerToggleIfApplicable(_actionMount, data, mediaType) {
     if (!currentModal) return;
     const secondary = currentModal.querySelector('[data-mount="je-secondary-actions"]');

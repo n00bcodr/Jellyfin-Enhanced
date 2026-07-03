@@ -104,10 +104,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // Decoder failed on probe — fall through to default 600x900.
-                // Logged at Debug (suppressed in normal operation) so a
-                // malformed-image flood (a corrupt poster somewhere in the
-                // library) can't fill the log.
+                // Debug-level (suppressed in normal operation) so a malformed-image
+                // flood — a corrupt poster somewhere in the library — can't fill the log.
                 _logger.Debug($"Spoiler Guard stock-card probe failed for input ({input?.Length ?? 0} bytes): {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 
@@ -169,9 +167,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // Reference probe failed — fall back to default 600x900
-                // target dims. Debug-level since this fires for any
-                // malformed reference and we have a sane default.
+                // Debug-level since this fires for any malformed reference and we
+                // have a sane default (600x900).
                 _logger.Debug($"Spoiler Guard parent-art reference probe failed: {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 
@@ -195,7 +192,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     targetH = Math.Max(1, (int)(targetH * ratio));
                 }
 
-                // Scale source to target dims using high-quality sampling.
                 var info = new SKImageInfo(targetW, targetH);
                 using var dst = new SKBitmap(info);
                 if (!srcBitmap.ScalePixels(dst, new SKSamplingOptions(SKCubicResampler.Mitchell)))

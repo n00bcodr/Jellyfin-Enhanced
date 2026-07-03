@@ -1937,17 +1937,14 @@
             }
         }
 
-        // Spoiler Guard per-user override toggles. Each checkbox carries a
-        // data-pref attribute naming the SpoilerBlurUserPrefs field it maps to,
-        // and an `id` prefixed with "sbPref" (set in the panel render). The id
-        // prefix is what the selector below is anchored on so a future module
-        // that happens to use the bare `data-pref` attribute on its own checkbox
-        // won't accidentally trigger this Spoiler-Guard save path.
-        // Checked = inherit admin (pref=null); unchecked = user opt-out (pref=false).
-        // The SkipDisableConfirm toggle is the one boolean exception — its semantics
-        // are direct (checked = skip the dialog) so it stores true, not null.
-        // Lives outside the JE.hiddenContent gate so Spoiler Guard's section works
-        // even on instances that have Hidden Content disabled.
+        // Spoiler Guard per-user override toggles. Each checkbox has a data-pref
+        // (the SpoilerBlurUserPrefs field) and an id prefixed "sbPref" — the
+        // selector anchors on that prefix so an unrelated module using a bare
+        // data-pref can't trigger this save path. Checked = inherit admin
+        // (pref=null); unchecked = user opt-out (pref=false). SkipDisableConfirm
+        // is the one exception: direct boolean (checked = skip dialog), stores true.
+        // Lives outside the JE.hiddenContent gate so this section works even where
+        // Hidden Content is disabled.
         if (JE.spoilerBlur && JE.spoilerBlur.setUserPrefs) {
             const sbPrefBoxes = document.querySelectorAll('input[type="checkbox"][id^="sbPref"][data-pref]');
             if (sbPrefBoxes.length > 0) {
@@ -1959,46 +1956,38 @@
                 const saveSbPrefs = async (changedBox, previousChecked) => {
                     setBoxesDisabled(true);
                     try {
-                        // Avoid the cold-load race: never write to the server using
-                        // the in-memory cache until loadState() has populated it.
-                        // Without this, a user toggling during the first few hundred
-                        // milliseconds of page load would POST an empty-cache-derived
-                        // payload that silently clobbers stored prefs.
+                        // Avoid the cold-load race: don't write to the server from
+                        // the in-memory cache until loadState() has populated it, or a
+                        // toggle during early page load POSTs an empty-cache payload
+                        // that silently clobbers stored prefs.
                         if (typeof JE.spoilerBlur.whenLoaded === 'function') {
                             await JE.spoilerBlur.whenLoaded();
                         }
-                        // Refuse to save when the initial GET failed — the
-                        // in-memory cache is empty, and writing from it
-                        // would clobber whatever prefs are stored on disk.
+                        // Refuse to save when the initial GET failed — the cache is
+                        // empty and writing from it would clobber stored prefs.
                         if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
                             throw new Error('Initial Spoiler Guard load failed; refusing to overwrite stored prefs.');
                         }
-                        // Build the payload from the authoritative cache,
-                        // then overlay ONLY the checkbox the user just
-                        // clicked. Reading every box from the DOM is unsafe
-                        // because the panel may have rendered before
-                        // loadState() resolved — the unrelated boxes would
-                        // visually default to "checked" (inherit) from an
-                        // empty cache and a full-DOM iteration would
-                        // serialize those stale visuals as `null`,
-                        // clobbering stored opt-outs.
+                        // Build the payload from the authoritative cache, then
+                        // overlay ONLY the box just clicked. A full-DOM read is unsafe:
+                        // if the panel rendered before loadState() resolved, unrelated
+                        // boxes default to "checked" (inherit) from an empty cache and
+                        // would serialize as null, clobbering stored opt-outs.
                         const current = JE.spoilerBlur.getUserPrefs ? JE.spoilerBlur.getUserPrefs() : {};
                         if (changedBox) {
                             const k = changedBox.dataset.pref;
                             if (k === 'SkipDisableConfirm') {
                                 current[k] = !!changedBox.checked;
                             } else {
-                                // Unchecked = user wants to SEE the field even when Spoiler Guard
-                                // strips it for others, so override to false. Checked = follow admin,
-                                // which we represent as null so future admin policy flips track through.
+                                // Unchecked = user opts to SEE the field (false); checked =
+                                // follow admin (null, so later admin policy flips track through).
                                 current[k] = changedBox.checked ? null : false;
                             }
                         }
                         await JE.spoilerBlur.setUserPrefs(current);
                     } catch (err) {
-                        // Always log even though the toast covers the visible case,
-                        // so a developer triaging "the panel isn't saving" can find
-                        // the actual error without having to add console.log breakpoints.
+                        // Log even though the toast covers the visible case, so a dev
+                        // triaging "panel isn't saving" sees the real error.
                         console.error('🪼 Jellyfin Enhanced [SpoilerBlur] saveSbPrefs failed:', err);
                         // Revert the visual state of the box the user just clicked
                         // so they can see the change didn't stick.
@@ -2019,13 +2008,10 @@
                         resetAutoCloseTimer();
                     });
                 });
-                // The rows were rendered from a synchronous getUserPrefs() read
-                // that may have happened BEFORE the initial state load resolved
-                // (or after it failed), in which case every box defaulted to
-                // "checked" (inherit) regardless of the user's stored opt-outs.
-                // Re-sync the visuals once the load settles so the panel shows
-                // the real saved state; if the load failed, disable the section
-                // rather than present editable-but-wrong checkboxes.
+                // Rows render from a synchronous getUserPrefs() that may run before
+                // the initial load resolves (or after it fails), defaulting every box
+                // to "checked" (inherit). Re-sync once the load settles; if it failed,
+                // disable the section rather than show editable-but-wrong checkboxes.
                 (async () => {
                     try {
                         if (typeof JE.spoilerBlur.whenLoaded === 'function') {

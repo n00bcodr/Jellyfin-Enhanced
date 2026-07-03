@@ -212,23 +212,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             // no-removal cases makes that observable.
                             if (!_watchedCache.TryRemove(key, out _))
                             {
-                                // Hit may simply not exist (cold cache); not an
-                                // error. Logging at Debug, not Warning.
+                                // Hit may not exist (cold cache); not an error.
                                 // _logger.Info($"[SpoilerBlur] UserDataSaved: no cache entry for season key {key} (cold cache or already evicted).");
                             }
                         }
                         else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
                         {
                             // Series-level event — invalidate every cached season
-                            // for this user under this series. Cache keys are
-                            // "{userN}:{seasonN}" so we'd have to iterate. Cheap
-                            // because the cache is small (≤512 entries) and this
-                            // event is rare.
-                            // ToArray for symmetry with the eviction site
-                            // at the bottom of this file.
-                            // ConcurrentDictionary.Keys is a snapshot in
-                            // current .NET but ToArray makes intent
-                            // explicit and survives framework changes.
+                            // for this user (keys are "{userN}:{seasonN}", so we
+                            // iterate). Cheap: cache is small (≤512) and this is
+                            // rare. ToArray so the snapshot survives a concurrent
+                            // insert and future framework changes to Keys.
                             var prefix = userId.ToString("N") + ":";
                             foreach (var k in _watchedCache.Keys.ToArray())
                             {
@@ -314,7 +308,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ActionExecutionDelegate next,
             Configuration.PluginConfiguration pluginConfig)
         {
-
             if (!TryGetItemId(context, out var itemId))
             {
                 await next().ConfigureAwait(false);
@@ -364,9 +357,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             //   inArtwork && SpoilerBlurArtwork   → blur
             //   inArtwork && !SpoilerBlurArtwork  → pass-through w/ no-store
 
-            // Read the item from Jellyfin's library. Cheap in-memory lookup.
-            // Needed up front so we can pick the effective user by spoiler
-            // scope (below) rather than by identity alone.
+            // Read the item up front so we can pick the effective user by
+            // spoiler scope (below) rather than by identity alone.
             var item = _libraryManager.GetItemById(itemId);
             if (item == null)
             {
@@ -404,7 +396,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             if (userState == null)
             {
-                // No candidate has this item on their Spoiler Guard list — pass through.
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -423,7 +414,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // on each movie's individual watched state.
             if (item is MediaBrowser.Controller.Entities.Movies.BoxSet)
             {
-                // Collection's own art: pass through unconditionally.
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -510,7 +500,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     await next().ConfigureAwait(false);
                     return;
                 }
-                // Fall through to blur.
             }
             else
             {
@@ -532,7 +521,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (seriesId == Guid.Empty
                     || !userState.Series.ContainsKey(seriesId.ToString("N")))
                 {
-                    // Item's series isn't on the user's Spoiler Guard list.
                     await next().ConfigureAwait(false);
                     return;
                 }
@@ -568,7 +556,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         await next().ConfigureAwait(false);
                         return;
                     }
-                    // Else fall through to blur path below.
                 }
                 else
                 {
@@ -586,12 +573,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     if (HasWatchedAnyEpisodeInSeason(jUser, season))
                     {
-                        // User started this season — pass-through.
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
                         return;
                     }
-                    // Else fall through to blur path below.
                 }
             }
 
@@ -606,10 +591,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Stash the cache key so the post-action code doesn't recompute.
-            // Cache key incorporates the blur mode so toggling between
-            // "blur" and "hide" doesn't serve stale entries from the
-            // wrong mode.
+            // Cache key incorporates the blur mode so toggling between "blur"
+            // and "hide" doesn't serve stale entries from the wrong mode.
             var spoilerMode = string.Equals(pluginConfig.SpoilerBlurMode, "hide", StringComparison.OrdinalIgnoreCase)
                 ? "hide" : "blur";
             var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity)
@@ -800,9 +783,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return imageType.Length > 0;
         }
 
-        // Read the imageIndex action argument used by chapter image
-        // requests (`/Items/{id}/Images/Chapter/{index}`). Returns false
-        // when the parameter is missing or non-integer.
+        // Reads the imageIndex action arg for chapter image requests
+        // (`/Items/{id}/Images/Chapter/{index}`).
         private static bool TryGetImageIndex(ActionExecutingContext context, out int imageIndex)
         {
             imageIndex = 0;
@@ -967,18 +949,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             bool anyWatched = false;
             bool determinationFailed = false;
-            // Diagnostic counters — kept (commented logger) for future
-            // troubleshooting if the season-watched cache produces
-            // unexpected blur/passthrough decisions. Uncomment the
-            // _logger.Info line below to surface per-call results.
+            // Diagnostic counters kept for the commented _logger.Info below —
+            // uncomment to troubleshoot unexpected blur/passthrough decisions.
             int total = 0, withUd = 0;
             try
             {
-                // Enumerate the season's episodes; bail as soon as we find a
-                // played one. `shouldIncludeMissingEpisodes: false` skips
-                // episodes Jellyfin has metadata for but no media file —
-                // those obviously can't have been "played" so they'd just
-                // waste iterations.
+                // `shouldIncludeMissingEpisodes: false` skips episodes Jellyfin
+                // has metadata for but no media file — they can't have been
+                // "played", so iterating them just wastes work.
                 foreach (var child in season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
                 {
                     total++;
@@ -1079,7 +1057,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Try parent art first.
             var parentBytes = TryGetParentArtBytes(item, userState, originalBytes, cacheKey + ":pp");
             if (parentBytes != null && parentBytes.Length > 0)
             {

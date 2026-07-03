@@ -290,10 +290,9 @@
      */
     let isInvalidating = false;
     function runScan() {
-        // While a server-cache invalidation is in flight (after a
-        // Spoiler Guard toggle), suppress concurrent scans so cards
-        // aren't processed against a half-loaded cache and marked done
-        // before the fresh data arrives.
+        // While a server-cache invalidation is in flight (after a Spoiler Guard
+        // toggle), suppress concurrent scans so cards aren't processed against a
+        // half-loaded cache and marked done before the fresh data arrives.
         if (isInvalidating) return;
         if (!hasAnyEnabledRenderer()) return;
         if (typeof ApiClient === 'undefined') return;
@@ -744,17 +743,14 @@
             firstEpisodeCache.clear();
             parentSeriesCache.clear();
         },
-        // Bust the server cache so the next scan re-fetches everything
-        // through the spoiler-strip pipeline. Used after toggling
-        // Spoiler Guard for a series/movie so newly-eligible items lose
-        // their cached unstripped tag data.
+        // Bust the server cache so the next scan re-fetches everything through the
+        // spoiler-strip pipeline. Used after toggling Spoiler Guard so newly-eligible
+        // items lose their cached unstripped tag data.
         async invalidateServerCache() {
-            // Hold a flag for the duration of the reload so concurrent
-            // scheduleScan() calls (triggered by body MutationObserver
-            // during the await window) no-op instead of processing cards
-            // against the empty cache. Reset processedCards a SECOND time
-            // after load so cards that
-            // were partially marked during the await get re-scanned.
+            // Hold a flag for the duration of the reload so concurrent scheduleScan()
+            // calls (from the body MutationObserver during the await) no-op instead of
+            // processing cards against the empty cache. processedCards is reset a
+            // SECOND time after load so cards partially marked during await re-scan.
             isInvalidating = true;
             try {
                 serverCache = null;
@@ -765,19 +761,17 @@
                 batchGeneration++;
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
-                // Clear each renderer's derived cache (e.g. quality's
-                // serverQualityCache) so it recomputes from the refreshed,
-                // spoiler-stripped server data instead of a stale entry.
+                // Clear each renderer's derived cache (e.g. quality's serverQualityCache)
+                // so it recomputes from the refreshed, spoiler-stripped server data.
                 for (const [, renderer] of renderers) {
                     if (renderer.onServerCacheRefresh) {
                         try { renderer.onServerCacheRefresh(null); } catch {}
                     }
                 }
-                // Remove overlays ALREADY inserted into the DOM and clear the
-                // per-card "tagged" markers. Without this the re-scan skips
-                // cards it considers already-processed, so genre/quality/
-                // rating overlays inserted BEFORE Spoiler Guard was enabled
-                // linger on unwatched-episode cards until a full page reload.
+                // Remove overlays ALREADY in the DOM and clear the per-card "tagged"
+                // markers. Without this the re-scan skips cards it considers processed,
+                // so genre/quality/rating overlays inserted BEFORE Spoiler Guard was
+                // enabled linger on unwatched-episode cards until a full page reload.
                 // Mirrors what each feature's own reinitialize does.
                 try {
                     document.querySelectorAll(

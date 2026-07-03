@@ -32,13 +32,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private volatile bool _dirty;
 
         // Bump whenever a TagCacheEntry field the STRIP paths depend on is added,
-        // so a cache serialized by an older build is discarded (not loaded) and
-        // rebuilt. v2 added TagCacheEntry.SeriesId, which the Spoiler Guard
-        // tag-cache strip requires — a v1 cache has null SeriesId on every
-        // episode, so the strip skips them (`if (string.IsNullOrEmpty(entry.SeriesId)) continue;`)
-        // and unstripped ratings leak onto guarded cards via renderFromServerCache.
-        // Discarding starts empty (no leak: the client falls back to the live/
-        // per-batch strip paths) until the Build Tag Cache task repopulates it.
+        // so a cache serialized by an older build is discarded and rebuilt. v2
+        // added SeriesId, which the Spoiler Guard tag-strip requires: a v1 cache
+        // has null SeriesId on every episode, so the strip skips them and unstripped
+        // ratings leak onto guarded cards via renderFromServerCache. Discarding
+        // starts empty (client falls back to the live/per-batch strip) until rebuild.
         private const int CurrentCacheSchemaVersion = 2;
 
         // User access cache: avoids expensive GetItemIds query on every request
@@ -212,10 +210,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var data = JsonSerializer.Deserialize<TagCacheDiskFormat>(json);
                 if (data?.Items != null)
                 {
-                    // Discard a cache written by an older schema (e.g. one that
-                    // predates TagCacheEntry.SeriesId) rather than serving stale
-                    // entries the strip paths can't process. Starting empty is
-                    // safe — the Build Tag Cache task rebuilds it fresh.
+                    // Discard a cache written by an older schema (e.g. predating
+                    // SeriesId) rather than serving entries the strip paths can't
+                    // process. Starting empty is safe — the Build task rebuilds it.
                     if (data.SchemaVersion != CurrentCacheSchemaVersion)
                     {
                         _logger.Info($"[TagCache] On-disk cache schema v{data.SchemaVersion} != current v{CurrentCacheSchemaVersion}; discarding {data.Items.Count} entries and rebuilding on next scan.");
@@ -312,10 +309,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-                // Capture parent series ID for Episodes/Seasons so the
-                // Spoiler Guard filter can strip cache entries for unwatched
-                // episodes of spoiler-list series without doing a library
-                // lookup per cache entry on every GetTagCache request.
+                // Capture parent series ID for Episodes/Seasons so the Spoiler
+                // Guard filter can strip unwatched-episode entries without a
+                // library lookup per entry on every GetTagCache request.
                 string? seriesIdN = null;
                 if (item is MediaBrowser.Controller.Entities.TV.Episode tcEp)
                 {

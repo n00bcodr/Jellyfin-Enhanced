@@ -47,30 +47,16 @@
     }
 
     /**
-     * True when the community/critic rating tag must be SUPPRESSED for this
-     * item because it belongs to (or is) a Spoiler-Guarded series and ratings
-     * are actually being hidden for this user. Covers every card surface the
-     * overlay renders on:
-     *   • Series  — the guarded show's own card (home rails, library grid).
-     *   • Season  — a season card of a guarded show. Seasons carry no rating
-     *               of their own, so the renderer would otherwise fall back to
-     *               the SERIES rating and leak it onto the season poster.
-     *   • Episode — an UNWATCHED episode of a guarded show. The server strips
-     *               the episode's own rating, and the client fallback would
-     *               otherwise substitute the series rating. Watched episodes
-     *               are no longer spoilers, so they reveal normally (matching
-     *               the server-side field-strip, which only strips unwatched).
-     *
-     * Gated on ratings ACTUALLY being stripped for this user: if the admin
-     * disabled rating stripping (SpoilerStripRatings === false) or the user
-     * opted to keep ratings (HideRatings === false), this returns false so the
-     * normal rating (including the parent-series fallback) still shows.
-     *
-     * Defensive: only ever true when the master switch is on and JE.spoilerBlur
-     * (with isEnabledFor) is present. Movies, non-guarded series, watched
-     * episodes, and Spoiler-Guard-off all return false — their rating tags
-     * render exactly as before.
-     * @param {object} item - Jellyfin item DTO (or a synthetic {Type, Id, SeriesId, UserData}).
+     * True when the community/critic rating tag must be SUPPRESSED because the
+     * item is (or belongs to) a Spoiler-Guarded series and ratings are being
+     * hidden for this user. Series suppress their own card; Seasons and unwatched
+     * Episodes would otherwise leak the series rating via the parent-series
+     * fallback (the server strips their own rating). Watched episodes reveal
+     * normally, matching the server strip which only strips unwatched. Gated on
+     * ratings actually being stripped (SpoilerStripRatings !== false and
+     * HideRatings !== false) and on the master switch + JE.spoilerBlur being
+     * present; everything else returns false.
+     * @param {object} item - Jellyfin item DTO (or synthetic {Type, Id, SeriesId, UserData}).
      * @returns {boolean}
      */
     function shouldSuppressRatingTag(item) {
@@ -86,11 +72,9 @@
                 if (prefs.HideRatings === false) return false; // user opted to keep ratings
             }
             // Fail CLOSED while Spoiler Guard state hasn't authoritatively loaded
-            // (initial GET still in flight, or it failed): the in-memory
-            // enabled-series set is not yet trustworthy, so suppress the rating on
-            // any GUARDABLE surface rather than momentarily flashing a guarded
-            // show's rating (a spoiler). Once loaded we decide precisely below.
-            // Mirrors reviews.js's whenLoaded/isLoadOk gate.
+            // (initial GET in flight or failed): the enabled-series set isn't
+            // trustworthy yet, so suppress on any guardable surface rather than
+            // flash a guarded show's rating. Mirrors reviews.js isLoadOk gate.
             var stateReady = typeof sg.isLoadOk === 'function' ? sg.isLoadOk() === true : true;
             if (item.Type === 'Series') {
                 if (!item.Id) return false;
@@ -397,12 +381,11 @@
 
                     const itemId = item.Id;
 
-                    // Spoiler Guard: suppress the community/critic rating tag for
-                    // guarded series/seasons/unwatched-episodes when ratings are
-                    // being hidden. Checked BEFORE the hot-cache path so a rating
-                    // cached before the show was guarded (or a season's
-                    // parent-series fallback cached earlier) can't replay onto the
-                    // card. The user's OWN rating is not a spoiler — keep it.
+                    // Spoiler Guard: suppress the rating tag for guarded
+                    // series/seasons/unwatched-episodes. Checked BEFORE the
+                    // hot-cache path so a rating cached before the show was
+                    // guarded can't replay onto the card. Keep the user's own
+                    // rating — it isn't a spoiler.
                     if (shouldSuppressRatingTag(item)) {
                         markCardTagged(el);
                         if (typeof JE.appendUserRatingToContainer === 'function') {
@@ -506,14 +489,12 @@
                 renderFromServerCache: function(el, entry) {
                     if (isCardAlreadyTagged(el)) return;
                     if (shouldIgnoreElement(el)) return;
-                    // Series / Season guard: the server tag-cache entry for a
-                    // guarded show's season CAN carry the series-fallback rating
-                    // (seasons have no rating of their own, and the server's
-                    // tag-cache strip exempts S0/S1), so suppress it here. Episodes
-                    // are intentionally NOT gated on this path: the server strip is
-                    // watched-aware (nulls unwatched, keeps watched), and this path
-                    // has no Played info — suppressing episodes here would wrongly
-                    // hide a WATCHED guarded episode's real rating.
+                    // Series / Season guard: a guarded show's season entry can
+                    // carry the series-fallback rating (seasons have none of
+                    // their own; the server strip exempts S0/S1), so suppress it.
+                    // Episodes are intentionally NOT gated here: this path has no
+                    // Played info and the server strip is watched-aware, so
+                    // suppressing would wrongly hide a WATCHED episode's rating.
                     if ((entry.Type === 'Series' || entry.Type === 'Season')
                         && shouldSuppressRatingTag({ Type: entry.Type, Id: entry.Id, SeriesId: entry.SeriesId })) {
                         markCardTagged(el);

@@ -22,36 +22,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? AudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
         public long LastUpdated { get; set; }
-        // Series ID in N format (no dashes, lowercase). Set for Episodes
-        // and Seasons; null for everything else. Used by the Spoiler Guard
-        // filter to strip cache entries for unwatched episodes whose parent
-        // series is in the requesting user's spoiler list — avoids a
-        // per-request library lookup for every episode in a 1000-item
-        // cache.
+        // Series ID in N format (lowercase). Set for Episodes and Seasons, null
+        // otherwise. Lets the Spoiler Guard filter strip cache entries for
+        // unwatched episodes whose parent series is in the user's spoiler list
+        // without a per-episode library lookup on every request.
         public string? SeriesId { get; set; }
 
-        // Shallow copy. Required by per-user mutators (spoiler tag-strip)
-        // because the underlying TagCacheService stores ONE shared instance
-        // per item across ALL users. Mutating in place would leak one user's
-        // strip into every other user's cache response. Arrays are kept by
-        // reference; spoiler strip only ever REPLACES them (with empty/null),
-        // never mutates an existing array, so the shallow copy is safe.
+        // Shallow copy required by per-user mutators (spoiler tag-strip): the
+        // TagCacheService stores ONE shared instance per item across ALL users,
+        // so mutating in place would leak one user's strip into every other user's
+        // cache response. Arrays are kept by reference, but the strip only REPLACES
+        // them (with empty/null), never mutates in place, so this is safe.
         //
-        // R6-L2 caveat: StreamData (TagStreamData object) is also reference-
-        // shared. Today's strip code replaces the reference (Stream Data =
-        // null) — safe. If a future feature mutates `clone.StreamData.Streams.Add(...)`
-        // or similar, every user's cache silently corrupts. Treat StreamData
-        // as immutable across users; replace the whole object, never mutate
-        // its fields.
+        // Same caveat for StreamData (also reference-shared): treat it as immutable
+        // across users — replace the whole object (StreamData = null), never mutate
+        // its fields, or every user's cache silently corrupts.
         public TagCacheEntry Clone() => new()
         {
             Type = Type,
-            // Copy EVERY property: the spoiler tag-strip replaces the shared
-            // instance with this clone in the response, so any field omitted
-            // here is silently blanked for the client. TmdbId / SeriesTmdbId /
-            // SeasonNumber / EpisodeNumber build the review key — dropping them
-            // broke reviews on cloned entries even when reviews weren't the
-            // field being stripped.
+            // Copy EVERY property: this clone replaces the shared instance in the
+            // response, so any field omitted here is silently blanked for the
+            // client. TmdbId/SeriesTmdbId/SeasonNumber/EpisodeNumber build the
+            // review key — dropping them broke reviews on cloned entries.
             TmdbId = TmdbId,
             SeriesTmdbId = SeriesTmdbId,
             SeasonNumber = SeasonNumber,

@@ -87,16 +87,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
-    // Per-collection Spoiler Guard entry. Collections (BoxSet) are
-    // user/admin-curated groupings of movies. R23-collections-redesign:
-    // toggling Spoiler Guard on a collection is a SHORTCUT — it does
-    // NOT blur or strip the collection itself (the collection name +
-    // art is the entry point the user clicked, like a Series). Instead,
-    // every movie that's a member of the collection (via BoxSet
-    // LinkedChildren) is treated as if it were directly opted-in, so
-    // its Primary art blurs (until Played) and its DTO strips. Items
-    // can be in `Movies` directly AND inherited via a collection — the
-    // image / strip pipelines OR these together (IsMovieInSpoilerScope).
+    // Per-collection Spoiler Guard entry. Toggling Spoiler Guard on a collection
+    // (BoxSet) is a SHORTCUT: it does NOT blur/strip the collection itself (its
+    // name + art is the entry point the user clicked, like a Series). Instead
+    // every member movie (via BoxSet LinkedChildren) is treated as directly
+    // opted-in, so its Primary art blurs until Played and its DTO strips. A movie
+    // can be in `Movies` directly AND inherited via a collection — the image/strip
+    // pipelines OR these together (IsMovieInSpoilerScope).
     public class SpoilerBlurCollectionEntry
     {
         public string CollectionId { get; set; } = string.Empty;
@@ -104,17 +101,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string EnabledAt { get; set; } = string.Empty;
     }
 
-    // Pre-acquisition spoiler intent: user has subscribed to Spoiler Guard
-    // for a TMDB id that isn't (yet) in the Jellyfin library. Two sources:
-    // (a) auto-add when the user submits a Seerr request via the JE-proxied
-    // /jellyseerr/request endpoint, gated by SpoilerAutoEnableOnSeerrRequest;
-    // (b) manual add from the Seerr more-info modal, gated only by the
-    // master SpoilerBlurEnabled (so a user can register intent even when
-    // another user has already requested the title and the Request button
-    // is disabled). Keyed "tv:{tmdbId}" or "movie:{tmdbId}". On ItemAdded,
-    // SpoilerSeerrPendingPromoter matches by ProviderIds.Tmdb and promotes
-    // the entry into Series/Movies — at which point the real per-item
-    // filter pipeline takes over and this pending row is removed.
+    // Pre-acquisition spoiler intent: user subscribed to Spoiler Guard for a
+    // TMDB id not (yet) in the library. Two sources: (a) auto-add on a Seerr
+    // request via JE's /jellyseerr/request, gated by SpoilerAutoEnableOnSeerrRequest;
+    // (b) manual add from the Seerr more-info modal, gated only by SpoilerBlurEnabled
+    // (so a user can register intent even when another user already requested the
+    // title and the Request button is disabled). Keyed "tv:{tmdbId}" or
+    // "movie:{tmdbId}". On ItemAdded, SpoilerSeerrPendingPromoter matches by
+    // ProviderIds.Tmdb, promotes it into Series/Movies, and removes this row.
     public class SpoilerBlurPendingEntry
     {
         public string MediaType { get; set; } = string.Empty;
@@ -133,8 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? HideTags { get; set; }
         public bool? HideChapterNames { get; set; }
         public bool? HideTaglines { get; set; }
-        // Single ratings opt-out — covers both community and critic ratings
-        // (consolidated from the former HideCommunityRating/HideCriticRating).
+        // Single opt-out covering both community and critic ratings.
         public bool? HideRatings { get; set; }
         public bool? HideAirDate { get; set; }
         public bool? ReplaceEpisodeTitles { get; set; }
@@ -148,16 +141,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     public class UserSpoilerBlur
     {
         // Keyed by series ID in N format (no dashes), case-insensitive — matches
-        // how UserHiddenContent stores keys.
-        //
-        // Backing setter re-wraps incoming dictionaries with
-        // StringComparer.OrdinalIgnoreCase. System.Text.Json deserialization
-        // otherwise silently drops the OrdinalIgnoreCase comparer (it constructs
-        // a default-comparer Dictionary and assigns to the setter), which would
-        // break case-insensitive lookups for any code path that reads via STJ.
-        // Newtonsoft.Json (the manager's primary serializer) preserves the
-        // comparer when MissingMemberHandling is Ignore + ObjectCreationHandling
-        // is Auto — but we don't rely on that.
+        // UserHiddenContent. The setter re-wraps incoming dictionaries with
+        // StringComparer.OrdinalIgnoreCase because System.Text.Json deserialization
+        // silently drops the comparer (it builds a default-comparer Dictionary and
+        // assigns to the setter), breaking case-insensitive lookups on any STJ read
+        // path. Newtonsoft preserves the comparer, but we don't rely on that.
         private Dictionary<string, SpoilerBlurSeriesEntry> _series
             = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, SpoilerBlurSeriesEntry> Series
@@ -168,10 +156,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : new Dictionary<string, SpoilerBlurSeriesEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
 
-        // Movies the user has opted into Spoiler Guard for. Keyed the same
-        // way as Series — N-format movie GUID, case-insensitive. Existing
-        // spoilerblur.json files written before movie support deserialize
-        // with an empty dict (Newtonsoft default).
+        // Movies opted into Spoiler Guard. Keyed like Series (N-format GUID,
+        // case-insensitive). Files written before movie support deserialize with
+        // an empty dict.
         private Dictionary<string, SpoilerBlurMovieEntry> _movies
             = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, SpoilerBlurMovieEntry> Movies
