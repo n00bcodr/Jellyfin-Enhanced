@@ -85,20 +85,32 @@
                 var prefs = sg.getUserPrefs() || {};
                 if (prefs.HideRatings === false) return false; // user opted to keep ratings
             }
+            // Fail CLOSED while Spoiler Guard state hasn't authoritatively loaded
+            // (initial GET still in flight, or it failed): the in-memory
+            // enabled-series set is not yet trustworthy, so suppress the rating on
+            // any GUARDABLE surface rather than momentarily flashing a guarded
+            // show's rating (a spoiler). Once loaded we decide precisely below.
+            // Mirrors reviews.js's whenLoaded/isLoadOk gate.
+            var stateReady = typeof sg.isLoadOk === 'function' ? sg.isLoadOk() === true : true;
             if (item.Type === 'Series') {
-                return !!item.Id && sg.isEnabledFor(item.Id) === true;
+                if (!item.Id) return false;
+                return stateReady ? sg.isEnabledFor(item.Id) === true : true;
             }
             if (item.Type === 'Season') {
-                return !!item.SeriesId && sg.isEnabledFor(item.SeriesId) === true;
+                if (!item.SeriesId) return false;
+                return stateReady ? sg.isEnabledFor(item.SeriesId) === true : true;
             }
             if (item.Type === 'Episode') {
                 // Watched episode is no longer a spoiler — reveal its rating.
                 if (item.UserData && item.UserData.Played === true) return false;
-                return !!item.SeriesId && sg.isEnabledFor(item.SeriesId) === true;
+                if (!item.SeriesId) return false;
+                return stateReady ? sg.isEnabledFor(item.SeriesId) === true : true;
             }
             return false;
         } catch (e) {
-            return false;
+            // Unexpected failure: fail CLOSED when Spoiler Guard is enabled
+            // (suppress) rather than risk revealing a guarded rating.
+            return !!(JE.pluginConfig && JE.pluginConfig.SpoilerBlurEnabled === true);
         }
     }
 

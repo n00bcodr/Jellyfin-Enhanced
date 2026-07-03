@@ -429,7 +429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
-                if (!IsMovieInSpoilerScope(userState, movie))
+                if (!_resolver.IsMovieInSpoilerScope(userState, movie.Id))
                 {
                     await next().ConfigureAwait(false);
                     return;
@@ -633,17 +633,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Error($"Spoiler Guard post-processing failed for episode {itemId} ({imageType}, {spoilerMode}): {ex.Message}");
 
-                // Hide-mode has a stricter contract: an exception thrown
-                // BEFORE ReplaceWithStockCardAsync assigned executed.Result
-                // (e.g. ExtractBytesAsync stream-copy IOException, OOM on a
-                // 4K backdrop decode, ObjectDisposedException on a cancelled
-                // request) would otherwise let MVC write the original
-                // FileStreamResult body — leaking the spoiler image. Force
-                // the hardcoded fallback so the fail-closed invariant holds
-                // structurally regardless of where in the pipeline the
-                // failure occurred. Blur-mode is best-effort by design and
-                // is allowed to pass through.
-                if (spoilerMode == "hide" && !executed.HttpContext.Response.HasStarted)
+                // Fail CLOSED in BOTH modes. An exception thrown before
+                // ReplaceWith*Async assigned executed.Result (e.g. ExtractBytesAsync
+                // stream-copy IOException, OOM on a 4K backdrop decode, or an
+                // ObjectDisposedException on a cancelled request) would otherwise
+                // let MVC write the original FileStreamResult body — leaking the
+                // spoiler image. Force the hardcoded fallback so the fail-closed
+                // invariant holds structurally regardless of mode or where in the
+                // pipeline the failure occurred (blur mode is NOT exempt: a
+                // best-effort blur must still never serve the original bytes).
+                if (!executed.HttpContext.Response.HasStarted)
                 {
                     try
                     {
@@ -652,7 +651,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     catch (Exception fallbackEx)
                     {
-                        _logger.Error($"Spoiler Guard: hide-mode fallback assignment failed for {itemId}: {fallbackEx.Message}");
+                        _logger.Error($"Spoiler Guard: fail-closed fallback assignment failed for {itemId}: {fallbackEx.Message}");
                     }
                 }
             }
@@ -944,7 +943,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return season.SeriesId != Guid.Empty
                         && userState.Series.ContainsKey(season.SeriesId.ToString("N"));
                 case MediaBrowser.Controller.Entities.Movies.Movie movie:
-                    return IsMovieInSpoilerScope(userState, movie);
+                    return _resolver.IsMovieInSpoilerScope(userState, movie.Id);
                 default:
                     return false;
             }
@@ -957,35 +956,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Jellyfin's data model — they reference movies via
         // LinkedChildren. So we iterate opted-in collections, check
         // whether each contains the movie ID.
-        private bool IsMovieInSpoilerScope(UserSpoilerBlur userState, MediaBrowser.Controller.Entities.Movies.Movie movie)
-        {
-            if (movie == null) return false;
-            var key = movie.Id.ToString("N");
-            if (userState.Movies.ContainsKey(key)) return true;
-            if (userState.Collections.Count == 0) return false;
-            try
-            {
-                foreach (var collKeyN in userState.Collections.Keys)
-                {
-                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
-                    var bs = _libraryManager.GetItemById(collGuid)
-                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
-                    if (bs == null) continue;
-                    foreach (var child in bs.GetLinkedChildren())
-                    {
-                        if (child != null && child.Id == movie.Id) return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _resolver.WarnRateLimited(
-                    "movie-in-collection:" + ex.GetType().FullName,
-                    $"Spoiler Guard: IsMovieInSpoilerScope linked-children walk failed for {movie.Id}: {ex.Message}");
-            }
-            return false;
-        }
-
         private bool HasWatchedAnyEpisodeInSeason(JUser user, Season season)
         {
             var key = user.Id.ToString("N") + ":" + season.Id.ToString("N");
@@ -1101,7 +1071,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var (originalBytes, originalContentType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            var (originalBytes, _) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
             if (originalBytes == null || originalBytes.Length == 0)
             {
                 MaybeWarnShapeMismatch(executed.Result);
@@ -1203,22 +1173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // aspect as the movie's own poster).
                     if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
                     {
-                        foreach (var collKeyN in userState.Collections.Keys)
-                        {
-                            if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
-                            var bs = _libraryManager.GetItemById(collGuid)
-                                as MediaBrowser.Controller.Entities.Movies.BoxSet;
-                            if (bs == null) continue;
-                            foreach (var child in bs.GetLinkedChildren())
-                            {
-                                if (child != null && child.Id == movie.Id)
-                                {
-                                    parentId = collGuid;
-                                    break;
-                                }
-                            }
-                            if (parentId != Guid.Empty) break;
-                        }
+                        parentId = _resolver.FindOptedInCollectionForMovie(userState, movie.Id) ?? Guid.Empty;
                     }
                 }
 
@@ -1268,7 +1223,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var (originalBytes, originalContentType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            var (originalBytes, _) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
             if (originalBytes == null || originalBytes.Length == 0)
             {
                 MaybeWarnShapeMismatch(executed.Result);
@@ -1279,13 +1234,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blurred = _blurService.Blur(originalBytes, sigma, cacheKey);
             if (blurred == null)
             {
-                // Blur failed but we already consumed the original
-                // FileStreamResult's stream during ExtractBytesAsync.
-                // Replace the result with the original bytes we captured
-                // so MVC writes a complete body, not an empty one. Force
-                // `no-store` so the browser doesn't permanently cache
-                // this transient failure.
-                executed.Result = new FileContentResult(originalBytes, originalContentType ?? "image/jpeg");
+                // Blur failed, and we already consumed the source stream during
+                // ExtractBytesAsync, so we MUST write a complete body — but it
+                // must NEVER be the original spoiler bytes (fail CLOSED, same as
+                // hide mode). Fall back to a stock card sized to the original
+                // (keeps the grid from shifting), then the hardcoded JPEG if even
+                // that fails. Not cached (null key) since this is a transient
+                // error path. Force `no-store`.
+                var fallback = _blurService.StockCard(originalBytes, null) ?? _blurService.HardcodedFallbackJpeg;
+                executed.Result = new FileContentResult(fallback, "image/jpeg");
                 ApplyNoStoreToResponse(executed.HttpContext);
                 return;
             }

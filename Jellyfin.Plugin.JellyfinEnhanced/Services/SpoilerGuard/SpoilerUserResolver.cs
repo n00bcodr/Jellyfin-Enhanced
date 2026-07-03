@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
@@ -22,7 +23,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         public const string ContextKeyUserState = "__JE_SpoilerBlur_UserState_Shared";
 
-        private static readonly TimeSpan SharedIpAmbiguityWindow = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan PerKeyWarnInterval = TimeSpan.FromHours(1);
         private static readonly ConcurrentDictionary<string, DateTime> _warnedAt = new();
 
@@ -49,31 +49,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private sealed class IpScanCacheEntry
         {
             public required DateTime CachedAt { get; init; }
-            public required IReadOnlyList<Guid> Recent { get; init; }
             public required IReadOnlyCollection<Guid> IpUsers { get; init; }
-            public required Guid? Best { get; init; }
         }
 
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ISessionManager _sessionManager;
+        private readonly ILibraryManager _libraryManager;
         private readonly Logger _logger;
 
         public SpoilerUserResolver(
             UserConfigurationManager userConfigManager,
             ISessionManager sessionManager,
+            ILibraryManager libraryManager,
             Logger logger)
         {
             _userConfigManager = userConfigManager;
             _sessionManager = sessionManager;
+            _libraryManager = libraryManager;
             _logger = logger;
+        }
+
+        // Returns the id of an opted-in collection (BoxSet) that contains the
+        // given movie, or null. Shared by the image filter, field-strip filter
+        // and controller so the "is this movie in spoiler scope via a collection"
+        // rule (and the collection-art lookup) can't drift between them.
+        public Guid? FindOptedInCollectionForMovie(UserSpoilerBlur userState, Guid movieId)
+        {
+            if (movieId == Guid.Empty || userState.Collections.Count == 0) return null;
+            try
+            {
+                foreach (var collKeyN in userState.Collections.Keys)
+                {
+                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                    if (_libraryManager.GetItemById(collGuid) is not MediaBrowser.Controller.Entities.Movies.BoxSet bs) continue;
+                    foreach (var child in bs.GetLinkedChildren())
+                    {
+                        if (child != null && child.Id == movieId) return collGuid;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WarnRateLimited(
+                    "movie-in-collection:" + ex.GetType().FullName,
+                    $"Spoiler Guard: movie-in-collection linked-children walk failed for {movieId}: {ex.Message}");
+            }
+            return null;
+        }
+
+        // True when the movie is opted in directly OR is a member of an opted-in
+        // collection. The single source of truth for movie spoiler scope.
+        public bool IsMovieInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
+        {
+            if (movieId == Guid.Empty) return false;
+            return userState.Movies.ContainsKey(movieId.ToString("N"))
+                || FindOptedInCollectionForMovie(userState, movieId).HasValue;
         }
 
         // Resolves the requesting user's GUID, falling back to a session-by-IP
         // lookup when ClaimsPrincipal yields no user (anonymous browser image
         // requests, native clients that don't authenticate image fetches).
-        // Returns null when session-by-IP is ambiguous (multiple users active
-        // from the same IP within the SharedIpAmbiguityWindow) — callers that
-        // need a single identity (the field-strip filter) then pass through.
+        // Returns null when session-by-IP is ambiguous (multiple distinct users
+        // have a session on the request IP) — callers that need a single
+        // identity (the field-strip filter) then pass through.
         // The image filter instead uses ResolveCandidateUserIds so it can
         // disambiguate by spoiler scope and fail CLOSED (protect) rather than
         // leak the original bytes. See that method.
@@ -87,10 +125,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Resolves the FULL set of plausible requesting users:
         //   • ClaimsPrincipal present  → exactly that user (authoritative).
-        //   • else session-by-IP       → every distinct user recently active
-        //     from the request IP. One entry when unambiguous; several when a
-        //     shared IP (reverse proxy without KnownProxies, NAT) can't pin
-        //     the request to one session.
+        //   • je-spoiler-uid cookie    → that user, when it has a session on the IP.
+        //   • else session-by-IP       → every distinct user with a session from
+        //     the request IP. One entry when unambiguous; several when a shared
+        //     IP (reverse proxy without KnownProxies, NAT) can't pin the request.
         // The image filter walks these and protects the item if ANY candidate
         // opted into it — fail-closed, so an anonymous image request on a
         // shared IP can no longer leak an opted-in user's unwatched artwork.
@@ -105,56 +143,81 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Anonymous request (browser <img>/CSS-background, or a native
             // TV/mobile image fetch). Resolve by the users with a session from
             // the request IP (cached briefly — see below).
-            var (recent, ipUsers, best) = ScanActiveSessionUsersCached(httpContext);
+            var ipUsers = ScanActiveSessionUsersCached(httpContext);
 
             // Per-browser cookie disambiguation. The je-spoiler-uid cookie pins
             // THIS request to its browser's user — trusted ONLY when that user
-            // genuinely has a session from this IP (so a stale/forged value can't
-            // impersonate an absent user). We validate against ALL IP sessions,
-            // not just recently-active ones, because passively viewing images
-            // doesn't refresh a session — a quietly-scrolling user would
-            // otherwise age out of the active window and lose their own identity.
+            // genuinely has a session from this IP, so a stale/forged value can't
+            // impersonate a user who isn't present.
             if (httpContext.Request.Cookies.TryGetValue(SpoilerUidCookie, out var raw)
                 && Guid.TryParse(raw, out var cookieUid)
-                && cookieUid != Guid.Empty
-                && ipUsers.Contains(cookieUid))
+                && cookieUid != Guid.Empty)
             {
-                return new[] { cookieUid };
+                // A cookie naming a user absent from the (up-to-TTL-stale) cached
+                // set may be a JUST-logged-in user the cache hasn't seen yet —
+                // re-scan uncached once before rejecting, else a fresh login
+                // leaks its own guarded images for up to the cache TTL.
+                if (!ipUsers.Contains(cookieUid))
+                {
+                    ipUsers = ScanActiveSessionUsersFresh(httpContext);
+                }
+                if (ipUsers.Contains(cookieUid))
+                {
+                    return new[] { cookieUid };
+                }
             }
 
-            if (recent.Count > 1)
+            // No usable cookie (native TV/mobile client, or a forged/stale value
+            // naming an absent user). Fail CLOSED by scope over ALL users with a
+            // session on this IP: return the full set so the image filter blurs
+            // the item if ANY of them opted in, rather than leaking the original
+            // bytes. (Using the full IP-session set — not a recent-activity
+            // window — is deliberate; passive image viewing doesn't refresh a
+            // session, so an opted-in user must not age out of protection.)
+            if (ipUsers.Count > 1)
             {
-                // Shared IP with no usable cookie (native client, or a
-                // forged/stale value naming an absent user): return ALL active
-                // users so the image filter fails CLOSED by scope (protect if
-                // ANY opted in) rather than leaking the original bytes.
                 WarnRateLimited(
                     "shared-ip-nocookie",
-                    $"Spoiler Guard resolver: {recent.Count} users active from one IP with no matching {SpoilerUidCookie} cookie (native client, or cookie names an absent user). Disambiguating by spoiler scope. Configure Jellyfin KnownProxies so proxied requests carry the real client IP to restore per-user precision.");
-                return recent;
+                    $"Spoiler Guard resolver: {ipUsers.Count} users have a session on one IP with no matching {SpoilerUidCookie} cookie (native client, or cookie names an absent user). Disambiguating by spoiler scope. Configure Jellyfin KnownProxies so proxied requests carry the real client IP to restore per-user precision.");
+                return ipUsers.ToArray();
             }
-
-            if (recent.Count == 1) return recent;
-            return best.HasValue ? new[] { best.Value } : Array.Empty<Guid>();
+            return ipUsers.Count == 1 ? ipUsers.ToArray() : Array.Empty<Guid>();
         }
 
         // Cached wrapper over the session scan. Keyed by normalized request IP;
         // entries live for IpScanCacheTtl so a page-load burst of image requests
         // scans ISessionManager.Sessions once instead of once per image.
-        private (IReadOnlyList<Guid> Recent, IReadOnlyCollection<Guid> IpUsers, Guid? Best) ScanActiveSessionUsersCached(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        private IReadOnlyCollection<Guid> ScanActiveSessionUsersCached(Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
             var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
-            if (remoteIpRaw == null) return (Array.Empty<Guid>(), Array.Empty<Guid>(), null);
+            if (remoteIpRaw == null) return Array.Empty<Guid>();
             var ipKey = NormalizeIp(remoteIpRaw).ToString();
-            var now = DateTime.UtcNow;
 
-            if (_ipScanCache.TryGetValue(ipKey, out var hit) && (now - hit.CachedAt) < IpScanCacheTtl)
+            if (_ipScanCache.TryGetValue(ipKey, out var hit) && (DateTime.UtcNow - hit.CachedAt) < IpScanCacheTtl)
             {
-                return (hit.Recent, hit.IpUsers, hit.Best);
+                return hit.IpUsers;
             }
+            return ScanAndCache(ipKey, httpContext);
+        }
 
-            var scanned = ScanActiveSessionUsers(httpContext);
-            _ipScanCache[ipKey] = new IpScanCacheEntry { CachedAt = now, Recent = scanned.Recent, IpUsers = scanned.IpUsers, Best = scanned.Best };
+        // Forces a fresh (uncached) scan and refreshes the cache. Used when a
+        // je-spoiler-uid cookie names a user absent from the cached set: the
+        // cache can be up to IpScanCacheTtl stale, so a just-logged-in user's
+        // brand-new session may not be in it yet. Re-scanning before rejecting
+        // the cookie closes the window where a fresh login would otherwise leak
+        // its guarded images for up to the TTL.
+        private IReadOnlyCollection<Guid> ScanActiveSessionUsersFresh(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        {
+            var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
+            if (remoteIpRaw == null) return Array.Empty<Guid>();
+            return ScanAndCache(NormalizeIp(remoteIpRaw).ToString(), httpContext);
+        }
+
+        private IReadOnlyCollection<Guid> ScanAndCache(string ipKey, Microsoft.AspNetCore.Http.HttpContext httpContext)
+        {
+            var now = DateTime.UtcNow;
+            var ipUsers = ScanActiveSessionUsers(httpContext);
+            _ipScanCache[ipKey] = new IpScanCacheEntry { CachedAt = now, IpUsers = ipUsers };
 
             // Opportunistic prune so the cache can't grow unbounded across many
             // distinct client IPs over a long uptime.
@@ -165,8 +228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if ((now - kvp.Value.CachedAt) >= IpScanCacheTtl) _ipScanCache.TryRemove(kvp.Key, out _);
                 }
             }
-
-            return (scanned.Recent, scanned.IpUsers, scanned.Best);
+            return ipUsers;
         }
 
         // Loads (and caches per-request, keyed by userId) the user's
@@ -212,40 +274,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return state;
         }
 
-        // Session-by-IP scan. Returns the distinct users active from the
-        // request IP:
-        //   • empty      → no matching session (bail; nothing to protect).
-        //   • one entry  → unambiguous best match.
-        //   • many       → shared-IP ambiguity: every user active within the
-        //     window. The caller (image filter) resolves this by spoiler
-        //     scope; the single-identity caller (field-strip) treats it as
-        //     "no single user" and passes through.
-        private (IReadOnlyList<Guid> Recent, IReadOnlyCollection<Guid> IpUsers, Guid? Best) ScanActiveSessionUsers(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        // Session-by-IP scan. Returns the set of DISTINCT users that have a
+        // session from the request IP, regardless of how recently active. We
+        // deliberately do NOT filter by a recent-activity window: passively
+        // viewing images (lazy-loaded <img>/CSS-background posters) does not
+        // refresh a session's LastActivityDate, so a quietly-scrolling opted-in
+        // user would age out of any activity window while still firing anonymous
+        // image requests — and drop out of the fail-closed-by-scope set, leaking
+        // their own guarded artwork. Empty ⇒ no matching session (nothing to
+        // protect). The caller applies the je-spoiler-uid cookie first, then
+        // falls back to protecting the item if ANY user in this set opted in.
+        private IReadOnlyCollection<Guid> ScanActiveSessionUsers(Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
             var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
-            if (remoteIpRaw == null) return (Array.Empty<Guid>(), Array.Empty<Guid>(), null);
+            if (remoteIpRaw == null) return Array.Empty<Guid>();
             var remoteIp = NormalizeIp(remoteIpRaw);
 
-            // Per-session try/catch instead of one outer try around the
-            // whole iteration. Previously a single misbehaving SessionInfo
-            // (e.g. a corrupt RemoteEndPoint string) aborted iteration of
-            // ALL sessions; one bad row hid every healthy match. Now a
-            // per-session failure logs a rate-limited warn and continues.
-            SessionInfo? best = null;
-            Guid? bestUser = null;
-            var recentlyActiveUsers = new HashSet<Guid>();
-            // Every distinct user with a session from this IP, regardless of how
-            // recently active — the cookie-disambiguation set (a passively
-            // image-viewing user stays here even after their session idles).
-            var allIpUsers = new HashSet<Guid>();
-            var now = DateTime.UtcNow;
+            var ipUsers = new HashSet<Guid>();
 
-            // Snapshot the live IEnumerable INSIDE the outer try.
-            // ISessionManager.Sessions can return a live view; foreach's
-            // MoveNext can throw InvalidOperationException ("Collection was
-            // modified") that would escape both inner per-session catches
-            // AND the outer property-access catch. ToArray() forces
-            // materialization here so the enumerator hazard is contained.
+            // Snapshot the live IEnumerable. ISessionManager.Sessions can return
+            // a live view; foreach's MoveNext can throw InvalidOperationException
+            // ("Collection was modified"). ToArray() forces materialization here
+            // so the enumerator hazard is contained.
             SessionInfo[] sessions;
             try
             {
@@ -256,26 +306,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 WarnRateLimited(
                     "session-list:" + ex.GetType().FullName,
                     $"Spoiler Guard resolver: ISessionManager.Sessions enumeration threw: {ex.Message}");
-                return (Array.Empty<Guid>(), Array.Empty<Guid>(), null);
+                return Array.Empty<Guid>();
             }
 
+            // Per-session try/catch (not one outer try) so a single misbehaving
+            // SessionInfo (e.g. a corrupt RemoteEndPoint) can't abort iteration
+            // of ALL sessions — one bad row must not hide every healthy match.
             foreach (var s in sessions)
             {
                 try
                 {
                     if (s.UserId == Guid.Empty) continue;
                     if (!RemoteEndpointIpEquals(s.RemoteEndPoint, remoteIp)) continue;
-
-                    allIpUsers.Add(s.UserId);
-                    if ((now - s.LastActivityDate) < SharedIpAmbiguityWindow)
-                    {
-                        recentlyActiveUsers.Add(s.UserId);
-                    }
-                    if (best == null || s.LastActivityDate > best.LastActivityDate)
-                    {
-                        best = s;
-                        bestUser = s.UserId;
-                    }
+                    ipUsers.Add(s.UserId);
                 }
                 catch (Exception ex)
                 {
@@ -286,11 +329,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // Return the recently-active set (for the no-cookie fail-closed
-            // fallback), the full IP-user set (for cookie validation), and the
-            // single best match. ResolveCandidateUserIds applies the cookie
-            // first, then falls back to fail-closed-by-scope.
-            return (recentlyActiveUsers.ToArray(), allIpUsers, bestUser);
+            return ipUsers;
         }
 
         // Returns the canonical IPAddress for comparison: IPv4-mapped-IPv6

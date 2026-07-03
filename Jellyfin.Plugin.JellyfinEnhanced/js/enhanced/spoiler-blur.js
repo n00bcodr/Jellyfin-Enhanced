@@ -933,6 +933,29 @@
         }
     }
 
+    // Write the identity cookie as EARLY as possible — before init() (which runs
+    // late in the plugin bootstrap, after loadScripts) and therefore before the
+    // first wave of card <img> requests. The cookie persists across the SPA's
+    // page reload, so after an in-browser account switch a stale previous-user
+    // value would otherwise ride along with the new user's early image requests
+    // (and mis-attribute their blur) until init() finally overwrites it. Setting
+    // it here at module load — then retrying briefly until ApiClient reports a
+    // user on a cold start — closes that window. Cheap: only reads
+    // getCurrentUserId() and writes document.cookie.
+    (function primeIdentityCookieEarly() {
+        setIdentityCookie();
+        var tries = 0;
+        var iv;
+        try {
+            iv = setInterval(function () {
+                var uid = (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId)
+                    ? ApiClient.getCurrentUserId() : null;
+                if (uid) { setIdentityCookie(); clearInterval(iv); }
+                else if (++tries >= 20) { clearInterval(iv); }
+            }, 250);
+        } catch (e) { /* setInterval unavailable — init() will still set it */ }
+    })();
+
     function init() {
         if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return;
         setIdentityCookie();

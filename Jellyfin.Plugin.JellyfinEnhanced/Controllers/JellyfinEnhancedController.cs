@@ -4473,6 +4473,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // movie Played.
         [HttpPost("spoiler-blur/movies/{movieId}")]
         [Authorize]
+        [RequestSizeLimit(8 * 1024)]
         [Produces("application/json")]
         public IActionResult EnableSpoilerBlurForMovie(string movieId, [FromBody] SpoilerBlurMovieRequest? body = null)
         {
@@ -4634,6 +4635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // pass through clear — it's the entry point the user just clicked.
         [HttpPost("spoiler-blur/collections/{collectionId}")]
         [Authorize]
+        [RequestSizeLimit(8 * 1024)]
         [Produces("application/json")]
         public IActionResult EnableSpoilerBlurForCollection(string collectionId, [FromBody] SpoilerBlurCollectionRequest? body = null)
         {
@@ -5956,7 +5958,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // dict OR a child of an opted-in collection
                             // (BoxSet).
                             if (!Guid.TryParse(kvp.Key, out var mGuid)) continue;
-                            if (!IsMovieIdInSpoilerScope(spState, mGuid)) continue;
+                            if (!_spoilerResolver.IsMovieInSpoilerScope(spState, mGuid)) continue;
                         }
                         else if (isSeries)
                         {
@@ -6376,7 +6378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (stripTagsEnabled
                     && spoilerState != null
                     && item is MediaBrowser.Controller.Entities.Movies.Movie spMovie
-                    && IsMovieIdInSpoilerScope(spoilerState, spMovie.Id))
+                    && _spoilerResolver.IsMovieInSpoilerScope(spoilerState, spMovie.Id))
                 {
                     var spMovieUd = _userDataManager.GetUserData(user, spMovie);
                     if (spMovieUd?.Played != true)
@@ -6435,7 +6437,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // entry point the user just clicked (like Series);
                 // blurring it would spoil the user's own navigation. The
                 // Movie-stub above already handles movies inside
-                // opted-in collections via IsMovieIdInSpoilerScope.
+                // opted-in collections via SpoilerUserResolver.IsMovieInSpoilerScope.
 
                 // When the item is a Season of a series the user has
                 // Spoiler Guard on for, AND no episode in that season has
@@ -7515,36 +7517,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // fall back to null so the strip silently no-ops rather than
         // returning 503 for the unrelated tag-cache request. The user's
         // actual /spoiler-blur/series endpoint will return 503 next call.
-        // See SpoilerFieldStripFilter.IsMovieIdInSpoilerScope for the
+        // See SpoilerUserResolver.IsMovieInSpoilerScope for the
         // same semantics: direct membership OR via opted-in BoxSet's
         // LinkedChildren.
-        private bool IsMovieIdInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
-        {
-            if (movieId == Guid.Empty) return false;
-            if (userState.Movies.ContainsKey(movieId.ToString("N"))) return true;
-            if (userState.Collections.Count == 0) return false;
-            try
-            {
-                foreach (var collKeyN in userState.Collections.Keys)
-                {
-                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
-                    var bs = _libraryManager.GetItemById(collGuid)
-                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
-                    if (bs == null) continue;
-                    foreach (var child in bs.GetLinkedChildren())
-                    {
-                        if (child != null && child.Id == movieId) return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _spoilerResolver.WarnRateLimited(
-                    "tagstrip-movie-collection:" + ex.GetType().FullName,
-                    $"Spoiler Guard tag-strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
-            }
-            return false;
-        }
 
         private UserSpoilerBlur? LoadSpoilerStateForTagStrip(Guid userId)
         {
