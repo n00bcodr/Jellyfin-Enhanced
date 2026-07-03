@@ -809,195 +809,6 @@
     }
 
     /**
-     * Patches the SRC / backgroundImage setters globally so every image URL
-     * that points at Jellyfin's /Items/{id}/Images/{type} endpoint gets an
-     * `api_key=<accessToken>` query param appended. Without this, browser
-     * <img> requests are anonymous (Jellyfin's image endpoint is public-
-     * accessible by design) and the server-side Spoiler Guard action filter
-     * has no way to identify which user is requesting the image, so it can't
-     * decide whether to blur. Adding api_key flips those requests into
-     * authenticated ones and the filter starts firing.
-     *
-     * Idempotent — calling this twice is harmless.
-     */
-    function patchImageUrlsForAuth() {
-        if (window.__je_spoilerBlurUrlPatchInstalled) return;
-        window.__je_spoilerBlurUrlPatchInstalled = true;
-
-        // Path-shape regex. Used as a cheap pre-filter before the costlier
-        // origin check in safelyPatchUrl().
-        var IMAGE_PATH_RE = /\/Items\/[a-f0-9-]+\/Images\//i;
-        var HAS_KEY_RE = /[?&](api_key|ApiKey)=/i;
-
-        // Capture the Jellyfin origin once at install time. Compared
-        // against every candidate URL — never append api_key to a
-        // non-Jellyfin origin even if the path happens to match
-        // /Items/.../Images/. Tolerates Jellyfin reverse-proxy mounts
-        // (BaseUrl) by letting any path on the same origin through.
-        var jfOrigin = (function () {
-            try {
-                if (typeof ApiClient !== 'undefined' && typeof ApiClient.serverAddress === 'function') {
-                    var addr = ApiClient.serverAddress();
-                    if (addr) return new URL(addr, location.href).origin;
-                }
-            } catch (e) {
-                // Same-origin fallback might be wrong on a BaseUrl-mounted
-                // reverse-proxy install — log so operators can diagnose.
-                console.warn(logPrefix, 'ApiClient.serverAddress() failed; falling back to location.origin:', e);
-            }
-            return location.origin;
-        })();
-
-        function getToken() {
-            try {
-                if (typeof ApiClient !== 'undefined' && typeof ApiClient.accessToken === 'function') {
-                    return ApiClient.accessToken() || '';
-                }
-            } catch (e) {
-                // Without a token we won't append api_key and the web
-                // client will see unblurred images — log so operators can
-                // diagnose.
-                console.warn(logPrefix, 'ApiClient.accessToken() failed:', e);
-            }
-            return '';
-        }
-
-        // Returns true when the URL is for the same Jellyfin origin AND
-        // matches the /Items/.../Images/ path shape AND doesn't already
-        // carry api_key. Anchored on origin to prevent token leakage to
-        // attacker-controlled hosts.
-        function shouldPatchUrl(url) {
-            if (typeof url !== 'string' || !url) return false;
-            if (!IMAGE_PATH_RE.test(url)) return false;
-            if (HAS_KEY_RE.test(url)) return false;
-            try {
-                var parsed = new URL(url, location.href);
-                if (parsed.origin !== jfOrigin) return false;
-            } catch (e) {
-                return false;
-            }
-            return true;
-        }
-
-        function patchUrl(url) {
-            if (!shouldPatchUrl(url)) return url;
-            var token = getToken();
-            if (!token) return url;
-            return url + (url.indexOf('?') === -1 ? '?' : '&') + 'api_key=' + encodeURIComponent(token);
-        }
-
-        // Patch HTMLImageElement.src — covers <img> tags everywhere.
-        var imgDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
-        if (imgDesc && imgDesc.set) {
-            Object.defineProperty(HTMLImageElement.prototype, 'src', {
-                configurable: true,
-                enumerable: imgDesc.enumerable,
-                get: imgDesc.get,
-                set: function (value) { return imgDesc.set.call(this, patchUrl(value)); },
-            });
-        }
-
-        // CSS properties on CSSStyleDeclaration are NOT regular accessor
-        // properties on the prototype — they're handled via WebIDL bindings
-        // and `Object.getOwnPropertyDescriptor(prototype, 'backgroundImage')`
-        // returns undefined in Chrome/Firefox. Patch `setProperty` (the
-        // underlying API for CSS property writes) AND use a MutationObserver
-        // on style-attribute changes as a backstop for `el.style.background-
-        // Image = ...` writes that bypass setProperty.
-        var origSetProp = CSSStyleDeclaration.prototype.setProperty;
-        CSSStyleDeclaration.prototype.setProperty = function (name, value, priority) {
-            if (typeof value === 'string'
-                && (name === 'background-image' || name === 'background')
-                && value.indexOf('/Items/') !== -1) {
-                value = value.replace(/url\((["']?)([^"')]+)\1\)/gi, function (m, q, u) {
-                    return 'url(' + q + patchUrl(u) + q + ')';
-                });
-            }
-            return origSetProp.call(this, name, value, priority);
-        };
-
-        // MutationObserver: when an element's style attribute changes and
-        // contains an unpatched /Items/.../Images/ url(...), rewrite it.
-        // Catches `el.style.backgroundImage = "url(...)"` (which goes through
-        // a non-public WebIDL setter that we cannot intercept directly).
-        function rewriteStyleBgIfNeeded(el) {
-            try {
-                var bg = el.style && el.style.backgroundImage;
-                if (!bg || bg.indexOf('/Items/') === -1) return;
-                var rewritten = bg.replace(/url\((["']?)([^"')]+)\1\)/gi, function (m, q, u) {
-                    return 'url(' + q + patchUrl(u) + q + ')';
-                });
-                if (rewritten !== bg) {
-                    // Use the original setter to bypass our setProperty patch
-                    // so we don't double-process.
-                    origSetProp.call(el.style, 'background-image', rewritten);
-                }
-            } catch (e) {
-                // Surface failures so we don't silently fall back to
-                // unblurred (which would mean every user sees every
-                // spoiler with no console signal). Rate-limited per
-                // element so a persistently-broken element doesn't spam
-                // the console.
-                if (!el.__jeSpoilerWarned) {
-                    el.__jeSpoilerWarned = true;
-                    console.warn(logPrefix, 'rewriteStyleBgIfNeeded failed:', e, el);
-                }
-            }
-        }
-
-        // Initial pass over already-rendered cards.
-        var existingCards = document.querySelectorAll('[style*="/Items/"]');
-        for (var i = 0; i < existingCards.length; i++) rewriteStyleBgIfNeeded(existingCards[i]);
-
-        var styleObserver = new MutationObserver(function (mutations) {
-            for (var i = 0; i < mutations.length; i++) {
-                var mut = mutations[i];
-                if (mut.type === 'attributes' && mut.attributeName === 'style') {
-                    rewriteStyleBgIfNeeded(mut.target);
-                } else if (mut.type === 'childList') {
-                    // New nodes may have inline style with unpatched URLs.
-                    for (var j = 0; j < mut.addedNodes.length; j++) {
-                        var node = mut.addedNodes[j];
-                        if (node.nodeType !== 1) continue;
-                        if (node.style) rewriteStyleBgIfNeeded(node);
-                        // descendants
-                        if (node.querySelectorAll) {
-                            var descs = node.querySelectorAll('[style*="/Items/"]');
-                            for (var k = 0; k < descs.length; k++) rewriteStyleBgIfNeeded(descs[k]);
-                        }
-                    }
-                }
-            }
-        });
-        styleObserver.observe(document.documentElement || document.body, {
-            attributes: true,
-            attributeFilter: ['style'],
-            childList: true,
-            subtree: true,
-        });
-
-        // Also rewrite static `src` / `style="background-image: ..."`
-        // attribute setters (some code uses setAttribute/style.cssText,
-        // which bypasses the property setters above). Early-out when the
-        // value can't possibly be a Jellyfin image URL — runs on every
-        // setAttribute call across the whole app, so the pre-filter
-        // matters.
-        var origSetAttr = Element.prototype.setAttribute;
-        Element.prototype.setAttribute = function (name, value) {
-            if (typeof value === 'string') {
-                if (this.tagName === 'IMG' && name === 'src') {
-                    value = patchUrl(value);
-                } else if (name === 'style' && value.indexOf('/Items/') !== -1) {
-                    value = value.replace(/url\((["']?)([^"')]+)\1\)/gi, function (m, q, u) {
-                        return 'url(' + q + patchUrl(u) + q + ')';
-                    });
-                }
-            }
-            return origSetAttr.call(this, name, value);
-        };
-    }
-
-    /**
      * Module init. Loads server state, then exposes toggle APIs.
      */
     // Intercept watched-state mutations (mark played / unplayed) so we
@@ -1090,18 +901,22 @@
 
     function init() {
         if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return;
-        // Install the URL patcher BEFORE loading state. We want any image
-        // request that fires while we're still loading state to already be
-        // authenticated; otherwise the filter sees `userId=null` and the
-        // image is permanently cached as pass-through in the browser.
-        try {
-            patchImageUrlsForAuth();
-        } catch (e) {
-            console.error(logPrefix, 'URL patcher install failed — web client will see unblurred images:', e);
-            if (JE.toast) {
-                JE.toast(JE.t('spoiler_blur_patcher_failed_toast'), 5000);
-            }
-        }
+        // NOTE: we deliberately do NOT rewrite image URLs client-side.
+        //
+        // The server-side SpoilerBlurImageFilter identifies the requesting
+        // user on its own — by ClaimsPrincipal for authenticated requests
+        // (native TV/mobile clients, and the web client's own api_key'd
+        // requests) and by session-by-IP for anonymous browser <img>/CSS
+        // background requests — so it blurs the right bytes for every client
+        // without any client help. An earlier build globally patched
+        // HTMLImageElement.src / CSSStyleDeclaration to append api_key so the
+        // filter could attribute anonymous <img> loads. That changed image
+        // URLs AFTER the browser had already begun loading the native URL,
+        // forcing a second fetch of every card image (native → BlurHash →
+        // api_key → BlurHash again) — visible as a blur/flicker on EVERY
+        // show, guarded or not. Since the server resolves the user by session
+        // anyway, the rewrite bought no protection and only cost jank, so it
+        // is gone. Do not reintroduce URL rewriting here.
         try { installWatchedMutationHook(); }
         catch (e) { console.warn(logPrefix, 'watched-mutation hook install failed:', e); }
         loadState();

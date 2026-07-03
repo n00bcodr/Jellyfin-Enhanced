@@ -220,7 +220,7 @@ The admin needs to flip the master **Enable Spoiler Guard** switch in the plugin
 
 - Refresh the page — your browser may have cached the original images before you opted in.
 - Confirm the series is in your Spoiler Guard list (the toggle should read **Spoiler Guard: On**).
-- If you're testing on the Web client and just installed the plugin, your browser may need a hard reload (Ctrl-F5) to pick up the URL-patching layer.
+- Protection is applied entirely on the server (the image API returns the protected bytes for every client), so a plain refresh is enough — a hard reload (Ctrl-F5) only helps if the browser cached the clear image before you opted in.
 
 **Android TV (Wholphin / Moonfin / Findroid) shows the original images on first load after enabling Spoiler Guard.**
 
