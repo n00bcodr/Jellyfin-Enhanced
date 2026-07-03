@@ -29,7 +29,7 @@ Once you turn Spoiler Guard on for a show or movie, the plugin hides every spoil
 | **Tags** | Story tags like "Death of a main character" are dropped. |
 | **Chapter names** | Replaced with `Chapter N` so the player's chapter list doesn't spoil the next scene. The chapter **timestamps** stay so you can still navigate. |
 | **Chapter thumbnails** | Stripped on unwatched episodes — for movies, only chapter thumbs **after** your current watch position are stripped (progressive reveal). |
-| **Trickplay timeline previews** | The sprite-sheet tiles your player uses for hover-scrubbing previews are blurred / hidden. |
+| **Trickplay timeline previews** | The sprite-sheet tiles your player uses for hover-scrubbing previews are blurred / hidden — with the same progressive reveal as chapters: a preview tile stays clear once its whole time range is behind your watch position, so scrubbing back over scenes you've already seen shows them normally while scenes ahead stay blurred. |
 | **Taglines** | TMDB taglines like "Everything changes tonight" are dropped. |
 | **Ratings** | The community/TMDB rating and the critic rating are both hidden — a 9.8/10 rating on a specific episode is a hint that something big happens. The Jellyfin Enhanced card rating overlay is suppressed too on the series, season, and unwatched-episode cards of a guarded show (it won't fall back to the parent series' rating); watched episodes keep theirs. |
 | **Air date** | Hidden — a multi-month gap before an episode can imply "season finale" or "long-anticipated reveal". |
